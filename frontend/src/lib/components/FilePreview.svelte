@@ -151,7 +151,7 @@
 			<!-- Content -->
 			<main class="flex-1 overflow-auto flex items-center justify-center">
 				{#if previewType === 'video'}
-					<VideoPreview url={previewUrl} filename={file.name} downloadUrl={downloadUrl} />
+					<VideoPreview url={previewUrl} filename={file.name} downloadUrl={downloadUrl} sizeBytes={file.size} />
 				{:else if previewType === 'audio'}
 					<AudioPreview url={previewUrl} filename={file.name} />
 				{:else if previewType === 'image'}
