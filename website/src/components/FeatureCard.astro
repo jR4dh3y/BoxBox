@@ -1,0 +1,13 @@
+---
+
+// Since this is Astro using @lucide/astro, the Icon prop is an Astro component.
+const { title, desc, icon: Icon } = Astro.props;
+---
+
+<div class="feature-card p-8 rounded-xl bg-surface-secondary border border-border-primary">
+  <div class="w-12 h-12 rounded-lg bg-surface-elevated flex items-center justify-center text-accent mb-6 border border-border-secondary">
+    <Icon class="w-6 h-6" />
+  </div>
+  <h3 class="text-xl font-bold text-white mb-3">{title}</h3>
+  <p class="text-text-secondary leading-relaxed">{desc}</p>
+</div>

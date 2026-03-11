@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@theme {
+	/* Surface colors (backgrounds) */
+	--color-surface-primary: #1e1e1e;
+	--color-surface-secondary: #252525;
+	--color-surface-tertiary: #2a2a2a;
+	--color-surface-elevated: #333333;
+
+	/* Border colors */
+	--color-border-primary: #333333;
+	--color-border-secondary: #2a2a2a;
+	--color-border-focus: #4a9eff;
+
+	/* Text colors */
+	--color-text-primary: #e0e0e0;
+	--color-text-secondary: #888888;
+	--color-text-muted: #666666;
+	--color-text-disabled: #444444;
+
+	/* Accent colors */
+	--color-accent: #4a9eff;
+	--color-accent-hover: #345580;
+	--color-accent-muted: #2d4a6f;
+
+	/* Semantic colors */
+	--color-danger: #dc3545;
+	--color-danger-hover: #b02a37;
+	--color-success: #10b981;
+	--color-success-hover: #059669;
+	--color-warning: #f39c12;
+	--color-warning-hover: #d68910;
+
+	/* Special colors */
+	--color-folder: #e8c36a;
+	--color-selection: #2d4a6f;
+	--color-selection-hover: #345580;
+}
+
+body {
+  background-color: #121212;
+  color: var(--color-text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(40px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  opacity: 0;
+  animation: fadeInUp 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.glass-panel {
+  background: rgba(30, 30, 30, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.feature-card {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.feature-card:hover {
+  transform: translateY(-8px);
+  background: var(--color-surface-secondary);
+  border-color: var(--color-border-focus);
+}
+
+/* Custom scrollbar for the mock UI */
+.mock-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.mock-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.mock-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-surface-elevated);
+  border-radius: 4px;
+}
+.mock-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+

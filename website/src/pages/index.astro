@@ -1,0 +1,295 @@
+---
+import Layout from '../layouts/Layout.astro';
+import DriveCard from '../components/DriveCard.astro';
+import SidebarItem from '../components/SidebarItem.astro';
+import FeatureCard from '../components/FeatureCard.astro';
+import FeaturesBento from '../components/FeaturesBento.astro';
+
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Database,
+  Monitor,
+  Download,
+  FileText,
+  Music,
+  Image,
+  Video,
+  House,
+  RefreshCw,
+  Settings,
+  List,
+  LayoutGrid,
+  LoaderCircle,
+  X,
+  FolderTree,
+  CloudUpload,
+  Code,
+  Zap,
+  CirclePlay,
+  Box,
+  Github,
+  Server,
+  FilePlus
+} from '@lucide/astro';
+---
+<Layout title="BoxBox | Homelab File Manager">
+<section class="relative min-h-screen flex flex-col items-center justify-start pt-32 pb-20 px-4 text-center overflow-hidden z-10">
+
+  <h1 class="text-5xl md:text-7xl lg:text-8xl font-black mb-6 max-w-5xl mx-auto tracking-tight leading-tight animate-fade-in-up text-white" style="animation-delay: 200ms;">
+    The file manager your <span class="text-accent">homelab</span> deserves.
+  </h1>
+
+  <p class="text-lg md:text-2xl text-text-secondary max-w-3xl mx-auto mb-12 font-medium leading-relaxed animate-fade-in-up" style="animation-delay: 300ms;">
+    Manage Linux servers like local folders. Zero latency, instant sync, chunked transfers, and native code editing right in your browser.
+  </p>
+
+  <div class="flex flex-wrap items-center justify-center gap-4 animate-fade-in-up" style="animation-delay: 400ms;">
+    <a href="https://github.com/jR4dh3y/BoxBox?tab=readme-ov-file#quick-start" target="_blank" class="bg-accent hover:bg-accent-hover text-white font-semibold text-lg px-8 py-4 rounded-lg flex items-center gap-2 transition-all">
+      <CirclePlay class="w-5 h-5" />
+      Install & Deploy
+    </a>
+    <a href="https://github.com/jR4dh3y/BoxBox" target="_blank" class="glass-panel text-text-primary hover:text-white font-semibold text-lg px-8 py-4 rounded-lg flex items-center gap-2 transition-all">
+      <Github class="w-5 h-5" />
+      GitHub
+    </a>
+  </div>
+
+  <!-- Scroll animated interface wrapper -->
+  <div id="demo" class="w-full max-w-[1400px] mt-24 mb-32 flex flex-col items-center justify-center relative">
+
+    <div class="absolute inset-0 bg-gradient-to-b from-transparent via-accent/5 to-transparent blur-3xl -z-10"></div>
+
+    <div id="app-window" class="w-full rounded-[14px] overflow-hidden border border-[#2a2a2a] shadow-[0_20px_50px_rgba(0,0,0,0.6)] transition-all duration-300 ease-out bg-[#161616] origin-top" style="transform: perspective(2000px) translateY(-50px) rotateX(20deg) scale(0.85);">
+
+      <!-- App Interface Layout (Exact replica of frontend layout) -->
+      <div class="flex h-[600px] md:h-[750px] w-full bg-[#161616] text-text-primary text-[13px] font-sans relative">
+
+        <!-- Sidebar -->
+        <div class="w-[220px] min-w-[220px] bg-[#1e1e1e] border-r border-[#2a2a2a] flex flex-col hidden md:flex">
+
+          <!-- Storage Section -->
+          <div class="border-b border-border-secondary">
+            <button class="w-full flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
+              <ChevronDown class="w-3.5 h-3.5" />
+              <span>Storage</span>
+            </button>
+            <div class="pb-2">
+              <SidebarItem icon={Database} label="drives" />
+              <SidebarItem icon={Database} label="root" />
+              <SidebarItem icon={Database} label="home" />
+            </div>
+          </div>
+
+          <!-- Places Section -->
+          <div class="border-b border-border-secondary">
+            <button class="w-full flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
+              <ChevronDown class="w-3.5 h-3.5" />
+              <span>Places</span>
+            </button>
+            <div class="pb-2">
+              <SidebarItem icon={Server} label="This Server" active={true} />
+              <SidebarItem icon={Monitor} label="Desktop" />
+              <SidebarItem icon={Download} label="Downloads" />
+              <SidebarItem icon={FileText} label="Documents" />
+              <SidebarItem icon={Music} label="Music" />
+              <SidebarItem icon={Image} label="Pictures" />
+              <SidebarItem icon={Video} label="Videos" />
+            </div>
+          </div>
+
+          <!-- Favorites Section -->
+          <div class="border-b border-border-secondary flex-1">
+            <button class="w-full flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
+              <ChevronDown class="w-3.5 h-3.5" />
+              <span>Favorites</span>
+            </button>
+            <div class="py-2 px-5 text-text-muted text-xs italic">
+              No favorites yet
+            </div>
+          </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="flex-1 flex flex-col min-w-0 bg-[#161616]">
+          <!-- Toolbar -->
+          <div class="h-14 border-b border-[#2a2a2a] flex items-center px-4 justify-between bg-[#1e1e1e]">
+            <div class="flex items-center gap-0.5">
+              <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><ChevronLeft class="w-[18px] h-[18px]" /></button>
+              <button class="w-7 h-7 flex items-center justify-center text-text-disabled cursor-not-allowed"><ChevronRight class="w-[18px] h-[18px]" /></button>
+              <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><ChevronUp class="w-[18px] h-[18px]" /></button>
+            </div>
+
+            <div class="flex-1 mx-4 relative">
+              <div class="bg-surface-secondary border border-border-primary rounded flex items-center px-2 py-1 max-w-full overflow-hidden h-8">
+                <button class="w-4.5 h-4.5 flex items-center justify-center text-text-secondary shrink-0 mr-1.5">
+                  <House class="w-3.5 h-3.5" />
+                </button>
+                <span class="text-text-primary text-[13px]">This Server</span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-1">
+              <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><FilePlus class="w-4 h-4" /></button>
+              <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><RefreshCw class="w-4 h-4" /></button>
+              <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><Settings class="w-4 h-4" /></button>
+            </div>
+          </div>
+
+          <!-- Content (Drive Cards exact replica) -->
+          <div class="flex-1 overflow-y-auto mock-scrollbar p-6 bg-surface-primary">
+
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 text-left">
+              <!-- Drive 1 (Blue/Healthy) -->
+              <DriveCard
+                path="/host_root"
+                total="217.97 GB"
+                used="105.26 GB"
+                free="101.57 GB"
+                device="/dev/sda2"
+                fs="ext4"
+                percent={48.3}
+                color="#4a9eff"
+              />
+
+              <!-- Drive 2 (Red/Critical) -->
+              <DriveCard
+                path="/host_root/mnt/stufff"
+                total="223.57 GB"
+                used="211.19 GB"
+                free="12.38 GB"
+                device="/dev/sdb1"
+                fs="fuseblk"
+                percent={94.5}
+                color="#dc3545"
+              />
+
+              <!-- Drive 3 (Orange/Warning) -->
+              <DriveCard
+                path="/host_root/mnt/sdcard"
+                total="119.05 GB"
+                used="93.29 GB"
+                free="25.76 GB"
+                device="/dev/sdc1"
+                fs="exfat"
+                percent={78.4}
+                color="#f39c12"
+              />
+
+              <!-- Drive 4 (Blue/Healthy) -->
+              <DriveCard
+                path="/home/user"
+                total="217.97 GB"
+                used="105.26 GB"
+                free="101.57 GB"
+                device="/dev/sda2"
+                fs="ext4"
+                percent={48.3}
+                color="#4a9eff"
+                showCursor={true}
+              />
+            </div>
+          </div>
+
+          <!-- Bottom Status Bar -->
+          <div class="h-8 bg-surface-primary border-t border-border-secondary flex items-center px-4 justify-between text-[11px] text-text-secondary">
+            <div class="flex items-center gap-3">
+              <span>5 items</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="flex gap-0.5 bg-surface-secondary border border-border-primary rounded p-0.5">
+                <button class="w-[20px] h-[20px] flex items-center justify-center text-text-muted hover:text-text-secondary"><List class="w-3.5 h-3.5" /></button>
+                <button class="w-[20px] h-[20px] flex items-center justify-center bg-surface-elevated text-text-primary rounded-sm"><LayoutGrid class="w-3.5 h-3.5" /></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Upload Progress Toast Widget Simulation -->
+        <div class="absolute bottom-12 right-6 w-[360px] bg-surface-secondary border border-border-primary rounded-lg shadow-2xl overflow-hidden animate-fade-in-up" style="animation-delay: 1s; z-index: 60; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);">
+          <div class="px-4 py-2 border-b border-border-primary flex items-center justify-between text-[12px] font-medium bg-surface-tertiary">
+            <span class="text-text-primary flex items-center gap-2">
+              <LoaderCircle class="w-3.5 h-3.5 text-accent animate-spin" />
+              Uploading 1 file...
+            </span>
+            <button class="text-text-muted hover:text-text-primary">
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div class="p-4 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-text-primary font-medium truncate pr-4">ubuntu-24.04-live-server-amd64.iso</span>
+              <span class="text-text-secondary font-mono text-[10px] shrink-0">1.8 GB / 2.4 GB</span>
+            </div>
+            <div class="w-full bg-surface-elevated rounded-full h-1.5 overflow-hidden">
+              <div class="bg-accent h-full rounded-full transition-all duration-300 relative" style="width: 74%">
+                <div class="absolute inset-0 bg-white/20 animate-pulse"></div>
+              </div>
+            </div>
+            <div class="flex justify-between text-[10px] text-text-muted mt-1 font-mono">
+              <span>74% &middot; 12.4 MB/s</span>
+              <span>45s remaining</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features Section -->
+<FeaturesBento />
+
+<!-- Footer -->
+<footer class="py-6 bg-surface-primary border-t border-border-primary relative z-10">
+  <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between text-sm text-text-muted gap-4">
+    <div class="flex items-center gap-2">
+      <span class="font-medium text-text-primary">BoxBox</span>
+    </div>
+
+    <div>
+      Built by <a href="https://github.com/jR4dh3y" target="_blank" class="text-accent hover:text-white transition-colors">Radhey</a>.
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Simple scroll animation for the app window
+  const appWindow = document.getElementById('app-window');
+
+  if (appWindow) {
+    window.addEventListener('scroll', () => {
+      // Use requestAnimationFrame for smooth performance
+      window.requestAnimationFrame(() => {
+        const scrollY = window.scrollY;
+        // Adjust these values to tune the animation timing
+        const maxScroll = window.innerHeight * 0.6;
+
+        let progress = Math.min(Math.max(scrollY / maxScroll, 0), 1);
+
+        // Use an easing function for smoother landing
+        // EaseOutQuart
+        const easeProgress = 1 - Math.pow(1 - progress, 4);
+
+        // Calculate transform values based on progress
+        const rotateX = 20 - (20 * easeProgress); // 20deg to 0deg
+        const scale = 0.85 + (0.15 * easeProgress); // 0.85 to 1.0
+        const translateY = -50 * (1 - easeProgress); // move up slightly as it rotates
+
+        appWindow.style.transform = `perspective(2000px) translateY(${translateY}px) rotateX(${rotateX}deg) scale(${scale})`;
+
+        if (progress > 0.8) {
+          appWindow.classList.add('shadow-accent/30');
+          appWindow.classList.remove('shadow-black/60');
+        } else {
+          appWindow.classList.add('shadow-black/60');
+          appWindow.classList.remove('shadow-accent/30');
+        }
+      });
+    });
+  }
+</script>
+</Layout>

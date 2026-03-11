@@ -1,0 +1,232 @@
+---
+import {
+  FolderTree,
+  CloudUpload,
+  Code,
+  Zap,
+  CirclePlay,
+  Play,
+  Box,
+  Terminal,
+  FileCode,
+  CheckCircle2,
+  HardDrive
+} from '@lucide/astro';
+---
+
+<section class="py-32 px-4 relative z-10 bg-[#0d0d0d] border-t border-white/5 font-['Inter']">
+  <div class="max-w-6xl mx-auto">
+    
+    <div class="mb-24 flex flex-col md:flex-row md:items-end justify-between gap-8">
+      <div class="max-w-2xl">
+        <h2 class="text-4xl md:text-6xl font-black md:mb-0 text-white tracking-tighter leading-none" style="font-family: 'Bricolage Grotesque', sans-serif;">
+          Beyond <span class="text-accent italic">basic</span> file management.
+        </h2>
+      </div>
+      <div class="max-w-md">
+        <p class="text-lg text-text-secondary">
+          No bloated electron apps or sluggish web UI. A meticulously crafted, high-performance toolkit designed specifically for bare-metal Linux servers and homelab enthusiasts.
+        </p>
+      </div>
+    </div>
+
+    <!-- Bento Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-6 auto-rows-[minmax(300px,auto)]">
+
+      <!-- 1. Monaco Editor (Large horizontal) -->
+      <div class="group relative md:col-span-8 rounded-3xl bg-gradient-to-br from-[#1c1c1c] to-[#121212] border border-white/5 overflow-hidden transition-all duration-500 hover:border-white/10 flex flex-col justify-between">
+        <div class="absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,_rgba(74,158,255,0.08)_0%,_transparent_50%)] transition-opacity duration-500 opacity-0 group-hover:opacity-100"></div>
+        
+        <div class="p-8 relative z-10 flex-1">
+          <div class="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-accent mb-6 shadow-inner">
+            <Code class="w-6 h-6" />
+          </div>
+          <h3 class="text-2xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Monaco Editor Engine</h3>
+          <p class="text-text-secondary max-w-md">Edit config files and code directly in the browser with VS Code's powerful native engine. Full syntax highlighting, minimap, and find/replace.</p>
+        </div>
+
+        <div class="px-8 pb-0 pt-4 relative z-10 mt-auto">
+          <div class="w-full bg-[#1e1e1e] border border-white/10 rounded-t-xl overflow-hidden shadow-2xl translate-y-2 group-hover:translate-y-0 transition-transform duration-500">
+            <div class="flex items-center gap-2 px-4 py-2 bg-[#252525] border-b border-white/5">
+              <div class="flex gap-1.5">
+                <div class="w-2.5 h-2.5 rounded-full bg-white/20"></div>
+                <div class="w-2.5 h-2.5 rounded-full bg-white/20"></div>
+                <div class="w-2.5 h-2.5 rounded-full bg-white/20"></div>
+              </div>
+              <span class="text-xs text-text-muted font-mono ml-2">docker-compose.yml</span>
+            </div>
+            <div class="p-4 font-mono text-sm leading-relaxed text-white/70 bg-[#1e1e1e] overflow-hidden" style="font-family: 'JetBrains Mono', monospace;">
+              <div><span class="text-[#c586c0]">version:</span> <span class="text-[#ce9178]">'3.8'</span></div>
+              <div class="mt-1"><span class="text-[#c586c0]">services:</span></div>
+              <div>&nbsp;&nbsp;<span class="text-[#9cdcfe]">boxbox:</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#c586c0]">image:</span> <span class="text-[#ce9178]">jr4dh3y/boxbox:latest</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#c586c0]">ports:</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#d4d4d4]">-</span> <span class="text-[#b5cea8]">"8080:8080"</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Multi-Mount Navigation (Vertical) -->
+      <div class="group relative md:col-span-4 rounded-3xl bg-gradient-to-br from-[#1c1c1c] to-[#121212] border border-white/5 overflow-hidden transition-all duration-500 hover:border-white/10 flex flex-col">
+        <div class="absolute inset-0 bg-[radial-gradient(circle_at_0%_100%,_rgba(243,156,18,0.08)_0%,_transparent_60%)] transition-opacity duration-500 opacity-0 group-hover:opacity-100"></div>
+
+        <div class="p-8 pb-0 relative z-10 flex-1">
+          <div class="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-warning mb-6 shadow-inner">
+            <FolderTree class="w-6 h-6" />
+          </div>
+          <h3 class="text-2xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Multi-Mount Nav</h3>
+          <p class="text-text-secondary text-sm">Browse multiple disks, directories, and partitions simultaneously from a single unified interface.</p>
+        </div>
+
+        <div class="p-8 pt-6 relative z-10 mt-auto">
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/10 backdrop-blur-sm">
+              <HardDrive class="w-5 h-5 text-accent" />
+              <div class="flex-1 min-w-0">
+                <div class="text-xs text-white font-medium truncate">/dev/sda1</div>
+                <div class="w-full bg-white/10 rounded-full h-1 mt-1.5">
+                  <div class="bg-accent h-full rounded-full w-[45%]"></div>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/10 backdrop-blur-sm translate-x-4">
+              <HardDrive class="w-5 h-5 text-warning" />
+              <div class="flex-1 min-w-0">
+                <div class="text-xs text-white font-medium truncate">/mnt/storage</div>
+                <div class="w-full bg-white/10 rounded-full h-1 mt-1.5">
+                  <div class="bg-warning h-full rounded-full w-[85%]"></div>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/10 backdrop-blur-sm">
+              <HardDrive class="w-5 h-5 text-success" />
+              <div class="flex-1 min-w-0">
+                <div class="text-xs text-white font-medium truncate">/home/radhey</div>
+                <div class="w-full bg-white/10 rounded-full h-1 mt-1.5">
+                  <div class="bg-success h-full rounded-full w-[15%]"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Chunked Transfers -->
+      <div class="group relative md:col-span-5 rounded-3xl bg-gradient-to-bl from-[#1c1c1c] to-[#121212] border border-white/5 overflow-hidden transition-all duration-500 hover:border-white/10 flex flex-col">
+        <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,_rgba(16,185,129,0.08)_0%,_transparent_60%)] transition-opacity duration-500 opacity-0 group-hover:opacity-100"></div>
+
+        <div class="p-8 relative z-10">
+          <div class="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-success mb-6 shadow-inner">
+            <CloudUpload class="w-6 h-6" />
+          </div>
+          <h3 class="text-2xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Chunked Transfers</h3>
+          <p class="text-text-secondary text-sm">Upload massive files effortlessly. Intelligent chunking ensures resumable, reliable transfers over unstable networks without memory bloat.</p>
+        </div>
+
+        <div class="px-8 pb-8 relative z-10 mt-auto">
+          <div class="flex gap-1.5 mb-2">
+            <!-- Chunk visualization -->
+            <div class="h-2 flex-1 rounded-sm bg-success/80"></div>
+            <div class="h-2 flex-1 rounded-sm bg-success/80"></div>
+            <div class="h-2 flex-1 rounded-sm bg-success/80"></div>
+            <div class="h-2 flex-1 rounded-sm bg-success/40 relative overflow-hidden">
+              <div class="absolute inset-0 bg-success/80 w-1/2 animate-[progress_2s_ease-in-out_infinite]"></div>
+            </div>
+            <div class="h-2 flex-1 rounded-sm bg-white/10"></div>
+            <div class="h-2 flex-1 rounded-sm bg-white/10"></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-text-muted font-mono uppercase tracking-widest">
+            <span>Uploading...</span>
+            <span class="text-success">65%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Real-time WebSocket Sync -->
+      <div class="group relative md:col-span-3 rounded-3xl bg-gradient-to-t from-[#1c1c1c] to-[#121212] border border-white/5 overflow-hidden transition-all duration-500 hover:border-white/10 flex flex-col">
+        <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.03)_0%,_transparent_60%)]"></div>
+
+        <div class="p-8 relative z-10 text-center flex flex-col items-center justify-center h-full">
+          <div class="relative w-16 h-16 mb-6">
+            <div class="absolute inset-0 rounded-full border border-white/20"></div>
+            <div class="absolute inset-0 rounded-full border border-white/40 scale-110 opacity-50 animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
+            <div class="absolute inset-0 flex items-center justify-center text-white">
+              <Zap class="w-6 h-6" />
+            </div>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Real-time Sync</h3>
+          <p class="text-text-secondary text-sm">Watch files change instantly. Upload progress and events sync via WebSocket.</p>
+        </div>
+      </div>
+
+      <!-- 5. Docker Native -->
+      <div class="group relative md:col-span-4 rounded-3xl bg-gradient-to-tr from-[#1c1c1c] to-[#121212] border border-white/5 overflow-hidden transition-all duration-500 hover:border-white/10 flex flex-col">
+        <div class="absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,_rgba(74,158,255,0.08)_0%,_transparent_60%)] transition-opacity duration-500 opacity-0 group-hover:opacity-100"></div>
+
+        <div class="p-8 relative z-10 flex-1">
+          <div class="flex items-center justify-between mb-6">
+            <div class="w-12 h-12 rounded-2xl bg-[#0db7ed]/10 border border-[#0db7ed]/20 flex items-center justify-center text-[#0db7ed] shadow-inner">
+              <Box class="w-6 h-6" />
+            </div>
+            <div class="text-[10px] font-mono text-[#0db7ed] bg-[#0db7ed]/10 px-2 py-1 rounded">25MB Image</div>
+          </div>
+          <h3 class="text-2xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Docker Native</h3>
+          <p class="text-text-secondary text-sm">Spin it up in seconds. Delivered as a lightweight, pre-configured Docker container designed for minimal resource footprint.</p>
+        </div>
+
+        <div class="px-8 pb-8 pt-2 relative z-10 mt-auto">
+          <div class="bg-black/50 border border-white/10 rounded-lg p-3 font-mono text-[11px] text-white/60">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-accent">~</span>
+              <span class="text-white">docker run -d</span>
+            </div>
+            <div class="pl-4">
+              -p 8080:8080 \<br/>
+              -v /:/host_root \<br/>
+              jr4dh3y/boxbox
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Media Streaming feature standalone row -->
+    <div class="mt-6 rounded-3xl bg-[#161616] border border-white/5 overflow-hidden relative flex flex-col md:flex-row group transition-all duration-500 hover:border-white/10">
+      <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-in-out"></div>
+      
+      <div class="p-8 md:p-12 md:w-1/2 flex flex-col justify-center relative z-10">
+        <div class="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white mb-6 shadow-inner">
+          <CirclePlay class="w-6 h-6" />
+        </div>
+        <h3 class="text-3xl font-bold text-white mb-4" style="font-family: 'Bricolage Grotesque', sans-serif;">Media Streaming & Preview</h3>
+        <p class="text-text-secondary text-lg">Instantly stream video and audio files directly from your server. High-performance previews load without downloading the entire file, saving bandwidth and time.</p>
+      </div>
+
+      <div class="md:w-1/2 bg-[#1e1e1e]/50 border-l border-white/5 p-8 flex items-center justify-center relative z-10 overflow-hidden">
+        <div class="w-full max-w-sm aspect-video bg-black/40 border border-white/10 rounded-xl relative shadow-2xl overflow-hidden group-hover:scale-105 transition-transform duration-500">
+          <div class="absolute inset-0 flex items-center justify-center">
+            <div class="w-12 h-12 rounded-full bg-white/10 backdrop-blur flex items-center justify-center border border-white/20 text-white">
+              <CirclePlay class="w-5 h-5" />
+            </div>
+          </div>
+          <!-- Scrubber -->
+          <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
+            <div class="h-1 bg-white/20 rounded-full overflow-hidden">
+              <div class="h-full bg-accent w-1/3"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<style>
+  @keyframes progress {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
+  }
+</style>

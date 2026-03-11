@@ -1,0 +1,32 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = "Fast, lightweight file manager for Linux servers." } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" class="scroll-smooth bg-[#0d0d0d]">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="description" content={description} />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-[#0d0d0d] text-text-primary min-h-screen flex flex-col antialiased">
+    <!-- Subtle background glow -->
+    <div class="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-accent/20 rounded-full blur-[120px] pointer-events-none z-0"></div>
+    <div class="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-accent-muted/20 rounded-full blur-[120px] pointer-events-none z-0"></div>
+    
+    <slot />
+  </body>
+</html>

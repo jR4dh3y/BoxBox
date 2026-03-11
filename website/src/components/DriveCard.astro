@@ -1,0 +1,51 @@
+---
+import { Server, MousePointer2 } from '@lucide/astro';
+
+export interface Props {
+  path: string;
+  total: string;
+  used: string;
+  free: string;
+  device: string;
+  fs: string;
+  percent: number;
+  color: string;
+  showCursor?: boolean;
+}
+
+const { 
+  path, 
+  total, 
+  used, 
+  free, 
+  device, 
+  fs, 
+  percent, 
+  color,
+  showCursor = false
+} = Astro.props;
+---
+
+<div class={`flex items-center gap-4 p-4 bg-[#252525] border border-[#333333] rounded-xl w-full transition-colors hover:border-[#4a4a4a] cursor-pointer group ${showCursor ? 'relative' : ''}`}>
+  <div class="shrink-0 w-[84px] h-[84px] flex items-center justify-center rounded-lg bg-[#303030] text-[#888888] transition-colors group-hover:text-[#e0e0e0]">
+    <Server class="w-7 h-7" />
+  </div>
+  <div class="flex-1 min-w-0 flex flex-col justify-center">
+    <div class="flex items-center justify-between gap-2 mb-1">
+      <span class="text-[14px] font-medium text-[#e0e0e0] truncate tracking-wide">{path}</span>
+      <span class="px-2 py-0.5 rounded bg-[#303030] text-[11px] text-[#999999]">{total}</span>
+    </div>
+    <div class="text-[12px] text-[#888888] mb-1">{used} used &middot; {free} free</div>
+    <div class="text-[11px] text-[#666666] font-mono truncate mb-3">{device} &middot; {fs}</div>
+    <div class="flex items-center gap-3">
+      <div class="flex-1 bg-[#333333] rounded-full h-[3px] overflow-hidden">
+        <div class="h-full rounded-full" style={`background-color: ${color}; width: ${percent}%`}></div>
+      </div>
+      <span class="text-[11px] shrink-0" style={`color: ${color}`}>{percent}%</span>
+    </div>
+  </div>
+  
+  {showCursor && (
+    <MousePointer2 class="w-5 h-5 absolute left-[15%] bottom-[-10px] drop-shadow-md z-50 text-white animate-pulse fill-white stroke-black stroke-[1.5]" />
+  )}
+</div>
