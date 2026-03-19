@@ -1,5 +1,5 @@
 ---
-import { Server, MousePointer2 } from '@lucide/astro';
+import { Server } from '@lucide/astro';
 
 export interface Props {
   path: string;
@@ -10,7 +10,6 @@ export interface Props {
   fs: string;
   percent: number;
   color: string;
-  showCursor?: boolean;
 }
 
 const { 
@@ -21,12 +20,11 @@ const {
   device, 
   fs, 
   percent, 
-  color,
-  showCursor = false
+  color
 } = Astro.props;
 ---
 
-<div class={`flex items-center gap-4 p-4 bg-[#252525] border border-[#333333] rounded-xl w-full transition-colors hover:border-[#4a4a4a] cursor-pointer group ${showCursor ? 'relative' : ''}`}>
+<div class="flex items-center gap-4 p-4 bg-[#252525] border border-[#333333] rounded-xl w-full transition-colors hover:border-[#4a4a4a] cursor-pointer group">
   <div class="shrink-0 w-[84px] h-[84px] flex items-center justify-center rounded-lg bg-[#303030] text-[#888888] transition-colors group-hover:text-[#e0e0e0]">
     <Server class="w-7 h-7" />
   </div>
@@ -44,8 +42,4 @@ const {
       <span class="text-[11px] shrink-0" style={`color: ${color}`}>{percent}%</span>
     </div>
   </div>
-  
-  {showCursor && (
-    <MousePointer2 class="w-5 h-5 absolute left-[15%] bottom-[-10px] drop-shadow-md z-50 text-white animate-pulse fill-white stroke-black stroke-[1.5]" />
-  )}
 </div>

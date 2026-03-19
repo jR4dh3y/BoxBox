@@ -47,6 +47,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+html,
+body {
+	overscroll-behavior-y: none;
+}
+
 /* Animations */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(40px); }

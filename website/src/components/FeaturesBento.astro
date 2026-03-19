@@ -205,7 +205,19 @@ import {
       </div>
 
       <div class="md:w-1/2 bg-[#1e1e1e]/50 border-l border-white/5 p-8 flex items-center justify-center relative z-10 overflow-hidden">
-        <div class="w-full max-w-sm aspect-video bg-black/40 border border-white/10 rounded-xl relative shadow-2xl overflow-hidden group-hover:scale-105 transition-transform duration-500">
+        <button
+          type="button"
+          class="w-full max-w-sm aspect-video bg-black/40 border border-white/10 rounded-xl relative shadow-2xl overflow-hidden group-hover:scale-105 transition-transform duration-500"
+          data-video-preview
+          aria-label="Play Never Gonna Give You Up"
+        >
+          <img
+            src="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg"
+            alt="Never Gonna Give You Up video thumbnail"
+            loading="lazy"
+            class="absolute inset-0 w-full h-full object-cover"
+          />
+          <div class="absolute inset-0 bg-black/35"></div>
           <div class="absolute inset-0 flex items-center justify-center">
             <div class="w-12 h-12 rounded-full bg-white/10 backdrop-blur flex items-center justify-center border border-white/20 text-white">
               <CirclePlay class="w-5 h-5" />
@@ -217,12 +229,34 @@ import {
               <div class="h-full bg-accent w-1/3"></div>
             </div>
           </div>
-        </div>
+        </button>
       </div>
     </div>
 
   </div>
 </section>
+
+<script>
+  const previewButton = document.querySelector('[data-video-preview]');
+
+  if (previewButton) {
+    previewButton.addEventListener('click', () => {
+      previewButton.outerHTML = `
+        <div class="w-full max-w-sm aspect-video bg-black border border-white/10 rounded-xl relative shadow-2xl overflow-hidden">
+          <iframe
+            src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1&rel=0"
+            title="Never Gonna Give You Up"
+            class="absolute inset-0 w-full h-full"
+            loading="lazy"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allowfullscreen
+          ></iframe>
+        </div>
+      `;
+    }, { once: true });
+  }
+</script>
 
 <style>
   @keyframes progress {
