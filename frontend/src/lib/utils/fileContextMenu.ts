@@ -7,13 +7,13 @@ import type { ContextMenuItem } from '$lib/components/ui/ContextMenu.svelte';
 import type { FileInfo } from '$lib/api/files';
 import { Copy, Scissors, ClipboardPaste, Pencil, Trash2, Download, Info } from 'lucide-svelte';
 
-export type FileContextAction = 
-	| 'copy' 
-	| 'cut' 
-	| 'paste' 
-	| 'rename' 
-	| 'delete' 
-	| 'download' 
+export type FileContextAction =
+	| 'copy'
+	| 'cut'
+	| 'paste'
+	| 'rename'
+	| 'delete'
+	| 'download'
 	| 'properties';
 
 export interface FileContextMenuOptions {
@@ -41,6 +41,6 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 		{ id: 'delete', label: 'Delete', icon: Trash2, shortcut: 'Del' },
 		{ id: 'separator-2', label: '', separator: true },
 		{ id: 'download', label: 'Download', icon: Download, disabled: hasFolder },
-		{ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple },
+		{ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple }
 	];
 }

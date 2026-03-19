@@ -296,14 +296,14 @@ import { CONFIG } from '$lib/config';
 /**
  * Map a system mount point (as returned by df/system drives API) to a browsable path in the app.
  * This handles the translation from container-internal paths to the app's mount point names.
- * 
+ *
  * Examples:
  * - '/media/devmon' -> 'drives'
  * - '/media/devmon/usb-drive' -> 'drives/usb-drive'
  * - '/home/user' -> 'home'
  * - '/host_root' -> 'root'
  * - '/host_root/mnt/rclone' -> 'root/mnt/rclone'
- * 
+ *
  * @param mountPoint - The system mount point path
  * @returns The browsable path that can be used with handleNavigate
  */
@@ -319,12 +319,12 @@ export function mapSystemMountToBrowsePath(mountPoint: string): string {
 			return mapping.browsePath + subPath;
 		}
 	}
-	
+
 	// Fallback for root filesystem
 	if (mountPoint === '/') {
 		return CONFIG.paths.hostRootMount;
 	}
-	
+
 	// Unknown mount - log warning and try using it as-is
 	console.warn('Unknown system mount point:', mountPoint);
 	return mountPoint.startsWith('/') ? mountPoint.slice(1) : mountPoint;

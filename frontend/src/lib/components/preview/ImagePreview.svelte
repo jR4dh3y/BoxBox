@@ -53,13 +53,17 @@
 	}
 </script>
 
-<div class="flex flex-col w-full h-full">
+<div class="flex h-full w-full flex-col">
 	<!-- Controls -->
-	<div class="flex items-center justify-center gap-2 p-2 bg-surface-secondary border-b border-border-primary shrink-0">
+	<div
+		class="flex shrink-0 items-center justify-center gap-2 border-b border-border-primary bg-surface-secondary p-2"
+	>
 		<Button variant="secondary" size="icon" onclick={zoomOut} title="Zoom out">
 			<ZoomOut size={18} />
 		</Button>
-		<span class="text-xs text-text-secondary min-w-[50px] text-center">{Math.round(scale * 100)}%</span>
+		<span class="min-w-[50px] text-center text-xs text-text-secondary"
+			>{Math.round(scale * 100)}%</span
+		>
 		<Button variant="secondary" size="icon" onclick={zoomIn} title="Zoom in">
 			<ZoomIn size={18} />
 		</Button>
@@ -70,18 +74,23 @@
 	</div>
 
 	<!-- Image container -->
-	<div class="flex-1 overflow-auto flex items-center justify-center bg-surface-primary" onwheel={handleWheel}>
+	<div
+		class="flex flex-1 items-center justify-center overflow-auto bg-surface-primary"
+		onwheel={handleWheel}
+	>
 		{#if loading}
-			<div class="text-text-secondary text-sm">Loading...</div>
+			<div class="text-sm text-text-secondary">Loading...</div>
 		{/if}
 		{#if error}
-			<div class="text-danger text-sm">{error}</div>
+			<div class="text-sm text-danger">{error}</div>
 		{:else}
 			<img
 				src={url}
 				alt={filename}
-				style="transform: scale({scale}) rotate({rotation}deg);"
-				class="max-w-full max-h-full object-contain transition-transform duration-150 select-none {loading ? 'opacity-0' : ''}"
+				style="--image-scale: {scale}; --image-rotation: {rotation}deg;"
+				class="max-h-full max-w-full object-contain transition-transform duration-150 select-none {loading
+					? 'opacity-0'
+					: ''}"
 				onload={handleLoad}
 				onerror={handleError}
 				draggable="false"
@@ -89,3 +98,9 @@
 		{/if}
 	</div>
 </div>
+
+<style>
+	img {
+		transform: scale(var(--image-scale, 1)) rotate(var(--image-rotation, 0deg));
+	}
+</style>

@@ -22,20 +22,12 @@
 		disabled = false,
 		onSearch,
 		onInput,
-		onClear,
+		onClear
 	}: Props = $props();
-
-	let inputValue = $state(value);
-
-	$effect(() => {
-		if (value !== inputValue) {
-			inputValue = value;
-		}
-	});
 
 	function handleSubmit(event: Event): void {
 		event.preventDefault();
-		const trimmed = inputValue.trim();
+		const trimmed = value.trim();
 		if (trimmed && onSearch) {
 			onSearch(trimmed);
 		}
@@ -43,12 +35,10 @@
 
 	function handleInput(event: Event): void {
 		const target = event.target as HTMLInputElement;
-		inputValue = target.value;
-		onInput?.(inputValue);
+		onInput?.(target.value);
 	}
 
 	function handleClear(): void {
-		inputValue = '';
 		onClear?.();
 		onInput?.('');
 	}
@@ -73,15 +63,15 @@
 		<input
 			type="search"
 			{placeholder}
-			value={inputValue}
+			{value}
 			oninput={handleInput}
 			onkeydown={handleKeydown}
-			disabled={disabled}
+			{disabled}
 			class="block w-full rounded-lg border border-border-primary bg-surface-secondary py-2 pr-10 pl-10 text-sm text-text-primary placeholder-text-muted focus:border-border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 			aria-label="Search"
 		/>
 
-		{#if inputValue}
+		{#if value}
 			<button
 				type="button"
 				onclick={handleClear}

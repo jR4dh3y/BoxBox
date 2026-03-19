@@ -14,7 +14,7 @@ export interface ClipboardState {
 
 const state = $state<ClipboardState>({
 	items: [],
-	operation: null,
+	operation: null
 });
 
 /**
@@ -62,5 +62,5 @@ export const clipboardStore = {
 	clear() {
 		state.items = [];
 		state.operation = null;
-	},
+	}
 };

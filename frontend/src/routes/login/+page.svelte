@@ -2,13 +2,15 @@
 	/**
 	 * Login page component
 	 */
-	import { authStore, authError, isAuthLoading } from '$lib/stores/auth';
+	import { authStore } from '$lib/stores/auth.svelte';
 	import { goto } from '$app/navigation';
 	import { Button, Input, Spinner } from '$lib/components/ui';
 	import { X, FolderOpen, AlertTriangle } from 'lucide-svelte';
 
 	let username = $state('');
 	let password = $state('');
+	const authError = $derived(authStore.error);
+	const isAuthLoading = $derived(authStore.isLoading);
 
 	async function handleSubmit(event: Event) {
 		event.preventDefault();
@@ -32,24 +34,29 @@
 	<title>Login - File Manager</title>
 </svelte:head>
 
-<div class="min-h-screen flex items-center justify-center p-4 bg-surface-primary">
-	<div class="w-full max-w-[400px] bg-surface-secondary border border-border-primary rounded-lg p-8">
-		<div class="flex flex-col items-center mb-8">
-			<div class="flex items-center gap-3 mb-2">
+<div class="flex min-h-screen items-center justify-center bg-surface-primary p-4">
+	<div
+		class="w-full max-w-[400px] rounded-lg border border-border-primary bg-surface-secondary p-8"
+	>
+		<div class="mb-8 flex flex-col items-center">
+			<div class="mb-2 flex items-center gap-3">
 				<span class="text-accent"><FolderOpen size={32} /></span>
-				<h1 class="text-2xl font-semibold text-text-primary m-0">File Manager</h1>
+				<h1 class="m-0 text-2xl font-semibold text-text-primary">File Manager</h1>
 			</div>
-			<p class="text-sm text-text-secondary m-0">Sign in to access your files</p>
+			<p class="m-0 text-sm text-text-secondary">Sign in to access your files</p>
 		</div>
 
 		<form class="flex flex-col gap-5" onsubmit={handleSubmit}>
-			{#if $authError}
-				<div class="flex items-center gap-2 px-4 py-3 bg-danger/20 border border-danger/30 rounded text-danger text-sm" role="alert">
+			{#if authError}
+				<div
+					class="flex items-center gap-2 rounded border border-danger/30 bg-danger/20 px-4 py-3 text-sm text-danger"
+					role="alert"
+				>
 					<span class="shrink-0"><AlertTriangle size={16} /></span>
-					<span class="flex-1">{$authError}</span>
+					<span class="flex-1">{authError}</span>
 					<button
 						type="button"
-						class="ml-auto p-0 w-6 h-6 flex items-center justify-center bg-transparent border-none text-xl text-danger cursor-pointer rounded transition-colors hover:bg-danger/30"
+						class="ml-auto flex h-6 w-6 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 text-xl text-danger transition-colors hover:bg-danger/30"
 						onclick={clearError}
 						aria-label="Dismiss error"
 					>
@@ -67,7 +74,7 @@
 					placeholder="Enter your username"
 					autocomplete="username"
 					required
-					disabled={$isAuthLoading}
+					disabled={isAuthLoading}
 				/>
 			</div>
 
@@ -80,16 +87,16 @@
 					placeholder="Enter your password"
 					autocomplete="current-password"
 					required
-					disabled={$isAuthLoading}
+					disabled={isAuthLoading}
 				/>
 			</div>
 
 			<Button
 				type="submit"
 				variant="primary"
-				disabled={$isAuthLoading || !username.trim() || !password}
+				disabled={isAuthLoading || !username.trim() || !password}
 			>
-				{#if $isAuthLoading}
+				{#if isAuthLoading}
 					<Spinner size="sm" />
 					<span>Signing in...</span>
 				{:else}

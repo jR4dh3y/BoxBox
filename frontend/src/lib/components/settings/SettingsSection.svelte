@@ -4,7 +4,7 @@
 	 * Provides consistent header styling and expand/collapse behavior
 	 */
 	import { ChevronDown } from 'lucide-svelte';
-	import type { Snippet, SvelteComponent } from 'svelte';
+	import type { Snippet } from 'svelte';
 
 	interface Props {
 		title: string;
@@ -21,11 +21,7 @@
 </script>
 
 <div class="border-b border-border-secondary">
-	<button
-		type="button"
-		class={sectionHeaderClass}
-		onclick={() => (collapsed = !collapsed)}
-	>
+	<button type="button" class={sectionHeaderClass} onclick={() => (collapsed = !collapsed)}>
 		<ChevronDown
 			size={14}
 			class="shrink-0 transition-transform duration-150 {collapsed ? '-rotate-90' : ''}"

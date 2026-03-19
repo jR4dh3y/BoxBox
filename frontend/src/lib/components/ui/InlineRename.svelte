@@ -13,17 +13,28 @@
 		class?: string;
 	}
 
-	let { value, onSave, onCancel, placeholder = '', class: className = '' }: Props = $props();
+	let props: Props = $props();
 
-	let inputValue = $state(value);
+	const placeholder = $derived(props.placeholder ?? '');
+	const className = $derived(props.class ?? '');
+
+	let inputValue = $state(props.value);
+	let previousPropValue = $state(props.value);
+
+	$effect(() => {
+		if (props.value !== previousPropValue) {
+			inputValue = props.value;
+			previousPropValue = props.value;
+		}
+	});
 
 	function handleSave(): void {
-		onSave(inputValue.trim());
+		props.onSave(inputValue.trim());
 	}
 
 	function handleKeydown(e: KeyboardEvent): void {
 		if (e.key === 'Enter') handleSave();
-		if (e.key === 'Escape') onCancel();
+		if (e.key === 'Escape') props.onCancel();
 	}
 
 	function handleFocus(e: FocusEvent): void {
@@ -36,27 +47,27 @@
 	}
 </script>
 
-<div class="flex items-center gap-1 h-5 {className}">
+<div class="flex h-5 items-center gap-1 {className}">
 	<input
 		type="text"
 		bind:value={inputValue}
 		onkeydown={handleKeydown}
 		onfocus={handleFocus}
 		{placeholder}
-		class="flex-1 min-w-0 h-5 box-border bg-surface-primary border border-border-focus rounded px-2 text-xs text-text-primary outline-none"
+		class="box-border h-5 min-w-0 flex-1 rounded border border-border-focus bg-surface-primary px-2 text-xs text-text-primary outline-none"
 	/>
 	<button
 		type="button"
 		onclick={(e: MouseEvent) => handleButtonClick(e, handleSave)}
-		class="shrink-0 w-5 h-5 flex items-center justify-center text-success hover:text-green-400 hover:bg-success/20 rounded transition-colors"
+		class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-success transition-colors hover:bg-success/20 hover:text-green-400"
 		title="Save"
 	>
 		<Check size={12} />
 	</button>
 	<button
 		type="button"
-		onclick={(e: MouseEvent) => handleButtonClick(e, onCancel)}
-		class="shrink-0 w-5 h-5 flex items-center justify-center text-text-muted hover:text-danger hover:bg-danger/20 rounded transition-colors"
+		onclick={(e: MouseEvent) => handleButtonClick(e, props.onCancel)}
+		class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:bg-danger/20 hover:text-danger"
 		title="Cancel"
 	>
 		<X size={12} />

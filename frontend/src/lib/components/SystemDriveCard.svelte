@@ -3,7 +3,7 @@
 	import { HardDrive, Database, Pencil, X } from 'lucide-svelte';
 	import { formatFileSize } from '$lib/utils/format';
 	import { Badge, ProgressBar, ContextMenu, InlineRename } from '$lib/components/ui';
-	import { settingsStore } from '$lib/stores/settings';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 
 	interface Props {
 		drive: SystemDrive;
@@ -21,7 +21,7 @@
 	const freeFormatted = $derived(formatFileSize(drive.freeBytes));
 
 	// Subscribe to the store reactively so UI updates when drive names change
-	const customName = $derived($settingsStore.driveNameOverrides[drive.mountPoint]);
+	const customName = $derived(settingsStore.driveNameOverrides[drive.mountPoint]);
 	const displayName = $derived(customName || drive.mountPoint);
 
 	const progressVariant = $derived.by(() => {
@@ -91,11 +91,13 @@
 
 <button
 	type="button"
-	class="flex items-stretch gap-3 p-4 bg-surface-secondary border border-border-primary rounded-lg w-full text-left cursor-pointer transition-all duration-150 hover:bg-surface-tertiary hover:border-border-focus relative"
+	class="relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-all duration-150 hover:border-border-focus hover:bg-surface-tertiary"
 	onclick={handleCardClick}
 	oncontextmenu={handleContextMenu}
 >
-	<div class="shrink-0 w-22 flex items-center justify-center rounded bg-surface-elevated text-text-secondary">
+	<div
+		class="flex w-22 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary"
+	>
 		{#if isRootDrive}
 			<Database size={22} />
 		{:else}
@@ -103,38 +105,40 @@
 		{/if}
 	</div>
 
-	<div class="flex-1 min-w-0 flex flex-col gap-1.5">
+	<div class="flex min-w-0 flex-1 flex-col gap-1.5">
 		{#if renaming}
-			<InlineRename
-				value={displayName}
-				onSave={handleSaveRename}
-				onCancel={handleCancelRename}
-			/>
+			<InlineRename value={displayName} onSave={handleSaveRename} onCancel={handleCancelRename} />
 		{:else}
-			<div class="flex items-center justify-between gap-2 h-5">
-				<span class="text-sm font-medium text-text-primary truncate" title={drive.mountPoint}>
+			<div class="flex h-5 items-center justify-between gap-2">
+				<span class="truncate text-sm font-medium text-text-primary" title={drive.mountPoint}>
 					{displayName}
 				</span>
 				<Badge variant="default">{totalFormatted}</Badge>
 			</div>
 		{/if}
-		
+
 		<div class="text-xs text-text-muted">
 			{usedFormatted} used · {freeFormatted} free
 		</div>
-		
-		<div class="text-[11px] text-text-muted font-mono truncate" title="{drive.device}">
+
+		<div class="truncate font-mono text-[11px] text-text-muted" title={drive.device}>
 			{drive.device}
 			{#if drive.fsType}
 				<span class="text-text-secondary"> · {drive.fsType}</span>
 			{/if}
 		</div>
-		
-		<div class="flex items-center gap-3 mt-0.5">
+
+		<div class="mt-0.5 flex items-center gap-3">
 			<div class="flex-1">
 				<ProgressBar value={drive.usedPct} size="sm" variant={progressVariant} />
 			</div>
-			<span class="text-[11px] shrink-0 font-medium {drive.usedPct >= 90 ? 'text-danger' : drive.usedPct >= 75 ? 'text-warning' : 'text-text-muted'}">
+			<span
+				class="shrink-0 text-[11px] font-medium {drive.usedPct >= 90
+					? 'text-danger'
+					: drive.usedPct >= 75
+						? 'text-warning'
+						: 'text-text-muted'}"
+			>
 				{drive.usedPct.toFixed(1)}%
 			</span>
 		</div>

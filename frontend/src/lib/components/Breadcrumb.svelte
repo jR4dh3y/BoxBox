@@ -35,7 +35,7 @@
 	</button>
 
 	{#if segments.length > 0}
-		{#each segments as segment, index (index)}
+		{#each segments as segment, index (buildPath(index))}
 			<ChevronRight size={16} class="shrink-0 text-text-muted" />
 
 			{#if index === segments.length - 1}

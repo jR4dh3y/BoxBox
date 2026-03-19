@@ -4,8 +4,8 @@
 	 * Design follows the same visual language as the file browser sidebar
 	 */
 	import { goto } from '$app/navigation';
-	import { authStore } from '$lib/stores/auth';
-	import { settingsStore, type UserSettings } from '$lib/stores/settings';
+	import { authStore } from '$lib/stores/auth.svelte';
+	import { settingsStore, type UserSettings } from '$lib/stores/settings.svelte';
 	import {
 		ChevronLeft,
 		Eye,
@@ -15,13 +15,20 @@
 		User,
 		LogOut,
 		Save,
-		X,
+		X
 	} from 'lucide-svelte';
 	import { Button, Toggle, Select } from '$lib/components/ui';
 	import { SettingsSection, SettingsRow } from '$lib/components/settings';
 
-	let settings = $state<UserSettings>({ ...$settingsStore });
-	const hasChanges = $derived(JSON.stringify(settings) !== JSON.stringify($settingsStore));
+	function cloneSettings(source: UserSettings): UserSettings {
+		return {
+			...source,
+			driveNameOverrides: { ...source.driveNameOverrides }
+		};
+	}
+
+	let settings = $state<UserSettings>(cloneSettings(settingsStore.value));
+	const hasChanges = $derived(JSON.stringify(settings) !== JSON.stringify(settingsStore.value));
 
 	// Section collapse state
 	let displayCollapsed = $state(false);
@@ -35,11 +42,11 @@
 
 	function handleReset() {
 		settingsStore.reset();
-		settings = { ...$settingsStore };
+		settings = cloneSettings(settingsStore.value);
 	}
 
 	function handleCancel() {
-		settings = { ...$settingsStore };
+		settings = cloneSettings(settingsStore.value);
 	}
 
 	async function handleLogout() {
@@ -55,58 +62,50 @@
 		{ value: 'name', label: 'Name' },
 		{ value: 'size', label: 'Size' },
 		{ value: 'modTime', label: 'Date modified' },
-		{ value: 'type', label: 'Type' },
+		{ value: 'type', label: 'Type' }
 	];
 
 	const sortDirOptions = [
 		{ value: 'asc', label: 'Ascending' },
-		{ value: 'desc', label: 'Descending' },
+		{ value: 'desc', label: 'Descending' }
 	];
 
 	const viewModeOptions = [
 		{ value: 'list', label: 'List' },
-		{ value: 'grid', label: 'Grid' },
+		{ value: 'grid', label: 'Grid' }
 	];
 
 	// Shared styles for navigation items
-	const navItemClass = 'w-full flex items-center gap-2.5 py-1.5 px-3 pl-5 bg-transparent border-none text-[13px] cursor-pointer text-left transition-colors duration-100 hover:bg-surface-secondary';
-	const backButtonClass = 'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:bg-surface-elevated hover:text-text-primary';
+	const navItemClass =
+		'w-full flex items-center gap-2.5 py-1.5 px-3 pl-5 bg-transparent border-none text-[13px] cursor-pointer text-left transition-colors duration-100 hover:bg-surface-secondary';
+	const backButtonClass =
+		'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:bg-surface-elevated hover:text-text-primary';
 </script>
 
 <svelte:head>
 	<title>Settings - File Manager</title>
 </svelte:head>
 
-<div class="flex h-screen w-full bg-surface-primary overflow-hidden">
+<div class="flex h-screen w-full overflow-hidden bg-surface-primary">
 	<!-- Settings Sidebar (matching main sidebar width) -->
-	<aside class="w-[220px] min-w-[220px] bg-surface-primary border-r border-border-secondary flex flex-col overflow-y-auto overflow-x-hidden">
+	<aside
+		class="flex w-[220px] min-w-[220px] flex-col overflow-x-hidden overflow-y-auto border-r border-border-secondary bg-surface-primary"
+	>
 		<!-- Header -->
-		<div class="flex items-center gap-2 px-3 py-3 border-b border-border-secondary">
-			<button
-				type="button"
-				class={backButtonClass}
-				onclick={goBack}
-				title="Back to Files"
-			>
+		<div class="flex items-center gap-2 border-b border-border-secondary px-3 py-3">
+			<button type="button" class={backButtonClass} onclick={goBack} title="Back to Files">
 				<ChevronLeft size={18} />
 			</button>
-			<span class="text-text-primary text-[13px] font-medium">Settings</span>
+			<span class="text-[13px] font-medium text-text-primary">Settings</span>
 		</div>
 
 		<!-- Navigation within settings -->
 		<nav class="flex-1 py-2">
-			<button
-				type="button"
-				class="{navItemClass} text-text-primary bg-selection"
-			>
+			<button type="button" class="{navItemClass} bg-selection text-text-primary">
 				<Eye size={16} class="shrink-0 opacity-80" />
 				<span>Preferences</span>
 			</button>
-			<button
-				type="button"
-				class="{navItemClass} text-text-secondary"
-				onclick={handleLogout}
-			>
+			<button type="button" class="{navItemClass} text-text-secondary" onclick={handleLogout}>
 				<LogOut size={16} class="shrink-0 opacity-80" />
 				<span>Logout</span>
 			</button>
@@ -114,25 +113,24 @@
 	</aside>
 
 	<!-- Main content area -->
-	<div class="flex-1 flex flex-col min-w-0">
+	<div class="flex min-w-0 flex-1 flex-col">
 		<!-- Toolbar matching browse toolbar -->
-		<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-primary border-b border-border-secondary">
+		<div
+			class="flex items-center gap-2 border-b border-border-secondary bg-surface-primary px-3 py-1.5"
+		>
 			<div class="flex items-center gap-2">
-				<button
-					type="button"
-					class={backButtonClass}
-					onclick={goBack}
-					title="Back"
-				>
+				<button type="button" class={backButtonClass} onclick={goBack} title="Back">
 					<ChevronLeft size={18} />
 				</button>
 			</div>
 
 			<!-- Path bar style breadcrumb -->
-			<div class="flex-1 flex items-center gap-1.5 bg-surface-secondary border border-border-primary rounded px-2 py-1 min-w-0">
-				<span class="text-text-secondary text-[13px]">Settings</span>
-				<span class="text-text-muted text-xs">/</span>
-				<span class="text-text-primary text-[13px]">Preferences</span>
+			<div
+				class="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border-primary bg-surface-secondary px-2 py-1"
+			>
+				<span class="text-[13px] text-text-secondary">Settings</span>
+				<span class="text-xs text-text-muted">/</span>
+				<span class="text-[13px] text-text-primary">Preferences</span>
 			</div>
 
 			<!-- Action buttons -->
@@ -219,7 +217,9 @@
 		</div>
 
 		<!-- Status bar matching browse status bar -->
-		<div class="flex items-center justify-between px-3 py-1.5 bg-surface-primary border-t border-border-secondary text-[11px] text-text-muted">
+		<div
+			class="flex items-center justify-between border-t border-border-secondary bg-surface-primary px-3 py-1.5 text-[11px] text-text-muted"
+		>
 			<span>
 				{#if hasChanges}
 					<span class="text-warning">● Unsaved changes</span>

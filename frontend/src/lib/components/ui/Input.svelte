@@ -22,7 +22,7 @@
 		name,
 		autocomplete,
 		oninput,
-		onkeydown,
+		onkeydown
 	}: Props = $props();
 </script>
 
@@ -34,8 +34,8 @@
 	{required}
 	{id}
 	{name}
-	autocomplete={autocomplete}
+	{autocomplete}
 	{oninput}
 	{onkeydown}
-	class="w-full px-3 py-2 bg-surface-secondary border border-border-primary rounded text-text-primary placeholder:text-text-muted text-sm transition-colors duration-150 focus:outline-none focus:border-border-focus disabled:opacity-50 disabled:cursor-not-allowed"
+	class="w-full rounded border border-border-primary bg-surface-secondary px-3 py-2 text-sm text-text-primary transition-colors duration-150 placeholder:text-text-muted focus:border-border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 />

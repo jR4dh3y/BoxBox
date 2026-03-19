@@ -13,10 +13,12 @@
 		success: 'bg-success/20 text-success',
 		warning: 'bg-warning/20 text-warning',
 		danger: 'bg-danger/20 text-danger',
-		info: 'bg-accent/20 text-accent',
+		info: 'bg-accent/20 text-accent'
 	};
 </script>
 
-<span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded {variantClasses[variant]}">
+<span
+	class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium {variantClasses[variant]}"
+>
 	{@render children()}
 </span>

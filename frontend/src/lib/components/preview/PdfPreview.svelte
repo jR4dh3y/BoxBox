@@ -17,15 +17,15 @@
 	}
 </script>
 
-<div class="w-full h-full flex items-center justify-center bg-surface-tertiary">
+<div class="flex h-full w-full items-center justify-center bg-surface-tertiary">
 	{#if error}
-		<div class="text-danger text-sm text-center p-5">{error}</div>
+		<div class="p-5 text-center text-sm text-danger">{error}</div>
 	{:else}
 		<iframe
 			src={url}
 			title={filename}
 			onerror={handleError}
-			class="w-full h-full border-none bg-white"
+			class="h-full w-full border-none bg-white"
 		></iframe>
 	{/if}
 </div>

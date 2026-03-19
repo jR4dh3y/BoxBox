@@ -16,10 +16,10 @@
 		Star,
 		Pencil,
 		X,
-		MoreVertical,
+		MoreVertical
 	} from 'lucide-svelte';
 	import { Badge, ContextMenu, InlineRename } from '$lib/components/ui';
-	import { settingsStore } from '$lib/stores/settings';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 
 	interface Props {
 		roots?: MountPoint[];
@@ -37,7 +37,7 @@
 		{ name: 'Documents', path: 'documents', icon: FileText },
 		{ name: 'Music', path: 'music', icon: Music },
 		{ name: 'Pictures', path: 'pictures', icon: Image },
-		{ name: 'Videos', path: 'videos', icon: Video },
+		{ name: 'Videos', path: 'videos', icon: Video }
 	];
 
 	// Favorites (could be stored in localStorage later)
@@ -61,13 +61,18 @@
 	let renamingDrive = $state<string | null>(null);
 	let contextMenuOpen = $state<string | null>(null);
 	let contextMenuPosition = $state({ x: 0, y: 0 });
+	const driveNameOverrides = $derived(settingsStore.driveNameOverrides);
 
 	const navItemClass =
 		'w-full flex items-center gap-2.5 py-1.5 px-3 pl-5 bg-transparent border-none text-text-primary text-[13px] cursor-pointer text-left transition-colors duration-100 hover:bg-surface-secondary';
 	const navItemActiveClass = 'bg-selection text-white hover:bg-selection-hover';
+	const storageRowClass =
+		'group relative flex items-center gap-2.5 py-1.5 px-3 pl-5 text-[13px] transition-colors duration-100';
+	const storageRowButtonClass =
+		'flex items-center gap-2.5 flex-1 min-w-0 bg-transparent border-none p-0 text-left text-inherit cursor-pointer';
 
 	function getDriveName(root: MountPoint): string {
-		return settingsStore.getDriveName(root.name) || root.name;
+		return driveNameOverrides[root.name] || root.name;
 	}
 
 	function startRenaming(rootName: string) {
@@ -113,15 +118,20 @@
 	}
 </script>
 
-<aside class="w-[220px] min-w-[220px] bg-surface-primary border-r border-border-secondary flex flex-col overflow-y-auto overflow-x-hidden">
+<aside
+	class="flex w-[220px] min-w-[220px] flex-col overflow-x-hidden overflow-y-auto border-r border-border-secondary bg-surface-primary"
+>
 	<!-- Storage Section -->
 	<div class="border-b border-border-secondary">
 		<button
 			type="button"
-			class="w-full flex items-center gap-1.5 px-3 py-2.5 bg-transparent border-none text-text-secondary text-[11px] font-medium uppercase tracking-wide cursor-pointer text-left hover:text-text-primary"
+			class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-3 py-2.5 text-left text-[11px] font-medium tracking-wide text-text-secondary uppercase hover:text-text-primary"
 			onclick={() => (storageCollapsed = !storageCollapsed)}
 		>
-			<ChevronDown size={14} class="shrink-0 transition-transform duration-150 {storageCollapsed ? '-rotate-90' : ''}" />
+			<ChevronDown
+				size={14}
+				class="shrink-0 transition-transform duration-150 {storageCollapsed ? '-rotate-90' : ''}"
+			/>
 			<span>Storage</span>
 		</button>
 		{#if !storageCollapsed}
@@ -138,21 +148,28 @@
 							/>
 						</div>
 					{:else}
-						<button
-							type="button"
-							class="group relative flex items-center w-full {navItemClass} {isActive(root.name) ? navItemActiveClass : ''}"
-							onclick={() => handleNavigate(root.name)}
-							oncontextmenu={(e) => handleContextMenu(root.name, e)}
+						<div
+							class="{storageRowClass} {isActive(root.name)
+								? navItemActiveClass
+								: 'hover:bg-surface-secondary'}"
 						>
-							<HardDrive size={16} class="shrink-0 opacity-80" />
-							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{getDriveName(root)}</span>
-							{#if root.readOnly}
-								<Badge>RO</Badge>
-							{/if}
-							<div
-								role="button"
-								tabindex="0"
-								class="shrink-0 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-tertiary rounded cursor-pointer"
+							<button
+								type="button"
+								class={storageRowButtonClass}
+								onclick={() => handleNavigate(root.name)}
+								oncontextmenu={(e) => handleContextMenu(root.name, e)}
+							>
+								<HardDrive size={16} class="shrink-0 opacity-80" />
+								<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+									>{getDriveName(root)}</span
+								>
+								{#if root.readOnly}
+									<Badge>RO</Badge>
+								{/if}
+							</button>
+							<button
+								type="button"
+								class="shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-surface-tertiary"
 								onclick={(e) => handleContextMenu(root.name, e)}
 								onkeydown={(e) => {
 									if (e.key === 'Enter' || e.key === ' ') {
@@ -160,17 +177,20 @@
 										handleContextMenu(root.name, e as unknown as MouseEvent);
 									}
 								}}
+								aria-label={`Open menu for ${getDriveName(root)}`}
 							>
 								<MoreVertical size={14} />
-							</div>
-						</button>
+							</button>
+						</div>
 						{#if contextMenuOpen === root.name}
 							<ContextMenu
 								x={contextMenuPosition.x}
 								y={contextMenuPosition.y}
 								items={[
 									{ id: 'rename', label: 'Rename', icon: Pencil },
-									...(settingsStore.getDriveName(root.name) ? [{ id: 'reset', label: 'Reset Name', icon: X }] : [])
+									...(driveNameOverrides[root.name]
+										? [{ id: 'reset', label: 'Reset Name', icon: X }]
+										: [])
 								]}
 								onSelect={(id) => handleMenuSelect(root.name, id)}
 								onClose={handleMenuClose}
@@ -186,10 +206,13 @@
 	<div class="border-b border-border-secondary">
 		<button
 			type="button"
-			class="w-full flex items-center gap-1.5 px-3 py-2.5 bg-transparent border-none text-text-secondary text-[11px] font-medium uppercase tracking-wide cursor-pointer text-left hover:text-text-primary"
+			class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-3 py-2.5 text-left text-[11px] font-medium tracking-wide text-text-secondary uppercase hover:text-text-primary"
 			onclick={() => (placesCollapsed = !placesCollapsed)}
 		>
-			<ChevronDown size={14} class="shrink-0 transition-transform duration-150 {placesCollapsed ? '-rotate-90' : ''}" />
+			<ChevronDown
+				size={14}
+				class="shrink-0 transition-transform duration-150 {placesCollapsed ? '-rotate-90' : ''}"
+			/>
 			<span>Places</span>
 		</button>
 		{#if !placesCollapsed}
@@ -212,16 +235,19 @@
 	<div class="border-b border-border-secondary">
 		<button
 			type="button"
-			class="w-full flex items-center gap-1.5 px-3 py-2.5 bg-transparent border-none text-text-secondary text-[11px] font-medium uppercase tracking-wide cursor-pointer text-left hover:text-text-primary"
+			class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-3 py-2.5 text-left text-[11px] font-medium tracking-wide text-text-secondary uppercase hover:text-text-primary"
 			onclick={() => (favoritesCollapsed = !favoritesCollapsed)}
 		>
-			<ChevronDown size={14} class="shrink-0 transition-transform duration-150 {favoritesCollapsed ? '-rotate-90' : ''}" />
+			<ChevronDown
+				size={14}
+				class="shrink-0 transition-transform duration-150 {favoritesCollapsed ? '-rotate-90' : ''}"
+			/>
 			<span>Favorites</span>
 		</button>
 		{#if !favoritesCollapsed}
 			<div class="pb-2">
 				{#if favorites.length === 0}
-					<div class="py-2 px-5 text-text-muted text-xs italic">No favorites yet</div>
+					<div class="px-5 py-2 text-xs text-text-muted italic">No favorites yet</div>
 				{:else}
 					{#each favorites as fav (fav.path)}
 						<button

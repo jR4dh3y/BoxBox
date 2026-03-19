@@ -21,15 +21,20 @@
 	});
 </script>
 
-<footer class="flex items-center justify-between px-3 py-1 bg-surface-primary border-t border-border-secondary text-xs text-text-secondary">
+<footer
+	class="flex items-center justify-between border-t border-border-secondary bg-surface-primary px-3 py-1 text-xs text-text-secondary"
+>
 	<div class="flex items-center gap-3">
 		<span>{statusText}</span>
 	</div>
 	<div class="flex items-center gap-3">
-		<div class="flex gap-0.5 bg-surface-secondary rounded p-0.5">
+		<div class="flex gap-0.5 rounded bg-surface-secondary p-0.5">
 			<button
 				type="button"
-				class="w-5.5 h-5.5 flex items-center justify-center bg-transparent border-none rounded-sm text-text-muted cursor-pointer transition-all duration-100 hover:text-text-secondary {viewMode === 'list' ? 'bg-surface-elevated text-text-primary' : ''}"
+				class="flex h-5.5 w-5.5 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-text-muted transition-all duration-100 hover:text-text-secondary {viewMode ===
+				'list'
+					? 'bg-surface-elevated text-text-primary'
+					: ''}"
 				onclick={() => onViewModeChange?.('list')}
 				title="List view"
 			>
@@ -37,7 +42,10 @@
 			</button>
 			<button
 				type="button"
-				class="w-5.5 h-5.5 flex items-center justify-center bg-transparent border-none rounded-sm text-text-muted cursor-pointer transition-all duration-100 hover:text-text-secondary {viewMode === 'grid' ? 'bg-surface-elevated text-text-primary' : ''}"
+				class="flex h-5.5 w-5.5 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-text-muted transition-all duration-100 hover:text-text-secondary {viewMode ===
+				'grid'
+					? 'bg-surface-elevated text-text-primary'
+					: ''}"
 				onclick={() => onViewModeChange?.('grid')}
 				title="Grid view"
 			>

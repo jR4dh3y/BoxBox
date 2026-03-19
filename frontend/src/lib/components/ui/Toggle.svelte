@@ -9,13 +9,17 @@
 
 	let { checked = $bindable(false), disabled = false, id, label, onchange }: Props = $props();
 
+	const labelClass = $derived(
+		`inline-flex items-center gap-2 cursor-pointer${disabled ? ' opacity-50' : ''}`
+	);
+
 	function handleChange() {
 		checked = !checked;
 		onchange?.(checked);
 	}
 </script>
 
-<label class="inline-flex items-center gap-2 cursor-pointer" class:opacity-50={disabled}>
+<label class={labelClass}>
 	<button
 		type="button"
 		role="switch"
@@ -24,12 +28,12 @@
 		{disabled}
 		{id}
 		onclick={handleChange}
-		class="relative w-10 h-5 rounded-full transition-colors duration-200 {checked
+		class="relative h-5 w-10 rounded-full transition-colors duration-200 {checked
 			? 'bg-accent'
 			: 'bg-surface-elevated'}"
 	>
 		<span
-			class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 {checked
+			class="absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-200 {checked
 				? 'translate-x-5'
 				: 'translate-x-0'}"
 		></span>

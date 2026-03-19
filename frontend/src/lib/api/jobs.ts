@@ -120,18 +120,3 @@ export function isJobTerminal(job: Job): boolean {
 export function isJobActive(job: Job): boolean {
 	return job.state === 'pending' || job.state === 'running';
 }
-
-/**
- * Job API object with all methods
- */
-export const jobsApi = {
-	list: listJobs,
-	get: getJob,
-	create: createJob,
-	createCopy: createCopyJob,
-	createMove: createMoveJob,
-	createDelete: createDeleteJob,
-	cancel: cancelJob,
-	isTerminal: isJobTerminal,
-	isActive: isJobActive
-};

@@ -73,13 +73,13 @@
 
 {#if shouldShow}
 	<div
-		class="fixed bottom-4 right-4 z-50 w-[380px] bg-surface-secondary border border-border-primary rounded-lg shadow-2xl overflow-hidden"
+		class="fixed right-4 bottom-4 z-50 w-[380px] overflow-hidden rounded-lg border border-border-primary bg-surface-secondary shadow-2xl"
 		role="region"
 		aria-label="Upload progress"
 	>
 		<!-- Header -->
 		<div
-			class="flex items-center justify-between px-4 py-3 bg-surface-primary border-b border-border-secondary cursor-pointer select-none"
+			class="flex cursor-pointer items-center justify-between border-b border-border-secondary bg-surface-primary px-4 py-3 select-none"
 			onclick={handleToggleMinimize}
 			onkeydown={(e) => e.key === 'Enter' && handleToggleMinimize()}
 			role="button"
@@ -90,8 +90,11 @@
 				<!-- Minimize/Expand button -->
 				<button
 					type="button"
-					class="p-1 rounded text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors"
-					onclick={(e) => { e.stopPropagation(); handleToggleMinimize(); }}
+					class="rounded p-1 text-text-muted transition-colors hover:bg-surface-elevated hover:text-text-primary"
+					onclick={(e) => {
+						e.stopPropagation();
+						handleToggleMinimize();
+					}}
 					aria-label={isMinimized ? 'Expand' : 'Minimize'}
 				>
 					{#if isMinimized}
@@ -104,8 +107,11 @@
 				<!-- Close button -->
 				<button
 					type="button"
-					class="p-1 rounded text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors"
-					onclick={(e) => { e.stopPropagation(); handleClose(); }}
+					class="rounded p-1 text-text-muted transition-colors hover:bg-surface-elevated hover:text-text-primary"
+					onclick={(e) => {
+						e.stopPropagation();
+						handleClose();
+					}}
 					aria-label="Close upload panel"
 				>
 					<X size={16} />

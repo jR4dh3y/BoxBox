@@ -227,9 +227,7 @@ class UploadStore {
 	 * Clear all completed/error/cancelled uploads
 	 */
 	clearFinished(): void {
-		this.uploads = this.uploads.filter(
-			(u) => u.status === 'pending' || u.status === 'uploading'
-		);
+		this.uploads = this.uploads.filter((u) => u.status === 'pending' || u.status === 'uploading');
 	}
 
 	/**

@@ -29,6 +29,7 @@ This document outlines all issues found during a code audit and provides actiona
 **Problem:** Almost every component uses scoped `<style>` blocks with raw CSS instead of Tailwind classes, despite Tailwind v4 being installed.
 
 **Affected Files:**
+
 - `src/lib/components/Sidebar.svelte` (~100 lines CSS)
 - `src/lib/components/FileList.svelte` (~180 lines CSS)
 - `src/lib/components/Toolbar.svelte` (~100 lines CSS)
@@ -51,60 +52,69 @@ This document outlines all issues found during a code audit and provides actiona
 - `src/routes/browse/+page.svelte` (~50 lines CSS)
 
 **Action:**
+
 1. Convert all CSS to Tailwind utility classes
 2. For complex/repeated patterns, use Tailwind's `@apply` in `layout.css` sparingly
 3. Remove all `<style>` blocks from components
 
 **Example Conversion:**
+
 ```svelte
 <!-- BEFORE -->
 <button class="nav-btn">Click</button>
-<style>
-  .nav-btn {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    color: #888;
-    cursor: pointer;
-    transition: all 0.1s ease;
-  }
-  .nav-btn:hover:not(:disabled) {
-    background: #333;
-    color: #ccc;
-  }
-</style>
 
 <!-- AFTER -->
-<button class="w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-gray-500 cursor-pointer transition-all duration-100 hover:enabled:bg-gray-700 hover:enabled:text-gray-300">
-  Click
+<button
+	class="flex h-7 w-7 cursor-pointer items-center justify-center rounded border-none bg-transparent text-gray-500 transition-all duration-100 hover:enabled:bg-gray-700 hover:enabled:text-gray-300"
+>
+	Click
 </button>
+
+<style>
+	.nav-btn {
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		border: none;
+		border-radius: 4px;
+		color: #888;
+		cursor: pointer;
+		transition: all 0.1s ease;
+	}
+	.nav-btn:hover:not(:disabled) {
+		background: #333;
+		color: #ccc;
+	}
+</style>
 ```
 
 ### 1.2 Inconsistent Theme Approach
 
 **Problem:** Three different theming strategies used simultaneously:
+
 - Hardcoded dark colors (`#1e1e1e`, `#252525`)
 - `@media (prefers-color-scheme: dark)` queries
 - Light theme only (Breadcrumb, SearchBar)
 
 **Action:**
+
 1. Decide on ONE approach: dark mode only OR system preference
 2. Use Tailwind's dark mode feature: `dark:` prefix
 3. Configure in `tailwind.config.js`:
+
 ```js
 export default {
-  darkMode: 'class', // or 'media' for system preference
-}
+	darkMode: 'class' // or 'media' for system preference
+};
 ```
 
 ### 1.3 Create Design Tokens
 
 **Problem:** Hardcoded colors with slight variations everywhere:
+
 ```css
 /* Backgrounds: */ #1e1e1e, #1a1a1a, #141414, #111827, #252525
 /* Borders: */ #2a2a2a, #333, #374151
@@ -112,24 +122,26 @@ export default {
 ```
 
 **Action:**
+
 1. Define custom colors in `layout.css` using Tailwind v4 syntax:
+
 ```css
 @import 'tailwindcss';
 
 @theme {
-  --color-surface-primary: #1e1e1e;
-  --color-surface-secondary: #252525;
-  --color-surface-tertiary: #2a2a2a;
-  --color-border-primary: #333;
-  --color-border-secondary: #2a2a2a;
-  --color-text-primary: #e0e0e0;
-  --color-text-secondary: #888;
-  --color-text-muted: #555;
-  --color-accent: #4a9eff;
-  --color-accent-hover: #345580;
-  --color-danger: #dc3545;
-  --color-success: #10b981;
-  --color-warning: #f39c12;
+	--color-surface-primary: #1e1e1e;
+	--color-surface-secondary: #252525;
+	--color-surface-tertiary: #2a2a2a;
+	--color-border-primary: #333;
+	--color-border-secondary: #2a2a2a;
+	--color-text-primary: #e0e0e0;
+	--color-text-secondary: #888;
+	--color-text-muted: #555;
+	--color-accent: #4a9eff;
+	--color-accent-hover: #345580;
+	--color-danger: #dc3545;
+	--color-success: #10b981;
+	--color-warning: #f39c12;
 }
 ```
 
@@ -138,63 +150,71 @@ export default {
 **Problem:** `@keyframes spin` defined in 7 different files.
 
 **Affected Files:**
+
 - `FileList.svelte`
 - `+layout.svelte`
 - `+page.svelte`
 - `login/+page.svelte`
 
 **Action:**
+
 1. Remove all `@keyframes spin` from components
 2. Use Tailwind's built-in `animate-spin` class instead:
+
 ```svelte
-<div class="w-6 h-6 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin"></div>
+<div class="h-6 w-6 animate-spin rounded-full border-2 border-gray-700 border-t-blue-500"></div>
 ```
 
 ### 1.5 Inconsistent Button Styling
 
 **Problem:** Every component defines its own button styles:
+
 - `.nav-btn`, `.action-btn`, `.header-btn`, `.control-btn`, `.submit-btn`, `.logout-btn`, `.back-btn`
 
 **Action:**
+
 1. Create reusable button component at `src/lib/components/ui/Button.svelte`:
+
 ```svelte
 <script lang="ts">
-  import type { Snippet } from 'svelte';
-  
-  interface Props {
-    variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-    size?: 'sm' | 'md' | 'lg' | 'icon';
-    disabled?: boolean;
-    children: Snippet;
-    onclick?: () => void;
-  }
-  
-  let { variant = 'primary', size = 'md', disabled = false, children, onclick }: Props = $props();
-  
-  const baseClasses = 'inline-flex items-center justify-center font-medium rounded transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
-  
-  const variantClasses = {
-    primary: 'bg-accent text-white hover:bg-accent-hover',
-    secondary: 'bg-surface-secondary border border-border-primary text-text-secondary hover:bg-surface-tertiary hover:text-text-primary',
-    ghost: 'bg-transparent text-text-secondary hover:bg-surface-secondary hover:text-text-primary',
-    danger: 'bg-danger text-white hover:bg-red-700'
-  };
-  
-  const sizeClasses = {
-    sm: 'px-2 py-1 text-xs gap-1',
-    md: 'px-4 py-2 text-sm gap-2',
-    lg: 'px-6 py-3 text-base gap-2',
-    icon: 'w-7 h-7 p-0'
-  };
+	import type { Snippet } from 'svelte';
+
+	interface Props {
+		variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+		size?: 'sm' | 'md' | 'lg' | 'icon';
+		disabled?: boolean;
+		children: Snippet;
+		onclick?: () => void;
+	}
+
+	let { variant = 'primary', size = 'md', disabled = false, children, onclick }: Props = $props();
+
+	const baseClasses =
+		'inline-flex items-center justify-center font-medium rounded transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
+
+	const variantClasses = {
+		primary: 'bg-accent text-white hover:bg-accent-hover',
+		secondary:
+			'bg-surface-secondary border border-border-primary text-text-secondary hover:bg-surface-tertiary hover:text-text-primary',
+		ghost: 'bg-transparent text-text-secondary hover:bg-surface-secondary hover:text-text-primary',
+		danger: 'bg-danger text-white hover:bg-red-700'
+	};
+
+	const sizeClasses = {
+		sm: 'px-2 py-1 text-xs gap-1',
+		md: 'px-4 py-2 text-sm gap-2',
+		lg: 'px-6 py-3 text-base gap-2',
+		icon: 'w-7 h-7 p-0'
+	};
 </script>
 
 <button
-  type="button"
-  class="{baseClasses} {variantClasses[variant]} {sizeClasses[size]}"
-  {disabled}
-  {onclick}
+	type="button"
+	class="{baseClasses} {variantClasses[variant]} {sizeClasses[size]}"
+	{disabled}
+	{onclick}
 >
-  {@render children()}
+	{@render children()}
 </button>
 ```
 
@@ -207,19 +227,22 @@ export default {
 **Problem:** Extension arrays and file type logic duplicated:
 
 **Location 1:** `src/lib/utils/fileTypes.ts`
+
 ```typescript
 const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mkv', ...];
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', ...];
 ```
 
 **Location 2:** `src/lib/utils/format.ts`
+
 ```typescript
 export function getFileTypeDescription(filename: string): string {
-  // Has its own extension map
+	// Has its own extension map
 }
 ```
 
 **Location 3:** `src/lib/components/FileList.svelte`
+
 ```typescript
 function getFileIcon(item: FileInfo) {
   const imageExts = ['jpg', 'jpeg', 'png', ...]; // Duplicated!
@@ -228,8 +251,10 @@ function getFileIcon(item: FileInfo) {
 ```
 
 **Action:**
+
 1. Consolidate ALL file type logic into `src/lib/utils/fileTypes.ts`
 2. Export a single source of truth:
+
 ```typescript
 // fileTypes.ts - SINGLE SOURCE OF TRUTH
 
@@ -262,16 +287,19 @@ export function getFileIcon(filename: string, isDir: boolean): ComponentType { .
 ### 2.2 `formatSize` Duplicated
 
 **Problem:** Same function exists twice with different names:
+
 - `src/lib/utils/format.ts` → `formatFileSize()`
 - `src/lib/utils/fileTypes.ts` → `formatSize()`
 
 **Action:**
+
 1. Delete `formatSize` from `fileTypes.ts`
 2. Use `formatFileSize` from `format.ts` everywhere
 
 ### 2.3 Duplicated API Export Patterns
 
 **Problem:** API modules export both individual functions AND an object:
+
 ```typescript
 // files.ts
 export async function listRoots() { ... }
@@ -279,6 +307,7 @@ export const filesApi = { listRoots, ... }; // Redundant
 ```
 
 **Action:**
+
 1. Pick ONE pattern — recommend individual named exports only
 2. Remove all `*Api` objects from:
    - `src/lib/api/files.ts`
@@ -290,18 +319,21 @@ export const filesApi = { listRoots, ... }; // Redundant
 **Problem:** `SortField` and `SortDir` defined in `types/files.ts` but also inline in stores.
 
 **Location 1:** `src/lib/types/files.ts`
+
 ```typescript
 export type SortField = 'name' | 'size' | 'modTime' | 'type';
 export type SortDir = 'asc' | 'desc';
 ```
 
 **Location 2:** `src/lib/stores/files.ts`
+
 ```typescript
 sortBy: 'name' | 'size' | 'modTime' | 'type'; // Duplicated inline
 sortDir: 'asc' | 'desc'; // Duplicated inline
 ```
 
 **Action:**
+
 1. Import types from `types/files.ts` in stores
 2. Use the imported types instead of inline definitions
 
@@ -314,6 +346,7 @@ sortDir: 'asc' | 'desc'; // Duplicated inline
 **Problem:** `FileBrowser.svelte` exists but is never used — `browse/+page.svelte` builds its own layout.
 
 **Action:**
+
 1. Either delete `FileBrowser.svelte` OR refactor `browse/+page.svelte` to use it
 2. Recommended: Use `FileBrowser.svelte` as the main container, move logic there
 
@@ -322,11 +355,13 @@ sortDir: 'asc' | 'desc'; // Duplicated inline
 **Problem:** Components import things they don't use.
 
 **File:** `src/lib/components/Sidebar.svelte`
+
 ```typescript
 import { Folder } from 'lucide-svelte'; // Never used
 ```
 
 **Action:**
+
 1. Run `eslint` with `no-unused-vars` rule
 2. Remove all unused imports
 
@@ -335,6 +370,7 @@ import { Folder } from 'lucide-svelte'; // Never used
 **Problem:** `.gitkeep` files in non-empty directories.
 
 **Files to delete:**
+
 - `src/lib/components/.gitkeep`
 - `src/lib/stores/.gitkeep`
 - `src/lib/utils/.gitkeep`
@@ -344,6 +380,7 @@ import { Folder } from 'lucide-svelte'; // Never used
 **Problem:** `src/lib/index.ts` is empty.
 
 **Action:**
+
 1. Either populate it with re-exports OR delete it
 
 ---
@@ -355,6 +392,7 @@ import { Folder } from 'lucide-svelte'; // Never used
 **Problem:** Components use Svelte 5 runes (`$state`, `$derived`, `$props`) but stores use legacy Svelte 4 pattern.
 
 **Affected Files:**
+
 - `src/lib/stores/auth.ts`
 - `src/lib/stores/files.ts`
 - `src/lib/stores/jobs.ts`
@@ -362,6 +400,7 @@ import { Folder } from 'lucide-svelte'; // Never used
 - `src/lib/stores/websocket.ts`
 
 **Action:**
+
 1. Convert stores to use Svelte 5's `$state` runes with `.svelte.ts` extension
 2. Example migration:
 
@@ -381,12 +420,12 @@ export const authStore = {
   get isAuthenticated() { return state.isAuthenticated; },
   get isLoading() { return state.isLoading; },
   get error() { return state.error; },
-  
+
   async login(username: string, password: string) {
     state.isLoading = true;
     // ...
   },
-  
+
   logout() {
     state = initialState;
   }
@@ -400,50 +439,54 @@ export const authStore = {
 ### 5.1 Centralize localStorage Access
 
 **Problem:** Multiple files access `localStorage` directly:
+
 - `src/lib/api/client.ts` — tokens
 - `src/lib/stores/settings.ts` — settings
 - `src/lib/api/files.ts` — reads token in `getPreviewUrl()`
 
 **Action:**
+
 1. Create `src/lib/utils/storage.ts`:
+
 ```typescript
 const KEYS = {
-  ACCESS_TOKEN: 'accessToken',
-  REFRESH_TOKEN: 'refreshToken',
-  SETTINGS: 'filemanager_settings'
+	ACCESS_TOKEN: 'accessToken',
+	REFRESH_TOKEN: 'refreshToken',
+	SETTINGS: 'filemanager_settings'
 } as const;
 
 export const storage = {
-  get<T>(key: string): T | null {
-    if (typeof window === 'undefined') return null;
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : null;
-    } catch {
-      return null;
-    }
-  },
-  
-  set<T>(key: string, value: T): void {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(key, JSON.stringify(value));
-  },
-  
-  remove(key: string): void {
-    if (typeof window === 'undefined') return;
-    localStorage.removeItem(key);
-  },
-  
-  // Typed accessors
-  getAccessToken: () => storage.get<string>(KEYS.ACCESS_TOKEN),
-  setAccessToken: (token: string) => storage.set(KEYS.ACCESS_TOKEN, token),
-  // ... etc
+	get<T>(key: string): T | null {
+		if (typeof window === 'undefined') return null;
+		try {
+			const item = localStorage.getItem(key);
+			return item ? JSON.parse(item) : null;
+		} catch {
+			return null;
+		}
+	},
+
+	set<T>(key: string, value: T): void {
+		if (typeof window === 'undefined') return;
+		localStorage.setItem(key, JSON.stringify(value));
+	},
+
+	remove(key: string): void {
+		if (typeof window === 'undefined') return;
+		localStorage.removeItem(key);
+	},
+
+	// Typed accessors
+	getAccessToken: () => storage.get<string>(KEYS.ACCESS_TOKEN),
+	setAccessToken: (token: string) => storage.set(KEYS.ACCESS_TOKEN, token)
+	// ... etc
 };
 ```
 
 ### 5.2 Centralize Configuration
 
 **Problem:** Magic numbers scattered across files:
+
 ```typescript
 const REFRESH_INTERVAL_MS = 14 * 60 * 1000; // auth.ts
 const DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024; // upload.ts
@@ -452,27 +495,29 @@ refetchInterval: 5000 // jobs.ts
 ```
 
 **Action:**
+
 1. Create `src/lib/config.ts`:
+
 ```typescript
 export const CONFIG = {
-  auth: {
-    tokenRefreshIntervalMs: 14 * 60 * 1000, // 14 minutes
-    accessTokenExpiryMs: 15 * 60 * 1000, // 15 minutes
-  },
-  upload: {
-    defaultChunkSize: 10 * 1024 * 1024, // 10MB
-    maxConcurrentUploads: 3,
-  },
-  query: {
-    staleTimeMs: 60 * 1000, // 1 minute
-    jobsRefetchIntervalMs: 5000, // 5 seconds
-  },
-  websocket: {
-    pingIntervalMs: 30 * 1000,
-    maxReconnectAttempts: 10,
-    initialReconnectDelayMs: 1000,
-    maxReconnectDelayMs: 30 * 1000,
-  }
+	auth: {
+		tokenRefreshIntervalMs: 14 * 60 * 1000, // 14 minutes
+		accessTokenExpiryMs: 15 * 60 * 1000 // 15 minutes
+	},
+	upload: {
+		defaultChunkSize: 10 * 1024 * 1024, // 10MB
+		maxConcurrentUploads: 3
+	},
+	query: {
+		staleTimeMs: 60 * 1000, // 1 minute
+		jobsRefetchIntervalMs: 5000 // 5 seconds
+	},
+	websocket: {
+		pingIntervalMs: 30 * 1000,
+		maxReconnectAttempts: 10,
+		initialReconnectDelayMs: 1000,
+		maxReconnectDelayMs: 30 * 1000
+	}
 } as const;
 ```
 
@@ -481,27 +526,29 @@ export const CONFIG = {
 **Problem:** No error handling at layout level — component errors crash the app.
 
 **Action:**
+
 1. Create `src/lib/components/ErrorBoundary.svelte`:
+
 ```svelte
 <script lang="ts">
-  import type { Snippet } from 'svelte';
-  
-  interface Props {
-    children: Snippet;
-    fallback?: Snippet<[Error]>;
-  }
-  
-  let { children, fallback }: Props = $props();
-  let error = $state<Error | null>(null);
-  
-  // Svelte 5 doesn't have built-in error boundaries yet
-  // This is a placeholder for when it's supported
+	import type { Snippet } from 'svelte';
+
+	interface Props {
+		children: Snippet;
+		fallback?: Snippet<[Error]>;
+	}
+
+	let { children, fallback }: Props = $props();
+	let error = $state<Error | null>(null);
+
+	// Svelte 5 doesn't have built-in error boundaries yet
+	// This is a placeholder for when it's supported
 </script>
 
 {#if error && fallback}
-  {@render fallback(error)}
+	{@render fallback(error)}
 {:else}
-  {@render children()}
+	{@render children()}
 {/if}
 ```
 
@@ -510,7 +557,9 @@ export const CONFIG = {
 **Problem:** No reusable base components.
 
 **Action:**
+
 1. Create `src/lib/components/ui/` directory with:
+
 ```
 ui/
 ├── Button.svelte
@@ -526,6 +575,7 @@ ui/
 ```
 
 2. Export all from `index.ts`:
+
 ```typescript
 export { default as Button } from './Button.svelte';
 export { default as Input } from './Input.svelte';
@@ -541,6 +591,7 @@ export { default as Input } from './Input.svelte';
 **Problem:** `FileList.svelte` uses `ondblclick` without keyboard equivalent.
 
 **Action:**
+
 ```svelte
 <!-- Add keyboard handler -->
 <tr
@@ -560,6 +611,7 @@ export { default as Input } from './Input.svelte';
 **Problem:** `#555` text on `#1e1e1e` background fails WCAG AA.
 
 **Action:**
+
 1. Use minimum `#888` for secondary text
 2. Use `#aaa` or lighter for readable text
 3. Test with browser accessibility tools
@@ -569,6 +621,7 @@ export { default as Input } from './Input.svelte';
 **Problem:** Some interactive elements lack proper labels.
 
 **Action:**
+
 1. Audit all buttons, inputs, and interactive elements
 2. Add `aria-label` where text content is not descriptive
 
@@ -579,6 +632,7 @@ export { default as Input } from './Input.svelte';
 Execute in this order to minimize conflicts:
 
 ### Phase 1: Foundation (Do First)
+
 1. Create `src/lib/config.ts` with centralized constants
 2. Create `src/lib/utils/storage.ts` for localStorage
 3. Consolidate `fileTypes.ts` — single source of truth
@@ -586,11 +640,13 @@ Execute in this order to minimize conflicts:
 5. Delete unused files (`.gitkeep`, empty `index.ts`)
 
 ### Phase 2: Design System
+
 1. Add design tokens to `layout.css`
 2. Create `src/lib/components/ui/` base components
 3. Create `Button.svelte`, `Spinner.svelte`, `Card.svelte`
 
 ### Phase 3: Component Migration (One at a Time)
+
 1. Start with smallest components:
    - `StatusBar.svelte`
    - `PdfPreview.svelte`
@@ -612,10 +668,12 @@ Execute in this order to minimize conflicts:
    - `+layout.svelte`
 
 ### Phase 4: Store Migration
+
 1. Convert stores to Svelte 5 runes (`.svelte.ts`)
 2. Update all imports
 
 ### Phase 5: Cleanup
+
 1. Remove unused imports
 2. Remove dead components (`FileBrowser.svelte` if not used)
 3. Remove redundant API object exports

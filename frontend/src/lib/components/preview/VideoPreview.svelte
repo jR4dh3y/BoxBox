@@ -15,29 +15,31 @@
 	let { url, filename, downloadUrl, sizeBytes = 0 }: Props = $props();
 
 	let videoElement: HTMLVideoElement | null = $state(null);
-	let error = $state<string | null>(null);
-	let shouldLoadVideo = $state(false);
+	let startedPreviewFor: string | null = $state(null);
+	let errorMessage: string | null = $state(null);
+	let errorUrl: string | null = $state(null);
 	const LARGE_VIDEO_THRESHOLD_BYTES = 500 * 1024 * 1024;
 	const isLargeVideo = $derived(sizeBytes >= LARGE_VIDEO_THRESHOLD_BYTES);
-
-	$effect(() => {
-		// Lazy load only for large files; load immediately for smaller videos.
-		shouldLoadVideo = !isLargeVideo;
-		error = null;
-		videoElement = null;
-	});
+	const shouldLoadVideo = $derived(!isLargeVideo || startedPreviewFor === url);
+	const error = $derived(errorUrl === url ? errorMessage : null);
 
 	function handleError() {
 		const mediaError = videoElement?.error;
 		if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
-			error = 'This video file uses a codec your browser cannot decode. Download it or play it in a native media player.';
+			errorMessage =
+				'This video file uses a codec your browser cannot decode. Download it or play it in a native media player.';
+			errorUrl = url;
 			return;
 		}
 		if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-			error = 'This video format is not supported by your browser. Download it or play it in a native media player.';
+			errorMessage =
+				'This video format is not supported by your browser. Download it or play it in a native media player.';
+			errorUrl = url;
 			return;
 		}
-		error = 'Failed to load video. The file may be corrupted or the codec is not supported by your browser.';
+		errorMessage =
+			'Failed to load video. The file may be corrupted or the codec is not supported by your browser.';
+		errorUrl = url;
 	}
 
 	function openDownload() {
@@ -47,13 +49,13 @@
 	}
 
 	function startPreview() {
-		shouldLoadVideo = true;
+		startedPreviewFor = url;
 	}
 </script>
 
-<div class="w-full h-full flex items-center justify-center bg-black">
+<div class="flex h-full w-full items-center justify-center bg-black">
 	{#if error}
-		<div class="flex flex-col items-center gap-4 text-danger text-sm text-center p-5 max-w-2xl">
+		<div class="flex max-w-2xl flex-col items-center gap-4 p-5 text-center text-sm text-danger">
 			<p>{error}</p>
 			{#if downloadUrl}
 				<Button variant="primary" onclick={openDownload}>
@@ -63,7 +65,7 @@
 			{/if}
 		</div>
 	{:else if !shouldLoadVideo}
-		<div class="flex flex-col items-center gap-4 text-sm text-center p-5 max-w-2xl">
+		<div class="flex max-w-2xl flex-col items-center gap-4 p-5 text-center text-sm">
 			<p class="text-text-secondary">
 				This is a large video file. Click below to start streaming preview.
 			</p>
@@ -76,17 +78,20 @@
 			{/if}
 		</div>
 	{:else}
-		<video
-			bind:this={videoElement}
-			src={url}
-			controls
-			preload={isLargeVideo ? 'none' : 'metadata'}
-			playsinline
-			onerror={handleError}
-			class="max-w-full max-h-full outline-none"
-		>
-			<track kind="captions" />
-			Your browser does not support the video tag.
-		</video>
+		{#key url}
+			<video
+				bind:this={videoElement}
+				src={url}
+				controls
+				preload={isLargeVideo ? 'none' : 'metadata'}
+				playsinline
+				aria-label={filename}
+				onerror={handleError}
+				class="max-h-full max-w-full outline-none"
+			>
+				<track kind="captions" />
+				Your browser does not support the video tag.
+			</video>
+		{/key}
 	{/if}
 </div>

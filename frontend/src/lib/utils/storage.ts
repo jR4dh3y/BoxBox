@@ -60,7 +60,7 @@ export const storage = {
 	has(key: string): boolean {
 		if (typeof window === 'undefined') return false;
 		return localStorage.getItem(key) !== null;
-	},
+	}
 };
 
 /**
@@ -87,7 +87,7 @@ export const tokenStorage = {
 
 	hasTokens(): boolean {
 		return storage.has(STORAGE_KEYS.ACCESS_TOKEN);
-	},
+	}
 };
 
 /**
@@ -104,5 +104,5 @@ export const settingsStorage = {
 
 	clear(): void {
 		storage.remove(STORAGE_KEYS.SETTINGS);
-	},
+	}
 };

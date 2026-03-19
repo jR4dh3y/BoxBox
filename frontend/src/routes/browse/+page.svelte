@@ -2,7 +2,7 @@
 	/**
 	 * Browse page - main file browser interface (FilePilot style)
 	 */
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
@@ -14,21 +14,30 @@
 	import UploadPanel from '$lib/components/UploadPanel.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
 	import { Spinner, Modal, Input, Button } from '$lib/components/ui';
-	import { pathStore, currentPath, pathSegments, listOptionsStore, fileQueryKeys } from '$lib/stores/files';
-	import { settingsStore } from '$lib/stores/settings';
+	import { pathStore, listOptionsStore, fileQueryKeys } from '$lib/stores/files.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { clipboardStore } from '$lib/stores/clipboard.svelte';
 	import { uploadStore } from '$lib/stores/upload.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
-	import { listRoots, listDirectory, search, rename, deleteFile, getDownloadUrl } from '$lib/api/files';
-	import { getSystemDrives, type SystemDrivesResponse, type SystemDrive } from '$lib/api/system';
-	import { CONFIG } from '$lib/config';
+	import {
+		listRoots,
+		listDirectory,
+		search,
+		rename,
+		deleteFile,
+		getDownloadUrl
+	} from '$lib/api/files';
+	import { getSystemDrives, type SystemDrivesResponse } from '$lib/api/system';
 	import { createCopyJob, createMoveJob, createDeleteJob } from '$lib/api/jobs';
 	import { formatFileSize, formatFileDate, mapSystemMountToBrowsePath } from '$lib/utils/format';
 	import type { SortField, SortDir } from '$lib/types/files';
-	import type { FileInfo, FileList as FileListType, RootsResponse, SearchResponse } from '$lib/api/files';
+	import type {
+		FileInfo,
+		FileList as FileListType,
+		RootsResponse,
+		SearchResponse
+	} from '$lib/api/files';
 	import { SvelteSet } from 'svelte/reactivity';
-
-	const queryClient = useQueryClient();
 
 	let searchQuery = $state('');
 	let selectedPaths = $state(new Set<string>());
@@ -45,49 +54,43 @@
 	let renameDialog = $state<{ open: boolean; file: FileInfo | null; newName: string }>({
 		open: false,
 		file: null,
-		newName: '',
-	});
-
-	// Delete confirmation dialog state
-	let deleteDialog = $state<{ open: boolean; items: FileInfo[] }>({
-		open: false,
-		items: [],
+		newName: ''
 	});
 
 	// Properties dialog state
 	let propertiesDialog = $state<{ open: boolean; file: FileInfo | null }>({
 		open: false,
-		file: null,
+		file: null
 	});
 
-	const path = $derived($currentPath);
-	const segments = $derived($pathSegments);
-	const options = $derived($listOptionsStore);
-	const settings = $derived($settingsStore);
+	const path = $derived(pathStore.currentPath);
+	const segments = $derived(pathStore.pathSegments);
+	const options = $derived(listOptionsStore.value);
+	const settings = $derived(settingsStore.value);
 	const trimmedSearchQuery = $derived(searchQuery.trim());
 	const isSearchActive = $derived(trimmedSearchQuery.length >= 2);
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
 		queryKey: fileQueryKeys.roots(),
-		queryFn: () => listRoots(),
+		queryFn: () => listRoots()
 	}));
 
 	const systemDrivesQuery = createQuery<SystemDrivesResponse>(() => ({
 		queryKey: ['system', 'drives'],
 		queryFn: () => getSystemDrives(),
-		enabled: path === '',
+		enabled: path === ''
 	}));
 
 	const directoryQuery = createQuery<FileListType>(() => ({
 		queryKey: fileQueryKeys.list(path, options),
 		queryFn: () => listDirectory(path, options),
-		enabled: path !== '',
+		enabled: path !== ''
 	}));
 
 	const searchQueryResult = createQuery<SearchResponse>(() => ({
 		queryKey: fileQueryKeys.search(path, trimmedSearchQuery),
 		queryFn: () => search(path, trimmedSearchQuery),
-		enabled: path !== '' && isSearchActive,
+		enabled: path !== '' && isSearchActive
 	}));
 
 	const isLoading = $derived(directoryQuery.isLoading);
@@ -241,16 +244,13 @@
 					renameDialog = {
 						open: true,
 						file: items[0],
-						newName: items[0].name,
+						newName: items[0].name
 					};
 				}
 				break;
 
 			case 'delete':
-				deleteDialog = {
-					open: true,
-					items: items,
-				};
+				await handleDeleteItems(items);
 				break;
 
 			case 'download':
@@ -261,10 +261,41 @@
 				if (items.length === 1) {
 					propertiesDialog = {
 						open: true,
-						file: items[0],
+						file: items[0]
 					};
 				}
 				break;
+		}
+	}
+
+	async function handleDeleteItems(items: FileInfo[]) {
+		if (items.length === 0) {
+			return;
+		}
+
+		if (settings.confirmDelete) {
+			const itemLabel =
+				items.length === 1
+					? `Delete "${items[0].name}"?`
+					: `Delete ${items.length} selected items?`;
+			if (!window.confirm(itemLabel)) {
+				return;
+			}
+		}
+
+		try {
+			for (const item of items) {
+				if (item.isDir) {
+					await createDeleteJob(item.path);
+				} else {
+					await deleteFile(item.path);
+				}
+			}
+
+			selectedPaths = new Set();
+			directoryQuery.refetch();
+		} catch (error) {
+			console.error('Delete failed:', error);
 		}
 	}
 
@@ -333,26 +364,6 @@
 	/**
 	 * Handle delete confirmation
 	 */
-	async function handleDeleteConfirm() {
-		if (deleteDialog.items.length === 0) return;
-
-		try {
-			for (const item of deleteDialog.items) {
-				if (item.isDir) {
-					// Use job for directory deletion
-					await createDeleteJob(item.path);
-				} else {
-					await deleteFile(item.path);
-				}
-			}
-			deleteDialog = { open: false, items: [] };
-			selectedPaths = new Set();
-			directoryQuery.refetch();
-		} catch (error) {
-			console.error('Delete failed:', error);
-		}
-	}
-
 	// Setup upload store callbacks
 	uploadStore.onComplete = (fileName: string, success: boolean, error?: string) => {
 		if (success) {
@@ -463,12 +474,12 @@
 	<title>File Manager</title>
 </svelte:head>
 
-<div class="flex h-screen w-full bg-surface-primary overflow-hidden">
+<div class="flex h-screen w-full overflow-hidden bg-surface-primary">
 	<!-- Sidebar -->
 	<Sidebar {roots} currentPath={path} onNavigate={handleNavigate} />
 
 	<!-- Main content area -->
-	<div class="flex-1 flex flex-col min-w-0">
+	<div class="flex min-w-0 flex-1 flex-col">
 		<!-- Toolbar with navigation and path bar -->
 		<Toolbar
 			pathSegments={segments}
@@ -499,7 +510,7 @@
 
 		<!-- File list or Drive cards -->
 		<div
-			class="flex-1 overflow-auto relative"
+			class="relative flex-1 overflow-auto"
 			ondragover={handleDragOver}
 			ondragleave={handleDragLeave}
 			ondrop={handleDrop}
@@ -508,9 +519,11 @@
 		>
 			<!-- Drag-drop overlay -->
 			{#if isDragOver && !isAtRoot}
-				<div class="absolute inset-0 bg-accent/10 border-2 border-dashed border-accent z-20 flex items-center justify-center pointer-events-none">
-					<div class="bg-surface-primary/90 backdrop-blur-sm px-6 py-4 rounded-lg shadow-lg">
-						<span class="text-accent text-lg font-medium">Drop files to upload here</span>
+				<div
+					class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-accent bg-accent/10"
+				>
+					<div class="rounded-lg bg-surface-primary/90 px-6 py-4 shadow-lg backdrop-blur-sm">
+						<span class="text-lg font-medium text-accent">Drop files to upload here</span>
 					</div>
 				</div>
 			{/if}
@@ -518,25 +531,26 @@
 			{#if isAtRoot}
 				<!-- This Server view - show drive cards -->
 				<div class="p-6">
-					<h2 class="text-lg font-medium text-text-primary m-0 mb-5">Storage Devices</h2>
+					<h2 class="m-0 mb-5 text-lg font-medium text-text-primary">Storage Devices</h2>
 					{#if systemDrivesQuery.isLoading}
-						<div class="flex items-center gap-2 text-text-secondary text-sm py-5">
+						<div class="flex items-center gap-2 py-5 text-sm text-text-secondary">
 							<Spinner size="sm" />
 							<span>Loading drives...</span>
 						</div>
 					{:else if systemDrives.length === 0}
-						<div class="text-text-secondary text-sm py-5">No storage devices found</div>
+						<div class="py-5 text-sm text-text-secondary">No storage devices found</div>
 					{:else}
-						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+						<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
 							{#each systemDrives as drive (drive.mountPoint)}
-								<SystemDriveCard {drive} onClick={() => {
-									// Map system mount point to browsable path via host root mount
-									const browsePath = mapSystemMountToBrowsePath(drive.mountPoint);
-	
-	
-	
-									handleNavigate(browsePath);
-								}} />
+								<SystemDriveCard
+									{drive}
+									onClick={() => {
+										// Map system mount point to browsable path via host root mount
+										const browsePath = mapSystemMountToBrowsePath(drive.mountPoint);
+
+										handleNavigate(browsePath);
+									}}
+								/>
 							{/each}
 						</div>
 					{/if}
@@ -566,7 +580,12 @@
 </div>
 
 <!-- File Preview Modal -->
-<FilePreview file={previewFile} allFiles={previewableFiles} onNavigate={handlePreviewNavigate} onClose={handleClosePreview} />
+<FilePreview
+	file={previewFile}
+	allFiles={previewableFiles}
+	onNavigate={handlePreviewNavigate}
+	onClose={handleClosePreview}
+/>
 
 <!-- Rename Dialog -->
 <Modal
@@ -575,7 +594,7 @@
 	onclose={() => (renameDialog = { open: false, file: null, newName: '' })}
 >
 	<div class="flex flex-col gap-4">
-		<p class="text-text-secondary text-sm">Enter a new name:</p>
+		<p class="text-sm text-text-secondary">Enter a new name:</p>
 		<Input
 			bind:value={renameDialog.newName}
 			placeholder="New name"
@@ -583,12 +602,13 @@
 		/>
 	</div>
 	{#snippet footer()}
-		<Button variant="secondary" onclick={() => (renameDialog = { open: false, file: null, newName: '' })}>
+		<Button
+			variant="secondary"
+			onclick={() => (renameDialog = { open: false, file: null, newName: '' })}
+		>
 			Cancel
 		</Button>
-		<Button variant="primary" onclick={handleRenameConfirm}>
-			Rename
-		</Button>
+		<Button variant="primary" onclick={handleRenameConfirm}>Rename</Button>
 	{/snippet}
 </Modal>
 
@@ -607,7 +627,6 @@
 <!-- Toast notifications -->
 <Toast />
 
-
 <!-- Properties Dialog -->
 <Modal
 	open={propertiesDialog.open}
@@ -619,7 +638,7 @@
 		<div class="flex flex-col gap-3 text-sm">
 			<div class="flex justify-between">
 				<span class="text-text-secondary">Name:</span>
-				<span class="text-text-primary font-medium">{file.name}</span>
+				<span class="font-medium text-text-primary">{file.name}</span>
 			</div>
 			<div class="flex justify-between">
 				<span class="text-text-secondary">Type:</span>
@@ -627,7 +646,7 @@
 			</div>
 			<div class="flex justify-between">
 				<span class="text-text-secondary">Path:</span>
-				<span class="text-text-primary break-all">{file.path}</span>
+				<span class="break-all text-text-primary">{file.path}</span>
 			</div>
 			{#if !file.isDir}
 				<div class="flex justify-between">
@@ -641,7 +660,7 @@
 			</div>
 			<div class="flex justify-between">
 				<span class="text-text-secondary">Permissions:</span>
-				<span class="text-text-primary font-mono">{file.permissions}</span>
+				<span class="font-mono text-text-primary">{file.permissions}</span>
 			</div>
 		</div>
 	{/if}
