@@ -4,6 +4,7 @@
  */
 
 import { api } from './client';
+import { tokenStorage } from '$lib/utils/storage';
 
 /**
  * File/directory metadata
@@ -51,8 +52,8 @@ export interface RootsResponse {
 export interface DriveStats {
 	name: string;
 	path: string;
-	device?: string;     // The underlying device (e.g., /dev/sda1)
-	fsType?: string;     // Filesystem type (e.g., ext4, ntfs)
+	device?: string; // The underlying device (e.g., /dev/sda1)
+	fsType?: string; // Filesystem type (e.g., ext4, ntfs)
 	mountPoint?: string; // Actual mount point in the system
 	totalBytes: number;
 	freeBytes: number;
@@ -216,9 +217,12 @@ export const filesApi = {
  * This URL can be used directly in <video>, <audio>, <img>, <iframe> src
  */
 export function getPreviewUrl(path: string): string {
-	const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+	const token = tokenStorage.getAccessToken();
 	// Don't double-encode the path - just encode special characters
-	const encodedPath = path.split('/').map(segment => encodeURIComponent(segment)).join('/');
+	const encodedPath = path
+		.split('/')
+		.map((segment) => encodeURIComponent(segment))
+		.join('/');
 	const baseUrl = `/api/v1/stream/preview/${encodedPath}`;
 	return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
 }
@@ -227,8 +231,11 @@ export function getPreviewUrl(path: string): string {
  * Get the download URL for a file
  */
 export function getDownloadUrl(path: string): string {
-	const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-	const encodedPath = path.split('/').map(segment => encodeURIComponent(segment)).join('/');
+	const token = tokenStorage.getAccessToken();
+	const encodedPath = path
+		.split('/')
+		.map((segment) => encodeURIComponent(segment))
+		.join('/');
 	const baseUrl = `/api/v1/stream/download/${encodedPath}`;
 	return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
 }

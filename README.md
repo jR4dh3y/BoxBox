@@ -1,141 +1,72 @@
-﻿<h1 align="center">Homelab File Manager</h1>
+# BoxBox
 
-<p align="center">
-  <strong>A modern, self-hosted file manager for your homelab</strong>
-</p>
-
-<p align="center">
-  <a href="#features">Features</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#documentation">Documentation</a> •
-  <a href="#tech-stack">Tech Stack</a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
-  <img src="https://img.shields.io/badge/SvelteKit-FF3E00?style=flat-square&logo=svelte&logoColor=white" alt="SvelteKit">
-  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
-  <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
-  <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License">
-</p>
-
-
+BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provides a browser UI for mounted Linux paths, large file uploads, previews, search, and background file operations.
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| **Multi-Mount Browsing** | Browse files across multiple mount points with a clean, intuitive interface |
-| **Chunked Uploads** | Upload large files with resumable transfers and progress tracking |
-| **Real-time Updates** | WebSocket-powered live updates for file changes and job progress |
-| **Background Jobs** | Copy, move, and delete operations run asynchronously with monitoring |
-| **Fast Search** | Recursive directory scanning with name filtering |
-| **Secure by Default** | JWT auth, path traversal protection, configurable credentials, rate limiting |
-| **Configurable Access** | Per-user credentials, read-only mounts, WebSocket origin restrictions |
+- Browse multiple configured mount points from one web UI.
+- Upload large files with chunked and resumable upload support.
+- Preview common image, audio, video, PDF, and code/text files.
+- Copy, move, and delete files through background jobs.
+- Track job progress through WebSocket updates.
+- Search directories by file or folder name.
+- Configure read-only mounts, users, rate limits, and allowed origins.
 
----
+## Stack
 
-## Quick Start
+- Backend: Go 1.24, Chi, JWT, Gorilla WebSocket, Afero.
+- Frontend: SvelteKit 2, Svelte 5, TypeScript, Tailwind CSS 4.
+- Packaging: Bun, Docker multi-stage build, embedded static frontend.
 
-### Using Docker Compose (Recommended)
+## Repository Layout
+
+```text
+backend/      Go API server and embedded frontend host
+frontend/     SvelteKit application
+website/      Astro marketing site
+docs/         Public project documentation
+scripts/      Local development helpers
+Dockerfile    Unified frontend/backend production image
+```
+
+## Development
+
+Install frontend dependencies:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/homelab-filemanager.git
-cd homelab-filemanager
-
-# Copy environment file and configure
-cp .env.example .env
-
-# Start the services
-docker compose up -d
+bun install --cwd frontend
 ```
 
-Access the web interface at `http://localhost:3000`
+Run frontend checks:
 
-### Manual Setup
-
-See [Development Guide](docs/development.md) for detailed instructions.
-
----
-
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [API Reference](docs/api.md) | REST API endpoints and WebSocket events |
-| [Architecture](docs/architecture.md) | System design and component overview |
-| [Configuration](docs/configuration.md) | Environment variables and config options |
-| [Development](docs/development.md) | Local setup and development workflow |
-| [Docker](docs/docker.md) | Container deployment and orchestration |
-| [Security](docs/security.md) | Authentication, authorization, and best practices |
-
----
-
-## Tech Stack
-
-**Backend**
-- Go with Chi router
-- JWT authentication
-- WebSocket support (Gorilla)
-- Afero filesystem abstraction
-
-**Frontend**
-- SvelteKit
-- TypeScript
-- Tailwind CSS
-
-**Infrastructure**
-- Docker & Docker Compose
-- Nginx reverse proxy
-- Multi-stage builds
-
----
-
-## Project Structure
-
-```
-homelab-filemanager/
-├── backend/                 # Go backend service
-│   ├── cmd/server/          # Application entrypoint
-│   ├── internal/
-│   │   ├── config/          # Configuration loading
-│   │   ├── handler/         # HTTP handlers
-│   │   ├── middleware/      # Auth & security middleware
-│   │   ├── model/           # Data models
-│   │   ├── pkg/             # Shared utilities
-│   │   ├── service/         # Business logic
-│   │   └── websocket/       # WebSocket hub & clients
-│   └── Dockerfile
-├── frontend/                # SvelteKit frontend
-│   ├── src/
-│   │   ├── lib/
-│   │   │   ├── api/         # API client modules
-│   │   │   ├── components/  # Svelte components
-│   │   │   ├── stores/      # Svelte stores
-│   │   │   └── utils/       # Helper functions
-│   │   └── routes/          # SvelteKit routes
-│   └── Dockerfile
-├── nginx/                   # Reverse proxy config
-├── docs/                    # Documentation
-└── docker-compose.yml       # Container orchestration
+```bash
+bun run --cwd frontend check
 ```
 
----
+Run backend tests:
 
-## Contributing
+```bash
+go -C backend test ./...
+```
 
-Contributions are welcome! Please read the [Development Guide](docs/development.md) before submitting a PR.
+Build the frontend:
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+```bash
+bun run --cwd frontend build
+```
 
----
+Build the container image:
+
+```bash
+docker build -t boxbox .
+```
+
+## Configuration
+
+The backend reads `backend/config.yaml` plus environment variables with the `FM_` prefix. Before exposing BoxBox on a network, set a strong JWT secret, configure real users, restrict mount points to the directories you intend to manage, and review allowed origins.
+
+See the files in `docs/` for API, architecture, configuration, Docker, development, and security notes.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT. See [LICENSE](LICENSE).

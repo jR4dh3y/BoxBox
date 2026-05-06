@@ -4,9 +4,9 @@
  */
 
 import { getAccessToken } from '$lib/api/client';
+import { CONFIG } from '$lib/config';
 
-// Default chunk size: 10MB
-const DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024;
+const DEFAULT_CHUNK_SIZE = CONFIG.upload.defaultChunkSize;
 
 // API base URL
 const API_BASE_URL = '/api/v1/stream';
@@ -35,6 +35,7 @@ export interface UploadProgress {
  * Upload options
  */
 export interface UploadOptions {
+	uploadId?: string;
 	chunkSize?: number;
 	onProgress?: UploadProgressCallback;
 	signal?: AbortSignal;
@@ -221,9 +222,13 @@ export async function uploadFile(
 	destinationPath: string,
 	options: UploadOptions = {}
 ): Promise<{ success: boolean; path?: string; error?: string }> {
-	const { chunkSize = DEFAULT_CHUNK_SIZE, onProgress, signal } = options;
+	const {
+		uploadId = generateUploadId(),
+		chunkSize = DEFAULT_CHUNK_SIZE,
+		onProgress,
+		signal
+	} = options;
 
-	const uploadId = generateUploadId();
 	const totalChunks = getChunkCount(file.size, chunkSize);
 
 	// Initialize progress
@@ -321,7 +326,7 @@ export async function resumeUpload(
 
 	if (!status) {
 		// Session expired or not found, start fresh
-		return uploadFile(file, destinationPath, options);
+		return uploadFile(file, destinationPath, { ...options, uploadId });
 	}
 
 	if (status.complete) {
@@ -472,6 +477,7 @@ export class UploadManager {
 
 		const result = await uploadFile(upload.file, upload.path, {
 			...options,
+			uploadId,
 			signal: upload.abortController.signal,
 			onProgress: (progress) => {
 				const existing = this.uploads.get(uploadId);

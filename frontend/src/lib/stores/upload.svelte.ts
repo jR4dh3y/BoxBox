@@ -4,10 +4,11 @@
  */
 
 import {
-	uploadFile,
+	resumeUpload,
 	type UploadProgress,
 	type UploadOptions,
-	generateUploadId
+	generateUploadId,
+	getChunkCount
 } from '$lib/utils/upload';
 
 export type { UploadProgress };
@@ -88,7 +89,7 @@ class UploadStore {
 				uploadedSize: 0,
 				percentage: 0,
 				currentChunk: 0,
-				totalChunks: Math.ceil(file.size / (10 * 1024 * 1024)), // 10MB chunks
+				totalChunks: getChunkCount(file.size),
 				status: 'pending'
 			};
 
@@ -122,6 +123,7 @@ class UploadStore {
 			this.currentAbortController = new AbortController();
 
 			const options: UploadOptions = {
+				uploadId: item.uploadId,
 				signal: this.currentAbortController.signal,
 				onProgress: (progress) => {
 					this.updateProgress(item.uploadId, progress);
@@ -129,22 +131,24 @@ class UploadStore {
 			};
 
 			try {
-				const result = await uploadFile(item.file, item.destPath, options);
+				const result = await resumeUpload(item.file, item.destPath, item.uploadId, options);
 
 				if (result.success) {
+					const totalChunks = getChunkCount(item.file.size);
 					this.updateProgress(item.uploadId, {
 						uploadId: item.uploadId,
 						fileName: item.file.name,
 						totalSize: item.file.size,
 						uploadedSize: item.file.size,
 						percentage: 100,
-						currentChunk: Math.ceil(item.file.size / (10 * 1024 * 1024)),
-						totalChunks: Math.ceil(item.file.size / (10 * 1024 * 1024)),
+						currentChunk: totalChunks,
+						totalChunks,
 						status: 'complete'
 					});
 					this.onComplete?.(item.file.name, true);
 					this.onRefreshNeeded?.();
 				} else {
+					const totalChunks = getChunkCount(item.file.size);
 					this.updateProgress(item.uploadId, {
 						uploadId: item.uploadId,
 						fileName: item.file.name,
@@ -152,7 +156,7 @@ class UploadStore {
 						uploadedSize: 0,
 						percentage: 0,
 						currentChunk: 0,
-						totalChunks: Math.ceil(item.file.size / (10 * 1024 * 1024)),
+						totalChunks,
 						status: 'error',
 						error: result.error
 					});
@@ -160,6 +164,7 @@ class UploadStore {
 				}
 			} catch (err) {
 				const errorMessage = err instanceof Error ? err.message : 'Upload failed';
+				const totalChunks = getChunkCount(item.file.size);
 				this.updateProgress(item.uploadId, {
 					uploadId: item.uploadId,
 					fileName: item.file.name,
@@ -167,7 +172,7 @@ class UploadStore {
 					uploadedSize: 0,
 					percentage: 0,
 					currentChunk: 0,
-					totalChunks: Math.ceil(item.file.size / (10 * 1024 * 1024)),
+					totalChunks,
 					status: 'error',
 					error: errorMessage
 				});
@@ -227,9 +232,7 @@ class UploadStore {
 	 * Clear all completed/error/cancelled uploads
 	 */
 	clearFinished(): void {
-		this.uploads = this.uploads.filter(
-			(u) => u.status === 'pending' || u.status === 'uploading'
-		);
+		this.uploads = this.uploads.filter((u) => u.status === 'pending' || u.status === 'uploading');
 	}
 
 	/**

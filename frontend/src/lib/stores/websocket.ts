@@ -136,37 +136,67 @@ function createWebSocketStore() {
 	}
 
 	/**
+	 * Handle one parsed WebSocket server message
+	 */
+	function handleServerMessage(message: WSServerMessage): void {
+		switch (message.type) {
+			case 'job_update':
+			case 'job_complete':
+				// Update jobs store with the job update
+				jobsStore.updateFromWebSocket(message.payload as JobUpdate);
+				break;
+
+			case 'error': {
+				const errorPayload = message.payload as { message: string };
+				update((state) => ({
+					...state,
+					error: errorPayload.message
+				}));
+				break;
+			}
+
+			case 'pong':
+				// Connection is healthy, nothing to do
+				break;
+
+			default:
+				console.warn('Unknown WebSocket message type:', message.type);
+		}
+	}
+
+	/**
+	 * Parse one text WebSocket frame. The backend may batch multiple JSON
+	 * messages in a single frame, separated by newlines.
+	 */
+	function handleMessageText(data: string): void {
+		for (const line of data.split('\n')) {
+			const text = line.trim();
+			if (!text) {
+				continue;
+			}
+
+			try {
+				handleServerMessage(JSON.parse(text) as WSServerMessage);
+			} catch (err) {
+				console.error('Failed to parse WebSocket message:', err);
+			}
+		}
+	}
+
+	/**
 	 * Handle incoming WebSocket message
 	 */
 	function handleMessage(event: MessageEvent): void {
-		try {
-			const message: WSServerMessage = JSON.parse(event.data);
+		if (typeof event.data === 'string') {
+			handleMessageText(event.data);
+			return;
+		}
 
-			switch (message.type) {
-				case 'job_update':
-				case 'job_complete':
-					// Update jobs store with the job update
-					jobsStore.updateFromWebSocket(message.payload as JobUpdate);
-					break;
-
-				case 'error': {
-					const errorPayload = message.payload as { message: string };
-					update((state) => ({
-						...state,
-						error: errorPayload.message
-					}));
-					break;
-				}
-
-				case 'pong':
-					// Connection is healthy, nothing to do
-					break;
-
-				default:
-					console.warn('Unknown WebSocket message type:', message.type);
-			}
-		} catch (err) {
-			console.error('Failed to parse WebSocket message:', err);
+		if (event.data instanceof Blob) {
+			event.data
+				.text()
+				.then(handleMessageText)
+				.catch((err) => console.error('Failed to read WebSocket message:', err));
 		}
 	}
 
@@ -325,6 +355,26 @@ function createWebSocketStore() {
 	}
 
 	/**
+	 * Reconcile job subscriptions with the provided active job IDs.
+	 */
+	function syncJobSubscriptions(jobIds: string[]): void {
+		const desired = new Set(jobIds);
+		const current = get({ subscribe }).subscribedJobs;
+
+		for (const jobId of desired) {
+			if (!current.has(jobId)) {
+				subscribeToJob(jobId);
+			}
+		}
+
+		for (const jobId of current) {
+			if (!desired.has(jobId)) {
+				unsubscribeFromJob(jobId);
+			}
+		}
+	}
+
+	/**
 	 * Check if connected
 	 */
 	function isConnected(): boolean {
@@ -354,6 +404,7 @@ function createWebSocketStore() {
 		sendMessage,
 		subscribeToJob,
 		unsubscribeFromJob,
+		syncJobSubscriptions,
 		isConnected,
 		clearError,
 		forceReconnect
