@@ -116,6 +116,9 @@
 
 	// Clipboard state for context menu
 	const canPaste = $derived(clipboardStore.hasItems);
+	const favoritePaths = $derived(
+		new SvelteSet(settings.favoriteFolders.map((folder) => folder.path))
+	);
 	const cutPaths = $derived.by(() => {
 		if (clipboardStore.operation === 'cut') {
 			return new SvelteSet(clipboardStore.items.map((i) => i.path));
@@ -250,6 +253,20 @@
 
 			case 'paste':
 				await handlePaste();
+				break;
+
+			case 'pin':
+				if (items.length === 1 && items[0].isDir) {
+					settingsStore.pinFavoriteFolder({ name: items[0].name, path: items[0].path });
+					toastStore.success(`${items[0].name} pinned to favorites`);
+				}
+				break;
+
+			case 'unpin':
+				if (items.length === 1 && items[0].isDir) {
+					settingsStore.unpinFavoriteFolder(items[0].path);
+					toastStore.success(`${items[0].name} unpinned from favorites`);
+				}
 				break;
 
 			case 'rename':
@@ -567,6 +584,7 @@
 					isLoading={isFileListLoading}
 					compactMode={settings.compactMode}
 					{cutPaths}
+					{favoritePaths}
 					{canPaste}
 					onItemClick={handleFileClick}
 					onSortChange={handleSortChange}

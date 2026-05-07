@@ -5,15 +5,27 @@
 
 import type { ContextMenuItem } from '$lib/components/ui/ContextMenu.svelte';
 import type { FileInfo } from '$lib/api/files';
-import { Copy, Scissors, ClipboardPaste, Pencil, Trash2, Download, Info } from 'lucide-svelte';
+import {
+	Copy,
+	Scissors,
+	ClipboardPaste,
+	Pencil,
+	Trash2,
+	Download,
+	Info,
+	Pin,
+	PinOff
+} from 'lucide-svelte';
 
-export type FileContextAction = 
-	| 'copy' 
-	| 'cut' 
-	| 'paste' 
-	| 'rename' 
-	| 'delete' 
-	| 'download' 
+export type FileContextAction =
+	| 'copy'
+	| 'cut'
+	| 'paste'
+	| 'pin'
+	| 'unpin'
+	| 'rename'
+	| 'delete'
+	| 'download'
 	| 'properties';
 
 export interface FileContextMenuOptions {
@@ -21,6 +33,8 @@ export interface FileContextMenuOptions {
 	items: FileInfo[];
 	/** Whether paste is available (clipboard has items) */
 	canPaste: boolean;
+	/** Paths currently pinned in the sidebar favorites section */
+	favoritePaths?: Set<string>;
 }
 
 /**
@@ -28,19 +42,30 @@ export interface FileContextMenuOptions {
  * Configures disabled states based on selection
  */
 export function getFileContextMenuItems(options: FileContextMenuOptions): ContextMenuItem[] {
-	const { items, canPaste } = options;
+	const { items, canPaste, favoritePaths = new Set<string>() } = options;
 	const hasMultiple = items.length > 1;
 	const hasFolder = items.some((i) => i.isDir);
+	const singleFolder = !hasMultiple && items[0]?.isDir ? items[0] : null;
+	const isFavorite = singleFolder ? favoritePaths.has(singleFolder.path) : false;
 
 	return [
 		{ id: 'copy', label: 'Copy', icon: Copy, shortcut: 'Ctrl+C' },
 		{ id: 'cut', label: 'Cut', icon: Scissors, shortcut: 'Ctrl+X' },
 		{ id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl+V', disabled: !canPaste },
+		...(singleFolder
+			? [
+					{
+						id: isFavorite ? 'unpin' : 'pin',
+						label: isFavorite ? 'Unpin from Favorites' : 'Pin to Favorites',
+						icon: isFavorite ? PinOff : Pin
+					}
+				]
+			: []),
 		{ id: 'separator-1', label: '', separator: true },
 		{ id: 'rename', label: 'Rename', icon: Pencil, shortcut: 'F2', disabled: hasMultiple },
 		{ id: 'delete', label: 'Delete', icon: Trash2, shortcut: 'Del' },
 		{ id: 'separator-2', label: '', separator: true },
 		{ id: 'download', label: 'Download', icon: Download, disabled: hasFolder },
-		{ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple },
+		{ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple }
 	];
 }

@@ -135,6 +135,7 @@
 				onClear={onSearchClear}
 				isLoading={searchLoading}
 				placeholder="Search files and folders..."
+				compact
 			/>
 		</div>
 	{/if}

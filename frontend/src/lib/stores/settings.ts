@@ -3,7 +3,11 @@
  */
 import { writable, derived, get } from 'svelte/store';
 import { settingsStorage } from '$lib/utils/storage';
-import { getDriveNames, setDriveName as apiSetDriveName, deleteDriveName as apiDeleteDriveName } from '$lib/api/drive-names';
+import {
+	getDriveNames,
+	setDriveName as apiSetDriveName,
+	deleteDriveName as apiDeleteDriveName
+} from '$lib/api/drive-names';
 
 export interface UserSettings {
 	showHiddenFiles: boolean;
@@ -15,6 +19,12 @@ export interface UserSettings {
 	previewOnSingleClick: boolean;
 	compactMode: boolean;
 	driveNameOverrides: Record<string, string>;
+	favoriteFolders: FavoriteFolder[];
+}
+
+export interface FavoriteFolder {
+	name: string;
+	path: string;
 }
 
 const defaultSettings: UserSettings = {
@@ -26,7 +36,8 @@ const defaultSettings: UserSettings = {
 	defaultViewMode: 'list',
 	previewOnSingleClick: false,
 	compactMode: false,
-	driveNameOverrides: {}
+	driveNameOverrides: {},
+	favoriteFolders: []
 };
 
 function loadSettings(): UserSettings {
@@ -59,7 +70,7 @@ function createSettingsStore() {
 
 		async initialize() {
 			const driveNames = await loadDriveNames();
-			update(current => ({ ...current, driveNameOverrides: driveNames }));
+			update((current) => ({ ...current, driveNameOverrides: driveNames }));
 		},
 
 		set(settings: UserSettings) {
@@ -68,7 +79,7 @@ function createSettingsStore() {
 		},
 
 		update(updater: (settings: UserSettings) => UserSettings) {
-			update(current => {
+			update((current) => {
 				const updated = updater(current);
 				saveSettings(updated);
 				return updated;
@@ -81,7 +92,7 @@ function createSettingsStore() {
 		},
 
 		setSetting<K extends keyof UserSettings>(key: K, value: UserSettings[K]) {
-			update(current => {
+			update((current) => {
 				const updated = { ...current, [key]: value };
 				saveSettings(updated);
 				return updated;
@@ -94,7 +105,7 @@ function createSettingsStore() {
 
 		async setDriveName(originalName: string, customName: string) {
 			await apiSetDriveName({ mountPoint: originalName, customName });
-			update(current => {
+			update((current) => {
 				const updated = {
 					...current,
 					driveNameOverrides: { ...current.driveNameOverrides, [originalName]: customName }
@@ -106,7 +117,7 @@ function createSettingsStore() {
 
 		async removeDriveName(originalName: string) {
 			await apiDeleteDriveName(originalName);
-			update(current => {
+			update((current) => {
 				const { [originalName]: removed, ...rest } = current.driveNameOverrides;
 				const updated = { ...current, driveNameOverrides: rest };
 				saveSettings(updated);
@@ -120,6 +131,36 @@ function createSettingsStore() {
 
 		get driveNameOverrides(): Record<string, string> {
 			return get({ subscribe }).driveNameOverrides;
+		},
+
+		pinFavoriteFolder(folder: FavoriteFolder) {
+			update((current) => {
+				if (current.favoriteFolders.some((favorite) => favorite.path === folder.path)) {
+					return current;
+				}
+
+				const updated = {
+					...current,
+					favoriteFolders: [...current.favoriteFolders, folder]
+				};
+				saveSettings(updated);
+				return updated;
+			});
+		},
+
+		unpinFavoriteFolder(path: string) {
+			update((current) => {
+				const updated = {
+					...current,
+					favoriteFolders: current.favoriteFolders.filter((folder) => folder.path !== path)
+				};
+				saveSettings(updated);
+				return updated;
+			});
+		},
+
+		isFavoriteFolder(path: string): boolean {
+			return get({ subscribe }).favoriteFolders.some((folder) => folder.path === path);
 		}
 	};
 }
@@ -129,7 +170,7 @@ export const settingsStore = createSettingsStore();
 // Do not call here as the API requires auth
 
 // Derived stores for individual settings
-export const showHiddenFiles = derived(settingsStore, $s => $s.showHiddenFiles);
-export const showFileExtensions = derived(settingsStore, $s => $s.showFileExtensions);
-export const confirmDelete = derived(settingsStore, $s => $s.confirmDelete);
-export const compactMode = derived(settingsStore, $s => $s.compactMode);
+export const showHiddenFiles = derived(settingsStore, ($s) => $s.showHiddenFiles);
+export const showFileExtensions = derived(settingsStore, ($s) => $s.showFileExtensions);
+export const confirmDelete = derived(settingsStore, ($s) => $s.confirmDelete);
+export const compactMode = derived(settingsStore, ($s) => $s.compactMode);

@@ -10,6 +10,7 @@
 		placeholder?: string;
 		isLoading?: boolean;
 		disabled?: boolean;
+		compact?: boolean;
 		onSearch?: (query: string) => void;
 		onInput?: (query: string) => void;
 		onClear?: () => void;
@@ -20,12 +21,13 @@
 		placeholder = 'Search files...',
 		isLoading = false,
 		disabled = false,
+		compact = false,
 		onSearch,
 		onInput,
-		onClear,
+		onClear
 	}: Props = $props();
 
-	let inputValue = $state(value);
+	let inputValue = $state('');
 
 	$effect(() => {
 		if (value !== inputValue) {
@@ -76,8 +78,10 @@
 			value={inputValue}
 			oninput={handleInput}
 			onkeydown={handleKeydown}
-			disabled={disabled}
-			class="block w-full rounded-lg border border-border-primary bg-surface-secondary py-2 pr-10 pl-10 text-sm text-text-primary placeholder-text-muted focus:border-border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+			{disabled}
+			class="block w-full rounded border border-border-primary bg-surface-secondary pr-10 pl-10 text-sm text-text-primary placeholder-text-muted focus:border-border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {compact
+				? 'h-7 py-1'
+				: 'py-2'}"
 			aria-label="Search"
 		/>
 
@@ -93,7 +97,7 @@
 		{/if}
 	</div>
 
-	{#if isLoading}
+	{#if isLoading && !compact}
 		<p class="mt-1 text-xs text-text-muted">Searching...</p>
 	{/if}
 </form>

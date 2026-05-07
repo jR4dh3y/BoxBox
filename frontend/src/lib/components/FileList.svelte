@@ -22,11 +22,12 @@
 		isLoading = false,
 		compactMode = false,
 		cutPaths = new SvelteSet<string>(),
+		favoritePaths = new SvelteSet<string>(),
 		canPaste = false,
 		onItemClick,
 		onSortChange,
 		onSelectionChange,
-		onContextMenuAction,
+		onContextMenuAction
 	}: {
 		items?: FileInfo[];
 		sortBy?: SortField;
@@ -36,6 +37,7 @@
 		isLoading?: boolean;
 		compactMode?: boolean;
 		cutPaths?: Set<string>;
+		favoritePaths?: Set<string>;
 		canPaste?: boolean;
 		onItemClick?: (item: FileInfo) => void;
 		onSortChange?: (field: SortField, dir: SortDir) => void;
@@ -87,20 +89,20 @@
 
 	function handleContextMenu(item: FileInfo, event: MouseEvent) {
 		event.preventDefault();
-		
+
 		// If right-clicked item is not selected, select only that item
 		if (!selectedPaths.has(item.path)) {
 			const newSelection = new SvelteSet<string>([item.path]);
 			onSelectionChange?.(newSelection);
 		}
-		
+
 		// Get all selected items for context menu
 		const selectedItems = items.filter((i) => selectedPaths.has(i.path) || i.path === item.path);
-		
+
 		contextMenu = {
 			x: event.clientX,
 			y: event.clientY,
-			items: selectedItems.length > 0 ? selectedItems : [item],
+			items: selectedItems.length > 0 ? selectedItems : [item]
 		};
 	}
 
@@ -134,9 +136,9 @@
 	const tdClass = 'px-3 py-1.5 border-b border-border-secondary text-text-primary';
 </script>
 
-<div class="relative w-full h-full overflow-auto bg-surface-primary {compactMode ? 'compact' : ''}">
+<div class="relative h-full w-full overflow-auto bg-surface-primary {compactMode ? 'compact' : ''}">
 	{#if isLoading}
-		<div class="absolute inset-0 bg-surface-primary/80 flex items-center justify-center z-10">
+		<div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-primary/80">
 			<Spinner />
 		</div>
 	{/if}
@@ -183,7 +185,11 @@
 					onkeydown={(e) => e.key === 'Enter' && handleSort('modTime')}
 					tabindex="0"
 					role="columnheader"
-					aria-sort={sortBy === 'modTime' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+					aria-sort={sortBy === 'modTime'
+						? sortDir === 'asc'
+							? 'ascending'
+							: 'descending'
+						: 'none'}
 				>
 					<span class="mr-1">Modified</span>
 					<span class="text-[10px] opacity-80">{getSortIndicator('modTime')}</span>
@@ -193,7 +199,7 @@
 		<tbody>
 			{#if items.length === 0 && !isLoading}
 				<tr>
-					<td colspan="4" class="py-12 px-3">
+					<td colspan="4" class="px-3 py-12">
 						<div class="flex flex-col items-center gap-2 text-text-muted">
 							<FolderOpen size={32} class="opacity-50" />
 							<span class="text-[13px]">{emptyMessage}</span>
@@ -204,7 +210,9 @@
 				{#each items as item (item.path)}
 					{@const IconComponent = getFileIcon(item.name, item.isDir)}
 					<tr
-						class="cursor-default transition-colors duration-50 hover:bg-surface-secondary focus:outline-none focus:bg-selection {isSelected(item.path)
+						class="cursor-default transition-colors duration-50 hover:bg-surface-secondary focus:bg-selection focus:outline-none {isSelected(
+							item.path
+						)
 							? 'bg-selection hover:bg-selection-hover'
 							: ''} {isCut(item.path) ? 'opacity-50' : ''}"
 						onclick={(e) => handleRowClick(item, e)}
@@ -216,10 +224,19 @@
 					>
 						<td class="{tdClass} min-w-[200px]">
 							<div class="flex items-center gap-2">
-								<span class="flex items-center justify-center shrink-0 w-5 {item.isDir ? 'text-folder' : 'text-text-secondary'}">
+								<span
+									class="flex w-5 shrink-0 items-center justify-center {item.isDir
+										? 'text-folder'
+										: 'text-text-secondary'}"
+								>
 									<IconComponent size={16} />
 								</span>
-								<span class="overflow-hidden text-ellipsis whitespace-nowrap {item.isDir ? 'text-folder' : ''}" title={item.name}>
+								<span
+									class="overflow-hidden text-ellipsis whitespace-nowrap {item.isDir
+										? 'text-folder'
+										: ''}"
+									title={item.name}
+								>
 									{item.name}
 								</span>
 							</div>
@@ -227,7 +244,7 @@
 						<td class="{tdClass} w-[120px] text-text-secondary">
 							{item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
 						</td>
-						<td class="{tdClass} w-[100px] text-right tabular-nums text-text-secondary">
+						<td class="{tdClass} w-[100px] text-right text-text-secondary tabular-nums">
 							{item.isDir ? '' : formatFileSize(item.size)}
 						</td>
 						<td class="{tdClass} w-[150px] whitespace-nowrap text-text-secondary">
@@ -243,7 +260,7 @@
 <!-- Context Menu -->
 {#if contextMenu}
 	<ContextMenu
-		items={getFileContextMenuItems({ items: contextMenu.items, canPaste })}
+		items={getFileContextMenuItems({ items: contextMenu.items, canPaste, favoritePaths })}
 		x={contextMenu.x}
 		y={contextMenu.y}
 		onSelect={handleContextMenuSelect}
