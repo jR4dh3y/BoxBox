@@ -550,7 +550,6 @@
 			{#if isAtRoot}
 				<!-- This Server view - show drive cards -->
 				<div class="p-6">
-					<h2 class="m-0 mb-5 text-lg font-medium text-text-primary">Storage Devices</h2>
 					{#if systemDrivesQuery.isLoading}
 						<div class="flex items-center gap-2 py-5 text-sm text-text-secondary">
 							<Spinner size="sm" />
