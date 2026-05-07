@@ -131,6 +131,14 @@ export function getChunkCount(fileSize: number, chunkSize: number = DEFAULT_CHUN
 	return Math.ceil(fileSize / chunkSize);
 }
 
+function calculateUploadedSize(
+	uploadedChunks: number,
+	fileSize: number,
+	chunkSize: number
+): number {
+	return Math.min(uploadedChunks * chunkSize, fileSize);
+}
+
 /**
  * Upload a single chunk
  */
@@ -143,7 +151,8 @@ async function uploadChunk(
 	totalSize: number,
 	chunkData: Blob,
 	checksum?: string,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	onUploadProgress?: (loaded: number) => void
 ): Promise<UploadResponse> {
 	const headers: Record<string, string> = {
 		'X-Upload-ID': uploadId,
@@ -165,19 +174,64 @@ async function uploadChunk(
 		headers['Authorization'] = `Bearer ${token}`;
 	}
 
-	const response = await fetch(`${API_BASE_URL}/upload/${path}`, {
-		method: 'POST',
-		headers,
-		body: chunkData,
-		signal
+	return new Promise((resolve, reject) => {
+		const xhr = new XMLHttpRequest();
+		const abortHandler = () => {
+			xhr.abort();
+			reject(new Error('Upload cancelled'));
+		};
+
+		xhr.open('POST', `${API_BASE_URL}/upload/${path}`);
+
+		for (const [key, value] of Object.entries(headers)) {
+			xhr.setRequestHeader(key, value);
+		}
+
+		xhr.upload.onprogress = (event) => {
+			if (event.lengthComputable) {
+				onUploadProgress?.(event.loaded);
+			}
+		};
+
+		xhr.onload = () => {
+			signal?.removeEventListener('abort', abortHandler);
+
+			if (xhr.status < 200 || xhr.status >= 300) {
+				let message = `Upload failed with status ${xhr.status}`;
+				try {
+					const errorData = JSON.parse(xhr.responseText) as { error?: string };
+					message = errorData.error || message;
+				} catch {
+					// Keep the HTTP status message when the server response is not JSON.
+				}
+				reject(new Error(message));
+				return;
+			}
+
+			try {
+				resolve(JSON.parse(xhr.responseText) as UploadResponse);
+			} catch {
+				reject(new Error('Invalid upload response'));
+			}
+		};
+
+		xhr.onerror = () => {
+			signal?.removeEventListener('abort', abortHandler);
+			reject(new Error('Upload failed'));
+		};
+		xhr.onabort = () => {
+			signal?.removeEventListener('abort', abortHandler);
+			reject(new Error('Upload cancelled'));
+		};
+
+		if (signal?.aborted) {
+			abortHandler();
+			return;
+		}
+
+		signal?.addEventListener('abort', abortHandler, { once: true });
+		xhr.send(chunkData);
 	});
-
-	if (!response.ok) {
-		const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
-		throw new Error(errorData.error || `Upload failed with status ${response.status}`);
-	}
-
-	return response.json();
 }
 
 /**
@@ -277,7 +331,12 @@ export async function uploadFile(
 				file.size,
 				chunk.blob,
 				chunk.isLast ? checksum : undefined,
-				signal
+				signal,
+				(loaded) => {
+					progress.uploadedSize = Math.min(chunk.index * chunkSize + loaded, file.size);
+					progress.percentage = Math.round((progress.uploadedSize / file.size) * 100);
+					reportProgress();
+				}
 			);
 
 			// Update progress
@@ -386,16 +445,24 @@ export async function resumeUpload(
 				file.size,
 				chunk.blob,
 				chunk.isLast ? checksum : undefined,
-				signal
+				signal,
+				(loaded) => {
+					const uploadedChunksBeforeCurrent = totalChunks - missingChunks.size;
+					const baseUploadedSize = calculateUploadedSize(
+						uploadedChunksBeforeCurrent,
+						file.size,
+						chunkSize
+					);
+					progress.uploadedSize = Math.min(baseUploadedSize + loaded, file.size);
+					progress.percentage = Math.round((progress.uploadedSize / file.size) * 100);
+					reportProgress();
+				}
 			);
 
 			// Update progress
 			missingChunks.delete(chunk.index);
 			const uploadedChunks = totalChunks - missingChunks.size;
-			progress.uploadedSize = uploadedChunks * chunkSize;
-			if (progress.uploadedSize > file.size) {
-				progress.uploadedSize = file.size;
-			}
+			progress.uploadedSize = calculateUploadedSize(uploadedChunks, file.size, chunkSize);
 			progress.percentage = Math.round((progress.uploadedSize / file.size) * 100);
 			reportProgress();
 

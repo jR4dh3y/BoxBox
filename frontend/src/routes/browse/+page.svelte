@@ -2,11 +2,10 @@
 	/**
 	 * Browse page - main file browser interface (FilePilot style)
 	 */
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
-	import SearchBar from '$lib/components/SearchBar.svelte';
 	import FileList from '$lib/components/FileList.svelte';
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import SystemDriveCard from '$lib/components/SystemDriveCard.svelte';
@@ -82,6 +81,7 @@
 	const settings = $derived($settingsStore);
 	const trimmedSearchQuery = $derived(searchQuery.trim());
 	const isSearchActive = $derived(trimmedSearchQuery.length >= 2);
+	const queryClient = useQueryClient();
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
 		queryKey: fileQueryKeys.roots(),
@@ -379,7 +379,11 @@
 	};
 
 	uploadStore.onRefreshNeeded = () => {
+		queryClient.invalidateQueries({ queryKey: fileQueryKeys.all });
 		directoryQuery.refetch();
+		if (isSearchActive) {
+			searchQueryResult.refetch();
+		}
 	};
 
 	/**
@@ -499,19 +503,12 @@
 			onSettings={handleSettings}
 			onUpload={handleUploadClick}
 			{uploadDisabled}
+			showSearch={!isAtRoot}
+			searchValue={searchQuery}
+			searchLoading={isSearchActive && searchQueryResult.isFetching}
+			onSearchInput={handleSearchInput}
+			onSearchClear={handleSearchClear}
 		/>
-
-		{#if !isAtRoot}
-			<div class="border-b border-border-secondary bg-surface-primary px-3 py-2">
-				<SearchBar
-					value={searchQuery}
-					onInput={handleSearchInput}
-					onClear={handleSearchClear}
-					isLoading={isSearchActive && searchQueryResult.isFetching}
-					placeholder="Search files and folders..."
-				/>
-			</div>
-		{/if}
 
 		<!-- File list or Drive cards -->
 		<div
