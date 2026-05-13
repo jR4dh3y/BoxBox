@@ -1,0 +1,18 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { getDocNav, getDocPage } from '../../lib/docs';
+
+export function getStaticPaths() {
+	return getDocNav()
+		.filter((doc) => doc.slug !== 'index')
+		.map((doc) => ({
+			params: { slug: doc.slug }
+		}));
+}
+
+const { slug } = Astro.params;
+const nav = getDocNav();
+const doc = await getDocPage(slug ?? 'index');
+---
+
+<DocsLayout doc={doc} nav={nav} />

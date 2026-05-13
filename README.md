@@ -16,6 +16,18 @@
 
 BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provides a browser UI for mounted Linux paths, large file uploads, previews, search, and background file operations.
 
+## Quick Start
+
+```bash
+git clone https://github.com/jR4dh3y/BoxBox.git
+cd BoxBox
+cp .env.example .env
+# Edit .env, especially FM_JWT_SECRET and FM_USERS_admin.
+docker compose up -d --build
+```
+
+The provided compose file is Traefik-oriented. For a simple local `docker run` setup, see [docs/docker.md](docs/docker.md).
+
 ## Features
 
 - Browse multiple configured mount points from one web UI.
@@ -31,11 +43,14 @@ BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provi
 ```text
 backend/      Go API server and embedded frontend host
 frontend/     SvelteKit application
-website/      Astro marketing site
 docs/         Public project documentation
 scripts/      Local development helpers
 Dockerfile    Unified frontend/backend production image
 ```
+
+## Documentation
+
+Start with [docs/index.md](docs/index.md) for install, configuration, API, development, security, architecture, and troubleshooting docs.
 
 ## License
 

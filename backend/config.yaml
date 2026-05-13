@@ -1,11 +1,23 @@
-# Homelab File Manager Configuration
+# BoxBox Configuration
 
 # Server settings
 port: 80
 host: "0.0.0.0"
 
-# JWT authentication secret (CHANGE THIS IN PRODUCTION!)
+# JWT authentication secret. Override with FM_JWT_SECRET in production.
 jwt_secret: "change-me-in-production-use-a-long-random-string"
+
+# Users can be configured here or with FM_USERS_<username> environment variables.
+# If no users are configured, the server falls back to admin:admin with a warning.
+# users:
+#   admin: "change-me"
+
+# Auth endpoint rate limit per client IP.
+rate_limit_rps: 10
+
+# Optional WebSocket/CORS origin allow-list.
+# Empty list allows all origins for simple homelab use.
+allowed_origins: []
 
 # Upload settings
 max_upload_mb: 10240  # 10GB max upload size

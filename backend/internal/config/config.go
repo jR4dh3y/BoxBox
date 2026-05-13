@@ -18,6 +18,11 @@ func Load(configPath string) (*model.ServerConfig, error) {
 	v.SetDefault("host", "0.0.0.0")
 	v.SetDefault("max_upload_mb", 10240) // 10GB default
 	v.SetDefault("chunk_size_mb", 5)     // 5MB chunks
+	v.SetDefault("rate_limit_rps", 10.0)
+
+	if configPath == "" {
+		configPath = os.Getenv("CONFIG_PATH")
+	}
 
 	// Config file settings
 	if configPath != "" {
@@ -66,9 +71,25 @@ func Load(configPath string) (*model.ServerConfig, error) {
 		}
 	}
 
+	if origins := os.Getenv("FM_ALLOWED_ORIGINS"); origins != "" {
+		cfg.AllowedOrigins = splitEnvList(origins)
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
 	return &cfg, nil
+}
+
+func splitEnvList(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

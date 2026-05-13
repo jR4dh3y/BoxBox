@@ -1,348 +1,137 @@
-# Security Guide
+# Security
 
-This document covers security features, best practices, and hardening recommendations for the Homelab File Manager.
+BoxBox is built for private homelab use. It can modify real host files, so treat deployment configuration as part of the security boundary.
 
-## Security Features
+## Required Hardening
 
-### Authentication
+Before exposing BoxBox beyond your own machine:
 
-The application uses JWT (JSON Web Tokens) for authentication:
+- Set `FM_JWT_SECRET` to a long random value.
+- Set `FM_USERS_admin` or configure users in `config.yaml`.
+- Use a reverse proxy with HTTPS.
+- Mount only the directories BoxBox needs.
+- Use `read_only: true` for backups and sensitive locations.
+- Avoid exposing `/host_root` unless you really need whole-host browsing.
+- Restrict WebSocket origins with `allowed_origins` or `FM_ALLOWED_ORIGINS`.
+- Put the service behind your normal VPN, Tailscale, WireGuard, or trusted reverse proxy access controls when possible.
 
-- **Access Tokens**: Short-lived (1 hour default)
-- **Refresh Tokens**: Longer-lived for session continuity
-- **Token Validation**: Every API request validates the token
+## Authentication Model
 
-### Path Traversal Prevention
+BoxBox uses JWT access and refresh tokens:
 
-All file paths are validated to prevent directory traversal attacks:
+- Access tokens expire after 15 minutes.
+- Refresh tokens expire after 7 days.
+- Logout revokes the submitted refresh token.
+- Auth endpoints are rate-limited per client IP.
 
-```go
-// Blocked patterns:
-// - ../
-// - ..\\
-// - %2e%2e%2f (URL encoded)
-// - %2e%2e/ (mixed encoding)
+Users are currently configured as username/password pairs in YAML or environment variables:
+
+```yaml
+users:
+  admin: "a-long-password"
 ```
-
-The validator:
-1. Decodes URL-encoded characters
-2. Cleans the path (removes `.` and `..`)
-3. Verifies the result stays within mount boundaries
-
-### Mount Point Isolation
-
-Files are only accessible within configured mount points:
-
-- Requests outside mount points return 403 Forbidden
-- Each mount point can be read-only or read-write
-- Mount names are validated against configuration
-
-### Security Headers
-
-All responses include security headers:
-
-| Header | Value | Purpose |
-|--------|-------|---------|
-| X-Content-Type-Options | nosniff | Prevent MIME sniffing |
-| X-Frame-Options | DENY | Prevent clickjacking |
-| X-XSS-Protection | 1; mode=block | XSS filter |
-| Content-Security-Policy | default-src 'self' | Restrict resource loading |
-| Referrer-Policy | strict-origin-when-cross-origin | Control referrer info |
-
-## Configuration Security
-
-### JWT Secret
-
-**Critical**: Always use a strong, random JWT secret in production.
-
-Generate a secure secret:
-```bash
-openssl rand -base64 32
-```
-
-Never:
-- Use default secrets in production
-- Commit secrets to version control
-- Share secrets in logs or error messages
-
-### Environment Variables
-
-Store sensitive configuration in environment variables:
 
 ```bash
-export JWT_SECRET="your-secure-random-string"
+FM_USERS_admin="a-long-password"
 ```
 
-Or use a `.env` file (not committed to git):
-```
-JWT_SECRET=your-secure-random-string
+Current limitation: passwords are compared from configured values, not stored as password hashes. Keep config files and environment handling private.
+
+## Default Credential Fallback
+
+If no users are configured, the server falls back to:
+
+```text
+admin:admin
 ```
 
-### Mount Point Security
+This is a development convenience only. The server logs a warning when it happens.
 
-Follow the principle of least privilege:
+## Mount Point Safety
+
+Mount points define what the authenticated UI and API can access.
+
+Prefer narrow paths:
 
 ```yaml
 mount_points:
-  # Only mount what's needed
   - name: "media"
-    path: "/data/media"
+    path: "/srv/media"
     read_only: false
-
-  # Use read-only for sensitive data
   - name: "backups"
-    path: "/backups"
+    path: "/srv/backups"
     read_only: true
 ```
 
-**Never mount:**
-- Root filesystem (`/`)
-- System directories (`/etc`, `/var`, `/usr`)
-- Home directories with sensitive files
-- Docker socket or system sockets
-
-## Docker Security
-
-### Container Privileges
-
-The backend container uses specific capabilities instead of full root:
+Avoid broad host paths unless the deployment is private and intentional:
 
 ```yaml
-cap_add:
-  - DAC_READ_SEARCH   # Read files regardless of permissions
-  - CHOWN             # Change file ownership
-  - FOWNER            # Bypass permission checks
+mount_points:
+  - name: "root"
+    path: "/host_root"
+    read_only: false
 ```
 
-This is more secure than `privileged: true`.
+The default compose file includes `/host_root` because it is useful for a personal server, but it has a large blast radius if credentials are weak or the service is exposed.
 
-### Security Options
+## Path Validation
+
+The backend validates requested paths against configured mount points and blocks traversal outside those roots. Examples of blocked paths include:
+
+```text
+../secret
+..%2Fsecret
+media/../../etc/passwd
+```
+
+Read-only mount points also block write operations after path resolution.
+
+## WebSocket Origins
+
+With no `allowed_origins`, BoxBox allows WebSocket upgrades from any origin for simple homelab setups.
+
+Restrict origins for browser-exposed deployments:
 
 ```yaml
-security_opt:
-  - no-new-privileges:true  # Prevent privilege escalation
+allowed_origins:
+  - "https://boxbox.example.com"
+  - "*.internal.example.com"
 ```
 
-### Read-Only Filesystem
-
-The frontend container runs with a read-only filesystem:
-
-```yaml
-read_only: true
-tmpfs:
-  - /tmp
-```
-
-### Non-Root User
-
-The frontend runs as a non-root user:
-
-```yaml
-user: "1001:1001"
-```
-
-### Resource Limits
-
-Prevent resource exhaustion:
-
-```yaml
-deploy:
-  resources:
-    limits:
-      memory: 512M
-```
-
-## Network Security
-
-### HTTPS
-
-Always use HTTPS in production:
-
-1. Obtain SSL certificates (Let's Encrypt recommended)
-2. Configure nginx with TLS
-3. Enable HSTS
-
-```nginx
-ssl_protocols TLSv1.2 TLSv1.3;
-ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
-add_header Strict-Transport-Security "max-age=63072000" always;
-```
-
-### Firewall
-
-Restrict access to necessary ports only:
+Or through env:
 
 ```bash
-# Allow only HTTPS
-ufw allow 443/tcp
-
-# Block direct backend access from outside
-ufw deny 8080/tcp
+FM_ALLOWED_ORIGINS="https://boxbox.example.com,*.internal.example.com"
 ```
 
-### Network Isolation
+## Reverse Proxy Checklist
 
-Use Docker networks to isolate services:
+Use your proxy to provide:
+
+- HTTPS certificates.
+- HTTP to HTTPS redirect.
+- WebSocket forwarding for `/api/v1/ws`.
+- Request size limits compatible with your upload size.
+- Optional extra auth, IP allow-listing, or VPN-only access.
+
+For Traefik, the provided compose file already adds labels for an HTTP router. Add TLS labels according to your Traefik setup.
+
+## Upload Safety
+
+Chunked uploads are assembled in `/tmp/filemanager` by default and moved into the final destination when complete. Configure enough disk space for temporary chunks:
 
 ```yaml
-networks:
-  filemanager-net:
-    driver: bridge
-    internal: false  # Set to true if no external access needed
+volumes:
+  - filemanager-temp:/tmp/filemanager
 ```
 
-## Authentication Hardening
+Use `max_upload_mb` to cap accepted upload sizes.
 
-### Configurable Credentials ✅
+## Operational Checklist
 
-Credentials are now configurable via config file or environment variables.
-
-**Via config.yaml:**
-```yaml
-users:
-  admin: "your-secure-password"
-  user2: "another-password"
-```
-
-**Via environment variables:**
-```bash
-FM_USERS_admin=your-secure-password
-FM_USERS_user2=another-password
-```
-
-If no users are configured, the system falls back to `admin:admin` with a warning log.
-
-### Session Management
-
-- Access tokens expire after 15 minutes (configurable)
-- Refresh tokens allow session continuity (7 days default)
-- Logout invalidates tokens
-- Revoked tokens are automatically cleaned up
-
-### Rate Limiting ✅
-
-Rate limiting is now built-in for authentication endpoints:
-
-**Configuration:**
-```yaml
-# config.yaml
-rate_limit_rps: 10  # requests per second per IP
-```
-
-**Via environment:**
-```bash
-FM_RATE_LIMIT_RPS=10
-```
-
-Features:
-- Per-IP rate limiting using token bucket algorithm
-- Supports proxy headers (X-Forwarded-For, X-Real-IP)
-- Returns HTTP 429 Too Many Requests when exceeded
-- Memory-efficient with automatic cleanup
-
-You can also add additional rate limiting via nginx:
-
-```nginx
-limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
-
-location /api/v1/auth/login {
-    limit_req zone=login burst=3 nodelay;
-    proxy_pass http://backend;
-}
-```
-
-## File Upload Security
-
-### Size Limits
-
-Configure maximum upload size:
-
-```yaml
-max_upload_mb: 10240  # 10GB
-```
-
-### Checksum Verification
-
-Uploads are verified with SHA256 checksums to ensure integrity.
-
-### Temporary File Handling
-
-- Chunks are stored in a temporary directory
-- Incomplete uploads are cleaned up
-- Final files are moved atomically
-
-## Logging and Monitoring
-
-### Access Logs
-
-Enable access logging in nginx:
-
-```nginx
-access_log /var/log/nginx/access.log main;
-```
-
-### Security Events
-
-Monitor for:
-- Failed login attempts
-- Path traversal attempts (403 errors)
-- Unusual file access patterns
-
-### Log Rotation
-
-Configure log rotation to prevent disk exhaustion:
-
-```bash
-# /etc/logrotate.d/filemanager
-/var/log/nginx/*.log {
-    daily
-    rotate 14
-    compress
-    delaycompress
-    notifempty
-    create 0640 www-data adm
-}
-```
-
-## Security Checklist
-
-### Before Deployment
-
-- [ ] Change JWT secret to a secure random value
-- [ ] Change default admin credentials
-- [ ] Configure mount points with minimal access
-- [ ] Set up HTTPS with valid certificates
-- [ ] Configure firewall rules
-- [ ] Review Docker security settings
-
-### Regular Maintenance
-
-- [ ] Update dependencies regularly
-- [ ] Review access logs for anomalies
-- [ ] Rotate secrets periodically
-- [ ] Test backup and recovery procedures
-- [ ] Audit mount point configurations
-
-### Incident Response
-
-If you suspect a security breach:
-
-1. **Isolate**: Disconnect the server from the network
-2. **Preserve**: Save logs before they rotate
-3. **Investigate**: Review access logs and file changes
-4. **Remediate**: Patch vulnerabilities, rotate secrets
-5. **Report**: Document the incident
-
-## Reporting Security Issues
-
-If you discover a security vulnerability:
-
-1. **Do not** open a public issue
-2. Email security concerns to [security@example.com]
-3. Include:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-   - Suggested fix (if any)
-
-We will respond within 48 hours and work with you to address the issue.
+- Rotate `FM_JWT_SECRET` if it was ever committed or shared.
+- Rotate admin passwords after test deployments.
+- Review mounted paths after adding new host disks.
+- Check logs for repeated failed logins or path validation errors.
+- Keep the image rebuilt from current dependencies.
+- Back up `/data` if custom drive names matter to you.

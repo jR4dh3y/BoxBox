@@ -1,268 +1,114 @@
-# Docker Deployment Guide
+# Docker Deployment
 
-This guide explains how to deploy the Homelab File Manager using Docker.
+BoxBox builds into one container: Bun compiles the SvelteKit frontend, Go embeds those static files, and the runtime image starts one HTTP server on port `80`.
 
 ## Prerequisites
 
-- Docker 20.10+
-- Docker Compose 2.0+
-- At least 1GB RAM available
+- Docker 24+ or a recent Docker Engine.
+- Docker Compose v2 if using `docker-compose.yml`.
+- A Linux host if you want accurate system drive discovery and mount propagation.
 
-## Quick Start
+## Simple Local Container
 
-1. **Copy environment file:**
-   ```bash
-   cp .env.example .env
-   ```
-
-2. **Configure your settings in `.env`:**
-   ```bash
-   # Generate a secure JWT secret
-   JWT_SECRET=$(openssl rand -base64 32)
-   
-   # Set your mount point paths
-   MEDIA_PATH=/path/to/your/media
-   DOCUMENTS_PATH=/path/to/your/documents
-   BACKUPS_PATH=/path/to/your/backups
-   ```
-
-3. **Start the services:**
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **Access the application:**
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8080
-
-## Default Credentials
-
-- Username: `admin`
-- Password: `admin`
-
-⚠️ **Change these in production!** See [Security Guide](security.md) for instructions.
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JWT_SECRET` | (required) | Secret key for JWT tokens |
-| `BACKEND_PORT` | 8080 | Backend API port |
-| `FRONTEND_PORT` | 3000 | Frontend UI port |
-| `ORIGIN` | http://localhost:3000 | Origin URL for CORS |
-| `MEDIA_PATH` | /data/media | Host path to media files |
-| `DOCUMENTS_PATH` | /home/user/documents | Host path to documents |
-| `BACKUPS_PATH` | /mnt/backups | Host path to backups |
-
-## Docker Compose Files
-
-### Development (`docker-compose.yml`)
-
-Basic setup with backend and frontend:
+Use this path when you do not have Traefik set up yet.
 
 ```bash
-docker-compose up -d
+git clone https://github.com/jR4dh3y/BoxBox.git
+cd BoxBox
+docker build -t boxbox:local .
+
+docker run -d \
+  --name boxbox \
+  -p 8080:80 \
+  -e FM_JWT_SECRET="$(openssl rand -base64 32)" \
+  -e FM_USERS_admin="replace-this-password" \
+  -v "$PWD/backend/config.yaml:/app/config.yaml:ro" \
+  -v "$HOME:/home/user" \
+  -v boxbox-data:/data \
+  -v boxbox-temp:/tmp/filemanager \
+  boxbox:local
 ```
 
-### Production (`docker-compose.prod.yml`)
+Open `http://localhost:8080` and sign in as `admin` with the password you set in `FM_USERS_admin`.
 
-Includes nginx reverse proxy with HTTPS support:
+## Compose With Traefik
+
+The checked-in `docker-compose.yml` is configured for an external Traefik network named `proxy`.
 
 ```bash
-docker-compose -f docker-compose.prod.yml up -d
+cp .env.example .env
+$EDITOR .env
+docker network create proxy
+docker compose up -d --build
 ```
 
-## Volume Mounts
+Set these values in `.env` before starting:
 
-Map your host directories to container paths in `docker-compose.yml`:
+```env
+FM_JWT_SECRET=generate-a-long-random-secret
+FM_USERS_admin=replace-this-password
+TRAEFIK_HOST=boxbox.example.test
+HOME_PATH=/home/your-user
+```
+
+If the `proxy` network already exists, `docker network create proxy` will fail with a harmless "already exists" error.
+
+## Volumes
+
+The default compose file mounts:
+
+| Host path | Container path | Why |
+| --- | --- | --- |
+| `./backend/config.yaml` | `/app/config.yaml` | Runtime configuration. |
+| `/media/devmon` | `/media/devmon` | Auto-discovered removable drives. |
+| `/` | `/host_root` | Host root browsing. High blast radius. |
+| `${HOME_PATH}` | `/home/user` | User home directory browsing. |
+| `filemanager-temp` | `/tmp/filemanager` | Chunked upload assembly. |
+| `filemanager-data` | `/data` | Persistent app data, including custom drive names. |
+
+Use `:ro` on a volume or `read_only: true` in `config.yaml` when a path should never be modified through BoxBox.
+
+## Mount Propagation
+
+The compose file uses `rslave` for host mount paths so new host mounts can appear inside the container. This matters for removable drives and some NAS/rclone mounts.
 
 ```yaml
 volumes:
-  # Host path : Container path
-  - /your/media:/data/media
-  - /your/documents:/home/user/documents
-  - /your/backups:/mnt/backups:ro  # Read-only
-```
-
-The container paths must match what's configured in `backend/config.yaml`.
-
-## HTTPS Setup
-
-### Using Let's Encrypt
-
-1. **Obtain certificates:**
-   ```bash
-   certbot certonly --standalone -d files.yourdomain.com
-   ```
-
-2. **Copy certificates:**
-   ```bash
-   mkdir -p nginx/certs
-   cp /etc/letsencrypt/live/files.yourdomain.com/fullchain.pem nginx/certs/
-   cp /etc/letsencrypt/live/files.yourdomain.com/privkey.pem nginx/certs/
-   ```
-
-3. **Enable HTTPS in nginx config:**
-   
-   Edit `nginx/nginx.conf` and uncomment the HTTPS server block.
-
-4. **Update environment:**
-   ```bash
-   ORIGIN=https://files.yourdomain.com
-   ```
-
-5. **Restart services:**
-   ```bash
-   docker-compose -f docker-compose.prod.yml up -d
-   ```
-
-### Using Custom Certificates
-
-Place your certificates in `nginx/certs/`:
-- `fullchain.pem` - Certificate chain
-- `privkey.pem` - Private key
-
-## File Permissions
-
-The backend container needs appropriate permissions to access mounted directories.
-
-### Option 1: Run as Root (Default)
-
-The container runs as root by default to access files with various ownership. This is the simplest option for homelab use.
-
-### Option 2: Specific UID/GID
-
-If your files have consistent ownership:
-
-```yaml
-backend:
-  user: "1000:1000"  # Match your file ownership
-```
-
-### Option 3: ACLs
-
-Use filesystem ACLs for fine-grained control:
-
-```bash
-# Grant access to container user
-setfacl -R -m u:1000:rwx /data/media
-setfacl -R -d -m u:1000:rwx /data/media
-```
-
-## Resource Limits
-
-Default limits in docker-compose.yml:
-
-| Service | Memory Limit | Memory Reserved |
-|---------|--------------|-----------------|
-| Backend | 512MB | 128MB |
-| Frontend | 256MB | 64MB |
-
-Adjust based on your server capacity:
-
-```yaml
-deploy:
-  resources:
-    limits:
-      memory: 1G
-    reservations:
-      memory: 256M
-```
-
-## Health Checks
-
-Both services include health checks:
-
-```bash
-# View health status
-docker-compose ps
-
-# Check specific service
-docker inspect --format='{{.State.Health.Status}}' filemanager-backend
-```
-
-## Logs
-
-```bash
-# All services
-docker-compose logs -f
-
-# Specific service
-docker-compose logs -f backend
-
-# Last 100 lines
-docker-compose logs --tail=100 backend
+  - /media/devmon:/media/devmon:rslave
+  - /:/host_root:rslave
 ```
 
 ## Updating
 
 ```bash
-# Pull latest code
 git pull
-
-# Rebuild and restart
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
+docker compose build --no-cache
+docker compose up -d
 ```
 
-## Backup
-
-Important data to backup:
-- `.env` - Environment configuration
-- `backend/config.yaml` - Mount point configuration
-- `nginx/certs/` - SSL certificates (if using HTTPS)
-
-## Troubleshooting
-
-### Container won't start
+For a `docker run` deployment:
 
 ```bash
-# Check logs
-docker-compose logs backend
-
-# Check container status
-docker-compose ps
+docker stop boxbox
+docker rm boxbox
+docker build -t boxbox:local .
+# Re-run the docker run command with the same volumes and env values.
 ```
 
-### Permission denied errors
+## Health and Logs
 
 ```bash
-# Verify mount point exists and is accessible
-ls -la /data/media
-
-# Check container user
-docker exec filemanager-backend id
+curl http://localhost:8080/health
+docker compose ps
+docker compose logs -f filemanager
 ```
 
-### WebSocket connection fails
+The health response is:
 
-```bash
-# Check nginx logs
-docker-compose logs nginx
-
-# Verify WebSocket endpoint
-curl -i -N -H "Connection: Upgrade" \
-  -H "Upgrade: websocket" \
-  http://localhost/api/v1/ws
+```json
+{"status":"ok"}
 ```
 
-### Large file uploads fail
+## Permission Notes
 
-Increase nginx client_max_body_size in `nginx/nginx.conf`:
-
-```nginx
-client_max_body_size 20G;
-```
-
-### Out of memory
-
-Increase resource limits or add swap:
-
-```bash
-# Add 2GB swap
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-```
+The container runs with a small set of Linux capabilities in compose so it can read and manage a variety of host-owned files without full privileged mode. If a path still returns permission errors, check the host path permissions and consider narrowing BoxBox to directories owned by a consistent user or group.

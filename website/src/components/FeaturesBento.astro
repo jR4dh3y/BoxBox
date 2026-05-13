@@ -59,9 +59,9 @@ import {
               <div><span class="text-[#c586c0]">version:</span> <span class="text-[#ce9178]">'3.8'</span></div>
               <div class="mt-1"><span class="text-[#c586c0]">services:</span></div>
               <div>&nbsp;&nbsp;<span class="text-[#9cdcfe]">boxbox:</span></div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#c586c0]">image:</span> <span class="text-[#ce9178]">jr4dh3y/boxbox:latest</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#c586c0]">image:</span> <span class="text-[#ce9178]">boxbox:local</span></div>
               <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#c586c0]">ports:</span></div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#d4d4d4]">-</span> <span class="text-[#b5cea8]">"8080:8080"</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#d4d4d4]">-</span> <span class="text-[#b5cea8]">"8080:80"</span></div>
             </div>
           </div>
         </div>
@@ -182,9 +182,10 @@ import {
               <span class="text-white">docker run -d</span>
             </div>
             <div class="pl-4">
-              -p 8080:8080 \<br/>
-              -v /:/host_root \<br/>
-              jr4dh3y/boxbox
+              -p 8080:80 \<br/>
+              -e FM_USERS_admin=... \<br/>
+              -v /srv/media:/srv/media \<br/>
+              boxbox:local
             </div>
           </div>
         </div>

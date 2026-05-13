@@ -1,0 +1,166 @@
+---
+import Layout from './Layout.astro';
+import { ArrowLeft, ExternalLink, Github } from '@lucide/astro';
+import type { DocHeading, DocNavItem, DocPage } from '../lib/docs';
+
+interface Props {
+	doc: DocPage;
+	nav: DocNavItem[];
+}
+
+const { doc, nav } = Astro.props;
+
+function hrefFor(slug: string) {
+	return slug === 'index' ? '/docs/' : `/docs/${slug}/`;
+}
+---
+
+<Layout title={`${doc.title} | BoxBox Docs`} description={doc.description}>
+  <main class="relative z-10 min-h-screen bg-[#0d0d0d] text-text-primary">
+    <header class="sticky top-0 z-50 border-b border-border-primary bg-[#0d0d0d]/95 backdrop-blur">
+      <div class="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-4 px-4">
+        <a href="/" class="flex items-center gap-2 text-sm font-semibold text-text-secondary transition-colors hover:text-white">
+          <ArrowLeft class="h-4 w-4" />
+          BoxBox
+        </a>
+        <div class="flex items-center gap-2">
+          <a
+            href="https://github.com/jR4dh3y/BoxBox/tree/main/docs"
+            target="_blank"
+            class="hidden items-center gap-2 rounded border border-border-primary bg-surface-secondary px-3 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:border-border-focus hover:text-white sm:flex"
+          >
+            <ExternalLink class="h-4 w-4" />
+            Markdown
+          </a>
+          <a
+            href="https://github.com/jR4dh3y/BoxBox"
+            target="_blank"
+            class="flex items-center gap-2 rounded border border-border-primary bg-surface-secondary px-3 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:border-border-focus hover:text-white"
+          >
+            <Github class="h-4 w-4" />
+            GitHub
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <div class="mx-auto grid max-w-[1440px] grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_240px]">
+      <aside class="border-b border-border-primary bg-[#101010] lg:sticky lg:top-14 lg:h-[calc(100vh-56px)] lg:border-b-0 lg:border-r lg:bg-transparent">
+        <nav class="px-4 py-4 lg:py-8" aria-label="Documentation">
+          <div class="mb-3 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">Documentation</div>
+          <div class="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
+            {nav.map((item) => (
+              <a
+                href={hrefFor(item.slug)}
+                class={`shrink-0 rounded px-3 py-2 text-sm font-semibold transition-colors lg:shrink ${
+                  item.slug === doc.slug
+                    ? 'bg-accent text-white'
+                    : 'text-text-secondary hover:bg-surface-secondary hover:text-white'
+                }`}
+              >
+                {item.title}
+              </a>
+            ))}
+          </div>
+        </nav>
+      </aside>
+
+      <article class="min-w-0 px-4 py-10 md:px-8 lg:px-12 lg:py-14">
+        <header class="mb-10 border-b border-border-primary pb-8">
+          <div class="mb-3 text-sm font-semibold text-accent">BoxBox Docs</div>
+          <h1 class="text-4xl font-black tracking-tight text-white md:text-5xl" style="font-family: 'Bricolage Grotesque', sans-serif;">
+            {doc.title}
+          </h1>
+          {doc.description && <p class="mt-4 max-w-3xl text-lg leading-relaxed text-text-secondary">{doc.description}</p>}
+        </header>
+
+        <div class="doc-content" set:html={doc.html} />
+      </article>
+
+      <aside class="hidden border-l border-border-primary px-5 py-14 xl:block">
+        <div class="sticky top-28">
+          <div class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">On This Page</div>
+          {doc.headings.length > 0 ? (
+            <nav class="flex max-h-[calc(100vh-9rem)] flex-col gap-2 overflow-y-auto pr-1 mock-scrollbar" aria-label="On this page">
+              {doc.headings.map((heading: DocHeading) => (
+                <a
+                  href={`#${heading.id}`}
+                  data-toc-link={heading.id}
+                  class={`toc-link block rounded border-l border-transparent py-1 pl-3 text-sm leading-snug text-text-secondary transition-colors hover:text-white ${
+                    heading.depth === 3 ? 'pl-4' : ''
+                  }`}
+                >
+                  {heading.text}
+                </a>
+              ))}
+            </nav>
+          ) : (
+            <p class="text-sm text-text-muted">No sections.</p>
+          )}
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const tocLinks = Array.from(document.querySelectorAll('[data-toc-link]'));
+    const headings = tocLinks
+      .map((link) => {
+        const id = link.getAttribute('data-toc-link');
+        return id ? document.getElementById(id) : null;
+      })
+      .filter(Boolean);
+
+    function setActiveTocLink(activeId) {
+      for (const link of tocLinks) {
+        link.classList.toggle('is-active', link.getAttribute('data-toc-link') === activeId);
+      }
+
+      const activeLink = tocLinks.find((link) => link.getAttribute('data-toc-link') === activeId);
+      activeLink?.scrollIntoView({ block: 'nearest' });
+    }
+
+    function updateActiveTocLink() {
+      const documentElement = document.documentElement;
+      const remainingScroll = Math.max(
+        0,
+        documentElement.scrollHeight - window.scrollY - window.innerHeight
+      );
+      const normalActivationLine = Math.min(window.innerHeight * 0.35, 280);
+      const endActivationLine = Math.max(normalActivationLine, window.innerHeight - 40);
+      const endZone = Math.min(Math.max(window.innerHeight * 0.45, 320), 520);
+      const endProgress = 1 - Math.min(remainingScroll / endZone, 1);
+      const activationLine =
+        normalActivationLine + (endActivationLine - normalActivationLine) * endProgress;
+
+      let activeHeading = headings[0];
+
+      for (const heading of headings) {
+        if (heading.getBoundingClientRect().top <= activationLine) {
+          activeHeading = heading;
+        } else {
+          break;
+        }
+      }
+
+      if (activeHeading) {
+        setActiveTocLink(activeHeading.id);
+      }
+    }
+
+    let ticking = false;
+    function requestTocUpdate() {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        updateActiveTocLink();
+        ticking = false;
+      });
+    }
+
+    updateActiveTocLink();
+    window.addEventListener('scroll', requestTocUpdate, { passive: true });
+    window.addEventListener('resize', requestTocUpdate);
+    window.addEventListener('hashchange', requestTocUpdate);
+  </script>
+</Layout>
