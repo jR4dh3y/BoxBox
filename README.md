@@ -1,5 +1,5 @@
   
-<h1 align="center">Homelab File Manager</h1>
+<h1 align="center">BoxBox</h1>
 
 <p align="center">
   <strong>A modern, self-hosted file manager for your homelab</strong>
