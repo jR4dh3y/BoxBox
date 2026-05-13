@@ -1,4 +1,18 @@
-# BoxBox
+  
+<h1 align="center">Homelab File Manager</h1>
+
+<p align="center">
+  <strong>A modern, self-hosted file manager for your homelab</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/SvelteKit-FF3E00?style=flat-square&logo=svelte&logoColor=white" alt="SvelteKit">
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License">
+</p>
+
 
 BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provides a browser UI for mounted Linux paths, large file uploads, previews, search, and background file operations.
 
@@ -12,12 +26,6 @@ BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provi
 - Search directories by file or folder name.
 - Configure read-only mounts, users, rate limits, and allowed origins.
 
-## Stack
-
-- Backend: Go 1.24, Chi, JWT, Gorilla WebSocket, Afero.
-- Frontend: SvelteKit 2, Svelte 5, TypeScript, Tailwind CSS 4.
-- Packaging: Bun, Docker multi-stage build, embedded static frontend.
-
 ## Repository Layout
 
 ```text
@@ -28,44 +36,6 @@ docs/         Public project documentation
 scripts/      Local development helpers
 Dockerfile    Unified frontend/backend production image
 ```
-
-## Development
-
-Install frontend dependencies:
-
-```bash
-bun install --cwd frontend
-```
-
-Run frontend checks:
-
-```bash
-bun run --cwd frontend check
-```
-
-Run backend tests:
-
-```bash
-go -C backend test ./...
-```
-
-Build the frontend:
-
-```bash
-bun run --cwd frontend build
-```
-
-Build the container image:
-
-```bash
-docker build -t boxbox .
-```
-
-## Configuration
-
-The backend reads `backend/config.yaml` plus environment variables with the `FM_` prefix. Before exposing BoxBox on a network, set a strong JWT secret, configure real users, restrict mount points to the directories you intend to manage, and review allowed origins.
-
-See the files in `docs/` for API, architecture, configuration, Docker, development, and security notes.
 
 ## License
 
