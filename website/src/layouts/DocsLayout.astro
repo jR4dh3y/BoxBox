@@ -37,7 +37,7 @@ function hrefFor(slug: string) {
     </header>
 
     <div class="mx-auto grid max-w-[1440px] grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_240px]">
-      <aside class="border-b border-border-primary bg-[#101010] lg:sticky lg:top-14 lg:h-[calc(100vh-56px)] lg:border-b-0 lg:border-r lg:bg-transparent">
+      <aside class="border-b border-border-primary bg-[#101010] lg:sticky lg:top-[calc(3.5rem_+_1px)] lg:h-[calc(100vh_-_3.5rem_-_1px)] lg:border-b-0 lg:border-r lg:bg-transparent">
         <nav class="px-4 py-4 lg:py-8" aria-label="Documentation">
           <div class="mb-3 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">Documentation</div>
           <div class="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
@@ -59,7 +59,6 @@ function hrefFor(slug: string) {
 
       <article class="min-w-0 px-4 py-10 md:px-8 lg:px-12 lg:py-14">
         <header class="mb-10 border-b border-border-primary pb-8">
-          <div class="mb-3 text-sm font-semibold text-accent">BoxBox Docs</div>
           <h1 class="text-4xl font-black tracking-tight text-white md:text-5xl" style="font-family: 'Bricolage Grotesque', sans-serif;">
             {doc.title}
           </h1>
@@ -69,8 +68,8 @@ function hrefFor(slug: string) {
         <div class="doc-content" set:html={doc.html} />
       </article>
 
-      <aside class="hidden border-l border-border-primary px-5 py-14 xl:block">
-        <div class="sticky top-28">
+      <aside class="hidden border-l border-border-primary px-5 py-14 xl:sticky xl:top-[calc(3.5rem_+_1px)] xl:block xl:h-[calc(100vh_-_3.5rem_-_1px)]">
+        <div>
           <div class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">On This Page</div>
           {doc.headings.length > 0 ? (
             <nav class="flex max-h-[calc(100vh-9rem)] flex-col gap-2 overflow-y-auto pr-1 mock-scrollbar" aria-label="On this page">
