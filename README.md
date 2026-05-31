@@ -18,16 +18,20 @@ BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provi
 
 ## Quick Start
 
+The default deployment uses the published GitHub Container Registry image and the checked-in Traefik-oriented compose file.
+
 ```bash
 git clone https://github.com/jR4dh3y/BoxBox.git
 cd BoxBox
 cp .env.example .env
-# Edit .env, especially FM_JWT_SECRET and FM_USERS_admin.
+
+# Edit .env, especially FM_JWT_SECRET, FM_USERS_admin, TRAEFIK_HOST, and HOME_PATH.
+docker network create proxy
 docker compose pull
 docker compose up -d
 ```
 
-Docker images are published to GitHub Container Registry at `ghcr.io/jr4dh3y/boxbox`. The provided compose file is Traefik-oriented. For a simple local `docker run` setup or local image builds, see [docs/docker.md](docs/docker.md).
+Docker images are published to GitHub Container Registry at `ghcr.io/jr4dh3y/boxbox`. The provided compose file is Traefik-oriented; for a direct `docker run` setup without Traefik, see [docs/docker.md](docs/docker.md).
 
 ## Features
 

@@ -23,6 +23,32 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+## Compose Deployment
+
+Use this path for a server behind Traefik. The checked-in `docker-compose.yml` pulls `ghcr.io/jr4dh3y/boxbox:latest` by default.
+
+```bash
+git clone https://github.com/jR4dh3y/BoxBox.git
+cd BoxBox
+cp .env.example .env
+$EDITOR .env
+docker network create proxy
+docker compose pull
+docker compose up -d
+```
+
+Set these values in `.env` before starting:
+
+```env
+FM_JWT_SECRET=generate-a-long-random-secret
+FM_USERS_admin=replace-this-password
+TRAEFIK_HOST=boxbox.example.test
+HOME_PATH=/home/your-user
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:latest
+```
+
+If the `proxy` network already exists, `docker network create proxy` will fail with a harmless "already exists" error.
+
 ## Simple Local Container
 
 Use this path when you do not have Traefik set up yet.
@@ -46,32 +72,15 @@ docker run -d \
 
 Open `http://localhost:8080` and sign in as `admin` with the password you set in `FM_USERS_admin`.
 
-To build from the local checkout instead, run `docker build -t boxbox:local .` and use `boxbox:local` in the `docker run` command.
+## Local Source Builds
 
-## Compose With Traefik
-
-The checked-in `docker-compose.yml` is configured for an external Traefik network named `proxy`.
+Use this path when you want to build the image from your checkout instead of pulling from GHCR.
 
 ```bash
-cp .env.example .env
-$EDITOR .env
-docker network create proxy
-docker compose pull
-docker compose up -d
+docker build -t boxbox:local .
 ```
 
-Set these values in `.env` before starting:
-
-```env
-FM_JWT_SECRET=generate-a-long-random-secret
-FM_USERS_admin=replace-this-password
-TRAEFIK_HOST=boxbox.example.test
-HOME_PATH=/home/your-user
-```
-
-If the `proxy` network already exists, `docker network create proxy` will fail with a harmless "already exists" error.
-
-For local source builds, keep the same `.env` file and run `docker compose up -d --build`.
+For compose, keep the same `.env` file and run `docker compose up -d --build`.
 
 ## Volumes
 
