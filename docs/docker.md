@@ -8,6 +8,21 @@ BoxBox builds into one container: Bun compiles the SvelteKit frontend, Go embeds
 - Docker Compose v2 if using `docker-compose.yml`.
 - A Linux host if you want accurate system drive discovery and mount propagation.
 
+## Published Image
+
+Release images are published to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/jr4dh3y/boxbox:latest
+```
+
+The publish workflow runs when a `v*` git tag is pushed. It publishes the tag name and updates `latest`.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
 ## Simple Local Container
 
 Use this path when you do not have Traefik set up yet.
@@ -15,7 +30,7 @@ Use this path when you do not have Traefik set up yet.
 ```bash
 git clone https://github.com/jR4dh3y/BoxBox.git
 cd BoxBox
-docker build -t boxbox:local .
+docker pull ghcr.io/jr4dh3y/boxbox:latest
 
 docker run -d \
   --name boxbox \
@@ -26,10 +41,12 @@ docker run -d \
   -v "$HOME:/home/user" \
   -v boxbox-data:/data \
   -v boxbox-temp:/tmp/filemanager \
-  boxbox:local
+  ghcr.io/jr4dh3y/boxbox:latest
 ```
 
 Open `http://localhost:8080` and sign in as `admin` with the password you set in `FM_USERS_admin`.
+
+To build from the local checkout instead, run `docker build -t boxbox:local .` and use `boxbox:local` in the `docker run` command.
 
 ## Compose With Traefik
 
@@ -39,7 +56,8 @@ The checked-in `docker-compose.yml` is configured for an external Traefik networ
 cp .env.example .env
 $EDITOR .env
 docker network create proxy
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 Set these values in `.env` before starting:
@@ -52,6 +70,8 @@ HOME_PATH=/home/your-user
 ```
 
 If the `proxy` network already exists, `docker network create proxy` will fail with a harmless "already exists" error.
+
+For local source builds, keep the same `.env` file and run `docker compose up -d --build`.
 
 ## Volumes
 
@@ -81,6 +101,13 @@ volumes:
 ## Updating
 
 ```bash
+docker compose pull
+docker compose up -d
+```
+
+For local source builds:
+
+```bash
 git pull
 docker compose build --no-cache
 docker compose up -d
@@ -89,9 +116,9 @@ docker compose up -d
 For a `docker run` deployment:
 
 ```bash
+docker pull ghcr.io/jr4dh3y/boxbox:latest
 docker stop boxbox
 docker rm boxbox
-docker build -t boxbox:local .
 # Re-run the docker run command with the same volumes and env values.
 ```
 

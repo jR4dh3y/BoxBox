@@ -23,10 +23,11 @@ git clone https://github.com/jR4dh3y/BoxBox.git
 cd BoxBox
 cp .env.example .env
 # Edit .env, especially FM_JWT_SECRET and FM_USERS_admin.
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-The provided compose file is Traefik-oriented. For a simple local `docker run` setup, see [docs/docker.md](docs/docker.md).
+Docker images are published to GitHub Container Registry at `ghcr.io/jr4dh3y/boxbox`. The provided compose file is Traefik-oriented. For a simple local `docker run` setup or local image builds, see [docs/docker.md](docs/docker.md).
 
 ## Features
 

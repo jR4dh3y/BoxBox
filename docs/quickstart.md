@@ -10,7 +10,7 @@ cd BoxBox
 cp .env.example .env
 
 # Edit .env and change FM_JWT_SECRET and FM_USERS_admin.
-docker build -t boxbox:local .
+docker compose pull
 docker compose up -d
 ```
 
