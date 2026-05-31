@@ -133,7 +133,8 @@
 	const thClass =
 		'text-left px-3 py-2 bg-surface-secondary border-b border-border-primary font-medium text-text-secondary whitespace-nowrap select-none sticky top-0 z-[5] cursor-pointer transition-colors duration-100 hover:bg-surface-tertiary hover:text-text-primary focus:outline focus:outline-1 focus:outline-accent focus:-outline-offset-1';
 	const thSortedClass = 'text-accent';
-	const tdClass = 'px-3 py-1.5 border-b border-border-secondary text-text-primary';
+	const tdClass = 'h-8 px-3 py-1.5 align-middle border-b border-border-secondary text-text-primary';
+	const clippedCellClass = 'block overflow-hidden text-ellipsis whitespace-nowrap';
 </script>
 
 <div class="relative h-full w-full overflow-auto bg-surface-primary {compactMode ? 'compact' : ''}">
@@ -143,11 +144,21 @@
 		</div>
 	{/if}
 
-	<table class="w-full border-collapse text-[13px]" role="grid" aria-busy={isLoading}>
+	<table
+		class="w-full min-w-[720px] table-fixed border-collapse text-[13px] leading-5"
+		role="grid"
+		aria-busy={isLoading}
+	>
+		<colgroup>
+			<col />
+			<col class="w-[170px]" />
+			<col class="w-[112px]" />
+			<col class="w-[168px]" />
+		</colgroup>
 		<thead>
 			<tr>
 				<th
-					class="{thClass} min-w-[200px] {sortBy === 'name' ? thSortedClass : ''}"
+					class="{thClass} {sortBy === 'name' ? thSortedClass : ''}"
 					onclick={() => handleSort('name')}
 					onkeydown={(e) => e.key === 'Enter' && handleSort('name')}
 					tabindex="0"
@@ -158,7 +169,7 @@
 					<span class="text-[10px] opacity-80">{getSortIndicator('name')}</span>
 				</th>
 				<th
-					class="{thClass} w-[120px] {sortBy === 'type' ? thSortedClass : ''}"
+					class="{thClass} {sortBy === 'type' ? thSortedClass : ''}"
 					onclick={() => handleSort('type')}
 					onkeydown={(e) => e.key === 'Enter' && handleSort('type')}
 					tabindex="0"
@@ -169,7 +180,7 @@
 					<span class="text-[10px] opacity-80">{getSortIndicator('type')}</span>
 				</th>
 				<th
-					class="{thClass} w-[100px] text-right {sortBy === 'size' ? thSortedClass : ''}"
+					class="{thClass} text-right {sortBy === 'size' ? thSortedClass : ''}"
 					onclick={() => handleSort('size')}
 					onkeydown={(e) => e.key === 'Enter' && handleSort('size')}
 					tabindex="0"
@@ -180,7 +191,7 @@
 					<span class="text-[10px] opacity-80">{getSortIndicator('size')}</span>
 				</th>
 				<th
-					class="{thClass} w-[150px] {sortBy === 'modTime' ? thSortedClass : ''}"
+					class="{thClass} {sortBy === 'modTime' ? thSortedClass : ''}"
 					onclick={() => handleSort('modTime')}
 					onkeydown={(e) => e.key === 'Enter' && handleSort('modTime')}
 					tabindex="0"
@@ -209,6 +220,9 @@
 			{:else}
 				{#each items as item (item.path)}
 					{@const IconComponent = getFileIcon(item.name, item.isDir)}
+					{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
+					{@const sizeDescription = item.isDir ? '' : formatFileSize(item.size)}
+					{@const modifiedDescription = formatFileDate(item.modTime)}
 					<tr
 						class="cursor-default transition-colors duration-50 hover:bg-surface-secondary focus:bg-selection focus:outline-none {isSelected(
 							item.path
@@ -222,8 +236,8 @@
 						tabindex="0"
 						aria-selected={isSelected(item.path)}
 					>
-						<td class="{tdClass} min-w-[200px]">
-							<div class="flex items-center gap-2">
+						<td class={tdClass}>
+							<div class="flex min-w-0 items-center gap-2">
 								<span
 									class="flex w-5 shrink-0 items-center justify-center {item.isDir
 										? 'text-folder'
@@ -232,23 +246,22 @@
 									<IconComponent size={16} />
 								</span>
 								<span
-									class="overflow-hidden text-ellipsis whitespace-nowrap {item.isDir
-										? 'text-folder'
-										: ''}"
+									class="{clippedCellClass} min-w-0 flex-1 {item.isDir ? 'text-folder' : ''}"
 									title={item.name}
 								>
 									{item.name}
 								</span>
 							</div>
 						</td>
-						<td class="{tdClass} w-[120px] text-text-secondary">
-							{item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
+						<td class="{tdClass} text-text-secondary">
+							<span class={clippedCellClass} title={typeDescription}>{typeDescription}</span>
 						</td>
-						<td class="{tdClass} w-[100px] text-right text-text-secondary tabular-nums">
-							{item.isDir ? '' : formatFileSize(item.size)}
+						<td class="{tdClass} text-right text-text-secondary tabular-nums">
+							<span class={clippedCellClass} title={sizeDescription}>{sizeDescription}</span>
 						</td>
-						<td class="{tdClass} w-[150px] whitespace-nowrap text-text-secondary">
-							{formatFileDate(item.modTime)}
+						<td class="{tdClass} text-text-secondary">
+							<span class={clippedCellClass} title={modifiedDescription}>{modifiedDescription}</span
+							>
 						</td>
 					</tr>
 				{/each}

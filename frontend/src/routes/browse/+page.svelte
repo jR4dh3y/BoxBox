@@ -7,6 +7,7 @@
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import FileList from '$lib/components/FileList.svelte';
+	import FileGrid from '$lib/components/FileGrid.svelte';
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import SystemDriveCard from '$lib/components/SystemDriveCard.svelte';
 	import FilePreview from '$lib/components/FilePreview.svelte';
@@ -36,7 +37,7 @@
 	import { getSystemDrives, type SystemDrivesResponse } from '$lib/api/system';
 	import { createCopyJob, createMoveJob, createDeleteJob } from '$lib/api/jobs';
 	import { formatFileSize, formatFileDate, mapSystemMountToBrowsePath } from '$lib/utils/format';
-	import type { SortField, SortDir } from '$lib/types/files';
+	import type { SortField, SortDir, ViewMode } from '$lib/types/files';
 	import type {
 		FileInfo,
 		FileList as FileListType,
@@ -47,7 +48,7 @@
 
 	let searchQuery = $state('');
 	let selectedPaths = $state(new Set<string>());
-	let viewMode = $state<'list' | 'grid'>('list');
+	let viewMode = $state<ViewMode>(settingsStore.getSetting('defaultViewMode'));
 	let previewFile = $state<FileInfo | null>(null);
 	let historyStack = $state<string[]>(['']);
 	let historyIndex = $state(0);
@@ -234,7 +235,7 @@
 		selectedPaths = paths;
 	}
 
-	function handleViewModeChange(mode: 'list' | 'grid') {
+	function handleViewModeChange(mode: ViewMode) {
 		viewMode = mode;
 	}
 
@@ -573,6 +574,20 @@
 						</div>
 					{/if}
 				</div>
+			{:else if viewMode === 'grid'}
+				<FileGrid
+					items={displayItems}
+					emptyMessage={emptyListMessage}
+					{selectedPaths}
+					isLoading={isFileListLoading}
+					compactMode={settings.compactMode}
+					{cutPaths}
+					{favoritePaths}
+					{canPaste}
+					onItemClick={handleFileClick}
+					onSelectionChange={handleSelectionChange}
+					onContextMenuAction={handleContextMenuAction}
+				/>
 			{:else}
 				<FileList
 					items={displayItems}

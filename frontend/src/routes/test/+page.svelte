@@ -19,6 +19,7 @@
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import SystemDriveCard from '$lib/components/SystemDriveCard.svelte';
 	import FileList from '$lib/components/FileList.svelte';
+	import FileGrid from '$lib/components/FileGrid.svelte';
 	import Breadcrumb from '$lib/components/Breadcrumb.svelte';
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import UploadDropzone from '$lib/components/UploadDropzone.svelte';
@@ -29,6 +30,7 @@
 	import ContextMenu from '$lib/components/ui/ContextMenu.svelte';
 	import { FlaskConical, Bell, Copy, Scissors, ClipboardPaste, Trash2, Pencil } from 'lucide-svelte';
 	import type { FileInfo, MountPoint } from '$lib/api/files';
+	import type { ViewMode } from '$lib/types/files';
 	import type { SystemDrive } from '$lib/api/system';
 	import type { Job } from '$lib/api/jobs';
 	import type { UploadProgress as UploadProgressType } from '$lib/utils/upload';
@@ -56,7 +58,7 @@
 
 	// Toolbar state
 	let toolbarPath = $state(['Documents', 'Projects', 'Frontend']);
-	let viewMode = $state<'list' | 'grid'>('list');
+	let viewMode = $state<ViewMode>('list');
 
 	// Mock data for components
 	const mockRoots: MountPoint[] = [
@@ -388,7 +390,7 @@
 		<div class="mb-8">
 			<h3 class="text-lg font-medium mb-4 text-text-secondary">SystemDriveCard</h3>
 			<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-				{#each mockSystemDrives as drive}
+				{#each mockSystemDrives as drive (drive.mountPoint)}
 					<SystemDriveCard {drive} onClick={() => console.log('Drive clicked:', drive.mountPoint)} />
 				{/each}
 			</div>
@@ -419,6 +421,22 @@
 					compactMode={false}
 					onItemClick={handleFileClick}
 					onSortChange={(field, dir) => { sortBy = field; sortDir = dir; }}
+					onSelectionChange={(paths) => selectedPaths = paths}
+				/>
+			</div>
+			<p class="text-xs text-text-muted mt-2">Selected: {selectedPaths.size} items</p>
+		</div>
+
+		<!-- FileGrid -->
+		<div class="mb-8">
+			<h3 class="text-lg font-medium mb-4 text-text-secondary">FileGrid</h3>
+			<div class="border border-border-primary rounded overflow-hidden h-[400px]">
+				<FileGrid
+					items={mockFiles}
+					{selectedPaths}
+					isLoading={false}
+					compactMode={false}
+					onItemClick={handleFileClick}
 					onSelectionChange={(paths) => selectedPaths = paths}
 				/>
 			</div>
