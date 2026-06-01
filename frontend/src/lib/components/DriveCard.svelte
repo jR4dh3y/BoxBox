@@ -91,36 +91,42 @@
 
 <button
 	type="button"
-	class="flex items-stretch gap-3 p-4 bg-surface-secondary border border-border-primary rounded-lg cursor-pointer transition-all duration-150 text-left w-full hover:bg-surface-tertiary hover:border-border-focus relative"
+	class="relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-all duration-150 hover:border-border-focus hover:bg-surface-tertiary"
 	onclick={handleCardClick}
 	oncontextmenu={handleContextMenu}
 >
-	<div class="shrink-0 w-16 flex items-center justify-center rounded bg-surface-elevated text-text-secondary">
+	<div
+		class="flex w-16 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary"
+	>
 		<HardDrive size={24} />
 	</div>
 
-	<div class="flex-1 min-w-0 flex flex-col gap-1 py-0.5">
+	<div class="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
 		{#if renaming}
-			<InlineRename
-				value={displayName}
-				onSave={handleSaveRename}
-				onCancel={handleCancelRename}
-			/>
+			<InlineRename value={displayName} onSave={handleSaveRename} onCancel={handleCancelRename} />
 		{:else}
-			<div class="flex items-center justify-between gap-2 h-5">
-				<span class="text-sm font-medium text-text-primary">{displayName}</span>
-				<Badge variant="default">{totalFormatted}</Badge>
+			<div class="grid h-5 grid-cols-[minmax(0,1fr)_5.25rem] items-center gap-2">
+				<span class="min-w-0 truncate text-sm font-medium text-text-primary" title={displayName}>
+					{displayName}
+				</span>
+				<div class="flex w-[5.25rem] shrink-0 justify-end overflow-hidden">
+					<Badge variant="default">{totalFormatted}</Badge>
+				</div>
 			</div>
 		{/if}
 		<div class="text-xs text-text-muted">
 			{usedFormatted} used · {freeFormatted} free
 			{#if drive.readOnly}
-				<span class="text-warning ml-1">· Read-only</span>
+				<span class="ml-1 text-warning">· Read-only</span>
 			{/if}
 		</div>
 		{#if drive.device}
-			<div class="text-[10px] text-text-muted font-mono truncate" title="{drive.device} ({drive.fsType || 'unknown'})">
-				{drive.device}{#if drive.fsType} · {drive.fsType}{/if}
+			<div
+				class="truncate font-mono text-[10px] text-text-muted"
+				title="{drive.device} ({drive.fsType || 'unknown'})"
+			>
+				{drive.device}{#if drive.fsType}
+					· {drive.fsType}{/if}
 			</div>
 		{/if}
 
@@ -128,7 +134,13 @@
 			<div class="flex-1">
 				<ProgressBar value={drive.usedPct} size="sm" variant={progressVariant} />
 			</div>
-			<span class="text-[11px] shrink-0 {drive.usedPct >= 90 ? 'text-danger' : drive.usedPct >= 75 ? 'text-warning' : 'text-text-muted'}">
+			<span
+				class="shrink-0 text-[11px] {drive.usedPct >= 90
+					? 'text-danger'
+					: drive.usedPct >= 75
+						? 'text-warning'
+						: 'text-text-muted'}"
+			>
 				{drive.usedPct.toFixed(1)}%
 			</span>
 		</div>
