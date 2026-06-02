@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/homelab/filemanager/internal/model"
-	"github.com/homelab/filemanager/internal/pkg/fileutil"
 	"github.com/homelab/filemanager/internal/pkg/filesystem"
+	"github.com/homelab/filemanager/internal/pkg/fileutil"
 	"github.com/homelab/filemanager/internal/pkg/validator"
 )
 
@@ -433,10 +433,18 @@ func (s *fileService) GetFilesystem() filesystem.FS {
 func (s *fileService) sortEntries(entries []fs.DirEntry, sortBy, sortDir string) {
 	sort.Slice(entries, func(i, j int) bool {
 		var less bool
+		iName := entries[i].Name()
+		jName := entries[j].Name()
+		iHidden := strings.HasPrefix(iName, ".")
+		jHidden := strings.HasPrefix(jName, ".")
+
+		if iHidden != jHidden {
+			return !iHidden
+		}
 
 		switch sortBy {
 		case "name":
-			less = strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name())
+			less = strings.ToLower(iName) < strings.ToLower(jName)
 		case "size":
 			iInfo, _ := entries[i].Info()
 			jInfo, _ := entries[j].Info()
@@ -462,10 +470,10 @@ func (s *fileService) sortEntries(entries []fs.DirEntry, sortBy, sortDir string)
 			if iDir != jDir {
 				less = iDir
 			} else {
-				less = strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name())
+				less = strings.ToLower(iName) < strings.ToLower(jName)
 			}
 		default:
-			less = strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name())
+			less = strings.ToLower(iName) < strings.ToLower(jName)
 		}
 
 		if sortDir == "desc" {
@@ -474,5 +482,3 @@ func (s *fileService) sortEntries(entries []fs.DirEntry, sortBy, sortDir string)
 		return less
 	})
 }
-
-

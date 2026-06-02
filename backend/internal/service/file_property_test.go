@@ -31,6 +31,47 @@ func setupTestFileService() (FileService, *filesystem.AferoFS) {
 	return svc, fs
 }
 
+func TestDirectoryListingPutsVisibleItemsBeforeHiddenItems(t *testing.T) {
+	svc, fs := setupTestFileService()
+	ctx := context.Background()
+
+	testDir := "/data/media/hidden-first"
+	if err := fs.MkdirAll(testDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 20; i++ {
+		if err := fs.WriteFile(fmt.Sprintf("%s/.hidden%02d", testDir, i), []byte("content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"Desktop", "Documents", "Downloads"} {
+		if err := fs.MkdirAll(testDir+"/"+name, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	list, err := svc.List(ctx, "media/hidden-first", model.ListOptions{
+		Page:     1,
+		PageSize: 3,
+		SortBy:   "name",
+		SortDir:  "asc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := make([]string, 0, len(list.Items))
+	for _, item := range list.Items {
+		got = append(got, item.Name)
+	}
+
+	want := []string{"Desktop", "Documents", "Downloads"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("expected first page to contain visible items %v, got %v", want, got)
+	}
+}
+
 // **Feature: homelab-file-manager, Property 1: Directory Listing Metadata Completeness**
 // **Validates: Requirements 1.1**
 //
@@ -159,7 +200,6 @@ func TestProperty_DirectoryListingMetadataCompleteness(t *testing.T) {
 
 	properties.TestingRun(t)
 }
-
 
 // **Feature: homelab-file-manager, Property 2: Pagination Correctness**
 // **Validates: Requirements 1.3**
@@ -310,7 +350,6 @@ func TestProperty_PaginationCorrectness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-
 // **Feature: homelab-file-manager, Property 3: Non-Existent Path Returns 404**
 // **Validates: Requirements 1.5, 3.4**
 //
@@ -402,7 +441,6 @@ func TestProperty_NonExistentPathReturnsError(t *testing.T) {
 
 	properties.TestingRun(t)
 }
-
 
 // **Feature: homelab-file-manager, Property 15: File Rename Correctness**
 // **Validates: Requirements 8.1**
@@ -544,7 +582,6 @@ func TestProperty_FileRenameCorrectness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-
 // **Feature: homelab-file-manager, Property 16: Directory Creation Correctness**
 // **Validates: Requirements 8.2**
 //
@@ -672,7 +709,6 @@ func TestProperty_DirectoryCreationCorrectness(t *testing.T) {
 
 	properties.TestingRun(t)
 }
-
 
 // **Feature: homelab-file-manager, Property 17: File Deletion Correctness**
 // **Validates: Requirements 8.3**

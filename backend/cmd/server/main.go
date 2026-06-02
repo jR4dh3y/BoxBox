@@ -74,10 +74,10 @@ func main() {
 	log.Info().Msg("Upload session cleanup started")
 
 	// Ensure data directory exists for settings storage
-	if err := os.MkdirAll(config.DefaultDataDir, 0755); err != nil {
-		log.Warn().Err(err).Str("path", config.DefaultDataDir).Msg("Could not create data directory, settings may not persist")
+	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
+		log.Warn().Err(err).Str("path", cfg.DataDir).Msg("Could not create data directory, settings may not persist")
 	} else {
-		log.Info().Str("path", config.DefaultDataDir).Msg("Data directory created/verified")
+		log.Info().Str("path", cfg.DataDir).Msg("Data directory created/verified")
 	}
 
 	// Start HTTP server in background
@@ -153,7 +153,7 @@ func initializeServer(ctx context.Context, cfg *model.ServerConfig) (*http.Serve
 	systemService := service.NewSystemService()
 
 	settingsService := service.NewSettingsService(fs, service.SettingsServiceConfig{
-		DataDir: config.DefaultDataDir,
+		DataDir: cfg.DataDir,
 	})
 
 	// Create handlers

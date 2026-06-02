@@ -18,6 +18,7 @@ type ServerConfig struct {
 	JWTSecret   string       `mapstructure:"jwt_secret"`
 	MaxUploadMB int          `mapstructure:"max_upload_mb"`
 	ChunkSizeMB int          `mapstructure:"chunk_size_mb"`
+	DataDir     string       `mapstructure:"data_dir"`
 
 	// Security settings
 	Users          map[string]string `mapstructure:"users"`           // username -> password
@@ -34,10 +35,11 @@ func DefaultServerConfig() ServerConfig {
 		JWTSecret:   "",
 		MaxUploadMB: 10240, // 10GB
 		ChunkSizeMB: 5,     // 5MB chunks
+		DataDir:     "",
 		// Security defaults
-		Users:          nil,   // Must be configured
-		AllowedOrigins: nil,   // nil = allow all (for homelab)
-		RateLimitRPS:   10.0,  // 10 requests per second per IP
+		Users:          nil,  // Must be configured
+		AllowedOrigins: nil,  // nil = allow all (for homelab)
+		RateLimitRPS:   10.0, // 10 requests per second per IP
 	}
 }
 

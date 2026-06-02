@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/dev.ts",
+    "local:test": "bun run scripts/local-test.ts",
     "dev:frontend": "bun run --cwd frontend dev",
     "dev:backend": "air -c backend/.air.toml",
     "build": "bun run build:frontend",

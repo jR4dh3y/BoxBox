@@ -37,6 +37,7 @@
 	import { getSystemDrives, type SystemDrivesResponse } from '$lib/api/system';
 	import { createCopyJob, createMoveJob, createDeleteJob } from '$lib/api/jobs';
 	import { formatFileSize, formatFileDate, mapSystemMountToBrowsePath } from '$lib/utils/format';
+	import { canPreview, getFileTypeDescription } from '$lib/utils/fileTypes';
 	import type { SortField, SortDir, ViewMode } from '$lib/types/files';
 	import type {
 		FileInfo,
@@ -142,7 +143,9 @@
 
 		return items;
 	});
-	const previewableFiles = $derived(displayItems.filter((item) => !item.isDir));
+	const previewableFiles = $derived(
+		displayItems.filter((item) => !item.isDir && canPreview(item.name))
+	);
 	const emptyListMessage = $derived.by(() => {
 		if (isSearchActive) {
 			return `No matches for "${trimmedSearchQuery}" in this folder`;
@@ -206,6 +209,11 @@
 		if (file.isDir) {
 			handleNavigate(file.path);
 		} else {
+			if (!canPreview(file.name)) {
+				toastStore.info(`Preview not available for ${getFileTypeDescription(file.name)}`);
+				return;
+			}
+
 			previewFile = file;
 		}
 	}

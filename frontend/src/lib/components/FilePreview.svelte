@@ -13,6 +13,8 @@
 	import ImagePreview from './preview/ImagePreview.svelte';
 	import CodePreview from './preview/CodePreview.svelte';
 	import PdfPreview from './preview/PdfPreview.svelte';
+	import OfficePreview from './preview/OfficePreview.svelte';
+	import NotebookPreview from './preview/NotebookPreview.svelte';
 
 	interface Props {
 		file: FileInfo | null;
@@ -35,7 +37,9 @@
 	function isInteractiveTarget(target: EventTarget | null): boolean {
 		const element = target instanceof HTMLElement ? target : null;
 		if (!element) return false;
-		return !!element.closest('input, textarea, select, button, [contenteditable="true"], audio, video');
+		return !!element.closest(
+			'input, textarea, select, button, [contenteditable="true"], audio, video'
+		);
 	}
 
 	function navigatePrevious() {
@@ -97,9 +101,10 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if file}
-	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="fixed inset-0 bg-black/85 flex items-center justify-center z-[1000] {isFullscreen ? 'p-0' : 'p-10'}"
+		class="fixed inset-0 z-[1000] flex items-center justify-center bg-black/85 {isFullscreen
+			? 'p-0'
+			: 'p-10'}"
 		onclick={handleBackdropClick}
 		onkeydown={handleKeydown}
 		role="dialog"
@@ -108,23 +113,40 @@
 		tabindex="-1"
 	>
 		<div
-			class="flex flex-col w-full h-full bg-surface-primary rounded-lg overflow-hidden shadow-2xl {isFullscreen
-				? 'max-w-none max-h-none rounded-none'
-				: 'max-w-[1200px] max-h-[90vh]'}"
+			class="flex h-full w-full flex-col overflow-hidden rounded-lg bg-surface-primary shadow-2xl {isFullscreen
+				? 'max-h-none max-w-none rounded-none'
+				: 'max-h-[90vh] max-w-[1200px]'}"
 		>
 			<!-- Header -->
-			<header class="flex items-center justify-between px-4 py-3 bg-surface-secondary border-b border-border-primary shrink-0">
-				<div class="flex items-center gap-3 min-w-0">
-					<span class="text-sm font-medium text-text-primary overflow-hidden text-ellipsis whitespace-nowrap" title={file.name}>
+			<header
+				class="flex shrink-0 items-center justify-between border-b border-border-primary bg-surface-secondary px-4 py-3"
+			>
+				<div class="flex min-w-0 items-center gap-3">
+					<span
+						class="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap text-text-primary"
+						title={file.name}
+					>
 						{file.name}
 					</span>
-					<span class="text-xs text-text-secondary shrink-0">{formatFileSize(file.size)}</span>
+					<span class="shrink-0 text-xs text-text-secondary">{formatFileSize(file.size)}</span>
 				</div>
 				<div class="flex items-center gap-1">
-					<button type="button" class={headerBtnClass} onclick={navigatePrevious} disabled={!hasPrevious} title="Previous file">
+					<button
+						type="button"
+						class={headerBtnClass}
+						onclick={navigatePrevious}
+						disabled={!hasPrevious}
+						title="Previous file"
+					>
 						<ChevronLeft size={18} />
 					</button>
-					<button type="button" class={headerBtnClass} onclick={navigateNext} disabled={!hasNext} title="Next file">
+					<button
+						type="button"
+						class={headerBtnClass}
+						onclick={navigateNext}
+						disabled={!hasNext}
+						title="Next file"
+					>
 						<ChevronRight size={18} />
 					</button>
 					<button type="button" class={headerBtnClass} onclick={handleDownload} title="Download">
@@ -142,26 +164,35 @@
 							<Maximize2 size={18} />
 						{/if}
 					</button>
-					<button type="button" class="{headerBtnClass} hover:bg-danger hover:text-white" onclick={onClose} title="Close">
+					<button
+						type="button"
+						class="{headerBtnClass} hover:bg-danger hover:text-white"
+						onclick={onClose}
+						title="Close"
+					>
 						<X size={18} />
 					</button>
 				</div>
 			</header>
 
 			<!-- Content -->
-			<main class="flex-1 overflow-auto flex items-center justify-center">
+			<main class="flex flex-1 items-center justify-center overflow-auto">
 				{#if previewType === 'video'}
-					<VideoPreview url={previewUrl} filename={file.name} downloadUrl={downloadUrl} sizeBytes={file.size} />
+					<VideoPreview url={previewUrl} filename={file.name} {downloadUrl} sizeBytes={file.size} />
 				{:else if previewType === 'audio'}
 					<AudioPreview url={previewUrl} filename={file.name} />
 				{:else if previewType === 'image'}
 					<ImagePreview url={previewUrl} filename={file.name} />
 				{:else if previewType === 'pdf'}
 					<PdfPreview url={previewUrl} filename={file.name} />
+				{:else if previewType === 'office'}
+					<OfficePreview url={previewUrl} filename={file.name} {downloadUrl} />
+				{:else if previewType === 'notebook'}
+					<NotebookPreview url={previewUrl} filename={file.name} />
 				{:else if previewType === 'code' || previewType === 'text'}
 					<CodePreview url={previewUrl} filename={file.name} />
 				{:else}
-					<div class="flex flex-col items-center gap-4 text-text-secondary text-sm">
+					<div class="flex flex-col items-center gap-4 text-sm text-text-secondary">
 						<p>Preview not available for this file type</p>
 						<Button variant="primary" onclick={handleDownload}>
 							<Download size={20} />

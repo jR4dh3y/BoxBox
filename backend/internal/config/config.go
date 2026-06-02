@@ -19,6 +19,7 @@ func Load(configPath string) (*model.ServerConfig, error) {
 	v.SetDefault("max_upload_mb", 10240) // 10GB default
 	v.SetDefault("chunk_size_mb", 5)     // 5MB chunks
 	v.SetDefault("rate_limit_rps", 10.0)
+	v.SetDefault("data_dir", DefaultDataDir)
 
 	if configPath == "" {
 		configPath = os.Getenv("CONFIG_PATH")
