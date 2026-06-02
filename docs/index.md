@@ -6,19 +6,19 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 
 | Page | Use it for |
 | --- | --- |
-| [Quick start](quickstart.md) | Install BoxBox quickly and choose the right deployment path. |
-| [Docker deployment](docker.md) | Build and run BoxBox as a single container. |
-| [Configuration](configuration.md) | Configure users, mount points, upload limits, origins, and ports. |
-| [API reference](api.md) | Use the REST, streaming, and WebSocket endpoints directly. |
-| [Development](development.md) | Run the backend and frontend app locally. |
-| [Security](security.md) | Harden credentials, mounted paths, reverse proxy, and network exposure. |
-| [Architecture](architecture.md) | Understand the Go backend, Svelte frontend, and embedded static deployment. |
-| [Troubleshooting](troubleshooting.md) | Diagnose common deployment, login, upload, and mount issues. |
+| [Quick start](/docs/quickstart/) | Run BoxBox quickly with Docker Compose and the published GHCR image. |
+| [Docker deployment](/docs/docker/) | Deploy from GHCR with Compose, or use separate local run and source-build alternatives. |
+| [Configuration](/docs/configuration/) | Configure users, mount points, upload limits, origins, and ports. |
+| [API reference](/docs/api/) | Use the REST, streaming, and WebSocket endpoints directly. |
+| [Development](/docs/development/) | Run the backend and frontend app locally. |
+| [Security](/docs/security/) | Harden credentials, mounted paths, reverse proxy, and network exposure. |
+| [Architecture](/docs/architecture/) | Understand the Go backend, Svelte frontend, and embedded static deployment. |
+| [Troubleshooting](/docs/troubleshooting/) | Diagnose common deployment, login, upload, and mount issues. |
 
 ## Current Runtime Facts
 
 - The production image is a single container.
-- Published images are available at `ghcr.io/jr4dh3y/boxbox`.
+- The preferred deployment is Docker Compose pulling `ghcr.io/jr4dh3y/boxbox`.
 - The server listens on port `80` by default.
 - The frontend static build is embedded into the Go binary.
 - API routes live under `/api/v1`; `/health` is also available at the root.

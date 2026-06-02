@@ -114,7 +114,7 @@ Use your proxy to provide:
 - Request size limits compatible with your upload size.
 - Optional extra auth, IP allow-listing, or VPN-only access.
 
-For Traefik, the provided compose file already adds labels for an HTTP router. Add TLS labels according to your Traefik setup.
+If you use Traefik or another reverse proxy, add routing and TLS configuration according to that proxy's setup. The default compose file uses normal host port binding.
 
 ## Upload Safety
 

@@ -18,20 +18,25 @@ BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provi
 
 ## Quick Start
 
-The default deployment uses the published GitHub Container Registry image and the checked-in Traefik-oriented compose file.
+The preferred deployment path is Docker Compose using the published GitHub Container Registry image. No source checkout is required.
 
 ```bash
-git clone https://github.com/jR4dh3y/BoxBox.git
-cd BoxBox
-cp .env.example .env
+mkdir -p boxbox
+cd boxbox
 
-# Edit .env, especially FM_JWT_SECRET, FM_USERS_admin, TRAEFIK_HOST, and HOME_PATH.
-docker network create proxy
+curl -fsSLO https://raw.githubusercontent.com/jR4dh3y/BoxBox/master/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/jR4dh3y/BoxBox/master/.env.example
+mkdir -p backend
+curl -fsSL https://raw.githubusercontent.com/jR4dh3y/BoxBox/master/backend/config.yaml -o backend/config.yaml
+
+cp .env.example .env
+$EDITOR .env
+
 docker compose pull
 docker compose up -d
 ```
 
-Docker images are published to GitHub Container Registry at `ghcr.io/jr4dh3y/boxbox`. The provided compose file is Traefik-oriented; for a direct `docker run` setup without Traefik, see [docs/docker.md](docs/docker.md).
+Open `http://localhost:8080` and sign in as `admin` with the password from `FM_USERS_admin`. For reverse proxy examples, local source builds, and update workflows, see [docs/docker.md](docs/docker.md).
 
 ## Features
 
@@ -55,7 +60,7 @@ Dockerfile    Unified frontend/backend production image
 
 ## Documentation
 
-Start with [docs/index.md](docs/index.md) for install, configuration, API, development, security, architecture, and troubleshooting docs.
+its here -  [boxbox.radhey.dev/docs/](https://boxbox.radhey.dev/docs/)
 
 ## License
 

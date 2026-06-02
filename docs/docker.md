@@ -8,7 +8,38 @@ BoxBox builds into one container: Bun compiles the SvelteKit frontend, Go embeds
 - Docker Compose v2 if using `docker-compose.yml`.
 - A Linux host if you want accurate system drive discovery and mount propagation.
 
-## Published Image
+## Preferred Deployment
+
+Deploy BoxBox with Docker Compose using the published GitHub Container Registry image. This is the recommended path for servers because it does not require cloning the repository and keeps updates simple.
+
+Download the deployment files, edit the environment, then start the published image:
+
+```bash
+mkdir -p boxbox
+cd boxbox
+curl -fsSLO https://raw.githubusercontent.com/jR4dh3y/BoxBox/master/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/jR4dh3y/BoxBox/master/.env.example
+mkdir -p backend
+curl -fsSL https://raw.githubusercontent.com/jR4dh3y/BoxBox/master/backend/config.yaml -o backend/config.yaml
+cp .env.example .env
+$EDITOR .env
+docker compose pull
+docker compose up -d
+```
+
+Set these values in `.env` before starting:
+
+```env
+FM_JWT_SECRET=generate-a-long-random-secret
+FM_USERS_admin=replace-this-password
+HOST_PORT=8080
+HOME_PATH=/home/your-user
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:latest
+```
+
+Open `http://localhost:8080`, or use the host and port you configured with `HOST_PORT`.
+
+## Published Images
 
 Release images are published to GitHub Container Registry:
 
@@ -23,39 +54,46 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-## Compose Deployment
+## Optional: Reverse Proxy or Traefik
 
-Use this path for a server behind Traefik. The checked-in `docker-compose.yml` pulls `ghcr.io/jr4dh3y/boxbox:latest` by default.
+The default compose file uses normal host port binding and does not require Traefik. If you want to put BoxBox behind Traefik, remove the `ports` entry, attach the service to your Traefik network, and add labels for your router.
 
-```bash
-git clone https://github.com/jR4dh3y/BoxBox.git
-cd BoxBox
-cp .env.example .env
-$EDITOR .env
-docker network create proxy
-docker compose pull
-docker compose up -d
+```yaml
+services:
+  filemanager:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.boxbox.rule=Host(`boxbox.example.test`)"
+      - "traefik.http.routers.boxbox.entrypoints=web"
+      - "traefik.http.services.boxbox.loadbalancer.server.port=80"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
 ```
 
-Set these values in `.env` before starting:
+For public or semi-public access, put TLS and access controls on your reverse proxy before exposing BoxBox beyond a trusted network.
 
-```env
-FM_JWT_SECRET=generate-a-long-random-secret
-FM_USERS_admin=replace-this-password
-TRAEFIK_HOST=boxbox.example.test
-HOME_PATH=/home/your-user
-BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:latest
-```
+## Alternative: Simple Local Container
 
-If the `proxy` network already exists, `docker network create proxy` will fail with a harmless "already exists" error.
-
-## Simple Local Container
-
-Use this path when you do not have Traefik set up yet.
+Use this path when you want a quick local test without Compose. It still uses the published GHCR image.
 
 ```bash
-git clone https://github.com/jR4dh3y/BoxBox.git
-cd BoxBox
+mkdir -p boxbox
+cd boxbox
+
+cat > config.yaml <<'EOF'
+port: 80
+host: "0.0.0.0"
+jwt_secret: "replace-this-with-a-long-random-secret"
+mount_points:
+  - name: "home"
+    path: "/home/user"
+    read_only: false
+EOF
+
 docker pull ghcr.io/jr4dh3y/boxbox:latest
 
 docker run -d \
@@ -63,7 +101,7 @@ docker run -d \
   -p 8080:80 \
   -e FM_JWT_SECRET="$(openssl rand -base64 32)" \
   -e FM_USERS_admin="replace-this-password" \
-  -v "$PWD/backend/config.yaml:/app/config.yaml:ro" \
+  -v "$PWD/config.yaml:/app/config.yaml:ro" \
   -v "$HOME:/home/user" \
   -v boxbox-data:/data \
   -v boxbox-temp:/tmp/filemanager \
@@ -72,15 +110,17 @@ docker run -d \
 
 Open `http://localhost:8080` and sign in as `admin` with the password you set in `FM_USERS_admin`.
 
-## Local Source Builds
+## Alternative: Local Source Builds
 
-Use this path when you want to build the image from your checkout instead of pulling from GHCR.
+Cloning the repository is supported, but it is not the preferred deployment method. Use this path only when you want to build the image from source instead of pulling the published GHCR image.
 
 ```bash
+git clone https://github.com/jR4dh3y/BoxBox.git
+cd BoxBox
 docker build -t boxbox:local .
 ```
 
-For compose, keep the same `.env` file and run `docker compose up -d --build`.
+For compose, set `BOXBOX_IMAGE=boxbox:local` in `.env`, then run `docker compose up -d`.
 
 ## Volumes
 
@@ -118,7 +158,7 @@ For local source builds:
 
 ```bash
 git pull
-docker compose build --no-cache
+docker build --no-cache -t boxbox:local .
 docker compose up -d
 ```
 

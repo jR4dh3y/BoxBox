@@ -29,11 +29,11 @@ const docMeta: Record<string, Omit<DocNavItem, 'slug'>> = {
 	},
 	quickstart: {
 		title: 'Quick Start',
-		description: 'Install BoxBox quickly and choose the right deployment path.'
+		description: 'Install BoxBox quickly with Docker Compose and the published GHCR image.'
 	},
 	docker: {
 		title: 'Docker Deployment',
-		description: 'Build and run the single-container deployment, with or without Traefik.'
+		description: 'Deploy from GHCR with Compose, port binding, and optional reverse proxy examples.'
 	},
 	configuration: {
 		title: 'Configuration',
@@ -101,7 +101,8 @@ export async function getDocPage(slug: string): Promise<DocPage> {
 	const normalizedSlug = slug === '' ? 'index' : slug;
 	const markdown = readFileSync(join(docsDirectory, `${normalizedSlug}.md`), 'utf8');
 	const rendered = await marked.parse(markdown);
-	const highlighted = await highlightCodeBlocks(rendered);
+	const linked = normalizeMarkdownDocLinks(rendered);
+	const highlighted = await highlightCodeBlocks(linked);
 	const { html, headings } = addHeadingIds(highlighted);
 	const meta = docMeta[normalizedSlug] ?? {
 		title: titleFromMarkdown(markdown) ?? titleFromSlug(normalizedSlug),
@@ -114,6 +115,19 @@ export async function getDocPage(slug: string): Promise<DocPage> {
 		html,
 		headings
 	};
+}
+
+function normalizeMarkdownDocLinks(html: string): string {
+	return html.replace(/href="([^"#][^"]*?\.md)(#[^"]*)?"/g, (_match, href: string, hash = '') => {
+		if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('/')) {
+			return `href="${href}${hash}"`;
+		}
+
+		const fileName = href.split('/').pop() ?? href;
+		const slug = fileName.replace(/\.md$/, '');
+		const path = slug === 'index' ? '/docs/' : `/docs/${slug}/`;
+		return `href="${path}${hash}"`;
+	});
 }
 
 function resolveDocsDirectory(): string {

@@ -6,26 +6,20 @@
 # Usage:
 #   1. Copy .env.example to .env and configure your settings.
 #   2. Run: docker compose pull && docker compose up -d
-#   3. Access via Traefik at http://${TRAEFIK_HOST:-boxbox.localhost}
+#   3. Access at http://localhost:${HOST_PORT:-8080}
 #
-# Configured for Traefik reverse proxy. Set TRAEFIK_HOST in .env.
+# Uses normal host port binding by default.
 # =============================================================================
 
 services:
   filemanager:
     image: ${BOXBOX_IMAGE:-ghcr.io/jr4dh3y/boxbox:latest}
-    build: .
     container_name: filemanager
     restart: unless-stopped
     env_file:
       - .env
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.filemanager.rule=Host(`${TRAEFIK_HOST:-filemanager.localhost}`)"
-      - "traefik.http.routers.filemanager.entrypoints=web"
-      - "traefik.http.services.filemanager.loadbalancer.server.port=80"
-    networks:
-      - proxy
+    ports:
+      - "${HOST_PORT:-8080}:80"
     environment:
       - FM_JWT_SECRET=${FM_JWT_SECRET:-change-me-in-production}
       - FM_USERS_admin=${FM_USERS_admin:-change-me-in-production}
@@ -78,7 +72,3 @@ volumes:
     driver: local
   filemanager-data:
     driver: local
-
-networks:
-  proxy:
-    external: true

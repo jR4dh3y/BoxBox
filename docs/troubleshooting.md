@@ -1,15 +1,20 @@
 # Troubleshooting
 
-## Container Fails With Missing Network
+## Container Fails to Start
 
-The provided compose file expects a Traefik network named `proxy`.
+The default compose file publishes BoxBox on `HOST_PORT`, which defaults to `8080`. If the container fails to start, check whether that host port is already in use:
 
 ```bash
-docker network create proxy
-docker compose up -d
+docker compose ps
+docker compose logs -f filemanager
 ```
 
-For local testing without Traefik, use the `docker run` command in [Docker deployment](docker.md).
+Change the published port in `.env` if needed:
+
+```bash
+HOST_PORT=8081
+docker compose up -d
+```
 
 ## Login Uses `admin:admin`
 
