@@ -1,36 +1,110 @@
 <script lang="ts">
 	/**
-	 * Settings page - user preferences and account management
-	 * Design follows the same visual language as the file browser sidebar
+	 * Settings page - workspace-style preferences screen matching the file browser shell.
 	 */
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { authStore } from '$lib/stores/auth';
 	import { settingsStore, type UserSettings } from '$lib/stores/settings';
+	import SearchBar from '$lib/components/SearchBar.svelte';
+	import { Button, Select, Toggle } from '$lib/components/ui';
 	import {
 		ChevronLeft,
 		Eye,
-		RotateCcw,
 		Layout,
-		MousePointer,
-		User,
 		LogOut,
+		MousePointer,
+		RotateCcw,
 		Save,
-		X,
+		Settings,
+		User,
+		X
 	} from 'lucide-svelte';
-	import { Button, Toggle, Select } from '$lib/components/ui';
-	import { SettingsSection, SettingsRow } from '$lib/components/settings';
+
+	type SettingsSectionId = 'display' | 'behavior' | 'defaults' | 'account';
+	type SettingsCategory = 'all' | SettingsSectionId;
 
 	let settings = $state<UserSettings>({ ...$settingsStore });
-	const hasChanges = $derived(JSON.stringify(settings) !== JSON.stringify($settingsStore));
+	let activeCategory = $state<SettingsCategory>('all');
+	let searchQuery = $state('');
 
-	// Section collapse state
-	let displayCollapsed = $state(false);
-	let behaviorCollapsed = $state(false);
-	let viewCollapsed = $state(false);
-	let accountCollapsed = $state(false);
+	const hasChanges = $derived(JSON.stringify(settings) !== JSON.stringify($settingsStore));
+	const normalizedSearch = $derived(searchQuery.trim().toLowerCase());
+
+	const navItems: Array<{
+		id: SettingsCategory;
+		label: string;
+		description: string;
+		icon: typeof Eye;
+	}> = [
+		{
+			id: 'all',
+			label: 'Show All',
+			description: 'Every setting in one view',
+			icon: Settings
+		},
+		{
+			id: 'display',
+			label: 'File Display',
+			description: 'Hidden files, extensions, density',
+			icon: Eye
+		},
+		{
+			id: 'behavior',
+			label: 'Behavior',
+			description: 'Delete and preview behavior',
+			icon: MousePointer
+		},
+		{
+			id: 'defaults',
+			label: 'Default View',
+			description: 'Sorting and layout choices',
+			icon: Layout
+		},
+		{
+			id: 'account',
+			label: 'Account',
+			description: 'Session and reset controls',
+			icon: User
+		}
+	];
+
+	const sortByOptions = [
+		{ value: 'name', label: 'Name' },
+		{ value: 'size', label: 'Size' },
+		{ value: 'modTime', label: 'Date modified' },
+		{ value: 'type', label: 'Type' }
+	];
+
+	const sortDirOptions = [
+		{ value: 'asc', label: 'Ascending' },
+		{ value: 'desc', label: 'Descending' }
+	];
+
+	const viewModeOptions = [
+		{ value: 'list', label: 'List' },
+		{ value: 'grid', label: 'Grid' }
+	];
+
+	const navButtonClass =
+		'group flex w-full cursor-pointer items-start gap-2.5 border-none bg-transparent px-3 py-2 text-left transition-colors duration-100 hover:bg-surface-secondary';
+	const activeNavClass = 'bg-selection text-white hover:bg-selection-hover';
+	const inactiveNavClass = 'text-text-secondary hover:text-text-primary';
+	const toolbarButtonClass =
+		'flex h-7 w-7 cursor-pointer items-center justify-center rounded border-none bg-transparent text-text-secondary transition-all duration-100 hover:bg-surface-elevated hover:text-text-primary';
+	const panelClass =
+		'scroll-mt-4 overflow-hidden rounded-lg border border-border-primary bg-surface-secondary shadow-[0_18px_70px_rgba(0,0,0,0.18)]';
+	const panelHeaderClass =
+		'flex items-start justify-between gap-4 border-b border-border-secondary bg-surface-primary/55 px-4 py-3';
+	const settingRowClass =
+		'flex items-center justify-between gap-4 border-b border-border-secondary px-4 py-3 last:border-b-0';
 
 	function handleSave() {
 		settingsStore.set(settings);
+	}
+
+	function handleCancel() {
+		settings = { ...$settingsStore };
 	}
 
 	function handleReset() {
@@ -38,196 +112,323 @@
 		settings = { ...$settingsStore };
 	}
 
-	function handleCancel() {
-		settings = { ...$settingsStore };
-	}
-
 	async function handleLogout() {
 		await authStore.logout();
-		goto('/login');
+		goto(resolve('/login'));
 	}
 
 	function goBack() {
-		goto('/browse');
+		goto(resolve('/browse'));
 	}
 
-	const sortByOptions = [
-		{ value: 'name', label: 'Name' },
-		{ value: 'size', label: 'Size' },
-		{ value: 'modTime', label: 'Date modified' },
-		{ value: 'type', label: 'Type' },
-	];
+	function handleSearchInput(query: string) {
+		searchQuery = query;
+	}
 
-	const sortDirOptions = [
-		{ value: 'asc', label: 'Ascending' },
-		{ value: 'desc', label: 'Descending' },
-	];
+	function handleSearchClear() {
+		searchQuery = '';
+	}
 
-	const viewModeOptions = [
-		{ value: 'list', label: 'List' },
-		{ value: 'grid', label: 'Grid' },
-	];
+	function matchesSearch(...values: string[]): boolean {
+		if (!normalizedSearch) return true;
+		return values.some((value) => value.toLowerCase().includes(normalizedSearch));
+	}
 
-	// Shared styles for navigation items
-	const navItemClass = 'w-full flex items-center gap-2.5 py-1.5 px-3 pl-5 bg-transparent border-none text-[13px] cursor-pointer text-left transition-colors duration-100 hover:bg-surface-secondary';
-	const backButtonClass = 'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:bg-surface-elevated hover:text-text-primary';
+	function categoryAllows(section: SettingsSectionId): boolean {
+		return activeCategory === 'all' || activeCategory === section;
+	}
+
+	const showDisplaySection = $derived(
+		categoryAllows('display') &&
+			matchesSearch(
+				'file display',
+				'hidden files',
+				'file extensions',
+				'compact mode',
+				'density',
+				'lists',
+				'grids'
+			)
+	);
+	const showBehaviorSection = $derived(
+		categoryAllows('behavior') &&
+			matchesSearch(
+				'behavior',
+				'confirm before delete',
+				'delete',
+				'preview on single click',
+				'preview'
+			)
+	);
+	const showDefaultsSection = $derived(
+		categoryAllows('defaults') &&
+			matchesSearch('default view', 'sort by', 'sort direction', 'view mode', 'list', 'grid')
+	);
+	const showAccountSection = $derived(
+		categoryAllows('account') &&
+			matchesSearch('account', 'session', 'reset defaults', 'logout', 'local preferences')
+	);
+	const hasSearchResults = $derived(
+		showDisplaySection || showBehaviorSection || showDefaultsSection || showAccountSection
+	);
 </script>
 
 <svelte:head>
 	<title>Settings - File Manager</title>
 </svelte:head>
 
-<div class="flex h-screen w-full bg-surface-primary overflow-hidden">
-	<!-- Settings Sidebar (matching main sidebar width) -->
-	<aside class="w-[220px] min-w-[220px] bg-surface-primary border-r border-border-secondary flex flex-col overflow-y-auto overflow-x-hidden">
-		<!-- Header -->
-		<div class="flex items-center gap-2 px-3 py-3 border-b border-border-secondary">
-			<button
-				type="button"
-				class={backButtonClass}
-				onclick={goBack}
-				title="Back to Files"
-			>
-				<ChevronLeft size={18} />
-			</button>
-			<span class="text-text-primary text-[13px] font-medium">Settings</span>
+<div class="flex h-screen w-full overflow-hidden bg-surface-primary text-text-primary">
+	<aside
+		class="flex w-[220px] min-w-[220px] flex-col overflow-x-hidden overflow-y-auto border-r border-border-secondary bg-surface-primary"
+	>
+		<div class="border-b border-border-secondary px-3 py-3">
+			<div class="flex items-center gap-2 text-[13px] font-medium text-text-primary">
+				<Settings size={16} class="text-accent" />
+				<span>Settings</span>
+			</div>
 		</div>
 
-		<!-- Navigation within settings -->
-		<nav class="flex-1 py-2">
-			<button
-				type="button"
-				class="{navItemClass} text-text-primary bg-selection"
-			>
-				<Eye size={16} class="shrink-0 opacity-80" />
-				<span>Preferences</span>
-			</button>
-			<button
-				type="button"
-				class="{navItemClass} text-text-secondary"
-				onclick={handleLogout}
-			>
-				<LogOut size={16} class="shrink-0 opacity-80" />
-				<span>Logout</span>
-			</button>
+		<nav class="flex-1 py-2" aria-label="Settings sections">
+			{#each navItems as item (item.id)}
+				<button
+					type="button"
+					class="{navButtonClass} {activeCategory === item.id ? activeNavClass : inactiveNavClass}"
+					onclick={() => (activeCategory = item.id)}
+					aria-current={activeCategory === item.id ? 'page' : undefined}
+				>
+					<item.icon size={16} class="mt-0.5 shrink-0 opacity-80" />
+					<span class="min-w-0">
+						<span class="block text-[13px] leading-5">{item.label}</span>
+						<span
+							class="block overflow-hidden text-[11px] leading-4 text-ellipsis whitespace-nowrap {activeCategory ===
+							item.id
+								? 'text-white/70'
+								: 'text-text-muted'}"
+						>
+							{item.description}
+						</span>
+					</span>
+				</button>
+			{/each}
 		</nav>
 	</aside>
 
-	<!-- Main content area -->
-	<div class="flex-1 flex flex-col min-w-0">
-		<!-- Toolbar matching browse toolbar -->
-		<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-primary border-b border-border-secondary">
-			<div class="flex items-center gap-2">
-				<button
-					type="button"
-					class={backButtonClass}
-					onclick={goBack}
-					title="Back"
+	<div class="flex min-w-0 flex-1 flex-col">
+		<div
+			class="flex items-center gap-2 border-b border-border-secondary bg-surface-primary px-3 py-1.5"
+		>
+			<button type="button" class={toolbarButtonClass} onclick={goBack} title="Back to files">
+				<ChevronLeft size={18} />
+			</button>
+
+			<div
+				class="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border-primary bg-surface-secondary px-2 py-1"
+			>
+				<span class="text-[13px] whitespace-nowrap text-text-secondary">Settings</span>
+				<span class="text-xs text-text-muted">/</span>
+				<span class="text-[13px] whitespace-nowrap text-text-primary">Preferences</span>
+			</div>
+
+			<div class="w-64 shrink-0 lg:w-96">
+				<SearchBar
+					value={searchQuery}
+					onInput={handleSearchInput}
+					onClear={handleSearchClear}
+					placeholder="Search settings..."
+					compact
+				/>
+			</div>
+
+			<div class="flex gap-1">
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={handleCancel}
+					title="Discard changes"
+					disabled={!hasChanges}
 				>
-					<ChevronLeft size={18} />
-				</button>
+					<X size={16} />
+					<span class="hidden sm:inline">Cancel</span>
+				</Button>
+				<Button
+					variant="primary"
+					size="sm"
+					onclick={handleSave}
+					title="Save changes"
+					disabled={!hasChanges}
+				>
+					<Save size={16} />
+					<span class="hidden sm:inline">Save</span>
+				</Button>
 			</div>
-
-			<!-- Path bar style breadcrumb -->
-			<div class="flex-1 flex items-center gap-1.5 bg-surface-secondary border border-border-primary rounded px-2 py-1 min-w-0">
-				<span class="text-text-secondary text-[13px]">Settings</span>
-				<span class="text-text-muted text-xs">/</span>
-				<span class="text-text-primary text-[13px]">Preferences</span>
-			</div>
-
-			<!-- Action buttons -->
-			{#if hasChanges}
-				<div class="flex gap-1">
-					<Button variant="ghost" size="sm" onclick={handleCancel} title="Discard changes">
-						<X size={16} />
-						<span class="hidden sm:inline">Cancel</span>
-					</Button>
-					<Button variant="primary" size="sm" onclick={handleSave} title="Save changes">
-						<Save size={16} />
-						<span class="hidden sm:inline">Save</span>
-					</Button>
-				</div>
-			{/if}
 		</div>
 
-		<!-- Settings content (styled like file list area) -->
-		<div class="flex-1 overflow-auto">
-			<div class="max-w-[600px]">
-				<!-- File Display Section -->
-				<SettingsSection title="File Display" icon={Eye} bind:collapsed={displayCollapsed}>
-					<SettingsRow label="Show hidden files" description="Display files starting with a dot">
-						<Toggle bind:checked={settings.showHiddenFiles} />
-					</SettingsRow>
-
-					<SettingsRow label="Show file extensions" description="Display extensions in file list">
-						<Toggle bind:checked={settings.showFileExtensions} />
-					</SettingsRow>
-
-					<SettingsRow label="Compact mode" description="Reduce spacing for more items">
-						<Toggle bind:checked={settings.compactMode} />
-					</SettingsRow>
-				</SettingsSection>
-
-				<!-- Behavior Section -->
-				<SettingsSection title="Behavior" icon={MousePointer} bind:collapsed={behaviorCollapsed}>
-					<SettingsRow label="Confirm before delete" description="Show confirmation dialog">
-						<Toggle bind:checked={settings.confirmDelete} />
-					</SettingsRow>
-
-					<SettingsRow label="Preview on single click" description="Open preview with single click">
-						<Toggle bind:checked={settings.previewOnSingleClick} />
-					</SettingsRow>
-				</SettingsSection>
-
-				<!-- Default View Section -->
-				<SettingsSection title="Default View" icon={Layout} bind:collapsed={viewCollapsed}>
-					<SettingsRow label="Sort by" description="Default sort field">
-						<div class="w-32">
-							<Select options={sortByOptions} bind:value={settings.defaultSortBy} />
-						</div>
-					</SettingsRow>
-
-					<SettingsRow label="Sort direction" description="Ascending or descending">
-						<div class="w-32">
-							<Select options={sortDirOptions} bind:value={settings.defaultSortDir} />
-						</div>
-					</SettingsRow>
-
-					<SettingsRow label="View mode" description="List or grid view">
-						<div class="w-32">
-							<Select options={viewModeOptions} bind:value={settings.defaultViewMode} />
-						</div>
-					</SettingsRow>
-				</SettingsSection>
-
-				<!-- Account Section -->
-				<SettingsSection title="Account" icon={User} bind:collapsed={accountCollapsed}>
-					<div class="px-3">
-						<div class="flex gap-2 pt-2">
-							<Button variant="secondary" size="sm" onclick={handleReset}>
-								<RotateCcw size={14} />
-								Reset to Defaults
-							</Button>
-							<Button variant="danger" size="sm" onclick={handleLogout}>
-								<LogOut size={14} />
-								Logout
-							</Button>
-						</div>
+		<main class="relative flex-1 overflow-auto">
+			<div class="relative mx-auto flex max-w-[980px] flex-col gap-4 px-6 py-6">
+				{#if !hasSearchResults}
+					<div
+						class="rounded-lg border border-border-primary bg-surface-secondary px-4 py-8 text-center"
+					>
+						<div class="text-sm text-text-primary">No settings found</div>
+						<div class="mt-1 text-xs text-text-muted">Try a different search term.</div>
 					</div>
-				</SettingsSection>
-			</div>
-		</div>
-
-		<!-- Status bar matching browse status bar -->
-		<div class="flex items-center justify-between px-3 py-1.5 bg-surface-primary border-t border-border-secondary text-[11px] text-text-muted">
-			<span>
-				{#if hasChanges}
-					<span class="text-warning">● Unsaved changes</span>
-				{:else}
-					All changes saved
 				{/if}
-			</span>
-			<span>Preferences</span>
-		</div>
+
+				{#if showDisplaySection}
+					<section id="display" class={panelClass}>
+						<div class={panelHeaderClass}>
+							<div>
+								<h2 class="m-0 flex items-center gap-2 text-sm font-medium">
+									<Eye size={16} class="text-accent" />
+									File Display
+								</h2>
+							</div>
+						</div>
+
+						<div>
+							{#if matchesSearch('show hidden files', 'display files and folders that start with a dot')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="text-[13px] text-text-primary">Show hidden files</div>
+									</div>
+									<Toggle bind:checked={settings.showHiddenFiles} label="Show hidden files" />
+								</div>
+							{/if}
+
+							{#if matchesSearch('show file extensions', 'keep extensions visible in file names')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="text-[13px] text-text-primary">Show file extensions</div>
+									</div>
+									<Toggle bind:checked={settings.showFileExtensions} label="Show file extensions" />
+								</div>
+							{/if}
+
+							{#if matchesSearch('compact mode', 'reduce row and tile spacing', 'density')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="text-[13px] text-text-primary">Compact mode</div>
+									</div>
+									<Toggle bind:checked={settings.compactMode} label="Compact mode" />
+								</div>
+							{/if}
+						</div>
+					</section>
+				{/if}
+
+				{#if showBehaviorSection}
+					<section id="behavior" class={panelClass}>
+						<div class={panelHeaderClass}>
+							<div>
+								<h2 class="m-0 flex items-center gap-2 text-sm font-medium">
+									<MousePointer size={16} class="text-accent" />
+									Behavior
+								</h2>
+							</div>
+						</div>
+
+						<div>
+							{#if matchesSearch('confirm before delete', 'confirmation', 'delete')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="text-[13px] text-text-primary">Confirm before delete</div>
+									</div>
+									<Toggle bind:checked={settings.confirmDelete} label="Confirm before delete" />
+								</div>
+							{/if}
+
+							{#if matchesSearch('preview on single click', 'preview', 'single click')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="text-[13px] text-text-primary">Preview on single click</div>
+									</div>
+									<Toggle
+										bind:checked={settings.previewOnSingleClick}
+										label="Preview on single click"
+									/>
+								</div>
+							{/if}
+						</div>
+					</section>
+				{/if}
+
+				{#if showDefaultsSection}
+					<section id="defaults" class={panelClass}>
+						<div class={panelHeaderClass}>
+							<div>
+								<h2 class="m-0 flex items-center gap-2 text-sm font-medium">
+									<Layout size={16} class="text-accent" />
+									Default Directory View
+								</h2>
+							</div>
+						</div>
+
+						<div>
+							{#if matchesSearch('sort by', 'default sort field', 'name', 'size', 'date modified', 'type')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="text-[13px] text-text-primary">Sort by</div>
+									</div>
+									<div class="w-44">
+										<Select options={sortByOptions} bind:value={settings.defaultSortBy} />
+									</div>
+								</div>
+							{/if}
+
+							{#if matchesSearch('sort direction', 'ascending', 'descending')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="text-[13px] text-text-primary">Sort direction</div>
+									</div>
+									<div class="w-44">
+										<Select options={sortDirOptions} bind:value={settings.defaultSortDir} />
+									</div>
+								</div>
+							{/if}
+
+							{#if matchesSearch('view mode', 'list', 'grid')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="text-[13px] text-text-primary">View mode</div>
+									</div>
+									<div class="w-44">
+										<Select options={viewModeOptions} bind:value={settings.defaultViewMode} />
+									</div>
+								</div>
+							{/if}
+						</div>
+					</section>
+				{/if}
+
+				{#if showAccountSection}
+					<section id="account" class={panelClass}>
+						<div class={panelHeaderClass}>
+							<div>
+								<h2 class="m-0 flex items-center gap-2 text-sm font-medium">
+									<User size={16} class="text-accent" />
+									Account
+								</h2>
+							</div>
+						</div>
+
+						<div class="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center">
+							<div>
+								<div class="text-[13px] text-text-primary">Signed in session</div>
+							</div>
+							<div class="flex flex-wrap gap-2">
+								<Button variant="secondary" size="sm" onclick={handleReset}>
+									<RotateCcw size={14} />
+									Reset Defaults
+								</Button>
+								<Button variant="danger" size="sm" onclick={handleLogout}>
+									<LogOut size={14} />
+									Logout
+								</Button>
+							</div>
+						</div>
+					</section>
+				{/if}
+			</div>
+		</main>
 	</div>
 </div>

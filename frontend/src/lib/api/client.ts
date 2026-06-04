@@ -132,7 +132,7 @@ async function refreshAccessToken(): Promise<boolean> {
  * Request options for the API client
  */
 export interface RequestOptions {
-	method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+	method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 	body?: unknown;
 	headers?: Record<string, string>;
 	skipAuth?: boolean;
@@ -254,6 +254,9 @@ export const api = {
 	post: <T>(endpoint: string, body?: unknown) => apiRequest<T>(endpoint, { method: 'POST', body }),
 
 	put: <T>(endpoint: string, body?: unknown) => apiRequest<T>(endpoint, { method: 'PUT', body }),
+
+	patch: <T>(endpoint: string, body?: unknown) =>
+		apiRequest<T>(endpoint, { method: 'PATCH', body }),
 
 	delete: <T>(endpoint: string, params?: Record<string, string | number | boolean | undefined>) =>
 		apiRequest<T>(endpoint, { method: 'DELETE', params })

@@ -21,6 +21,7 @@
 		cutPaths = new SvelteSet<string>(),
 		favoritePaths = new SvelteSet<string>(),
 		canPaste = false,
+		canCreate = false,
 		onItemClick,
 		onSelectionChange,
 		onContextMenuAction
@@ -33,6 +34,7 @@
 		cutPaths?: Set<string>;
 		favoritePaths?: Set<string>;
 		canPaste?: boolean;
+		canCreate?: boolean;
 		onItemClick?: (item: FileInfo) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
 		onContextMenuAction?: (action: string, items: FileInfo[]) => void;
@@ -88,6 +90,19 @@
 		};
 	}
 
+	function handleBackgroundContextMenu(event: MouseEvent) {
+		const target = event.target instanceof HTMLElement ? event.target : null;
+		if (target?.closest('[data-file-item="true"]')) return;
+
+		event.preventDefault();
+		onSelectionChange?.(new SvelteSet<string>());
+		contextMenu = {
+			x: event.clientX,
+			y: event.clientY,
+			items: []
+		};
+	}
+
 	function handleContextMenuClose() {
 		contextMenu = null;
 	}
@@ -120,7 +135,11 @@
 		'flex shrink-0 items-center justify-center overflow-hidden rounded border border-border-primary bg-surface-primary';
 </script>
 
-<div class="relative h-full w-full overflow-auto bg-surface-primary">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="relative h-full w-full overflow-auto bg-surface-primary"
+	oncontextmenu={handleBackgroundContextMenu}
+>
 	{#if isLoading}
 		<div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-primary/80">
 			<Spinner />
@@ -159,6 +178,7 @@
 					ondblclick={() => handleOpen(item)}
 					onkeydown={(e) => handleKeyDown(item, e)}
 					oncontextmenu={(e) => handleContextMenu(item, e)}
+					data-file-item="true"
 				>
 					<div class="{thumbnailClass} {compactMode ? 'h-11' : 'h-16'}">
 						{#if showThumbnail}
@@ -199,7 +219,12 @@
 
 {#if contextMenu}
 	<ContextMenu
-		items={getFileContextMenuItems({ items: contextMenu.items, canPaste, favoritePaths })}
+		items={getFileContextMenuItems({
+			items: contextMenu.items,
+			canPaste,
+			favoritePaths,
+			canCreate
+		})}
 		x={contextMenu.x}
 		y={contextMenu.y}
 		onSelect={handleContextMenuSelect}

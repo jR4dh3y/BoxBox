@@ -9,6 +9,8 @@ import {
 	Copy,
 	Scissors,
 	ClipboardPaste,
+	FilePlus,
+	FolderPlus,
 	Pencil,
 	Trash2,
 	Download,
@@ -18,6 +20,8 @@ import {
 } from 'lucide-svelte';
 
 export type FileContextAction =
+	| 'new-file'
+	| 'new-folder'
 	| 'copy'
 	| 'cut'
 	| 'paste'
@@ -35,6 +39,10 @@ export interface FileContextMenuOptions {
 	canPaste: boolean;
 	/** Paths currently pinned in the sidebar favorites section */
 	favoritePaths?: Set<string>;
+	/** Whether new files/folders can be created in the current location */
+	canCreate?: boolean;
+	/** Whether creation actions should be included in this menu */
+	includeCreateActions?: boolean;
 }
 
 /**
@@ -42,13 +50,35 @@ export interface FileContextMenuOptions {
  * Configures disabled states based on selection
  */
 export function getFileContextMenuItems(options: FileContextMenuOptions): ContextMenuItem[] {
-	const { items, canPaste, favoritePaths = new Set<string>() } = options;
+	const {
+		items,
+		canPaste,
+		favoritePaths = new Set<string>(),
+		canCreate = false,
+		includeCreateActions = true
+	} = options;
+	const hasSelection = items.length > 0;
 	const hasMultiple = items.length > 1;
 	const hasFolder = items.some((i) => i.isDir);
 	const singleFolder = !hasMultiple && items[0]?.isDir ? items[0] : null;
 	const isFavorite = singleFolder ? favoritePaths.has(singleFolder.path) : false;
+	const createItems: ContextMenuItem[] = includeCreateActions
+		? [
+				{ id: 'new-file', label: 'New File', icon: FilePlus, disabled: !canCreate },
+				{ id: 'new-folder', label: 'New Folder', icon: FolderPlus, disabled: !canCreate },
+				{ id: 'separator-create', label: '', separator: true }
+			]
+		: [];
+
+	if (!hasSelection) {
+		return [
+			...createItems,
+			{ id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl+V', disabled: !canPaste }
+		];
+	}
 
 	return [
+		...createItems,
 		{ id: 'copy', label: 'Copy', icon: Copy, shortcut: 'Ctrl+C' },
 		{ id: 'cut', label: 'Cut', icon: Scissors, shortcut: 'Ctrl+X' },
 		{ id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl+V', disabled: !canPaste },

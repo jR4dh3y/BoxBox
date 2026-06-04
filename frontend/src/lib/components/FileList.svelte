@@ -10,7 +10,7 @@
 	import { getFileTypeDescription, getFileIcon } from '$lib/utils/fileTypes';
 	import { getFileContextMenuItems } from '$lib/utils/fileContextMenu';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { Spinner, ContextMenu, type ContextMenuItem } from '$lib/components/ui';
+	import { Spinner, ContextMenu } from '$lib/components/ui';
 	import { FolderOpen } from 'lucide-svelte';
 
 	let {
@@ -24,6 +24,7 @@
 		cutPaths = new SvelteSet<string>(),
 		favoritePaths = new SvelteSet<string>(),
 		canPaste = false,
+		canCreate = false,
 		onItemClick,
 		onSortChange,
 		onSelectionChange,
@@ -39,6 +40,7 @@
 		cutPaths?: Set<string>;
 		favoritePaths?: Set<string>;
 		canPaste?: boolean;
+		canCreate?: boolean;
 		onItemClick?: (item: FileInfo) => void;
 		onSortChange?: (field: SortField, dir: SortDir) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
@@ -106,6 +108,19 @@
 		};
 	}
 
+	function handleBackgroundContextMenu(event: MouseEvent) {
+		const target = event.target instanceof HTMLElement ? event.target : null;
+		if (target?.closest('[data-file-row="true"], [data-file-header="true"]')) return;
+
+		event.preventDefault();
+		onSelectionChange?.(new SvelteSet<string>());
+		contextMenu = {
+			x: event.clientX,
+			y: event.clientY,
+			items: []
+		};
+	}
+
 	function handleContextMenuClose() {
 		contextMenu = null;
 	}
@@ -137,7 +152,11 @@
 	const clippedCellClass = 'block overflow-hidden text-ellipsis whitespace-nowrap';
 </script>
 
-<div class="relative h-full w-full overflow-auto bg-surface-primary {compactMode ? 'compact' : ''}">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="relative h-full w-full overflow-auto bg-surface-primary {compactMode ? 'compact' : ''}"
+	oncontextmenu={handleBackgroundContextMenu}
+>
 	{#if isLoading}
 		<div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-primary/80">
 			<Spinner />
@@ -163,6 +182,7 @@
 					onkeydown={(e) => e.key === 'Enter' && handleSort('name')}
 					tabindex="0"
 					role="columnheader"
+					data-file-header="true"
 					aria-sort={sortBy === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
 				>
 					<span class="mr-1">Name</span>
@@ -174,6 +194,7 @@
 					onkeydown={(e) => e.key === 'Enter' && handleSort('type')}
 					tabindex="0"
 					role="columnheader"
+					data-file-header="true"
 					aria-sort={sortBy === 'type' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
 				>
 					<span class="mr-1">Type</span>
@@ -185,6 +206,7 @@
 					onkeydown={(e) => e.key === 'Enter' && handleSort('size')}
 					tabindex="0"
 					role="columnheader"
+					data-file-header="true"
 					aria-sort={sortBy === 'size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
 				>
 					<span class="mr-1">Size</span>
@@ -196,6 +218,7 @@
 					onkeydown={(e) => e.key === 'Enter' && handleSort('modTime')}
 					tabindex="0"
 					role="columnheader"
+					data-file-header="true"
 					aria-sort={sortBy === 'modTime'
 						? sortDir === 'asc'
 							? 'ascending'
@@ -235,6 +258,7 @@
 						oncontextmenu={(e) => handleContextMenu(item, e)}
 						tabindex="0"
 						aria-selected={isSelected(item.path)}
+						data-file-row="true"
 					>
 						<td class={tdClass}>
 							<div class="flex min-w-0 items-center gap-2">
@@ -273,7 +297,12 @@
 <!-- Context Menu -->
 {#if contextMenu}
 	<ContextMenu
-		items={getFileContextMenuItems({ items: contextMenu.items, canPaste, favoritePaths })}
+		items={getFileContextMenuItems({
+			items: contextMenu.items,
+			canPaste,
+			favoritePaths,
+			canCreate
+		})}
 		x={contextMenu.x}
 		y={contextMenu.y}
 		onSelect={handleContextMenuSelect}

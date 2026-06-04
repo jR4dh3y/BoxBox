@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,8 +29,9 @@ func (h *FileHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/", h.ListRoots)
 	r.Get("/stats", h.GetDriveStats)
 	r.Get("/*", h.GetPath)
-	r.Post("/*", h.CreateDir)
+	r.Post("/*", h.CreateItem)
 	r.Put("/*", h.Rename)
+	r.Patch("/*", h.SaveFileContent)
 	r.Delete("/*", h.Delete)
 }
 
@@ -44,9 +46,11 @@ type RootsResponse struct {
 	Roots []MountPointResponse `json:"roots"`
 }
 
-// CreateDirRequest represents the create directory request body
-type CreateDirRequest struct {
-	Name string `json:"name"`
+// CreateItemRequest represents the create file/directory request body
+type CreateItemRequest struct {
+	Name    string `json:"name"`
+	Type    string `json:"type,omitempty"`
+	Content string `json:"content,omitempty"`
 }
 
 // RenameRequest represents the rename request body
@@ -54,6 +58,10 @@ type RenameRequest struct {
 	NewPath string `json:"newPath"`
 }
 
+// SaveFileRequest represents the file content save request body
+type SaveFileRequest struct {
+	Content string `json:"content"`
+}
 
 // ListRoots returns all configured mount points
 // GET /api/v1/files
@@ -116,26 +124,31 @@ func (h *FileHandler) GetPath(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// CreateDir creates a new directory
+// CreateItem creates a new directory or file
 // POST /api/v1/files/*path
-func (h *FileHandler) CreateDir(w http.ResponseWriter, r *http.Request) {
+func (h *FileHandler) CreateItem(w http.ResponseWriter, r *http.Request) {
 	basePath := chi.URLParam(r, "*")
 
-	var req CreateDirRequest
+	var req CreateItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
 
-	// Validate directory name
+	itemType := req.Type
+	if itemType == "" {
+		itemType = "directory"
+	}
+
+	// Validate item name
 	if req.Name == "" {
-		writeError(w, "Directory name is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		writeError(w, "Name is required", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
 
 	// Check for invalid characters in name
-	if strings.ContainsAny(req.Name, "/\\") {
-		writeError(w, "Directory name cannot contain path separators", model.ErrCodeValidationError, http.StatusBadRequest)
+	if strings.ContainsAny(req.Name, "/\\") || req.Name == "." || req.Name == ".." || strings.ContainsRune(req.Name, 0) {
+		writeError(w, "Name cannot contain path separators or special path names", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
 
@@ -147,13 +160,41 @@ func (h *FileHandler) CreateDir(w http.ResponseWriter, r *http.Request) {
 		fullPath = req.Name
 	}
 
-	// Create directory
-	if err := h.fileService.CreateDir(r.Context(), fullPath); err != nil {
-		HandleServiceError(w, err)
+	switch itemType {
+	case "directory", "folder":
+		// Create directory
+		if err := h.fileService.CreateDir(r.Context(), fullPath); err != nil {
+			HandleServiceError(w, err)
+			return
+		}
+	case "file":
+		// Create file without overwriting any existing item
+		file, err := h.fileService.CreateFile(r.Context(), fullPath)
+		if err != nil {
+			HandleServiceError(w, err)
+			return
+		}
+
+		if req.Content != "" {
+			if _, err := io.WriteString(file, req.Content); err != nil {
+				_ = file.Close()
+				_ = h.fileService.Delete(r.Context(), fullPath)
+				writeError(w, "Failed to write file content", model.ErrCodeInternalError, http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if err := file.Close(); err != nil {
+			_ = h.fileService.Delete(r.Context(), fullPath)
+			writeError(w, "Failed to create file", model.ErrCodeInternalError, http.StatusInternalServerError)
+			return
+		}
+	default:
+		writeError(w, "Type must be file or directory", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
 
-	// Return the created directory info
+	// Return the created item info
 	info, err := h.fileService.GetInfo(r.Context(), fullPath)
 	if err != nil {
 		HandleServiceError(w, err)
@@ -163,6 +204,34 @@ func (h *FileHandler) CreateDir(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, info, http.StatusCreated)
 }
 
+// SaveFileContent overwrites an existing file's content
+// PATCH /api/v1/files/*path
+func (h *FileHandler) SaveFileContent(w http.ResponseWriter, r *http.Request) {
+	path := chi.URLParam(r, "*")
+	if path == "" {
+		writeError(w, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+
+	var req SaveFileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.fileService.WriteFile(r.Context(), path, []byte(req.Content)); err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+
+	info, err := h.fileService.GetInfo(r.Context(), path)
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, info, http.StatusOK)
+}
 
 // Rename renames/moves a file or directory
 // PUT /api/v1/files/*path
@@ -236,7 +305,6 @@ func (h *FileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"message": "Deleted successfully"}, http.StatusOK)
 }
 
-
 // parseListOptions extracts listing options from query parameters
 func (h *FileHandler) parseListOptions(r *http.Request) model.ListOptions {
 	opts := model.DefaultListOptions()
@@ -274,5 +342,3 @@ func (h *FileHandler) parseListOptions(r *http.Request) model.ListOptions {
 
 	return opts
 }
-
-
