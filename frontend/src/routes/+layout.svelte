@@ -4,6 +4,7 @@
 	import { authStore, isAuthenticated } from '$lib/stores/auth';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import { CONFIG } from '$lib/config';
@@ -27,7 +28,9 @@
 
 	// Public routes that don't require authentication
 	const publicRoutes = ['/login', '/test'];
-	const isBrowsePage = $derived(page.url.pathname.startsWith('/browse'));
+	const isWorkspacePage = $derived(
+		page.url.pathname.startsWith('/browse') || page.url.pathname.startsWith('/settings')
+	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
 
 	onMount(() => {
@@ -46,9 +49,9 @@
 		const isPublicRoute = publicRoutes.some((route) => currentPath.startsWith(route));
 
 		if (!$isAuthenticated && !isPublicRoute) {
-			goto('/login');
+			goto(resolve('/login'));
 		} else if ($isAuthenticated && currentPath.startsWith('/login')) {
-			goto('/browse');
+			goto(resolve('/browse'));
 		}
 	});
 
@@ -77,7 +80,7 @@
 
 	async function handleLogout() {
 		await authStore.logout();
-		goto('/login');
+		goto(resolve('/login'));
 	}
 </script>
 
@@ -88,7 +91,7 @@
 		<div class="flex min-h-screen items-center justify-center bg-surface-primary">
 			<Spinner size="lg" />
 		</div>
-	{:else if isBrowsePage}
+	{:else if isWorkspacePage}
 		{@render children()}
 	{:else}
 		<div class="flex min-h-screen flex-col bg-surface-primary">
@@ -96,7 +99,7 @@
 				<header class="sticky top-0 z-50 border-b border-border-secondary bg-surface-primary px-4">
 					<div class="mx-auto flex h-14 max-w-[1400px] items-center justify-between">
 						<a
-							href="/browse"
+							href={resolve('/browse')}
 							class="flex items-center gap-2 text-lg font-semibold text-text-primary no-underline hover:text-accent"
 						>
 							<FolderOpen size={24} class="text-accent" />

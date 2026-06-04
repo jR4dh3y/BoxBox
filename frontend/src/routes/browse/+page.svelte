@@ -4,6 +4,7 @@
 	 */
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import FileList from '$lib/components/FileList.svelte';
@@ -30,6 +31,8 @@
 		listRoots,
 		listDirectory,
 		search,
+		createDirectory,
+		createFile,
 		rename,
 		deleteFile,
 		getDownloadUrl
@@ -69,6 +72,13 @@
 	let deleteDialog = $state<{ open: boolean; items: FileInfo[] }>({
 		open: false,
 		items: []
+	});
+
+	// Create file/folder dialog state
+	let createDialog = $state<{ open: boolean; type: 'file' | 'directory'; name: string }>({
+		open: false,
+		type: 'file',
+		name: ''
 	});
 
 	// Properties dialog state
@@ -158,6 +168,15 @@
 	const canGoBack = $derived(historyIndex > 0);
 	const canGoForward = $derived(historyIndex < historyStack.length - 1);
 	const canGoUp = $derived(segments.length > 0);
+	const currentMount = $derived(
+		path ? roots.find((root) => path === root.name || path.startsWith(`${root.name}/`)) : null
+	);
+	const isCurrentLocationReadOnly = $derived(currentMount?.readOnly ?? false);
+	const canCreate = $derived(!isAtRoot && !isCurrentLocationReadOnly);
+
+	function getErrorMessage(error: unknown, fallback: string): string {
+		return error instanceof Error ? error.message : fallback;
+	}
 
 	function handleNavigate(newPath: string) {
 		const newHistory = historyStack.slice(0, historyIndex + 1);
@@ -202,7 +221,7 @@
 	}
 
 	function handleSettings() {
-		goto('/settings');
+		goto(resolve('/settings'));
 	}
 
 	function handleFileClick(file: FileInfo) {
@@ -252,6 +271,14 @@
 	 */
 	async function handleContextMenuAction(action: string, items: FileInfo[]) {
 		switch (action) {
+			case 'new-file':
+				openCreateDialog('file');
+				break;
+
+			case 'new-folder':
+				openCreateDialog('directory');
+				break;
+
 			case 'copy':
 				clipboardStore.copy(items);
 				break;
@@ -310,6 +337,51 @@
 		}
 	}
 
+	function openCreateDialog(type: 'file' | 'directory') {
+		if (!canCreate) {
+			toastStore.error('Cannot create items in this location');
+			return;
+		}
+
+		createDialog = {
+			open: true,
+			type,
+			name: type === 'file' ? 'untitled.txt' : 'New Folder'
+		};
+	}
+
+	function closeCreateDialog() {
+		createDialog = { open: false, type: 'file', name: '' };
+	}
+
+	async function handleCreateConfirm() {
+		if (!path || !createDialog.name.trim()) return;
+
+		const name = createDialog.name.trim();
+		if (name.includes('/') || name.includes('\\')) {
+			toastStore.error('Name cannot contain path separators');
+			return;
+		}
+
+		try {
+			const created =
+				createDialog.type === 'file'
+					? await createFile(path, name)
+					: await createDirectory(path, name);
+
+			closeCreateDialog();
+			selectedPaths = new Set([created.path]);
+			toastStore.success(`${created.name} created`);
+			queryClient.invalidateQueries({ queryKey: fileQueryKeys.all });
+			directoryQuery.refetch();
+			if (isSearchActive) {
+				searchQueryResult.refetch();
+			}
+		} catch (error) {
+			toastStore.error(getErrorMessage(error, 'Create failed'));
+		}
+	}
+
 	/**
 	 * Handle paste operation
 	 */
@@ -338,6 +410,7 @@
 			directoryQuery.refetch();
 		} catch (error) {
 			console.error('Paste operation failed:', error);
+			toastStore.error(getErrorMessage(error, 'Paste failed'));
 		}
 	}
 
@@ -369,6 +442,7 @@
 			directoryQuery.refetch();
 		} catch (error) {
 			console.error('Rename failed:', error);
+			toastStore.error(getErrorMessage(error, 'Rename failed'));
 		}
 	}
 
@@ -392,6 +466,16 @@
 			directoryQuery.refetch();
 		} catch (error) {
 			console.error('Delete failed:', error);
+			toastStore.error(getErrorMessage(error, 'Delete failed'));
+		}
+	}
+
+	function handleFileSaved(file: FileInfo) {
+		previewFile = file;
+		queryClient.invalidateQueries({ queryKey: fileQueryKeys.all });
+		directoryQuery.refetch();
+		if (isSearchActive) {
+			searchQueryResult.refetch();
 		}
 	}
 
@@ -466,8 +550,7 @@
 		}
 
 		// Check if current mount is read-only
-		const currentMount = roots.find((r) => path.startsWith(r.name));
-		if (currentMount?.readOnly) {
+		if (isCurrentLocationReadOnly) {
 			toastStore.error('Cannot upload to read-only location');
 			return;
 		}
@@ -488,8 +571,7 @@
 		}
 
 		// Check if current mount is read-only
-		const currentMount = roots.find((r) => path.startsWith(r.name));
-		if (currentMount?.readOnly) {
+		if (isCurrentLocationReadOnly) {
 			toastStore.error('Cannot upload to read-only location');
 			return;
 		}
@@ -500,8 +582,7 @@
 	// Derived: is upload disabled (at root or read-only)
 	const uploadDisabled = $derived.by(() => {
 		if (isAtRoot) return true;
-		const currentMount = roots.find((r) => path.startsWith(r.name));
-		return currentMount?.readOnly ?? false;
+		return isCurrentLocationReadOnly;
 	});
 </script>
 
@@ -592,6 +673,7 @@
 					{cutPaths}
 					{favoritePaths}
 					{canPaste}
+					{canCreate}
 					onItemClick={handleFileClick}
 					onSelectionChange={handleSelectionChange}
 					onContextMenuAction={handleContextMenuAction}
@@ -608,6 +690,7 @@
 					{cutPaths}
 					{favoritePaths}
 					{canPaste}
+					{canCreate}
 					onItemClick={handleFileClick}
 					onSortChange={handleSortChange}
 					onSelectionChange={handleSelectionChange}
@@ -626,8 +709,33 @@
 	file={previewFile}
 	allFiles={previewableFiles}
 	onNavigate={handlePreviewNavigate}
+	onFileSaved={handleFileSaved}
 	onClose={handleClosePreview}
 />
+
+<!-- Create File/Folder Dialog -->
+<Modal
+	open={createDialog.open}
+	title={createDialog.type === 'file' ? 'New File' : 'New Folder'}
+	onclose={closeCreateDialog}
+>
+	<div class="flex flex-col gap-4">
+		<p class="text-sm text-text-secondary">
+			Enter a name for the new {createDialog.type === 'file' ? 'file' : 'folder'}:
+		</p>
+		<Input
+			bind:value={createDialog.name}
+			placeholder={createDialog.type === 'file' ? 'untitled.txt' : 'New Folder'}
+			onkeydown={(e) => e.key === 'Enter' && handleCreateConfirm()}
+		/>
+	</div>
+	{#snippet footer()}
+		<Button variant="secondary" onclick={closeCreateDialog}>Cancel</Button>
+		<Button variant="primary" onclick={handleCreateConfirm}>
+			Create {createDialog.type === 'file' ? 'File' : 'Folder'}
+		</Button>
+	{/snippet}
+</Modal>
 
 <!-- Rename Dialog -->
 <Modal

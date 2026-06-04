@@ -28,7 +28,9 @@ export {
 	listDirectory,
 	getFileInfo,
 	createDirectory,
+	createFile,
 	rename,
+	saveFileContent,
 	deleteFile,
 	search,
 	type FileInfo,
@@ -59,8 +61,4 @@ export {
 } from './jobs';
 
 // System API
-export {
-	getSystemDrives,
-	type SystemDrive,
-	type SystemDrivesResponse
-} from './system';
+export { getSystemDrives, type SystemDrive, type SystemDrivesResponse } from './system';

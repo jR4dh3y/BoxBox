@@ -1,0 +1,11 @@
+name: BoxBox
+website_url: https://boxbox.radhey.dev
+source_code_url: https://github.com/jR4dh3y/BoxBox
+description: Browser file manager for homelab and NAS-style servers with mounted path browsing, large uploads, previews, search, and background file operations.
+licenses:
+  - MIT
+platforms:
+  - Go
+  - Docker
+tags:
+  - File Transfer - Web-based File Managers

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -62,6 +63,8 @@ type FileService interface {
 	OpenFile(ctx context.Context, path string) (File, *model.FileInfo, error)
 	// CreateFile creates a new file for writing using the filesystem abstraction
 	CreateFile(ctx context.Context, path string) (WriteFile, error)
+	// WriteFile overwrites an existing file using the filesystem abstraction
+	WriteFile(ctx context.Context, path string, content []byte) error
 	// GetFilesystem returns the underlying filesystem for advanced operations
 	GetFilesystem() filesystem.FS
 }
@@ -409,6 +412,15 @@ func (s *fileService) CreateFile(ctx context.Context, path string) (WriteFile, e
 		return nil, ErrPermissionDenied
 	}
 
+	// New-file creation must not truncate an existing item.
+	exists, err := s.fs.Exists(fsPath)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, ErrPathExists
+	}
+
 	// Ensure parent directory exists
 	parentDir := filepath.Dir(fsPath)
 	if err := s.fs.MkdirAll(parentDir, 0755); err != nil {
@@ -416,12 +428,42 @@ func (s *fileService) CreateFile(ctx context.Context, path string) (WriteFile, e
 	}
 
 	// Create the file
-	file, err := s.fs.Create(fsPath)
+	file, err := s.fs.OpenFile(fsPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return nil, err
 	}
 
 	return file, nil
+}
+
+// WriteFile overwrites an existing file using the filesystem abstraction
+func (s *fileService) WriteFile(ctx context.Context, path string, content []byte) error {
+	// Resolve the path to filesystem path
+	mount, fsPath, err := s.ResolvePath(path)
+	if err != nil {
+		if errors.Is(err, validator.ErrOutsideMountPoint) {
+			return ErrMountPointNotFound
+		}
+		return err
+	}
+
+	// Check if mount is read-only
+	if mount.ReadOnly {
+		return ErrPermissionDenied
+	}
+
+	info, err := s.fs.Stat(fsPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return ErrPathNotFound
+		}
+		return err
+	}
+	if info.IsDir() {
+		return ErrNotFile
+	}
+
+	return s.fs.WriteFile(fsPath, content, info.Mode().Perm())
 }
 
 // GetFilesystem returns the underlying filesystem for advanced operations

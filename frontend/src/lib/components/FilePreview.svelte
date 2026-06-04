@@ -20,10 +20,11 @@
 		file: FileInfo | null;
 		allFiles?: FileInfo[];
 		onNavigate?: (file: FileInfo) => void;
+		onFileSaved?: (file: FileInfo) => void;
 		onClose: () => void;
 	}
 
-	let { file, allFiles = [], onNavigate, onClose }: Props = $props();
+	let { file, allFiles = [], onNavigate, onFileSaved, onClose }: Props = $props();
 
 	let isFullscreen = $state(false);
 
@@ -190,7 +191,12 @@
 				{:else if previewType === 'notebook'}
 					<NotebookPreview url={previewUrl} filename={file.name} />
 				{:else if previewType === 'code' || previewType === 'text'}
-					<CodePreview url={previewUrl} filename={file.name} />
+					<CodePreview
+						url={previewUrl}
+						filename={file.name}
+						path={file.path}
+						onSaved={onFileSaved}
+					/>
 				{:else}
 					<div class="flex flex-col items-center gap-4 text-sm text-text-secondary">
 						<p>Preview not available for this file type</p>

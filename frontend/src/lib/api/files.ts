@@ -91,10 +91,12 @@ export interface SearchResponse {
 }
 
 /**
- * Create directory request
+ * Create file/directory request
  */
-interface CreateDirRequest {
+interface CreateItemRequest {
 	name: string;
+	type?: 'file' | 'directory';
+	content?: string;
 }
 
 /**
@@ -102,6 +104,13 @@ interface CreateDirRequest {
  */
 interface RenameRequest {
 	newPath: string;
+}
+
+/**
+ * Save file content request
+ */
+interface SaveFileRequest {
+	content: string;
 }
 
 /**
@@ -166,7 +175,20 @@ export async function getFileInfo(path: string): Promise<FileInfo> {
  * POST /api/v1/files/*path
  */
 export async function createDirectory(basePath: string, name: string): Promise<FileInfo> {
-	const body: CreateDirRequest = { name };
+	const body: CreateItemRequest = { name, type: 'directory' };
+	return api.post<FileInfo>(`/files/${basePath}`, body);
+}
+
+/**
+ * Create a new empty file
+ * POST /api/v1/files/*path
+ */
+export async function createFile(
+	basePath: string,
+	name: string,
+	content: string = ''
+): Promise<FileInfo> {
+	const body: CreateItemRequest = { name, type: 'file', content };
 	return api.post<FileInfo>(`/files/${basePath}`, body);
 }
 
@@ -177,6 +199,15 @@ export async function createDirectory(basePath: string, name: string): Promise<F
 export async function rename(oldPath: string, newPath: string): Promise<FileInfo> {
 	const body: RenameRequest = { newPath };
 	return api.put<FileInfo>(`/files/${oldPath}`, body);
+}
+
+/**
+ * Save file content
+ * PATCH /api/v1/files/*path
+ */
+export async function saveFileContent(path: string, content: string): Promise<FileInfo> {
+	const body: SaveFileRequest = { content };
+	return api.patch<FileInfo>(`/files/${path}`, body);
 }
 
 /**
@@ -207,7 +238,9 @@ export const filesApi = {
 	listDirectory,
 	getFileInfo,
 	createDirectory,
+	createFile,
 	rename,
+	saveFileContent,
 	delete: deleteFile,
 	search
 };

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -69,6 +70,60 @@ func TestDirectoryListingPutsVisibleItemsBeforeHiddenItems(t *testing.T) {
 	want := []string{"Desktop", "Documents", "Downloads"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("expected first page to contain visible items %v, got %v", want, got)
+	}
+}
+
+func TestCreateFileCreatesEmptyFileWithoutOverwriting(t *testing.T) {
+	svc, fs := setupTestFileService()
+	ctx := context.Background()
+
+	file, err := svc.CreateFile(ctx, "media/new-note.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := fs.ReadFile("/data/media/new-note.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "" {
+		t.Fatalf("expected created file to be empty, got %q", string(content))
+	}
+
+	existing, err := svc.CreateFile(ctx, "media/new-note.txt")
+	if existing != nil {
+		_ = existing.Close()
+	}
+	if !errors.Is(err, ErrPathExists) {
+		t.Fatalf("expected ErrPathExists, got %v", err)
+	}
+}
+
+func TestWriteFileOverwritesExistingFileOnly(t *testing.T) {
+	svc, fs := setupTestFileService()
+	ctx := context.Background()
+
+	if err := fs.WriteFile("/data/media/editable.txt", []byte("before"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.WriteFile(ctx, "media/editable.txt", []byte("after")); err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := fs.ReadFile("/data/media/editable.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "after" {
+		t.Fatalf("expected overwritten content, got %q", string(content))
+	}
+
+	if err := svc.WriteFile(ctx, "media/missing.txt", []byte("new")); !errors.Is(err, ErrPathNotFound) {
+		t.Fatalf("expected ErrPathNotFound, got %v", err)
 	}
 }
 
