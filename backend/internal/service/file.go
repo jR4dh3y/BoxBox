@@ -187,6 +187,10 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 	var filtered []fs.DirEntry
 	filterLower := strings.ToLower(opts.Filter)
 	for _, entry := range entries {
+		if !opts.IncludeHidden && strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
 		if opts.Filter == "" || strings.Contains(strings.ToLower(entry.Name()), filterLower) {
 			filtered = append(filtered, entry)
 		}

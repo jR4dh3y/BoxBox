@@ -8,6 +8,7 @@ import {
 	setDriveName as apiSetDriveName,
 	deleteDriveName as apiDeleteDriveName
 } from '$lib/api/drive-names';
+import { getPreviewUrl } from '$lib/api/files';
 
 export interface UserSettings {
 	showHiddenFiles: boolean;
@@ -17,6 +18,8 @@ export interface UserSettings {
 	defaultSortDir: 'asc' | 'desc';
 	defaultViewMode: 'list' | 'grid';
 	accentColor: string | null;
+	backgroundImage: string | null;
+	frostedGlass: boolean;
 	previewOnSingleClick: boolean;
 	compactMode: boolean;
 	driveNameOverrides: Record<string, string>;
@@ -29,6 +32,8 @@ export interface FavoriteFolder {
 }
 
 export const DEFAULT_ACCENT_COLOR = '#4a9eff';
+
+const SERVER_BACKGROUND_PREFIX = 'boxbox-server:';
 
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const THEME_COLOR_PROPERTIES = [
@@ -49,6 +54,8 @@ const defaultSettings: UserSettings = {
 	defaultSortDir: 'asc',
 	defaultViewMode: 'list',
 	accentColor: null,
+	backgroundImage: null,
+	frostedGlass: false,
 	previewOnSingleClick: false,
 	compactMode: false,
 	driveNameOverrides: {},
@@ -63,6 +70,56 @@ export function normalizeAccentColor(color: string | null): string | null {
 
 export function isValidAccentColor(color: string | null): boolean {
 	return color === null || normalizeAccentColor(color) !== null;
+}
+
+function isSupportedBackgroundImage(value: string): boolean {
+	if (
+		value.startsWith(SERVER_BACKGROUND_PREFIX) &&
+		value.length > SERVER_BACKGROUND_PREFIX.length
+	) {
+		return true;
+	}
+	if (value.startsWith('/') && !value.startsWith('//')) return true;
+	if (/^data:image\/(avif|gif|jpeg|jpg|png|svg\+xml|webp);base64,/i.test(value)) return true;
+
+	try {
+		const url = new URL(value);
+		return url.protocol === 'http:' || url.protocol === 'https:';
+	} catch {
+		return false;
+	}
+}
+
+export function normalizeBackgroundImage(backgroundImage: string | null): string | null {
+	if (!backgroundImage) return null;
+	const trimmed = backgroundImage.trim();
+	return isSupportedBackgroundImage(trimmed) ? trimmed : null;
+}
+
+export function isValidBackgroundImage(backgroundImage: string | null): boolean {
+	return backgroundImage === null || normalizeBackgroundImage(backgroundImage) !== null;
+}
+
+export function toServerBackgroundImage(path: string): string | null {
+	const normalizedPath = path.trim().replace(/^\/+|\/+$/g, '');
+	return normalizedPath ? `${SERVER_BACKGROUND_PREFIX}${normalizedPath}` : null;
+}
+
+function getServerBackgroundPath(backgroundImage: string): string | null {
+	if (!backgroundImage.startsWith(SERVER_BACKGROUND_PREFIX)) return null;
+	const path = backgroundImage
+		.slice(SERVER_BACKGROUND_PREFIX.length)
+		.trim()
+		.replace(/^\/+|\/+$/g, '');
+	return path || null;
+}
+
+export function resolveBackgroundImage(backgroundImage: string | null): string | null {
+	const normalized = normalizeBackgroundImage(backgroundImage);
+	if (!normalized) return null;
+
+	const serverPath = getServerBackgroundPath(normalized);
+	return serverPath ? getPreviewUrl(serverPath) : normalized;
 }
 
 function parseHexColor(color: string): [number, number, number] {

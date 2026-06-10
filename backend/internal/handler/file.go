@@ -321,6 +321,12 @@ func (h *FileHandler) parseListOptions(r *http.Request) model.ListOptions {
 		}
 	}
 
+	if includeHidden := r.URL.Query().Get("includeHidden"); includeHidden != "" {
+		if value, err := strconv.ParseBool(includeHidden); err == nil {
+			opts.IncludeHidden = value
+		}
+	}
+
 	if sortBy := r.URL.Query().Get("sortBy"); sortBy != "" {
 		// Validate sort field
 		validSortFields := map[string]bool{"name": true, "size": true, "modTime": true, "type": true}

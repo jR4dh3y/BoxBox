@@ -24,21 +24,23 @@ type FileList struct {
 
 // ListOptions contains options for listing directory contents
 type ListOptions struct {
-	Page     int    `json:"page"`
-	PageSize int    `json:"pageSize"`
-	SortBy   string `json:"sortBy"`
-	SortDir  string `json:"sortDir"`
-	Filter   string `json:"filter"`
+	Page          int    `json:"page"`
+	PageSize      int    `json:"pageSize"`
+	SortBy        string `json:"sortBy"`
+	SortDir       string `json:"sortDir"`
+	Filter        string `json:"filter"`
+	IncludeHidden bool   `json:"includeHidden"`
 }
 
 // DefaultListOptions returns sensible defaults for listing
 func DefaultListOptions() ListOptions {
 	return ListOptions{
-		Page:     1,
-		PageSize: 50,
-		SortBy:   "name",
-		SortDir:  "asc",
-		Filter:   "",
+		Page:          1,
+		PageSize:      50,
+		SortBy:        "name",
+		SortDir:       "asc",
+		Filter:        "",
+		IncludeHidden: true,
 	}
 }
 
