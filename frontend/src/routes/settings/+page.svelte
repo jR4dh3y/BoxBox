@@ -7,16 +7,29 @@
 	import { authStore } from '$lib/stores/auth';
 	import {
 		DEFAULT_ACCENT_COLOR,
+		isValidBackgroundImage,
 		isValidAccentColor,
+		normalizeBackgroundImage,
 		normalizeAccentColor,
+		resolveBackgroundImage,
 		settingsStore,
+		toServerBackgroundImage,
 		type UserSettings
 	} from '$lib/stores/settings';
 	import SearchBar from '$lib/components/SearchBar.svelte';
-	import { Button, Select, Toggle } from '$lib/components/ui';
+	import { Button, Modal, Select, Toggle } from '$lib/components/ui';
+	import { listDirectory, listRoots, type FileInfo, type MountPoint } from '$lib/api/files';
+	import { formatFileSize } from '$lib/utils/format';
+	import { getPreviewType } from '$lib/utils/fileTypes';
 	import {
+		AlertTriangle,
+		ChevronUp,
 		ChevronLeft,
 		Eye,
+		FileImage,
+		Folder,
+		HardDrive,
+		Image as ImageIcon,
 		Layout,
 		LogOut,
 		MousePointer,
@@ -24,16 +37,31 @@
 		RotateCcw,
 		Save,
 		Settings,
+		Sparkles,
+		Upload,
 		User,
+		PaintRollerIcon,
 		X
 	} from 'lucide-svelte';
 
-	type SettingsSectionId = 'display' | 'behavior' | 'defaults' | 'account';
+	type SettingsSectionId = 'display' | 'personalization' | 'behavior' | 'defaults' | 'account';
 	type SettingsCategory = 'all' | SettingsSectionId;
+	type WallpaperSource = 'server';
+
+	const LOCAL_WALLPAPER_MAX_BYTES = 10 * 1024 * 1024;
 
 	let settings = $state<UserSettings>({ ...$settingsStore });
 	let activeCategory = $state<SettingsCategory>('all');
 	let searchQuery = $state('');
+	let wallpaperDialogOpen = $state(false);
+	let wallpaperSource = $state<WallpaperSource | null>(null);
+	let serverWallpaperRoots = $state<MountPoint[]>([]);
+	let serverWallpaperPath = $state('');
+	let serverWallpaperItems = $state<FileInfo[]>([]);
+	let serverWallpaperLoading = $state(false);
+	let serverWallpaperError = $state<string | null>(null);
+	let localWallpaperError = $state<string | null>(null);
+	let localWallpaperInput: HTMLInputElement;
 
 	const hasChanges = $derived(JSON.stringify(settings) !== JSON.stringify($settingsStore));
 	const normalizedSearch = $derived(searchQuery.trim().toLowerCase());
@@ -41,42 +69,50 @@
 	const accentColorValue = $derived(
 		normalizeAccentColor(settings.accentColor) ?? DEFAULT_ACCENT_COLOR
 	);
-	const canSave = $derived(hasChanges && accentColorIsValid);
+	const backgroundImageIsValid = $derived(isValidBackgroundImage(settings.backgroundImage));
+	const normalizedBackgroundImage = $derived(resolveBackgroundImage(settings.backgroundImage));
+	const hasBackgroundImage = $derived(normalizedBackgroundImage !== null);
+	const serverWallpaperEntries = $derived.by(() =>
+		serverWallpaperItems.filter((item) => item.isDir || isImageFile(item))
+	);
+	const serverWallpaperCrumbs = $derived(
+		serverWallpaperPath ? serverWallpaperPath.split('/').filter(Boolean) : []
+	);
+	const canSave = $derived(hasChanges && accentColorIsValid && backgroundImageIsValid);
 
 	const navItems: Array<{
 		id: SettingsCategory;
 		label: string;
-		description: string;
 		icon: typeof Eye;
 	}> = [
 		{
 			id: 'all',
 			label: 'Show All',
-			description: 'Every setting in one view',
 			icon: Settings
 		},
 		{
 			id: 'display',
 			label: 'File Display',
-			description: 'Colors, hidden files, density',
 			icon: Eye
+		},
+		{
+			id: 'personalization',
+			label: 'Personalization',
+			icon: PaintRollerIcon
 		},
 		{
 			id: 'behavior',
 			label: 'Behavior',
-			description: 'Delete and preview behavior',
 			icon: MousePointer
 		},
 		{
 			id: 'defaults',
 			label: 'Default View',
-			description: 'Sorting and layout choices',
 			icon: Layout
 		},
 		{
 			id: 'account',
 			label: 'Account',
-			description: 'Session and reset controls',
 			icon: User
 		}
 	];
@@ -99,7 +135,7 @@
 	];
 
 	const navButtonClass =
-		'group flex w-full cursor-pointer items-start gap-2.5 border-none bg-transparent px-3 py-2 text-left transition-colors duration-100 hover:bg-surface-secondary';
+		'group flex w-full cursor-pointer items-center gap-2.5 border-none bg-transparent px-3 py-2 text-left transition-colors duration-100 hover:bg-surface-secondary';
 	const activeNavClass = 'bg-selection text-white hover:bg-selection-hover';
 	const inactiveNavClass = 'text-text-secondary hover:text-text-primary';
 	const toolbarButtonClass =
@@ -112,11 +148,15 @@
 		'flex items-center justify-between gap-4 border-b border-border-secondary px-4 py-3 last:border-b-0';
 
 	function handleSave() {
-		if (!accentColorIsValid) return;
+		if (!accentColorIsValid || !backgroundImageIsValid) return;
+
+		const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
 
 		settingsStore.set({
 			...settings,
-			accentColor: normalizeAccentColor(settings.accentColor)
+			accentColor: normalizeAccentColor(settings.accentColor),
+			backgroundImage,
+			frostedGlass: backgroundImage ? settings.frostedGlass : false
 		});
 	}
 
@@ -159,6 +199,146 @@
 		settings.accentColor = null;
 	}
 
+	function handleBackgroundClear() {
+		settings.backgroundImage = null;
+		settings.frostedGlass = false;
+	}
+
+	function openWallpaperDialog() {
+		wallpaperDialogOpen = true;
+		wallpaperSource = null;
+		serverWallpaperError = null;
+		localWallpaperError = null;
+	}
+
+	function closeWallpaperDialog() {
+		wallpaperDialogOpen = false;
+	}
+
+	async function chooseWallpaperSource(source: WallpaperSource) {
+		wallpaperSource = source;
+		serverWallpaperError = null;
+		localWallpaperError = null;
+
+		await loadServerWallpaperRoots();
+	}
+
+	async function loadServerWallpaperRoots() {
+		serverWallpaperLoading = true;
+		serverWallpaperError = null;
+
+		try {
+			const response = await listRoots();
+			serverWallpaperRoots = response.roots;
+			serverWallpaperPath = '';
+			serverWallpaperItems = [];
+		} catch (error) {
+			serverWallpaperError =
+				error instanceof Error ? error.message : 'Unable to load server folders.';
+		} finally {
+			serverWallpaperLoading = false;
+		}
+	}
+
+	async function openServerWallpaperPath(path: string) {
+		serverWallpaperPath = path;
+		serverWallpaperLoading = true;
+		serverWallpaperError = null;
+
+		try {
+			const response = await listDirectory(path, {
+				page: 1,
+				pageSize: 200,
+				sortBy: 'name',
+				sortDir: 'asc',
+				includeHidden: settings.showHiddenFiles
+			});
+			serverWallpaperItems = response.items;
+		} catch (error) {
+			serverWallpaperError = error instanceof Error ? error.message : 'Unable to open this folder.';
+			serverWallpaperItems = [];
+		} finally {
+			serverWallpaperLoading = false;
+		}
+	}
+
+	function openServerWallpaperRoot() {
+		serverWallpaperPath = '';
+		serverWallpaperItems = [];
+		serverWallpaperError = null;
+	}
+
+	async function openServerWallpaperParent() {
+		if (!serverWallpaperPath) return;
+
+		const parentPath = serverWallpaperPath.split('/').slice(0, -1).join('/');
+		if (parentPath) {
+			await openServerWallpaperPath(parentPath);
+		} else {
+			openServerWallpaperRoot();
+		}
+	}
+
+	function isImageFile(item: FileInfo): boolean {
+		return (
+			!item.isDir && (item.mimeType?.startsWith('image/') || getPreviewType(item.name) === 'image')
+		);
+	}
+
+	function chooseServerWallpaper(item: FileInfo) {
+		const backgroundImage = toServerBackgroundImage(item.path);
+		if (!backgroundImage) return;
+
+		settings.backgroundImage = backgroundImage;
+		closeWallpaperDialog();
+	}
+
+	function openLocalWallpaperPicker() {
+		localWallpaperError = null;
+		localWallpaperInput?.click();
+	}
+
+	async function handleLocalWallpaperChange(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+
+		if (!file) return;
+
+		localWallpaperError = null;
+		if (!file.type.startsWith('image/') && getPreviewType(file.name) !== 'image') {
+			localWallpaperError = 'Choose an image file.';
+			return;
+		}
+
+		if (file.size > LOCAL_WALLPAPER_MAX_BYTES) {
+			localWallpaperError = `Choose an image smaller than ${formatFileSize(LOCAL_WALLPAPER_MAX_BYTES)}.`;
+			return;
+		}
+
+		try {
+			settings.backgroundImage = await readFileAsDataUrl(file);
+			closeWallpaperDialog();
+		} catch {
+			localWallpaperError = 'Unable to read this image.';
+		}
+	}
+
+	function readFileAsDataUrl(file: File): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => {
+				if (typeof reader.result === 'string') {
+					resolve(reader.result);
+				} else {
+					reject(new Error('Unsupported file result'));
+				}
+			};
+			reader.onerror = () => reject(reader.error ?? new Error('Unable to read file'));
+			reader.readAsDataURL(file);
+		});
+	}
+
 	function matchesSearch(...values: string[]): boolean {
 		if (!normalizedSearch) return true;
 		return values.some((value) => value.toLowerCase().includes(normalizedSearch));
@@ -174,14 +354,25 @@
 				'file display',
 				'hidden files',
 				'file extensions',
-				'accent color',
-				'custom color',
-				'theme',
-				'folder color',
 				'compact mode',
 				'density',
 				'lists',
 				'grids'
+			)
+	);
+	const showPersonalizationSection = $derived(
+		categoryAllows('personalization') &&
+			matchesSearch(
+				'personalization',
+				'accent color',
+				'custom color',
+				'background image',
+				'wallpaper',
+				'frosted glass',
+				'blur',
+				'theme',
+				'folder color',
+				'selection color'
 			)
 	);
 	const showBehaviorSection = $derived(
@@ -203,7 +394,11 @@
 			matchesSearch('account', 'session', 'reset defaults', 'logout', 'local preferences')
 	);
 	const hasSearchResults = $derived(
-		showDisplaySection || showBehaviorSection || showDefaultsSection || showAccountSection
+		showDisplaySection ||
+			showPersonalizationSection ||
+			showBehaviorSection ||
+			showDefaultsSection ||
+			showAccountSection
 	);
 </script>
 
@@ -233,14 +428,6 @@
 					<item.icon size={16} class="mt-0.5 shrink-0 opacity-80" />
 					<span class="min-w-0">
 						<span class="block text-[13px] leading-5">{item.label}</span>
-						<span
-							class="block overflow-hidden text-[11px] leading-4 text-ellipsis whitespace-nowrap {activeCategory ===
-							item.id
-								? 'text-white/70'
-								: 'text-text-muted'}"
-						>
-							{item.description}
-						</span>
 					</span>
 				</button>
 			{/each}
@@ -325,7 +512,11 @@
 									<div>
 										<div class="text-[13px] text-text-primary">Show hidden files</div>
 									</div>
-									<Toggle bind:checked={settings.showHiddenFiles} label="Show hidden files" />
+									<Toggle
+										bind:checked={settings.showHiddenFiles}
+										label="Show hidden files"
+										showLabel={false}
+									/>
 								</div>
 							{/if}
 
@@ -334,19 +525,48 @@
 									<div>
 										<div class="text-[13px] text-text-primary">Show file extensions</div>
 									</div>
-									<Toggle bind:checked={settings.showFileExtensions} label="Show file extensions" />
+									<Toggle
+										bind:checked={settings.showFileExtensions}
+										label="Show file extensions"
+										showLabel={false}
+									/>
 								</div>
 							{/if}
 
+							{#if matchesSearch('compact mode', 'reduce row and tile spacing', 'density')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="text-[13px] text-text-primary">Compact mode</div>
+									</div>
+									<Toggle
+										bind:checked={settings.compactMode}
+										label="Compact mode"
+										showLabel={false}
+									/>
+								</div>
+							{/if}
+						</div>
+					</section>
+				{/if}
+
+				{#if showPersonalizationSection}
+					<section id="personalization" class={panelClass}>
+						<div class={panelHeaderClass}>
+							<div>
+								<h2 class="m-0 flex items-center gap-2 text-sm font-medium">
+									<PaintRollerIcon size={16} class="text-accent" />
+									Personalization
+								</h2>
+							</div>
+						</div>
+
+						<div>
 							{#if matchesSearch('accent color', 'custom color', 'theme', 'folder color', 'selection color')}
 								<div class={settingRowClass}>
 									<div>
 										<div class="flex items-center gap-2 text-[13px] text-text-primary">
 											<Palette size={14} class="text-accent" />
 											<span>Accent color</span>
-										</div>
-										<div class="mt-1 max-w-md text-xs text-text-muted">
-											Applies to buttons, selections, focus rings, and folder icons.
 										</div>
 										{#if !accentColorIsValid}
 											<div class="mt-1 text-xs text-danger">Use a #RRGGBB hex color.</div>
@@ -379,12 +599,51 @@
 								</div>
 							{/if}
 
-							{#if matchesSearch('compact mode', 'reduce row and tile spacing', 'density')}
+							{#if matchesSearch('background image', 'wallpaper', 'custom background', 'personalization')}
+								<div class="{settingRowClass} flex-wrap">
+									<div class="min-w-56">
+										<div class="flex items-center gap-2 text-[13px] text-text-primary">
+											<ImageIcon size={14} class="text-accent" />
+											<span>Wallpaper</span>
+										</div>
+										{#if !backgroundImageIsValid}
+											<div class="mt-1 text-xs text-danger">
+												The selected wallpaper is invalid. Choose another one or clear it.
+											</div>
+										{/if}
+									</div>
+
+									<div class="flex min-w-64 flex-1 justify-end gap-2">
+										<Button variant="secondary" size="sm" onclick={openWallpaperDialog}>
+											<ImageIcon size={14} />
+											Choose Wallpaper
+										</Button>
+										<Button
+											variant="secondary"
+											size="sm"
+											onclick={handleBackgroundClear}
+											disabled={!hasBackgroundImage}
+										>
+											Clear
+										</Button>
+									</div>
+								</div>
+							{/if}
+
+							{#if matchesSearch('frosted glass', 'blur', 'background blur', 'glass look')}
 								<div class={settingRowClass}>
 									<div>
-										<div class="text-[13px] text-text-primary">Compact mode</div>
+										<div class="flex items-center gap-2 text-[13px] text-text-primary">
+											<Sparkles size={14} class="text-accent" />
+											<span>Frosted glass blur</span>
+										</div>
 									</div>
-									<Toggle bind:checked={settings.compactMode} label="Compact mode" />
+									<Toggle
+										bind:checked={settings.frostedGlass}
+										disabled={!hasBackgroundImage}
+										label="Frosted glass blur"
+										showLabel={false}
+									/>
 								</div>
 							{/if}
 						</div>
@@ -408,7 +667,11 @@
 									<div>
 										<div class="text-[13px] text-text-primary">Confirm before delete</div>
 									</div>
-									<Toggle bind:checked={settings.confirmDelete} label="Confirm before delete" />
+									<Toggle
+										bind:checked={settings.confirmDelete}
+										label="Confirm before delete"
+										showLabel={false}
+									/>
 								</div>
 							{/if}
 
@@ -420,6 +683,7 @@
 									<Toggle
 										bind:checked={settings.previewOnSingleClick}
 										label="Preview on single click"
+										showLabel={false}
 									/>
 								</div>
 							{/if}
@@ -507,3 +771,161 @@
 		</main>
 	</div>
 </div>
+
+<input
+	bind:this={localWallpaperInput}
+	type="file"
+	accept="image/*"
+	class="hidden"
+	onchange={handleLocalWallpaperChange}
+/>
+
+<Modal open={wallpaperDialogOpen} title="Choose Wallpaper" onclose={closeWallpaperDialog}>
+	{#snippet headerActions()}
+		{#if wallpaperSource === 'server'}
+			<Button variant="ghost" size="sm" onclick={() => (wallpaperSource = null)}>Back</Button>
+		{/if}
+	{/snippet}
+
+	{#if wallpaperSource === null}
+		<div class="flex flex-col gap-4">
+			<p class="m-0 text-sm text-text-secondary">Where should BoxBox pick the wallpaper from?</p>
+
+			<div class="grid gap-3 sm:grid-cols-2">
+				<button
+					type="button"
+					class="flex h-16 cursor-pointer items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary px-4 py-3 text-left transition-colors hover:border-border-focus hover:bg-surface-tertiary"
+					onclick={() => chooseWallpaperSource('server')}
+				>
+					<span class="rounded bg-accent/15 p-2 text-accent"><HardDrive size={22} /></span>
+					<span>
+						<span class="block text-sm font-medium text-text-primary">This Server</span>
+					</span>
+				</button>
+
+				<button
+					type="button"
+					class="flex h-16 cursor-pointer items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary px-4 py-3 text-left transition-colors hover:border-border-focus hover:bg-surface-tertiary"
+					onclick={openLocalWallpaperPicker}
+				>
+					<span class="rounded bg-accent/15 p-2 text-accent"><Upload size={22} /></span>
+					<span>
+						<span class="block text-sm font-medium text-text-primary">This Device</span>
+					</span>
+				</button>
+			</div>
+
+			{#if localWallpaperError}
+				<div
+					class="flex items-start gap-2 rounded border border-danger/30 bg-danger/15 px-3 py-2 text-sm text-danger"
+				>
+					<AlertTriangle size={16} class="mt-0.5 shrink-0" />
+					<span>{localWallpaperError}</span>
+				</div>
+			{/if}
+		</div>
+	{:else if wallpaperSource === 'server'}
+		<div class="flex flex-col gap-3">
+			{#if serverWallpaperPath}
+				<div class="flex justify-end">
+					<Button variant="ghost" size="sm" onclick={openServerWallpaperParent}>
+						<ChevronUp size={14} />
+						Up
+					</Button>
+				</div>
+			{/if}
+
+			<div
+				class="rounded border border-border-primary bg-surface-secondary px-3 py-2 text-xs text-text-secondary"
+			>
+				<button
+					type="button"
+					class="cursor-pointer border-none bg-transparent p-0 text-text-primary hover:text-accent"
+					onclick={openServerWallpaperRoot}
+				>
+					Server
+				</button>
+				{#each serverWallpaperCrumbs as crumb, index (`${crumb}-${index}`)}
+					<span class="mx-1 text-text-muted">/</span>
+					<span class={index === serverWallpaperCrumbs.length - 1 ? 'text-text-primary' : ''}
+						>{crumb}</span
+					>
+				{/each}
+			</div>
+
+			{#if serverWallpaperError}
+				<div
+					class="flex items-start gap-2 rounded border border-danger/30 bg-danger/15 px-3 py-2 text-sm text-danger"
+				>
+					<AlertTriangle size={16} class="mt-0.5 shrink-0" />
+					<span>{serverWallpaperError}</span>
+				</div>
+			{/if}
+
+			{#if serverWallpaperLoading}
+				<div
+					class="rounded border border-border-primary bg-surface-secondary px-3 py-8 text-center text-sm text-text-secondary"
+				>
+					Loading server folders...
+				</div>
+			{:else if !serverWallpaperPath}
+				<div
+					class="max-h-72 overflow-auto rounded border border-border-primary bg-surface-secondary"
+				>
+					{#if serverWallpaperRoots.length === 0}
+						<div class="px-3 py-8 text-center text-sm text-text-secondary">
+							No server folders are available.
+						</div>
+					{:else}
+						{#each serverWallpaperRoots as root (root.name)}
+							<button
+								type="button"
+								class="flex w-full cursor-pointer items-center gap-3 border-0 border-b border-border-secondary bg-transparent px-3 py-2.5 text-left last:border-b-0 hover:bg-surface-tertiary"
+								onclick={() => openServerWallpaperPath(root.name)}
+							>
+								<Folder size={16} class="shrink-0 text-accent" />
+								<span class="min-w-0 flex-1 truncate text-sm text-text-primary">{root.name}</span>
+								{#if root.readOnly}
+									<span class="text-[11px] text-text-muted">Read only</span>
+								{/if}
+							</button>
+						{/each}
+					{/if}
+				</div>
+			{:else}
+				<div
+					class="max-h-72 overflow-auto rounded border border-border-primary bg-surface-secondary"
+				>
+					{#if serverWallpaperEntries.length === 0}
+						<div class="px-3 py-8 text-center text-sm text-text-secondary">
+							No image files found in this folder.
+						</div>
+					{:else}
+						{#each serverWallpaperEntries as item (item.path)}
+							{#if item.isDir}
+								<button
+									type="button"
+									class="flex w-full cursor-pointer items-center gap-3 border-0 border-b border-border-secondary bg-transparent px-3 py-2.5 text-left last:border-b-0 hover:bg-surface-tertiary"
+									onclick={() => openServerWallpaperPath(item.path)}
+								>
+									<Folder size={16} class="shrink-0 text-accent" />
+									<span class="min-w-0 flex-1 truncate text-sm text-text-primary">{item.name}</span>
+								</button>
+							{:else}
+								<button
+									type="button"
+									class="flex w-full cursor-pointer items-center gap-3 border-0 border-b border-border-secondary bg-transparent px-3 py-2.5 text-left last:border-b-0 hover:bg-surface-tertiary"
+									onclick={() => chooseServerWallpaper(item)}
+								>
+									<FileImage size={16} class="shrink-0 text-accent" />
+									<span class="min-w-0 flex-1 truncate text-sm text-text-primary">{item.name}</span>
+									<span class="text-xs text-text-muted">{formatFileSize(item.size)}</span>
+								</button>
+							{/if}
+						{/each}
+					{/if}
+				</div>
+			{/if}
+		</div>
+	{/if}
+</Modal>

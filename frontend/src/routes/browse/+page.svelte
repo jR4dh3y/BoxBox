@@ -97,8 +97,16 @@
 	const settings = $derived($settingsStore);
 	const trimmedSearchQuery = $derived(searchQuery.trim());
 	const isSearchActive = $derived(trimmedSearchQuery.length >= 2);
+	const directoryOptions = $derived({ ...options, includeHidden: settings.showHiddenFiles });
 	const listScope = $derived(
-		[path, options.pageSize, options.sortBy, options.sortDir, options.filter].join('\u0000')
+		[
+			path,
+			directoryOptions.pageSize,
+			directoryOptions.sortBy,
+			directoryOptions.sortDir,
+			directoryOptions.filter,
+			directoryOptions.includeHidden
+		].join('\u0000')
 	);
 	const queryClient = useQueryClient();
 
@@ -114,8 +122,8 @@
 	}));
 
 	const directoryQuery = createQuery<FileListType>(() => ({
-		queryKey: fileQueryKeys.list(path, options),
-		queryFn: () => listDirectory(path, options),
+		queryKey: fileQueryKeys.list(path, directoryOptions),
+		queryFn: () => listDirectory(path, directoryOptions),
 		enabled: path !== ''
 	}));
 
@@ -171,7 +179,6 @@
 	);
 	const statusTotalCount = $derived.by(() => {
 		if (isAtRoot || isSearchActive) return undefined;
-		if (!settings.showHiddenFiles && !hasMoreItems) return displayItems.length;
 		return loadedTotalCount;
 	});
 	const emptyListMessage = $derived.by(() => {
@@ -198,6 +205,10 @@
 		activeListScope = listScope;
 		loadedFileItems = [];
 		loadedTotalCount = 0;
+
+		if (options.page !== 1) {
+			listOptionsStore.setPage(1);
+		}
 	});
 
 	$effect(() => {

@@ -41,3 +41,98 @@
 	--color-selection: #2d4a6f;
 	--color-selection-hover: #345580;
 }
+
+html,
+body {
+	min-height: 100%;
+	background: var(--color-surface-primary);
+}
+
+.app-shell {
+	position: relative;
+	min-height: 100vh;
+	background:
+		radial-gradient(circle at 15% 12%, rgba(74, 158, 255, 0.12), transparent 28rem),
+		var(--color-surface-primary);
+}
+
+.app-content {
+	position: relative;
+	z-index: 1;
+	min-height: 100vh;
+}
+
+.app-personal-background {
+	position: fixed;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+	background-position: center;
+	background-repeat: no-repeat;
+	background-size: cover;
+	transform: scale(1.015);
+}
+
+.app-personal-background::after {
+	position: absolute;
+	inset: 0;
+	content: '';
+	background:
+		linear-gradient(
+			135deg,
+			rgba(10, 10, 10, 0.72),
+			rgba(10, 10, 10, 0.3) 45%,
+			rgba(10, 10, 10, 0.76)
+		),
+		radial-gradient(circle at 80% 15%, rgba(74, 158, 255, 0.2), transparent 24rem);
+}
+
+.app-shell[data-has-background='true'] :where(.bg-surface-primary) {
+	background-color: rgb(30 30 30 / 0.86);
+}
+
+.app-shell[data-has-background='true'] :where(.bg-surface-secondary) {
+	background-color: rgb(37 37 37 / 0.84);
+}
+
+.app-shell[data-has-background='true'] :where(.bg-surface-tertiary) {
+	background-color: rgb(42 42 42 / 0.86);
+}
+
+.app-shell[data-has-background='true'] :where(.bg-surface-elevated) {
+	background-color: rgb(51 51 51 / 0.86);
+}
+
+.app-shell[data-has-background='true'][data-frosted-glass='true']
+	:where(.bg-surface-primary, .bg-surface-secondary, .bg-surface-tertiary, .bg-surface-elevated) {
+	-webkit-backdrop-filter: blur(22px) saturate(145%);
+	backdrop-filter: blur(22px) saturate(145%);
+}
+
+.app-shell[data-has-background='true'][data-frosted-glass='true'] :where(.bg-surface-primary) {
+	background-color: rgb(30 30 30 / 0.62);
+}
+
+.app-shell[data-has-background='true'][data-frosted-glass='true'] :where(.bg-surface-secondary) {
+	background-color: rgb(37 37 37 / 0.58);
+}
+
+.app-shell[data-has-background='true'][data-frosted-glass='true'] :where(.bg-surface-tertiary) {
+	background-color: rgb(42 42 42 / 0.6);
+}
+
+.app-shell[data-has-background='true'][data-frosted-glass='true'] :where(.bg-surface-elevated) {
+	background-color: rgb(51 51 51 / 0.62);
+}
+
+.app-shell[data-has-background='true'][data-frosted-glass='true']
+	:where(.border-border-primary, .border-border-secondary) {
+	border-color: rgb(255 255 255 / 0.13);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+	.app-shell[data-has-background='true'][data-frosted-glass='true']
+		:where(.bg-surface-primary, .bg-surface-secondary, .bg-surface-tertiary, .bg-surface-elevated) {
+		background-color: rgb(30 30 30 / 0.9);
+	}
+}
