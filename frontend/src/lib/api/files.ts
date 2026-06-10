@@ -78,6 +78,7 @@ export interface ListOptions {
 	sortBy?: 'name' | 'size' | 'modTime' | 'type';
 	sortDir?: 'asc' | 'desc';
 	filter?: string;
+	includeHidden?: boolean;
 }
 
 /**
@@ -149,6 +150,7 @@ export async function getPath(path: string, options?: ListOptions): Promise<File
 		if (options.sortBy) params.sortBy = options.sortBy;
 		if (options.sortDir) params.sortDir = options.sortDir;
 		if (options.filter) params.filter = options.filter;
+		if (options.includeHidden !== undefined) params.includeHidden = options.includeHidden;
 	}
 
 	return api.get<FileList | FileInfo>(`/files/${path}`, params);

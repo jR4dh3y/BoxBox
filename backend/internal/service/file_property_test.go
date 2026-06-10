@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/homelab/filemanager/internal/model"
@@ -53,10 +54,11 @@ func TestDirectoryListingPutsVisibleItemsBeforeHiddenItems(t *testing.T) {
 	}
 
 	list, err := svc.List(ctx, "media/hidden-first", model.ListOptions{
-		Page:     1,
-		PageSize: 3,
-		SortBy:   "name",
-		SortDir:  "asc",
+		Page:          1,
+		PageSize:      3,
+		SortBy:        "name",
+		SortDir:       "asc",
+		IncludeHidden: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +72,58 @@ func TestDirectoryListingPutsVisibleItemsBeforeHiddenItems(t *testing.T) {
 	want := []string{"Desktop", "Documents", "Downloads"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("expected first page to contain visible items %v, got %v", want, got)
+	}
+}
+
+func TestDirectoryListingCanExcludeHiddenItemsBeforePagination(t *testing.T) {
+	svc, fs := setupTestFileService()
+	ctx := context.Background()
+
+	testDir := "/data/media/visible-count"
+	if err := fs.MkdirAll(testDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"alpha.txt", "beta.txt", ".env", ".cache"} {
+		if err := fs.WriteFile(testDir+"/"+name, []byte("content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	list, err := svc.List(ctx, "media/visible-count", model.ListOptions{
+		Page:          1,
+		PageSize:      50,
+		SortBy:        "name",
+		SortDir:       "asc",
+		IncludeHidden: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if list.TotalCount != 2 || len(list.Items) != 2 {
+		t.Fatalf("expected only visible items in count/page, got total=%d page=%d", list.TotalCount, len(list.Items))
+	}
+
+	for _, item := range list.Items {
+		if strings.HasPrefix(item.Name, ".") {
+			t.Fatalf("expected hidden item to be excluded before pagination, got %q", item.Name)
+		}
+	}
+
+	list, err = svc.List(ctx, "media/visible-count", model.ListOptions{
+		Page:          1,
+		PageSize:      50,
+		SortBy:        "name",
+		SortDir:       "asc",
+		IncludeHidden: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if list.TotalCount != 4 || len(list.Items) != 4 {
+		t.Fatalf("expected hidden items when enabled, got total=%d page=%d", list.TotalCount, len(list.Items))
 	}
 }
 

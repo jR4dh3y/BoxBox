@@ -7,13 +7,17 @@
 	import { authStore } from '$lib/stores/auth';
 	import {
 		DEFAULT_ACCENT_COLOR,
+		isValidBackgroundImage,
 		isValidAccentColor,
+		normalizeBackgroundImage,
 		normalizeAccentColor,
 		settingsStore,
 		type UserSettings
 	} from '$lib/stores/settings';
 	import SearchBar from '$lib/components/SearchBar.svelte';
+	import WallpaperSettings from '$lib/components/settings/wallpaper/WallpaperSettings.svelte';
 	import { Button, Select, Toggle } from '$lib/components/ui';
+	import { normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
 	import {
 		ChevronLeft,
 		Eye,
@@ -25,10 +29,11 @@
 		Save,
 		Settings,
 		User,
+		PaintRollerIcon,
 		X
 	} from 'lucide-svelte';
 
-	type SettingsSectionId = 'display' | 'behavior' | 'defaults' | 'account';
+	type SettingsSectionId = 'display' | 'personalization' | 'behavior' | 'defaults' | 'account';
 	type SettingsCategory = 'all' | SettingsSectionId;
 
 	let settings = $state<UserSettings>({ ...$settingsStore });
@@ -41,42 +46,42 @@
 	const accentColorValue = $derived(
 		normalizeAccentColor(settings.accentColor) ?? DEFAULT_ACCENT_COLOR
 	);
-	const canSave = $derived(hasChanges && accentColorIsValid);
+	const backgroundImageIsValid = $derived(isValidBackgroundImage(settings.backgroundImage));
+	const canSave = $derived(hasChanges && accentColorIsValid && backgroundImageIsValid);
 
 	const navItems: Array<{
 		id: SettingsCategory;
 		label: string;
-		description: string;
 		icon: typeof Eye;
 	}> = [
 		{
 			id: 'all',
 			label: 'Show All',
-			description: 'Every setting in one view',
 			icon: Settings
 		},
 		{
 			id: 'display',
 			label: 'File Display',
-			description: 'Colors, hidden files, density',
 			icon: Eye
+		},
+		{
+			id: 'personalization',
+			label: 'Personalization',
+			icon: PaintRollerIcon
 		},
 		{
 			id: 'behavior',
 			label: 'Behavior',
-			description: 'Delete and preview behavior',
 			icon: MousePointer
 		},
 		{
 			id: 'defaults',
 			label: 'Default View',
-			description: 'Sorting and layout choices',
 			icon: Layout
 		},
 		{
 			id: 'account',
 			label: 'Account',
-			description: 'Session and reset controls',
 			icon: User
 		}
 	];
@@ -99,7 +104,7 @@
 	];
 
 	const navButtonClass =
-		'group flex w-full cursor-pointer items-start gap-2.5 border-none bg-transparent px-3 py-2 text-left transition-colors duration-100 hover:bg-surface-secondary';
+		'group flex w-full cursor-pointer items-center gap-2.5 border-none bg-transparent px-3 py-2 text-left transition-colors duration-100 hover:bg-surface-secondary';
 	const activeNavClass = 'bg-selection text-white hover:bg-selection-hover';
 	const inactiveNavClass = 'text-text-secondary hover:text-text-primary';
 	const toolbarButtonClass =
@@ -112,11 +117,16 @@
 		'flex items-center justify-between gap-4 border-b border-border-secondary px-4 py-3 last:border-b-0';
 
 	function handleSave() {
-		if (!accentColorIsValid) return;
+		if (!accentColorIsValid || !backgroundImageIsValid) return;
+
+		const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
 
 		settingsStore.set({
 			...settings,
-			accentColor: normalizeAccentColor(settings.accentColor)
+			accentColor: normalizeAccentColor(settings.accentColor),
+			backgroundImage,
+			backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode),
+			frostedGlass: backgroundImage ? settings.frostedGlass : false
 		});
 	}
 
@@ -174,14 +184,29 @@
 				'file display',
 				'hidden files',
 				'file extensions',
-				'accent color',
-				'custom color',
-				'theme',
-				'folder color',
 				'compact mode',
 				'density',
 				'lists',
 				'grids'
+			)
+	);
+	const showPersonalizationSection = $derived(
+		categoryAllows('personalization') &&
+			matchesSearch(
+				'personalization',
+				'accent color',
+				'custom color',
+				'background image',
+				'wallpaper',
+				'crop',
+				'stretch',
+				'fit',
+				'wallpaper fit',
+				'frosted glass',
+				'blur',
+				'theme',
+				'folder color',
+				'selection color'
 			)
 	);
 	const showBehaviorSection = $derived(
@@ -203,7 +228,11 @@
 			matchesSearch('account', 'session', 'reset defaults', 'logout', 'local preferences')
 	);
 	const hasSearchResults = $derived(
-		showDisplaySection || showBehaviorSection || showDefaultsSection || showAccountSection
+		showDisplaySection ||
+			showPersonalizationSection ||
+			showBehaviorSection ||
+			showDefaultsSection ||
+			showAccountSection
 	);
 </script>
 
@@ -233,14 +262,6 @@
 					<item.icon size={16} class="mt-0.5 shrink-0 opacity-80" />
 					<span class="min-w-0">
 						<span class="block text-[13px] leading-5">{item.label}</span>
-						<span
-							class="block overflow-hidden text-[11px] leading-4 text-ellipsis whitespace-nowrap {activeCategory ===
-							item.id
-								? 'text-white/70'
-								: 'text-text-muted'}"
-						>
-							{item.description}
-						</span>
 					</span>
 				</button>
 			{/each}
@@ -325,7 +346,11 @@
 									<div>
 										<div class="text-[13px] text-text-primary">Show hidden files</div>
 									</div>
-									<Toggle bind:checked={settings.showHiddenFiles} label="Show hidden files" />
+									<Toggle
+										bind:checked={settings.showHiddenFiles}
+										label="Show hidden files"
+										showLabel={false}
+									/>
 								</div>
 							{/if}
 
@@ -334,19 +359,48 @@
 									<div>
 										<div class="text-[13px] text-text-primary">Show file extensions</div>
 									</div>
-									<Toggle bind:checked={settings.showFileExtensions} label="Show file extensions" />
+									<Toggle
+										bind:checked={settings.showFileExtensions}
+										label="Show file extensions"
+										showLabel={false}
+									/>
 								</div>
 							{/if}
 
+							{#if matchesSearch('compact mode', 'reduce row and tile spacing', 'density')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="text-[13px] text-text-primary">Compact mode</div>
+									</div>
+									<Toggle
+										bind:checked={settings.compactMode}
+										label="Compact mode"
+										showLabel={false}
+									/>
+								</div>
+							{/if}
+						</div>
+					</section>
+				{/if}
+
+				{#if showPersonalizationSection}
+					<section id="personalization" class={panelClass}>
+						<div class={panelHeaderClass}>
+							<div>
+								<h2 class="m-0 flex items-center gap-2 text-sm font-medium">
+									<PaintRollerIcon size={16} class="text-accent" />
+									Personalization
+								</h2>
+							</div>
+						</div>
+
+						<div>
 							{#if matchesSearch('accent color', 'custom color', 'theme', 'folder color', 'selection color')}
 								<div class={settingRowClass}>
 									<div>
 										<div class="flex items-center gap-2 text-[13px] text-text-primary">
 											<Palette size={14} class="text-accent" />
 											<span>Accent color</span>
-										</div>
-										<div class="mt-1 max-w-md text-xs text-text-muted">
-											Applies to buttons, selections, focus rings, and folder icons.
 										</div>
 										{#if !accentColorIsValid}
 											<div class="mt-1 text-xs text-danger">Use a #RRGGBB hex color.</div>
@@ -379,14 +433,33 @@
 								</div>
 							{/if}
 
-							{#if matchesSearch('compact mode', 'reduce row and tile spacing', 'density')}
-								<div class={settingRowClass}>
-									<div>
-										<div class="text-[13px] text-text-primary">Compact mode</div>
-									</div>
-									<Toggle bind:checked={settings.compactMode} label="Compact mode" />
-								</div>
-							{/if}
+							<WallpaperSettings
+								rowClass={settingRowClass}
+								showHiddenFiles={settings.showHiddenFiles}
+								showWallpaperRow={matchesSearch(
+									'background image',
+									'wallpaper',
+									'custom background',
+									'personalization'
+								)}
+								showDisplayModeRow={matchesSearch(
+									'wallpaper fit',
+									'crop',
+									'stretch',
+									'fit',
+									'center',
+									'tile'
+								)}
+								showFrostedRow={matchesSearch(
+									'frosted glass',
+									'blur',
+									'background blur',
+									'glass look'
+								)}
+								bind:backgroundImage={settings.backgroundImage}
+								bind:backgroundImageMode={settings.backgroundImageMode}
+								bind:frostedGlass={settings.frostedGlass}
+							/>
 						</div>
 					</section>
 				{/if}
@@ -408,7 +481,11 @@
 									<div>
 										<div class="text-[13px] text-text-primary">Confirm before delete</div>
 									</div>
-									<Toggle bind:checked={settings.confirmDelete} label="Confirm before delete" />
+									<Toggle
+										bind:checked={settings.confirmDelete}
+										label="Confirm before delete"
+										showLabel={false}
+									/>
 								</div>
 							{/if}
 
@@ -420,6 +497,7 @@
 									<Toggle
 										bind:checked={settings.previewOnSingleClick}
 										label="Preview on single click"
+										showLabel={false}
 									/>
 								</div>
 							{/if}
