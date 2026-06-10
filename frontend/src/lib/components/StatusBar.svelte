@@ -7,17 +7,35 @@
 
 	interface Props {
 		itemCount?: number;
+		totalCount?: number;
 		selectedCount?: number;
 		viewMode?: ViewMode;
+		hasMore?: boolean;
+		isLoadingMore?: boolean;
+		onLoadMore?: () => void;
 		onViewModeChange?: (mode: ViewMode) => void;
 	}
 
-	let { itemCount = 0, selectedCount = 0, viewMode = 'list', onViewModeChange }: Props = $props();
+	let {
+		itemCount = 0,
+		totalCount,
+		selectedCount = 0,
+		viewMode = 'list',
+		hasMore = false,
+		isLoadingMore = false,
+		onLoadMore,
+		onViewModeChange
+	}: Props = $props();
 
 	const statusText = $derived.by(() => {
 		if (selectedCount > 0) {
 			return `${selectedCount} of ${itemCount} selected`;
 		}
+
+		if (totalCount !== undefined && totalCount > itemCount) {
+			return `${itemCount} of ${totalCount} items`;
+		}
+
 		return `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
 	});
 
@@ -31,6 +49,16 @@
 >
 	<div class="flex items-center gap-3">
 		<span>{statusText}</span>
+		{#if hasMore}
+			<button
+				type="button"
+				class="rounded border border-border-primary bg-surface-secondary px-2 py-0.5 text-xs text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
+				onclick={onLoadMore}
+				disabled={isLoadingMore}
+			>
+				{isLoadingMore ? 'Loading...' : 'Load more'}
+			</button>
+		{/if}
 	</div>
 	<div class="flex items-center gap-3">
 		<div class="flex gap-0.5 rounded bg-surface-secondary p-0.5">

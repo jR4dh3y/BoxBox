@@ -12,6 +12,7 @@
 	import { FolderOpen } from 'lucide-svelte';
 	import { activeJobs, jobsStore } from '$lib/stores/jobs';
 	import { websocketStore } from '$lib/stores/websocket';
+	import { applyAccentColor, settingsStore } from '$lib/stores/settings';
 
 	let { children } = $props();
 	let initialized = $state(false);
@@ -76,6 +77,10 @@
 		if (!initialized || !$isAuthenticated) return;
 
 		websocketStore.syncJobSubscriptions($activeJobs.map((job) => job.id));
+	});
+
+	$effect(() => {
+		applyAccentColor($settingsStore.accentColor);
 	});
 
 	async function handleLogout() {

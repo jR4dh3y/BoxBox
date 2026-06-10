@@ -48,6 +48,7 @@
 		RootsResponse,
 		SearchResponse
 	} from '$lib/api/files';
+	import { untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	let searchQuery = $state('');
@@ -56,6 +57,9 @@
 	let previewFile = $state<FileInfo | null>(null);
 	let historyStack = $state<string[]>(['']);
 	let historyIndex = $state(0);
+	let loadedFileItems = $state<FileInfo[]>([]);
+	let loadedTotalCount = $state(0);
+	let activeListScope = $state('');
 
 	// Upload state
 	let fileInputEl: HTMLInputElement;
@@ -93,6 +97,9 @@
 	const settings = $derived($settingsStore);
 	const trimmedSearchQuery = $derived(searchQuery.trim());
 	const isSearchActive = $derived(trimmedSearchQuery.length >= 2);
+	const listScope = $derived(
+		[path, options.pageSize, options.sortBy, options.sortDir, options.filter].join('\u0000')
+	);
 	const queryClient = useQueryClient();
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
@@ -119,7 +126,10 @@
 	}));
 
 	const isLoading = $derived(directoryQuery.isLoading);
-	const isFileListLoading = $derived(isSearchActive ? searchQueryResult.isFetching : isLoading);
+	const isLoadingMore = $derived(!isSearchActive && directoryQuery.isFetching && options.page > 1);
+	const isFileListLoading = $derived(
+		isSearchActive ? searchQueryResult.isFetching : isLoading && loadedFileItems.length === 0
+	);
 	const fileList = $derived(directoryQuery.data ?? null);
 	const searchResults = $derived(searchQueryResult.data?.results ?? []);
 	const roots = $derived(rootsQuery.data?.roots ?? []);
@@ -144,7 +154,7 @@
 		if (isSearchActive) {
 			items = searchResults;
 		} else {
-			items = fileList?.items ?? [];
+			items = loadedFileItems;
 		}
 
 		if (!settings.showHiddenFiles) {
@@ -156,6 +166,14 @@
 	const previewableFiles = $derived(
 		displayItems.filter((item) => !item.isDir && canPreview(item.name))
 	);
+	const hasMoreItems = $derived(
+		!isSearchActive && !isAtRoot && loadedFileItems.length < loadedTotalCount
+	);
+	const statusTotalCount = $derived.by(() => {
+		if (isAtRoot || isSearchActive) return undefined;
+		if (!settings.showHiddenFiles && !hasMoreItems) return displayItems.length;
+		return loadedTotalCount;
+	});
 	const emptyListMessage = $derived.by(() => {
 		if (isSearchActive) {
 			return `No matches for "${trimmedSearchQuery}" in this folder`;
@@ -174,6 +192,33 @@
 	const isCurrentLocationReadOnly = $derived(currentMount?.readOnly ?? false);
 	const canCreate = $derived(!isAtRoot && !isCurrentLocationReadOnly);
 
+	$effect(() => {
+		if (listScope === activeListScope) return;
+
+		activeListScope = listScope;
+		loadedFileItems = [];
+		loadedTotalCount = 0;
+	});
+
+	$effect(() => {
+		if (!fileList || fileList.path !== path) return;
+
+		untrack(() => {
+			loadedTotalCount = fileList.totalCount;
+
+			if (fileList.page <= 1) {
+				loadedFileItems = fileList.items;
+				return;
+			}
+
+			const seenPaths = new Set(loadedFileItems.map((item) => item.path));
+			const newItems = fileList.items.filter((item) => !seenPaths.has(item.path));
+			if (newItems.length > 0) {
+				loadedFileItems = [...loadedFileItems, ...newItems];
+			}
+		});
+	});
+
 	function getErrorMessage(error: unknown, fallback: string): string {
 		return error instanceof Error ? error.message : fallback;
 	}
@@ -185,6 +230,7 @@
 		historyIndex = newHistory.length - 1;
 
 		pathStore.navigateTo(newPath);
+		listOptionsStore.setPage(1);
 		searchQuery = '';
 		selectedPaths = new Set();
 	}
@@ -193,6 +239,7 @@
 		if (canGoBack) {
 			historyIndex--;
 			pathStore.navigateTo(historyStack[historyIndex]);
+			listOptionsStore.setPage(1);
 			selectedPaths = new Set();
 		}
 	}
@@ -201,6 +248,7 @@
 		if (canGoForward) {
 			historyIndex++;
 			pathStore.navigateTo(historyStack[historyIndex]);
+			listOptionsStore.setPage(1);
 			selectedPaths = new Set();
 		}
 	}
@@ -264,6 +312,11 @@
 
 	function handleViewModeChange(mode: ViewMode) {
 		viewMode = mode;
+	}
+
+	function handleLoadMore() {
+		if (!hasMoreItems || directoryQuery.isFetching) return;
+		listOptionsStore.setPage(options.page + 1);
 	}
 
 	/**
@@ -700,7 +753,16 @@
 		</div>
 
 		<!-- Status bar -->
-		<StatusBar {itemCount} {selectedCount} {viewMode} onViewModeChange={handleViewModeChange} />
+		<StatusBar
+			{itemCount}
+			{selectedCount}
+			{viewMode}
+			totalCount={statusTotalCount}
+			hasMore={hasMoreItems}
+			{isLoadingMore}
+			onLoadMore={handleLoadMore}
+			onViewModeChange={handleViewModeChange}
+		/>
 	</div>
 </div>
 
