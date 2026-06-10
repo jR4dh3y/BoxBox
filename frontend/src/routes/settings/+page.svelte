@@ -5,7 +5,13 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { authStore } from '$lib/stores/auth';
-	import { settingsStore, type UserSettings } from '$lib/stores/settings';
+	import {
+		DEFAULT_ACCENT_COLOR,
+		isValidAccentColor,
+		normalizeAccentColor,
+		settingsStore,
+		type UserSettings
+	} from '$lib/stores/settings';
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import { Button, Select, Toggle } from '$lib/components/ui';
 	import {
@@ -14,6 +20,7 @@
 		Layout,
 		LogOut,
 		MousePointer,
+		Palette,
 		RotateCcw,
 		Save,
 		Settings,
@@ -30,6 +37,11 @@
 
 	const hasChanges = $derived(JSON.stringify(settings) !== JSON.stringify($settingsStore));
 	const normalizedSearch = $derived(searchQuery.trim().toLowerCase());
+	const accentColorIsValid = $derived(isValidAccentColor(settings.accentColor));
+	const accentColorValue = $derived(
+		normalizeAccentColor(settings.accentColor) ?? DEFAULT_ACCENT_COLOR
+	);
+	const canSave = $derived(hasChanges && accentColorIsValid);
 
 	const navItems: Array<{
 		id: SettingsCategory;
@@ -46,7 +58,7 @@
 		{
 			id: 'display',
 			label: 'File Display',
-			description: 'Hidden files, extensions, density',
+			description: 'Colors, hidden files, density',
 			icon: Eye
 		},
 		{
@@ -100,7 +112,12 @@
 		'flex items-center justify-between gap-4 border-b border-border-secondary px-4 py-3 last:border-b-0';
 
 	function handleSave() {
-		settingsStore.set(settings);
+		if (!accentColorIsValid) return;
+
+		settingsStore.set({
+			...settings,
+			accentColor: normalizeAccentColor(settings.accentColor)
+		});
 	}
 
 	function handleCancel() {
@@ -129,6 +146,19 @@
 		searchQuery = '';
 	}
 
+	function handleAccentColorInput(event: Event) {
+		settings.accentColor = (event.currentTarget as HTMLInputElement).value;
+	}
+
+	function handleAccentTextInput(event: Event) {
+		const value = (event.currentTarget as HTMLInputElement).value.trim();
+		settings.accentColor = value === '' ? null : value;
+	}
+
+	function handleAccentReset() {
+		settings.accentColor = null;
+	}
+
 	function matchesSearch(...values: string[]): boolean {
 		if (!normalizedSearch) return true;
 		return values.some((value) => value.toLowerCase().includes(normalizedSearch));
@@ -144,6 +174,10 @@
 				'file display',
 				'hidden files',
 				'file extensions',
+				'accent color',
+				'custom color',
+				'theme',
+				'folder color',
 				'compact mode',
 				'density',
 				'lists',
@@ -255,7 +289,7 @@
 					size="sm"
 					onclick={handleSave}
 					title="Save changes"
-					disabled={!hasChanges}
+					disabled={!canSave}
 				>
 					<Save size={16} />
 					<span class="hidden sm:inline">Save</span>
@@ -301,6 +335,47 @@
 										<div class="text-[13px] text-text-primary">Show file extensions</div>
 									</div>
 									<Toggle bind:checked={settings.showFileExtensions} label="Show file extensions" />
+								</div>
+							{/if}
+
+							{#if matchesSearch('accent color', 'custom color', 'theme', 'folder color', 'selection color')}
+								<div class={settingRowClass}>
+									<div>
+										<div class="flex items-center gap-2 text-[13px] text-text-primary">
+											<Palette size={14} class="text-accent" />
+											<span>Accent color</span>
+										</div>
+										<div class="mt-1 max-w-md text-xs text-text-muted">
+											Applies to buttons, selections, focus rings, and folder icons.
+										</div>
+										{#if !accentColorIsValid}
+											<div class="mt-1 text-xs text-danger">Use a #RRGGBB hex color.</div>
+										{/if}
+									</div>
+
+									<div class="flex flex-wrap items-center justify-end gap-2">
+										<input
+											type="color"
+											value={accentColorValue}
+											oninput={handleAccentColorInput}
+											aria-label="Choose accent color"
+											class="h-8 w-10 cursor-pointer rounded border border-border-primary bg-surface-secondary p-0.5"
+										/>
+										<input
+											type="text"
+											value={settings.accentColor ?? ''}
+											placeholder={DEFAULT_ACCENT_COLOR}
+											oninput={handleAccentTextInput}
+											aria-label="Accent color hex value"
+											aria-invalid={!accentColorIsValid}
+											class="h-8 w-28 rounded border bg-surface-secondary px-2 text-sm text-text-primary placeholder:text-text-muted focus:border-border-focus focus:outline-none {accentColorIsValid
+												? 'border-border-primary'
+												: 'border-danger'}"
+										/>
+										<Button variant="secondary" size="sm" onclick={handleAccentReset}
+											>Default</Button
+										>
+									</div>
 								</div>
 							{/if}
 
