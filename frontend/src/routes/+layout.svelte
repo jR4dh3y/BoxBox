@@ -13,6 +13,7 @@
 	import { activeJobs, jobsStore } from '$lib/stores/jobs';
 	import { websocketStore } from '$lib/stores/websocket';
 	import { applyAccentColor, resolveBackgroundImage, settingsStore } from '$lib/stores/settings';
+	import { getWallpaperBackgroundStyle, normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
 
 	let { children } = $props();
 	let initialized = $state(false);
@@ -34,11 +35,15 @@
 	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
 	const backgroundImage = $derived(resolveBackgroundImage($settingsStore.backgroundImage));
+	const backgroundImageMode = $derived(
+		normalizeBackgroundImageMode($settingsStore.backgroundImageMode)
+	);
 	const hasBackgroundImage = $derived(backgroundImage !== null);
 	const frostedGlass = $derived(hasBackgroundImage && $settingsStore.frostedGlass);
 	const backgroundImageStyle = $derived(
 		backgroundImage ? `url(${JSON.stringify(backgroundImage)})` : undefined
 	);
+	const backgroundStyle = $derived(getWallpaperBackgroundStyle(backgroundImageMode));
 
 	onMount(() => {
 		authStore.initialize();
@@ -100,12 +105,16 @@
 <div
 	class="app-shell"
 	data-has-background={hasBackgroundImage ? 'true' : undefined}
+	data-background-mode={hasBackgroundImage ? backgroundImageMode : undefined}
 	data-frosted-glass={frostedGlass ? 'true' : undefined}
 >
 	{#if hasBackgroundImage}
 		<div
 			class="app-personal-background"
 			style:background-image={backgroundImageStyle}
+			style:background-size={backgroundStyle.size}
+			style:background-repeat={backgroundStyle.repeat}
+			style:background-position={backgroundStyle.position}
 			aria-hidden="true"
 		></div>
 	{/if}

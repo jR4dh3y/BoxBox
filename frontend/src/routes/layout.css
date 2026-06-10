@@ -70,6 +70,9 @@ body {
 	background-position: center;
 	background-repeat: no-repeat;
 	background-size: cover;
+}
+
+.app-shell[data-background-mode='cover'] .app-personal-background {
 	transform: scale(1.015);
 }
 

@@ -5,13 +5,24 @@
 	interface Props {
 		open?: boolean;
 		title?: string;
+		size?: 'md' | 'lg';
 		children: Snippet;
 		headerActions?: Snippet;
 		footer?: Snippet;
 		onclose?: () => void;
 	}
 
-	let { open = false, title, children, headerActions, footer, onclose }: Props = $props();
+	let {
+		open = false,
+		title,
+		size = 'md',
+		children,
+		headerActions,
+		footer,
+		onclose
+	}: Props = $props();
+
+	const widthClass = $derived(size === 'lg' ? 'max-w-3xl' : 'max-w-md');
 
 	function handleBackdropClick(e: MouseEvent) {
 		if (e.target === e.currentTarget) {
@@ -36,7 +47,7 @@
 		onkeydown={handleKeydown}
 	>
 		<div
-			class="mx-4 flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-border-primary bg-surface-primary shadow-xl"
+			class="mx-4 flex max-h-[90vh] w-full {widthClass} flex-col overflow-hidden rounded-lg border border-border-primary bg-surface-primary shadow-xl"
 		>
 			{#if title}
 				<div class="flex items-center justify-between border-b border-border-secondary px-4 py-3">

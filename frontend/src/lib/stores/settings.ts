@@ -9,6 +9,11 @@ import {
 	deleteDriveName as apiDeleteDriveName
 } from '$lib/api/drive-names';
 import { getPreviewUrl } from '$lib/api/files';
+import {
+	DEFAULT_BACKGROUND_IMAGE_MODE,
+	normalizeBackgroundImageMode,
+	type BackgroundImageMode
+} from '$lib/utils/wallpaper';
 
 export interface UserSettings {
 	showHiddenFiles: boolean;
@@ -19,6 +24,7 @@ export interface UserSettings {
 	defaultViewMode: 'list' | 'grid';
 	accentColor: string | null;
 	backgroundImage: string | null;
+	backgroundImageMode: BackgroundImageMode;
 	frostedGlass: boolean;
 	previewOnSingleClick: boolean;
 	compactMode: boolean;
@@ -55,6 +61,7 @@ const defaultSettings: UserSettings = {
 	defaultViewMode: 'list',
 	accentColor: null,
 	backgroundImage: null,
+	backgroundImageMode: DEFAULT_BACKGROUND_IMAGE_MODE,
 	frostedGlass: false,
 	previewOnSingleClick: false,
 	compactMode: false,
@@ -172,7 +179,11 @@ export function applyAccentColor(accentColor: string | null): void {
 
 function loadSettings(): UserSettings {
 	const stored = settingsStorage.get<UserSettings>();
-	return stored ? { ...defaultSettings, ...stored } : defaultSettings;
+	const settings = stored ? { ...defaultSettings, ...stored } : defaultSettings;
+	return {
+		...settings,
+		backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode)
+	};
 }
 
 function saveSettings(settings: UserSettings): void {
@@ -248,7 +259,8 @@ function createSettingsStore() {
 		async removeDriveName(originalName: string) {
 			await apiDeleteDriveName(originalName);
 			update((current) => {
-				const { [originalName]: removed, ...rest } = current.driveNameOverrides;
+				const rest = { ...current.driveNameOverrides };
+				delete rest[originalName];
 				const updated = { ...current, driveNameOverrides: rest };
 				saveSettings(updated);
 				return updated;
