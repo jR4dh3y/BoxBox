@@ -9,7 +9,7 @@
 		Image as ImageIcon,
 		Upload
 	} from 'lucide-svelte';
-	import { Button, Modal, Select } from '$lib/components/ui';
+	import { Button, Modal, ProgressBar, Select } from '$lib/components/ui';
 	import { listDirectory, listRoots, type FileInfo, type MountPoint } from '$lib/api/files';
 	import { resolveBackgroundImage, toServerBackgroundImage } from '$lib/stores/settings';
 	import { formatFileSize } from '$lib/utils/format';
@@ -34,17 +34,19 @@
 	interface Props {
 		open?: boolean;
 		currentMode?: BackgroundImageMode;
+		frostedGlass?: boolean;
 		showHiddenFiles: boolean;
 		onapply?: (selection: WallpaperSelection) => void;
 		onclose?: () => void;
 	}
 
-	const LOCAL_WALLPAPER_MAX_BYTES = 10 * 1024 * 1024;
+	const LOCAL_WALLPAPER_MAX_BYTES = 20 * 1024 * 1024;
 	const PREVIEW_ROWS = [0, 1, 2, 3, 4, 5];
 
 	let {
 		open = true,
 		currentMode = DEFAULT_BACKGROUND_IMAGE_MODE,
+		frostedGlass = false,
 		showHiddenFiles,
 		onapply,
 		onclose
@@ -57,6 +59,9 @@
 	let serverWallpaperLoading = $state(false);
 	let serverWallpaperError = $state<string | null>(null);
 	let localWallpaperError = $state<string | null>(null);
+	let localWallpaperUploading = $state(false);
+	let localWallpaperProgress = $state(0);
+	let localWallpaperProgressLabel = $state('');
 	let previewBackgroundImage = $state<string | null>(null);
 	let previewName = $state('');
 	let previewOrigin = $state<PreviewOrigin | null>(null);
@@ -144,6 +149,8 @@
 	}
 
 	function openLocalWallpaperPicker() {
+		if (localWallpaperUploading) return;
+
 		localWallpaperError = null;
 		localWallpaperInput?.click();
 	}
@@ -153,26 +160,38 @@
 		const file = input.files?.[0];
 		input.value = '';
 
-		if (!file) return;
+		if (!file || localWallpaperUploading) return;
 
 		localWallpaperError = null;
+		localWallpaperProgress = 0;
+		localWallpaperProgressLabel = '';
 		if (!file.type.startsWith('image/') && !isLocalImageFile(file.name)) {
 			localWallpaperError = 'Choose an image file.';
 			return;
 		}
 
 		if (file.size > LOCAL_WALLPAPER_MAX_BYTES) {
-			localWallpaperError = `Choose an image smaller than ${formatFileSize(LOCAL_WALLPAPER_MAX_BYTES)}.`;
+			localWallpaperError = `Choose an image smaller than ${formatFileSize(LOCAL_WALLPAPER_MAX_BYTES)} so it can be saved locally.`;
 			return;
 		}
 
 		try {
-			previewBackgroundImage = await readFileAsDataUrl(file);
+			localWallpaperUploading = true;
+			localWallpaperProgressLabel = 'Preparing wallpaper upload...';
+			previewBackgroundImage = await readFileAsDataUrl(file, (progress) => {
+				localWallpaperProgress = progress;
+				localWallpaperProgressLabel =
+					progress >= 100 ? 'Preparing preview...' : 'Uploading wallpaper...';
+			});
 			previewName = file.name;
 			previewOrigin = 'local';
 			previewMode = normalizeBackgroundImageMode(currentMode);
 		} catch {
 			localWallpaperError = 'Unable to read this image.';
+			localWallpaperProgress = 0;
+			localWallpaperProgressLabel = '';
+		} finally {
+			localWallpaperUploading = false;
 		}
 	}
 
@@ -186,6 +205,8 @@
 		previewBackgroundImage = null;
 		previewName = '';
 		previewOrigin = null;
+		localWallpaperProgress = 0;
+		localWallpaperProgressLabel = '';
 
 		if (origin === 'server') {
 			wallpaperSource = 'server';
@@ -236,23 +257,24 @@
 				style:background-repeat={previewBackgroundStyle.repeat}
 				style:background-position={previewBackgroundStyle.position}
 			>
-				<div class="absolute inset-0 bg-black/35"></div>
+				<div class="absolute inset-0 bg-black/30"></div>
 				<div
-					class="relative flex h-full overflow-hidden rounded bg-surface-primary/70 backdrop-blur-md"
+					class="preview-chrome relative flex h-full overflow-hidden rounded bg-surface-primary/70"
+					data-frosted-glass={frostedGlass ? 'true' : undefined}
 				>
 					<div class="w-36 shrink-0 border-r border-white/10 p-3">
 						<div class="space-y-2">
-							<div class="h-7 rounded bg-white/12"></div>
-							<div class="h-7 rounded bg-accent/55"></div>
-							<div class="h-7 rounded bg-white/12"></div>
-							<div class="h-7 rounded bg-white/12"></div>
+							<div class="preview-field h-7 rounded"></div>
+							<div class="preview-field preview-field-accent h-7 rounded"></div>
+							<div class="preview-field h-7 rounded"></div>
+							<div class="preview-field h-7 rounded"></div>
 						</div>
 					</div>
 					<div class="flex min-w-0 flex-1 flex-col">
 						<div class="flex h-12 items-center gap-2 border-b border-white/10 px-3">
-							<div class="h-7 w-7 rounded bg-white/12"></div>
-							<div class="h-7 flex-1 rounded bg-white/12"></div>
-							<div class="h-7 w-20 rounded bg-white/12"></div>
+							<div class="preview-field h-7 w-7 rounded"></div>
+							<div class="preview-field h-7 flex-1 rounded"></div>
+							<div class="preview-field h-7 w-20 rounded"></div>
 						</div>
 						<div class="flex-1 p-4">
 							<div class="rounded border border-white/10 bg-surface-secondary/70">
@@ -261,11 +283,11 @@
 										class="grid grid-cols-[1fr_90px_110px] items-center gap-4 border-b border-white/10 px-3 py-3 last:border-b-0"
 									>
 										<div class="flex items-center gap-2">
-											<div class="h-4 w-4 rounded bg-accent/55"></div>
-											<div class="h-2.5 w-32 rounded bg-white/35"></div>
+											<div class="preview-field preview-field-accent h-4 w-4 rounded"></div>
+											<div class="preview-field preview-field-strong h-2.5 w-32 rounded"></div>
 										</div>
-										<div class="h-2.5 rounded bg-white/20"></div>
-										<div class="h-2.5 rounded bg-white/20"></div>
+										<div class="preview-field preview-field-muted h-2.5 rounded"></div>
+										<div class="preview-field preview-field-muted h-2.5 rounded"></div>
 									</div>
 								{/each}
 							</div>
@@ -316,16 +338,34 @@
 
 				<button
 					type="button"
-					class="flex h-16 cursor-pointer items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary px-4 py-3 text-left transition-colors hover:border-border-focus hover:bg-surface-tertiary"
+					class="flex h-16 cursor-pointer items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary px-4 py-3 text-left transition-colors hover:border-border-focus hover:bg-surface-tertiary disabled:cursor-not-allowed disabled:opacity-60"
 					onclick={openLocalWallpaperPicker}
+					disabled={localWallpaperUploading}
+					aria-busy={localWallpaperUploading}
 				>
 					<span class="rounded bg-accent/15 p-2 text-accent"><Upload size={22} /></span>
 					<span>
 						<span class="block text-sm font-medium text-text-primary">This Device</span>
-						<span class="block text-xs text-text-muted">Upload a local image</span>
+						<span class="block text-xs text-text-muted">
+							{localWallpaperUploading ? 'Uploading wallpaper...' : 'Upload a local image'}
+						</span>
 					</span>
 				</button>
 			</div>
+
+			{#if localWallpaperUploading}
+				<div
+					class="rounded border border-border-primary bg-surface-secondary px-3 py-2"
+					role="status"
+					aria-live="polite"
+				>
+					<div class="mb-2 flex items-center justify-between gap-3 text-xs">
+						<span class="text-text-secondary">{localWallpaperProgressLabel}</span>
+						<span class="shrink-0 font-medium text-accent">{localWallpaperProgress}%</span>
+					</div>
+					<ProgressBar value={localWallpaperProgress} size="sm" />
+				</div>
+			{/if}
 
 			{#if localWallpaperError}
 				<div
@@ -440,3 +480,39 @@
 		</div>
 	{/if}
 </Modal>
+
+<style>
+	.preview-field {
+		background: rgb(255 255 255 / 0.12);
+	}
+
+	.preview-field-muted {
+		background: rgb(255 255 255 / 0.2);
+	}
+
+	.preview-field-strong {
+		background: rgb(255 255 255 / 0.35);
+	}
+
+	.preview-field-accent {
+		background: color-mix(in srgb, var(--color-accent) 55%, transparent);
+	}
+
+	.preview-chrome[data-frosted-glass='true'] .preview-field {
+		-webkit-backdrop-filter: blur(14px) saturate(145%);
+		backdrop-filter: blur(14px) saturate(145%);
+		background: rgb(255 255 255 / 0.16);
+	}
+
+	.preview-chrome[data-frosted-glass='true'] .preview-field-muted {
+		background: rgb(255 255 255 / 0.24);
+	}
+
+	.preview-chrome[data-frosted-glass='true'] .preview-field-strong {
+		background: rgb(255 255 255 / 0.4);
+	}
+
+	.preview-chrome[data-frosted-glass='true'] .preview-field-accent {
+		background: color-mix(in srgb, var(--color-accent) 62%, transparent);
+	}
+</style>

@@ -125,6 +125,7 @@
 	<WallpaperPickerModal
 		open={wallpaperDialogOpen}
 		currentMode={normalizedMode}
+		{frostedGlass}
 		{showHiddenFiles}
 		onapply={handleWallpaperApply}
 		onclose={() => (wallpaperDialogOpen = false)}

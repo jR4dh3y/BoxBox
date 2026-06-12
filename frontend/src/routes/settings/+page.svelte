@@ -2,6 +2,7 @@
 	/**
 	 * Settings page - workspace-style preferences screen matching the file browser shell.
 	 */
+	import { onDestroy, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { authStore } from '$lib/stores/auth';
@@ -16,7 +17,7 @@
 	} from '$lib/stores/settings';
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import WallpaperSettings from '$lib/components/settings/wallpaper/WallpaperSettings.svelte';
-	import { Button, Select, Toggle } from '$lib/components/ui';
+	import { Button, ProgressButton, Select, Toggle } from '$lib/components/ui';
 	import { normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
 	import {
 		ChevronLeft,
@@ -35,10 +36,16 @@
 
 	type SettingsSectionId = 'display' | 'personalization' | 'behavior' | 'defaults' | 'account';
 	type SettingsCategory = 'all' | SettingsSectionId;
+	type ApplyProgressVariant = 'default' | 'success' | 'danger';
 
 	let settings = $state<UserSettings>({ ...$settingsStore });
 	let activeCategory = $state<SettingsCategory>('all');
 	let searchQuery = $state('');
+	let isApplyingSettings = $state(false);
+	let applyProgress = $state(0);
+	let applyProgressStatus = $state('');
+	let applyProgressVariant = $state<ApplyProgressVariant>('default');
+	let applyProgressResetTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const hasChanges = $derived(JSON.stringify(settings) !== JSON.stringify($settingsStore));
 	const normalizedSearch = $derived(searchQuery.trim().toLowerCase());
@@ -47,7 +54,15 @@
 		normalizeAccentColor(settings.accentColor) ?? DEFAULT_ACCENT_COLOR
 	);
 	const backgroundImageIsValid = $derived(isValidBackgroundImage(settings.backgroundImage));
-	const canSave = $derived(hasChanges && accentColorIsValid && backgroundImageIsValid);
+	const canSave = $derived(
+		hasChanges && accentColorIsValid && backgroundImageIsValid && !isApplyingSettings
+	);
+	const showApplyProgress = $derived(isApplyingSettings || applyProgress > 0);
+	const saveButtonText = $derived.by(() => {
+		if (applyProgressVariant === 'danger' && applyProgress > 0) return 'Failed';
+		if (applyProgressVariant === 'success' && applyProgress >= 100) return 'Saved';
+		return isApplyingSettings ? 'Saving' : 'Save';
+	});
 
 	const navItems: Array<{
 		id: SettingsCategory;
@@ -114,27 +129,114 @@
 	const panelHeaderClass =
 		'flex items-start justify-between gap-4 border-b border-border-secondary bg-surface-primary/55 px-4 py-3';
 	const settingRowClass =
-		'flex items-center justify-between gap-4 border-b border-border-secondary px-4 py-3 last:border-b-0';
+		'flex min-h-12 items-center justify-between gap-4 border-b border-border-secondary px-4 py-2 last:border-b-0';
 
-	function handleSave() {
-		if (!accentColorIsValid || !backgroundImageIsValid) return;
+	onDestroy(() => {
+		clearApplyProgressResetTimer();
+	});
 
-		const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
+	function clearApplyProgressResetTimer() {
+		if (!applyProgressResetTimer) return;
 
-		settingsStore.set({
-			...settings,
-			accentColor: normalizeAccentColor(settings.accentColor),
-			backgroundImage,
-			backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode),
-			frostedGlass: backgroundImage ? settings.frostedGlass : false
+		clearTimeout(applyProgressResetTimer);
+		applyProgressResetTimer = null;
+	}
+
+	function scheduleApplyProgressReset(delay: number) {
+		clearApplyProgressResetTimer();
+		applyProgressResetTimer = setTimeout(() => {
+			applyProgress = 0;
+			applyProgressStatus = '';
+			applyProgressVariant = 'default';
+			applyProgressResetTimer = null;
+		}, delay);
+	}
+
+	function waitForPaint(): Promise<void> {
+		return new Promise((resolvePaint) => {
+			if (typeof requestAnimationFrame === 'undefined') {
+				resolvePaint();
+				return;
+			}
+
+			requestAnimationFrame(() => resolvePaint());
 		});
 	}
 
+	async function setApplyProgress(value: number, status: string) {
+		applyProgress = value;
+		applyProgressStatus = status;
+		await tick();
+		await waitForPaint();
+	}
+
+	async function handleSave() {
+		if (!accentColorIsValid || !backgroundImageIsValid || isApplyingSettings) return;
+
+		clearApplyProgressResetTimer();
+		isApplyingSettings = true;
+		applyProgressVariant = 'default';
+
+		try {
+			await setApplyProgress(15, 'Validating settings...');
+
+			const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
+			const nextSettings = {
+				...settings,
+				accentColor: normalizeAccentColor(settings.accentColor),
+				backgroundImage,
+				backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode),
+				frostedGlass: backgroundImage ? settings.frostedGlass : false
+			};
+
+			await setApplyProgress(
+				55,
+				backgroundImage ? 'Applying wallpaper and preferences...' : 'Applying preferences...'
+			);
+
+			settingsStore.set(nextSettings);
+			settings = { ...nextSettings };
+
+			await setApplyProgress(85, 'Refreshing workspace...');
+			applyProgressVariant = 'success';
+			await setApplyProgress(100, 'Settings applied');
+			scheduleApplyProgressReset(900);
+		} catch (error) {
+			applyProgressVariant = 'danger';
+			applyProgress = 100;
+			applyProgressStatus = getApplyErrorMessage(error);
+			scheduleApplyProgressReset(4000);
+		} finally {
+			isApplyingSettings = false;
+		}
+	}
+
+	function getApplyErrorMessage(error: unknown): string {
+		if (isStorageQuotaError(error)) {
+			return 'This wallpaper is too large to save locally. Choose a smaller image or pick one from the server.';
+		}
+
+		return error instanceof Error ? error.message : 'Unable to apply settings.';
+	}
+
+	function isStorageQuotaError(error: unknown): boolean {
+		const errorText = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+		return /quota|NS_ERROR_DOM_QUOTA_REACHED|exceeded/i.test(errorText);
+	}
+
 	function handleCancel() {
+		clearApplyProgressResetTimer();
+		applyProgress = 0;
+		applyProgressStatus = '';
+		applyProgressVariant = 'default';
 		settings = { ...$settingsStore };
 	}
 
 	function handleReset() {
+		clearApplyProgressResetTimer();
+		applyProgress = 0;
+		applyProgressStatus = '';
+		applyProgressVariant = 'default';
 		settingsStore.reset();
 		settings = { ...$settingsStore };
 	}
@@ -300,21 +402,26 @@
 					size="sm"
 					onclick={handleCancel}
 					title="Discard changes"
-					disabled={!hasChanges}
+					disabled={!hasChanges || isApplyingSettings}
 				>
 					<X size={16} />
 					<span class="hidden sm:inline">Cancel</span>
 				</Button>
-				<Button
+				<ProgressButton
 					variant="primary"
 					size="sm"
 					onclick={handleSave}
-					title="Save changes"
+					title={applyProgressStatus || 'Save changes'}
 					disabled={!canSave}
+					busy={isApplyingSettings}
+					progress={showApplyProgress ? applyProgress : null}
+					progressVariant={applyProgressVariant}
+					progressLabel={applyProgressStatus}
+					className="min-w-20"
 				>
 					<Save size={16} />
-					<span class="hidden sm:inline">Save</span>
-				</Button>
+					<span class="hidden sm:inline">{saveButtonText}</span>
+				</ProgressButton>
 			</div>
 		</div>
 
