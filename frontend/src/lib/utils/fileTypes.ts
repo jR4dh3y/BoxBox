@@ -117,10 +117,56 @@ const OFFICE_PREVIEW_EXTENSIONS = new Set<string>([
 	...FILE_EXTENSIONS.presentation
 ]);
 
+const SPECIAL_CODE_FILENAMES = new Set<string>([
+	'dockerfile',
+	'makefile',
+	'gnumakefile',
+	'cmakelists.txt',
+	'gemfile',
+	'rakefile'
+]);
+
+const SHELL_DOTFILES = new Set<string>([
+	'.bashrc',
+	'.bash_profile',
+	'.bash_login',
+	'.bash_logout',
+	'.profile',
+	'.zshrc',
+	'.zprofile',
+	'.zshenv',
+	'.zlogin',
+	'.zlogout',
+	'.kshrc',
+	'.cshrc',
+	'.tcshrc'
+]);
+
+const DOTFILE_LANGUAGE_MAP: Record<string, string> = {
+	'.env': 'dotenv',
+	'.envrc': 'shell',
+	'.gitconfig': 'ini',
+	'.gitignore': 'ignore',
+	'.dockerignore': 'ignore',
+	'.editorconfig': 'ini',
+	'.npmrc': 'ini',
+	'.yarnrc': 'ini',
+	'.curlrc': 'shell',
+	'.wgetrc': 'ini',
+	'.vimrc': 'vim'
+};
+
+function isSingleDotfile(filename: string): boolean {
+	const baseName = filename.split('/').pop() ?? filename;
+	return baseName.startsWith('.') && baseName.indexOf('.', 1) === -1 && baseName.length > 1;
+}
+
 /**
  * Get the file extension from a filename
  */
 export function getExtension(filename: string): string {
+	if (isSingleDotfile(filename)) return '';
+
 	const lastDot = filename.lastIndexOf('.');
 	if (lastDot === -1) return '';
 	return filename.slice(lastDot + 1).toLowerCase();
@@ -149,11 +195,11 @@ export function getPreviewType(filename: string): PreviewType {
 
 	// Handle special filenames without extensions
 	const lowerName = filename.toLowerCase();
-	if (['dockerfile', 'makefile', 'cmakelists.txt', 'gemfile', 'rakefile'].includes(lowerName)) {
+	if (SPECIAL_CODE_FILENAMES.has(lowerName)) {
 		return 'code';
 	}
-	if (lowerName.startsWith('.') && !ext) {
-		// Dotfiles like .gitignore, .env, etc.
+	if (isSingleDotfile(lowerName)) {
+		// Dotfiles like .bashrc, .gitignore, .env, etc.
 		return 'code';
 	}
 
@@ -188,7 +234,9 @@ export function getMonacoLanguage(filename: string): string {
 	// Special filenames
 	if (lowerName === 'dockerfile') return 'dockerfile';
 	if (lowerName === 'makefile' || lowerName === 'gnumakefile') return 'makefile';
-	if (lowerName.endsWith('.gitignore') || lowerName.endsWith('.dockerignore')) return 'ignore';
+	if (SHELL_DOTFILES.has(lowerName)) return 'shell';
+	if (DOTFILE_LANGUAGE_MAP[lowerName]) return DOTFILE_LANGUAGE_MAP[lowerName];
+	if (isSingleDotfile(lowerName)) return 'plaintext';
 
 	const languageMap: Record<string, string> = {
 		// JavaScript/TypeScript
@@ -279,7 +327,12 @@ export function canPreview(filename: string): boolean {
  */
 export function getFileTypeDescription(filename: string): string {
 	const ext = getExtension(filename);
-	if (!ext) return 'File';
+	const lowerName = filename.toLowerCase();
+
+	if (SHELL_DOTFILES.has(lowerName)) return 'Shell Config';
+	if (DOTFILE_LANGUAGE_MAP[lowerName]) return 'Config File';
+	if (isSingleDotfile(lowerName)) return 'Dotfile';
+	if (!ext) return SPECIAL_CODE_FILENAMES.has(lowerName) ? 'Code File' : 'File';
 
 	const typeMap: Record<string, string> = {
 		// Documents
@@ -421,7 +474,9 @@ export function getFileIcon(filename: string, isDir: boolean): ComponentType {
 	if (isDir) return Folder;
 
 	const ext = getExtension(filename);
-	if (!ext) return File;
+	if (!ext) {
+		return getPreviewType(filename) === 'code' ? FileCode : File;
+	}
 
 	// Check each category
 	if (FILE_EXTENSIONS.image.includes(ext as (typeof FILE_EXTENSIONS.image)[number]))

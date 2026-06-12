@@ -656,7 +656,7 @@
 
 <div class="flex h-screen w-full overflow-hidden bg-surface-primary">
 	<!-- Sidebar -->
-	<Sidebar {roots} currentPath={path} onNavigate={handleNavigate} />
+	<Sidebar currentPath={path} onNavigate={handleNavigate} />
 
 	<!-- Main content area -->
 	<div class="flex min-w-0 flex-1 flex-col">
@@ -679,6 +679,7 @@
 			searchLoading={isSearchActive && searchQueryResult.isFetching}
 			onSearchInput={handleSearchInput}
 			onSearchClear={handleSearchClear}
+			includeHiddenSuggestions={settings.showHiddenFiles}
 		/>
 
 		<!-- File list or Drive cards -->
