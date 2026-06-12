@@ -211,34 +211,42 @@ import {
   const appWindow = document.getElementById('app-window');
 
   if (appWindow) {
+    let ticking = false;
+
+    function updateDemoTransform() {
+      const scrollY = window.scrollY;
+      // Adjust these values to tune the animation timing
+      const maxScroll = window.innerHeight * 0.6;
+
+      let progress = Math.min(Math.max(scrollY / maxScroll, 0), 1);
+
+      // Use an easing function for smoother landing
+      // EaseOutQuart
+      const easeProgress = 1 - Math.pow(1 - progress, 4);
+
+      // Calculate transform values based on progress
+      const rotateX = 20 - (20 * easeProgress); // 20deg to 0deg
+      const scale = 0.85 + (0.15 * easeProgress); // 0.85 to 1.0
+      const translateY = -50 * (1 - easeProgress); // move up slightly as it rotates
+
+      appWindow.style.transform = `perspective(2000px) translateY(${translateY}px) rotateX(${rotateX}deg) scale(${scale})`;
+
+      if (progress > 0.8) {
+        appWindow.classList.add('shadow-accent/30');
+        appWindow.classList.remove('shadow-black/60');
+      } else {
+        appWindow.classList.add('shadow-black/60');
+        appWindow.classList.remove('shadow-accent/30');
+      }
+    }
+
     window.addEventListener('scroll', () => {
-      // Use requestAnimationFrame for smooth performance
+      if (ticking) return;
+      ticking = true;
       window.requestAnimationFrame(() => {
-        const scrollY = window.scrollY;
-        // Adjust these values to tune the animation timing
-        const maxScroll = window.innerHeight * 0.6;
-
-        let progress = Math.min(Math.max(scrollY / maxScroll, 0), 1);
-
-        // Use an easing function for smoother landing
-        // EaseOutQuart
-        const easeProgress = 1 - Math.pow(1 - progress, 4);
-
-        // Calculate transform values based on progress
-        const rotateX = 20 - (20 * easeProgress); // 20deg to 0deg
-        const scale = 0.85 + (0.15 * easeProgress); // 0.85 to 1.0
-        const translateY = -50 * (1 - easeProgress); // move up slightly as it rotates
-
-        appWindow.style.transform = `perspective(2000px) translateY(${translateY}px) rotateX(${rotateX}deg) scale(${scale})`;
-
-        if (progress > 0.8) {
-          appWindow.classList.add('shadow-accent/30');
-          appWindow.classList.remove('shadow-black/60');
-        } else {
-          appWindow.classList.add('shadow-black/60');
-          appWindow.classList.remove('shadow-accent/30');
-        }
+        updateDemoTransform();
+        ticking = false;
       });
-    });
+    }, { passive: true });
   }
 </script>

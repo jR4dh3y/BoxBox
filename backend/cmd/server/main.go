@@ -52,7 +52,7 @@ func main() {
 	defer cancel()
 
 	// Initialize components
-	server, hub, jobService, authService, streamHandler, _, err := initializeServer(ctx, cfg)
+	server, hub, jobService, authService, streamHandler, err := initializeServer(cfg)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize server")
 	}
@@ -90,11 +90,11 @@ func main() {
 	}()
 
 	// Wait for shutdown signal
-	waitForShutdown(ctx, cancel, server, jobService, authService, streamHandler)
+	waitForShutdown(cancel, server, jobService, authService, streamHandler)
 }
 
 // initializeServer creates and configures all server components
-func initializeServer(ctx context.Context, cfg *model.ServerConfig) (*http.Server, *websocket.Hub, service.JobService, service.AuthService, *handler.StreamHandler, *handler.SettingsHandler, error) {
+func initializeServer(cfg *model.ServerConfig) (*http.Server, *websocket.Hub, service.JobService, service.AuthService, *handler.StreamHandler, error) {
 	// Create filesystem abstraction (using real OS filesystem)
 	fs := filesystem.NewOsFS()
 
@@ -146,7 +146,7 @@ func initializeServer(ctx context.Context, cfg *model.ServerConfig) (*http.Serve
 	})
 
 	jobService := service.NewJobService(fs, hub, service.JobServiceConfig{
-		Workers:     4,
+		Workers:     config.DefaultJobWorkers,
 		MountPoints: mountPoints,
 	})
 
@@ -159,7 +159,7 @@ func initializeServer(ctx context.Context, cfg *model.ServerConfig) (*http.Serve
 	// Create handlers
 	authHandler := handler.NewAuthHandler(authService)
 	fileHandler := handler.NewFileHandler(fileService)
-	streamHandler := handler.NewStreamHandler(fileService, cfg.ChunkSizeMB)
+	streamHandler := handler.NewStreamHandler(fileService, cfg.ChunkSizeMB, cfg.MaxUploadMB)
 	jobHandler := handler.NewJobHandler(jobService)
 	searchHandler := handler.NewSearchHandler(searchService)
 	wsHandler := handler.NewWebSocketHandler(hub, authService, cfg.AllowedOrigins)
@@ -170,7 +170,6 @@ func initializeServer(ctx context.Context, cfg *model.ServerConfig) (*http.Serve
 	router := createRouter(cfg, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, mountPoints)
 
 	// Create HTTP server
-	// Create HTTP server
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Handler:      router,
@@ -179,7 +178,7 @@ func initializeServer(ctx context.Context, cfg *model.ServerConfig) (*http.Serve
 		IdleTimeout:  config.HTTPIdleTimeout,
 	}
 
-	return server, hub, jobService, authService, streamHandler, settingsHandler, nil
+	return server, hub, jobService, authService, streamHandler, nil
 }
 
 // createRouter sets up chi router with all routes and middleware
@@ -282,7 +281,7 @@ func createRouter(
 }
 
 // waitForShutdown handles graceful shutdown on interrupt signals
-func waitForShutdown(ctx context.Context, cancel context.CancelFunc, server *http.Server, jobService service.JobService, authService service.AuthService, streamHandler *handler.StreamHandler) {
+func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService service.JobService, authService service.AuthService, streamHandler *handler.StreamHandler) {
 	// Create channel to receive OS signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -295,7 +294,7 @@ func waitForShutdown(ctx context.Context, cancel context.CancelFunc, server *htt
 	cancel()
 
 	// Create shutdown context with timeout
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.ShutdownTimeout)
 	defer shutdownCancel()
 
 	// Stop job service

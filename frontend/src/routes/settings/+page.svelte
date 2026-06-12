@@ -20,6 +20,12 @@
 	import { Button, ProgressButton, Select, Toggle } from '$lib/components/ui';
 	import { normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
 	import {
+		deleteLocalWallpaper,
+		isInlineWallpaperDataUrl,
+		isLocalWallpaperReference,
+		saveLocalWallpaperDataUrl
+	} from '$lib/utils/wallpaperStorage';
+	import {
 		ChevronLeft,
 		Eye,
 		Layout,
@@ -176,11 +182,19 @@
 		clearApplyProgressResetTimer();
 		isApplyingSettings = true;
 		applyProgressVariant = 'default';
+		let savedLocalBackgroundImage: string | null = null;
 
 		try {
 			await setApplyProgress(15, 'Validating settings...');
 
-			const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
+			const previousBackgroundImage = $settingsStore.backgroundImage;
+			let backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
+			if (backgroundImage && isInlineWallpaperDataUrl(backgroundImage)) {
+				await setApplyProgress(35, 'Saving wallpaper locally...');
+				backgroundImage = await saveLocalWallpaperDataUrl(backgroundImage);
+				savedLocalBackgroundImage = backgroundImage;
+			}
+
 			const nextSettings = {
 				...settings,
 				accentColor: normalizeAccentColor(settings.accentColor),
@@ -198,10 +212,12 @@
 			settings = { ...nextSettings };
 
 			await setApplyProgress(85, 'Refreshing workspace...');
+			cleanupLocalWallpaper(previousBackgroundImage, backgroundImage);
 			applyProgressVariant = 'success';
 			await setApplyProgress(100, 'Settings applied');
 			scheduleApplyProgressReset(900);
 		} catch (error) {
+			cleanupLocalWallpaper(savedLocalBackgroundImage, null);
 			applyProgressVariant = 'danger';
 			applyProgress = 100;
 			applyProgressStatus = getApplyErrorMessage(error);
@@ -224,6 +240,23 @@
 		return /quota|NS_ERROR_DOM_QUOTA_REACHED|exceeded/i.test(errorText);
 	}
 
+	function cleanupLocalWallpaper(
+		previousBackgroundImage: string | null,
+		nextBackgroundImage: string | null
+	) {
+		if (
+			!previousBackgroundImage ||
+			previousBackgroundImage === nextBackgroundImage ||
+			!isLocalWallpaperReference(previousBackgroundImage)
+		) {
+			return;
+		}
+
+		deleteLocalWallpaper(previousBackgroundImage).catch(() => {
+			// Cleanup failure should not make an already saved preference look failed.
+		});
+	}
+
 	function handleCancel() {
 		clearApplyProgressResetTimer();
 		applyProgress = 0;
@@ -237,8 +270,10 @@
 		applyProgress = 0;
 		applyProgressStatus = '';
 		applyProgressVariant = 'default';
+		const previousBackgroundImage = $settingsStore.backgroundImage;
 		settingsStore.reset();
 		settings = { ...$settingsStore };
+		cleanupLocalWallpaper(previousBackgroundImage, null);
 	}
 
 	async function handleLogout() {

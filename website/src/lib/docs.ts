@@ -22,56 +22,55 @@ export type DocPage = DocNavItem & {
 
 const docsDirectory = resolveDocsDirectory();
 
-const docMeta: Record<string, Omit<DocNavItem, 'slug'>> = {
-	index: {
+const docNav = [
+	{
+		slug: 'index',
 		title: 'Overview',
 		description: 'Start here: what BoxBox is and where to find each project reference.'
 	},
-	quickstart: {
+	{
+		slug: 'quickstart',
 		title: 'Quick Start',
 		description: 'Install BoxBox quickly with Docker Compose and the published GHCR image.'
 	},
-	docker: {
+	{
+		slug: 'docker',
 		title: 'Docker Deployment',
 		description: 'Deploy from GHCR with Compose, port binding, and optional reverse proxy examples.'
 	},
-	configuration: {
+	{
+		slug: 'configuration',
 		title: 'Configuration',
 		description: 'Configure users, mount points, origins, upload limits, ports, and environment overrides.'
 	},
-	api: {
+	{
+		slug: 'api',
 		title: 'API Reference',
 		description: 'REST endpoints, chunked uploads, streaming previews, background jobs, and WebSocket messages.'
 	},
-	development: {
+	{
+		slug: 'development',
 		title: 'Development',
 		description: 'Run the Go backend, SvelteKit app, and Astro website locally.'
 	},
-	security: {
+	{
+		slug: 'security',
 		title: 'Security',
 		description: 'Harden credentials, mounted paths, origins, reverse proxy behavior, and upload storage.'
 	},
-	architecture: {
+	{
+		slug: 'architecture',
 		title: 'Architecture',
 		description: 'How the Go server, embedded SvelteKit app, services, jobs, and storage paths fit together.'
 	},
-	troubleshooting: {
+	{
+		slug: 'troubleshooting',
 		title: 'Troubleshooting',
 		description: 'Fix common deployment, login, mount, upload, preview, and WebSocket issues.'
 	}
-};
+] satisfies DocNavItem[];
 
-const navOrder = [
-	'index',
-	'quickstart',
-	'docker',
-	'configuration',
-	'api',
-	'development',
-	'security',
-	'architecture',
-	'troubleshooting'
-];
+const docMeta = new Map(docNav.map(({ slug, ...meta }) => [slug, meta]));
 
 marked.setOptions({
 	gfm: true,
@@ -80,15 +79,7 @@ marked.setOptions({
 
 export function getDocNav(): DocNavItem[] {
 	const available = new Set(getDocSlugs());
-	return navOrder
-		.filter((slug) => available.has(slug))
-		.map((slug) => ({
-			slug,
-			...(docMeta[slug] ?? {
-				title: titleFromSlug(slug),
-				description: ''
-			})
-		}));
+	return docNav.filter((doc) => available.has(doc.slug));
 }
 
 export function getDocSlugs(): string[] {
@@ -104,7 +95,7 @@ export async function getDocPage(slug: string): Promise<DocPage> {
 	const linked = normalizeMarkdownDocLinks(rendered);
 	const highlighted = await highlightCodeBlocks(linked);
 	const { html, headings } = addHeadingIds(highlighted);
-	const meta = docMeta[normalizedSlug] ?? {
+	const meta = docMeta.get(normalizedSlug) ?? {
 		title: titleFromMarkdown(markdown) ?? titleFromSlug(normalizedSlug),
 		description: ''
 	};

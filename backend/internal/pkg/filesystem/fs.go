@@ -4,10 +4,8 @@
 package filesystem
 
 import (
-	"io"
 	"io/fs"
 	"os"
-	"time"
 
 	"github.com/spf13/afero"
 )
@@ -60,12 +58,6 @@ type AferoFS struct {
 	fs afero.Fs
 }
 
-// New creates a new AferoFS wrapping the given afero.Fs
-func New(afs afero.Fs) *AferoFS {
-	return &AferoFS{fs: afs}
-}
-
-
 // NewOsFS creates a new AferoFS using the real OS filesystem
 func NewOsFS() *AferoFS {
 	return &AferoFS{fs: afero.NewOsFs()}
@@ -74,11 +66,6 @@ func NewOsFS() *AferoFS {
 // NewMemMapFS creates a new AferoFS using an in-memory filesystem (for testing)
 func NewMemMapFS() *AferoFS {
 	return &AferoFS{fs: afero.NewMemMapFs()}
-}
-
-// Underlying returns the underlying afero.Fs
-func (a *AferoFS) Underlying() afero.Fs {
-	return a.fs
 }
 
 // ReadDir reads the directory named by dirname and returns a list of directory entries.
@@ -174,58 +161,4 @@ func (d *dirEntry) Type() fs.FileMode {
 
 func (d *dirEntry) Info() (fs.FileInfo, error) {
 	return d.info, nil
-}
-
-// FileInfo wraps os.FileInfo with additional helper methods
-type FileInfo struct {
-	name    string
-	size    int64
-	mode    fs.FileMode
-	modTime time.Time
-	isDir   bool
-}
-
-// NewFileInfo creates a FileInfo from fs.FileInfo
-func NewFileInfo(info fs.FileInfo) *FileInfo {
-	return &FileInfo{
-		name:    info.Name(),
-		size:    info.Size(),
-		mode:    info.Mode(),
-		modTime: info.ModTime(),
-		isDir:   info.IsDir(),
-	}
-}
-
-func (f *FileInfo) Name() string       { return f.name }
-func (f *FileInfo) Size() int64        { return f.size }
-func (f *FileInfo) Mode() fs.FileMode  { return f.mode }
-func (f *FileInfo) ModTime() time.Time { return f.modTime }
-func (f *FileInfo) IsDir() bool        { return f.isDir }
-func (f *FileInfo) Sys() interface{}   { return nil }
-
-// CopyFile copies a file from src to dst
-func (a *AferoFS) CopyFile(src, dst string) error {
-	srcFile, err := a.fs.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	srcInfo, err := srcFile.Stat()
-	if err != nil {
-		return err
-	}
-
-	dstFile, err := a.fs.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	_, err = io.Copy(dstFile, srcFile)
-	if err != nil {
-		return err
-	}
-
-	return a.fs.Chmod(dst, srcInfo.Mode())
 }

@@ -60,12 +60,6 @@ func JWTAuth(authService service.AuthService) func(next http.Handler) http.Handl
 	}
 }
 
-// GetUserClaims retrieves user claims from the request context
-func GetUserClaims(ctx context.Context) (*service.Claims, bool) {
-	claims, ok := ctx.Value(UserClaimsKey).(*service.Claims)
-	return claims, ok
-}
-
 // writeAuthError writes an authentication error response
 func writeAuthError(w http.ResponseWriter, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")

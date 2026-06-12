@@ -51,14 +51,6 @@ type JobParams struct {
 	DestPath   string  `json:"destPath,omitempty"`
 }
 
-// JobError represents detailed error information for a failed job
-type JobError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Path    string `json:"path,omitempty"`
-	Cause   string `json:"cause,omitempty"`
-}
-
 // IsTerminal returns true if the job state is a terminal state
 func (s JobState) IsTerminal() bool {
 	return s == JobStateCompleted || s == JobStateFailed || s == JobStateCancelled

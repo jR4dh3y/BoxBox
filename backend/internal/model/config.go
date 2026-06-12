@@ -26,23 +26,6 @@ type ServerConfig struct {
 	RateLimitRPS   float64           `mapstructure:"rate_limit_rps"`  // Auth endpoint rate limit (requests per second)
 }
 
-// DefaultServerConfig returns sensible defaults for server configuration
-func DefaultServerConfig() ServerConfig {
-	return ServerConfig{
-		Port:        8080,
-		Host:        "0.0.0.0",
-		MountPoints: []MountPoint{},
-		JWTSecret:   "",
-		MaxUploadMB: 10240, // 10GB
-		ChunkSizeMB: 5,     // 5MB chunks
-		DataDir:     "",
-		// Security defaults
-		Users:          nil,  // Must be configured
-		AllowedOrigins: nil,  // nil = allow all (for homelab)
-		RateLimitRPS:   10.0, // 10 requests per second per IP
-	}
-}
-
 // Validate checks that the configuration is valid
 func (c *ServerConfig) Validate() error {
 	if c.JWTSecret == "" {
@@ -74,25 +57,5 @@ func (c *ServerConfig) Validate() error {
 		return fmt.Errorf("chunk_size_mb must be at least 1")
 	}
 
-	return nil
-}
-
-// IsMountPointReadOnly checks if a mount point is read-only by name
-func (c *ServerConfig) IsMountPointReadOnly(name string) bool {
-	for _, mp := range c.MountPoints {
-		if mp.Name == name {
-			return mp.ReadOnly
-		}
-	}
-	return true // Default to read-only if not found
-}
-
-// GetMountPoint returns a mount point by name, or nil if not found
-func (c *ServerConfig) GetMountPoint(name string) *MountPoint {
-	for i := range c.MountPoints {
-		if c.MountPoints[i].Name == name {
-			return &c.MountPoints[i]
-		}
-	}
 	return nil
 }

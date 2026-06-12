@@ -396,32 +396,13 @@ function isPortAvailable(host: string, port: number): Promise<boolean> {
   });
 }
 
-async function isPortListening(port: number): Promise<boolean> {
-  const proc = spawn({
-    cmd: ["ss", "-ltnH"],
-    stdout: "pipe",
-    stderr: "ignore",
-  });
-
-  const output = await new Response(proc.stdout).text();
-  await proc.exited;
-
-  if (proc.exitCode !== 0) {
-    return false;
-  }
-
-  return output
-    .split("\n")
-    .some((line) => line.trim().split(/\s+/)[3]?.endsWith(`:${port}`));
-}
-
 async function findAvailablePort(
   host: string,
   preferredPort: number,
   label: string,
 ): Promise<number> {
   for (let port = preferredPort; port < preferredPort + 50; port++) {
-    if ((await isPortAvailable(host, port)) && !(await isPortListening(port))) {
+    if (await isPortAvailable(host, port)) {
       if (port !== preferredPort) {
         console.log(
           `${colors.yellow}${label} port ${preferredPort} is busy; using ${port}.${colors.reset}`,

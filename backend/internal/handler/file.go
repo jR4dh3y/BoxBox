@@ -5,10 +5,10 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/homelab/filemanager/internal/model"
+	"github.com/homelab/filemanager/internal/pkg/validator"
 	"github.com/homelab/filemanager/internal/service"
 )
 
@@ -140,14 +140,12 @@ func (h *FileHandler) CreateItem(w http.ResponseWriter, r *http.Request) {
 		itemType = "directory"
 	}
 
-	// Validate item name
 	if req.Name == "" {
 		writeError(w, "Name is required", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
 
-	// Check for invalid characters in name
-	if strings.ContainsAny(req.Name, "/\\") || req.Name == "." || req.Name == ".." || strings.ContainsRune(req.Name, 0) {
+	if !validator.IsValidFileName(req.Name) {
 		writeError(w, "Name cannot contain path separators or special path names", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}

@@ -34,12 +34,6 @@ type TokenPair struct {
 	ExpiresAt    time.Time `json:"expiresAt"`
 }
 
-// UserCredentials represents login credentials
-type UserCredentials struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
 // AuthService defines the authentication service interface
 type AuthService interface {
 	Login(ctx context.Context, username, password string) (*TokenPair, error)
@@ -49,7 +43,6 @@ type AuthService interface {
 	StartCleanup(ctx context.Context)
 	StopCleanup()
 }
-
 
 // authService implements AuthService
 type authService struct {
@@ -74,10 +67,10 @@ type AuthServiceConfig struct {
 // NewAuthService creates a new authentication service
 func NewAuthService(cfg AuthServiceConfig) AuthService {
 	if cfg.AccessTokenExpiry == 0 {
-		cfg.AccessTokenExpiry = 15 * time.Minute
+		cfg.AccessTokenExpiry = config.DefaultAccessTokenExpiry
 	}
 	if cfg.RefreshTokenExpiry == 0 {
-		cfg.RefreshTokenExpiry = 7 * 24 * time.Hour // 7 days
+		cfg.RefreshTokenExpiry = config.DefaultRefreshTokenExpiry
 	}
 	if cfg.Users == nil {
 		cfg.Users = make(map[string]string)
@@ -128,7 +121,6 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (*TokenP
 	// Generate new token pair
 	return s.generateTokenPair(claims.Username)
 }
-
 
 // ValidateToken validates a JWT token and returns the claims
 func (s *authService) ValidateToken(tokenString string) (*Claims, error) {

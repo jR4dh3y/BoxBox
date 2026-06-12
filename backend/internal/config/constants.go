@@ -78,6 +78,9 @@ const (
 
 // Upload configuration constants
 const (
+	// DefaultMaxUploadMB is the default maximum accepted upload size in megabytes
+	DefaultMaxUploadMB = 10240
+
 	// DefaultChunkSizeMB is the default chunk size for uploads in megabytes
 	DefaultChunkSizeMB = 10
 

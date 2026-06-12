@@ -55,17 +55,3 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 	// Default to internal server error
 	writeError(w, "Internal server error", model.ErrCodeInternalError, http.StatusInternalServerError)
 }
-
-// HandleServiceErrorWithLog converts service errors to HTTP responses and returns
-// whether the error was handled (true) or was an internal error (false)
-func HandleServiceErrorWithLog(w http.ResponseWriter, err error) bool {
-	for _, mapping := range serviceErrorMappings {
-		if errors.Is(err, mapping.Error) {
-			writeError(w, mapping.Message, mapping.Code, mapping.StatusCode)
-			return true
-		}
-	}
-	// Internal server error - caller should log the actual error
-	writeError(w, "Internal server error", model.ErrCodeInternalError, http.StatusInternalServerError)
-	return false
-}

@@ -36,9 +36,13 @@ func setupTestStreamHandler() (*StreamHandler, *filesystem.AferoFS, service.File
 	}
 
 	fileSvc := service.NewFileService(fs, service.FileServiceConfig{MountPoints: mounts})
-	streamHandler := NewStreamHandler(fileSvc, 1) // 1MB chunk size for testing
+	streamHandler := NewStreamHandler(fileSvc, 1, 100) // 1MB chunks, 100MB max for testing
 
 	return streamHandler, fs, fileSvc
+}
+
+func testChunkCount(totalSize, chunkSize int) int {
+	return (totalSize + chunkSize - 1) / chunkSize
 }
 
 // createTestRouter creates a chi router with the stream handler for testing
@@ -48,6 +52,87 @@ func createStreamTestRouter(handler *StreamHandler) *chi.Mux {
 		handler.RegisterRoutes(r)
 	})
 	return r
+}
+
+func newChunkUploadRequest(
+	filePath string,
+	body []byte,
+	uploadID string,
+	chunkIndex int,
+	totalChunks int,
+	chunkSize int,
+	totalSize int,
+) *http.Request {
+	req := httptest.NewRequest("POST", "/api/v1/upload/"+filePath, bytes.NewReader(body))
+	req.Header.Set("X-Upload-ID", uploadID)
+	req.Header.Set("X-Chunk-Index", strconv.Itoa(chunkIndex))
+	req.Header.Set("X-Total-Chunks", strconv.Itoa(totalChunks))
+	req.Header.Set("X-Chunk-Size", strconv.Itoa(chunkSize))
+	req.Header.Set("X-Total-Size", strconv.Itoa(totalSize))
+	return req
+}
+
+func TestUploadRejectsTotalSizeAboveConfiguredMax(t *testing.T) {
+	handler, _, _ := setupTestStreamHandler()
+	handler.maxUploadBytes = 2
+	router := createStreamTestRouter(handler)
+
+	req := newChunkUploadRequest("media/too-large.bin", []byte("ab"), "too-large", 0, 2, 2, 3)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusRequestEntityTooLarge, rec.Code, rec.Body.String())
+	}
+}
+
+func TestUploadRejectsChunkBodyLargerThanMetadata(t *testing.T) {
+	handler, _, _ := setupTestStreamHandler()
+	router := createStreamTestRouter(handler)
+
+	req := newChunkUploadRequest("media/chunk-large.bin", []byte("abc"), "chunk-large", 0, 2, 2, 3)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusRequestEntityTooLarge, rec.Code, rec.Body.String())
+	}
+}
+
+func TestUploadRejectsChunkBodyShorterThanMetadata(t *testing.T) {
+	handler, _, _ := setupTestStreamHandler()
+	router := createStreamTestRouter(handler)
+
+	req := newChunkUploadRequest("media/chunk-short.bin", []byte("a"), "chunk-short", 0, 2, 2, 3)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
+func TestUploadRejectsSessionMetadataMismatch(t *testing.T) {
+	handler, _, _ := setupTestStreamHandler()
+	router := createStreamTestRouter(handler)
+
+	firstReq := newChunkUploadRequest("media/original.bin", []byte("ab"), "same-id", 0, 2, 2, 4)
+	firstRec := httptest.NewRecorder()
+	router.ServeHTTP(firstRec, firstReq)
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("expected initial status %d, got %d: %s", http.StatusOK, firstRec.Code, firstRec.Body.String())
+	}
+
+	secondReq := newChunkUploadRequest("media/other.bin", []byte("cd"), "same-id", 1, 2, 2, 4)
+	secondRec := httptest.NewRecorder()
+	router.ServeHTTP(secondRec, secondReq)
+
+	if secondRec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusConflict, secondRec.Code, secondRec.Body.String())
+	}
 }
 
 // **Feature: homelab-file-manager, Property 4: Upload/Download Round-Trip Integrity**
@@ -158,9 +243,10 @@ func TestProperty_UploadDownloadRoundTripIntegrity(t *testing.T) {
 			if chunkSize < 1 {
 				chunkSize = 1
 			}
+			totalChunks := testChunkCount(len(content), chunkSize)
 
 			// Upload in chunks
-			for i := 0; i < numChunks; i++ {
+			for i := 0; i < totalChunks; i++ {
 				start := i * chunkSize
 				end := start + chunkSize
 				if end > len(content) {
@@ -175,12 +261,12 @@ func TestProperty_UploadDownloadRoundTripIntegrity(t *testing.T) {
 				uploadReq := httptest.NewRequest("POST", "/api/v1/upload/"+filePath, bytes.NewReader(chunkData))
 				uploadReq.Header.Set("X-Upload-ID", uploadID)
 				uploadReq.Header.Set("X-Chunk-Index", strconv.Itoa(i))
-				uploadReq.Header.Set("X-Total-Chunks", strconv.Itoa(numChunks))
+				uploadReq.Header.Set("X-Total-Chunks", strconv.Itoa(totalChunks))
 				uploadReq.Header.Set("X-Chunk-Size", strconv.Itoa(chunkSize))
 				uploadReq.Header.Set("X-Total-Size", strconv.Itoa(len(content)))
 
 				// Add checksum on final chunk
-				if i == numChunks-1 {
+				if i == totalChunks-1 {
 					uploadReq.Header.Set("X-Checksum", expectedChecksum)
 				}
 
@@ -189,7 +275,7 @@ func TestProperty_UploadDownloadRoundTripIntegrity(t *testing.T) {
 
 				// Last chunk should return 201, others 200
 				expectedStatus := http.StatusOK
-				if i == numChunks-1 {
+				if i == totalChunks-1 {
 					expectedStatus = http.StatusCreated
 				}
 				if uploadRec.Code != expectedStatus {
@@ -213,7 +299,6 @@ func TestProperty_UploadDownloadRoundTripIntegrity(t *testing.T) {
 
 	properties.TestingRun(t)
 }
-
 
 // **Feature: homelab-file-manager, Property 5: Resumable Upload Correctness**
 // **Validates: Requirements 2.3**
@@ -270,6 +355,16 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 			if chunkSize < 1 {
 				chunkSize = 1
 			}
+			totalChunks := testChunkCount(len(content), chunkSize)
+			if totalChunks < 2 {
+				return true
+			}
+			if interruptAt >= totalChunks-1 {
+				interruptAt = totalChunks - 2
+			}
+			if interruptAt < 0 {
+				interruptAt = 0
+			}
 
 			// Phase 1: Upload chunks up to interrupt point
 			for i := 0; i <= interruptAt; i++ {
@@ -287,7 +382,7 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 				uploadReq := httptest.NewRequest("POST", "/api/v1/upload/"+filePath, bytes.NewReader(chunkData))
 				uploadReq.Header.Set("X-Upload-ID", uploadID)
 				uploadReq.Header.Set("X-Chunk-Index", strconv.Itoa(i))
-				uploadReq.Header.Set("X-Total-Chunks", strconv.Itoa(numChunks))
+				uploadReq.Header.Set("X-Total-Chunks", strconv.Itoa(totalChunks))
 				uploadReq.Header.Set("X-Chunk-Size", strconv.Itoa(chunkSize))
 				uploadReq.Header.Set("X-Total-Size", strconv.Itoa(len(content)))
 
@@ -300,7 +395,7 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 			}
 
 			// Phase 2: Resume upload from interrupt point + 1
-			for i := interruptAt + 1; i < numChunks; i++ {
+			for i := interruptAt + 1; i < totalChunks; i++ {
 				start := i * chunkSize
 				end := start + chunkSize
 				if end > len(content) {
@@ -315,12 +410,12 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 				uploadReq := httptest.NewRequest("POST", "/api/v1/upload/"+filePath, bytes.NewReader(chunkData))
 				uploadReq.Header.Set("X-Upload-ID", uploadID)
 				uploadReq.Header.Set("X-Chunk-Index", strconv.Itoa(i))
-				uploadReq.Header.Set("X-Total-Chunks", strconv.Itoa(numChunks))
+				uploadReq.Header.Set("X-Total-Chunks", strconv.Itoa(totalChunks))
 				uploadReq.Header.Set("X-Chunk-Size", strconv.Itoa(chunkSize))
 				uploadReq.Header.Set("X-Total-Size", strconv.Itoa(len(content)))
 
 				// Add checksum on final chunk
-				if i == numChunks-1 {
+				if i == totalChunks-1 {
 					uploadReq.Header.Set("X-Checksum", expectedChecksum)
 				}
 
@@ -329,7 +424,7 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 
 				// Last chunk should return 201, others 200
 				expectedStatus := http.StatusOK
-				if i == numChunks-1 {
+				if i == totalChunks-1 {
 					expectedStatus = http.StatusCreated
 				}
 				if uploadRec.Code != expectedStatus {
@@ -369,6 +464,7 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 			if chunkSize < 1 {
 				chunkSize = 1
 			}
+			totalChunks := testChunkCount(len(content), chunkSize)
 
 			// Upload first chunk
 			start := 0
@@ -381,7 +477,7 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 			uploadReq := httptest.NewRequest("POST", "/api/v1/upload/"+filePath, bytes.NewReader(chunkData))
 			uploadReq.Header.Set("X-Upload-ID", uploadID)
 			uploadReq.Header.Set("X-Chunk-Index", "0")
-			uploadReq.Header.Set("X-Total-Chunks", strconv.Itoa(numChunks))
+			uploadReq.Header.Set("X-Total-Chunks", strconv.Itoa(totalChunks))
 			uploadReq.Header.Set("X-Chunk-Size", strconv.Itoa(chunkSize))
 			uploadReq.Header.Set("X-Total-Size", strconv.Itoa(len(content)))
 
@@ -396,7 +492,7 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 			uploadReq2 := httptest.NewRequest("POST", "/api/v1/upload/"+filePath, bytes.NewReader(chunkData))
 			uploadReq2.Header.Set("X-Upload-ID", uploadID)
 			uploadReq2.Header.Set("X-Chunk-Index", "0")
-			uploadReq2.Header.Set("X-Total-Chunks", strconv.Itoa(numChunks))
+			uploadReq2.Header.Set("X-Total-Chunks", strconv.Itoa(totalChunks))
 			uploadReq2.Header.Set("X-Chunk-Size", strconv.Itoa(chunkSize))
 			uploadReq2.Header.Set("X-Total-Size", strconv.Itoa(len(content)))
 
@@ -412,7 +508,6 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 
 	properties.TestingRun(t)
 }
-
 
 // **Feature: homelab-file-manager, Property 6: Range Request Correctness**
 // **Validates: Requirements 3.2**
@@ -601,15 +696,15 @@ func TestProperty_RangeRequestCorrectness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-
 // Helper function to perform chunked upload
 func performChunkedUpload(router http.Handler, filePath, uploadID string, content []byte, numChunks int, checksum string) error {
 	chunkSize := (len(content) + numChunks - 1) / numChunks
 	if chunkSize < 1 {
 		chunkSize = 1
 	}
+	totalChunks := testChunkCount(len(content), chunkSize)
 
-	for i := 0; i < numChunks; i++ {
+	for i := 0; i < totalChunks; i++ {
 		start := i * chunkSize
 		end := start + chunkSize
 		if end > len(content) {
@@ -624,11 +719,11 @@ func performChunkedUpload(router http.Handler, filePath, uploadID string, conten
 		uploadReq := httptest.NewRequest("POST", "/api/v1/upload/"+filePath, bytes.NewReader(chunkData))
 		uploadReq.Header.Set("X-Upload-ID", uploadID)
 		uploadReq.Header.Set("X-Chunk-Index", strconv.Itoa(i))
-		uploadReq.Header.Set("X-Total-Chunks", strconv.Itoa(numChunks))
+		uploadReq.Header.Set("X-Total-Chunks", strconv.Itoa(totalChunks))
 		uploadReq.Header.Set("X-Chunk-Size", strconv.Itoa(chunkSize))
 		uploadReq.Header.Set("X-Total-Size", strconv.Itoa(len(content)))
 
-		if i == numChunks-1 && checksum != "" {
+		if i == totalChunks-1 && checksum != "" {
 			uploadReq.Header.Set("X-Checksum", checksum)
 		}
 
@@ -636,7 +731,7 @@ func performChunkedUpload(router http.Handler, filePath, uploadID string, conten
 		router.ServeHTTP(uploadRec, uploadReq)
 
 		expectedStatus := http.StatusOK
-		if i == numChunks-1 {
+		if i == totalChunks-1 {
 			expectedStatus = http.StatusCreated
 		}
 		if uploadRec.Code != expectedStatus {

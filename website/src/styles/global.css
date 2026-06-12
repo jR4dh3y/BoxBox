@@ -70,15 +70,6 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.feature-card {
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.feature-card:hover {
-  transform: translateY(-8px);
-  background: var(--color-surface-secondary);
-  border-color: var(--color-border-focus);
-}
-
 /* Custom scrollbar for the mock UI */
 .mock-scrollbar::-webkit-scrollbar {
   width: 6px;

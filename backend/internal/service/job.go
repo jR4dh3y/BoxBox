@@ -18,10 +18,10 @@ import (
 
 // Job service errors
 var (
-	ErrJobNotFound     = errors.New("job not found")
+	ErrJobNotFound       = errors.New("job not found")
 	ErrJobNotCancellable = errors.New("job cannot be cancelled")
-	ErrInvalidJobType  = errors.New("invalid job type")
-	ErrInvalidJobParams = errors.New("invalid job parameters")
+	ErrInvalidJobType    = errors.New("invalid job type")
+	ErrInvalidJobParams  = errors.New("invalid job parameters")
 )
 
 // JobService defines the job operations service interface
@@ -42,9 +42,7 @@ type JobService interface {
 
 // runningJob tracks a job that is currently executing
 type runningJob struct {
-	job    *model.Job
 	cancel context.CancelFunc
-	mu     sync.RWMutex
 }
 
 // jobService implements JobService
@@ -60,7 +58,6 @@ type jobService struct {
 	mountPoints []model.MountPoint
 }
 
-
 // JobServiceConfig holds configuration for the job service
 type JobServiceConfig struct {
 	Workers     int
@@ -71,13 +68,13 @@ type JobServiceConfig struct {
 func NewJobService(fsys filesystem.FS, hub *websocket.Hub, cfg JobServiceConfig) JobService {
 	workers := cfg.Workers
 	if workers <= 0 {
-		workers = 4 // default worker count
+		workers = config.DefaultJobWorkers
 	}
 
 	return &jobService{
 		fs:          fsys,
 		hub:         hub,
-		workQueue:   make(chan *model.Job, 100),
+		workQueue:   make(chan *model.Job, config.JobQueueSize),
 		workers:     workers,
 		stopCh:      make(chan struct{}),
 		mountPoints: cfg.MountPoints,
@@ -242,12 +239,11 @@ func (s *jobService) Cancel(ctx context.Context, jobID string) error {
 	return nil
 }
 
-
 // execute runs a job
 func (s *jobService) execute(ctx context.Context, job *model.Job) {
 	// Create cancellable context for this job
 	jobCtx, cancel := context.WithCancel(ctx)
-	rj := &runningJob{job: job, cancel: cancel}
+	rj := &runningJob{cancel: cancel}
 	s.jobs.Store(job.ID, rj)
 	defer func() {
 		s.jobs.Delete(job.ID)
@@ -429,7 +425,6 @@ func (s *jobService) copyDirRecursive(ctx context.Context, job *model.Job, srcDi
 
 	return nil
 }
-
 
 // executeMove moves a file or directory
 func (s *jobService) executeMove(ctx context.Context, job *model.Job) error {

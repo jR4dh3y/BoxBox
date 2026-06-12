@@ -1,6 +1,6 @@
 # BoxBox Project Context
 
-> **Last updated:** 2026-05-06  
+> **Last updated:** 2026-06-12
 > **Purpose:** Single source of truth for the non-`docs/` Markdown files and current codebase state.  
 > **Scope:** Consolidates project truth from the previous non-`docs/` Markdown set. The old audit, roadmap, refactor-plan, and nested starter README files were removed on 2026-05-06 after this file became the local source of truth.  
 > **Excluded by request:** Contents of `docs/` Markdown files are not merged here, though this file notes known drift between `docs/` and the implementation where it affects project truth.
@@ -321,7 +321,7 @@ Backend testing gaps remain:
 
 - SvelteKit app is built as a static SPA with fallback.
 - Root layout initializes Svelte Query and handles auth redirects.
-- Main app flow includes login, browse, settings, and a manual `/test` component/demo route.
+- Main app flow includes login, browse, and settings. The old unauthenticated `/test` component/demo route was removed during the 2026-06-12 cleanup.
 - `browse/+page.svelte` is the main file manager screen and composes the active UI.
 
 ### Important frontend directories
@@ -347,7 +347,7 @@ Older frontend refactor files are stale in several areas. These are now implemen
 - `src/lib/utils/fileTypes.ts` exists and is the central file-type source.
 - `src/lib/utils/format.ts` exists for formatting.
 - Design tokens are defined in `src/routes/layout.css`.
-- `src/lib/components/ui/` exists with base components including `Button`, `Input`, `Select`, `Toggle`, `Card`, `Modal`, `Spinner`, `Badge`, `ProgressBar`, `ContextMenu`, `Toast`, and `InlineRename`.
+- `src/lib/components/ui/` exists with base components including `Button`, `Input`, `Select`, `Toggle`, `Modal`, `Spinner`, `Badge`, `ProgressBar`, `ContextMenu`, `Toast`, and `InlineRename`.
 - No `<style>` blocks were found under `frontend/src` during this audit.
 - `FileBrowser.svelte` referenced by old docs no longer exists.
 
@@ -409,14 +409,12 @@ Current upload utility supports:
 - Upload progress callbacks.
 - `getUploadStatus()`.
 - `resumeUpload()`.
-- An `UploadManager` helper class.
 
 Upload integration status:
 
 - `uploadStore.addFiles()` generates the upload ID for UI queue tracking.
 - The upload ID is passed through `UploadOptions` into chunk upload requests.
 - Normal queue flow now calls `resumeUpload()` first and falls back to a fresh upload with the same upload ID if no server session exists.
-- `UploadManager` also passes its generated upload ID into `uploadFile()`.
 
 ### WebSocket frontend
 
@@ -462,7 +460,7 @@ Current video state:
 - No Vitest config was found.
 - No Playwright config was found.
 - No frontend automated test files were found.
-- A manual `/test` route exists as a component/demo page.
+- No manual component/demo route remains.
 
 Verification status:
 
@@ -686,7 +684,7 @@ The test roadmap remains mostly aspirational for frontend and partially implemen
 ### Frontend now
 
 - No automated frontend test infrastructure found.
-- Manual `/test` route exists.
+- No manual `/test` route remains.
 
 ### Frontend next tests
 
@@ -723,6 +721,8 @@ A pragmatic target:
 - MIME type duplication in backend stream handler has been fixed.
 - Frontend config/storage/file-type/design-system foundation is now implemented.
 - Base UI components exist.
+- The old frontend `/test` route and its demo-only components were removed.
+- The old frontend `UploadManager` helper class was removed; the active upload queue is `upload.svelte.ts`.
 - No component `<style>` blocks were found under `frontend/src`.
 - `FileBrowser.svelte` referenced by older docs no longer exists.
 - More than one store is now migrated to runes: `clipboard`, `upload`, and `toast` are Svelte 5-style stores.

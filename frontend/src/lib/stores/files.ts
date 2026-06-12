@@ -4,15 +4,8 @@
  */
 
 import { writable, derived, get } from 'svelte/store';
-import {
-	listRoots,
-	listDirectory,
-	createDirectory,
-	rename,
-	deleteFile,
-	search,
-	type ListOptions
-} from '$lib/api/files';
+import { type ListOptions } from '$lib/api/files';
+import { CONFIG } from '$lib/config';
 
 /**
  * Current path state
@@ -114,7 +107,7 @@ export interface ListOptionsState extends ListOptions {
  */
 const defaultListOptions: ListOptionsState = {
 	page: 1,
-	pageSize: 50,
+	pageSize: CONFIG.ui.defaultPageSize,
 	sortBy: 'name',
 	sortDir: 'asc',
 	filter: ''
@@ -190,179 +183,3 @@ export const fileQueryKeys = {
 		[...fileQueryKeys.all, 'list', path, options] as const,
 	search: (path: string, query: string) => [...fileQueryKeys.all, 'search', path, query] as const
 };
-
-/**
- * Query options factory for listing mount points (roots)
- */
-export function rootsQueryOptions() {
-	return {
-		queryKey: fileQueryKeys.roots(),
-		queryFn: () => listRoots()
-	};
-}
-
-/**
- * Query options factory for listing directory contents
- */
-export function directoryQueryOptions(path: string, options: ListOptions) {
-	return {
-		queryKey: fileQueryKeys.list(path, options),
-		queryFn: () => listDirectory(path, options),
-		enabled: path !== ''
-	};
-}
-
-/**
- * Query options factory for searching files
- */
-export function searchQueryOptions(path: string, query: string) {
-	return {
-		queryKey: fileQueryKeys.search(path, query),
-		queryFn: () => search(path, query),
-		enabled: query.length > 0
-	};
-}
-
-/**
- * Mutation options for creating directories
- */
-export function createDirectoryMutationOptions() {
-	return {
-		mutationFn: ({ basePath, name }: { basePath: string; name: string }) =>
-			createDirectory(basePath, name)
-	};
-}
-
-/**
- * Mutation options for renaming files/directories
- */
-export function renameMutationOptions() {
-	return {
-		mutationFn: ({ oldPath, newPath }: { oldPath: string; newPath: string }) =>
-			rename(oldPath, newPath)
-	};
-}
-
-/**
- * Mutation options for deleting files/directories
- */
-export function deleteMutationOptions() {
-	return {
-		mutationFn: ({ path, confirm }: { path: string; confirm?: boolean }) =>
-			deleteFile(path, confirm)
-	};
-}
-
-/**
- * Selection state for multi-select operations
- */
-export interface SelectionState {
-	selectedItems: Set<string>;
-	lastSelectedItem: string | null;
-}
-
-/**
- * Create the selection store
- */
-function createSelectionStore() {
-	const { subscribe, set, update } = writable<SelectionState>({
-		selectedItems: new Set(),
-		lastSelectedItem: null
-	});
-
-	function select(path: string): void {
-		update((state) => {
-			const newSelected = new Set(state.selectedItems);
-			newSelected.add(path);
-			return {
-				selectedItems: newSelected,
-				lastSelectedItem: path
-			};
-		});
-	}
-
-	function deselect(path: string): void {
-		update((state) => {
-			const newSelected = new Set(state.selectedItems);
-			newSelected.delete(path);
-			return {
-				...state,
-				selectedItems: newSelected
-			};
-		});
-	}
-
-	function toggle(path: string): void {
-		update((state) => {
-			const newSelected = new Set(state.selectedItems);
-			if (newSelected.has(path)) {
-				newSelected.delete(path);
-			} else {
-				newSelected.add(path);
-			}
-			return {
-				selectedItems: newSelected,
-				lastSelectedItem: path
-			};
-		});
-	}
-
-	function selectOnly(path: string): void {
-		set({
-			selectedItems: new Set([path]),
-			lastSelectedItem: path
-		});
-	}
-
-	function selectAll(paths: string[]): void {
-		set({
-			selectedItems: new Set(paths),
-			lastSelectedItem: paths[paths.length - 1] || null
-		});
-	}
-
-	function clearSelection(): void {
-		set({
-			selectedItems: new Set(),
-			lastSelectedItem: null
-		});
-	}
-
-	function isSelected(path: string): boolean {
-		return get({ subscribe }).selectedItems.has(path);
-	}
-
-	function getSelectedItems(): string[] {
-		return Array.from(get({ subscribe }).selectedItems);
-	}
-
-	return {
-		subscribe,
-		select,
-		deselect,
-		toggle,
-		selectOnly,
-		selectAll,
-		clearSelection,
-		isSelected,
-		getSelectedItems
-	};
-}
-
-/**
- * Selection store singleton
- */
-export const selectionStore = createSelectionStore();
-
-/**
- * Derived store for selected items count
- */
-export const selectedCount = derived(selectionStore, ($selection) => $selection.selectedItems.size);
-
-/**
- * Derived store for whether any items are selected
- */
-export const hasSelection = derived(
-	selectionStore,
-	($selection) => $selection.selectedItems.size > 0
-);
