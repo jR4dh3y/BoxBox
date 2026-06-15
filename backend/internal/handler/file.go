@@ -38,6 +38,7 @@ func (h *FileHandler) RegisterRoutes(r chi.Router) {
 // MountPointResponse represents a mount point in API responses
 type MountPointResponse struct {
 	Name     string `json:"name"`
+	Path     string `json:"path"`
 	ReadOnly bool   `json:"readOnly"`
 }
 
@@ -72,6 +73,7 @@ func (h *FileHandler) ListRoots(w http.ResponseWriter, r *http.Request) {
 	for i, mount := range mounts {
 		roots[i] = MountPointResponse{
 			Name:     mount.Name,
+			Path:     mount.Path,
 			ReadOnly: mount.ReadOnly,
 		}
 	}
