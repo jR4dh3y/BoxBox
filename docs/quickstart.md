@@ -34,7 +34,7 @@ FM_USERS_admin="a-long-unique-password"
 HOST_PORT=8080
 ```
 
-Also edit `backend/config.yaml` if you want to expose different paths. Add more entries under `mount_points` and bind each host path in `docker-compose.yml`.
+Also edit `backend/config.yaml` if you want to expose different paths. The default sidebar folders map to `$HOME/Desktop`, `$HOME/Downloads`, and the other standard home folders unless you set `HOME_PATH`; override `DESKTOP_PATH`, `DOWNLOADS_PATH`, `DOCUMENTS_PATH`, `MUSIC_PATH`, `PICTURES_PATH`, or `VIDEOS_PATH` in `.env` to point one shortcut somewhere custom.
 
 ## Open BoxBox
 

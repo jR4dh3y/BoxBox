@@ -39,3 +39,29 @@ mount_points:
   - name: "home"
     path: "/home/user"
     read_only: false
+
+  # Default home folders used by the sidebar quick-access entries.
+  # Override the matching Docker volume path in .env to map any of these elsewhere.
+  - name: "desktop"
+    path: "/home/user/Desktop"
+    read_only: false
+
+  - name: "downloads"
+    path: "/home/user/Downloads"
+    read_only: false
+
+  - name: "documents"
+    path: "/home/user/Documents"
+    read_only: false
+
+  - name: "music"
+    path: "/home/user/Music"
+    read_only: false
+
+  - name: "pictures"
+    path: "/home/user/Pictures"
+    read_only: false
+
+  - name: "videos"
+    path: "/home/user/Videos"
+    read_only: false

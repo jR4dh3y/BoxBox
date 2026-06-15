@@ -46,6 +46,10 @@ mount_points:
     path: "/home/user"
     read_only: false
 
+  - name: "downloads"
+    path: "/home/user/Downloads"
+    read_only: false
+
   - name: "backups"
     path: "/mnt/backups"
     read_only: true
@@ -110,6 +114,8 @@ mount_points:
 ```
 
 The `name` is the first segment in API paths. For example, a mount named `media` is browsed through `/api/v1/files/media`.
+
+The built-in sidebar shortcuts use mount names `desktop`, `downloads`, `documents`, `music`, `pictures`, and `videos`. Keep those names if you want the default sidebar entries to open custom locations.
 
 ### Read-Only Mounts
 

@@ -33,7 +33,10 @@ Set these values in `.env` before starting:
 FM_JWT_SECRET=generate-a-long-random-secret
 FM_USERS_admin=replace-this-password
 HOST_PORT=8080
-HOME_PATH=/home/your-user
+# Optional: defaults to the HOME of the user running docker compose.
+# HOME_PATH=/home/your-user
+# Optional: point sidebar shortcuts somewhere other than HOME_PATH/<Folder>.
+# DOWNLOADS_PATH=/mnt/downloads
 BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:latest
 ```
 
@@ -131,11 +134,19 @@ The default compose file mounts:
 | `./backend/config.yaml` | `/app/config.yaml` | Runtime configuration. |
 | `/media/devmon` | `/media/devmon` | Auto-discovered removable drives. |
 | `/` | `/host_root` | Host root browsing. High blast radius. |
-| `${HOME_PATH}` | `/home/user` | User home directory browsing. |
+| `${HOME_PATH}` or host `$HOME` | `/home/user` | User home directory browsing. |
+| `${DESKTOP_PATH}` or `$HOME/Desktop` | `/home/user/Desktop` | Desktop sidebar shortcut. |
+| `${DOWNLOADS_PATH}` or `$HOME/Downloads` | `/home/user/Downloads` | Downloads sidebar shortcut. |
+| `${DOCUMENTS_PATH}` or `$HOME/Documents` | `/home/user/Documents` | Documents sidebar shortcut. |
+| `${MUSIC_PATH}` or `$HOME/Music` | `/home/user/Music` | Music sidebar shortcut. |
+| `${PICTURES_PATH}` or `$HOME/Pictures` | `/home/user/Pictures` | Pictures sidebar shortcut. |
+| `${VIDEOS_PATH}` or `$HOME/Videos` | `/home/user/Videos` | Videos sidebar shortcut. |
 | `filemanager-temp` | `/tmp/filemanager` | Chunked upload assembly. |
 | `filemanager-data` | `/data` | Persistent app data, including custom drive names. |
 
 Use `:ro` on a volume or `read_only: true` in `config.yaml` when a path should never be modified through BoxBox.
+
+The sidebar's default folders are configured as normal mount points named `desktop`, `downloads`, `documents`, `music`, `pictures`, and `videos`. To remap one shortcut, set the matching host path in `.env` and restart, for example `DOWNLOADS_PATH=/srv/incoming`. Do not use `~` in `.env`; use an absolute path like `/home/alex/Downloads`.
 
 ## Mount Propagation
 

@@ -35,7 +35,17 @@ services:
       # rslave enables mount propagation so container sees new host mounts
       - /media/devmon:/media/devmon:rslave
       - /:/host_root:ro,rslave
-      - ${HOME_PATH:-/home/user}:/home/user
+      - ${HOME_PATH:-${HOME:-/home/user}}:/home/user
+
+      # Sidebar quick-access folders. By default these point inside HOME_PATH,
+      # or the host user's HOME when HOME_PATH is unset.
+      # Set any *_PATH variable in .env to map that shortcut to a custom host path.
+      - ${DESKTOP_PATH:-${HOME_PATH:-${HOME:-/home/user}}/Desktop}:/home/user/Desktop
+      - ${DOWNLOADS_PATH:-${HOME_PATH:-${HOME:-/home/user}}/Downloads}:/home/user/Downloads
+      - ${DOCUMENTS_PATH:-${HOME_PATH:-${HOME:-/home/user}}/Documents}:/home/user/Documents
+      - ${MUSIC_PATH:-${HOME_PATH:-${HOME:-/home/user}}/Music}:/home/user/Music
+      - ${PICTURES_PATH:-${HOME_PATH:-${HOME:-/home/user}}/Pictures}:/home/user/Pictures
+      - ${VIDEOS_PATH:-${HOME_PATH:-${HOME:-/home/user}}/Videos}:/home/user/Videos
 
       # Persistent storage
       - filemanager-temp:/tmp/filemanager
