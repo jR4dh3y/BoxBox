@@ -351,7 +351,16 @@ export function mapSystemMountToBrowsePath(mountPoint: string, roots: MountPoint
 }
 
 function normalizeMountPath(path: string): string {
-	const normalized = path.replace(/\/+$|\\+$/g, '');
+	let end = path.length;
+	const trailingSeparator = path[end - 1];
+
+	if (trailingSeparator === '/' || trailingSeparator === '\\') {
+		while (end > 0 && path[end - 1] === trailingSeparator) {
+			end -= 1;
+		}
+	}
+
+	const normalized = path.slice(0, end);
 	return normalized === '' ? '/' : normalized;
 }
 
