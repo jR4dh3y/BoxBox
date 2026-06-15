@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  Database,
   Monitor,
   Download,
   FileText,
@@ -26,32 +25,19 @@ import {
 } from '@lucide/astro';
 ---
 
-<div id="demo" class="w-full max-w-[1400px] mt-24 mb-32 flex flex-col items-center justify-center relative">
+<div id="demo" class="w-full max-w-[1400px] mt-24 mb-32 flex flex-col items-center justify-center relative isolate" style="--hero-glow: rgba(146, 124, 255, 0.32);">
+  <div class="pointer-events-none absolute left-1/2 top-1/2 h-[86%] w-[118%] -translate-x-1/2 -translate-y-[42%] demo-hero-glow z-0"></div>
+  <div
+    id="app-window"
+    class="w-full rounded-[14px] overflow-hidden border border-[#2a2a2a] transition-all duration-300 ease-out bg-[#161616] origin-top relative z-10"
+    style="transform: perspective(2000px) translateY(-50px) rotateX(20deg) scale(0.85); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.72), 0 0 96px var(--hero-glow); --hero-wallpaper: url('/wallpapers/evernight.png'); --hero-glow: rgba(146, 124, 255, 0.32); --color-accent: #a892ff; --color-accent-hover: #7b69c5; --color-accent-muted: #473d68; --color-selection: #463c67; --color-selection-hover: #7b69c5; --color-border-focus: #a892ff;"
+  >
+    <div class="absolute inset-0 demo-wallpaper-layer"></div>
+    <div id="demo-wallpaper-fade" class="absolute inset-0 demo-wallpaper-fade"></div>
+    <div class="absolute inset-0 bg-black/35"></div>
 
-  <div class="absolute inset-0 bg-gradient-to-b from-transparent via-accent/5 to-transparent blur-3xl -z-10"></div>
-
-  <div id="app-window" class="w-full rounded-[14px] overflow-hidden border border-[#2a2a2a] shadow-[0_20px_50px_rgba(0,0,0,0.6)] transition-all duration-300 ease-out bg-[#161616] origin-top" style="transform: perspective(2000px) translateY(-50px) rotateX(20deg) scale(0.85);">
-
-    <!-- App Interface Layout (Exact replica of frontend layout) -->
-    <div class="flex h-[600px] md:h-[750px] w-full bg-[#161616] text-text-primary text-[13px] font-sans relative">
-
-      <!-- Sidebar -->
-      <div class="w-[220px] min-w-[220px] bg-[#1e1e1e] border-r border-[#2a2a2a] hidden md:flex md:flex-col">
-
-        <!-- Storage Section -->
-        <div class="border-b border-border-secondary">
-          <button class="w-full flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
-            <ChevronDown class="w-3.5 h-3.5" />
-            <span>Storage</span>
-          </button>
-          <div class="pb-2">
-            <SidebarItem icon={Database} label="drives" />
-            <SidebarItem icon={Database} label="root" />
-            <SidebarItem icon={Database} label="home" />
-          </div>
-        </div>
-
-        <!-- Places Section -->
+    <div class="flex h-[600px] md:h-[750px] w-full bg-[#161616]/55 text-text-primary text-[13px] font-sans relative z-10 backdrop-blur-[2px]">
+      <div class="w-[220px] min-w-[220px] bg-[#1e1e1e]/78 border-r border-[#2a2a2a] hidden md:flex md:flex-col backdrop-blur-md">
         <div class="border-b border-border-secondary">
           <button class="w-full flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
             <ChevronDown class="w-3.5 h-3.5" />
@@ -68,7 +54,6 @@ import {
           </div>
         </div>
 
-        <!-- Favorites Section -->
         <div class="border-b border-border-secondary flex-1">
           <button class="w-full flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
             <ChevronDown class="w-3.5 h-3.5" />
@@ -80,10 +65,8 @@ import {
         </div>
       </div>
 
-      <!-- Main Content Area -->
-      <div class="flex-1 flex flex-col min-w-0 bg-[#161616]">
-        <!-- Toolbar -->
-        <div class="h-14 border-b border-[#2a2a2a] flex items-center px-4 justify-between bg-[#1e1e1e]">
+      <div class="flex-1 flex flex-col min-w-0 bg-[#161616]/45 backdrop-blur-sm">
+        <div class="h-14 border-b border-[#2a2a2a] flex items-center px-4 justify-between bg-[#1e1e1e]/82 backdrop-blur-md">
           <div class="flex items-center gap-0.5">
             <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><ChevronLeft class="w-[18px] h-[18px]" /></button>
             <button class="w-7 h-7 flex items-center justify-center text-text-disabled cursor-not-allowed"><ChevronRight class="w-[18px] h-[18px]" /></button>
@@ -106,62 +89,62 @@ import {
           </div>
         </div>
 
-        <!-- Content (Drive Cards exact replica) -->
-        <div class="flex-1 overflow-y-auto mock-scrollbar p-6 bg-surface-primary">
-
-          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 text-left">
-            <!-- Drive 1 (Blue/Healthy) -->
+        <div class="flex-1 overflow-y-auto mock-scrollbar p-6 bg-surface-primary/35 backdrop-blur-[1.5px]">
+          <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 text-left">
             <DriveCard
-              path="/host_root"
+              path="root"
               total="217.97 GB"
-              used="105.26 GB"
-              free="101.57 GB"
+              used="105.22 GB"
+              free="101.61 GB"
               device="/dev/sda2"
               fs="ext4"
               percent={48.3}
-              color="#4a9eff"
+              color="var(--color-accent)"
             />
-
-            <!-- Drive 2 (Red/Critical) -->
             <DriveCard
-              path="/host_root/mnt/stufff"
+              path="storage"
               total="223.57 GB"
-              used="211.19 GB"
-              free="12.38 GB"
-              device="/dev/sdb1"
+              used="211.18 GB"
+              free="12.39 GB"
+              device="/dev/sdc1"
               fs="fuseblk"
               percent={94.5}
-              color="#dc3545"
+              color="#ef4165"
             />
-
-            <!-- Drive 3 (Orange/Warning) -->
             <DriveCard
-              path="/host_root/mnt/card"
-              total="119.05 GB"
-              used="93.29 GB"
-              free="25.76 GB"
-              device="/dev/sdc1"
-              fs="exfat"
-              percent={78.4}
-              color="#f39c12"
+              path="archive"
+              total="101.56 TB"
+              used="61.24 TB"
+              free="40.32 TB"
+              device="archive_remote:"
+              fs="fuse.rclone"
+              percent={60.3}
+              color="var(--color-accent)"
             />
-
-            <!-- Drive 4 (Blue/Healthy) -->
             <DriveCard
-              path="/home/user"
+              path="backups"
+              total="5 TB"
+              used="59.67 GB"
+              free="4.94 TB"
+              device="backups_remote:"
+              fs="fuse.rclone"
+              percent={1.2}
+              color="var(--color-accent)"
+            />
+            <DriveCard
+              path="home"
               total="217.97 GB"
-              used="105.26 GB"
-              free="101.57 GB"
+              used="105.22 GB"
+              free="101.61 GB"
               device="/dev/sda2"
               fs="ext4"
               percent={48.3}
-              color="#4a9eff"
+              color="var(--color-accent)"
             />
           </div>
         </div>
 
-        <!-- Bottom Status Bar -->
-        <div class="h-8 bg-surface-primary border-t border-border-secondary flex items-center px-4 justify-between text-[11px] text-text-secondary">
+        <div class="h-8 bg-surface-primary/70 border-t border-border-secondary flex items-center px-4 justify-between text-[11px] text-text-secondary backdrop-blur-md">
           <div class="flex items-center gap-3">
             <span>5 items</span>
           </div>
@@ -174,9 +157,8 @@ import {
         </div>
       </div>
 
-      <!-- Upload Progress Toast Widget Simulation -->
-      <div class="absolute bottom-12 right-6 w-[360px] bg-surface-secondary border border-border-primary rounded-lg shadow-2xl overflow-hidden animate-fade-in-up" style="animation-delay: 1s; z-index: 60; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);">
-        <div class="px-4 py-2 border-b border-border-primary flex items-center justify-between text-[12px] font-medium bg-surface-tertiary">
+      <div class="absolute bottom-12 right-6 w-[360px] bg-surface-secondary/92 border border-border-primary rounded-lg shadow-2xl overflow-hidden animate-fade-in-up backdrop-blur-md" style="animation-delay: 1s; z-index: 60; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);">
+        <div class="px-4 py-2 border-b border-border-primary flex items-center justify-between text-[12px] font-medium bg-surface-tertiary/95">
           <span class="text-text-primary flex items-center gap-2">
             <LoaderCircle class="w-3.5 h-3.5 text-accent animate-spin" />
             Uploading 1 file...
@@ -201,43 +183,120 @@ import {
           </div>
         </div>
       </div>
-
     </div>
   </div>
 </div>
 
 <script>
-  // Simple scroll animation for the app window
   const appWindow = document.getElementById('app-window');
+  const demo = document.getElementById('demo');
+  const wallpaperFade = document.getElementById('demo-wallpaper-fade');
+  const root = document.documentElement;
+
+  const themes = [
+    {
+      wallpaper: '/wallpapers/evernight.png',
+      accent: '#a892ff',
+      glow: 'rgba(146, 124, 255, 0.26)'
+    },
+    {
+      wallpaper: '/wallpapers/light.png',
+      accent: '#5ea8ff',
+      glow: 'rgba(94, 168, 255, 0.28)'
+    },
+    {
+      wallpaper: '/wallpapers/lucy.jpeg',
+      accent: '#ff7ab8',
+      glow: 'rgba(255, 122, 184, 0.28)'
+    },
+    {
+      wallpaper: '/wallpapers/minami.jpg',
+      accent: '#7ed3ff',
+      glow: 'rgba(126, 211, 255, 0.24)'
+    },
+    {
+      wallpaper: '/wallpapers/summer_1.png',
+      accent: '#ff9f70',
+      glow: 'rgba(255, 159, 112, 0.26)'
+    }
+  ];
+
+  function hexToRgb(hex) {
+    const cleaned = hex.replace('#', '');
+    return [
+      Number.parseInt(cleaned.slice(0, 2), 16),
+      Number.parseInt(cleaned.slice(2, 4), 16),
+      Number.parseInt(cleaned.slice(4, 6), 16)
+    ];
+  }
+
+  function rgbToHex(rgb) {
+    return `#${rgb.map((value) => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  function mixHex(color, target, amount) {
+    const [r1, g1, b1] = hexToRgb(color);
+    const [r2, g2, b2] = hexToRgb(target);
+    return rgbToHex([
+      r1 + (r2 - r1) * amount,
+      g1 + (g2 - g1) * amount,
+      b1 + (b2 - b1) * amount
+    ]);
+  }
+
+  function setThemeVars(target, theme) {
+    target.style.setProperty('--color-accent', theme.accent);
+    target.style.setProperty('--color-border-focus', theme.accent);
+    target.style.setProperty('--color-accent-hover', mixHex(theme.accent, '#000000', 0.28));
+    target.style.setProperty('--color-accent-muted', mixHex(theme.accent, '#1b1b1b', 0.58));
+    target.style.setProperty('--color-selection', mixHex(theme.accent, '#1e1e1e', 0.6));
+    target.style.setProperty('--color-selection-hover', mixHex(theme.accent, '#000000', 0.35));
+  }
+
+  function applyTheme(theme, shouldFade = true, syncSiteAccent = false) {
+    if (!appWindow || !demo) return;
+
+    if (wallpaperFade && shouldFade) {
+      wallpaperFade.style.transition = 'none';
+      wallpaperFade.style.backgroundImage = appWindow.style.getPropertyValue('--hero-wallpaper');
+      wallpaperFade.style.opacity = '1';
+      wallpaperFade.offsetHeight;
+      wallpaperFade.style.transition = '';
+      appWindow.style.setProperty('--hero-wallpaper', `url('${theme.wallpaper}')`);
+      window.requestAnimationFrame(() => {
+        wallpaperFade.style.opacity = '0';
+      });
+    } else {
+      appWindow.style.setProperty('--hero-wallpaper', `url('${theme.wallpaper}')`);
+    }
+
+    appWindow.style.setProperty('--hero-glow', theme.glow);
+    setThemeVars(appWindow, theme);
+
+    if (syncSiteAccent) {
+      root.dataset.accentTransition = 'true';
+      setThemeVars(root, theme);
+    }
+
+    demo.style.setProperty('--hero-glow', theme.glow);
+  }
 
   if (appWindow) {
+    const demoWindow = appWindow;
     let ticking = false;
+    let themeIndex = 0;
+    let themeStarted = false;
 
     function updateDemoTransform() {
       const scrollY = window.scrollY;
-      // Adjust these values to tune the animation timing
       const maxScroll = window.innerHeight * 0.6;
-
-      let progress = Math.min(Math.max(scrollY / maxScroll, 0), 1);
-
-      // Use an easing function for smoother landing
-      // EaseOutQuart
+      const progress = Math.min(Math.max(scrollY / maxScroll, 0), 1);
       const easeProgress = 1 - Math.pow(1 - progress, 4);
+      const rotateX = 20 - (20 * easeProgress);
+      const scale = 0.85 + (0.15 * easeProgress);
+      const translateY = -50 * (1 - easeProgress);
 
-      // Calculate transform values based on progress
-      const rotateX = 20 - (20 * easeProgress); // 20deg to 0deg
-      const scale = 0.85 + (0.15 * easeProgress); // 0.85 to 1.0
-      const translateY = -50 * (1 - easeProgress); // move up slightly as it rotates
-
-      appWindow.style.transform = `perspective(2000px) translateY(${translateY}px) rotateX(${rotateX}deg) scale(${scale})`;
-
-      if (progress > 0.8) {
-        appWindow.classList.add('shadow-accent/30');
-        appWindow.classList.remove('shadow-black/60');
-      } else {
-        appWindow.classList.add('shadow-black/60');
-        appWindow.classList.remove('shadow-accent/30');
-      }
+      demoWindow.style.transform = `perspective(2000px) translateY(${translateY}px) rotateX(${rotateX}deg) scale(${scale})`;
     }
 
     window.addEventListener('scroll', () => {
@@ -248,5 +307,69 @@ import {
         ticking = false;
       });
     }, { passive: true });
+
+    function startThemeCycle() {
+      if (themeStarted) return;
+
+      themeStarted = true;
+      applyTheme(themes[themeIndex], false, true);
+
+      window.setInterval(() => {
+        themeIndex = (themeIndex + 1) % themes.length;
+        applyTheme(themes[themeIndex], true, true);
+      }, 4800);
+    }
+
+    applyTheme(themes[themeIndex], false, false);
+
+    if ('IntersectionObserver' in window && demo) {
+      const themeObserver = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          startThemeCycle();
+          themeObserver.disconnect();
+        }
+      }, { threshold: 0.22 });
+
+      themeObserver.observe(demo);
+    } else {
+      window.addEventListener('scroll', () => {
+        if (!demo || themeStarted) return;
+
+        const rect = demo.getBoundingClientRect();
+        if (rect.top < window.innerHeight * 0.78 && rect.bottom > 0) {
+          startThemeCycle();
+        }
+      }, { passive: true });
+    }
   }
 </script>
+
+<style>
+  .demo-wallpaper-layer,
+  .demo-wallpaper-fade {
+    background-image: var(--hero-wallpaper);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    transform: scale(1.03);
+  }
+
+  .demo-wallpaper-layer {
+    transition: transform 800ms ease;
+  }
+
+  .demo-wallpaper-fade {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 900ms ease;
+  }
+
+  .demo-hero-glow {
+    background:
+      radial-gradient(ellipse at 50% 42%, var(--hero-glow, rgba(74, 158, 255, 0.32)) 0%, transparent 58%),
+      radial-gradient(ellipse at 50% 88%, rgba(74, 158, 255, 0.18) 0%, transparent 64%);
+    filter: blur(72px);
+    opacity: 0.95;
+    transition: background 700ms ease, opacity 700ms ease;
+  }
+</style>

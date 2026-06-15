@@ -52,6 +52,12 @@ body {
 	overscroll-behavior-y: none;
 }
 
+html[data-accent-transition="true"] :where([class*="accent"], [class*="selection"], a, button, svg) {
+  transition-duration: 700ms;
+  transition-property: background-color, border-color, box-shadow, color, fill, opacity, stroke;
+  transition-timing-function: ease;
+}
+
 /* Animations */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(40px); }

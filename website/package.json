@@ -15,12 +15,16 @@
     "@lucide/astro": "^0.577.0",
     "@tailwindcss/vite": "^4.2.1",
     "astro": "^6.0.3",
+    "entities": "^8.0.0",
     "marked": "^18.0.3",
+    "sanitize-html": "^2.17.5",
     "shiki": "^4.0.2",
     "tailwindcss": "^4.2.1"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.7",
+    "@types/node": "^22",
+    "@types/sanitize-html": "^2.16.1",
     "typescript": "^5.9.3"
   }
 }

@@ -94,15 +94,15 @@ function hrefFor(slug: string) {
   </main>
 
   <script>
-    const tocLinks = Array.from(document.querySelectorAll('[data-toc-link]'));
+    const tocLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
     const headings = tocLinks
-      .map((link) => {
+      .map((link): HTMLElement | null => {
         const id = link.getAttribute('data-toc-link');
         return id ? document.getElementById(id) : null;
       })
-      .filter(Boolean);
+      .filter((heading): heading is HTMLElement => heading !== null);
 
-    function setActiveTocLink(activeId) {
+    function setActiveTocLink(activeId: string) {
       for (const link of tocLinks) {
         link.classList.toggle('is-active', link.getAttribute('data-toc-link') === activeId);
       }
@@ -124,7 +124,7 @@ function hrefFor(slug: string) {
       const activationLine =
         normalActivationLine + (endActivationLine - normalActivationLine) * endProgress;
 
-      let activeHeading = headings[0];
+      let activeHeading: HTMLElement | undefined = headings[0];
 
       for (const heading of headings) {
         if (heading.getBoundingClientRect().top <= activationLine) {
