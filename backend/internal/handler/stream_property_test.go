@@ -72,6 +72,58 @@ func newChunkUploadRequest(
 	return req
 }
 
+func setUploadChecksum(req *http.Request, content []byte) {
+	sum := sha256.Sum256(content)
+	req.Header.Set("X-Checksum", hex.EncodeToString(sum[:]))
+}
+
+func TestUploadRejectsInvalidUploadID(t *testing.T) {
+	handler, _, _ := setupTestStreamHandler()
+	router := createStreamTestRouter(handler)
+
+	req := newChunkUploadRequest("media/invalid-id.bin", []byte("ab"), "../bad", 0, 1, 2, 2)
+	setUploadChecksum(req, []byte("ab"))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
+func TestUploadRejectsFinalChunkWithoutChecksum(t *testing.T) {
+	handler, fs, _ := setupTestStreamHandler()
+	router := createStreamTestRouter(handler)
+
+	firstReq := newChunkUploadRequest("media/checksum-required.bin", []byte("ab"), "checksum-required", 0, 2, 2, 4)
+	firstRec := httptest.NewRecorder()
+	router.ServeHTTP(firstRec, firstReq)
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("expected initial status %d, got %d: %s", http.StatusOK, firstRec.Code, firstRec.Body.String())
+	}
+
+	missingChecksumReq := newChunkUploadRequest("media/checksum-required.bin", []byte("cd"), "checksum-required", 1, 2, 2, 4)
+	missingChecksumRec := httptest.NewRecorder()
+	router.ServeHTTP(missingChecksumRec, missingChecksumReq)
+	if missingChecksumRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected missing checksum status %d, got %d: %s", http.StatusBadRequest, missingChecksumRec.Code, missingChecksumRec.Body.String())
+	}
+
+	exists, _ := fs.Exists("/data/media/checksum-required.bin")
+	if exists {
+		t.Fatal("file should not be assembled without a final checksum")
+	}
+
+	finalReq := newChunkUploadRequest("media/checksum-required.bin", []byte("cd"), "checksum-required", 1, 2, 2, 4)
+	setUploadChecksum(finalReq, []byte("abcd"))
+	finalRec := httptest.NewRecorder()
+	router.ServeHTTP(finalRec, finalReq)
+	if finalRec.Code != http.StatusCreated {
+		t.Fatalf("expected retry status %d, got %d: %s", http.StatusCreated, finalRec.Code, finalRec.Body.String())
+	}
+}
+
 func TestUploadRejectsTotalSizeAboveConfiguredMax(t *testing.T) {
 	handler, _, _ := setupTestStreamHandler()
 	handler.maxUploadBytes = 2

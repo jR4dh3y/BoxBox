@@ -13,6 +13,7 @@ import (
 	"github.com/homelab/filemanager/internal/config"
 	"github.com/homelab/filemanager/internal/model"
 	"github.com/homelab/filemanager/internal/pkg/filesystem"
+	"github.com/homelab/filemanager/internal/pkg/validator"
 	"github.com/homelab/filemanager/internal/websocket"
 )
 
@@ -110,6 +111,9 @@ func (s *jobService) worker(ctx context.Context) {
 		case <-s.stopCh:
 			return
 		case job := <-s.workQueue:
+			if job.State == model.JobStateCancelled {
+				continue
+			}
 			s.execute(ctx, job)
 		}
 	}
@@ -162,15 +166,40 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 		return nil, ErrInvalidJobParams
 	}
 
+	sourceMount, sourceFsPath, err := s.resolveJobPath(params.SourcePath)
+	if err != nil {
+		return nil, err
+	}
+
+	destFsPath := ""
+	if params.DestPath != "" {
+		destMount, resolvedDestPath, err := s.resolveJobPath(params.DestPath)
+		if err != nil {
+			return nil, err
+		}
+		if destMount.ReadOnly {
+			return nil, ErrPermissionDenied
+		}
+		destFsPath = resolvedDestPath
+	}
+
+	if params.Type == model.JobTypeMove || params.Type == model.JobTypeDelete {
+		if sourceMount.ReadOnly {
+			return nil, ErrPermissionDenied
+		}
+	}
+
 	// Create job
 	job := &model.Job{
-		ID:         uuid.New().String(),
-		Type:       params.Type,
-		State:      model.JobStatePending,
-		Progress:   0,
-		SourcePath: params.SourcePath,
-		DestPath:   params.DestPath,
-		CreatedAt:  time.Now(),
+		ID:                 uuid.New().String(),
+		Type:               params.Type,
+		State:              model.JobStatePending,
+		Progress:           0,
+		SourcePath:         params.SourcePath,
+		DestPath:           params.DestPath,
+		ResolvedSourcePath: sourceFsPath,
+		ResolvedDestPath:   destFsPath,
+		CreatedAt:          time.Now(),
 	}
 
 	// Store job
@@ -190,6 +219,18 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 	}
 
 	return job, nil
+}
+
+func (s *jobService) resolveJobPath(path string) (*model.MountPoint, string, error) {
+	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mountPoints)
+	if err != nil {
+		if errors.Is(err, validator.ErrOutsideMountPoint) || errors.Is(err, validator.ErrMountPointNotFound) {
+			return nil, "", ErrMountPointNotFound
+		}
+		return nil, "", ErrInvalidJobParams
+	}
+
+	return mount, fsPath, nil
 }
 
 // Get returns a job by ID
@@ -241,6 +282,10 @@ func (s *jobService) Cancel(ctx context.Context, jobID string) error {
 
 // execute runs a job
 func (s *jobService) execute(ctx context.Context, job *model.Job) {
+	if job.State == model.JobStateCancelled {
+		return
+	}
+
 	// Create cancellable context for this job
 	jobCtx, cancel := context.WithCancel(ctx)
 	rj := &runningJob{cancel: cancel}
@@ -249,6 +294,10 @@ func (s *jobService) execute(ctx context.Context, job *model.Job) {
 		s.jobs.Delete(job.ID)
 		cancel()
 	}()
+
+	if job.State == model.JobStateCancelled {
+		return
+	}
 
 	// Update job state to running
 	job.State = model.JobStateRunning
@@ -287,7 +336,8 @@ func (s *jobService) execute(ctx context.Context, job *model.Job) {
 
 // executeCopy copies a file or directory
 func (s *jobService) executeCopy(ctx context.Context, job *model.Job) error {
-	srcInfo, err := s.fs.Stat(job.SourcePath)
+	sourcePath := jobSourcePath(job)
+	srcInfo, err := s.fs.Stat(sourcePath)
 	if err != nil {
 		return err
 	}
@@ -300,19 +350,22 @@ func (s *jobService) executeCopy(ctx context.Context, job *model.Job) error {
 
 // copyFile copies a single file with progress tracking
 func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int64) error {
-	src, err := s.fs.Open(job.SourcePath)
+	sourcePath := jobSourcePath(job)
+	destPath := jobDestPath(job)
+
+	src, err := s.fs.Open(sourcePath)
 	if err != nil {
 		return err
 	}
 	defer src.Close()
 
 	// Ensure destination directory exists
-	destDir := filepath.Dir(job.DestPath)
+	destDir := filepath.Dir(destPath)
 	if err := s.fs.MkdirAll(destDir, 0755); err != nil {
 		return err
 	}
 
-	dst, err := s.fs.Create(job.DestPath)
+	dst, err := s.fs.Create(destPath)
 	if err != nil {
 		return err
 	}
@@ -326,7 +379,7 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 		case <-ctx.Done():
 			// Cleanup partial file on cancellation
 			dst.Close()
-			s.fs.Remove(job.DestPath)
+			s.fs.Remove(destPath)
 			return ctx.Err()
 		default:
 		}
@@ -361,14 +414,17 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 
 // copyDir copies a directory recursively with progress tracking
 func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
+	sourcePath := jobSourcePath(job)
+	destPath := jobDestPath(job)
+
 	// First, count total files for progress tracking
-	totalFiles, err := s.countFiles(job.SourcePath)
+	totalFiles, err := s.countFiles(sourcePath)
 	if err != nil {
 		return err
 	}
 
 	var copiedFiles int
-	return s.copyDirRecursive(ctx, job, job.SourcePath, job.DestPath, totalFiles, &copiedFiles)
+	return s.copyDirRecursive(ctx, job, sourcePath, destPath, totalFiles, &copiedFiles)
 }
 
 // copyDirRecursive recursively copies a directory
@@ -405,8 +461,10 @@ func (s *jobService) copyDirRecursive(ctx context.Context, job *model.Job, srcDi
 
 			// Create a temporary job for file copy (to track individual file progress)
 			tempJob := &model.Job{
-				SourcePath: srcPath,
-				DestPath:   dstPath,
+				SourcePath:         srcPath,
+				DestPath:           dstPath,
+				ResolvedSourcePath: srcPath,
+				ResolvedDestPath:   dstPath,
 			}
 			if err := s.copyFile(ctx, tempJob, info.Size()); err != nil {
 				return err
@@ -428,8 +486,11 @@ func (s *jobService) copyDirRecursive(ctx context.Context, job *model.Job, srcDi
 
 // executeMove moves a file or directory
 func (s *jobService) executeMove(ctx context.Context, job *model.Job) error {
+	sourcePath := jobSourcePath(job)
+	destPath := jobDestPath(job)
+
 	// Try simple rename first (works if on same filesystem)
-	err := s.fs.Rename(job.SourcePath, job.DestPath)
+	err := s.fs.Rename(sourcePath, destPath)
 	if err == nil {
 		job.Progress = 100
 		s.broadcastUpdate(job)
@@ -437,7 +498,7 @@ func (s *jobService) executeMove(ctx context.Context, job *model.Job) error {
 	}
 
 	// If rename fails, fall back to copy + delete
-	srcInfo, err := s.fs.Stat(job.SourcePath)
+	srcInfo, err := s.fs.Stat(sourcePath)
 	if err != nil {
 		return err
 	}
@@ -457,18 +518,19 @@ func (s *jobService) executeMove(ctx context.Context, job *model.Job) error {
 	select {
 	case <-ctx.Done():
 		// Cleanup destination on cancellation
-		s.fs.RemoveAll(job.DestPath)
+		s.fs.RemoveAll(destPath)
 		return ctx.Err()
 	default:
 	}
 
 	// Delete source
-	return s.fs.RemoveAll(job.SourcePath)
+	return s.fs.RemoveAll(sourcePath)
 }
 
 // executeDelete deletes a file or directory
 func (s *jobService) executeDelete(ctx context.Context, job *model.Job) error {
-	info, err := s.fs.Stat(job.SourcePath)
+	sourcePath := jobSourcePath(job)
+	info, err := s.fs.Stat(sourcePath)
 	if err != nil {
 		return err
 	}
@@ -478,7 +540,7 @@ func (s *jobService) executeDelete(ctx context.Context, job *model.Job) error {
 	}
 
 	// Simple file delete
-	if err := s.fs.Remove(job.SourcePath); err != nil {
+	if err := s.fs.Remove(sourcePath); err != nil {
 		return err
 	}
 	job.Progress = 100
@@ -488,14 +550,16 @@ func (s *jobService) executeDelete(ctx context.Context, job *model.Job) error {
 
 // deleteDir deletes a directory recursively with progress tracking
 func (s *jobService) deleteDir(ctx context.Context, job *model.Job) error {
+	sourcePath := jobSourcePath(job)
+
 	// Count total files for progress tracking
-	totalFiles, err := s.countFiles(job.SourcePath)
+	totalFiles, err := s.countFiles(sourcePath)
 	if err != nil {
 		return err
 	}
 
 	var deletedFiles int
-	return s.deleteDirRecursive(ctx, job, job.SourcePath, totalFiles, &deletedFiles)
+	return s.deleteDirRecursive(ctx, job, sourcePath, totalFiles, &deletedFiles)
 }
 
 // deleteDirRecursive recursively deletes a directory
@@ -568,6 +632,20 @@ func (s *jobService) countFiles(path string) (int, error) {
 	}
 
 	return count, nil
+}
+
+func jobSourcePath(job *model.Job) string {
+	if job.ResolvedSourcePath != "" {
+		return job.ResolvedSourcePath
+	}
+	return job.SourcePath
+}
+
+func jobDestPath(job *model.Job) string {
+	if job.ResolvedDestPath != "" {
+		return job.ResolvedDestPath
+	}
+	return job.DestPath
 }
 
 // broadcastUpdate sends a job update via WebSocket

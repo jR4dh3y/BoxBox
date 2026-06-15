@@ -1,6 +1,9 @@
 package model
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // MountPoint represents a configured filesystem location accessible through the file manager
 type MountPoint struct {
@@ -30,6 +33,24 @@ type ServerConfig struct {
 func (c *ServerConfig) Validate() error {
 	if c.JWTSecret == "" {
 		return fmt.Errorf("jwt_secret is required")
+	}
+	if strings.Contains(strings.ToLower(c.JWTSecret), "change-me") {
+		return fmt.Errorf("jwt_secret must be changed from the placeholder value")
+	}
+
+	if len(c.Users) == 0 {
+		return fmt.Errorf("at least one user is required")
+	}
+	for username, password := range c.Users {
+		if username == "" {
+			return fmt.Errorf("usernames cannot be empty")
+		}
+		if password == "" {
+			return fmt.Errorf("password for user %q is required", username)
+		}
+		if strings.Contains(strings.ToLower(password), "change-me") {
+			return fmt.Errorf("password for user %q must be changed from the placeholder value", username)
+		}
 	}
 
 	if len(c.MountPoints) == 0 {

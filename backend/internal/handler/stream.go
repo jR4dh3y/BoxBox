@@ -392,6 +392,11 @@ func (h *StreamHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if uploadReq.IsFinalChunk() && uploadReq.Checksum == "" {
+		writeError(w, "X-Checksum header is required on final chunk", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+
 	// Check if chunk was already received (for resumable uploads)
 	if session.IsChunkReceived(uploadReq.ChunkIndex) {
 		writeJSON(w, UploadResponse{
@@ -478,6 +483,9 @@ func (h *StreamHandler) parseUploadHeaders(r *http.Request) (*UploadRequest, err
 	if uploadID == "" {
 		return nil, errors.New("X-Upload-ID header is required")
 	}
+	if !isValidUploadID(uploadID) {
+		return nil, errors.New("X-Upload-ID contains invalid characters")
+	}
 
 	chunkIndexStr := r.Header.Get("X-Chunk-Index")
 	if chunkIndexStr == "" {
@@ -542,7 +550,7 @@ func (h *StreamHandler) parseUploadHeaders(r *http.Request) (*UploadRequest, err
 		return nil, errors.New("request body size does not match upload metadata")
 	}
 
-	// Checksum is optional but required on final chunk for verification
+	// Final chunks are rejected without this after session metadata is validated.
 	checksum := r.Header.Get("X-Checksum")
 
 	return &UploadRequest{
@@ -555,12 +563,35 @@ func (h *StreamHandler) parseUploadHeaders(r *http.Request) (*UploadRequest, err
 	}, nil
 }
 
+func isValidUploadID(uploadID string) bool {
+	if len(uploadID) > 128 {
+		return false
+	}
+
+	for _, r := range uploadID {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '.', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
 func (r *UploadRequest) ExpectedChunkSize() int64 {
 	if r.ChunkIndex == r.TotalChunks-1 {
 		return r.TotalSize - int64(r.ChunkIndex)*r.ChunkSize
 	}
 
 	return r.ChunkSize
+}
+
+func (r *UploadRequest) IsFinalChunk() bool {
+	return r.ChunkIndex == r.TotalChunks-1
 }
 
 func (s *UploadSession) matches(path string, uploadReq *UploadRequest) bool {

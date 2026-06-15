@@ -2,6 +2,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ type RateLimiter struct {
 	mu       sync.RWMutex
 	rps      float64 // requests per second
 	burst    int     // max burst size
+	lastDrop time.Time
 }
 
 // NewRateLimiter creates a new rate limiter with the specified requests per second.
@@ -34,6 +36,7 @@ func NewRateLimiter(rps float64) *RateLimiter {
 		limiters: make(map[string]*rate.Limiter),
 		rps:      rps,
 		burst:    burst,
+		lastDrop: time.Now(),
 	}
 }
 
@@ -63,7 +66,26 @@ func (rl *RateLimiter) getLimiter(ip string) *rate.Limiter {
 
 // Allow returns true if the request from the given IP should be allowed.
 func (rl *RateLimiter) Allow(ip string) bool {
+	rl.dropLimitersPeriodically()
 	return rl.getLimiter(ip).Allow()
+}
+
+func (rl *RateLimiter) dropLimitersPeriodically() {
+	rl.mu.RLock()
+	due := time.Since(rl.lastDrop) >= 10*time.Minute
+	rl.mu.RUnlock()
+	if !due {
+		return
+	}
+
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if time.Since(rl.lastDrop) < 10*time.Minute {
+		return
+	}
+	rl.limiters = make(map[string]*rate.Limiter)
+	rl.lastDrop = time.Now()
 }
 
 // RateLimit returns a middleware that limits requests per IP address.
@@ -88,34 +110,14 @@ func RateLimit(rps float64) func(http.Handler) http.Handler {
 	}
 }
 
-// getClientIP extracts the client IP address from the request.
-// It checks X-Forwarded-For and X-Real-IP headers first (for proxied requests),
-// then falls back to RemoteAddr.
+// getClientIP extracts the client IP address from the socket address.
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header (may contain multiple IPs)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the list (original client)
-		for i := 0; i < len(xff); i++ {
-			if xff[i] == ',' {
-				return xff[:i]
-			}
-		}
-		return xff
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
 	}
 
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
-	}
-
-	// Fall back to RemoteAddr (strip port)
-	addr := r.RemoteAddr
-	for i := len(addr) - 1; i >= 0; i-- {
-		if addr[i] == ':' {
-			return addr[:i]
-		}
-	}
-	return addr
+	return r.RemoteAddr
 }
 
 // StartCleanup starts a background goroutine that periodically removes

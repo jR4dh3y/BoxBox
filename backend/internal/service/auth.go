@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"sync"
@@ -20,10 +21,18 @@ var (
 	ErrTokenRevoked       = errors.New("token revoked")
 )
 
+type TokenType string
+
+const (
+	TokenTypeAccess  TokenType = "access"
+	TokenTypeRefresh TokenType = "refresh"
+)
+
 // Claims represents the JWT claims for access tokens
 type Claims struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
+	UserID    string    `json:"user_id"`
+	Username  string    `json:"username"`
+	TokenType TokenType `json:"token_type"`
 	jwt.RegisteredClaims
 }
 
@@ -39,6 +48,8 @@ type AuthService interface {
 	Login(ctx context.Context, username, password string) (*TokenPair, error)
 	Refresh(ctx context.Context, refreshToken string) (*TokenPair, error)
 	ValidateToken(tokenString string) (*Claims, error)
+	ValidateAccessToken(tokenString string) (*Claims, error)
+	ValidateRefreshToken(tokenString string) (*Claims, error)
 	Logout(ctx context.Context, refreshToken string) error
 	StartCleanup(ctx context.Context)
 	StopCleanup()
@@ -90,7 +101,7 @@ func NewAuthService(cfg AuthServiceConfig) AuthService {
 func (s *authService) Login(ctx context.Context, username, password string) (*TokenPair, error) {
 	// Validate credentials
 	storedPassword, exists := s.users[username]
-	if !exists || storedPassword != password {
+	if !exists || subtle.ConstantTimeCompare([]byte(storedPassword), []byte(password)) != 1 {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -108,7 +119,7 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (*TokenP
 	s.mu.RUnlock()
 
 	// Parse and validate the refresh token
-	claims, err := s.ValidateToken(refreshToken)
+	claims, err := s.ValidateRefreshToken(refreshToken)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +135,25 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (*TokenP
 
 // ValidateToken validates a JWT token and returns the claims
 func (s *authService) ValidateToken(tokenString string) (*Claims, error) {
+	return s.validateToken(tokenString, "")
+}
+
+func (s *authService) ValidateAccessToken(tokenString string) (*Claims, error) {
+	return s.validateToken(tokenString, TokenTypeAccess)
+}
+
+func (s *authService) ValidateRefreshToken(tokenString string) (*Claims, error) {
+	s.mu.RLock()
+	_, revoked := s.revokedTokens[tokenString]
+	s.mu.RUnlock()
+	if revoked {
+		return nil, ErrTokenRevoked
+	}
+
+	return s.validateToken(tokenString, TokenTypeRefresh)
+}
+
+func (s *authService) validateToken(tokenString string, expectedType TokenType) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		// Validate signing method
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -143,12 +173,19 @@ func (s *authService) ValidateToken(tokenString string) (*Claims, error) {
 	if !ok || !token.Valid {
 		return nil, ErrInvalidToken
 	}
+	if expectedType != "" && claims.TokenType != expectedType {
+		return nil, ErrInvalidToken
+	}
 
 	return claims, nil
 }
 
 // Logout revokes a refresh token
 func (s *authService) Logout(ctx context.Context, refreshToken string) error {
+	if _, err := s.ValidateRefreshToken(refreshToken); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.revokedTokens[refreshToken] = time.Now()
@@ -163,8 +200,9 @@ func (s *authService) generateTokenPair(username string) (*TokenPair, error) {
 	// Create access token
 	accessExpiry := now.Add(s.accessTokenExpiry)
 	accessClaims := &Claims{
-		UserID:   userID,
-		Username: username,
+		UserID:    userID,
+		Username:  username,
+		TokenType: TokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(accessExpiry),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -183,8 +221,9 @@ func (s *authService) generateTokenPair(username string) (*TokenPair, error) {
 	// Create refresh token
 	refreshExpiry := now.Add(s.refreshTokenExpiry)
 	refreshClaims := &Claims{
-		UserID:   userID,
-		Username: username,
+		UserID:    userID,
+		Username:  username,
+		TokenType: TokenTypeRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(refreshExpiry),
 			IssuedAt:  jwt.NewNumericDate(now),

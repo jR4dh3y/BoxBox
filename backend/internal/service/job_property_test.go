@@ -65,9 +65,9 @@ func (h *capturingHub) captureUpdate(job *model.Job) {
 // testableJobService wraps jobService to capture broadcasts
 type testableJobService struct {
 	JobService
-	fs          filesystem.FS
+	fs           filesystem.FS
 	capturingHub *capturingHub
-	allJobs     *sync.Map
+	allJobs      *sync.Map
 }
 
 // setupTestJobService creates a job service with an in-memory filesystem for testing
@@ -102,11 +102,108 @@ func setupTestJobService() (*testableJobService, *filesystem.AferoFS) {
 	}, fs
 }
 
+func TestJobCreateResolvesVirtualPaths(t *testing.T) {
+	svc, _ := setupTestJobService()
+	ctx := context.Background()
+
+	job, err := svc.Create(ctx, model.JobParams{
+		Type:       model.JobTypeCopy,
+		SourcePath: "media/source.bin",
+		DestPath:   "backup/dest.bin",
+	})
+	if err != nil {
+		t.Fatalf("expected job creation to succeed, got %v", err)
+	}
+
+	if job.SourcePath != "media/source.bin" || job.DestPath != "backup/dest.bin" {
+		t.Fatalf("expected API paths to remain virtual, got source=%q dest=%q", job.SourcePath, job.DestPath)
+	}
+	if job.ResolvedSourcePath != "/data/media/source.bin" {
+		t.Fatalf("expected resolved source path %q, got %q", "/data/media/source.bin", job.ResolvedSourcePath)
+	}
+	if job.ResolvedDestPath != "/data/backup/dest.bin" {
+		t.Fatalf("expected resolved destination path %q, got %q", "/data/backup/dest.bin", job.ResolvedDestPath)
+	}
+}
+
+func TestJobCreateRejectsPathsOutsideMounts(t *testing.T) {
+	svc, _ := setupTestJobService()
+	ctx := context.Background()
+
+	_, err := svc.Create(ctx, model.JobParams{
+		Type:       model.JobTypeCopy,
+		SourcePath: "/etc/passwd",
+		DestPath:   "backup/passwd",
+	})
+	if err != ErrMountPointNotFound {
+		t.Fatalf("expected %v, got %v", ErrMountPointNotFound, err)
+	}
+
+	_, err = svc.Create(ctx, model.JobParams{
+		Type:       model.JobTypeCopy,
+		SourcePath: "media/source.bin",
+		DestPath:   "/tmp/out.bin",
+	})
+	if err != ErrMountPointNotFound {
+		t.Fatalf("expected %v, got %v", ErrMountPointNotFound, err)
+	}
+}
+
+func TestJobCreateEnforcesReadOnlyMounts(t *testing.T) {
+	fs := filesystem.NewMemMapFS()
+	if err := fs.MkdirAll("/data/readonly", 0755); err != nil {
+		t.Fatalf("failed to create readonly mount: %v", err)
+	}
+	if err := fs.MkdirAll("/data/writeable", 0755); err != nil {
+		t.Fatalf("failed to create writeable mount: %v", err)
+	}
+
+	svc := NewJobService(fs, nil, JobServiceConfig{
+		Workers: 1,
+		MountPoints: []model.MountPoint{
+			{Name: "readonly", Path: "/data/readonly", ReadOnly: true},
+			{Name: "writeable", Path: "/data/writeable", ReadOnly: false},
+		},
+	})
+	ctx := context.Background()
+
+	if _, err := svc.Create(ctx, model.JobParams{
+		Type:       model.JobTypeCopy,
+		SourcePath: "readonly/source.bin",
+		DestPath:   "writeable/copy.bin",
+	}); err != nil {
+		t.Fatalf("expected copy from read-only mount to be allowed, got %v", err)
+	}
+
+	if _, err := svc.Create(ctx, model.JobParams{
+		Type:       model.JobTypeCopy,
+		SourcePath: "writeable/source.bin",
+		DestPath:   "readonly/copy.bin",
+	}); err != ErrPermissionDenied {
+		t.Fatalf("expected copy into read-only mount to fail with %v, got %v", ErrPermissionDenied, err)
+	}
+
+	if _, err := svc.Create(ctx, model.JobParams{
+		Type:       model.JobTypeMove,
+		SourcePath: "readonly/source.bin",
+		DestPath:   "writeable/moved.bin",
+	}); err != ErrPermissionDenied {
+		t.Fatalf("expected move from read-only mount to fail with %v, got %v", ErrPermissionDenied, err)
+	}
+
+	if _, err := svc.Create(ctx, model.JobParams{
+		Type:       model.JobTypeDelete,
+		SourcePath: "readonly/source.bin",
+	}); err != ErrPermissionDenied {
+		t.Fatalf("expected delete from read-only mount to fail with %v, got %v", ErrPermissionDenied, err)
+	}
+}
+
 // captureJobUpdates polls the job and captures state changes
 func (s *testableJobService) captureJobUpdates(ctx context.Context, jobID string, done chan struct{}) {
 	lastState := model.JobState("")
 	lastProgress := -1
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -119,7 +216,7 @@ func (s *testableJobService) captureJobUpdates(ctx context.Context, jobID string
 				time.Sleep(10 * time.Millisecond)
 				continue
 			}
-			
+
 			// Capture state changes or progress changes
 			if job.State != lastState || job.Progress != lastProgress {
 				s.capturingHub.mu.Lock()
@@ -133,7 +230,7 @@ func (s *testableJobService) captureJobUpdates(ctx context.Context, jobID string
 				lastState = job.State
 				lastProgress = job.Progress
 			}
-			
+
 			if job.State.IsTerminal() {
 				// Capture final state one more time to ensure error is captured
 				time.Sleep(10 * time.Millisecond)
@@ -150,7 +247,7 @@ func (s *testableJobService) captureJobUpdates(ctx context.Context, jobID string
 				}
 				return
 			}
-			
+
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
@@ -195,8 +292,8 @@ func TestProperty_JobProgressMonotonicity(t *testing.T) {
 			// Create copy job
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeCopy,
-				SourcePath: "/data/media/source.bin",
-				DestPath:   "/data/backup/dest.bin",
+				SourcePath: "media/source.bin",
+				DestPath:   "backup/dest.bin",
 			})
 			if err != nil {
 				return false
@@ -253,8 +350,8 @@ func TestProperty_JobProgressMonotonicity(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeCopy,
-				SourcePath: "/data/media/mono_source.bin",
-				DestPath:   "/data/backup/mono_dest.bin",
+				SourcePath: "media/mono_source.bin",
+				DestPath:   "backup/mono_dest.bin",
 			})
 			if err != nil {
 				return false
@@ -303,6 +400,7 @@ func TestProperty_JobProgressMonotonicity(t *testing.T) {
 
 			// Create directory with files
 			dirPath := "/data/media/delete_test"
+			virtualDirPath := "media/delete_test"
 			fs.MkdirAll(dirPath, 0755)
 			for i := 0; i < numFiles; i++ {
 				fs.WriteFile(fmt.Sprintf("%s/file%d.txt", dirPath, i), []byte("content"), 0644)
@@ -310,7 +408,7 @@ func TestProperty_JobProgressMonotonicity(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeDelete,
-				SourcePath: dirPath,
+				SourcePath: virtualDirPath,
 			})
 			if err != nil {
 				return false
@@ -360,8 +458,8 @@ func TestProperty_JobProgressMonotonicity(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeCopy,
-				SourcePath: "/data/media/complete_source.bin",
-				DestPath:   "/data/backup/complete_dest.bin",
+				SourcePath: "media/complete_source.bin",
+				DestPath:   "backup/complete_dest.bin",
 			})
 			if err != nil {
 				return false
@@ -394,7 +492,6 @@ func TestProperty_JobProgressMonotonicity(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-
 // **Feature: homelab-file-manager, Property 8: Job Completion Notification**
 // **Validates: Requirements 4.3, 5.2, 5.3**
 //
@@ -426,8 +523,8 @@ func TestProperty_JobCompletionNotification(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeCopy,
-				SourcePath: "/data/media/notify_source.bin",
-				DestPath:   "/data/backup/notify_dest.bin",
+				SourcePath: "media/notify_source.bin",
+				DestPath:   "backup/notify_dest.bin",
 			})
 			if err != nil {
 				return false
@@ -479,8 +576,8 @@ func TestProperty_JobCompletionNotification(t *testing.T) {
 			// Create job for non-existent source (will fail)
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeCopy,
-				SourcePath: "/data/media/nonexistent_" + fileName,
-				DestPath:   "/data/backup/dest_" + fileName,
+				SourcePath: "media/nonexistent_" + fileName,
+				DestPath:   "backup/dest_" + fileName,
 			})
 			if err != nil {
 				return false
@@ -524,6 +621,7 @@ func TestProperty_JobCompletionNotification(t *testing.T) {
 
 			// Create directory with files
 			dirPath := "/data/media/delete_notify"
+			virtualDirPath := "media/delete_notify"
 			fs.MkdirAll(dirPath, 0755)
 			for i := 0; i < numFiles; i++ {
 				fs.WriteFile(fmt.Sprintf("%s/file%d.txt", dirPath, i), []byte("content"), 0644)
@@ -531,7 +629,7 @@ func TestProperty_JobCompletionNotification(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeDelete,
-				SourcePath: dirPath,
+				SourcePath: virtualDirPath,
 			})
 			if err != nil {
 				return false
@@ -581,8 +679,8 @@ func TestProperty_JobCompletionNotification(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeMove,
-				SourcePath: "/data/media/move_notify_source.bin",
-				DestPath:   "/data/backup/move_notify_dest.bin",
+				SourcePath: "media/move_notify_source.bin",
+				DestPath:   "backup/move_notify_dest.bin",
 			})
 			if err != nil {
 				return false
@@ -632,8 +730,8 @@ func TestProperty_JobCompletionNotification(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeCopy,
-				SourcePath: "/data/media/id_check_source.bin",
-				DestPath:   "/data/backup/id_check_dest.bin",
+				SourcePath: "media/id_check_source.bin",
+				DestPath:   "backup/id_check_dest.bin",
 			})
 			if err != nil {
 				return false
@@ -713,8 +811,8 @@ func TestProperty_JobCancellationCleanup(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeCopy,
-				SourcePath: "/data/media/cancel_source.bin",
-				DestPath:   "/data/backup/cancel_dest.bin",
+				SourcePath: "media/cancel_source.bin",
+				DestPath:   "backup/cancel_dest.bin",
 			})
 			if err != nil {
 				return false
@@ -770,8 +868,8 @@ func TestProperty_JobCancellationCleanup(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeCopy,
-				SourcePath: "/data/media/preserve_source.bin",
-				DestPath:   "/data/backup/preserve_dest.bin",
+				SourcePath: "media/preserve_source.bin",
+				DestPath:   "backup/preserve_dest.bin",
 			})
 			if err != nil {
 				return false
@@ -837,8 +935,8 @@ func TestProperty_JobCancellationCleanup(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeMove,
-				SourcePath: "/data/media/move_cancel_source.bin",
-				DestPath:   "/data/backup/move_cancel_dest.bin",
+				SourcePath: "media/move_cancel_source.bin",
+				DestPath:   "backup/move_cancel_dest.bin",
 			})
 			if err != nil {
 				return false
@@ -885,8 +983,8 @@ func TestProperty_JobCancellationCleanup(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeCopy,
-				SourcePath: "/data/media/state_cancel_source.bin",
-				DestPath:   "/data/backup/state_cancel_dest.bin",
+				SourcePath: "media/state_cancel_source.bin",
+				DestPath:   "backup/state_cancel_dest.bin",
 			})
 			if err != nil {
 				return false
@@ -924,8 +1022,8 @@ func TestProperty_JobCancellationCleanup(t *testing.T) {
 
 			job, err := svc.Create(ctx, model.JobParams{
 				Type:       model.JobTypeCopy,
-				SourcePath: "/data/media/notify_cancel_source.bin",
-				DestPath:   "/data/backup/notify_cancel_dest.bin",
+				SourcePath: "media/notify_cancel_source.bin",
+				DestPath:   "backup/notify_cancel_dest.bin",
 			})
 			if err != nil {
 				return false

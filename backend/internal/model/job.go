@@ -24,16 +24,18 @@ const (
 
 // Job represents a background job for file operations
 type Job struct {
-	ID          string    `json:"id"`
-	Type        JobType   `json:"type"`
-	State       JobState  `json:"state"`
-	Progress    int       `json:"progress"` // 0-100
-	SourcePath  string    `json:"sourcePath"`
-	DestPath    string    `json:"destPath,omitempty"`
-	Error       string    `json:"error,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
-	StartedAt   time.Time `json:"startedAt,omitempty"`
-	CompletedAt time.Time `json:"completedAt,omitempty"`
+	ID                 string    `json:"id"`
+	Type               JobType   `json:"type"`
+	State              JobState  `json:"state"`
+	Progress           int       `json:"progress"` // 0-100
+	SourcePath         string    `json:"sourcePath"`
+	DestPath           string    `json:"destPath,omitempty"`
+	ResolvedSourcePath string    `json:"-"`
+	ResolvedDestPath   string    `json:"-"`
+	Error              string    `json:"error,omitempty"`
+	CreatedAt          time.Time `json:"createdAt"`
+	StartedAt          time.Time `json:"startedAt,omitempty"`
+	CompletedAt        time.Time `json:"completedAt,omitempty"`
 }
 
 // JobUpdate represents a progress update for a job sent via WebSocket

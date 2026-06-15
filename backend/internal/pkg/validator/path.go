@@ -118,8 +118,22 @@ func ValidatePathAgainstMounts(requestedPath string, mounts []model.MountPoint) 
 		return nil, "", ErrEmptyPath
 	}
 
+	decodedPath, err := url.PathUnescape(requestedPath)
+	if err != nil {
+		return nil, "", ErrInvalidPath
+	}
+	if containsTraversalSequence(decodedPath) {
+		return nil, "", ErrPathTraversal
+	}
+	if strings.ContainsRune(decodedPath, 0) {
+		return nil, "", ErrInvalidPath
+	}
+
 	// Clean and normalize the requested path
-	cleanPath := filepath.Clean(requestedPath)
+	cleanPath := filepath.Clean(decodedPath)
+	if containsTraversalSequence(cleanPath) {
+		return nil, "", ErrPathTraversal
+	}
 
 	// Remove leading slash for comparison
 	cleanPath = strings.TrimPrefix(cleanPath, "/")

@@ -40,7 +40,7 @@ func JWTAuth(authService service.AuthService) func(next http.Handler) http.Handl
 			}
 
 			// Validate token
-			claims, err := authService.ValidateToken(tokenString)
+			claims, err := authService.ValidateAccessToken(tokenString)
 			if err != nil {
 				switch err {
 				case service.ErrTokenExpired:

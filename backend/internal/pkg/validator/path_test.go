@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/homelab/filemanager/internal/model"
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
@@ -199,6 +200,28 @@ func TestContainsTraversalSequence(t *testing.T) {
 	))
 
 	properties.TestingRun(t)
+}
+
+func TestValidatePathAgainstMountsRejectsTraversalBeforeMountMatching(t *testing.T) {
+	mounts := []model.MountPoint{
+		{Name: "media", Path: "/data/media", ReadOnly: false},
+		{Name: "backup", Path: "/data/backup", ReadOnly: false},
+	}
+
+	tests := []string{
+		"media/../backup/file.txt",
+		"media/%2e%2e/backup/file.txt",
+		"media/subdir/../../backup/file.txt",
+	}
+
+	for _, requestedPath := range tests {
+		t.Run(requestedPath, func(t *testing.T) {
+			_, _, err := ValidatePathAgainstMounts(requestedPath, mounts)
+			if err != ErrPathTraversal {
+				t.Fatalf("expected %v, got %v", ErrPathTraversal, err)
+			}
+		})
+	}
 }
 
 // TestSafePathsAreAccepted ensures valid paths without traversal are accepted

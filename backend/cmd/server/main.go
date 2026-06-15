@@ -126,15 +126,9 @@ func initializeServer(cfg *model.ServerConfig) (*http.Server, *websocket.Hub, se
 	hub := websocket.NewHub()
 
 	// Create services
-	// Use configured users, or default to admin:admin if none configured (homelab default)
-	users := cfg.Users
-	if len(users) == 0 {
-		log.Warn().Msg("No users configured, using default admin:admin credentials")
-		users = map[string]string{"admin": "admin"}
-	}
 	authService := service.NewAuthService(service.AuthServiceConfig{
 		JWTSecret: cfg.JWTSecret,
-		Users:     users,
+		Users:     cfg.Users,
 	})
 
 	fileService := service.NewFileService(fs, service.FileServiceConfig{
@@ -199,7 +193,6 @@ func createRouter(
 
 	// Global middleware
 	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.SecurityHeaders)
