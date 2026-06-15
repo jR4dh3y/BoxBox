@@ -13,7 +13,7 @@
 		Folder,
 		Loader2
 	} from 'lucide-svelte';
-	import { tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import { listDirectory, listRoots } from '$lib/api/files';
 	import SearchBar from '$lib/components/SearchBar.svelte';
 
@@ -70,6 +70,7 @@
 	}: Props = $props();
 
 	const suggestionPageSize = 1000;
+	const suggestionListId = 'toolbar-path-suggestions';
 
 	let isEditingPath = $state(false);
 	let pathDraft = $state('');
@@ -105,6 +106,20 @@
 	const completionDisplayText = $derived(
 		!hasPathSelection && pathDraft.length > 0 ? formatPathText(completionSuffix) : ''
 	);
+	const showSuggestionPopup = $derived(
+		isEditingPath && (suggestions.length > 0 || isLoadingSuggestions)
+	);
+	const activeSuggestionOptionId = $derived(
+		showSuggestionPopup && activeSuggestion
+			? `${suggestionListId}-${activeSuggestionIndex}`
+			: undefined
+	);
+
+	onDestroy(() => {
+		clearSuggestionTimer();
+		clearBlurTimer();
+		suggestionRequestId++;
+	});
 
 	function buildPath(index: number): string {
 		return pathSegments.slice(0, index + 1).join('/');
@@ -301,14 +316,13 @@
 	}
 
 	function queueSuggestions(): void {
-		if (suggestionTimer) {
-			clearTimeout(suggestionTimer);
-		}
+		clearSuggestionTimer();
 
 		if (!isEditingPath) return;
 
 		const value = pathDraft;
 		suggestionTimer = setTimeout(() => {
+			suggestionTimer = undefined;
 			void loadSuggestions(value);
 		}, 120);
 	}
@@ -333,9 +347,8 @@
 	}
 
 	function cancelPathEdit(): void {
-		if (suggestionTimer) {
-			clearTimeout(suggestionTimer);
-		}
+		clearSuggestionTimer();
+		clearBlurTimer();
 
 		isEditingPath = false;
 		pathDraft = '';
@@ -397,15 +410,15 @@
 	}
 
 	function handlePathInputFocus(): void {
-		if (blurTimer) {
-			clearTimeout(blurTimer);
-		}
+		clearBlurTimer();
 
 		syncPathSelection();
 	}
 
 	function handlePathInputBlur(): void {
+		clearBlurTimer();
 		blurTimer = setTimeout(() => {
+			blurTimer = undefined;
 			if (isEditingPath) {
 				cancelPathEdit();
 			}
@@ -470,6 +483,20 @@
 	function handleSuggestionPointerDown(event: PointerEvent, suggestion: PathSuggestion): void {
 		event.preventDefault();
 		commitPath(suggestion.path);
+	}
+
+	function clearSuggestionTimer(): void {
+		if (!suggestionTimer) return;
+
+		clearTimeout(suggestionTimer);
+		suggestionTimer = undefined;
+	}
+
+	function clearBlurTimer(): void {
+		if (!blurTimer) return;
+
+		clearTimeout(blurTimer);
+		blurTimer = undefined;
 	}
 
 	const navBtnClass =
@@ -566,7 +593,11 @@
 						autocapitalize="off"
 						spellcheck="false"
 						aria-label="Location"
+						role="combobox"
 						aria-autocomplete="list"
+						aria-expanded={showSuggestionPopup}
+						aria-controls={showSuggestionPopup ? suggestionListId : undefined}
+						aria-activedescendant={activeSuggestionOptionId}
 					/>
 				</form>
 			{:else if pathSegments.length === 0}
@@ -595,9 +626,12 @@
 				</div>
 			{/if}
 
-			{#if isEditingPath && (suggestions.length > 0 || isLoadingSuggestions)}
+			{#if showSuggestionPopup}
 				<div
+					id={suggestionListId}
 					bind:this={suggestionListEl}
+					role="listbox"
+					aria-label="Location suggestions"
 					class="absolute top-full right-0 left-0 z-[200] mt-1 max-h-64 overflow-auto rounded border border-border-primary bg-[#202020] py-1 shadow-2xl ring-1 ring-black/40"
 				>
 					{#if isLoadingSuggestions && suggestions.length === 0}
@@ -610,7 +644,10 @@
 					{#each suggestions as suggestion, index (suggestion.path)}
 						<button
 							type="button"
+							id={`${suggestionListId}-${index}`}
 							data-suggestion-index={index}
+							role="option"
+							aria-selected={index === activeSuggestionIndex}
 							class="flex w-full items-center gap-2 border-none px-3 py-1.5 text-left text-[13px] {index ===
 							activeSuggestionIndex
 								? 'bg-accent-muted text-white'

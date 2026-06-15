@@ -292,40 +292,69 @@ export function truncateFilename(filename: string, maxLength: number = 30): stri
 export { getFileTypeDescription } from '$lib/utils/fileTypes';
 
 import { CONFIG } from '$lib/config';
+import type { MountPoint } from '$lib/api/files';
 
 /**
  * Map a system mount point (as returned by df/system drives API) to a browsable path in the app.
  * This handles the translation from container-internal paths to the app's mount point names.
- * 
+ *
  * Examples:
  * - '/media/devmon' -> 'drives'
  * - '/media/devmon/usb-drive' -> 'drives/usb-drive'
  * - '/home/user' -> 'home'
  * - '/host_root' -> 'root'
  * - '/host_root/mnt/rclone' -> 'root/mnt/rclone'
- * 
+ *
  * @param mountPoint - The system mount point path
  * @returns The browsable path that can be used with handleNavigate
  */
-export function mapSystemMountToBrowsePath(mountPoint: string): string {
+export function mapSystemMountToBrowsePath(mountPoint: string, roots: MountPoint[] = []): string {
+	const normalizedMountPoint = normalizeMountPath(mountPoint);
+	const configuredRoot = [...roots]
+		.filter((root) => root.path)
+		.sort((a, b) => normalizeMountPath(b.path).length - normalizeMountPath(a.path).length)
+		.find((root) => isSameOrChildPath(normalizedMountPoint, normalizeMountPath(root.path)));
+
+	if (configuredRoot) {
+		const rootPath = normalizeMountPath(configuredRoot.path);
+		if (normalizedMountPoint === rootPath) {
+			return configuredRoot.name;
+		}
+
+		const subPath =
+			rootPath === '/' ? normalizedMountPoint : normalizedMountPoint.slice(rootPath.length);
+		return configuredRoot.name + subPath;
+	}
+
 	// Find matching mount point mapping
 	for (const mapping of CONFIG.paths.mountPointMappings) {
-		if (mountPoint === mapping.systemPath) {
+		if (normalizedMountPoint === mapping.systemPath) {
 			// Exact match
 			return mapping.browsePath;
-		} else if (mountPoint.startsWith(mapping.systemPath + '/')) {
+		} else if (normalizedMountPoint.startsWith(mapping.systemPath + '/')) {
 			// Subpath match - replace prefix with browse path
-			const subPath = mountPoint.slice(mapping.systemPath.length);
+			const subPath = normalizedMountPoint.slice(mapping.systemPath.length);
 			return mapping.browsePath + subPath;
 		}
 	}
-	
+
 	// Fallback for root filesystem
-	if (mountPoint === '/') {
+	if (normalizedMountPoint === '/') {
 		return CONFIG.paths.hostRootMount;
 	}
-	
+
 	// Unknown mount - log warning and try using it as-is
 	console.warn('Unknown system mount point:', mountPoint);
-	return mountPoint.startsWith('/') ? mountPoint.slice(1) : mountPoint;
+	return normalizedMountPoint.startsWith('/')
+		? normalizedMountPoint.slice(1)
+		: normalizedMountPoint;
+}
+
+function normalizeMountPath(path: string): string {
+	const normalized = path.replace(/\/+$|\\+$/g, '');
+	return normalized === '' ? '/' : normalized;
+}
+
+function isSameOrChildPath(path: string, parent: string): boolean {
+	return path === parent || parent === '/' || path.startsWith(parent + '/');
 }

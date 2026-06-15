@@ -99,7 +99,7 @@
 	}
 
 	async function renderSheet(buffer: ArrayBuffer) {
-		const xlsx = await import('xlsx');
+		const xlsx = await import('@e965/xlsx');
 		const workbook = xlsx.read(buffer, {
 			type: 'array',
 			cellDates: true,

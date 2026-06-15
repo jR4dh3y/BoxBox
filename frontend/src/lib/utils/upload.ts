@@ -3,14 +3,19 @@
  * Requirements: 2.1, 2.2, 2.3, 2.5
  */
 
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import { getAccessToken } from '$lib/api/client';
 import { CONFIG } from '$lib/config';
 
 const DEFAULT_CHUNK_SIZE = CONFIG.upload.defaultChunkSize;
-const MAX_CHECKSUM_BYTES = DEFAULT_CHUNK_SIZE * 2;
 
 // API base URL
 const API_BASE_URL = '/api/v1/stream';
+
+function encodeRoutePath(path: string): string {
+	return path.split('/').map(encodeURIComponent).join('/');
+}
 
 /**
  * Upload progress callback
@@ -79,10 +84,7 @@ export function generateUploadId(): string {
  * Calculate SHA-256 checksum of a file
  */
 export async function calculateChecksum(file: File): Promise<string> {
-	const buffer = await file.arrayBuffer();
-	const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-	const hashArray = Array.from(new Uint8Array(hashBuffer));
-	return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+	return calculateChecksumStreaming(file);
 }
 
 /**
@@ -90,14 +92,28 @@ export async function calculateChecksum(file: File): Promise<string> {
  */
 export async function calculateChecksumStreaming(
 	file: File,
-	chunkSize: number = DEFAULT_CHUNK_SIZE
-): Promise<string | undefined> {
-	const checksumLimit = Math.max(chunkSize * 2, MAX_CHECKSUM_BYTES);
-	if (file.size > checksumLimit) {
-		return undefined;
+	chunkSize: number = DEFAULT_CHUNK_SIZE,
+	signal?: AbortSignal
+): Promise<string> {
+	const hasher = sha256.create();
+	const safeChunkSize = Math.max(1, chunkSize);
+	let chunksRead = 0;
+
+	for (let offset = 0; offset < file.size; offset += safeChunkSize) {
+		if (signal?.aborted) {
+			throw new Error('Upload cancelled');
+		}
+
+		const chunk = file.slice(offset, Math.min(offset + safeChunkSize, file.size));
+		hasher.update(new Uint8Array(await chunk.arrayBuffer()));
+
+		chunksRead++;
+		if (chunksRead % 8 === 0) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
 	}
 
-	return calculateChecksum(file);
+	return bytesToHex(hasher.digest());
 }
 
 /**
@@ -179,7 +195,7 @@ async function uploadChunk(
 			reject(new Error('Upload cancelled'));
 		};
 
-		xhr.open('POST', `${API_BASE_URL}/upload/${path}`);
+		xhr.open('POST', `${API_BASE_URL}/upload/${encodeRoutePath(path)}`);
 
 		for (const [key, value] of Object.entries(headers)) {
 			xhr.setRequestHeader(key, value);
@@ -306,7 +322,7 @@ export async function uploadFile(
 		progress.status = 'uploading';
 		reportProgress();
 
-		const checksum = await calculateChecksumStreaming(file, chunkSize);
+		const checksum = await calculateChecksumStreaming(file, chunkSize, signal);
 
 		// Upload chunks
 		for (const chunk of splitFileIntoChunks(file, chunkSize)) {
@@ -415,7 +431,7 @@ export async function resumeUpload(
 		reportProgress();
 
 		// Calculate checksum
-		const checksum = await calculateChecksumStreaming(file, chunkSize);
+		const checksum = await calculateChecksumStreaming(file, chunkSize, signal);
 
 		// Upload only missing chunks
 		for (const chunk of splitFileIntoChunks(file, chunkSize)) {

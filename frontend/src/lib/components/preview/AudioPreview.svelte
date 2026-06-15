@@ -18,15 +18,22 @@
 	}
 </script>
 
-<div class="flex flex-col items-center justify-center gap-5 p-10 w-full max-w-md">
+<div class="flex w-full max-w-md flex-col items-center justify-center gap-5 p-10">
 	<div class="text-accent opacity-80">
 		<Music size={64} />
 	</div>
-	<div class="text-base font-medium text-text-primary text-center break-words">{filename}</div>
+	<div class="text-center text-base font-medium break-words text-text-primary">{filename}</div>
 	{#if error}
-		<div class="text-danger text-sm text-center">{error}</div>
+		<div class="text-center text-sm text-danger">{error}</div>
 	{:else}
-		<audio src={url} controls autoplay preload="metadata" onerror={handleError} class="w-full outline-none">
+		<audio
+			src={url}
+			controls
+			autoplay
+			preload="metadata"
+			onerror={handleError}
+			class="w-full outline-none"
+		>
 			Your browser does not support the audio tag.
 		</audio>
 	{/if}

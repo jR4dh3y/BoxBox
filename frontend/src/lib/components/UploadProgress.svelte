@@ -17,31 +17,56 @@
 		showCompleted?: boolean;
 	}
 
-	let { uploads = [], onCancel, onRemove, onClearCompleted, showCompleted = true }: Props = $props();
+	let {
+		uploads = [],
+		onCancel,
+		onRemove,
+		onClearCompleted,
+		showCompleted = true
+	}: Props = $props();
 
 	const filteredUploads = $derived(
-		showCompleted ? uploads : uploads.filter((u) => u.status !== 'complete' && u.status !== 'cancelled')
+		showCompleted
+			? uploads
+			: uploads.filter((u) => u.status !== 'complete' && u.status !== 'cancelled')
 	);
 
-	const activeCount = $derived(uploads.filter((u) => u.status === 'pending' || u.status === 'uploading').length);
-	const completedCount = $derived(uploads.filter((u) => u.status === 'complete' || u.status === 'error' || u.status === 'cancelled').length);
+	const activeCount = $derived(
+		uploads.filter((u) => u.status === 'pending' || u.status === 'uploading').length
+	);
+	const completedCount = $derived(
+		uploads.filter(
+			(u) => u.status === 'complete' || u.status === 'error' || u.status === 'cancelled'
+		).length
+	);
 
-	function getProgressVariant(status: UploadProgressType['status']): 'default' | 'success' | 'warning' | 'danger' {
+	function getProgressVariant(
+		status: UploadProgressType['status']
+	): 'default' | 'success' | 'warning' | 'danger' {
 		switch (status) {
-			case 'complete': return 'success';
-			case 'error': return 'danger';
-			default: return 'default';
+			case 'complete':
+				return 'success';
+			case 'error':
+				return 'danger';
+			default:
+				return 'default';
 		}
 	}
 
 	function getStatusText(upload: UploadProgressType): string {
 		switch (upload.status) {
-			case 'pending': return 'Waiting...';
-			case 'uploading': return formatPercentage(upload.percentage, 0, false);
-			case 'complete': return 'Complete';
-			case 'error': return upload.error || 'Failed';
-			case 'cancelled': return 'Cancelled';
-			default: return '';
+			case 'pending':
+				return 'Waiting...';
+			case 'uploading':
+				return formatPercentage(upload.percentage, 0, false);
+			case 'complete':
+				return 'Complete';
+			case 'error':
+				return upload.error || 'Failed';
+			case 'cancelled':
+				return 'Cancelled';
+			default:
+				return '';
 		}
 	}
 
@@ -51,30 +76,35 @@
 </script>
 
 {#if filteredUploads.length > 0}
-	<div class="bg-surface-secondary border border-border-primary rounded-lg overflow-hidden">
-		<div class="px-4 py-3 bg-surface-primary border-b border-border-secondary flex items-center justify-between">
-			<h3 class="m-0 text-sm font-semibold text-text-primary flex items-center gap-2">
+	<div class="overflow-hidden rounded-lg border border-border-primary bg-surface-secondary">
+		<div
+			class="flex items-center justify-between border-b border-border-secondary bg-surface-primary px-4 py-3"
+		>
+			<h3 class="m-0 flex items-center gap-2 text-sm font-semibold text-text-primary">
 				Uploads
 				{#if activeCount > 0}
 					<Badge variant="info">{activeCount} active</Badge>
 				{/if}
 			</h3>
 			{#if completedCount > 0 && onClearCompleted}
-				<Button variant="ghost" size="sm" onclick={onClearCompleted}>
-					Clear done
-				</Button>
+				<Button variant="ghost" size="sm" onclick={onClearCompleted}>Clear done</Button>
 			{/if}
 		</div>
 
-		<ul class="list-none m-0 p-0 max-h-[300px] overflow-y-auto" role="list">
+		<ul class="m-0 max-h-[300px] list-none overflow-y-auto p-0" role="list">
 			{#each filteredUploads as upload (upload.uploadId)}
-				<li class="px-4 py-3 border-b border-border-secondary last:border-b-0 transition-all hover:bg-surface-tertiary">
+				<li
+					class="border-b border-border-secondary px-4 py-3 transition-all last:border-b-0 hover:bg-surface-tertiary"
+				>
 					<div class="flex items-stretch gap-3">
 						<!-- Icon that transforms to X on hover -->
 						<button
 							type="button"
-							class="group shrink-0 w-16 flex items-center justify-center rounded bg-surface-elevated text-text-secondary border-none cursor-pointer transition-all hover:bg-danger/20 hover:text-danger"
-							onclick={() => isTerminal(upload.status) ? onRemove?.(upload.uploadId) : onCancel?.(upload.uploadId)}
+							class="group flex w-16 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-surface-elevated text-text-secondary transition-all hover:bg-danger/20 hover:text-danger"
+							onclick={() =>
+								isTerminal(upload.status)
+									? onRemove?.(upload.uploadId)
+									: onCancel?.(upload.uploadId)}
 							aria-label={isTerminal(upload.status) ? 'Remove from list' : 'Cancel upload'}
 						>
 							<span class="group-hover:hidden">
@@ -84,13 +114,16 @@
 								<X size={20} />
 							</span>
 						</button>
-						
-						<div class="flex-1 min-w-0 flex flex-col gap-1 py-0.5">
+
+						<div class="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
 							<div class="flex items-center justify-between gap-2">
-								<span class="text-sm font-medium text-text-primary overflow-hidden text-ellipsis whitespace-nowrap" title={upload.fileName}>
+								<span
+									class="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap text-text-primary"
+									title={upload.fileName}
+								>
 									{upload.fileName}
 								</span>
-								<span class="text-xs text-text-muted shrink-0">
+								<span class="shrink-0 text-xs text-text-muted">
 									{formatFileSize(upload.totalSize)}
 								</span>
 							</div>
@@ -101,17 +134,24 @@
 									{formatFileSize(upload.uploadedSize)} / {formatFileSize(upload.totalSize)}
 								{/if}
 							</div>
-							
+
 							<!-- Progress bar with inline status -->
 							<div class="flex items-center gap-3">
 								<div class="flex-1">
-									<ProgressBar 
-										value={upload.percentage} 
-										size="sm" 
+									<ProgressBar
+										value={upload.percentage}
+										size="sm"
 										variant={getProgressVariant(upload.status)}
 									/>
 								</div>
-								<span class="text-[11px] shrink-0 {upload.status === 'complete' ? 'text-success' : ''} {upload.status === 'error' ? 'text-danger' : ''} {upload.status === 'uploading' ? 'text-accent' : 'text-text-muted'}">
+								<span
+									class="shrink-0 text-[11px] {upload.status === 'complete'
+										? 'text-success'
+										: ''} {upload.status === 'error' ? 'text-danger' : ''} {upload.status ===
+									'uploading'
+										? 'text-accent'
+										: 'text-text-muted'}"
+								>
 									{getStatusText(upload)}
 								</span>
 							</div>

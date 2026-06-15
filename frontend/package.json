@@ -38,11 +38,12 @@
 		"vite": "^7.2.6"
 	},
 	"dependencies": {
+		"@e965/xlsx": "^0.20.3",
+		"@noble/hashes": "^2.2.0",
 		"@tanstack/svelte-query": "^6.0.14",
 		"docx-preview": "^0.3.7",
 		"lucide-svelte": "^0.562.0",
 		"monaco-editor": "^0.55.1",
-		"pptx-preview": "^1.0.7",
-		"xlsx": "^0.18.5"
+		"pptx-preview": "^1.0.7"
 	}
 }

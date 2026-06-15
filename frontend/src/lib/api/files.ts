@@ -35,6 +35,7 @@ export interface FileList {
  */
 export interface MountPoint {
 	name: string;
+	path: string;
 	readOnly: boolean;
 	autoDiscover?: boolean;
 }
@@ -121,6 +122,10 @@ interface MessageResponse {
 	message: string;
 }
 
+function encodeRoutePath(path: string): string {
+	return path.split('/').map(encodeURIComponent).join('/');
+}
+
 /**
  * List all configured mount points (roots)
  * GET /api/v1/files
@@ -153,7 +158,7 @@ export async function getPath(path: string, options?: ListOptions): Promise<File
 		if (options.includeHidden !== undefined) params.includeHidden = options.includeHidden;
 	}
 
-	return api.get<FileList | FileInfo>(`/files/${path}`, params);
+	return api.get<FileList | FileInfo>(`/files/${encodeRoutePath(path)}`, params);
 }
 
 /**
@@ -178,7 +183,7 @@ export async function getFileInfo(path: string): Promise<FileInfo> {
  */
 export async function createDirectory(basePath: string, name: string): Promise<FileInfo> {
 	const body: CreateItemRequest = { name, type: 'directory' };
-	return api.post<FileInfo>(`/files/${basePath}`, body);
+	return api.post<FileInfo>(`/files/${encodeRoutePath(basePath)}`, body);
 }
 
 /**
@@ -191,7 +196,7 @@ export async function createFile(
 	content: string = ''
 ): Promise<FileInfo> {
 	const body: CreateItemRequest = { name, type: 'file', content };
-	return api.post<FileInfo>(`/files/${basePath}`, body);
+	return api.post<FileInfo>(`/files/${encodeRoutePath(basePath)}`, body);
 }
 
 /**
@@ -200,7 +205,7 @@ export async function createFile(
  */
 export async function rename(oldPath: string, newPath: string): Promise<FileInfo> {
 	const body: RenameRequest = { newPath };
-	return api.put<FileInfo>(`/files/${oldPath}`, body);
+	return api.put<FileInfo>(`/files/${encodeRoutePath(oldPath)}`, body);
 }
 
 /**
@@ -209,7 +214,7 @@ export async function rename(oldPath: string, newPath: string): Promise<FileInfo
  */
 export async function saveFileContent(path: string, content: string): Promise<FileInfo> {
 	const body: SaveFileRequest = { content };
-	return api.patch<FileInfo>(`/files/${path}`, body);
+	return api.patch<FileInfo>(`/files/${encodeRoutePath(path)}`, body);
 }
 
 /**
@@ -219,7 +224,7 @@ export async function saveFileContent(path: string, content: string): Promise<Fi
  */
 export async function deleteFile(path: string, confirm: boolean = false): Promise<MessageResponse> {
 	const params = confirm ? { confirm: 'true' } : undefined;
-	return api.delete<MessageResponse>(`/files/${path}`, params);
+	return api.delete<MessageResponse>(`/files/${encodeRoutePath(path)}`, params);
 }
 
 /**
@@ -231,33 +236,12 @@ export async function search(path: string, query: string): Promise<SearchRespons
 }
 
 /**
- * File API object with all methods
- */
-export const filesApi = {
-	listRoots,
-	getDriveStats,
-	getPath,
-	listDirectory,
-	getFileInfo,
-	createDirectory,
-	createFile,
-	rename,
-	saveFileContent,
-	delete: deleteFile,
-	search
-};
-
-/**
  * Get the preview URL for a file (for streaming media, images, etc.)
  * This URL can be used directly in <video>, <audio>, <img>, <iframe> src
  */
 export function getPreviewUrl(path: string): string {
 	const token = tokenStorage.getAccessToken();
-	// Don't double-encode the path - just encode special characters
-	const encodedPath = path
-		.split('/')
-		.map((segment) => encodeURIComponent(segment))
-		.join('/');
+	const encodedPath = encodeRoutePath(path);
 	const baseUrl = `/api/v1/stream/preview/${encodedPath}`;
 	return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
 }
@@ -267,10 +251,7 @@ export function getPreviewUrl(path: string): string {
  */
 export function getDownloadUrl(path: string): string {
 	const token = tokenStorage.getAccessToken();
-	const encodedPath = path
-		.split('/')
-		.map((segment) => encodeURIComponent(segment))
-		.join('/');
+	const encodedPath = encodeRoutePath(path);
 	const baseUrl = `/api/v1/stream/download/${encodedPath}`;
 	return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
 }

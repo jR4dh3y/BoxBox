@@ -15,7 +15,11 @@
 
 	let { value, onSave, onCancel, placeholder = '', class: className = '' }: Props = $props();
 
-	let inputValue = $state(value);
+	let inputValue = $state('');
+
+	$effect.pre(() => {
+		inputValue = value;
+	});
 
 	function handleSave(): void {
 		onSave(inputValue.trim());
@@ -36,19 +40,19 @@
 	}
 </script>
 
-<div class="flex items-center gap-1 h-5 {className}">
+<div class="flex h-5 items-center gap-1 {className}">
 	<input
 		type="text"
 		bind:value={inputValue}
 		onkeydown={handleKeydown}
 		onfocus={handleFocus}
 		{placeholder}
-		class="flex-1 min-w-0 h-5 box-border bg-surface-primary border border-border-focus rounded px-2 text-xs text-text-primary outline-none"
+		class="box-border h-5 min-w-0 flex-1 rounded border border-border-focus bg-surface-primary px-2 text-xs text-text-primary outline-none"
 	/>
 	<button
 		type="button"
 		onclick={(e: MouseEvent) => handleButtonClick(e, handleSave)}
-		class="shrink-0 w-5 h-5 flex items-center justify-center text-success hover:text-green-400 hover:bg-success/20 rounded transition-colors"
+		class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-success transition-colors hover:bg-success/20 hover:text-green-400"
 		title="Save"
 	>
 		<Check size={12} />
@@ -56,7 +60,7 @@
 	<button
 		type="button"
 		onclick={(e: MouseEvent) => handleButtonClick(e, onCancel)}
-		class="shrink-0 w-5 h-5 flex items-center justify-center text-text-muted hover:text-danger hover:bg-danger/20 rounded transition-colors"
+		class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:bg-danger/20 hover:text-danger"
 		title="Cancel"
 	>
 		<X size={12} />
