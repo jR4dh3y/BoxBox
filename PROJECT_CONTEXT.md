@@ -405,7 +405,7 @@ Older TODO status corrections:
 Current upload utility supports:
 
 - Chunked upload to `/api/v1/stream`.
-- SHA-256 checksum generation.
+- Full-file SHA-256 checksum generation for final chunk verification.
 - Upload progress callbacks.
 - `getUploadStatus()`.
 - `resumeUpload()`.
@@ -555,6 +555,9 @@ Avoid trying to clone Cloudreve’s breadth before fixing BoxBox’s current sec
 4. WebSocket connect/disconnect is wired into the authenticated app lifecycle.
 5. Active job subscriptions are synced, and newly created background jobs are upserted into the jobs store.
 6. Preview/download URL helpers now use `tokenStorage` instead of direct `localStorage`.
+7. Job service now resolves virtual paths through configured mount points before filesystem execution.
+8. Chunked upload now rejects unsafe upload IDs and requires final-chunk checksums.
+9. Website docs Markdown is sanitized before being injected as HTML.
 
 ### Medium risks
 
@@ -562,7 +565,6 @@ Avoid trying to clone Cloudreve’s breadth before fixing BoxBox’s current sec
 2. API docs under `docs/` are stale in places, especially stream upload responses.
 3. Stream tests use route prefixes that do not fully match production routing.
 4. WebSocket auth errors use `http.Error` plain text rather than shared JSON response helpers.
-5. Upload checksum is optional even though comments imply final checksum verification should be required.
 
 ---
 
