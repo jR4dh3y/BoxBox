@@ -25,6 +25,8 @@
 		favoritePaths = new SvelteSet<string>(),
 		canPaste = false,
 		canCreate = false,
+		showFileExtensions = true,
+		previewOnSingleClick = false,
 		onItemClick,
 		onSortChange,
 		onSelectionChange,
@@ -41,6 +43,8 @@
 		favoritePaths?: Set<string>;
 		canPaste?: boolean;
 		canCreate?: boolean;
+		showFileExtensions?: boolean;
+		previewOnSingleClick?: boolean;
 		onItemClick?: (item: FileInfo) => void;
 		onSortChange?: (field: SortField, dir: SortDir) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
@@ -76,9 +80,20 @@
 			const newSelection = new SvelteSet<string>([item.path]);
 			onSelectionChange?.(newSelection);
 		}
+
+		if (
+			previewOnSingleClick &&
+			!item.isDir &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			!event.shiftKey
+		) {
+			onItemClick?.(item);
+		}
 	}
 
 	function handleDoubleClick(item: FileInfo) {
+		if (previewOnSingleClick && !item.isDir) return;
 		onItemClick?.(item);
 	}
 
@@ -143,6 +158,13 @@
 
 	function isCut(path: string): boolean {
 		return cutPaths.has(path);
+	}
+
+	function getDisplayName(item: FileInfo): string {
+		if (showFileExtensions || item.isDir) return item.name;
+
+		const dotIndex = item.name.lastIndexOf('.');
+		return dotIndex > 0 ? item.name.slice(0, dotIndex) : item.name;
 	}
 
 	const thClass =
@@ -243,6 +265,7 @@
 			{:else}
 				{#each items as item (item.path)}
 					{@const IconComponent = getFileIcon(item.name, item.isDir)}
+					{@const displayName = getDisplayName(item)}
 					{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
 					{@const sizeDescription = item.isDir ? '' : formatFileSize(item.size)}
 					{@const modifiedDescription = formatFileDate(item.modTime)}
@@ -273,7 +296,7 @@
 									class="{clippedCellClass} min-w-0 flex-1 {item.isDir ? 'text-folder' : ''}"
 									title={item.name}
 								>
-									{item.name}
+									{displayName}
 								</span>
 							</div>
 						</td>

@@ -18,11 +18,10 @@ export {
 } from './client';
 
 // Auth API
-export { authApi, login, refresh, logout, type LoginRequest, type LoginResponse } from './auth';
+export { login, refresh, logout, type LoginRequest, type LoginResponse } from './auth';
 
 // Files API
 export {
-	filesApi,
 	listRoots,
 	getPath,
 	listDirectory,
@@ -43,7 +42,6 @@ export {
 
 // Jobs API
 export {
-	jobsApi,
 	listJobs,
 	getJob,
 	createJob,

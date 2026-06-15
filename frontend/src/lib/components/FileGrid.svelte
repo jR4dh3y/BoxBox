@@ -22,6 +22,8 @@
 		favoritePaths = new SvelteSet<string>(),
 		canPaste = false,
 		canCreate = false,
+		showFileExtensions = true,
+		previewOnSingleClick = false,
 		onItemClick,
 		onSelectionChange,
 		onContextMenuAction
@@ -35,6 +37,8 @@
 		favoritePaths?: Set<string>;
 		canPaste?: boolean;
 		canCreate?: boolean;
+		showFileExtensions?: boolean;
+		previewOnSingleClick?: boolean;
 		onItemClick?: (item: FileInfo) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
 		onContextMenuAction?: (action: string, items: FileInfo[]) => void;
@@ -60,9 +64,20 @@
 			const newSelection = new SvelteSet<string>([item.path]);
 			onSelectionChange?.(newSelection);
 		}
+
+		if (
+			previewOnSingleClick &&
+			!item.isDir &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			!event.shiftKey
+		) {
+			onItemClick?.(item);
+		}
 	}
 
 	function handleOpen(item: FileInfo) {
+		if (previewOnSingleClick && !item.isDir) return;
 		onItemClick?.(item);
 	}
 
@@ -126,6 +141,13 @@
 		return cutPaths.has(path);
 	}
 
+	function getDisplayName(item: FileInfo): string {
+		if (showFileExtensions || item.isDir) return item.name;
+
+		const dotIndex = item.name.lastIndexOf('.');
+		return dotIndex > 0 ? item.name.slice(0, dotIndex) : item.name;
+	}
+
 	const gridClass = 'grid grid-cols-[repeat(auto-fill,112px)] justify-start gap-3 p-3';
 	const compactGridClass = 'grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-2 p-2';
 	const tileClass =
@@ -160,6 +182,7 @@
 		>
 			{#each items as item (item.path)}
 				{@const IconComponent = getFileIcon(item.name, item.isDir)}
+				{@const displayName = getDisplayName(item)}
 				{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
 				{@const sizeDescription = item.isDir ? '' : formatFileSize(item.size)}
 				{@const modifiedDescription = formatFileDate(item.modTime)}
@@ -202,7 +225,7 @@
 
 					<div class="mt-1.5 min-w-0 overflow-hidden">
 						<div class="file-grid-name text-center text-[13px] leading-4 text-text-primary">
-							<span class={item.isDir ? 'text-folder' : ''}>{item.name}</span>
+							<span class={item.isDir ? 'text-folder' : ''}>{displayName}</span>
 						</div>
 						<div
 							class="mt-0.5 truncate text-center text-[11px] leading-3.5 text-text-muted"

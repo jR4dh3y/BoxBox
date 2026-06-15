@@ -4,11 +4,11 @@
 port: 80
 host: "0.0.0.0"
 
-# JWT authentication secret. Override with FM_JWT_SECRET in production.
+# JWT authentication secret. Override with FM_JWT_SECRET.
 jwt_secret: "change-me-in-production-use-a-long-random-string"
 
 # Users can be configured here or with FM_USERS_<username> environment variables.
-# If no users are configured, the server falls back to admin:admin with a warning.
+# At least one user is required.
 # users:
 #   admin: "change-me"
 
@@ -34,7 +34,7 @@ mount_points:
 
   - name: "root"
     path: "/host_root"
-    read_only: false
+    read_only: true
 
   - name: "home"
     path: "/home/user"

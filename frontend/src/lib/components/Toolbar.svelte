@@ -1,16 +1,16 @@
 <script lang="ts">
 	/**
-	 * Toolbar component - navigation buttons and path bar
+	 * Toolbar component - navigation buttons, path bar, search, and actions
 	 */
 	import {
 		ChevronLeft,
 		ChevronRight,
 		ChevronUp,
-		Home,
+		FolderUp,
 		RefreshCw,
-		Settings,
-		FolderUp
+		Settings
 	} from 'lucide-svelte';
+	import EditablePathBar from '$lib/components/EditablePathBar.svelte';
 	import SearchBar from '$lib/components/SearchBar.svelte';
 
 	interface Props {
@@ -31,6 +31,7 @@
 		searchLoading?: boolean;
 		onSearchInput?: (query: string) => void;
 		onSearchClear?: () => void;
+		includeHiddenSuggestions?: boolean;
 	}
 
 	let {
@@ -50,27 +51,16 @@
 		searchValue = '',
 		searchLoading = false,
 		onSearchInput,
-		onSearchClear
+		onSearchClear,
+		includeHiddenSuggestions = false
 	}: Props = $props();
-
-	function buildPath(index: number): string {
-		return pathSegments.slice(0, index + 1).join('/');
-	}
-
-	function handleSegmentClick(index: number) {
-		onNavigate?.(buildPath(index));
-	}
-
-	function handleRootClick() {
-		onNavigate?.('');
-	}
 
 	const navBtnClass =
 		'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed';
 </script>
 
 <div
-	class="flex items-center gap-2 border-b border-border-secondary bg-surface-primary px-3 py-1.5"
+	class="relative z-50 flex items-center gap-2 border-b border-border-secondary bg-surface-primary px-3 py-1.5"
 >
 	<!-- Navigation buttons -->
 	<div class="flex gap-0.5">
@@ -91,41 +81,7 @@
 		</button>
 	</div>
 
-	<!-- Path bar -->
-	<div
-		class="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border-primary bg-surface-secondary px-2 py-1"
-	>
-		<button
-			type="button"
-			class="flex h-4.5 w-4.5 shrink-0 cursor-pointer items-center justify-center border-none bg-transparent text-text-secondary hover:text-text-primary"
-			onclick={handleRootClick}
-			title="Go to root"
-		>
-			<Home size={14} />
-		</button>
-		<div class="flex flex-1 items-center gap-1 overflow-hidden">
-			{#if pathSegments.length === 0}
-				<span class="text-[13px] whitespace-nowrap text-text-primary">This Server</span>
-			{:else}
-				{#each pathSegments as segment, index (index)}
-					{#if index > 0}
-						<span class="text-xs text-text-muted">/</span>
-					{/if}
-					{#if index === pathSegments.length - 1}
-						<span class="text-[13px] whitespace-nowrap text-text-primary">{segment}</span>
-					{:else}
-						<button
-							type="button"
-							class="cursor-pointer border-none bg-transparent p-0 text-[13px] text-text-secondary hover:text-white hover:underline"
-							onclick={() => handleSegmentClick(index)}
-						>
-							{segment}
-						</button>
-					{/if}
-				{/each}
-			{/if}
-		</div>
-	</div>
+	<EditablePathBar {pathSegments} {onNavigate} {includeHiddenSuggestions} />
 
 	{#if showSearch}
 		<div class="w-64 shrink-0 lg:w-96">

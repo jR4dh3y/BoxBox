@@ -102,7 +102,7 @@ func (h *WebSocketHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate the token
-	claims, err := h.authService.ValidateToken(token)
+	claims, err := h.authService.ValidateAccessToken(token)
 	if err != nil {
 		http.Error(w, "Invalid authentication token", http.StatusUnauthorized)
 		return

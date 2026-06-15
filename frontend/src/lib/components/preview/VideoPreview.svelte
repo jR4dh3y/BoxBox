@@ -3,6 +3,7 @@
 	 * VideoPreview - HTML5 video player with streaming support
 	 */
 	import { Button } from '$lib/components/ui';
+	import { formatFileSize } from '$lib/utils/format';
 	import { Download } from 'lucide-svelte';
 
 	interface Props {
@@ -12,12 +13,13 @@
 		sizeBytes?: number;
 	}
 
-	let { url, downloadUrl }: Props = $props();
+	let { url, filename, downloadUrl, sizeBytes }: Props = $props();
 
 	let failedUrl = $state<string | null>(null);
 	let errorMessage = $state<string | null>(null);
 
 	const currentError = $derived(failedUrl === url ? errorMessage : null);
+	const videoLabel = $derived(sizeBytes ? `${filename} (${formatFileSize(sizeBytes)})` : filename);
 
 	function setError(message: string) {
 		failedUrl = url;
@@ -67,6 +69,8 @@
 		{#key url}
 			<video
 				src={url}
+				aria-label={videoLabel}
+				title={videoLabel}
 				controls
 				preload="metadata"
 				playsinline

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { ChevronDown } from 'lucide-svelte';
+
 	interface Option {
 		value: string;
 		label: string;
@@ -22,15 +24,23 @@
 	}
 </script>
 
-<select
-	{value}
-	{disabled}
-	{id}
-	{name}
-	onchange={handleChange}
-	class="w-full px-3 py-2 bg-surface-secondary border border-border-primary rounded text-text-primary text-sm transition-colors duration-150 focus:outline-none focus:border-border-focus disabled:opacity-50 disabled:cursor-not-allowed appearance-none cursor-pointer"
->
-	{#each options as option (option.value)}
-		<option value={option.value}>{option.label}</option>
-	{/each}
-</select>
+<div class="relative w-full">
+	<select
+		{value}
+		{disabled}
+		{id}
+		{name}
+		onchange={handleChange}
+		class="h-8 w-full cursor-pointer appearance-none rounded border border-border-primary bg-surface-secondary px-3 pr-8 text-sm leading-none text-text-primary transition-colors duration-150 focus:border-border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+	>
+		{#each options as option (option.value)}
+			<option value={option.value}>{option.label}</option>
+		{/each}
+	</select>
+	<ChevronDown
+		size={14}
+		class="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-text-muted {disabled
+			? 'opacity-50'
+			: ''}"
+	/>
+</div>

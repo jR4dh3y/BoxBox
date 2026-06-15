@@ -6,6 +6,7 @@
 	import { getMonacoLanguage } from '$lib/utils/fileTypes';
 	import { getFileContent, saveFileContent, type FileInfo } from '$lib/api/files';
 	import { Button, Spinner } from '$lib/components/ui';
+	import type * as Monaco from 'monaco-editor';
 
 	interface Props {
 		url: string;
@@ -17,9 +18,9 @@
 	let { url, filename, path, onSaved }: Props = $props();
 
 	let containerElement: HTMLDivElement | null = $state(null);
-	let editor: any = $state(null);
-	let monaco: any = $state(null);
-	let changeDisposable: { dispose: () => void } | null = null;
+	let editor: Monaco.editor.IStandaloneCodeEditor | null = $state(null);
+	let monaco: typeof Monaco | null = $state(null);
+	let changeDisposable: Monaco.IDisposable | null = null;
 	let content = $state<string | null>(null);
 	let error = $state<string | null>(null);
 	let loading = $state(true);
@@ -35,8 +36,8 @@
 		return value instanceof Error ? value.message : 'Failed to save file.';
 	}
 
-	function defineTheme() {
-		monaco.editor.defineTheme('filemanager-dark', {
+	function defineTheme(monacoApi: typeof Monaco) {
+		monacoApi.editor.defineTheme('filemanager-dark', {
 			base: 'vs-dark',
 			inherit: true,
 			rules: [],
@@ -53,9 +54,10 @@
 
 	function createEditor() {
 		if (!monaco || !containerElement || editor) return;
+		const monacoApi = monaco;
 
-		defineTheme();
-		editor = monaco.editor.create(containerElement, {
+		defineTheme(monacoApi);
+		const createdEditor = monacoApi.editor.create(containerElement, {
 			value: content ?? '',
 			language: language,
 			theme: 'filemanager-dark',
@@ -75,12 +77,13 @@
 				horizontalScrollbarSize: 10
 			}
 		});
+		editor = createdEditor;
 
-		changeDisposable = editor.onDidChangeModelContent(() => {
-			dirty = content !== null && editor.getValue() !== content;
+		changeDisposable = createdEditor.onDidChangeModelContent(() => {
+			dirty = content !== null && createdEditor.getValue() !== content;
 			saveMessage = null;
 		});
-		editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+		createdEditor.addCommand(monacoApi.KeyMod.CtrlCmd | monacoApi.KeyCode.KeyS, () => {
 			void handleSave();
 		});
 	}
@@ -114,7 +117,7 @@
 
 			// Configure Monaco environment for web workers
 			self.MonacoEnvironment = {
-				getWorker: function (_moduleId: string, label: string) {
+				getWorker: function () {
 					return new Worker(
 						URL.createObjectURL(
 							new Blob([`self.onmessage = function() {}`], { type: 'text/javascript' })
@@ -182,7 +185,10 @@
 		editor.setValue(content);
 		dirty = false;
 		if (monaco) {
-			monaco.editor.setModelLanguage(editor.getModel(), language);
+			const model = editor.getModel();
+			if (model) {
+				monaco.editor.setModelLanguage(model, language);
+			}
 		}
 	});
 </script>

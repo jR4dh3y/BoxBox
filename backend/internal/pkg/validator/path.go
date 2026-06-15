@@ -13,10 +13,10 @@ import (
 
 // Errors returned by path validation functions
 var (
-	ErrPathTraversal     = errors.New("path traversal detected")
-	ErrEmptyPath         = errors.New("path cannot be empty")
-	ErrInvalidPath       = errors.New("invalid path")
-	ErrOutsideMountPoint = errors.New("path is outside configured mount points")
+	ErrPathTraversal      = errors.New("path traversal detected")
+	ErrEmptyPath          = errors.New("path cannot be empty")
+	ErrInvalidPath        = errors.New("invalid path")
+	ErrOutsideMountPoint  = errors.New("path is outside configured mount points")
 	ErrMountPointNotFound = errors.New("mount point not found")
 )
 
@@ -69,7 +69,6 @@ func SanitizePath(basePath, requestedPath string) (string, error) {
 	return fullPath, nil
 }
 
-
 // containsTraversalSequence checks if a path contains any path traversal sequences
 func containsTraversalSequence(path string) bool {
 	// Check for various forms of path traversal
@@ -93,13 +92,13 @@ func containsTraversalSequence(path string) bool {
 
 	// Also check for URL-encoded traversal sequences
 	encodedPatterns := []string{
-		"%2e%2e",     // ..
-		"%2e%2e%2f",  // ../
-		"%2e%2e/",    // ../
-		"..%2f",      // ../
-		"%2e%2e%5c",  // ..\
-		"%2e%2e\\",   // ..\
-		"..%5c",      // ..\
+		"%2e%2e",    // ..
+		"%2e%2e%2f", // ../
+		"%2e%2e/",   // ../
+		"..%2f",     // ../
+		"%2e%2e%5c", // ..\
+		"%2e%2e\\",  // ..\
+		"..%5c",     // ..\
 	}
 
 	lowerPath := strings.ToLower(path)
@@ -119,9 +118,23 @@ func ValidatePathAgainstMounts(requestedPath string, mounts []model.MountPoint) 
 		return nil, "", ErrEmptyPath
 	}
 
+	decodedPath, err := url.PathUnescape(requestedPath)
+	if err != nil {
+		return nil, "", ErrInvalidPath
+	}
+	if containsTraversalSequence(decodedPath) {
+		return nil, "", ErrPathTraversal
+	}
+	if strings.ContainsRune(decodedPath, 0) {
+		return nil, "", ErrInvalidPath
+	}
+
 	// Clean and normalize the requested path
-	cleanPath := filepath.Clean(requestedPath)
-	
+	cleanPath := filepath.Clean(decodedPath)
+	if containsTraversalSequence(cleanPath) {
+		return nil, "", ErrPathTraversal
+	}
+
 	// Remove leading slash for comparison
 	cleanPath = strings.TrimPrefix(cleanPath, "/")
 	cleanPath = strings.TrimPrefix(cleanPath, "\\")
@@ -130,7 +143,7 @@ func ValidatePathAgainstMounts(requestedPath string, mounts []model.MountPoint) 
 	for i := range mounts {
 		mount := &mounts[i]
 		mountName := strings.TrimPrefix(mount.Name, "/")
-		
+
 		// Check if the path starts with this mount point name
 		if cleanPath == mountName || strings.HasPrefix(cleanPath, mountName+"/") || strings.HasPrefix(cleanPath, mountName+"\\") {
 			// Extract the relative path within the mount
@@ -149,28 +162,6 @@ func ValidatePathAgainstMounts(requestedPath string, mounts []model.MountPoint) 
 	}
 
 	return nil, "", ErrOutsideMountPoint
-}
-
-// GetMountPointFromPath extracts the mount point name from a path.
-// Returns the mount point name and the remaining path.
-func GetMountPointFromPath(path string) (mountName string, remainingPath string) {
-	// Clean and normalize
-	cleanPath := filepath.Clean(path)
-	cleanPath = strings.TrimPrefix(cleanPath, "/")
-	cleanPath = strings.TrimPrefix(cleanPath, "\\")
-
-	// Split on first separator
-	parts := strings.SplitN(cleanPath, "/", 2)
-	if len(parts) == 0 {
-		return "", ""
-	}
-
-	mountName = parts[0]
-	if len(parts) > 1 {
-		remainingPath = parts[1]
-	}
-
-	return mountName, remainingPath
 }
 
 // IsValidFileName checks if a filename is valid (no path separators or special chars)
@@ -201,9 +192,9 @@ func IsValidFileName(name string) bool {
 func NormalizePath(path string) string {
 	// Clean the path
 	cleaned := filepath.Clean(path)
-	
+
 	// Convert to forward slashes for consistency
 	normalized := filepath.ToSlash(cleaned)
-	
+
 	return normalized
 }

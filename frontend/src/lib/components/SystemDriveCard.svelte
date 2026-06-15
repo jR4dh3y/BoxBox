@@ -62,6 +62,13 @@
 		}
 	}
 
+	function handleCardKeydown(e: KeyboardEvent): void {
+		if (renaming || (e.key !== 'Enter' && e.key !== ' ')) return;
+
+		e.preventDefault();
+		onClick?.();
+	}
+
 	function handleContextMenu(e: MouseEvent): void {
 		e.preventDefault();
 		contextMenuPosition = { x: e.clientX, y: e.clientY };
@@ -89,10 +96,12 @@
 
 <svelte:window onclick={handleClickOutside} />
 
-<button
-	type="button"
+<div
 	class="relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-all duration-150 hover:border-border-focus hover:bg-surface-tertiary"
+	role="button"
+	tabindex="0"
 	onclick={handleCardClick}
+	onkeydown={handleCardKeydown}
 	oncontextmenu={handleContextMenu}
 >
 	<div
@@ -161,4 +170,4 @@
 			onClose={handleMenuClose}
 		/>
 	{/if}
-</button>
+</div>

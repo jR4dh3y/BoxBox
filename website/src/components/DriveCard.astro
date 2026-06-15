@@ -24,22 +24,24 @@ const {
 } = Astro.props;
 ---
 
-<div class="flex items-center gap-4 p-4 bg-[#252525] border border-[#333333] rounded-xl w-full transition-colors hover:border-[#4a4a4a] cursor-pointer group">
-  <div class="shrink-0 w-[84px] h-[84px] flex items-center justify-center rounded-lg bg-[#303030] text-[#888888] transition-colors group-hover:text-[#e0e0e0]">
+<div class="flex items-center gap-4 p-4 bg-surface-secondary/82 border border-border-primary rounded-xl w-full transition-colors cursor-pointer group backdrop-blur-sm hover:border-border-focus/60">
+  <div class="shrink-0 w-[84px] h-[84px] flex items-center justify-center rounded-lg bg-surface-elevated/85 text-text-secondary transition-colors group-hover:text-[#e0e0e0]">
     <Server class="w-7 h-7" />
   </div>
   <div class="flex-1 min-w-0 flex flex-col justify-center">
     <div class="flex items-center justify-between gap-2 mb-1">
       <span class="text-[14px] font-medium text-[#e0e0e0] truncate tracking-wide">{path}</span>
-      <span class="px-2 py-0.5 rounded bg-[#303030] text-[11px] text-[#999999]">{total}</span>
+      <span class="px-2 py-0.5 rounded bg-surface-elevated/85 text-[11px] text-text-secondary">{total}</span>
     </div>
     <div class="text-[12px] text-[#888888] mb-1">{used} used &middot; {free} free</div>
-    <div class="text-[11px] text-[#666666] font-mono truncate mb-3">{device} &middot; {fs}</div>
+    <div class="text-[11px] text-text-muted font-mono truncate mb-3">
+      {device} &middot; {fs}
+    </div>
     <div class="flex items-center gap-3">
       <div class="flex-1 bg-[#333333] rounded-full h-[3px] overflow-hidden">
-        <div class="h-full rounded-full" style={`background-color: ${color}; width: ${percent}%`}></div>
+        <div class="h-full rounded-full transition-[background-color,width] duration-700 ease-out" style={`background-color: ${color}; width: ${percent}%`}></div>
       </div>
-      <span class="text-[11px] shrink-0" style={`color: ${color}`}>{percent}%</span>
+      <span class="text-[11px] shrink-0 transition-colors duration-700 ease-out" style={`color: ${color}`}>{percent}%</span>
     </div>
   </div>
 </div>

@@ -60,6 +60,7 @@
 	let loadedFileItems = $state<FileInfo[]>([]);
 	let loadedTotalCount = $state(0);
 	let activeListScope = $state('');
+	let defaultSortApplied = false;
 
 	// Upload state
 	let fileInputEl: HTMLInputElement;
@@ -109,6 +110,18 @@
 		].join('\u0000')
 	);
 	const queryClient = useQueryClient();
+
+	$effect(() => {
+		if (defaultSortApplied) return;
+
+		defaultSortApplied = true;
+		if (options.sortBy !== settings.defaultSortBy) {
+			listOptionsStore.setSortBy(settings.defaultSortBy);
+		}
+		if (options.sortDir !== settings.defaultSortDir) {
+			listOptionsStore.setSortDir(settings.defaultSortDir);
+		}
+	});
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
 		queryKey: fileQueryKeys.roots(),
@@ -380,10 +393,14 @@
 				break;
 
 			case 'delete':
-				deleteDialog = {
-					open: true,
-					items: items
-				};
+				if (settings.confirmDelete) {
+					deleteDialog = {
+						open: true,
+						items: items
+					};
+				} else {
+					await deleteItems(items);
+				}
 				break;
 
 			case 'download':
@@ -511,13 +528,13 @@
 	}
 
 	/**
-	 * Handle delete confirmation
+	 * Delete files immediately or enqueue directory deletion jobs.
 	 */
-	async function handleDeleteConfirm() {
-		if (deleteDialog.items.length === 0) return;
+	async function deleteItems(items: FileInfo[]) {
+		if (items.length === 0) return;
 
 		try {
-			for (const item of deleteDialog.items) {
+			for (const item of items) {
 				if (item.isDir) {
 					// Use job for directory deletion
 					jobsStore.upsertJob(await createDeleteJob(item.path));
@@ -525,13 +542,20 @@
 					await deleteFile(item.path);
 				}
 			}
-			deleteDialog = { open: false, items: [] };
 			selectedPaths = new Set();
 			directoryQuery.refetch();
 		} catch (error) {
 			console.error('Delete failed:', error);
 			toastStore.error(getErrorMessage(error, 'Delete failed'));
 		}
+	}
+
+	/**
+	 * Handle delete confirmation
+	 */
+	async function handleDeleteConfirm() {
+		await deleteItems(deleteDialog.items);
+		deleteDialog = { open: false, items: [] };
 	}
 
 	function handleFileSaved(file: FileInfo) {
@@ -656,7 +680,7 @@
 
 <div class="flex h-screen w-full overflow-hidden bg-surface-primary">
 	<!-- Sidebar -->
-	<Sidebar {roots} currentPath={path} onNavigate={handleNavigate} />
+	<Sidebar currentPath={path} onNavigate={handleNavigate} />
 
 	<!-- Main content area -->
 	<div class="flex min-w-0 flex-1 flex-col">
@@ -679,6 +703,7 @@
 			searchLoading={isSearchActive && searchQueryResult.isFetching}
 			onSearchInput={handleSearchInput}
 			onSearchClear={handleSearchClear}
+			includeHiddenSuggestions={settings.showHiddenFiles}
 		/>
 
 		<!-- File list or Drive cards -->
@@ -704,7 +729,7 @@
 			{#if isAtRoot}
 				<!-- This Server view - show drive cards -->
 				<div class="p-6">
-					{#if systemDrivesQuery.isLoading}
+					{#if rootsQuery.isLoading || systemDrivesQuery.isLoading}
 						<div class="flex items-center gap-2 py-5 text-sm text-text-secondary">
 							<Spinner size="sm" />
 							<span>Loading drives...</span>
@@ -717,8 +742,8 @@
 								<SystemDriveCard
 									{drive}
 									onClick={() => {
-										// Map system mount point to browsable path via host root mount
-										const browsePath = mapSystemMountToBrowsePath(drive.mountPoint);
+										// Map system mount point to a configured BoxBox mount path.
+										const browsePath = mapSystemMountToBrowsePath(drive.mountPoint, roots);
 
 										handleNavigate(browsePath);
 									}}
@@ -738,6 +763,8 @@
 					{favoritePaths}
 					{canPaste}
 					{canCreate}
+					showFileExtensions={settings.showFileExtensions}
+					previewOnSingleClick={settings.previewOnSingleClick}
 					onItemClick={handleFileClick}
 					onSelectionChange={handleSelectionChange}
 					onContextMenuAction={handleContextMenuAction}
@@ -755,6 +782,8 @@
 					{favoritePaths}
 					{canPaste}
 					{canCreate}
+					showFileExtensions={settings.showFileExtensions}
+					previewOnSingleClick={settings.previewOnSingleClick}
 					onItemClick={handleFileClick}
 					onSortChange={handleSortChange}
 					onSelectionChange={handleSelectionChange}

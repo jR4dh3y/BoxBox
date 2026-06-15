@@ -14,6 +14,12 @@ import {
 	normalizeBackgroundImageMode,
 	type BackgroundImageMode
 } from '$lib/utils/wallpaper';
+import {
+	isInlineWallpaperDataUrl,
+	isLocalWallpaperReference,
+	resolveLocalWallpaperUrl,
+	saveLocalWallpaperDataUrl
+} from '$lib/utils/wallpaperStorage';
 
 export interface UserSettings {
 	showHiddenFiles: boolean;
@@ -87,7 +93,8 @@ function isSupportedBackgroundImage(value: string): boolean {
 		return true;
 	}
 	if (value.startsWith('/') && !value.startsWith('//')) return true;
-	if (/^data:image\/(avif|gif|jpeg|jpg|png|svg\+xml|webp);base64,/i.test(value)) return true;
+	if (isInlineWallpaperDataUrl(value)) return true;
+	if (isLocalWallpaperReference(value)) return true;
 
 	try {
 		const url = new URL(value);
@@ -126,7 +133,21 @@ export function resolveBackgroundImage(backgroundImage: string | null): string |
 	if (!normalized) return null;
 
 	const serverPath = getServerBackgroundPath(normalized);
+	if (isLocalWallpaperReference(normalized)) return null;
 	return serverPath ? getPreviewUrl(serverPath) : normalized;
+}
+
+export async function resolveBackgroundImageUrl(
+	backgroundImage: string | null
+): Promise<string | null> {
+	const normalized = normalizeBackgroundImage(backgroundImage);
+	if (!normalized) return null;
+
+	if (isLocalWallpaperReference(normalized)) {
+		return resolveLocalWallpaperUrl(normalized);
+	}
+
+	return resolveBackgroundImage(normalized);
 }
 
 function parseHexColor(color: string): [number, number, number] {
@@ -203,6 +224,23 @@ async function loadDriveNames(): Promise<Record<string, string>> {
 	}
 }
 
+async function migrateInlineBackgroundImage(settings: UserSettings): Promise<UserSettings> {
+	const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
+	if (!backgroundImage || !isInlineWallpaperDataUrl(backgroundImage)) {
+		return settings;
+	}
+
+	try {
+		const migratedBackgroundImage = await saveLocalWallpaperDataUrl(backgroundImage);
+		return {
+			...settings,
+			backgroundImage: migratedBackgroundImage
+		};
+	} catch {
+		return settings;
+	}
+}
+
 function createSettingsStore() {
 	const { subscribe, set, update } = writable<UserSettings>(loadSettings());
 
@@ -210,8 +248,27 @@ function createSettingsStore() {
 		subscribe,
 
 		async initialize() {
+			const currentSettings = get({ subscribe });
+			const migratedSettings = await migrateInlineBackgroundImage(currentSettings);
+			if (migratedSettings !== currentSettings) {
+				try {
+					saveSettings(migratedSettings);
+				} catch {
+					// Keep the in-memory migrated reference even if the browser refuses persistence.
+				}
+				set(migratedSettings);
+			}
+
 			const driveNames = await loadDriveNames();
-			update((current) => ({ ...current, driveNameOverrides: driveNames }));
+			update((current) => {
+				const updated = { ...current, driveNameOverrides: driveNames };
+				try {
+					saveSettings(updated);
+				} catch {
+					// Initialization should not fail auth because local preference persistence is full.
+				}
+				return updated;
+			});
 		},
 
 		set(settings: UserSettings) {
@@ -310,6 +367,29 @@ function createSettingsStore() {
 export const settingsStore = createSettingsStore();
 // Note: initialize() should be called after successful authentication
 // Do not call here as the API requires auth
+
+export const resolvedBackgroundImageUrl = derived(
+	settingsStore,
+	($settings, set) => {
+		const requestedBackgroundImage = $settings.backgroundImage;
+		let cancelled = false;
+
+		set(resolveBackgroundImage(requestedBackgroundImage));
+
+		resolveBackgroundImageUrl(requestedBackgroundImage)
+			.then((url) => {
+				if (!cancelled) set(url);
+			})
+			.catch(() => {
+				if (!cancelled) set(null);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	},
+	null as string | null
+);
 
 // Derived stores for individual settings
 export const showHiddenFiles = derived(settingsStore, ($s) => $s.showHiddenFiles);

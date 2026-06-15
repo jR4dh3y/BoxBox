@@ -15,17 +15,17 @@
 		default: 'bg-accent',
 		success: 'bg-success',
 		warning: 'bg-warning',
-		danger: 'bg-danger',
+		danger: 'bg-danger'
 	};
 
 	const sizeClasses: Record<string, string> = {
 		sm: 'h-1',
-		md: 'h-2',
+		md: 'h-2'
 	};
 </script>
 
 <div class="w-full">
-	<div class="w-full bg-surface-elevated rounded-full overflow-hidden {sizeClasses[size]}">
+	<div class="w-full overflow-hidden rounded-full bg-surface-elevated {sizeClasses[size]}">
 		<div
 			class="{variantClasses[variant]} h-full rounded-full transition-all duration-300"
 			style="width: {percentage}%"
@@ -36,6 +36,6 @@
 		></div>
 	</div>
 	{#if showLabel}
-		<span class="text-xs text-text-secondary mt-1">{percentage.toFixed(0)}%</span>
+		<span class="mt-1 text-xs text-text-secondary">{percentage.toFixed(0)}%</span>
 	{/if}
 </div>

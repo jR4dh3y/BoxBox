@@ -43,6 +43,18 @@ func (s *testAuthService) Logout(ctx context.Context, refreshToken string) error
 }
 
 func (s *testAuthService) ValidateToken(tokenString string) (*service.Claims, error) {
+	return s.validateToken(tokenString, "")
+}
+
+func (s *testAuthService) ValidateAccessToken(tokenString string) (*service.Claims, error) {
+	return s.validateToken(tokenString, service.TokenTypeAccess)
+}
+
+func (s *testAuthService) ValidateRefreshToken(tokenString string) (*service.Claims, error) {
+	return s.validateToken(tokenString, service.TokenTypeRefresh)
+}
+
+func (s *testAuthService) validateToken(tokenString string, expectedType service.TokenType) (*service.Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &service.Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, service.ErrInvalidToken
@@ -61,6 +73,9 @@ func (s *testAuthService) ValidateToken(tokenString string) (*service.Claims, er
 	if !ok || !token.Valid {
 		return nil, service.ErrInvalidToken
 	}
+	if expectedType != "" && claims.TokenType != expectedType {
+		return nil, service.ErrInvalidToken
+	}
 
 	return claims, nil
 }
@@ -76,8 +91,9 @@ func (s *testAuthService) StopCleanup() {
 // generateValidToken creates a valid JWT token for testing
 func generateValidToken(secret string, username string, expiry time.Duration) string {
 	claims := &service.Claims{
-		UserID:   "test-user-id",
-		Username: username,
+		UserID:    "test-user-id",
+		Username:  username,
+		TokenType: service.TokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -95,8 +111,9 @@ func generateValidToken(secret string, username string, expiry time.Duration) st
 // generateExpiredToken creates an expired JWT token for testing
 func generateExpiredToken(secret string, username string) string {
 	claims := &service.Claims{
-		UserID:   "test-user-id",
-		Username: username,
+		UserID:    "test-user-id",
+		Username:  username,
+		TokenType: service.TokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
@@ -110,7 +127,6 @@ func generateExpiredToken(secret string, username string) string {
 	tokenString, _ := token.SignedString([]byte(secret))
 	return tokenString
 }
-
 
 // TestAuthenticationEnforcement is a property-based test that verifies
 // requests without valid JWT tokens always receive HTTP 401 status.
@@ -147,13 +163,13 @@ func TestAuthenticationEnforcement(t *testing.T) {
 
 	// Generator for invalid authorization header formats
 	invalidAuthHeaderGen := gen.OneConstOf(
-		"",                          // Empty
-		"Basic dXNlcjpwYXNz",        // Wrong scheme
-		"Bearer",                    // Missing token
-		"Bearer ",                   // Empty token
-		"bearer valid-token",        // Wrong case
-		"BEARER valid-token",        // Wrong case
-		"Token valid-token",         // Wrong scheme
+		"",                   // Empty
+		"Basic dXNlcjpwYXNz", // Wrong scheme
+		"Bearer",             // Missing token
+		"Bearer ",            // Empty token
+		"bearer valid-token", // Wrong case
+		"BEARER valid-token", // Wrong case
+		"Token valid-token",  // Wrong scheme
 	)
 
 	// Generator for random strings (invalid tokens)
@@ -296,9 +312,9 @@ func TestMalformedTokensRejected(t *testing.T) {
 		"not.a.jwt",
 		"header.payload",
 		"a.b.c.d.e",
-		"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",                                     // Only header
-		"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0",          // Missing signature
-		"eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.",          // Algorithm none
+		"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", // Only header
+		"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0", // Missing signature
+		"eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.", // Algorithm none
 		".....",
 		"",
 		" ",

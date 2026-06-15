@@ -52,11 +52,21 @@ export function isWallpaperImageFile(item: FileInfo): boolean {
 	);
 }
 
-export function readFileAsDataUrl(file: File): Promise<string> {
+export function readFileAsDataUrl(
+	file: File,
+	onProgress?: (progress: number) => void
+): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
+		reader.onloadstart = () => onProgress?.(0);
+		reader.onprogress = (event) => {
+			if (event.lengthComputable && event.total > 0) {
+				onProgress?.(Math.round((event.loaded / event.total) * 100));
+			}
+		};
 		reader.onload = () => {
 			if (typeof reader.result === 'string') {
+				onProgress?.(100);
 				resolve(reader.result);
 			} else {
 				reject(new Error('Unsupported file result'));

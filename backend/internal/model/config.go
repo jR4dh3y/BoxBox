@@ -1,6 +1,9 @@
 package model
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // MountPoint represents a configured filesystem location accessible through the file manager
 type MountPoint struct {
@@ -26,27 +29,28 @@ type ServerConfig struct {
 	RateLimitRPS   float64           `mapstructure:"rate_limit_rps"`  // Auth endpoint rate limit (requests per second)
 }
 
-// DefaultServerConfig returns sensible defaults for server configuration
-func DefaultServerConfig() ServerConfig {
-	return ServerConfig{
-		Port:        8080,
-		Host:        "0.0.0.0",
-		MountPoints: []MountPoint{},
-		JWTSecret:   "",
-		MaxUploadMB: 10240, // 10GB
-		ChunkSizeMB: 5,     // 5MB chunks
-		DataDir:     "",
-		// Security defaults
-		Users:          nil,  // Must be configured
-		AllowedOrigins: nil,  // nil = allow all (for homelab)
-		RateLimitRPS:   10.0, // 10 requests per second per IP
-	}
-}
-
 // Validate checks that the configuration is valid
 func (c *ServerConfig) Validate() error {
 	if c.JWTSecret == "" {
 		return fmt.Errorf("jwt_secret is required")
+	}
+	if strings.Contains(strings.ToLower(c.JWTSecret), "change-me") {
+		return fmt.Errorf("jwt_secret must be changed from the placeholder value")
+	}
+
+	if len(c.Users) == 0 {
+		return fmt.Errorf("at least one user is required")
+	}
+	for username, password := range c.Users {
+		if username == "" {
+			return fmt.Errorf("usernames cannot be empty")
+		}
+		if password == "" {
+			return fmt.Errorf("password for user %q is required", username)
+		}
+		if strings.Contains(strings.ToLower(password), "change-me") {
+			return fmt.Errorf("password for user %q must be changed from the placeholder value", username)
+		}
 	}
 
 	if len(c.MountPoints) == 0 {
@@ -74,25 +78,5 @@ func (c *ServerConfig) Validate() error {
 		return fmt.Errorf("chunk_size_mb must be at least 1")
 	}
 
-	return nil
-}
-
-// IsMountPointReadOnly checks if a mount point is read-only by name
-func (c *ServerConfig) IsMountPointReadOnly(name string) bool {
-	for _, mp := range c.MountPoints {
-		if mp.Name == name {
-			return mp.ReadOnly
-		}
-	}
-	return true // Default to read-only if not found
-}
-
-// GetMountPoint returns a mount point by name, or nil if not found
-func (c *ServerConfig) GetMountPoint(name string) *MountPoint {
-	for i := range c.MountPoints {
-		if c.MountPoints[i].Name == name {
-			return &c.MountPoints[i]
-		}
-	}
 	return nil
 }

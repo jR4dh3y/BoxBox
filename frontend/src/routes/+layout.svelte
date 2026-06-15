@@ -12,7 +12,11 @@
 	import { FolderOpen } from 'lucide-svelte';
 	import { activeJobs, jobsStore } from '$lib/stores/jobs';
 	import { websocketStore } from '$lib/stores/websocket';
-	import { applyAccentColor, resolveBackgroundImage, settingsStore } from '$lib/stores/settings';
+	import {
+		applyAccentColor,
+		resolvedBackgroundImageUrl,
+		settingsStore
+	} from '$lib/stores/settings';
 	import { getWallpaperBackgroundStyle, normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
 
 	let { children } = $props();
@@ -29,15 +33,15 @@
 	});
 
 	// Public routes that don't require authentication
-	const publicRoutes = ['/login', '/test'];
+	const publicRoutes = ['/login'];
 	const isWorkspacePage = $derived(
 		page.url.pathname.startsWith('/browse') || page.url.pathname.startsWith('/settings')
 	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
-	const backgroundImage = $derived(resolveBackgroundImage($settingsStore.backgroundImage));
 	const backgroundImageMode = $derived(
 		normalizeBackgroundImageMode($settingsStore.backgroundImageMode)
 	);
+	const backgroundImage = $derived($resolvedBackgroundImageUrl);
 	const hasBackgroundImage = $derived(backgroundImage !== null);
 	const frostedGlass = $derived(hasBackgroundImage && $settingsStore.frostedGlass);
 	const backgroundImageStyle = $derived(

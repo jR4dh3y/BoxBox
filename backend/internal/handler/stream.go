@@ -23,22 +23,29 @@ import (
 	"github.com/homelab/filemanager/internal/service"
 )
 
+var errUploadTooLarge = errors.New("upload too large")
+
 // StreamHandler handles streaming upload and download operations
 type StreamHandler struct {
-	fileService   service.FileService
-	uploadManager *UploadManager
-	chunkSizeMB   int
+	fileService    service.FileService
+	uploadManager  *UploadManager
+	chunkSizeMB    int
+	maxUploadBytes int64
 }
 
 // NewStreamHandler creates a new stream handler
-func NewStreamHandler(fileService service.FileService, chunkSizeMB int) *StreamHandler {
+func NewStreamHandler(fileService service.FileService, chunkSizeMB int, maxUploadMB int) *StreamHandler {
 	if chunkSizeMB <= 0 {
-		chunkSizeMB = 10 // Default 10MB chunks
+		chunkSizeMB = config.DefaultChunkSizeMB
+	}
+	if maxUploadMB <= 0 {
+		maxUploadMB = config.DefaultMaxUploadMB
 	}
 	return &StreamHandler{
-		fileService:   fileService,
-		uploadManager: NewUploadManager(config.DefaultUploadTempDir),
-		chunkSizeMB:   chunkSizeMB,
+		fileService:    fileService,
+		uploadManager:  NewUploadManager(config.DefaultUploadTempDir),
+		chunkSizeMB:    chunkSizeMB,
+		maxUploadBytes: int64(maxUploadMB) * 1024 * 1024,
 	}
 }
 
@@ -346,7 +353,11 @@ func (h *StreamHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	// Parse upload headers
 	uploadReq, err := h.parseUploadHeaders(r)
 	if err != nil {
-		writeError(w, err.Error(), model.ErrCodeValidationError, http.StatusBadRequest)
+		status := http.StatusBadRequest
+		if errors.Is(err, errUploadTooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		writeError(w, err.Error(), model.ErrCodeValidationError, status)
 		return
 	}
 
@@ -376,6 +387,14 @@ func (h *StreamHandler) Upload(w http.ResponseWriter, r *http.Request) {
 			writeError(w, "Failed to create upload session", model.ErrCodeInternalError, http.StatusInternalServerError)
 			return
 		}
+	} else if !session.matches(path, uploadReq) {
+		writeError(w, "Upload session metadata does not match this request", model.ErrCodeConflict, http.StatusConflict)
+		return
+	}
+
+	if uploadReq.IsFinalChunk() && uploadReq.Checksum == "" {
+		writeError(w, "X-Checksum header is required on final chunk", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
 	}
 
 	// Check if chunk was already received (for resumable uploads)
@@ -398,11 +417,23 @@ func (h *StreamHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = io.Copy(chunkFile, r.Body)
+	limitedBody := http.MaxBytesReader(w, r.Body, uploadReq.ExpectedChunkSize())
+	writtenBytes, err := io.Copy(chunkFile, limitedBody)
+	_ = limitedBody.Close()
 	chunkFile.Close()
 	if err != nil {
 		_ = os.Remove(chunkPath)
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, "Chunk body exceeds declared chunk size", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge)
+			return
+		}
 		writeError(w, "Failed to write chunk", model.ErrCodeInternalError, http.StatusInternalServerError)
+		return
+	}
+	if writtenBytes != uploadReq.ExpectedChunkSize() {
+		_ = os.Remove(chunkPath)
+		writeError(w, "Chunk body size does not match upload metadata", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
 
@@ -452,6 +483,9 @@ func (h *StreamHandler) parseUploadHeaders(r *http.Request) (*UploadRequest, err
 	if uploadID == "" {
 		return nil, errors.New("X-Upload-ID header is required")
 	}
+	if !isValidUploadID(uploadID) {
+		return nil, errors.New("X-Upload-ID contains invalid characters")
+	}
 
 	chunkIndexStr := r.Header.Get("X-Chunk-Index")
 	if chunkIndexStr == "" {
@@ -492,8 +526,31 @@ func (h *StreamHandler) parseUploadHeaders(r *http.Request) (*UploadRequest, err
 	if err != nil || totalSize < 1 {
 		return nil, errors.New("X-Total-Size must be a positive integer")
 	}
+	if h.maxUploadBytes > 0 && totalSize > h.maxUploadBytes {
+		return nil, fmt.Errorf("%w: maximum size is %d bytes", errUploadTooLarge, h.maxUploadBytes)
+	}
 
-	// Checksum is optional but required on final chunk for verification
+	expectedTotalChunks := (totalSize + chunkSize - 1) / chunkSize
+	if int64(totalChunks) != expectedTotalChunks {
+		return nil, errors.New("X-Total-Chunks does not match X-Total-Size and X-Chunk-Size")
+	}
+
+	expectedChunkSize := chunkSize
+	if chunkIndex == totalChunks-1 {
+		expectedChunkSize = totalSize - int64(chunkIndex)*chunkSize
+	}
+	if expectedChunkSize < 1 || expectedChunkSize > chunkSize {
+		return nil, errors.New("invalid upload chunk metadata")
+	}
+
+	if r.ContentLength > expectedChunkSize {
+		return nil, fmt.Errorf("%w: request body exceeds expected chunk size", errUploadTooLarge)
+	}
+	if r.ContentLength >= 0 && r.ContentLength != expectedChunkSize {
+		return nil, errors.New("request body size does not match upload metadata")
+	}
+
+	// Final chunks are rejected without this after session metadata is validated.
 	checksum := r.Header.Get("X-Checksum")
 
 	return &UploadRequest{
@@ -504,6 +561,44 @@ func (h *StreamHandler) parseUploadHeaders(r *http.Request) (*UploadRequest, err
 		TotalSize:   totalSize,
 		Checksum:    checksum,
 	}, nil
+}
+
+func isValidUploadID(uploadID string) bool {
+	if len(uploadID) > 128 {
+		return false
+	}
+
+	for _, r := range uploadID {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '.', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
+func (r *UploadRequest) ExpectedChunkSize() int64 {
+	if r.ChunkIndex == r.TotalChunks-1 {
+		return r.TotalSize - int64(r.ChunkIndex)*r.ChunkSize
+	}
+
+	return r.ChunkSize
+}
+
+func (r *UploadRequest) IsFinalChunk() bool {
+	return r.ChunkIndex == r.TotalChunks-1
+}
+
+func (s *UploadSession) matches(path string, uploadReq *UploadRequest) bool {
+	return s.Path == path &&
+		s.TotalChunks == uploadReq.TotalChunks &&
+		s.ChunkSize == uploadReq.ChunkSize &&
+		s.TotalSize == uploadReq.TotalSize
 }
 
 // assembleChunks combines all chunks into the final file

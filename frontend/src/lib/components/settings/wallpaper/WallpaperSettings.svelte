@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Image as ImageIcon, ScanSearch, Sparkles } from 'lucide-svelte';
 	import { Button, Select, Toggle } from '$lib/components/ui';
-	import { isValidBackgroundImage, resolveBackgroundImage } from '$lib/stores/settings';
+	import { isValidBackgroundImage, normalizeBackgroundImage } from '$lib/stores/settings';
 	import {
 		DEFAULT_BACKGROUND_IMAGE_MODE,
 		WALLPAPER_DISPLAY_OPTIONS,
@@ -40,7 +40,7 @@
 	let wallpaperDialogOpen = $state(false);
 
 	const backgroundImageIsValid = $derived(isValidBackgroundImage(backgroundImage));
-	const hasBackgroundImage = $derived(resolveBackgroundImage(backgroundImage) !== null);
+	const hasBackgroundImage = $derived(normalizeBackgroundImage(backgroundImage) !== null);
 	const normalizedMode = $derived(normalizeBackgroundImageMode(backgroundImageMode));
 
 	function handleBackgroundClear() {
@@ -125,6 +125,7 @@
 	<WallpaperPickerModal
 		open={wallpaperDialogOpen}
 		currentMode={normalizedMode}
+		{frostedGlass}
 		{showHiddenFiles}
 		onapply={handleWallpaperApply}
 		onclose={() => (wallpaperDialogOpen = false)}

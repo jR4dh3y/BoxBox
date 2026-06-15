@@ -65,7 +65,10 @@
 				: null;
 		sheets = [];
 		selectedSheet = 0;
+		// Third-party preview renderers own these host containers.
+		// eslint-disable-next-line svelte/no-dom-manipulating
 		if (docxContainer) docxContainer.replaceChildren();
+		// eslint-disable-next-line svelte/no-dom-manipulating
 		if (pptxContainer) pptxContainer.replaceChildren();
 	}
 
@@ -83,6 +86,7 @@
 		}
 
 		const { renderAsync } = await import('docx-preview');
+		// eslint-disable-next-line svelte/no-dom-manipulating
 		docxContainer.replaceChildren();
 		await renderAsync(buffer, docxContainer, undefined, {
 			breakPages: true,
@@ -95,7 +99,7 @@
 	}
 
 	async function renderSheet(buffer: ArrayBuffer) {
-		const xlsx = await import('xlsx');
+		const xlsx = await import('@e965/xlsx');
 		const workbook = xlsx.read(buffer, {
 			type: 'array',
 			cellDates: true,
@@ -125,6 +129,7 @@
 		}
 
 		const { init } = await import('pptx-preview');
+		// eslint-disable-next-line svelte/no-dom-manipulating
 		pptxContainer.replaceChildren();
 		const previewer = init(pptxContainer, {
 			width: 960,
@@ -253,7 +258,7 @@
 									>
 										{rowIndex + 1}
 									</th>
-									{#each Array.from({ length: maxColumns }) as _, columnIndex (columnIndex)}
+									{#each Array.from({ length: maxColumns }, (_, index) => index) as columnIndex (columnIndex)}
 										<td
 											class="max-w-[360px] min-w-[120px] border border-[#d8dee8] px-2 py-1 align-top whitespace-pre-wrap"
 											title={formatCell(row[columnIndex])}

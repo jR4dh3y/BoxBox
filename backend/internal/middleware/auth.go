@@ -40,7 +40,7 @@ func JWTAuth(authService service.AuthService) func(next http.Handler) http.Handl
 			}
 
 			// Validate token
-			claims, err := authService.ValidateToken(tokenString)
+			claims, err := authService.ValidateAccessToken(tokenString)
 			if err != nil {
 				switch err {
 				case service.ErrTokenExpired:
@@ -58,12 +58,6 @@ func JWTAuth(authService service.AuthService) func(next http.Handler) http.Handl
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
-}
-
-// GetUserClaims retrieves user claims from the request context
-func GetUserClaims(ctx context.Context) (*service.Claims, bool) {
-	claims, ok := ctx.Value(UserClaimsKey).(*service.Claims)
-	return claims, ok
 }
 
 // writeAuthError writes an authentication error response

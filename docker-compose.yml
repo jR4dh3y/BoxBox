@@ -21,8 +21,8 @@ services:
     ports:
       - "${HOST_PORT:-8080}:80"
     environment:
-      - FM_JWT_SECRET=${FM_JWT_SECRET:-change-me-in-production}
-      - FM_USERS_admin=${FM_USERS_admin:-change-me-in-production}
+      - FM_JWT_SECRET=${FM_JWT_SECRET:?Set FM_JWT_SECRET in .env}
+      - FM_USERS_admin=${FM_USERS_admin:?Set FM_USERS_admin in .env}
       - FM_RATE_LIMIT_RPS=${FM_RATE_LIMIT_RPS:-10}
       - FM_ALLOWED_ORIGINS=${FM_ALLOWED_ORIGINS:-}
       - CONFIG_PATH=/app/config.yaml
@@ -34,7 +34,7 @@ services:
       # Mount points for file access (customize these for your setup)
       # rslave enables mount propagation so container sees new host mounts
       - /media/devmon:/media/devmon:rslave
-      - /:/host_root:rslave
+      - /:/host_root:ro,rslave
       - ${HOME_PATH:-/home/user}:/home/user
 
       # Persistent storage

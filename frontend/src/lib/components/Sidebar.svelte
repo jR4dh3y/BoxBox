@@ -2,7 +2,6 @@
 	/**
 	 * Sidebar component - navigation panel with places and favorites
 	 */
-	import type { MountPoint } from '$lib/api/files';
 	import {
 		ChevronDown,
 		Server,
@@ -18,7 +17,6 @@
 	import { settingsStore } from '$lib/stores/settings';
 
 	interface Props {
-		roots?: MountPoint[];
 		currentPath?: string;
 		onNavigate?: (path: string) => void;
 	}

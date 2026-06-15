@@ -16,8 +16,8 @@ func Load(configPath string) (*model.ServerConfig, error) {
 	// Set defaults
 	v.SetDefault("port", 80)
 	v.SetDefault("host", "0.0.0.0")
-	v.SetDefault("max_upload_mb", 10240) // 10GB default
-	v.SetDefault("chunk_size_mb", 5)     // 5MB chunks
+	v.SetDefault("max_upload_mb", DefaultMaxUploadMB) // 10GB default
+	v.SetDefault("chunk_size_mb", 5)                  // 5MB chunks
 	v.SetDefault("rate_limit_rps", 10.0)
 	v.SetDefault("data_dir", DefaultDataDir)
 

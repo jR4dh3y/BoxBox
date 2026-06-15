@@ -23,20 +23,3 @@ const (
 	ErrCodeChecksumMismatch = "CHECKSUM_MISMATCH"
 	ErrCodeInternalError    = "INTERNAL_ERROR"
 )
-
-// NewErrorResponse creates a new error response
-func NewErrorResponse(err, code string) ErrorResponse {
-	return ErrorResponse{
-		Error: err,
-		Code:  code,
-	}
-}
-
-// NewErrorResponseWithDetails creates a new error response with details
-func NewErrorResponseWithDetails(err, code, details string) ErrorResponse {
-	return ErrorResponse{
-		Error:   err,
-		Code:    code,
-		Details: details,
-	}
-}

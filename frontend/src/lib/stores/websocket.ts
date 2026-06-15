@@ -5,6 +5,7 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { getAccessToken } from '$lib/api/client';
+import { CONFIG } from '$lib/config';
 import { jobsStore, type JobUpdate } from './jobs';
 
 /**
@@ -64,16 +65,16 @@ const initialState: WebSocketState = {
  * Exponential backoff configuration
  */
 const BACKOFF_CONFIG = {
-	initialDelayMs: 1000,
-	maxDelayMs: 30000,
+	initialDelayMs: CONFIG.websocket.initialReconnectDelayMs,
+	maxDelayMs: CONFIG.websocket.maxReconnectDelayMs,
 	multiplier: 2,
-	maxAttempts: 10
+	maxAttempts: CONFIG.websocket.maxReconnectAttempts
 };
 
 /**
  * Ping interval for connection health
  */
-const PING_INTERVAL_MS = 30000;
+const PING_INTERVAL_MS = CONFIG.websocket.pingIntervalMs;
 
 /**
  * Create the WebSocket store

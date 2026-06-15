@@ -3,6 +3,8 @@
  * Requirements: 2.1, 2.2, 2.3, 2.5
  */
 
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import { getAccessToken } from '$lib/api/client';
 import { CONFIG } from '$lib/config';
 
@@ -10,6 +12,10 @@ const DEFAULT_CHUNK_SIZE = CONFIG.upload.defaultChunkSize;
 
 // API base URL
 const API_BASE_URL = '/api/v1/stream';
+
+function encodeRoutePath(path: string): string {
+	return path.split('/').map(encodeURIComponent).join('/');
+}
 
 /**
  * Upload progress callback
@@ -78,10 +84,7 @@ export function generateUploadId(): string {
  * Calculate SHA-256 checksum of a file
  */
 export async function calculateChecksum(file: File): Promise<string> {
-	const buffer = await file.arrayBuffer();
-	const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-	const hashArray = Array.from(new Uint8Array(hashBuffer));
-	return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+	return calculateChecksumStreaming(file);
 }
 
 /**
@@ -89,17 +92,28 @@ export async function calculateChecksum(file: File): Promise<string> {
  */
 export async function calculateChecksumStreaming(
 	file: File,
-	chunkSize: number = DEFAULT_CHUNK_SIZE
+	chunkSize: number = DEFAULT_CHUNK_SIZE,
+	signal?: AbortSignal
 ): Promise<string> {
-	// For smaller files, use the simple method
-	if (file.size <= chunkSize * 2) {
-		return calculateChecksum(file);
+	const hasher = sha256.create();
+	const safeChunkSize = Math.max(1, chunkSize);
+	let chunksRead = 0;
+
+	for (let offset = 0; offset < file.size; offset += safeChunkSize) {
+		if (signal?.aborted) {
+			throw new Error('Upload cancelled');
+		}
+
+		const chunk = file.slice(offset, Math.min(offset + safeChunkSize, file.size));
+		hasher.update(new Uint8Array(await chunk.arrayBuffer()));
+
+		chunksRead++;
+		if (chunksRead % 8 === 0) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
 	}
 
-	// For larger files, we need to hash incrementally
-	// Note: Web Crypto API doesn't support streaming, so we read the whole file
-	// This is a limitation of the browser environment
-	return calculateChecksum(file);
+	return bytesToHex(hasher.digest());
 }
 
 /**
@@ -181,7 +195,7 @@ async function uploadChunk(
 			reject(new Error('Upload cancelled'));
 		};
 
-		xhr.open('POST', `${API_BASE_URL}/upload/${path}`);
+		xhr.open('POST', `${API_BASE_URL}/upload/${encodeRoutePath(path)}`);
 
 		for (const [key, value] of Object.entries(headers)) {
 			xhr.setRequestHeader(key, value);
@@ -308,7 +322,7 @@ export async function uploadFile(
 		progress.status = 'uploading';
 		reportProgress();
 
-		const checksum = await calculateChecksumStreaming(file, chunkSize);
+		const checksum = await calculateChecksumStreaming(file, chunkSize, signal);
 
 		// Upload chunks
 		for (const chunk of splitFileIntoChunks(file, chunkSize)) {
@@ -417,7 +431,7 @@ export async function resumeUpload(
 		reportProgress();
 
 		// Calculate checksum
-		const checksum = await calculateChecksumStreaming(file, chunkSize);
+		const checksum = await calculateChecksumStreaming(file, chunkSize, signal);
 
 		// Upload only missing chunks
 		for (const chunk of splitFileIntoChunks(file, chunkSize)) {
@@ -484,141 +498,5 @@ export async function resumeUpload(
 		progress.error = error instanceof Error ? error.message : 'Upload failed';
 		reportProgress();
 		return { success: false, error: progress.error };
-	}
-}
-
-/**
- * Upload manager for handling multiple concurrent uploads
- */
-export class UploadManager {
-	private uploads: Map<
-		string,
-		{ file: File; path: string; progress: UploadProgress; abortController: AbortController }
-	> = new Map();
-	private onProgressCallback?: (uploads: UploadProgress[]) => void;
-
-	constructor(onProgress?: (uploads: UploadProgress[]) => void) {
-		this.onProgressCallback = onProgress;
-	}
-
-	/**
-	 * Add a file to the upload queue and start uploading
-	 */
-	async addUpload(
-		file: File,
-		destinationPath: string,
-		options: Omit<UploadOptions, 'signal' | 'onProgress'> = {}
-	): Promise<string> {
-		const uploadId = generateUploadId();
-		const abortController = new AbortController();
-
-		const progress: UploadProgress = {
-			uploadId,
-			fileName: file.name,
-			totalSize: file.size,
-			uploadedSize: 0,
-			percentage: 0,
-			currentChunk: 0,
-			totalChunks: getChunkCount(file.size, options.chunkSize),
-			status: 'pending'
-		};
-
-		this.uploads.set(uploadId, { file, path: destinationPath, progress, abortController });
-		this.notifyProgress();
-
-		// Start upload in background
-		this.startUpload(uploadId, options);
-
-		return uploadId;
-	}
-
-	/**
-	 * Start or resume an upload
-	 */
-	private async startUpload(
-		uploadId: string,
-		options: Omit<UploadOptions, 'signal' | 'onProgress'> = {}
-	): Promise<void> {
-		const upload = this.uploads.get(uploadId);
-		if (!upload) return;
-
-		const result = await uploadFile(upload.file, upload.path, {
-			...options,
-			uploadId,
-			signal: upload.abortController.signal,
-			onProgress: (progress) => {
-				const existing = this.uploads.get(uploadId);
-				if (existing) {
-					existing.progress = progress;
-					this.notifyProgress();
-				}
-			}
-		});
-
-		if (!result.success && upload.progress.status !== 'cancelled') {
-			upload.progress.status = 'error';
-			upload.progress.error = result.error;
-			this.notifyProgress();
-		}
-	}
-
-	/**
-	 * Cancel an upload
-	 */
-	cancelUpload(uploadId: string): void {
-		const upload = this.uploads.get(uploadId);
-		if (upload) {
-			upload.abortController.abort();
-			upload.progress.status = 'cancelled';
-			this.notifyProgress();
-		}
-	}
-
-	/**
-	 * Remove an upload from the manager
-	 */
-	removeUpload(uploadId: string): void {
-		const upload = this.uploads.get(uploadId);
-		if (upload) {
-			upload.abortController.abort();
-			this.uploads.delete(uploadId);
-			this.notifyProgress();
-		}
-	}
-
-	/**
-	 * Get all upload progress
-	 */
-	getUploads(): UploadProgress[] {
-		return Array.from(this.uploads.values()).map((u) => ({ ...u.progress }));
-	}
-
-	/**
-	 * Get a specific upload's progress
-	 */
-	getUpload(uploadId: string): UploadProgress | undefined {
-		const upload = this.uploads.get(uploadId);
-		return upload ? { ...upload.progress } : undefined;
-	}
-
-	/**
-	 * Notify progress callback
-	 */
-	private notifyProgress(): void {
-		if (this.onProgressCallback) {
-			this.onProgressCallback(this.getUploads());
-		}
-	}
-
-	/**
-	 * Clear completed/failed/cancelled uploads
-	 */
-	clearFinished(): void {
-		for (const [id, upload] of this.uploads) {
-			if (['complete', 'error', 'cancelled'].includes(upload.progress.status)) {
-				this.uploads.delete(id);
-			}
-		}
-		this.notifyProgress();
 	}
 }

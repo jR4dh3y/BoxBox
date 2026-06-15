@@ -50,7 +50,6 @@ type LogoutRequest struct {
 	RefreshToken string `json:"refreshToken"`
 }
 
-
 // Login handles user login requests
 // POST /api/v1/auth/login
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +128,6 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, resp, http.StatusOK)
 }
 
-
 // Logout handles user logout requests
 // POST /api/v1/auth/logout
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -147,12 +145,14 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	// Revoke the refresh token
 	if err := h.authService.Logout(r.Context(), req.RefreshToken); err != nil {
-		writeError(w, "Logout failed", "INTERNAL_ERROR", http.StatusInternalServerError)
+		switch err {
+		case service.ErrTokenExpired, service.ErrTokenRevoked, service.ErrInvalidToken:
+			writeError(w, "Invalid refresh token", "TOKEN_INVALID", http.StatusUnauthorized)
+		default:
+			writeError(w, "Logout failed", "INTERNAL_ERROR", http.StatusInternalServerError)
+		}
 		return
 	}
 
 	writeJSON(w, map[string]string{"message": "Logged out successfully"}, http.StatusOK)
 }
-
-
-

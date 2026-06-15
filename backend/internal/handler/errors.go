@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/homelab/filemanager/internal/model"
+	"github.com/homelab/filemanager/internal/pkg/validator"
 	"github.com/homelab/filemanager/internal/service"
 )
 
@@ -26,6 +27,13 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrPermissionDenied, "Permission denied", model.ErrCodePermissionDenied, http.StatusForbidden},
 	{service.ErrMountPointNotFound, "Mount point not found", model.ErrCodeAccessDenied, http.StatusForbidden},
 	{service.ErrInvalidOperation, "Invalid operation", model.ErrCodeValidationError, http.StatusBadRequest},
+
+	// Path validation errors
+	{validator.ErrPathTraversal, "Invalid path", model.ErrCodeValidationError, http.StatusBadRequest},
+	{validator.ErrEmptyPath, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest},
+	{validator.ErrInvalidPath, "Invalid path", model.ErrCodeValidationError, http.StatusBadRequest},
+	{validator.ErrOutsideMountPoint, "Mount point not found", model.ErrCodeAccessDenied, http.StatusForbidden},
+	{validator.ErrMountPointNotFound, "Mount point not found", model.ErrCodeAccessDenied, http.StatusForbidden},
 
 	// Job service errors
 	{service.ErrJobNotFound, "Job not found", model.ErrCodeJobNotFound, http.StatusNotFound},
@@ -54,18 +62,4 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 	}
 	// Default to internal server error
 	writeError(w, "Internal server error", model.ErrCodeInternalError, http.StatusInternalServerError)
-}
-
-// HandleServiceErrorWithLog converts service errors to HTTP responses and returns
-// whether the error was handled (true) or was an internal error (false)
-func HandleServiceErrorWithLog(w http.ResponseWriter, err error) bool {
-	for _, mapping := range serviceErrorMappings {
-		if errors.Is(err, mapping.Error) {
-			writeError(w, mapping.Message, mapping.Code, mapping.StatusCode)
-			return true
-		}
-	}
-	// Internal server error - caller should log the actual error
-	writeError(w, "Internal server error", model.ErrCodeInternalError, http.StatusInternalServerError)
-	return false
 }

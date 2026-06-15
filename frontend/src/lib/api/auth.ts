@@ -115,15 +115,5 @@ export function isAuthenticated(): boolean {
 	return checkAuth();
 }
 
-/**
- * Auth API object with all methods
- */
-export const authApi = {
-	login,
-	refresh,
-	logout,
-	isAuthenticated
-};
-
 // Re-export token utilities for convenience
 export { getAccessToken, getRefreshToken, clearTokens } from './client';
