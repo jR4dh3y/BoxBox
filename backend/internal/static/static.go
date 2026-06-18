@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-//go:embed dist/*
+//go:embed all:dist
 var embeddedFiles embed.FS
 
 // Handler serves static files with SPA fallback and compression support
