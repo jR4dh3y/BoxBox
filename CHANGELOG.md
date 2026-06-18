@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.8 - 2026-06-18
+
+- Fix the production blank screen caused by underscore-prefixed SvelteKit chunks being omitted from the embedded frontend.
+- Embed all generated frontend assets so Docker images consistently serve JavaScript modules with the correct content type.
+
+Verification: `go test ./internal/static`, production Docker build, and Chromium smoke test
+
 ## v0.1.7 - 2026-06-15
 
 - Add default sidebar mount points for Desktop, Downloads, Documents, Music, Pictures, and Videos in the backend config.
