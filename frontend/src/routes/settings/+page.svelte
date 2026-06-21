@@ -379,7 +379,7 @@
 
 <div class="flex h-screen w-full overflow-hidden bg-surface-primary text-text-primary">
 	<aside
-		class="flex w-[220px] min-w-[220px] flex-col overflow-x-hidden overflow-y-auto border-r border-border-secondary bg-surface-primary"
+		class="flex w-55 min-w-55 flex-col overflow-x-hidden overflow-y-auto border-r border-border-secondary bg-surface-primary"
 	>
 		<div class="border-b border-border-secondary px-3 py-3">
 			<div class="flex items-center gap-2 text-[13px] font-medium text-text-primary">
@@ -461,7 +461,7 @@
 		</div>
 
 		<main class="relative flex-1 overflow-auto">
-			<div class="relative mx-auto flex max-w-[980px] flex-col gap-4 px-6 py-6">
+			<div class="relative mx-auto flex max-w-245 flex-col gap-4 px-6 py-6">
 				{#if !hasSearchResults}
 					<div
 						class="rounded-lg border border-border-primary bg-surface-secondary px-4 py-8 text-center"
