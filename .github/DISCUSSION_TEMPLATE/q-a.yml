@@ -1,0 +1,66 @@
+title: "[Q&A]: "
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use Q&A for setup help, configuration questions, reverse proxy issues, and usage guidance. File a bug report instead when you have a reproducible product defect.
+  - type: input
+    id: version
+    attributes:
+      label: BoxBox version or image tag
+      placeholder: ghcr.io/jr4dh3y/boxbox:v1.2.3 or latest
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment method
+      options:
+        - Docker Compose
+        - docker run
+        - Kubernetes or other orchestrator
+        - Built from source
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include host OS, architecture, Docker/Podman version, browser, and client OS when relevant.
+      placeholder: Debian 12 arm64, Docker 27, Chrome on macOS
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to configure or understand?
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant sanitized configuration
+      description: Include compose service settings, volumes, config.yaml snippets, environment variables, or proxy rules. Redact secrets and private paths.
+      render: yaml
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or browser errors
+      description: Include container logs, browser console output, or proxy errors if they help explain the question.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before posting
+      options:
+        - label: I searched existing issues, discussions, and documentation.
+          required: true
+        - label: I removed secrets, tokens, and private data from logs/configuration.
+          required: true

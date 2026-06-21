@@ -50,12 +50,9 @@ Release images are published to GitHub Container Registry:
 docker pull ghcr.io/jr4dh3y/boxbox:latest
 ```
 
-The publish workflow runs when a `v*` git tag is pushed. It publishes the tag name and updates `latest`.
+Stable release tags update `latest`. Prerelease tags such as `v0.2.0-rc.1` publish versioned images without moving `latest`, and test branch images publish under branch-scoped tags such as `branch-test-my-change`.
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
+See [Release workflow](/docs/release/) for the full test-branch and stable-release process.
 
 ## Optional: Reverse Proxy or Traefik
 

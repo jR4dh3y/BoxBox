@@ -1,4 +1,4 @@
-name: Publish Docker Image
+name: Publish Release Docker Image
 
 on:
   push:
@@ -9,8 +9,68 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: docker-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Test backend
+        working-directory: backend
+        run: go test ./...
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      - name: Check frontend
+        working-directory: frontend
+        run: bun run check
+
+      - name: Build frontend
+        working-directory: frontend
+        run: bun run build
+
+      - name: Install website dependencies
+        working-directory: website
+        run: bun install --frozen-lockfile
+
+      - name: Build website
+        working-directory: website
+        run: bun run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   publish:
+    name: Publish release image
+    needs: preflight
     runs-on: ubuntu-latest
 
     steps:
@@ -40,9 +100,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image.outputs.name }}
+          flavor: latest=false
           tags: |
             type=ref,event=tag
-            type=raw,value=latest
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -53,3 +115,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

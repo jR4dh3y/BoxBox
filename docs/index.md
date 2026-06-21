@@ -8,6 +8,7 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 | --- | --- |
 | [Quick start](/docs/quickstart/) | Run BoxBox quickly with Docker Compose and the published GHCR image. |
 | [Docker deployment](/docs/docker/) | Deploy from GHCR with Compose, or use separate local run and source-build alternatives. |
+| [Release workflow](/docs/release/) | Use test branches, test GHCR images, and stable tags. |
 | [Configuration](/docs/configuration/) | Configure users, mount points, upload limits, origins, and ports. |
 | [API reference](/docs/api/) | Use the REST, streaming, and WebSocket endpoints directly. |
 | [Development](/docs/development/) | Run the backend and frontend app locally. |

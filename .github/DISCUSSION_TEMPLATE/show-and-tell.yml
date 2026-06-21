@@ -1,0 +1,55 @@
+title: "[Show and tell]: "
+labels: [show-and-tell]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share working deployments, compose examples, operational tips, browser workflows, or screenshots that may help other BoxBox users.
+  - type: textarea
+    id: overview
+    attributes:
+      label: What are you sharing?
+      description: Summarize the deployment, workflow, customization, or lesson learned.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: BoxBox version or image tag
+      placeholder: ghcr.io/jr4dh3y/boxbox:v1.2.3 or latest
+    validations:
+      required: false
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment method
+      options:
+        - Docker Compose
+        - docker run
+        - Kubernetes or other orchestrator
+        - Built from source
+        - Other
+    validations:
+      required: false
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include host OS, architecture, browser, storage backend, or reverse proxy if relevant.
+      placeholder: Ubuntu 24.04 x86_64, Docker Compose, Caddy, Firefox
+    validations:
+      required: false
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Include sanitized config snippets, screenshots, diagrams, or commands when useful. Redact secrets and private paths.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before posting
+      options:
+        - label: I removed secrets, tokens, hostnames, and private paths from shared details.
+          required: true

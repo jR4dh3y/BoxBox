@@ -1,0 +1,75 @@
+title: "[Idea]: "
+labels: [idea]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use Ideas to explore larger changes before they become focused feature requests.
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: What should BoxBox do differently or better?
+    validations:
+      required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Self-hosted use case
+      description: Describe the deployment, users, storage layout, or workflow that would benefit.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: BoxBox version or image tag
+      description: Include this if the idea comes from a current deployment.
+      placeholder: ghcr.io/jr4dh3y/boxbox:v1.2.3 or latest
+    validations:
+      required: false
+  - type: input
+    id: environment
+    attributes:
+      label: Deployment, browser, and OS context
+      description: Include Docker setup, host OS, browser, or client OS if it shapes the idea.
+      placeholder: Docker Compose on Ubuntu, Safari on iOS
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area affected
+      multiple: true
+      options:
+        - Backend / Go API
+        - Frontend / Svelte UI
+        - Docker image or compose deployment
+        - Configuration
+        - File operations or previews
+        - Website or documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Tradeoffs and risks
+      description: Note possible migration, compatibility, storage, permissions, security, or release concerns.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or prior art
+      description: Mention workarounds, scripts, browser tools, or other file managers that handle this well.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before posting
+      options:
+        - label: I searched existing issues and discussions for similar ideas.
+          required: true
+        - label: I described the self-hosted deployment or workflow this would improve.
+          required: true
