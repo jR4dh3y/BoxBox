@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/homelab/filemanager/internal/model"
-	"github.com/homelab/filemanager/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
@@ -32,7 +32,7 @@ func setupTestSearchService() (SearchService, *filesystem.AferoFS) {
 	return svc, fs
 }
 
-// **Feature: homelab-file-manager, Property 18: Search Result Correctness**
+// **Feature: boxbox, Property 18: Search Result Correctness**
 // **Validates: Requirements 9.1, 9.2**
 //
 // Property: For any search query Q in directory D, all returned results SHALL have

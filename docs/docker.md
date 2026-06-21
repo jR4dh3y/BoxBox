@@ -30,8 +30,8 @@ docker compose up -d
 Set these values in `.env` before starting:
 
 ```env
-FM_JWT_SECRET=generate-a-long-random-secret
-FM_USERS_admin=replace-this-password
+BOXBOX_JWT_SECRET=generate-a-long-random-secret
+BOXBOX_USERS_admin=replace-this-password
 HOST_PORT=8080
 # Optional: defaults to the HOME of the user running docker compose.
 # HOME_PATH=/home/your-user
@@ -60,7 +60,7 @@ The default compose file uses normal host port binding and does not require Trae
 
 ```yaml
 services:
-  filemanager:
+  boxbox:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.boxbox.rule=Host(`boxbox.example.test`)"
@@ -99,16 +99,16 @@ docker pull ghcr.io/jr4dh3y/boxbox:latest
 docker run -d \
   --name boxbox \
   -p 8080:80 \
-  -e FM_JWT_SECRET="$(openssl rand -base64 32)" \
-  -e FM_USERS_admin="replace-this-password" \
+  -e BOXBOX_JWT_SECRET="$(openssl rand -base64 32)" \
+  -e BOXBOX_USERS_admin="replace-this-password" \
   -v "$PWD/config.yaml:/app/config.yaml:ro" \
   -v "$HOME:/home/user" \
   -v boxbox-data:/data \
-  -v boxbox-temp:/tmp/filemanager \
+  -v boxbox-temp:/tmp/boxbox \
   ghcr.io/jr4dh3y/boxbox:latest
 ```
 
-Open `http://localhost:8080` and sign in as `admin` with the password you set in `FM_USERS_admin`.
+Open `http://localhost:8080` and sign in as `admin` with the password you set in `BOXBOX_USERS_admin`.
 
 ## Alternative: Local Source Builds
 
@@ -138,8 +138,8 @@ The default compose file mounts:
 | `${MUSIC_PATH}` or `$HOME/Music` | `/home/user/Music` | Music sidebar shortcut. |
 | `${PICTURES_PATH}` or `$HOME/Pictures` | `/home/user/Pictures` | Pictures sidebar shortcut. |
 | `${VIDEOS_PATH}` or `$HOME/Videos` | `/home/user/Videos` | Videos sidebar shortcut. |
-| `filemanager-temp` | `/tmp/filemanager` | Chunked upload assembly. |
-| `filemanager-data` | `/data` | Persistent app data, including custom drive names. |
+| `boxbox-temp` | `/tmp/boxbox` | Chunked upload assembly. |
+| `boxbox-data` | `/data` | Persistent app data, including custom drive names. |
 
 Use `:ro` on a volume or `read_only: true` in `config.yaml` when a path should never be modified through BoxBox.
 
@@ -184,7 +184,7 @@ docker rm boxbox
 ```bash
 curl http://localhost:8080/health
 docker compose ps
-docker compose logs -f filemanager
+docker compose logs -f boxbox
 ```
 
 The health response is:

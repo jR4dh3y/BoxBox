@@ -10,7 +10,7 @@ The server looks for configuration in this order:
 2. The `CONFIG_PATH` environment variable.
 3. `config.yaml` in the current directory.
 4. `./config/config.yaml`.
-5. `/etc/filemanager/config.yaml`.
+5. `/etc/boxbox/config.yaml`.
 
 The Docker image includes `/app/config.yaml`, and the compose file bind-mounts `./backend/config.yaml` there.
 
@@ -79,26 +79,26 @@ users:
 You can also set users through environment variables:
 
 ```bash
-FM_USERS_admin="a-long-password"
-FM_USERS_radhey="another-password"
+BOXBOX_USERS_admin="a-long-password"
+BOXBOX_USERS_radhey="another-password"
 ```
 
 If no users are configured, BoxBox falls back to `admin:admin` and logs a warning. Treat that as a local development fallback only.
 
 ## Environment Variables
 
-Environment overrides use the `FM_` prefix:
+Environment overrides use the `BOXBOX_` prefix:
 
 | Environment variable | Config key |
 | --- | --- |
-| `FM_JWT_SECRET` | `jwt_secret` |
-| `FM_PORT` | `port` |
-| `FM_HOST` | `host` |
-| `FM_RATE_LIMIT_RPS` | `rate_limit_rps` |
-| `FM_MAX_UPLOAD_MB` | `max_upload_mb` |
-| `FM_CHUNK_SIZE_MB` | `chunk_size_mb` |
-| `FM_ALLOWED_ORIGINS` | `allowed_origins`, comma-separated |
-| `FM_USERS_<username>` | `users.<username>` |
+| `BOXBOX_JWT_SECRET` | `jwt_secret` |
+| `BOXBOX_PORT` | `port` |
+| `BOXBOX_HOST` | `host` |
+| `BOXBOX_RATE_LIMIT_RPS` | `rate_limit_rps` |
+| `BOXBOX_MAX_UPLOAD_MB` | `max_upload_mb` |
+| `BOXBOX_CHUNK_SIZE_MB` | `chunk_size_mb` |
+| `BOXBOX_ALLOWED_ORIGINS` | `allowed_origins`, comma-separated |
+| `BOXBOX_USERS_<username>` | `users.<username>` |
 
 `CONFIG_PATH` is also supported as a convenience for selecting the YAML file path.
 
@@ -150,7 +150,7 @@ Paths in `config.yaml` are container paths. Bind host directories to those paths
 
 ```yaml
 services:
-  filemanager:
+  boxbox:
     volumes:
       - /srv/media:/srv/media
       - /mnt/backups:/mnt/backups:ro
@@ -173,5 +173,5 @@ mount_points:
 Configuration is loaded on startup. Restart the container or process after editing YAML or environment variables.
 
 ```bash
-docker compose restart filemanager
+docker compose restart boxbox
 ```

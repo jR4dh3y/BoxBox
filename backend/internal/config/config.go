@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/homelab/filemanager/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/spf13/viper"
 )
 
@@ -33,13 +33,27 @@ func Load(configPath string) (*model.ServerConfig, error) {
 		v.SetConfigType("yaml")
 		v.AddConfigPath(".")
 		v.AddConfigPath("./config")
-		v.AddConfigPath("/etc/filemanager")
+		v.AddConfigPath("/etc/boxbox")
 	}
 
 	// Environment variable settings
-	v.SetEnvPrefix("FM")
+	v.SetEnvPrefix("BOXBOX")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+
+	for _, key := range []string{
+		"jwt_secret",
+		"port",
+		"host",
+		"rate_limit_rps",
+		"max_upload_mb",
+		"chunk_size_mb",
+		"data_dir",
+	} {
+		if err := v.BindEnv(key); err != nil {
+			return nil, fmt.Errorf("bind environment variable %q: %w", key, err)
+		}
+	}
 
 	// Read config file
 	if err := v.ReadInConfig(); err != nil {
@@ -54,16 +68,16 @@ func Load(configPath string) (*model.ServerConfig, error) {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 
-	// Parse FM_USERS_* environment variables into the Users map
-	// Viper's AutomaticEnv doesn't handle map types from env vars like FM_USERS_username=password
+	// Parse BOXBOX_USERS_* environment variables into the Users map.
+	// Viper's AutomaticEnv doesn't handle map types from env vars like BOXBOX_USERS_username=password.
 	if cfg.Users == nil {
 		cfg.Users = make(map[string]string)
 	}
 	for _, env := range os.Environ() {
-		if strings.HasPrefix(env, "FM_USERS_") {
+		if strings.HasPrefix(env, "BOXBOX_USERS_") {
 			parts := strings.SplitN(env, "=", 2)
 			if len(parts) == 2 {
-				username := strings.TrimPrefix(parts[0], "FM_USERS_")
+				username := strings.TrimPrefix(parts[0], "BOXBOX_USERS_")
 				password := parts[1]
 				if username != "" && password != "" {
 					cfg.Users[username] = password
@@ -72,7 +86,7 @@ func Load(configPath string) (*model.ServerConfig, error) {
 		}
 	}
 
-	if origins := os.Getenv("FM_ALLOWED_ORIGINS"); origins != "" {
+	if origins := os.Getenv("BOXBOX_ALLOWED_ORIGINS"); origins != "" {
 		cfg.AllowedOrigins = splitEnvList(origins)
 	}
 

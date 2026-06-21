@@ -374,7 +374,7 @@
 </script>
 
 <svelte:head>
-	<title>Settings - File Manager</title>
+	<title>Settings - BoxBox</title>
 </svelte:head>
 
 <div class="flex h-screen w-full overflow-hidden bg-surface-primary text-text-primary">

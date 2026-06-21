@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/homelab/filemanager/internal/service"
+	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
 )
 
-// **Feature: homelab-file-manager, Property 12: Authentication Enforcement**
+// **Feature: boxbox, Property 12: Authentication Enforcement**
 // **Validates: Requirements 7.1, 7.5**
 //
 // Property: For any API request without a valid JWT token, the response SHALL be HTTP 401 status code.
@@ -98,7 +98,7 @@ func generateValidToken(secret string, username string, expiry time.Duration) st
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
-			Issuer:    "homelab-filemanager",
+			Issuer:    "boxbox",
 			Subject:   username,
 		},
 	}
@@ -118,7 +118,7 @@ func generateExpiredToken(secret string, username string) string {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
 			NotBefore: jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
-			Issuer:    "homelab-filemanager",
+			Issuer:    "boxbox",
 			Subject:   username,
 		},
 	}

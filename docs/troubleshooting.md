@@ -6,7 +6,7 @@ The default compose file publishes BoxBox on `HOST_PORT`, which defaults to `808
 
 ```bash
 docker compose ps
-docker compose logs -f filemanager
+docker compose logs -f boxbox
 ```
 
 Change the published port in `.env` if needed:
@@ -21,7 +21,7 @@ docker compose up -d
 That means no users were configured. Set a user through env or YAML:
 
 ```bash
-FM_USERS_admin="a-long-password"
+BOXBOX_USERS_admin="a-long-password"
 ```
 
 ```yaml
@@ -33,10 +33,10 @@ Restart after changing credentials.
 
 ## `jwt_secret is required`
 
-Set `FM_JWT_SECRET` or `jwt_secret` in `config.yaml`:
+Set `BOXBOX_JWT_SECRET` or `jwt_secret` in `config.yaml`:
 
 ```bash
-FM_JWT_SECRET="$(openssl rand -base64 32)"
+BOXBOX_JWT_SECRET="$(openssl rand -base64 32)"
 ```
 
 ## Mount Point Does Not Show Up
@@ -44,8 +44,8 @@ FM_JWT_SECRET="$(openssl rand -base64 32)"
 Check that the path exists inside the container:
 
 ```bash
-docker compose exec filemanager ls -la /home/user
-docker compose exec filemanager ls -la /media/devmon
+docker compose exec boxbox ls -la /home/user
+docker compose exec boxbox ls -la /media/devmon
 ```
 
 Remember that `config.yaml` paths are container paths, not host paths.
@@ -56,8 +56,8 @@ Check host permissions and whether the container path is mounted read-only:
 
 ```bash
 ls -la /path/on/host
-docker compose exec filemanager id
-docker compose exec filemanager ls -la /path/in/container
+docker compose exec boxbox id
+docker compose exec boxbox ls -la /path/in/container
 ```
 
 For sensitive paths, prefer keeping the mount read-only rather than expanding container permissions.
@@ -67,7 +67,7 @@ For sensitive paths, prefer keeping the mount read-only rather than expanding co
 Check:
 
 - The destination mount is not `read_only`.
-- `/tmp/filemanager` has enough space for chunks.
+- `/tmp/boxbox` has enough space for chunks.
 - Your reverse proxy request size limit allows the upload.
 - `max_upload_mb` is large enough.
 - The browser request includes `X-Chunk-Size` and `X-Total-Size`.
@@ -75,7 +75,7 @@ Check:
 Logs:
 
 ```bash
-docker compose logs -f filemanager
+docker compose logs -f boxbox
 ```
 
 ## Preview or Download Fails

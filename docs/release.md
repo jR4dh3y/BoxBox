@@ -51,7 +51,7 @@ Then run:
 docker compose pull
 docker compose up -d
 docker compose ps
-docker compose logs -f filemanager
+docker compose logs -f boxbox
 ```
 
 Rollback is just changing `BOXBOX_IMAGE` back to `ghcr.io/jr4dh3y/boxbox:latest` or the last known-good version tag, then pulling and restarting.

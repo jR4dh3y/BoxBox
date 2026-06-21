@@ -8,13 +8,13 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/homelab/filemanager/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
 )
 
-// **Feature: homelab-file-manager, Property 14: Security Headers Presence**
+// **Feature: boxbox, Property 14: Security Headers Presence**
 // **Validates: Requirements 7.3**
 //
 // Property: For any API response, the headers SHALL include X-Content-Type-Options,
@@ -122,8 +122,7 @@ func TestSecurityHeadersPresence(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-
-// **Feature: homelab-file-manager, Property 10: Mount Point Isolation**
+// **Feature: boxbox, Property 10: Mount Point Isolation**
 // **Validates: Requirements 6.2, 6.3**
 //
 // Property: For any path not prefixed by a configured mount point name,
@@ -173,9 +172,9 @@ func TestMountPointIsolation(t *testing.T) {
 		"system",
 		"unauthorized",
 		"notamount",
-		"mediax",        // Similar but not exact match
-		"documentsx",    // Similar but not exact match
-		"backupx",       // Similar but not exact match
+		"mediax",     // Similar but not exact match
+		"documentsx", // Similar but not exact match
+		"backupx",    // Similar but not exact match
 	)
 
 	// Property: Paths outside mount points return 403
@@ -225,8 +224,7 @@ func TestMountPointIsolation(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-
-// **Feature: homelab-file-manager, Property 11: Read-Only Mount Enforcement**
+// **Feature: boxbox, Property 11: Read-Only Mount Enforcement**
 // **Validates: Requirements 6.4**
 //
 // Property: For any mount point configured as read-only, write operations

@@ -37,7 +37,7 @@ func NewHandler() (*Handler, error) {
 	if err != nil {
 		// If index.html doesn't exist, create a placeholder
 		// This allows the binary to run even without embedded frontend (dev mode)
-		indexHTML = []byte(`<!DOCTYPE html><html><head><title>File Manager</title></head><body><h1>Frontend not embedded</h1><p>Build with frontend assets to enable the web UI.</p></body></html>`)
+		indexHTML = []byte(`<!DOCTYPE html><html><head><title>BoxBox</title></head><body><h1>Frontend not embedded</h1><p>Build with frontend assets to enable the web UI.</p></body></html>`)
 	}
 
 	return &Handler{

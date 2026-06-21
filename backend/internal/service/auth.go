@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/homelab/filemanager/internal/config"
+	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 )
 
 // Auth-related errors
@@ -207,7 +207,7 @@ func (s *authService) generateTokenPair(username string) (*TokenPair, error) {
 			ExpiresAt: jwt.NewNumericDate(accessExpiry),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
-			Issuer:    "homelab-filemanager",
+			Issuer:    "boxbox",
 			Subject:   username,
 		},
 	}
@@ -228,7 +228,7 @@ func (s *authService) generateTokenPair(username string) (*TokenPair, error) {
 			ExpiresAt: jwt.NewNumericDate(refreshExpiry),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
-			Issuer:    "homelab-filemanager",
+			Issuer:    "boxbox",
 			Subject:   username,
 		},
 	}

@@ -1,4 +1,4 @@
-module github.com/homelab/filemanager
+module github.com/jR4dh3y/BoxBox/backend
 
 go 1.24.0
 
