@@ -2,6 +2,57 @@
 
 Use this workflow to keep `latest` stable while still getting GitHub-built images for server testing.
 
+## v1.0.0 Upgrade Notes
+
+BoxBox `v1.0.0` keeps old FileManager deployment names working so upgrades do not hard-break existing servers. The old names are deprecated and should be renamed during the `1.x` line.
+
+Environment variables using the old `FM_` prefix still work in `v1.0.0`, but the matching `BOXBOX_` variable always takes precedence when both are set:
+
+| Deprecated | Use instead |
+| --- | --- |
+| `FM_JWT_SECRET` | `BOXBOX_JWT_SECRET` |
+| `FM_USERS_<username>` | `BOXBOX_USERS_<username>` |
+| `FM_RATE_LIMIT_RPS` | `BOXBOX_RATE_LIMIT_RPS` |
+| `FM_ALLOWED_ORIGINS` | `BOXBOX_ALLOWED_ORIGINS` |
+| `FM_PORT` | `BOXBOX_PORT` |
+| `FM_HOST` | `BOXBOX_HOST` |
+| `FM_MAX_UPLOAD_MB` | `BOXBOX_MAX_UPLOAD_MB` |
+| `FM_CHUNK_SIZE_MB` | `BOXBOX_CHUNK_SIZE_MB` |
+
+The old `/etc/filemanager/config.yaml` path also still works as a fallback, but move it to `/etc/boxbox/config.yaml`.
+
+Run the check-only migration helper from a repository checkout to inspect a deployment directory:
+
+```bash
+scripts/check-1.0-migration.sh
+```
+
+The script does not edit `.env`, rewrite Compose files, stop containers, or change Docker volumes. It exits `0` when no legacy settings are found, `2` when migration work is detected, and `1` only for script/runtime errors.
+
+If you used old Docker named volumes, copy them manually only when you are ready to switch Compose to the new names. Docker Compose may prefix volume names with the project name; use `scripts/check-1.0-migration.sh` to print the actual volume names on your host.
+
+```bash
+docker compose down
+
+docker volume create boxbox-data
+docker run --rm \
+  -v filemanager-data:/from:ro \
+  -v boxbox-data:/to \
+  alpine sh -c 'cd /from && cp -a . /to'
+
+docker volume create boxbox-temp
+docker run --rm \
+  -v filemanager-temp:/from:ro \
+  -v boxbox-temp:/to \
+  alpine sh -c 'cd /from && cp -a . /to'
+
+docker compose up -d
+```
+
+Old `filemanager-*` volumes are not deleted. Do not start with the new Compose volume names unless every needed copy command succeeds. If a copy fails, the old `filemanager-*` volume remains the source of truth; the new `boxbox-*` target may be partial, so remove and recreate the partial target or copy into a fresh target before starting the new Compose config.
+
+Rollback is still changing `BOXBOX_IMAGE` to the last known-good tag, then pulling and restarting.
+
 ## Test Branch Model
 
 - Do normal development on a branch, not on `master`.

@@ -36,9 +36,17 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Load configuration
-	cfg, err := config.Load(*configPath)
+	loadResult, err := config.LoadWithReport(*configPath)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
+	}
+	cfg := loadResult.Config
+
+	for _, warning := range loadResult.Warnings {
+		log.Warn().
+			Str("legacy", warning.Legacy).
+			Str("replacement", warning.Replacement).
+			Msg(warning.Message)
 	}
 
 	log.Info().

@@ -54,6 +54,8 @@ Stable release tags update `latest`. Prerelease tags such as `v0.2.0-rc.1` publi
 
 See [Release workflow](/docs/release/) for the full test-branch and stable-release process.
 
+If you are upgrading an older deployment that still uses `FM_*`, `filemanager`, or `filemanager-*` names, see the `v1.0.0` notes in [Release workflow](/docs/release/). The `scripts/check-1.0-migration.sh` helper is check-only and prints the manual changes without editing files or Docker volumes.
+
 ## Optional: Reverse Proxy or Traefik
 
 The default compose file uses normal host port binding and does not require Traefik. If you want to put BoxBox behind Traefik, remove the `ports` entry, attach the service to your Traefik network, and add labels for your router.
@@ -161,6 +163,8 @@ volumes:
 docker compose pull
 docker compose up -d
 ```
+
+For `v1.0.0`, old `FM_*` environment variables still work as deprecated aliases, but rename them to `BOXBOX_*`. `BOXBOX_*` values take precedence when both are set.
 
 For local source builds:
 
