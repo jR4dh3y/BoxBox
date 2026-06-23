@@ -149,7 +149,7 @@ EOF
 }
 
 cat <<'EOF'
-BoxBox 1.0 migration check
+BoxBox v0.2 migration check
 This script is check-only. It does not edit files, stop containers, or change Docker volumes.
 EOF
 
@@ -160,12 +160,12 @@ check_docker_volumes
 if [[ "$found_legacy" -eq 1 ]]; then
 	cat <<'EOF'
 
-Legacy deployment settings were detected. BoxBox v1.0.0 still accepts FM_* aliases,
-but rename them during the 1.x line. See docs/release.md for the full upgrade notes.
+Legacy deployment settings were detected. BoxBox v0.2.x accepts FM_* aliases,
+but rename them before a future breaking release. See docs/release.md for the full upgrade notes.
 EOF
 	exit 2
 fi
 
 echo
-echo "No BoxBox 1.0 legacy deployment settings detected."
+echo "No BoxBox v0.2 legacy deployment settings detected."
 exit 0

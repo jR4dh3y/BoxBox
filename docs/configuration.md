@@ -11,7 +11,7 @@ The server looks for configuration in this order:
 3. `config.yaml` in the current directory.
 4. `./config/config.yaml`.
 5. `/etc/boxbox/config.yaml`.
-6. `/etc/filemanager/config.yaml` as a deprecated `v1.0.0` compatibility fallback.
+6. `/etc/filemanager/config.yaml` as a deprecated `v0.2.0` compatibility fallback.
 
 The Docker image includes `/app/config.yaml`, and the compose file bind-mounts `./backend/config.yaml` there.
 
@@ -103,7 +103,7 @@ Environment overrides use the `BOXBOX_` prefix:
 
 `CONFIG_PATH` is also supported as a convenience for selecting the YAML file path.
 
-For `v1.0.0`, deprecated `FM_*` variables still work as aliases for older deployments. Rename them to `BOXBOX_*` during the `1.x` line. If both old and new names are set, `BOXBOX_*` wins and the server logs a migration warning. See [Release workflow](/docs/release/) for the full upgrade notes and the check-only migration helper.
+For `v0.2.0`, deprecated `FM_*` variables still work as aliases for older deployments. Rename them to `BOXBOX_*` before a future breaking release. If both old and new names are set, `BOXBOX_*` wins and the server logs a migration warning. See [Release workflow](/docs/release/) for the full upgrade notes and the check-only migration helper.
 
 ## Mount Points
 

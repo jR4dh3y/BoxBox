@@ -41,12 +41,12 @@ BOXBOX_JWT_SECRET="$(openssl rand -base64 32)"
 
 ## Deprecated `FM_*` Warnings After Upgrade
 
-BoxBox `v1.0.0` still accepts old `FM_*` environment variables, but logs migration warnings so you can rename them safely. For example, rename `FM_JWT_SECRET` to `BOXBOX_JWT_SECRET` and `FM_USERS_admin` to `BOXBOX_USERS_admin`.
+BoxBox `v0.2.0` still accepts old `FM_*` environment variables, but logs migration warnings so you can rename them safely. For example, rename `FM_JWT_SECRET` to `BOXBOX_JWT_SECRET` and `FM_USERS_admin` to `BOXBOX_USERS_admin`.
 
 If both old and new variables are set, `BOXBOX_*` wins. Run the check-only helper from a repository checkout to inspect `.env`, `docker-compose.yml`, and old Docker volumes:
 
 ```bash
-scripts/check-1.0-migration.sh
+scripts/check-0.2-migration.sh
 ```
 
 The helper does not edit files or Docker volumes. See [Release workflow](/docs/release/) for volume copy commands and failure handling.

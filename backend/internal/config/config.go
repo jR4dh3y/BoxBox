@@ -251,7 +251,7 @@ func envWarning(legacy, replacement string) MigrationWarning {
 		Legacy:      legacy,
 		Replacement: replacement,
 		Message: fmt.Sprintf(
-			"Detected deprecated v1.0 migration input: %s. Rename it to %s. %s takes precedence when both are set.",
+			"Detected deprecated FileManager migration input: %s. Rename it to %s. %s takes precedence when both are set.",
 			legacy,
 			replacement,
 			replacement,
@@ -264,7 +264,7 @@ func configPathWarning(legacy, replacement string) MigrationWarning {
 		Legacy:      legacy,
 		Replacement: replacement,
 		Message: fmt.Sprintf(
-			"Detected deprecated v1.0 config path: %s. Move it to %s.",
+			"Detected deprecated FileManager config path: %s. Move it to %s.",
 			legacy,
 			replacement,
 		),
