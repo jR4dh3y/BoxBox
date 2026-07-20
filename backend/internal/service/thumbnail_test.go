@@ -3,6 +3,9 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
@@ -45,4 +48,51 @@ func TestThumbnailServiceRendersAndValidatesETag(t *testing.T) {
 	if _, err := service.Render(context.Background(), "media/photo.png", 224, 144, thumbnail.ETag); err != ErrThumbnailNotModified {
 		t.Fatalf("expected not modified, got %v", err)
 	}
+}
+
+func TestThumbnailServiceRejectsExcessivePixelCountBeforeDecode(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	if err := fsys.MkdirAll("/data/media", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.WriteFile(
+		"/data/media/oversized.png",
+		pngHeader(4096, 4096),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	files := NewFileService(fsys, FileServiceConfig{MountPoints: []model.MountPoint{{
+		Name: "media", Path: "/data/media",
+	}}})
+	_, err := NewThumbnailService(files).Render(
+		context.Background(),
+		"media/oversized.png",
+		224,
+		144,
+		"",
+	)
+	if !errors.Is(err, ErrThumbnailTooLarge) {
+		t.Fatalf("expected thumbnail limit error, got %v", err)
+	}
+}
+
+func pngHeader(width, height uint32) []byte {
+	var output bytes.Buffer
+	output.Write([]byte("\x89PNG\r\n\x1a\n"))
+	data := make([]byte, 13)
+	binary.BigEndian.PutUint32(data[0:4], width)
+	binary.BigEndian.PutUint32(data[4:8], height)
+	data[8] = 8
+	data[9] = 2
+	writePNGChunk(&output, "IHDR", data)
+	return output.Bytes()
+}
+
+func writePNGChunk(output *bytes.Buffer, chunkType string, data []byte) {
+	_ = binary.Write(output, binary.BigEndian, uint32(len(data)))
+	payload := append([]byte(chunkType), data...)
+	output.Write(payload)
+	_ = binary.Write(output, binary.BigEndian, crc32.ChecksumIEEE(payload))
 }

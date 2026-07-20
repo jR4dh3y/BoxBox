@@ -265,8 +265,11 @@ func (s *uploadService) assemble(
 		return err
 	}
 	complete := false
+	fileClosed := false
 	defer func() {
-		_ = destinationFile.Close()
+		if !fileClosed {
+			_ = destinationFile.Close()
+		}
 		if !complete {
 			_ = fsys.Remove(temporary)
 		}
@@ -294,8 +297,10 @@ func (s *uploadService) assemble(
 	if actualChecksum != expectedChecksum {
 		return fmt.Errorf("%w: expected %s, got %s", ErrChecksumMismatch, expectedChecksum, actualChecksum)
 	}
-	if err := destinationFile.Close(); err != nil {
-		return err
+	closeErr := destinationFile.Close()
+	fileClosed = true
+	if closeErr != nil {
+		return closeErr
 	}
 	if err := fsys.Rename(temporary, destination); err != nil {
 		return err

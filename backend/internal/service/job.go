@@ -52,6 +52,8 @@ type jobService struct {
 	hub         *websocket.Hub
 	jobs        sync.Map // map[string]*runningJob
 	allJobs     sync.Map // map[string]*model.Job - stores all jobs including completed
+	jobMu       sync.RWMutex
+	jobEventMu  sync.Mutex
 	workQueue   chan *model.Job
 	workers     int
 	wg          sync.WaitGroup
@@ -113,7 +115,7 @@ func (s *jobService) worker(ctx context.Context) {
 		case <-s.stopCh:
 			return
 		case job := <-s.workQueue:
-			if job.State == model.JobStateCancelled {
+			if s.jobState(job) == model.JobStateCancelled {
 				continue
 			}
 			s.execute(ctx, job)
@@ -144,7 +146,8 @@ func (s *jobService) cleanupHistory() {
 	cutoff := time.Now().Add(-config.JobRetentionPeriod)
 	s.allJobs.Range(func(key, value interface{}) bool {
 		job := value.(*model.Job)
-		if (job.State == model.JobStateCompleted || job.State == model.JobStateFailed || job.State == model.JobStateCancelled) && job.CompletedAt.Before(cutoff) {
+		snapshot := s.snapshotJob(job)
+		if snapshot.State.IsTerminal() && snapshot.CompletedAt.Before(cutoff) {
 			s.allJobs.Delete(key)
 		}
 		return true
@@ -213,14 +216,16 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 		// Job queued successfully
 	default:
 		// Queue is full, mark as failed
-		job.State = model.JobStateFailed
-		job.Error = "job queue is full"
-		job.CompletedAt = time.Now()
-		s.broadcastUpdate(job)
-		return job, nil
+		snapshot := s.updateAndBroadcast(job, func(job *model.Job) bool {
+			job.State = model.JobStateFailed
+			job.Error = "job queue is full"
+			job.CompletedAt = time.Now()
+			return true
+		})
+		return snapshot, nil
 	}
 
-	return job, nil
+	return s.snapshotJob(job), nil
 }
 
 func (s *jobService) resolveJobPath(path string) (*model.MountPoint, string, error) {
@@ -238,7 +243,7 @@ func (s *jobService) resolveJobPath(path string) (*model.MountPoint, string, err
 // Get returns a job by ID
 func (s *jobService) Get(ctx context.Context, jobID string) (*model.Job, error) {
 	if value, ok := s.allJobs.Load(jobID); ok {
-		return value.(*model.Job), nil
+		return s.snapshotJob(value.(*model.Job)), nil
 	}
 	return nil, ErrJobNotFound
 }
@@ -247,7 +252,7 @@ func (s *jobService) Get(ctx context.Context, jobID string) (*model.Job, error) 
 func (s *jobService) List(ctx context.Context) ([]*model.Job, error) {
 	var jobs []*model.Job
 	s.allJobs.Range(func(key, value interface{}) bool {
-		jobs = append(jobs, value.(*model.Job))
+		jobs = append(jobs, s.snapshotJob(value.(*model.Job)))
 		return true
 	})
 	return jobs, nil
@@ -262,9 +267,15 @@ func (s *jobService) Cancel(ctx context.Context, jobID string) error {
 	}
 
 	job := jobValue.(*model.Job)
-
-	// Check if job is in a cancellable state
-	if job.State != model.JobStatePending && job.State != model.JobStateRunning {
+	cancelled := s.updateAndBroadcast(job, func(job *model.Job) bool {
+		if job.State != model.JobStatePending && job.State != model.JobStateRunning {
+			return false
+		}
+		job.State = model.JobStateCancelled
+		job.CompletedAt = time.Now()
+		return true
+	})
+	if cancelled == nil {
 		return ErrJobNotCancellable
 	}
 
@@ -274,17 +285,12 @@ func (s *jobService) Cancel(ctx context.Context, jobID string) error {
 		runningJob.cancel()
 	}
 
-	// Update job state
-	job.State = model.JobStateCancelled
-	job.CompletedAt = time.Now()
-	s.broadcastUpdate(job)
-
 	return nil
 }
 
 // execute runs a job
 func (s *jobService) execute(ctx context.Context, job *model.Job) {
-	if job.State == model.JobStateCancelled {
+	if s.jobState(job) == model.JobStateCancelled {
 		return
 	}
 
@@ -297,17 +303,19 @@ func (s *jobService) execute(ctx context.Context, job *model.Job) {
 		cancel()
 	}()
 
-	if job.State == model.JobStateCancelled {
+	started := s.updateAndBroadcast(job, func(job *model.Job) bool {
+		if job.State == model.JobStateCancelled {
+			return false
+		}
+		job.State = model.JobStateRunning
+		job.StartedAt = time.Now()
+		return true
+	})
+	if started == nil {
 		return
 	}
-
-	// Update job state to running
-	job.State = model.JobStateRunning
-	job.StartedAt = time.Now()
-	s.broadcastUpdate(job)
-
 	var err error
-	switch job.Type {
+	switch started.Type {
 	case model.JobTypeCopy:
 		err = s.executeCopy(jobCtx, job)
 	case model.JobTypeMove:
@@ -324,16 +332,20 @@ func (s *jobService) execute(ctx context.Context, job *model.Job) {
 		return
 	}
 
-	// Update final state
-	if err != nil {
-		job.State = model.JobStateFailed
-		job.Error = err.Error()
-	} else {
-		job.State = model.JobStateCompleted
-		job.Progress = 100
-	}
-	job.CompletedAt = time.Now()
-	s.broadcastUpdate(job)
+	s.updateAndBroadcast(job, func(job *model.Job) bool {
+		if job.State == model.JobStateCancelled {
+			return false
+		}
+		if err != nil {
+			job.State = model.JobStateFailed
+			job.Error = err.Error()
+		} else {
+			job.State = model.JobStateCompleted
+			job.Progress = 100
+		}
+		job.CompletedAt = time.Now()
+		return true
+	})
 }
 
 // executeCopy copies a file or directory
@@ -397,10 +409,7 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 			// Update progress
 			if totalSize > 0 {
 				progress := int(float64(copied) / float64(totalSize) * 100)
-				if progress != job.Progress {
-					job.Progress = progress
-					s.broadcastUpdate(job)
-				}
+				s.updateProgress(job, progress)
 			}
 		}
 		if readErr == io.EOF {
@@ -446,16 +455,13 @@ func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 			ResolvedSourcePath: entry.Path,
 			ResolvedDestPath:   targetPath,
 		}
-		if err := s.copyFile(ctx, tempJob, entry.Metadata.Size()); err != nil {
+		if err := s.copyFile(ctx, tempJob, 0); err != nil {
 			return err
 		}
 		copiedFiles++
 		if totalFiles > 0 {
 			progress := int(float64(copiedFiles) / float64(totalFiles) * 100)
-			if progress != job.Progress {
-				job.Progress = progress
-				s.broadcastUpdate(job)
-			}
+			s.updateProgress(job, progress)
 		}
 	}
 	return nil
@@ -469,8 +475,7 @@ func (s *jobService) executeMove(ctx context.Context, job *model.Job) error {
 	// Try simple rename first (works if on same filesystem)
 	err := s.fs.Rename(sourcePath, destPath)
 	if err == nil {
-		job.Progress = 100
-		s.broadcastUpdate(job)
+		s.updateProgress(job, 100)
 		return nil
 	}
 
@@ -520,8 +525,7 @@ func (s *jobService) executeDelete(ctx context.Context, job *model.Job) error {
 	if err := s.fs.Remove(sourcePath); err != nil {
 		return err
 	}
-	job.Progress = 100
-	s.broadcastUpdate(job)
+	s.updateProgress(job, 100)
 	return nil
 }
 
@@ -546,10 +550,7 @@ func (s *jobService) deleteDir(ctx context.Context, job *model.Job) error {
 			deletedFiles++
 			if totalFiles > 0 {
 				progress := int(float64(deletedFiles) / float64(totalFiles) * 100)
-				if progress != job.Progress {
-					job.Progress = progress
-					s.broadcastUpdate(job)
-				}
+				s.updateProgress(job, progress)
 			}
 		}
 	}
@@ -584,6 +585,52 @@ func jobDestPath(job *model.Job) string {
 		return job.ResolvedDestPath
 	}
 	return job.DestPath
+}
+
+func (s *jobService) snapshotJob(job *model.Job) *model.Job {
+	s.jobMu.RLock()
+	defer s.jobMu.RUnlock()
+	snapshot := *job
+	return &snapshot
+}
+
+func (s *jobService) jobState(job *model.Job) model.JobState {
+	s.jobMu.RLock()
+	defer s.jobMu.RUnlock()
+	return job.State
+}
+
+func (s *jobService) updateJobIf(job *model.Job, update func(*model.Job) bool) *model.Job {
+	s.jobMu.Lock()
+	defer s.jobMu.Unlock()
+	if !update(job) {
+		return nil
+	}
+	snapshot := *job
+	return &snapshot
+}
+
+func (s *jobService) updateAndBroadcast(
+	job *model.Job,
+	update func(*model.Job) bool,
+) *model.Job {
+	s.jobEventMu.Lock()
+	defer s.jobEventMu.Unlock()
+	snapshot := s.updateJobIf(job, update)
+	if snapshot != nil {
+		s.broadcastUpdate(snapshot)
+	}
+	return snapshot
+}
+
+func (s *jobService) updateProgress(job *model.Job, progress int) {
+	s.updateAndBroadcast(job, func(job *model.Job) bool {
+		if job.State.IsTerminal() || job.Progress == progress {
+			return false
+		}
+		job.Progress = progress
+		return true
+	})
 }
 
 // broadcastUpdate sends a job update via WebSocket

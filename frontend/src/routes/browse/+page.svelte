@@ -434,14 +434,20 @@
 		createDialog = { open: false, type: 'file', name: '' };
 	}
 
-	async function handleCreateConfirm() {
-		if (!path || !createDialog.name.trim()) return;
-
-		const name = createDialog.name.trim();
+	function validateItemName(value: string): string | null {
+		const name = value.trim();
+		if (!name) return null;
 		if (name.includes('/') || name.includes('\\')) {
 			toastStore.error('Name cannot contain path separators');
-			return;
+			return null;
 		}
+		return name;
+	}
+
+	async function handleCreateConfirm() {
+		if (!path) return;
+		const name = validateItemName(createDialog.name);
+		if (!name) return;
 
 		try {
 			const created =
@@ -506,11 +512,13 @@
 	 * Handle rename confirmation
 	 */
 	async function handleRenameConfirm() {
-		if (!renameDialog.file || !renameDialog.newName.trim()) return;
+		if (!renameDialog.file) return;
+		const newName = validateItemName(renameDialog.newName);
+		if (!newName) return;
 
 		const oldPath = renameDialog.file.path;
 		const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
-		const newPath = parentPath ? `${parentPath}/${renameDialog.newName}` : renameDialog.newName;
+		const newPath = parentPath ? `${parentPath}/${newName}` : newName;
 
 		try {
 			await rename(oldPath, newPath);

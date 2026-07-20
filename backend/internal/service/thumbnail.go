@@ -14,7 +14,17 @@ import (
 	"golang.org/x/image/draw"
 )
 
-var ErrThumbnailNotModified = errors.New("thumbnail not modified")
+var (
+	ErrThumbnailNotModified = errors.New("thumbnail not modified")
+	ErrThumbnailTooLarge    = errors.New("thumbnail source exceeds resource limits")
+)
+
+const (
+	maxThumbnailSourceBytes  = 64 << 20
+	maxThumbnailSourcePixels = 2048 * 2048
+	maxThumbnailDimension    = 8192
+	maxConcurrentThumbnails  = 2
+)
 
 type Thumbnail struct {
 	Content []byte
@@ -27,10 +37,14 @@ type ThumbnailService interface {
 
 type thumbnailService struct {
 	files FileStreamer
+	slots chan struct{}
 }
 
 func NewThumbnailService(files FileStreamer) ThumbnailService {
-	return &thumbnailService{files: files}
+	return &thumbnailService{
+		files: files,
+		slots: make(chan struct{}, maxConcurrentThumbnails),
+	}
 }
 
 func (s *thumbnailService) Render(
@@ -40,6 +54,13 @@ func (s *thumbnailService) Render(
 	height int,
 	ifNoneMatch string,
 ) (*Thumbnail, error) {
+	select {
+	case s.slots <- struct{}{}:
+		defer func() { <-s.slots }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
 	file, info, err := s.files.OpenFile(ctx, path)
 	if err != nil {
 		return nil, err
@@ -50,14 +71,21 @@ func (s *thumbnailService) Render(
 	if ifNoneMatch == etag {
 		return nil, ErrThumbnailNotModified
 	}
+	if info.Size > maxThumbnailSourceBytes {
+		return nil, ErrThumbnailTooLarge
+	}
 
 	configuration, _, err := image.DecodeConfig(file)
 	if err != nil {
 		return nil, fmt.Errorf("decode image config: %w", err)
 	}
-	if configuration.Width > 8192 || configuration.Height > 8192 {
-		return nil, errors.New("image dimensions exceed thumbnail limit")
+	if configuration.Width <= 0 || configuration.Height <= 0 ||
+		configuration.Width > maxThumbnailDimension ||
+		configuration.Height > maxThumbnailDimension ||
+		int64(configuration.Width)*int64(configuration.Height) > maxThumbnailSourcePixels {
+		return nil, ErrThumbnailTooLarge
 	}
+
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
