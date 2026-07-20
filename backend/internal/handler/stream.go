@@ -3,18 +3,11 @@ package handler
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
-	"sync"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
@@ -27,10 +20,11 @@ var errUploadTooLarge = errors.New("upload too large")
 
 // StreamHandler handles streaming upload and download operations
 type StreamHandler struct {
-	fileService    service.FileService
-	uploadManager  *UploadManager
-	chunkSizeMB    int
-	maxUploadBytes int64
+	fileService      service.FileService
+	uploadService    service.UploadService
+	thumbnailService service.ThumbnailService
+	chunkSizeMB      int
+	maxUploadBytes   int64
 }
 
 // NewStreamHandler creates a new stream handler
@@ -42,10 +36,11 @@ func NewStreamHandler(fileService service.FileService, chunkSizeMB int, maxUploa
 		maxUploadMB = config.DefaultMaxUploadMB
 	}
 	return &StreamHandler{
-		fileService:    fileService,
-		uploadManager:  NewUploadManager(config.DefaultUploadTempDir),
-		chunkSizeMB:    chunkSizeMB,
-		maxUploadBytes: int64(maxUploadMB) * 1024 * 1024,
+		fileService:      fileService,
+		uploadService:    service.NewUploadService(fileService, config.DefaultUploadTempDir),
+		thumbnailService: service.NewThumbnailService(fileService),
+		chunkSizeMB:      chunkSizeMB,
+		maxUploadBytes:   int64(maxUploadMB) * 1024 * 1024,
 	}
 }
 
@@ -53,18 +48,58 @@ func NewStreamHandler(fileService service.FileService, chunkSizeMB int, maxUploa
 func (h *StreamHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/download/*", h.Download)
 	r.Get("/preview/*", h.Preview)
+	r.Get("/thumbnail/*", h.Thumbnail)
 	r.Post("/upload/*", h.Upload)
 	r.Get("/upload/status/*", h.UploadStatus)
 }
 
+// Thumbnail returns a bounded JPEG rendition for file-grid previews.
+func (h *StreamHandler) Thumbnail(w http.ResponseWriter, r *http.Request) {
+	path := chi.URLParam(r, "*")
+	if path == "" {
+		writeError(w, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	width := parseThumbnailDimension(r.URL.Query().Get("width"), 224)
+	height := parseThumbnailDimension(r.URL.Query().Get("height"), 144)
+	thumbnail, err := h.thumbnailService.Render(
+		r.Context(),
+		path,
+		width,
+		height,
+		r.Header.Get("If-None-Match"),
+	)
+	if errors.Is(err, service.ErrThumbnailNotModified) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("ETag", thumbnail.ETag)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(thumbnail.Content)
+}
+
+func parseThumbnailDimension(value string, fallback int) int {
+	dimension, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return min(512, max(16, dimension))
+}
+
 // StartCleanup starts the periodic cleanup of expired upload sessions
 func (h *StreamHandler) StartCleanup(ctx context.Context) {
-	h.uploadManager.StartCleanup(ctx)
+	h.uploadService.StartCleanup(ctx)
 }
 
 // StopCleanup stops the cleanup goroutine for upload sessions
 func (h *StreamHandler) StopCleanup() {
-	h.uploadManager.StopCleanup()
+	h.uploadService.StopCleanup()
 }
 
 // Download handles file download requests with Range header support
@@ -133,174 +168,6 @@ func (h *StreamHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, info.Name, info.ModTime, file)
 }
 
-// UploadSession tracks the state of a chunked upload
-type UploadSession struct {
-	ID             string       `json:"id"`
-	Path           string       `json:"path"`
-	TotalChunks    int          `json:"totalChunks"`
-	ChunkSize      int64        `json:"chunkSize"`
-	TotalSize      int64        `json:"totalSize"`
-	ReceivedChunks map[int]bool `json:"-"`
-	TempDir        string       `json:"-"`
-	CreatedAt      time.Time    `json:"createdAt"`
-	LastActivity   time.Time    `json:"lastActivity"`
-	mu             sync.RWMutex
-}
-
-// UploadManager manages active upload sessions
-type UploadManager struct {
-	sessions map[string]*UploadSession
-	tempRoot string
-	mu       sync.RWMutex
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
-}
-
-// NewUploadManager creates a new upload manager
-func NewUploadManager(tempRoot string) *UploadManager {
-	if tempRoot == "" {
-		tempRoot = os.TempDir()
-	}
-	return &UploadManager{
-		sessions: make(map[string]*UploadSession),
-		tempRoot: tempRoot,
-		stopCh:   make(chan struct{}),
-	}
-}
-
-// StartCleanup starts the periodic cleanup of expired sessions
-func (m *UploadManager) StartCleanup(ctx context.Context) {
-	m.wg.Add(1)
-	go func() {
-		defer m.wg.Done()
-		ticker := time.NewTicker(config.SessionCleanupInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-m.stopCh:
-				return
-			case <-ticker.C:
-				m.cleanupExpiredSessions()
-			}
-		}
-	}()
-}
-
-// StopCleanup stops the cleanup goroutine
-func (m *UploadManager) StopCleanup() {
-	close(m.stopCh)
-	m.wg.Wait()
-}
-
-// cleanupExpiredSessions removes sessions that have been inactive for too long
-func (m *UploadManager) cleanupExpiredSessions() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	now := time.Now()
-	for id, session := range m.sessions {
-		if now.Sub(session.LastActivity) > config.SessionTimeout {
-			_ = os.RemoveAll(session.TempDir)
-			delete(m.sessions, id)
-		}
-	}
-}
-
-// CreateSession creates a new upload session
-func (m *UploadManager) CreateSession(id, path string, totalChunks int, chunkSize, totalSize int64) (*UploadSession, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Ensure upload temp root exists and create a per-upload temp directory.
-	if err := os.MkdirAll(m.tempRoot, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to ensure upload temp root: %w", err)
-	}
-	tempDir, err := os.MkdirTemp(m.tempRoot, "upload-"+id+"-")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp directory: %w", err)
-	}
-
-	session := &UploadSession{
-		ID:             id,
-		Path:           path,
-		TotalChunks:    totalChunks,
-		ChunkSize:      chunkSize,
-		TotalSize:      totalSize,
-		ReceivedChunks: make(map[int]bool),
-		TempDir:        tempDir,
-		CreatedAt:      time.Now(),
-		LastActivity:   time.Now(),
-	}
-
-	m.sessions[id] = session
-	return session, nil
-}
-
-// GetSession retrieves an upload session by ID
-func (m *UploadManager) GetSession(id string) (*UploadSession, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	session, ok := m.sessions[id]
-	return session, ok
-}
-
-// DeleteSession removes an upload session and cleans up temp files
-func (m *UploadManager) DeleteSession(id string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if session, ok := m.sessions[id]; ok {
-		_ = os.RemoveAll(session.TempDir)
-		delete(m.sessions, id)
-	}
-}
-
-// MarkChunkReceived marks a chunk as received
-func (s *UploadSession) MarkChunkReceived(index int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ReceivedChunks[index] = true
-	s.LastActivity = time.Now()
-}
-
-// IsChunkReceived checks if a chunk has been received
-func (s *UploadSession) IsChunkReceived(index int) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.ReceivedChunks[index]
-}
-
-// IsComplete checks if all chunks have been received
-func (s *UploadSession) IsComplete() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.ReceivedChunks) == s.TotalChunks
-}
-
-// GetReceivedCount returns the number of received chunks
-func (s *UploadSession) GetReceivedCount() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.ReceivedChunks)
-}
-
-// GetMissingChunks returns a list of missing chunk indices
-func (s *UploadSession) GetMissingChunks() []int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	missing := make([]int, 0)
-	for i := 0; i < s.TotalChunks; i++ {
-		if !s.ReceivedChunks[i] {
-			missing = append(missing, i)
-		}
-	}
-	return missing
-}
-
 // UploadRequest represents the headers for a chunk upload
 type UploadRequest struct {
 	UploadID    string
@@ -309,28 +176,6 @@ type UploadRequest struct {
 	ChunkSize   int64
 	TotalSize   int64
 	Checksum    string // SHA256 checksum for final verification
-}
-
-// UploadResponse represents the response for a chunk upload
-type UploadResponse struct {
-	UploadID       string `json:"uploadId"`
-	ChunkIndex     int    `json:"chunkIndex"`
-	ReceivedChunks int    `json:"receivedChunks"`
-	TotalChunks    int    `json:"totalChunks"`
-	Complete       bool   `json:"complete"`
-	Path           string `json:"path,omitempty"`
-}
-
-// UploadStatusResponse represents the status of an upload session
-type UploadStatusResponse struct {
-	UploadID       string    `json:"uploadId"`
-	Path           string    `json:"path"`
-	TotalChunks    int       `json:"totalChunks"`
-	ReceivedChunks int       `json:"receivedChunks"`
-	MissingChunks  []int     `json:"missingChunks"`
-	Complete       bool      `json:"complete"`
-	CreatedAt      time.Time `json:"createdAt"`
-	LastActivity   time.Time `json:"lastActivity"`
 }
 
 // Upload handles chunked file uploads
@@ -361,120 +206,35 @@ func (h *StreamHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate path and check write permissions
-	mount, fsPath, err := h.fileService.ResolvePath(path)
+	result, err := h.uploadService.AcceptChunk(r.Context(), path, service.UploadChunk{
+		UploadID:    uploadReq.UploadID,
+		ChunkIndex:  uploadReq.ChunkIndex,
+		TotalChunks: uploadReq.TotalChunks,
+		ChunkSize:   uploadReq.ChunkSize,
+		TotalSize:   uploadReq.TotalSize,
+		Checksum:    uploadReq.Checksum,
+	}, r.Body)
 	if err != nil {
-		HandleServiceError(w, err)
-		return
-	}
-
-	if mount.ReadOnly {
-		writeError(w, "Mount point is read-only", model.ErrCodeReadOnly, http.StatusForbidden)
-		return
-	}
-
-	// Get or create upload session
-	session, exists := h.uploadManager.GetSession(uploadReq.UploadID)
-	if !exists {
-		session, err = h.uploadManager.CreateSession(
-			uploadReq.UploadID,
-			path,
-			uploadReq.TotalChunks,
-			uploadReq.ChunkSize,
-			uploadReq.TotalSize,
-		)
-		if err != nil {
-			writeError(w, "Failed to create upload session", model.ErrCodeInternalError, http.StatusInternalServerError)
-			return
+		switch {
+		case errors.Is(err, service.ErrPermissionDenied):
+			writeError(w, "Mount point is read-only", model.ErrCodeReadOnly, http.StatusForbidden)
+		case errors.Is(err, service.ErrUploadConflict):
+			writeError(w, err.Error(), model.ErrCodeConflict, http.StatusConflict)
+		case errors.Is(err, service.ErrFinalChecksumNeeded), errors.Is(err, service.ErrChunkSizeMismatch):
+			writeError(w, err.Error(), model.ErrCodeValidationError, http.StatusBadRequest)
+		case errors.Is(err, service.ErrChecksumMismatch):
+			writeError(w, err.Error(), model.ErrCodeChecksumMismatch, http.StatusUnprocessableEntity)
+		default:
+			HandleServiceError(w, err)
 		}
-	} else if !session.matches(path, uploadReq) {
-		writeError(w, "Upload session metadata does not match this request", model.ErrCodeConflict, http.StatusConflict)
 		return
 	}
 
-	if uploadReq.IsFinalChunk() && uploadReq.Checksum == "" {
-		writeError(w, "X-Checksum header is required on final chunk", model.ErrCodeValidationError, http.StatusBadRequest)
-		return
+	status := http.StatusOK
+	if result.Complete {
+		status = http.StatusCreated
 	}
-
-	// Check if chunk was already received (for resumable uploads)
-	if session.IsChunkReceived(uploadReq.ChunkIndex) {
-		writeJSON(w, UploadResponse{
-			UploadID:       session.ID,
-			ChunkIndex:     uploadReq.ChunkIndex,
-			ReceivedChunks: session.GetReceivedCount(),
-			TotalChunks:    session.TotalChunks,
-			Complete:       session.IsComplete(),
-		}, http.StatusOK)
-		return
-	}
-
-	// Save chunk to temp file
-	chunkPath := filepath.Join(session.TempDir, fmt.Sprintf("chunk_%d", uploadReq.ChunkIndex))
-	chunkFile, err := os.OpenFile(chunkPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		writeError(w, "Failed to create chunk file", model.ErrCodeInternalError, http.StatusInternalServerError)
-		return
-	}
-
-	limitedBody := http.MaxBytesReader(w, r.Body, uploadReq.ExpectedChunkSize())
-	writtenBytes, err := io.Copy(chunkFile, limitedBody)
-	_ = limitedBody.Close()
-	chunkFile.Close()
-	if err != nil {
-		_ = os.Remove(chunkPath)
-		var maxBytesErr *http.MaxBytesError
-		if errors.As(err, &maxBytesErr) {
-			writeError(w, "Chunk body exceeds declared chunk size", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge)
-			return
-		}
-		writeError(w, "Failed to write chunk", model.ErrCodeInternalError, http.StatusInternalServerError)
-		return
-	}
-	if writtenBytes != uploadReq.ExpectedChunkSize() {
-		_ = os.Remove(chunkPath)
-		writeError(w, "Chunk body size does not match upload metadata", model.ErrCodeValidationError, http.StatusBadRequest)
-		return
-	}
-
-	// Mark chunk as received
-	session.MarkChunkReceived(uploadReq.ChunkIndex)
-
-	// Check if upload is complete
-	if session.IsComplete() {
-		// Assemble chunks into final file
-		err = h.assembleChunks(session, fsPath, uploadReq.Checksum)
-		if err != nil {
-			h.uploadManager.DeleteSession(session.ID)
-			if strings.Contains(err.Error(), "checksum") {
-				writeError(w, err.Error(), model.ErrCodeChecksumMismatch, http.StatusUnprocessableEntity)
-			} else {
-				writeError(w, "Failed to assemble file: "+err.Error(), model.ErrCodeInternalError, http.StatusInternalServerError)
-			}
-			return
-		}
-
-		// Clean up session
-		h.uploadManager.DeleteSession(session.ID)
-
-		writeJSON(w, UploadResponse{
-			UploadID:       session.ID,
-			ChunkIndex:     uploadReq.ChunkIndex,
-			ReceivedChunks: session.TotalChunks,
-			TotalChunks:    session.TotalChunks,
-			Complete:       true,
-			Path:           path,
-		}, http.StatusCreated)
-		return
-	}
-
-	writeJSON(w, UploadResponse{
-		UploadID:       session.ID,
-		ChunkIndex:     uploadReq.ChunkIndex,
-		ReceivedChunks: session.GetReceivedCount(),
-		TotalChunks:    session.TotalChunks,
-		Complete:       false,
-	}, http.StatusOK)
+	writeJSON(w, result, status)
 }
 
 // parseUploadHeaders parses and validates upload request headers
@@ -582,91 +342,6 @@ func isValidUploadID(uploadID string) bool {
 	return true
 }
 
-func (r *UploadRequest) ExpectedChunkSize() int64 {
-	if r.ChunkIndex == r.TotalChunks-1 {
-		return r.TotalSize - int64(r.ChunkIndex)*r.ChunkSize
-	}
-
-	return r.ChunkSize
-}
-
-func (r *UploadRequest) IsFinalChunk() bool {
-	return r.ChunkIndex == r.TotalChunks-1
-}
-
-func (s *UploadSession) matches(path string, uploadReq *UploadRequest) bool {
-	return s.Path == path &&
-		s.TotalChunks == uploadReq.TotalChunks &&
-		s.ChunkSize == uploadReq.ChunkSize &&
-		s.TotalSize == uploadReq.TotalSize
-}
-
-// assembleChunks combines all chunks into the final file
-func (h *StreamHandler) assembleChunks(session *UploadSession, destPath string, expectedChecksum string) error {
-	// Get the filesystem from the file service
-	fs := h.fileService.GetFilesystem()
-
-	// Ensure parent directory exists
-	parentDir := filepath.Dir(destPath)
-	if err := fs.MkdirAll(parentDir, 0755); err != nil {
-		return fmt.Errorf("failed to create parent directory: %w", err)
-	}
-
-	// Write into a temporary file in the destination directory, then rename atomically.
-	tempDestPath := destPath + ".uploading." + session.ID
-	destFile, err := fs.OpenFile(tempDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return fmt.Errorf("failed to create destination file: %w", err)
-	}
-	cleanupTemp := true
-	defer func() {
-		_ = destFile.Close()
-		if cleanupTemp {
-			_ = fs.Remove(tempDestPath)
-		}
-	}()
-
-	// Create hasher for checksum verification
-	hasher := sha256.New()
-	writer := io.MultiWriter(destFile, hasher)
-	copyBuf := make([]byte, config.FileCopyBufferSize)
-
-	// Assemble chunks in order
-	for i := 0; i < session.TotalChunks; i++ {
-		chunkPath := filepath.Join(session.TempDir, fmt.Sprintf("chunk_%d", i))
-		chunkFile, err := os.Open(chunkPath)
-		if err != nil {
-			return fmt.Errorf("failed to open chunk %d: %w", i, err)
-		}
-
-		_, err = io.CopyBuffer(writer, chunkFile, copyBuf)
-		chunkFile.Close()
-		if err != nil {
-			return fmt.Errorf("failed to copy chunk %d: %w", i, err)
-		}
-	}
-
-	// Verify checksum if provided
-	if expectedChecksum != "" {
-		actualChecksum := hex.EncodeToString(hasher.Sum(nil))
-		// Handle both with and without "sha256:" prefix
-		expected := strings.TrimPrefix(expectedChecksum, "sha256:")
-		if actualChecksum != expected {
-			return fmt.Errorf("checksum mismatch: expected %s, got %s", expected, actualChecksum)
-		}
-	}
-
-	if err := destFile.Close(); err != nil {
-		return fmt.Errorf("failed to finalize destination file: %w", err)
-	}
-	if err := fs.Rename(tempDestPath, destPath); err != nil {
-		return fmt.Errorf("failed to finalize uploaded file: %w", err)
-	}
-	cleanupTemp = false
-
-	return nil
-}
-
 func detectStreamMimeType(file io.ReadSeeker, filename string) string {
 	if mimeType := fileutil.DetectMimeType(filename); mimeType != "application/octet-stream" {
 		return mimeType
@@ -698,20 +373,15 @@ func (h *StreamHandler) UploadStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, exists := h.uploadManager.GetSession(uploadID)
-	if !exists {
+	status, err := h.uploadService.Status(uploadID)
+	if errors.Is(err, service.ErrUploadNotFound) {
 		writeError(w, "Upload session not found", model.ErrCodeNotFound, http.StatusNotFound)
 		return
 	}
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
 
-	writeJSON(w, UploadStatusResponse{
-		UploadID:       session.ID,
-		Path:           session.Path,
-		TotalChunks:    session.TotalChunks,
-		ReceivedChunks: session.GetReceivedCount(),
-		MissingChunks:  session.GetMissingChunks(),
-		Complete:       session.IsComplete(),
-		CreatedAt:      session.CreatedAt,
-		LastActivity:   session.LastActivity,
-	}, http.StatusOK)
+	writeJSON(w, status, http.StatusOK)
 }

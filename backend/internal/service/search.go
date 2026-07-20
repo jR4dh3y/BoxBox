@@ -9,14 +9,15 @@ import (
 	"strings"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
-	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
 )
 
 // Search service errors
 var (
-	ErrEmptyQuery = errors.New("search query cannot be empty")
+	ErrEmptyQuery  = errors.New("search query cannot be empty")
+	errSearchLimit = errors.New("search result limit reached")
 )
 
 // SearchService defines the search operations service interface
@@ -29,6 +30,7 @@ type SearchService interface {
 type searchService struct {
 	fs          filesystem.FS
 	mountPoints []model.MountPoint
+	walker      Walker
 }
 
 // SearchServiceConfig holds configuration for the search service
@@ -41,6 +43,7 @@ func NewSearchService(fsys filesystem.FS, cfg SearchServiceConfig) SearchService
 	return &searchService{
 		fs:          fsys,
 		mountPoints: cfg.MountPoints,
+		walker:      NewWalker(fsys),
 	}
 }
 
@@ -73,67 +76,32 @@ func (s *searchService) Search(ctx context.Context, path, query string) ([]model
 		return nil, ErrNotDirectory
 	}
 
-	// Perform recursive search
+	// Perform a bounded recursive search. This prevents one request from
+	// retaining an arbitrarily large result set in memory.
 	queryLower := strings.ToLower(query)
-	var results []model.FileInfo
-
-	err = s.searchRecursive(ctx, fsPath, path, queryLower, &results)
-	if err != nil {
+	results := make([]model.FileInfo, 0, 64)
+	const maxSearchResults = 1000
+	err = s.walker.Walk(ctx, fsPath, WalkOptions{
+		IncludeHidden:  true,
+		SkipUnreadable: true,
+	}, func(entry WalkEntry) error {
+		if len(results) >= maxSearchResults {
+			return errSearchLimit
+		}
+		if !strings.Contains(strings.ToLower(entry.DirEntry.Name()), queryLower) {
+			return nil
+		}
+		info, err := entry.DirEntry.Info()
+		if err != nil {
+			return nil
+		}
+		virtualPath := filepath.ToSlash(filepath.Join(path, entry.RelativePath))
+		results = append(results, fileutil.ToFileInfo(info.Name(), virtualPath, info))
+		return nil
+	})
+	if err != nil && !errors.Is(err, errSearchLimit) {
 		return nil, err
 	}
 
 	return results, nil
 }
-
-// searchRecursive performs the recursive directory traversal for search
-func (s *searchService) searchRecursive(ctx context.Context, fsPath, virtualPath, queryLower string, results *[]model.FileInfo) error {
-	// Check for context cancellation
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	// Read directory entries
-	entries, err := s.fs.ReadDir(fsPath)
-	if err != nil {
-		// Skip directories we can't read (permission errors, etc.)
-		return nil
-	}
-
-	for _, entry := range entries {
-		// Check for context cancellation
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		name := entry.Name()
-		entryFsPath := filepath.Join(fsPath, name)
-		entryVirtualPath := virtualPath + "/" + name
-		if virtualPath == "" {
-			entryVirtualPath = name
-		}
-
-		// Check if name matches query (case-insensitive)
-		if strings.Contains(strings.ToLower(name), queryLower) {
-			entryInfo, err := entry.Info()
-			if err != nil {
-				continue // Skip entries we can't stat
-			}
-			*results = append(*results, fileutil.ToFileInfo(name, entryVirtualPath, entryInfo))
-		}
-
-		// Recurse into directories
-		if entry.IsDir() {
-			if err := s.searchRecursive(ctx, entryFsPath, entryVirtualPath, queryLower, results); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-

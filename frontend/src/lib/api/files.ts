@@ -146,7 +146,11 @@ export async function getDriveStats(): Promise<DriveStatsResponse> {
  * List directory contents or get file info
  * GET /api/v1/files/*path
  */
-export async function getPath(path: string, options?: ListOptions): Promise<FileList | FileInfo> {
+export async function getPath(
+	path: string,
+	options?: ListOptions,
+	signal?: AbortSignal
+): Promise<FileList | FileInfo> {
 	const params: Record<string, string | number | boolean | undefined> = {};
 
 	if (options) {
@@ -158,15 +162,26 @@ export async function getPath(path: string, options?: ListOptions): Promise<File
 		if (options.includeHidden !== undefined) params.includeHidden = options.includeHidden;
 	}
 
-	return api.get<FileList | FileInfo>(`/files/${encodeRoutePath(path)}`, params);
+	return api.get<FileList | FileInfo>(`/files/${encodeRoutePath(path)}`, params, signal);
 }
 
 /**
  * List directory contents with pagination
  * Returns FileList for directories
  */
-export async function listDirectory(path: string, options?: ListOptions): Promise<FileList> {
-	return getPath(path, options) as Promise<FileList>;
+export async function listDirectory(
+	path: string,
+	options?: ListOptions,
+	signal?: AbortSignal
+): Promise<FileList> {
+	const params: Record<string, string | number | boolean | undefined> = {};
+	if (options?.page !== undefined) params.page = options.page;
+	if (options?.pageSize !== undefined) params.pageSize = options.pageSize;
+	if (options?.sortBy) params.sortBy = options.sortBy;
+	if (options?.sortDir) params.sortDir = options.sortDir;
+	if (options?.filter) params.filter = options.filter;
+	if (options?.includeHidden !== undefined) params.includeHidden = options.includeHidden;
+	return api.get<FileList>(`/files/list/${encodeRoutePath(path)}`, params, signal);
 }
 
 /**
@@ -231,8 +246,23 @@ export async function deleteFile(path: string, confirm: boolean = false): Promis
  * Search for files by name
  * GET /api/v1/search?path=&q=
  */
-export async function search(path: string, query: string): Promise<SearchResponse> {
-	return api.get<SearchResponse>('/search', { path, q: query });
+export async function search(
+	path: string,
+	query: string,
+	signal?: AbortSignal
+): Promise<SearchResponse> {
+	return api.get<SearchResponse>('/search', { path, q: query }, signal);
+}
+
+/**
+ * Get a small cached image suitable for file-grid thumbnails.
+ */
+export function getThumbnailUrl(path: string, width = 224, height = 144): string {
+	const token = tokenStorage.getAccessToken();
+	const encodedPath = encodeRoutePath(path);
+	const params = new URLSearchParams({ width: String(width), height: String(height) });
+	if (token) params.set('token', token);
+	return `/api/v1/stream/thumbnail/${encodedPath}?${params.toString()}`;
 }
 
 /**

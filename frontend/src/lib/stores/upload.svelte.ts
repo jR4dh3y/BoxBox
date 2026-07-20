@@ -10,6 +10,7 @@ import {
 	generateUploadId,
 	getChunkCount
 } from '$lib/utils/upload';
+import { CONFIG } from '$lib/config';
 
 export type { UploadProgress };
 
@@ -36,8 +37,10 @@ class UploadStore {
 	/** Queue for pending uploads */
 	private queue: QueueItem[] = [];
 
-	/** Current abort controller for cancellation */
-	private currentAbortController: AbortController | null = null;
+	/** Active uploads and their cancellation controllers. */
+	private controllers = new Map<string, AbortController>();
+	private activeWorkers = 0;
+	private refreshPending = false;
 
 	/** Callback for when upload completes */
 	onComplete?: (fileName: string, success: boolean, error?: string) => void;
@@ -101,16 +104,10 @@ class UploadStore {
 	}
 
 	/**
-	 * Process the upload queue sequentially
+	 * Fill the bounded upload worker pool.
 	 */
-	private async processQueue(): Promise<void> {
-		if (this.isUploading || this.queue.length === 0) {
-			return;
-		}
-
-		this.isUploading = true;
-
-		while (this.queue.length > 0) {
+	private processQueue(): void {
+		while (this.activeWorkers < CONFIG.upload.maxConcurrentUploads && this.queue.length > 0) {
 			const item = this.queue.shift()!;
 
 			// Check if this upload was cancelled before starting
@@ -119,70 +116,77 @@ class UploadStore {
 				continue;
 			}
 
-			// Create abort controller for this upload
-			this.currentAbortController = new AbortController();
+			this.activeWorkers++;
+			this.isUploading = true;
+			void this.processItem(item);
+		}
+	}
 
-			const options: UploadOptions = {
-				uploadId: item.uploadId,
-				signal: this.currentAbortController.signal,
-				onProgress: (progress) => {
-					this.updateProgress(item.uploadId, progress);
-				}
-			};
+	private async processItem(item: QueueItem): Promise<void> {
+		const controller = new AbortController();
+		this.controllers.set(item.uploadId, controller);
 
-			try {
-				const result = await resumeUpload(item.file, item.destPath, item.uploadId, options);
+		const options: UploadOptions = {
+			uploadId: item.uploadId,
+			signal: controller.signal,
+			onProgress: (progress) => {
+				this.updateProgress(item.uploadId, progress);
+			}
+		};
 
-				if (result.success) {
-					const totalChunks = getChunkCount(item.file.size);
-					this.updateProgress(item.uploadId, {
-						uploadId: item.uploadId,
-						fileName: item.file.name,
-						totalSize: item.file.size,
-						uploadedSize: item.file.size,
-						percentage: 100,
-						currentChunk: totalChunks,
-						totalChunks,
-						status: 'complete'
-					});
-					this.onComplete?.(item.file.name, true);
-					this.onRefreshNeeded?.();
-				} else {
-					const totalChunks = getChunkCount(item.file.size);
-					this.updateProgress(item.uploadId, {
-						uploadId: item.uploadId,
-						fileName: item.file.name,
-						totalSize: item.file.size,
-						uploadedSize: 0,
-						percentage: 0,
-						currentChunk: 0,
-						totalChunks,
-						status: 'error',
-						error: result.error
-					});
-					this.onComplete?.(item.file.name, false, result.error);
-				}
-			} catch (err) {
-				const errorMessage = err instanceof Error ? err.message : 'Upload failed';
+		try {
+			const result = await resumeUpload(item.file, item.destPath, item.uploadId, options);
+
+			if (result.success) {
 				const totalChunks = getChunkCount(item.file.size);
 				this.updateProgress(item.uploadId, {
 					uploadId: item.uploadId,
 					fileName: item.file.name,
 					totalSize: item.file.size,
-					uploadedSize: 0,
-					percentage: 0,
-					currentChunk: 0,
+					uploadedSize: item.file.size,
+					percentage: 100,
+					currentChunk: totalChunks,
 					totalChunks,
-					status: 'error',
-					error: errorMessage
+					status: 'complete'
 				});
-				this.onComplete?.(item.file.name, false, errorMessage);
+				this.refreshPending = true;
+				this.onComplete?.(item.file.name, true);
+			} else {
+				this.markFailed(item, result.error || 'Upload failed');
 			}
-
-			this.currentAbortController = null;
+		} catch (err) {
+			this.markFailed(item, err instanceof Error ? err.message : 'Upload failed');
+		} finally {
+			this.controllers.delete(item.uploadId);
+			this.activeWorkers--;
+			this.processQueue();
+			if (this.activeWorkers === 0 && this.queue.length === 0) {
+				this.isUploading = false;
+				if (this.refreshPending) {
+					this.refreshPending = false;
+					this.onRefreshNeeded?.();
+				}
+			}
 		}
+	}
 
-		this.isUploading = false;
+	private markFailed(item: QueueItem, error: string): void {
+		const upload = this.uploads.find((candidate) => candidate.uploadId === item.uploadId);
+		if (!upload || upload.status === 'cancelled') {
+			return;
+		}
+		this.updateProgress(item.uploadId, {
+			uploadId: item.uploadId,
+			fileName: item.file.name,
+			totalSize: item.file.size,
+			uploadedSize: 0,
+			percentage: 0,
+			currentChunk: 0,
+			totalChunks: getChunkCount(item.file.size),
+			status: 'error',
+			error
+		});
+		this.onComplete?.(item.file.name, false, error);
 	}
 
 	/**
@@ -197,12 +201,7 @@ class UploadStore {
 	 */
 	cancel(uploadId: string): void {
 		// If it's the current upload, abort it
-		const currentUpload = this.uploads.find(
-			(u) => u.uploadId === uploadId && u.status === 'uploading'
-		);
-		if (currentUpload && this.currentAbortController) {
-			this.currentAbortController.abort();
-		}
+		this.controllers.get(uploadId)?.abort();
 
 		// Remove from queue if pending
 		this.queue = this.queue.filter((q) => q.uploadId !== uploadId);
@@ -240,16 +239,16 @@ class UploadStore {
 	 */
 	clearAll(): void {
 		// Cancel current upload
-		if (this.currentAbortController) {
-			this.currentAbortController.abort();
-		}
+		for (const controller of this.controllers.values()) controller.abort();
+		this.controllers.clear();
 
 		// Clear queue
 		this.queue = [];
 
 		// Clear all uploads
 		this.uploads = [];
-		this.isUploading = false;
+		this.isUploading = this.activeWorkers > 0;
+		this.refreshPending = false;
 	}
 }
 
