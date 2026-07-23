@@ -53,7 +53,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # -----------------------------------------------------------------------------
 # Stage 3: Minimal Production Runtime
 # -----------------------------------------------------------------------------
-FROM alpine:3.20
+FROM alpine:3.24
 
 WORKDIR /app
 
