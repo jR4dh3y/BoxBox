@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/homelab/filemanager/internal/config"
-	"github.com/homelab/filemanager/internal/model"
-	"github.com/homelab/filemanager/internal/pkg/filesystem"
-	"github.com/homelab/filemanager/internal/pkg/validator"
-	"github.com/homelab/filemanager/internal/websocket"
+	"github.com/jR4dh3y/BoxBox/backend/internal/config"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
+	"github.com/jR4dh3y/BoxBox/backend/internal/websocket"
 )
 
 // Job service errors

@@ -547,9 +547,9 @@ Data:     ${dataDir}
     ["go", "run", "./cmd/server", "-config", configPath],
     backendRoot,
     {
-      FM_PORT: String(backendPort),
-      FM_HOST: backendHost,
-      FM_DATA_DIR: dataDir,
+      BOXBOX_PORT: String(backendPort),
+      BOXBOX_HOST: backendHost,
+      BOXBOX_DATA_DIR: dataDir,
     },
   );
 

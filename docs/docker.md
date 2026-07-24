@@ -30,8 +30,8 @@ docker compose up -d
 Set these values in `.env` before starting:
 
 ```env
-FM_JWT_SECRET=generate-a-long-random-secret
-FM_USERS_admin=replace-this-password
+BOXBOX_JWT_SECRET=generate-a-long-random-secret
+BOXBOX_USERS_admin=replace-this-password
 HOST_PORT=8080
 # Optional: defaults to the HOME of the user running docker compose.
 # HOME_PATH=/home/your-user
@@ -50,12 +50,11 @@ Release images are published to GitHub Container Registry:
 docker pull ghcr.io/jr4dh3y/boxbox:latest
 ```
 
-The publish workflow runs when a `v*` git tag is pushed. It publishes the tag name and updates `latest`.
+Stable release tags update `latest`. Prerelease tags such as `v0.2.0-rc.1` publish versioned images without moving `latest`, and test branch images publish under branch-scoped tags such as `branch-test-my-change`.
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
+See [Release workflow](/docs/release/) for the full test-branch and stable-release process.
+
+If you are upgrading an older deployment that still uses `FM_*`, `filemanager`, or `filemanager-*` names, see the `v0.2.0` notes in [Release workflow](/docs/release/). The `scripts/check-0.2-migration.sh` helper is check-only and prints the manual changes without editing files or Docker volumes.
 
 ## Optional: Reverse Proxy or Traefik
 
@@ -63,7 +62,7 @@ The default compose file uses normal host port binding and does not require Trae
 
 ```yaml
 services:
-  filemanager:
+  boxbox:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.boxbox.rule=Host(`boxbox.example.test`)"
@@ -102,16 +101,16 @@ docker pull ghcr.io/jr4dh3y/boxbox:latest
 docker run -d \
   --name boxbox \
   -p 8080:80 \
-  -e FM_JWT_SECRET="$(openssl rand -base64 32)" \
-  -e FM_USERS_admin="replace-this-password" \
+  -e BOXBOX_JWT_SECRET="$(openssl rand -base64 32)" \
+  -e BOXBOX_USERS_admin="replace-this-password" \
   -v "$PWD/config.yaml:/app/config.yaml:ro" \
   -v "$HOME:/home/user" \
   -v boxbox-data:/data \
-  -v boxbox-temp:/tmp/filemanager \
+  -v boxbox-temp:/tmp/boxbox \
   ghcr.io/jr4dh3y/boxbox:latest
 ```
 
-Open `http://localhost:8080` and sign in as `admin` with the password you set in `FM_USERS_admin`.
+Open `http://localhost:8080` and sign in as `admin` with the password you set in `BOXBOX_USERS_admin`.
 
 ## Alternative: Local Source Builds
 
@@ -141,8 +140,8 @@ The default compose file mounts:
 | `${MUSIC_PATH}` or `$HOME/Music` | `/home/user/Music` | Music sidebar shortcut. |
 | `${PICTURES_PATH}` or `$HOME/Pictures` | `/home/user/Pictures` | Pictures sidebar shortcut. |
 | `${VIDEOS_PATH}` or `$HOME/Videos` | `/home/user/Videos` | Videos sidebar shortcut. |
-| `filemanager-temp` | `/tmp/filemanager` | Chunked upload assembly. |
-| `filemanager-data` | `/data` | Persistent app data, including custom drive names. |
+| `boxbox-temp` | `/tmp/boxbox` | Chunked upload assembly. |
+| `boxbox-data` | `/data` | Persistent app data, including custom drive names. |
 
 Use `:ro` on a volume or `read_only: true` in `config.yaml` when a path should never be modified through BoxBox.
 
@@ -164,6 +163,8 @@ volumes:
 docker compose pull
 docker compose up -d
 ```
+
+For `v0.2.0`, old `FM_*` environment variables still work as deprecated aliases, but rename them to `BOXBOX_*`. `BOXBOX_*` values take precedence when both are set.
 
 For local source builds:
 
@@ -187,7 +188,7 @@ docker rm boxbox
 ```bash
 curl http://localhost:8080/health
 docker compose ps
-docker compose logs -f filemanager
+docker compose logs -f boxbox
 ```
 
 The health response is:

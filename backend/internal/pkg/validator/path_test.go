@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/homelab/filemanager/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
 )
 
-// **Feature: homelab-file-manager, Property 13: Path Traversal Prevention**
+// **Feature: boxbox, Property 13: Path Traversal Prevention**
 // **Validates: Requirements 7.2**
 //
 // Property: For any path containing "..", "/../", or URL-encoded traversal sequences,

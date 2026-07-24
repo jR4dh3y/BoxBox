@@ -8,7 +8,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/homelab/filemanager/internal/config"
+	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 )
 
 // mountInfo stores information about a mount point from /proc/mounts

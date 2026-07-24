@@ -8,6 +8,7 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 | --- | --- |
 | [Quick start](/docs/quickstart/) | Run BoxBox quickly with Docker Compose and the published GHCR image. |
 | [Docker deployment](/docs/docker/) | Deploy from GHCR with Compose, or use separate local run and source-build alternatives. |
+| [Release workflow](/docs/release/) | Use test branches, test GHCR images, and stable tags. |
 | [Configuration](/docs/configuration/) | Configure users, mount points, upload limits, origins, and ports. |
 | [API reference](/docs/api/) | Use the REST, streaming, and WebSocket endpoints directly. |
 | [Development](/docs/development/) | Run the backend and frontend app locally. |
@@ -23,15 +24,15 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 - The frontend static build is embedded into the Go binary.
 - API routes live under `/api/v1`; `/health` is also available at the root.
 - Mount points are configured in `config.yaml` and can be customized by binding another config file to `/app/config.yaml`.
-- Environment overrides use the `FM_` prefix, for example `FM_JWT_SECRET` and `FM_USERS_admin`.
+- Environment overrides use the `BOXBOX_` prefix, for example `BOXBOX_JWT_SECRET` and `BOXBOX_USERS_admin`.
 
 ## Default Credentials
 
 If no users are configured, BoxBox falls back to `admin:admin` and logs a warning. Do not run a reachable deployment without setting at least:
 
 ```bash
-FM_JWT_SECRET="$(openssl rand -base64 32)"
-FM_USERS_admin="a-long-unique-password"
+BOXBOX_JWT_SECRET="$(openssl rand -base64 32)"
+BOXBOX_USERS_admin="a-long-unique-password"
 ```
 
 ## Scope

@@ -1,4 +1,4 @@
-// Package main provides the entry point for the homelab file manager server.
+// Package main provides the entry point for the BoxBox server.
 package main
 
 import (
@@ -16,14 +16,14 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/homelab/filemanager/internal/config"
-	"github.com/homelab/filemanager/internal/handler"
-	"github.com/homelab/filemanager/internal/middleware"
-	"github.com/homelab/filemanager/internal/model"
-	"github.com/homelab/filemanager/internal/pkg/filesystem"
-	"github.com/homelab/filemanager/internal/service"
-	"github.com/homelab/filemanager/internal/static"
-	"github.com/homelab/filemanager/internal/websocket"
+	"github.com/jR4dh3y/BoxBox/backend/internal/config"
+	"github.com/jR4dh3y/BoxBox/backend/internal/handler"
+	"github.com/jR4dh3y/BoxBox/backend/internal/middleware"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/service"
+	"github.com/jR4dh3y/BoxBox/backend/internal/static"
+	"github.com/jR4dh3y/BoxBox/backend/internal/websocket"
 )
 
 func main() {
@@ -36,9 +36,17 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Load configuration
-	cfg, err := config.Load(*configPath)
+	loadResult, err := config.LoadWithReport(*configPath)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
+	}
+	cfg := loadResult.Config
+
+	for _, warning := range loadResult.Warnings {
+		log.Warn().
+			Str("legacy", warning.Legacy).
+			Str("replacement", warning.Replacement).
+			Msg(warning.Message)
 	}
 
 	log.Info().

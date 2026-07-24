@@ -1,0 +1,102 @@
+name: Feature request
+description: Suggest a focused improvement for BoxBox
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for specific product changes. Open a Discussion first for broad ideas, setup questions, or design exploration.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to do with your self-hosted BoxBox deployment that is hard or impossible today?
+      placeholder: I want to ... because ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest practical change that would solve the problem.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area affected
+      multiple: true
+      options:
+        - Backend / Go API
+        - Frontend / Svelte UI
+        - Docker image or compose deployment
+        - Configuration
+        - File operations or previews
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Current version or image tag
+      description: If this request comes from a current limitation, include the version or tag you tested.
+      placeholder: ghcr.io/jr4dh3y/boxbox:v1.2.3 or latest
+    validations:
+      required: false
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Current deployment method
+      description: If this request comes from a running BoxBox instance, tell us how it is deployed.
+      options:
+        - Docker Compose
+        - docker run
+        - Kubernetes or other orchestrator
+        - Built from source
+        - Not deployment-specific
+        - Other
+    validations:
+      required: false
+  - type: input
+    id: environment
+    attributes:
+      label: Current browser, client OS, and host OS
+      description: Include the environment when it affects the requested workflow.
+      placeholder: Firefox on Fedora, Android Chrome, Ubuntu Docker host
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives tried
+      description: Mention workarounds, reverse proxy settings, scripts, browser extensions, or other file managers you compared.
+    validations:
+      required: false
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples, screenshots, or logs
+      description: Add sanitized logs, screenshots, browser console output, or workflow examples if they clarify the request.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: release_safety
+    attributes:
+      label: Safety and release considerations
+      description: Note any migration, compatibility, storage, permissions, security, or Docker image concerns this change might create.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation checks
+      options:
+        - label: I searched existing issues and discussions for similar requests.
+          required: true
+        - label: This is a specific product change, not a support question.
+          required: true
+        - label: I described why the change matters for a self-hosted deployment.
+          required: true

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/homelab/filemanager/internal/config"
-	"github.com/homelab/filemanager/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/config"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 )
 
 // systemMountInfo stores information about a mount point from /proc/mounts

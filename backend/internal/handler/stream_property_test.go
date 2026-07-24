@@ -1,4 +1,4 @@
-// Package handler provides HTTP handlers for the file manager API.
+// Package handler provides HTTP handlers for the BoxBox API.
 // This file contains property-based tests for streaming operations.
 package handler
 
@@ -14,9 +14,9 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/homelab/filemanager/internal/model"
-	"github.com/homelab/filemanager/internal/pkg/filesystem"
-	"github.com/homelab/filemanager/internal/service"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
@@ -187,7 +187,7 @@ func TestUploadRejectsSessionMetadataMismatch(t *testing.T) {
 	}
 }
 
-// **Feature: homelab-file-manager, Property 4: Upload/Download Round-Trip Integrity**
+// **Feature: boxbox, Property 4: Upload/Download Round-Trip Integrity**
 // **Validates: Requirements 2.5, 3.1**
 //
 // Property: For any file content uploaded via chunked upload, downloading that file
@@ -352,7 +352,7 @@ func TestProperty_UploadDownloadRoundTripIntegrity(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// **Feature: homelab-file-manager, Property 5: Resumable Upload Correctness**
+// **Feature: boxbox, Property 5: Resumable Upload Correctness**
 // **Validates: Requirements 2.3**
 //
 // Property: For any upload interrupted after N successful chunks, resuming the upload
@@ -561,7 +561,7 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// **Feature: homelab-file-manager, Property 6: Range Request Correctness**
+// **Feature: boxbox, Property 6: Range Request Correctness**
 // **Validates: Requirements 3.2**
 //
 // Property: For any file and valid byte range [start, end], a Range request SHALL return

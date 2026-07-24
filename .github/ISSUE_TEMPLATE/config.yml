@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a setup or usage question
+    url: https://github.com/jr4dh3y/BoxBox/discussions/new?category=q-a
+    about: Get help with Docker, configuration, reverse proxies, browsers, and day-to-day use.
+  - name: Share an idea before filing a feature request
+    url: https://github.com/jr4dh3y/BoxBox/discussions/new?category=ideas
+    about: Discuss larger changes with maintainers and other self-hosters before opening an issue.
+  - name: Show your deployment or tips
+    url: https://github.com/jr4dh3y/BoxBox/discussions/new?category=show-and-tell
+    about: Share compose files, storage layouts, and operational notes that are not bug reports.
+  - name: Start a general discussion
+    url: https://github.com/jr4dh3y/BoxBox/discussions/new?category=general
+    about: Use this for community topics that are not bug reports, feature requests, or setup questions.

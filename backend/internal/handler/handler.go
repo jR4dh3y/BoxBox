@@ -1,4 +1,4 @@
-// Package handler provides HTTP handlers for the file manager API.
+// Package handler provides HTTP handlers for the BoxBox API.
 //
 // # Handlers
 //

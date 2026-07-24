@@ -1,0 +1,46 @@
+title: "[General]: "
+labels: [discussion]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use General for topics that are not bug reports, focused feature requests, setup help, or deployment showcases.
+  - type: textarea
+    id: topic
+    attributes:
+      label: Topic
+      description: What would you like to discuss with the BoxBox community?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: BoxBox version or image tag
+      description: Include this if the topic is based on a running deployment.
+      placeholder: ghcr.io/jr4dh3y/boxbox:v1.2.3 or latest
+    validations:
+      required: false
+  - type: input
+    id: environment
+    attributes:
+      label: Deployment and environment context
+      description: Include deployment method, host OS, browser, or client OS if relevant.
+      placeholder: Docker Compose on Debian, Safari on iOS
+    validations:
+      required: false
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Add context, links, logs, screenshots, or sanitized configuration if they help the discussion.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before posting
+      options:
+        - label: I checked whether this belongs in Q&A, Ideas, Show and tell, or an issue form instead.
+          required: true
+        - label: I removed secrets, tokens, and private data from any shared details.
+          required: true

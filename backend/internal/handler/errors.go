@@ -4,9 +4,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/homelab/filemanager/internal/model"
-	"github.com/homelab/filemanager/internal/pkg/validator"
-	"github.com/homelab/filemanager/internal/service"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
+	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
 
 // ErrorMapping maps service errors to HTTP responses

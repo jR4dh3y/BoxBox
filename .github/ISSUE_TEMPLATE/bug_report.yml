@@ -1,0 +1,100 @@
+name: Bug report
+description: Report something broken in BoxBox
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve BoxBox. Please include enough detail for another self-hoster to reproduce the issue.
+  - type: input
+    id: version
+    attributes:
+      label: BoxBox version or image tag
+      description: Use the exact Docker image tag, release version, or commit SHA you are running.
+      placeholder: ghcr.io/jr4dh3y/boxbox:v1.2.3, latest, or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment method
+      options:
+        - Docker Compose
+        - docker run
+        - Kubernetes or other orchestrator
+        - Built from source
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host environment
+      description: Include host OS, CPU architecture, and Docker/Podman version when relevant.
+      placeholder: Ubuntu 24.04 x86_64, Docker 27.0
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and client OS
+      description: Include browser name/version and the OS used to access the web UI.
+      placeholder: Firefox 126 on Windows 11, Safari 17 on iOS 17
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the broken behavior and the area affected, such as upload, preview, file operations, auth, or settings.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use a fresh browser session if possible and include the smallest file/folder setup that reproduces the issue.
+      placeholder: |
+        1. Start BoxBox with ...
+        2. Open ...
+        3. Upload or browse ...
+        4. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should BoxBox have done instead?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or errors
+      description: Paste backend container logs, browser console output, network errors, or reverse proxy errors. Redact secrets, tokens, hostnames, and private paths.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: Share sanitized docker-compose.yml service settings, environment variables, config.yaml snippets, volumes, or reverse proxy rules that affect the issue.
+      render: yaml
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmation checks
+      options:
+        - label: I searched existing issues and discussions for this problem.
+          required: true
+        - label: I am not filing a setup/support question that belongs in Discussions.
+          required: true
+        - label: I included the exact version or image tag I am running.
+          required: true
+        - label: I removed secrets, tokens, and private data from logs/configuration.
+          required: true

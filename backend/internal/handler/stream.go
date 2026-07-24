@@ -1,4 +1,4 @@
-// Package handler provides HTTP handlers for the file manager API.
+// Package handler provides HTTP handlers for the BoxBox API.
 package handler
 
 import (
@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/homelab/filemanager/internal/config"
-	"github.com/homelab/filemanager/internal/model"
-	"github.com/homelab/filemanager/internal/pkg/fileutil"
-	"github.com/homelab/filemanager/internal/service"
+	"github.com/jR4dh3y/BoxBox/backend/internal/config"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
+	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
 
 var errUploadTooLarge = errors.New("upload too large")

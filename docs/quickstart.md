@@ -20,7 +20,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Open `http://localhost:8080` and sign in as `admin` with the password you set in `FM_USERS_admin`.
+Open `http://localhost:8080` and sign in as `admin` with the password you set in `BOXBOX_USERS_admin`.
 
 For a single-container `docker run` command or local source build, use the separate alternatives in [Docker deployment](/docs/docker/).
 
@@ -29,8 +29,8 @@ For a single-container `docker run` command or local source build, use the separ
 Before starting a reachable deployment, change at least:
 
 ```bash
-FM_JWT_SECRET="$(openssl rand -base64 32)"
-FM_USERS_admin="a-long-unique-password"
+BOXBOX_JWT_SECRET="$(openssl rand -base64 32)"
+BOXBOX_USERS_admin="a-long-unique-password"
 HOST_PORT=8080
 ```
 
