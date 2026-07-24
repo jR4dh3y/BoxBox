@@ -238,7 +238,7 @@ func (s *uploadService) getOrCreate(path string, chunk UploadChunk) (*uploadSess
 	if err := os.MkdirAll(s.tempRoot, 0o755); err != nil {
 		return nil, err
 	}
-	tempDir, err := os.MkdirTemp(s.tempRoot, "upload-"+chunk.UploadID+"-")
+	tempDir, err := os.MkdirTemp(s.tempRoot, "upload-*")
 	if err != nil {
 		return nil, err
 	}
