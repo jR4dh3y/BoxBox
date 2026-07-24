@@ -79,6 +79,9 @@ type uploadSession struct {
 	createdAt      time.Time
 	lastActivity   time.Time
 	activeRequests int
+	terminal       bool
+	terminalPath   string
+	terminalErr    error
 	processMu      sync.Mutex
 	mu             sync.RWMutex
 }
@@ -157,10 +160,13 @@ func (s *uploadService) AcceptChunk(
 	if err != nil {
 		return nil, err
 	}
-	defer session.release()
+	defer s.releaseSession(session)
 	session.processMu.Lock()
 	defer session.processMu.Unlock()
 
+	if result, err, terminal := session.terminalResult(chunk.ChunkIndex); terminal {
+		return result, err
+	}
 	if chunk.ChunkIndex == chunk.TotalChunks-1 && chunk.Checksum == "" {
 		return nil, ErrFinalChecksumNeeded
 	}
@@ -200,10 +206,10 @@ func (s *uploadService) AcceptChunk(
 	}
 
 	if err := s.assemble(ctx, session, destination, session.getExpectedHash()); err != nil {
-		s.deleteSession(session.id)
+		session.finish("", err)
 		return nil, err
 	}
-	s.deleteSession(session.id)
+	session.finish(path, nil)
 	return session.result(chunk.ChunkIndex, path), nil
 }
 
@@ -329,12 +335,20 @@ func (s *uploadService) cleanupExpired() {
 	}
 }
 
-func (s *uploadService) deleteSession(id string) {
+func (s *uploadService) releaseSession(session *uploadSession) {
+	var tempDir string
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if session := s.sessions[id]; session != nil {
-		_ = os.RemoveAll(session.tempDir)
-		delete(s.sessions, id)
+	session.mu.Lock()
+	session.activeRequests--
+	session.lastActivity = time.Now()
+	if session.terminal && session.activeRequests == 0 && s.sessions[session.id] == session {
+		tempDir = session.tempDir
+		delete(s.sessions, session.id)
+	}
+	session.mu.Unlock()
+	s.mu.Unlock()
+	if tempDir != "" {
+		_ = os.RemoveAll(tempDir)
 	}
 }
 
@@ -345,11 +359,31 @@ func (s *uploadSession) acquire() {
 	s.lastActivity = time.Now()
 }
 
-func (s *uploadSession) release() {
+func (s *uploadSession) finish(path string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.activeRequests--
-	s.lastActivity = time.Now()
+	s.terminal = true
+	s.terminalPath = path
+	s.terminalErr = err
+}
+
+func (s *uploadSession) terminalResult(chunkIndex int) (*UploadResult, error, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if !s.terminal {
+		return nil, nil, false
+	}
+	if s.terminalErr != nil {
+		return nil, s.terminalErr, true
+	}
+	return &UploadResult{
+		UploadID:       s.id,
+		ChunkIndex:     chunkIndex,
+		ReceivedChunks: len(s.receivedChunks),
+		TotalChunks:    s.totalChunks,
+		Complete:       true,
+		Path:           s.terminalPath,
+	}, nil, true
 }
 
 func (s *uploadSession) hasChunk(index int) bool {
