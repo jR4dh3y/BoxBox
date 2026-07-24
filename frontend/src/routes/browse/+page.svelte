@@ -2,9 +2,20 @@
 	/**
 	 * Browse page - main file browser interface (FilePilot style)
 	 */
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { goto } from '$app/navigation';
+	import {
+		createInfiniteQuery,
+		createQuery,
+		useQueryClient,
+		type InfiniteData
+	} from '@tanstack/svelte-query';
+	import {
+		afterNavigate,
+		goto,
+		pushState as pushHistoryState,
+		replaceState as replaceHistoryState
+	} from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import FileList from '$lib/components/FileList.svelte';
@@ -12,16 +23,11 @@
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import SystemDriveCard from '$lib/components/SystemDriveCard.svelte';
 	import FilePreview from '$lib/components/FilePreview.svelte';
+	import BrowseDialogs from '$lib/components/BrowseDialogs.svelte';
 	import UploadPanel from '$lib/components/UploadPanel.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
-	import { Spinner, Modal, Input, Button } from '$lib/components/ui';
-	import {
-		pathStore,
-		currentPath,
-		pathSegments,
-		listOptionsStore,
-		fileQueryKeys
-	} from '$lib/stores/files';
+	import { Spinner } from '$lib/components/ui';
+	import { fileQueryKeys } from '$lib/stores/files';
 	import { settingsStore } from '$lib/stores/settings';
 	import { clipboardStore } from '$lib/stores/clipboard.svelte';
 	import { uploadStore } from '$lib/stores/upload.svelte';
@@ -39,28 +45,22 @@
 	} from '$lib/api/files';
 	import { getSystemDrives, type SystemDrivesResponse } from '$lib/api/system';
 	import { createCopyJob, createMoveJob, createDeleteJob } from '$lib/api/jobs';
-	import { formatFileSize, formatFileDate, mapSystemMountToBrowsePath } from '$lib/utils/format';
+	import { mapSystemMountToBrowsePath } from '$lib/utils/format';
 	import { canPreview, getFileTypeDescription } from '$lib/utils/fileTypes';
 	import type { SortField, SortDir, ViewMode } from '$lib/types/files';
 	import type {
 		FileInfo,
 		FileList as FileListType,
+		ListOptions,
 		RootsResponse,
 		SearchResponse
 	} from '$lib/api/files';
-	import { untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
-	let searchQuery = $state('');
 	let selectedPaths = $state(new Set<string>());
-	let viewMode = $state<ViewMode>(settingsStore.getSetting('defaultViewMode'));
 	let previewFile = $state<FileInfo | null>(null);
-	let historyStack = $state<string[]>(['']);
-	let historyIndex = $state(0);
-	let loadedFileItems = $state<FileInfo[]>([]);
-	let loadedTotalCount = $state(0);
-	let activeListScope = $state('');
-	let defaultSortApplied = false;
+	type BrowsePageState = App.PageState & { browseHistoryIndex?: number };
+	let historyMaxIndex = $state((page.state as BrowsePageState).browseHistoryIndex ?? 0);
 
 	// Upload state
 	let fileInputEl: HTMLInputElement;
@@ -92,36 +92,40 @@
 		file: null
 	});
 
-	const path = $derived($currentPath);
-	const segments = $derived($pathSegments);
-	const options = $derived($listOptionsStore);
 	const settings = $derived($settingsStore);
+	const path = $derived(page.url.searchParams.get('path')?.replace(/^\/+|\/+$/g, '') ?? '');
+	const segments = $derived(path ? path.split('/') : []);
+	const searchQuery = $derived(page.url.searchParams.get('q') ?? '');
 	const trimmedSearchQuery = $derived(searchQuery.trim());
 	const isSearchActive = $derived(trimmedSearchQuery.length >= 2);
-	const directoryOptions = $derived({ ...options, includeHidden: settings.showHiddenFiles });
-	const listScope = $derived(
-		[
-			path,
-			directoryOptions.pageSize,
-			directoryOptions.sortBy,
-			directoryOptions.sortDir,
-			directoryOptions.filter,
-			directoryOptions.includeHidden
-		].join('\u0000')
+	const sortBy = $derived<SortField>(parseSortField(page.url.searchParams.get('sort')));
+	const sortDir = $derived<SortDir>(
+		page.url.searchParams.get('dir') === 'desc'
+			? 'desc'
+			: page.url.searchParams.get('dir') === 'asc'
+				? 'asc'
+				: settings.defaultSortDir
 	);
+	const viewMode = $derived<ViewMode>(
+		page.url.searchParams.get('view') === 'grid'
+			? 'grid'
+			: page.url.searchParams.get('view') === 'list'
+				? 'list'
+				: settings.defaultViewMode
+	);
+	const directoryOptions = $derived<Omit<ListOptions, 'page'>>({
+		pageSize: 50,
+		sortBy,
+		sortDir,
+		includeHidden: settings.showHiddenFiles
+	});
 	const queryClient = useQueryClient();
 
-	$effect(() => {
-		if (defaultSortApplied) return;
-
-		defaultSortApplied = true;
-		if (options.sortBy !== settings.defaultSortBy) {
-			listOptionsStore.setSortBy(settings.defaultSortBy);
-		}
-		if (options.sortDir !== settings.defaultSortDir) {
-			listOptionsStore.setSortDir(settings.defaultSortDir);
-		}
-	});
+	function parseSortField(value: string | null): SortField {
+		if (value === 'size' || value === 'modTime' || value === 'type') return value;
+		if (value === 'name') return value;
+		return settingsStore.getSetting('defaultSortBy');
+	}
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
 		queryKey: fileQueryKeys.roots(),
@@ -134,24 +138,36 @@
 		enabled: path === ''
 	}));
 
-	const directoryQuery = createQuery<FileListType>(() => ({
+	const directoryQuery = createInfiniteQuery<
+		FileListType,
+		Error,
+		InfiniteData<FileListType>,
+		ReturnType<typeof fileQueryKeys.list>,
+		number
+	>(() => ({
 		queryKey: fileQueryKeys.list(path, directoryOptions),
-		queryFn: () => listDirectory(path, directoryOptions),
+		queryFn: ({ pageParam, signal }) =>
+			listDirectory(path, { ...directoryOptions, page: pageParam }, signal),
+		initialPageParam: 1,
+		getNextPageParam: (lastPage) =>
+			lastPage.page * lastPage.pageSize < lastPage.totalCount ? lastPage.page + 1 : undefined,
 		enabled: path !== ''
 	}));
 
 	const searchQueryResult = createQuery<SearchResponse>(() => ({
 		queryKey: fileQueryKeys.search(path, trimmedSearchQuery),
-		queryFn: () => search(path, trimmedSearchQuery),
+		queryFn: ({ signal }) => search(path, trimmedSearchQuery, signal),
 		enabled: path !== '' && isSearchActive
 	}));
 
 	const isLoading = $derived(directoryQuery.isLoading);
-	const isLoadingMore = $derived(!isSearchActive && directoryQuery.isFetching && options.page > 1);
+	const isLoadingMore = $derived(!isSearchActive && directoryQuery.isFetchingNextPage);
+	const directoryPages = $derived(directoryQuery.data?.pages ?? []);
+	const directoryItems = $derived(directoryPages.flatMap((directoryPage) => directoryPage.items));
+	const directoryTotalCount = $derived(directoryPages[0]?.totalCount ?? 0);
 	const isFileListLoading = $derived(
-		isSearchActive ? searchQueryResult.isFetching : isLoading && loadedFileItems.length === 0
+		isSearchActive ? searchQueryResult.isFetching : isLoading && directoryItems.length === 0
 	);
-	const fileList = $derived(directoryQuery.data ?? null);
 	const searchResults = $derived(searchQueryResult.data?.results ?? []);
 	const roots = $derived(rootsQuery.data?.roots ?? []);
 	const systemDrives = $derived(systemDrivesQuery.data?.drives ?? []);
@@ -175,7 +191,7 @@
 		if (isSearchActive) {
 			items = searchResults;
 		} else {
-			items = loadedFileItems;
+			items = directoryItems;
 		}
 
 		if (!settings.showHiddenFiles) {
@@ -187,12 +203,10 @@
 	const previewableFiles = $derived(
 		displayItems.filter((item) => !item.isDir && canPreview(item.name))
 	);
-	const hasMoreItems = $derived(
-		!isSearchActive && !isAtRoot && loadedFileItems.length < loadedTotalCount
-	);
+	const hasMoreItems = $derived(!isSearchActive && !isAtRoot && directoryQuery.hasNextPage);
 	const statusTotalCount = $derived.by(() => {
 		if (isAtRoot || isSearchActive) return undefined;
-		return loadedTotalCount;
+		return directoryTotalCount;
 	});
 	const emptyListMessage = $derived.by(() => {
 		if (isSearchActive) {
@@ -203,8 +217,9 @@
 
 	const itemCount = $derived(isAtRoot ? systemDrives.length : displayItems.length);
 	const selectedCount = $derived(selectedPaths.size);
+	const historyIndex = $derived((page.state as BrowsePageState).browseHistoryIndex ?? 0);
 	const canGoBack = $derived(historyIndex > 0);
-	const canGoForward = $derived(historyIndex < historyStack.length - 1);
+	const canGoForward = $derived(historyIndex < historyMaxIndex);
 	const canGoUp = $derived(segments.length > 0);
 	const currentMount = $derived(
 		path ? roots.find((root) => path === root.name || path.startsWith(`${root.name}/`)) : null
@@ -212,69 +227,54 @@
 	const isCurrentLocationReadOnly = $derived(currentMount?.readOnly ?? false);
 	const canCreate = $derived(!isAtRoot && !isCurrentLocationReadOnly);
 
-	$effect(() => {
-		if (listScope === activeListScope) return;
-
-		activeListScope = listScope;
-		loadedFileItems = [];
-		loadedTotalCount = 0;
-
-		if (options.page !== 1) {
-			listOptionsStore.setPage(1);
-		}
-	});
-
-	$effect(() => {
-		if (!fileList || fileList.path !== path) return;
-
-		untrack(() => {
-			loadedTotalCount = fileList.totalCount;
-
-			if (fileList.page <= 1) {
-				loadedFileItems = fileList.items;
-				return;
-			}
-
-			const seenPaths = new Set(loadedFileItems.map((item) => item.path));
-			const newItems = fileList.items.filter((item) => !seenPaths.has(item.path));
-			if (newItems.length > 0) {
-				loadedFileItems = [...loadedFileItems, ...newItems];
-			}
-		});
+	afterNavigate((navigation) => {
+		if (navigation.type !== 'popstate') return;
+		selectedPaths = new Set();
 	});
 
 	function getErrorMessage(error: unknown, fallback: string): string {
 		return error instanceof Error ? error.message : fallback;
 	}
 
-	function handleNavigate(newPath: string) {
-		const newHistory = historyStack.slice(0, historyIndex + 1);
-		newHistory.push(newPath);
-		historyStack = newHistory;
-		historyIndex = newHistory.length - 1;
+	function refreshCurrentLocation() {
+		void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directory(path) });
+		if (isSearchActive) {
+			void queryClient.invalidateQueries({
+				queryKey: fileQueryKeys.search(path, trimmedSearchQuery)
+			});
+		}
+	}
 
-		pathStore.navigateTo(newPath);
-		listOptionsStore.setPage(1);
-		searchQuery = '';
+	function updateBrowseParams(
+		updates: Record<string, string | null>,
+		options: { replaceState?: boolean } = {}
+	) {
+		const url = new URL(page.url);
+		for (const [key, value] of Object.entries(updates)) {
+			if (value) url.searchParams.set(key, value);
+			else url.searchParams.delete(key);
+		}
+		if (options.replaceState) {
+			replaceHistoryState(url, page.state);
+			return;
+		}
+
+		const nextIndex = historyIndex + 1;
+		historyMaxIndex = nextIndex;
+		pushHistoryState(url, { ...page.state, browseHistoryIndex: nextIndex });
+	}
+
+	function handleNavigate(newPath: string) {
 		selectedPaths = new Set();
+		updateBrowseParams({ path: newPath || null, q: null });
 	}
 
 	function handleBack() {
-		if (canGoBack) {
-			historyIndex--;
-			pathStore.navigateTo(historyStack[historyIndex]);
-			listOptionsStore.setPage(1);
-			selectedPaths = new Set();
-		}
+		history.back();
 	}
 
 	function handleForward() {
-		if (canGoForward) {
-			historyIndex++;
-			pathStore.navigateTo(historyStack[historyIndex]);
-			listOptionsStore.setPage(1);
-			selectedPaths = new Set();
-		}
+		history.forward();
 	}
 
 	function handleUp() {
@@ -318,16 +318,15 @@
 	}
 
 	function handleSearchInput(query: string) {
-		searchQuery = query;
+		updateBrowseParams({ q: query.trim() || null }, { replaceState: true });
 	}
 
 	function handleSearchClear() {
-		searchQuery = '';
+		updateBrowseParams({ q: null }, { replaceState: true });
 	}
 
 	function handleSortChange(field: SortField, dir: SortDir) {
-		listOptionsStore.setSortBy(field);
-		listOptionsStore.setSortDir(dir);
+		updateBrowseParams({ sort: field, dir }, { replaceState: true });
 	}
 
 	function handleSelectionChange(paths: Set<string>) {
@@ -335,12 +334,12 @@
 	}
 
 	function handleViewModeChange(mode: ViewMode) {
-		viewMode = mode;
+		updateBrowseParams({ view: mode }, { replaceState: true });
 	}
 
 	function handleLoadMore() {
-		if (!hasMoreItems || directoryQuery.isFetching) return;
-		listOptionsStore.setPage(options.page + 1);
+		if (!hasMoreItems || directoryQuery.isFetchingNextPage) return;
+		void directoryQuery.fetchNextPage();
 	}
 
 	/**
@@ -435,14 +434,20 @@
 		createDialog = { open: false, type: 'file', name: '' };
 	}
 
-	async function handleCreateConfirm() {
-		if (!path || !createDialog.name.trim()) return;
-
-		const name = createDialog.name.trim();
+	function validateItemName(value: string): string | null {
+		const name = value.trim();
+		if (!name) return null;
 		if (name.includes('/') || name.includes('\\')) {
 			toastStore.error('Name cannot contain path separators');
-			return;
+			return null;
 		}
+		return name;
+	}
+
+	async function handleCreateConfirm() {
+		if (!path) return;
+		const name = validateItemName(createDialog.name);
+		if (!name) return;
 
 		try {
 			const created =
@@ -453,11 +458,7 @@
 			closeCreateDialog();
 			selectedPaths = new Set([created.path]);
 			toastStore.success(`${created.name} created`);
-			queryClient.invalidateQueries({ queryKey: fileQueryKeys.all });
-			directoryQuery.refetch();
-			if (isSearchActive) {
-				searchQueryResult.refetch();
-			}
+			refreshCurrentLocation();
 		} catch (error) {
 			toastStore.error(getErrorMessage(error, 'Create failed'));
 		}
@@ -511,11 +512,13 @@
 	 * Handle rename confirmation
 	 */
 	async function handleRenameConfirm() {
-		if (!renameDialog.file || !renameDialog.newName.trim()) return;
+		if (!renameDialog.file) return;
+		const newName = validateItemName(renameDialog.newName);
+		if (!newName) return;
 
 		const oldPath = renameDialog.file.path;
 		const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
-		const newPath = parentPath ? `${parentPath}/${renameDialog.newName}` : renameDialog.newName;
+		const newPath = parentPath ? `${parentPath}/${newName}` : newName;
 
 		try {
 			await rename(oldPath, newPath);
@@ -560,11 +563,7 @@
 
 	function handleFileSaved(file: FileInfo) {
 		previewFile = file;
-		queryClient.invalidateQueries({ queryKey: fileQueryKeys.all });
-		directoryQuery.refetch();
-		if (isSearchActive) {
-			searchQueryResult.refetch();
-		}
+		refreshCurrentLocation();
 	}
 
 	// Setup upload store callbacks
@@ -576,12 +575,10 @@
 		}
 	};
 
+	let uploadRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 	uploadStore.onRefreshNeeded = () => {
-		queryClient.invalidateQueries({ queryKey: fileQueryKeys.all });
-		directoryQuery.refetch();
-		if (isSearchActive) {
-			searchQueryResult.refetch();
-		}
+		if (uploadRefreshTimer) clearTimeout(uploadRefreshTimer);
+		uploadRefreshTimer = setTimeout(refreshCurrentLocation, 250);
 	};
 
 	/**
@@ -772,8 +769,8 @@
 			{:else}
 				<FileList
 					items={displayItems}
-					sortBy={options.sortBy}
-					sortDir={options.sortDir}
+					{sortBy}
+					{sortDir}
 					emptyMessage={emptyListMessage}
 					{selectedPaths}
 					isLoading={isFileListLoading}
@@ -815,83 +812,21 @@
 	onClose={handleClosePreview}
 />
 
-<!-- Create File/Folder Dialog -->
-<Modal
-	open={createDialog.open}
-	title={createDialog.type === 'file' ? 'New File' : 'New Folder'}
-	onclose={closeCreateDialog}
->
-	<div class="flex flex-col gap-4">
-		<p class="text-sm text-text-secondary">
-			Enter a name for the new {createDialog.type === 'file' ? 'file' : 'folder'}:
-		</p>
-		<Input
-			bind:value={createDialog.name}
-			placeholder={createDialog.type === 'file' ? 'untitled.txt' : 'New Folder'}
-			onkeydown={(e) => e.key === 'Enter' && handleCreateConfirm()}
-		/>
-	</div>
-	{#snippet footer()}
-		<Button variant="secondary" onclick={closeCreateDialog}>Cancel</Button>
-		<Button variant="primary" onclick={handleCreateConfirm}>
-			Create {createDialog.type === 'file' ? 'File' : 'Folder'}
-		</Button>
-	{/snippet}
-</Modal>
-
-<!-- Rename Dialog -->
-<Modal
-	open={renameDialog.open}
-	title="Rename"
-	onclose={() => (renameDialog = { open: false, file: null, newName: '' })}
->
-	<div class="flex flex-col gap-4">
-		<p class="text-sm text-text-secondary">Enter a new name:</p>
-		<Input
-			bind:value={renameDialog.newName}
-			placeholder="New name"
-			onkeydown={(e) => e.key === 'Enter' && handleRenameConfirm()}
-		/>
-	</div>
-	{#snippet footer()}
-		<Button
-			variant="secondary"
-			onclick={() => (renameDialog = { open: false, file: null, newName: '' })}
-		>
-			Cancel
-		</Button>
-		<Button variant="primary" onclick={handleRenameConfirm}>Rename</Button>
-	{/snippet}
-</Modal>
-
-<!-- Delete Confirmation Dialog -->
-<Modal
-	open={deleteDialog.open}
-	title="Delete"
-	onclose={() => (deleteDialog = { open: false, items: [] })}
->
-	<div class="flex flex-col gap-3 text-sm text-text-secondary">
-		<p>
-			Delete {deleteDialog.items.length}
-			{deleteDialog.items.length === 1 ? 'item' : 'items'}?
-		</p>
-		{#if deleteDialog.items.length > 0}
-			<ul class="max-h-40 list-none overflow-auto rounded border border-border-secondary p-0">
-				{#each deleteDialog.items as item (item.path)}
-					<li class="border-b border-border-secondary px-3 py-2 last:border-b-0">
-						<span class="block truncate text-text-primary" title={item.path}>{item.name}</span>
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</div>
-	{#snippet footer()}
-		<Button variant="secondary" onclick={() => (deleteDialog = { open: false, items: [] })}>
-			Cancel
-		</Button>
-		<Button variant="danger" onclick={handleDeleteConfirm}>Delete</Button>
-	{/snippet}
-</Modal>
+<BrowseDialogs
+	{createDialog}
+	{renameDialog}
+	{deleteDialog}
+	{propertiesDialog}
+	onCreateNameChange={(name) => (createDialog.name = name)}
+	onRenameNameChange={(name) => (renameDialog.newName = name)}
+	onCreateConfirm={() => void handleCreateConfirm()}
+	onRenameConfirm={() => void handleRenameConfirm()}
+	onDeleteConfirm={() => void handleDeleteConfirm()}
+	onCloseCreate={closeCreateDialog}
+	onCloseRename={() => (renameDialog = { open: false, file: null, newName: '' })}
+	onCloseDelete={() => (deleteDialog = { open: false, items: [] })}
+	onCloseProperties={() => (propertiesDialog = { open: false, file: null })}
+/>
 
 <!-- Hidden file input for upload button -->
 <input
@@ -907,47 +842,3 @@
 
 <!-- Toast notifications -->
 <Toast />
-
-<!-- Properties Dialog -->
-<Modal
-	open={propertiesDialog.open}
-	title="Properties"
-	onclose={() => (propertiesDialog = { open: false, file: null })}
->
-	{#if propertiesDialog.file}
-		{@const file = propertiesDialog.file}
-		<div class="flex flex-col gap-3 text-sm">
-			<div class="flex justify-between">
-				<span class="text-text-secondary">Name:</span>
-				<span class="font-medium text-text-primary">{file.name}</span>
-			</div>
-			<div class="flex justify-between">
-				<span class="text-text-secondary">Type:</span>
-				<span class="text-text-primary">{file.isDir ? 'Folder' : file.mimeType || 'File'}</span>
-			</div>
-			<div class="flex justify-between">
-				<span class="text-text-secondary">Path:</span>
-				<span class="break-all text-text-primary">{file.path}</span>
-			</div>
-			{#if !file.isDir}
-				<div class="flex justify-between">
-					<span class="text-text-secondary">Size:</span>
-					<span class="text-text-primary">{formatFileSize(file.size)}</span>
-				</div>
-			{/if}
-			<div class="flex justify-between">
-				<span class="text-text-secondary">Modified:</span>
-				<span class="text-text-primary">{formatFileDate(file.modTime)}</span>
-			</div>
-			<div class="flex justify-between">
-				<span class="text-text-secondary">Permissions:</span>
-				<span class="font-mono text-text-primary">{file.permissions}</span>
-			</div>
-		</div>
-	{/if}
-	{#snippet footer()}
-		<Button variant="secondary" onclick={() => (propertiesDialog = { open: false, file: null })}>
-			Close
-		</Button>
-	{/snippet}
-</Modal>

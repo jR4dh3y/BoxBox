@@ -137,6 +137,7 @@ export interface RequestOptions {
 	headers?: Record<string, string>;
 	skipAuth?: boolean;
 	params?: Record<string, string | number | boolean | undefined>;
+	signal?: AbortSignal;
 }
 
 /**
@@ -194,7 +195,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
  * Main API request function with automatic token injection and refresh
  */
 export async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-	const { method = 'GET', body, headers = {}, skipAuth = false, params } = options;
+	const { method = 'GET', body, headers = {}, skipAuth = false, params, signal } = options;
 
 	const url = buildUrl(endpoint, params);
 
@@ -217,7 +218,8 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
 
 	const fetchOptions: RequestInit = {
 		method,
-		headers: requestHeaders
+		headers: requestHeaders,
+		signal
 	};
 
 	if (body) {
@@ -248,8 +250,11 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
  * Convenience methods for common HTTP methods
  */
 export const api = {
-	get: <T>(endpoint: string, params?: Record<string, string | number | boolean | undefined>) =>
-		apiRequest<T>(endpoint, { method: 'GET', params }),
+	get: <T>(
+		endpoint: string,
+		params?: Record<string, string | number | boolean | undefined>,
+		signal?: AbortSignal
+	) => apiRequest<T>(endpoint, { method: 'GET', params, signal }),
 
 	post: <T>(endpoint: string, body?: unknown) => apiRequest<T>(endpoint, { method: 'POST', body }),
 

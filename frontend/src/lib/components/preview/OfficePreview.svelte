@@ -2,6 +2,7 @@
 	/**
 	 * OfficePreview - browser-only previews for supported Office formats
 	 */
+	import { tick, untrack } from 'svelte';
 	import { AlertTriangle, Download, Sheet, Table2 } from 'lucide-svelte';
 	import { Button, Spinner } from '$lib/components/ui';
 	import { getExtension } from '$lib/utils/fileTypes';
@@ -138,34 +139,53 @@
 		await previewer.preview(buffer);
 	}
 
+	const RENDER_TIMEOUT_MS = 30_000;
+
+	function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(
+				() => reject(new Error('Rendering timed out. Try downloading the file instead.')),
+				ms
+			);
+			promise.then(resolve, reject).finally(() => clearTimeout(timer));
+		});
+	}
+
+	async function loadPreview(nextMode: Exclude<PreviewMode, 'unsupported'>, signal: AbortSignal) {
+		try {
+			const buffer = await fetchBuffer(signal);
+			if (signal.aborted) return;
+			// Wait for the mode switch to flush so bind:this containers are attached.
+			await tick();
+			if (signal.aborted) return;
+			if (nextMode === 'docx') {
+				await withTimeout(renderDocx(buffer), RENDER_TIMEOUT_MS);
+			} else if (nextMode === 'sheet') {
+				await renderSheet(buffer);
+			} else {
+				await withTimeout(renderPptx(buffer), RENDER_TIMEOUT_MS);
+			}
+			if (!signal.aborted) {
+				status = 'ready';
+			}
+		} catch (err: unknown) {
+			if (signal.aborted) return;
+			error = err instanceof Error ? err.message : 'Failed to render Office preview.';
+			status = 'error';
+		}
+	}
+
 	$effect(() => {
 		if (!url) return;
 
 		const nextMode = detectMode(ext);
-		resetPreview(nextMode);
+		// Untracked so container bind:this updates inside resetPreview
+		// do not become effect dependencies and abort in-flight loads.
+		untrack(() => resetPreview(nextMode));
 		if (nextMode === 'unsupported') return;
 
 		const controller = new AbortController();
-
-		fetchBuffer(controller.signal)
-			.then(async (buffer) => {
-				if (controller.signal.aborted) return;
-				if (nextMode === 'docx') {
-					await renderDocx(buffer);
-				} else if (nextMode === 'sheet') {
-					await renderSheet(buffer);
-				} else if (nextMode === 'pptx') {
-					await renderPptx(buffer);
-				}
-				if (!controller.signal.aborted) {
-					status = 'ready';
-				}
-			})
-			.catch((err: unknown) => {
-				if (controller.signal.aborted) return;
-				error = err instanceof Error ? err.message : 'Failed to render Office preview.';
-				status = 'error';
-			});
+		void loadPreview(nextMode, controller.signal);
 
 		return () => {
 			controller.abort();
@@ -173,9 +193,11 @@
 	});
 </script>
 
-<div class="flex h-full w-full flex-col bg-surface-primary">
+<div class="relative flex h-full w-full flex-col bg-surface-primary">
 	{#if status === 'loading'}
-		<div class="flex h-full flex-col items-center justify-center gap-3 text-text-secondary">
+		<div
+			class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-surface-primary text-text-secondary"
+		>
 			<Spinner />
 			<span class="text-sm">Rendering locally...</span>
 		</div>

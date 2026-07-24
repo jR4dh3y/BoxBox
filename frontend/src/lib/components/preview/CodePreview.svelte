@@ -6,7 +6,8 @@
 	import { getMonacoLanguage } from '$lib/utils/fileTypes';
 	import { getFileContent, saveFileContent, type FileInfo } from '$lib/api/files';
 	import { Button, Spinner } from '$lib/components/ui';
-	import type * as Monaco from 'monaco-editor';
+	import { loadMonacoLanguage } from './monacoLanguages';
+	import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 
 	interface Props {
 		url: string;
@@ -112,18 +113,19 @@
 	onMount(async () => {
 		// Dynamically import Monaco Editor
 		try {
-			const monacoModule = await import('monaco-editor');
+			const [monacoModule, editorWorkerModule, jsonWorkerModule] = await Promise.all([
+				import('monaco-editor/esm/vs/editor/editor.api.js'),
+				import('monaco-editor/esm/vs/editor/editor.worker.js?worker'),
+				import('monaco-editor/esm/vs/language/json/json.worker.js?worker'),
+				loadMonacoLanguage(language)
+			]);
 			monaco = monacoModule;
 
-			// Configure Monaco environment for web workers
+			// Keep editor services off the UI thread while loading the worker only
+			// when a code preview is opened.
 			self.MonacoEnvironment = {
-				getWorker: function () {
-					return new Worker(
-						URL.createObjectURL(
-							new Blob([`self.onmessage = function() {}`], { type: 'text/javascript' })
-						)
-					);
-				}
+				getWorker: (_moduleId, label) =>
+					label === 'json' ? new jsonWorkerModule.default() : new editorWorkerModule.default()
 			};
 
 			createEditor();
@@ -187,7 +189,11 @@
 		if (monaco) {
 			const model = editor.getModel();
 			if (model) {
-				monaco.editor.setModelLanguage(model, language);
+				void loadMonacoLanguage(language).then(() => {
+					if (monaco && editor?.getModel() === model) {
+						monaco.editor.setModelLanguage(model, language);
+					}
+				});
 			}
 		}
 	});

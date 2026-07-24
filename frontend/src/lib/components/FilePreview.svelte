@@ -7,14 +7,8 @@
 	import { getPreviewUrl, getDownloadUrl } from '$lib/api/files';
 	import { getPreviewType, type PreviewType } from '$lib/utils/fileTypes';
 	import { formatFileSize } from '$lib/utils/format';
-	import { Button } from '$lib/components/ui';
-	import VideoPreview from './preview/VideoPreview.svelte';
-	import AudioPreview from './preview/AudioPreview.svelte';
-	import ImagePreview from './preview/ImagePreview.svelte';
-	import CodePreview from './preview/CodePreview.svelte';
-	import PdfPreview from './preview/PdfPreview.svelte';
-	import OfficePreview from './preview/OfficePreview.svelte';
-	import NotebookPreview from './preview/NotebookPreview.svelte';
+	import { Button, Spinner } from '$lib/components/ui';
+	import { loadPreviewComponent } from './preview/registry';
 
 	interface Props {
 		file: FileInfo | null;
@@ -29,6 +23,7 @@
 	let isFullscreen = $state(false);
 
 	const previewType = $derived<PreviewType>(file ? getPreviewType(file.name) : 'unsupported');
+	const previewComponent = $derived(loadPreviewComponent(previewType));
 	const previewUrl = $derived(file ? getPreviewUrl(file.path) : '');
 	const downloadUrl = $derived(file ? getDownloadUrl(file.path) : '');
 	const currentIndex = $derived(file ? allFiles.findIndex((item) => item.path === file.path) : -1);
@@ -178,34 +173,43 @@
 
 			<!-- Content -->
 			<main class="flex flex-1 items-center justify-center overflow-auto">
-				{#if previewType === 'video'}
-					<VideoPreview url={previewUrl} filename={file.name} {downloadUrl} sizeBytes={file.size} />
-				{:else if previewType === 'audio'}
-					<AudioPreview url={previewUrl} filename={file.name} />
-				{:else if previewType === 'image'}
-					<ImagePreview url={previewUrl} filename={file.name} />
-				{:else if previewType === 'pdf'}
-					<PdfPreview url={previewUrl} filename={file.name} />
-				{:else if previewType === 'office'}
-					<OfficePreview url={previewUrl} filename={file.name} {downloadUrl} />
-				{:else if previewType === 'notebook'}
-					<NotebookPreview url={previewUrl} filename={file.name} />
-				{:else if previewType === 'code' || previewType === 'text'}
-					<CodePreview
-						url={previewUrl}
-						filename={file.name}
-						path={file.path}
-						onSaved={onFileSaved}
-					/>
-				{:else}
-					<div class="flex flex-col items-center gap-4 text-sm text-text-secondary">
-						<p>Preview not available for this file type</p>
-						<Button variant="primary" onclick={handleDownload}>
-							<Download size={20} />
-							Download File
-						</Button>
-					</div>
-				{/if}
+				{#await previewComponent}
+					<Spinner />
+				{:then PreviewComponent}
+					{#if PreviewComponent && previewType === 'video'}
+						<PreviewComponent
+							url={previewUrl}
+							filename={file.name}
+							{downloadUrl}
+							sizeBytes={file.size}
+						/>
+					{:else if PreviewComponent && previewType === 'audio'}
+						<PreviewComponent url={previewUrl} filename={file.name} />
+					{:else if PreviewComponent && previewType === 'image'}
+						<PreviewComponent url={previewUrl} filename={file.name} />
+					{:else if PreviewComponent && previewType === 'pdf'}
+						<PreviewComponent url={previewUrl} filename={file.name} />
+					{:else if PreviewComponent && previewType === 'office'}
+						<PreviewComponent url={previewUrl} filename={file.name} {downloadUrl} />
+					{:else if PreviewComponent && previewType === 'notebook'}
+						<PreviewComponent url={previewUrl} filename={file.name} />
+					{:else if PreviewComponent && (previewType === 'code' || previewType === 'text')}
+						<PreviewComponent
+							url={previewUrl}
+							filename={file.name}
+							path={file.path}
+							onSaved={onFileSaved}
+						/>
+					{:else}
+						<div class="flex flex-col items-center gap-4 text-sm text-text-secondary">
+							<p>Preview not available for this file type</p>
+							<Button variant="primary" onclick={handleDownload}>
+								<Download size={20} />
+								Download File
+							</Button>
+						</div>
+					{/if}
+				{/await}
 			</main>
 		</div>
 	</div>

@@ -52,11 +52,14 @@ type jobService struct {
 	hub         *websocket.Hub
 	jobs        sync.Map // map[string]*runningJob
 	allJobs     sync.Map // map[string]*model.Job - stores all jobs including completed
+	jobMu       sync.RWMutex
+	jobEventMu  sync.Mutex
 	workQueue   chan *model.Job
 	workers     int
 	wg          sync.WaitGroup
 	stopCh      chan struct{}
 	mountPoints []model.MountPoint
+	walker      Walker
 }
 
 // JobServiceConfig holds configuration for the job service
@@ -79,6 +82,7 @@ func NewJobService(fsys filesystem.FS, hub *websocket.Hub, cfg JobServiceConfig)
 		workers:     workers,
 		stopCh:      make(chan struct{}),
 		mountPoints: cfg.MountPoints,
+		walker:      NewWalker(fsys),
 	}
 }
 
@@ -111,7 +115,7 @@ func (s *jobService) worker(ctx context.Context) {
 		case <-s.stopCh:
 			return
 		case job := <-s.workQueue:
-			if job.State == model.JobStateCancelled {
+			if s.jobState(job) == model.JobStateCancelled {
 				continue
 			}
 			s.execute(ctx, job)
@@ -142,7 +146,8 @@ func (s *jobService) cleanupHistory() {
 	cutoff := time.Now().Add(-config.JobRetentionPeriod)
 	s.allJobs.Range(func(key, value interface{}) bool {
 		job := value.(*model.Job)
-		if (job.State == model.JobStateCompleted || job.State == model.JobStateFailed || job.State == model.JobStateCancelled) && job.CompletedAt.Before(cutoff) {
+		snapshot := s.snapshotJob(job)
+		if snapshot.State.IsTerminal() && snapshot.CompletedAt.Before(cutoff) {
 			s.allJobs.Delete(key)
 		}
 		return true
@@ -211,14 +216,16 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 		// Job queued successfully
 	default:
 		// Queue is full, mark as failed
-		job.State = model.JobStateFailed
-		job.Error = "job queue is full"
-		job.CompletedAt = time.Now()
-		s.broadcastUpdate(job)
-		return job, nil
+		snapshot := s.updateAndBroadcast(job, func(job *model.Job) bool {
+			job.State = model.JobStateFailed
+			job.Error = "job queue is full"
+			job.CompletedAt = time.Now()
+			return true
+		})
+		return snapshot, nil
 	}
 
-	return job, nil
+	return s.snapshotJob(job), nil
 }
 
 func (s *jobService) resolveJobPath(path string) (*model.MountPoint, string, error) {
@@ -236,7 +243,7 @@ func (s *jobService) resolveJobPath(path string) (*model.MountPoint, string, err
 // Get returns a job by ID
 func (s *jobService) Get(ctx context.Context, jobID string) (*model.Job, error) {
 	if value, ok := s.allJobs.Load(jobID); ok {
-		return value.(*model.Job), nil
+		return s.snapshotJob(value.(*model.Job)), nil
 	}
 	return nil, ErrJobNotFound
 }
@@ -245,7 +252,7 @@ func (s *jobService) Get(ctx context.Context, jobID string) (*model.Job, error) 
 func (s *jobService) List(ctx context.Context) ([]*model.Job, error) {
 	var jobs []*model.Job
 	s.allJobs.Range(func(key, value interface{}) bool {
-		jobs = append(jobs, value.(*model.Job))
+		jobs = append(jobs, s.snapshotJob(value.(*model.Job)))
 		return true
 	})
 	return jobs, nil
@@ -260,9 +267,15 @@ func (s *jobService) Cancel(ctx context.Context, jobID string) error {
 	}
 
 	job := jobValue.(*model.Job)
-
-	// Check if job is in a cancellable state
-	if job.State != model.JobStatePending && job.State != model.JobStateRunning {
+	cancelled := s.updateAndBroadcast(job, func(job *model.Job) bool {
+		if job.State != model.JobStatePending && job.State != model.JobStateRunning {
+			return false
+		}
+		job.State = model.JobStateCancelled
+		job.CompletedAt = time.Now()
+		return true
+	})
+	if cancelled == nil {
 		return ErrJobNotCancellable
 	}
 
@@ -272,17 +285,12 @@ func (s *jobService) Cancel(ctx context.Context, jobID string) error {
 		runningJob.cancel()
 	}
 
-	// Update job state
-	job.State = model.JobStateCancelled
-	job.CompletedAt = time.Now()
-	s.broadcastUpdate(job)
-
 	return nil
 }
 
 // execute runs a job
 func (s *jobService) execute(ctx context.Context, job *model.Job) {
-	if job.State == model.JobStateCancelled {
+	if s.jobState(job) == model.JobStateCancelled {
 		return
 	}
 
@@ -295,17 +303,19 @@ func (s *jobService) execute(ctx context.Context, job *model.Job) {
 		cancel()
 	}()
 
-	if job.State == model.JobStateCancelled {
+	started := s.updateAndBroadcast(job, func(job *model.Job) bool {
+		if job.State == model.JobStateCancelled {
+			return false
+		}
+		job.State = model.JobStateRunning
+		job.StartedAt = time.Now()
+		return true
+	})
+	if started == nil {
 		return
 	}
-
-	// Update job state to running
-	job.State = model.JobStateRunning
-	job.StartedAt = time.Now()
-	s.broadcastUpdate(job)
-
 	var err error
-	switch job.Type {
+	switch started.Type {
 	case model.JobTypeCopy:
 		err = s.executeCopy(jobCtx, job)
 	case model.JobTypeMove:
@@ -322,16 +332,20 @@ func (s *jobService) execute(ctx context.Context, job *model.Job) {
 		return
 	}
 
-	// Update final state
-	if err != nil {
-		job.State = model.JobStateFailed
-		job.Error = err.Error()
-	} else {
-		job.State = model.JobStateCompleted
-		job.Progress = 100
-	}
-	job.CompletedAt = time.Now()
-	s.broadcastUpdate(job)
+	s.updateAndBroadcast(job, func(job *model.Job) bool {
+		if job.State == model.JobStateCancelled {
+			return false
+		}
+		if err != nil {
+			job.State = model.JobStateFailed
+			job.Error = err.Error()
+		} else {
+			job.State = model.JobStateCompleted
+			job.Progress = 100
+		}
+		job.CompletedAt = time.Now()
+		return true
+	})
 }
 
 // executeCopy copies a file or directory
@@ -395,10 +409,7 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 			// Update progress
 			if totalSize > 0 {
 				progress := int(float64(copied) / float64(totalSize) * 100)
-				if progress != job.Progress {
-					job.Progress = progress
-					s.broadcastUpdate(job)
-				}
+				s.updateProgress(job, progress)
 			}
 		}
 		if readErr == io.EOF {
@@ -412,75 +423,47 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 	return nil
 }
 
-// copyDir copies a directory recursively with progress tracking
+// copyDir builds one traversal manifest, then copies without walking the
+// directory tree a second time merely to calculate progress.
 func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 	sourcePath := jobSourcePath(job)
 	destPath := jobDestPath(job)
-
-	// First, count total files for progress tracking
-	totalFiles, err := s.countFiles(sourcePath)
+	manifest, totalFiles, err := s.collectManifest(ctx, sourcePath)
 	if err != nil {
 		return err
 	}
-
-	var copiedFiles int
-	return s.copyDirRecursive(ctx, job, sourcePath, destPath, totalFiles, &copiedFiles)
-}
-
-// copyDirRecursive recursively copies a directory
-func (s *jobService) copyDirRecursive(ctx context.Context, job *model.Job, srcDir, dstDir string, totalFiles int, copiedFiles *int) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	// Create destination directory
-	if err := s.fs.MkdirAll(dstDir, 0755); err != nil {
+	if err := s.fs.MkdirAll(destPath, 0o755); err != nil {
 		return err
 	}
 
-	entries, err := s.fs.ReadDir(srcDir)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		srcPath := filepath.Join(srcDir, entry.Name())
-		dstPath := filepath.Join(dstDir, entry.Name())
-
-		if entry.IsDir() {
-			if err := s.copyDirRecursive(ctx, job, srcPath, dstPath, totalFiles, copiedFiles); err != nil {
+	copiedFiles := 0
+	for _, entry := range manifest {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		targetPath := filepath.Join(destPath, entry.RelativePath)
+		if entry.Metadata.IsDir() {
+			if err := s.fs.MkdirAll(targetPath, entry.Metadata.Mode().Perm()); err != nil {
 				return err
 			}
-		} else {
-			info, err := entry.Info()
-			if err != nil {
-				return err
-			}
+			continue
+		}
 
-			// Create a temporary job for file copy (to track individual file progress)
-			tempJob := &model.Job{
-				SourcePath:         srcPath,
-				DestPath:           dstPath,
-				ResolvedSourcePath: srcPath,
-				ResolvedDestPath:   dstPath,
-			}
-			if err := s.copyFile(ctx, tempJob, info.Size()); err != nil {
-				return err
-			}
-
-			*copiedFiles++
-			if totalFiles > 0 {
-				progress := int(float64(*copiedFiles) / float64(totalFiles) * 100)
-				if progress != job.Progress {
-					job.Progress = progress
-					s.broadcastUpdate(job)
-				}
-			}
+		tempJob := &model.Job{
+			SourcePath:         entry.Path,
+			DestPath:           targetPath,
+			ResolvedSourcePath: entry.Path,
+			ResolvedDestPath:   targetPath,
+		}
+		if err := s.copyFile(ctx, tempJob, 0); err != nil {
+			return err
+		}
+		copiedFiles++
+		if totalFiles > 0 {
+			progress := int(float64(copiedFiles) / float64(totalFiles) * 100)
+			s.updateProgress(job, progress)
 		}
 	}
-
 	return nil
 }
 
@@ -492,8 +475,7 @@ func (s *jobService) executeMove(ctx context.Context, job *model.Job) error {
 	// Try simple rename first (works if on same filesystem)
 	err := s.fs.Rename(sourcePath, destPath)
 	if err == nil {
-		job.Progress = 100
-		s.broadcastUpdate(job)
+		s.updateProgress(job, 100)
 		return nil
 	}
 
@@ -543,95 +525,52 @@ func (s *jobService) executeDelete(ctx context.Context, job *model.Job) error {
 	if err := s.fs.Remove(sourcePath); err != nil {
 		return err
 	}
-	job.Progress = 100
-	s.broadcastUpdate(job)
+	s.updateProgress(job, 100)
 	return nil
 }
 
-// deleteDir deletes a directory recursively with progress tracking
+// deleteDir uses the same traversal manifest as copy and removes entries in
+// reverse order so child paths are deleted before their parents.
 func (s *jobService) deleteDir(ctx context.Context, job *model.Job) error {
 	sourcePath := jobSourcePath(job)
-
-	// Count total files for progress tracking
-	totalFiles, err := s.countFiles(sourcePath)
+	manifest, totalFiles, err := s.collectManifest(ctx, sourcePath)
 	if err != nil {
 		return err
 	}
-
-	var deletedFiles int
-	return s.deleteDirRecursive(ctx, job, sourcePath, totalFiles, &deletedFiles)
-}
-
-// deleteDirRecursive recursively deletes a directory
-func (s *jobService) deleteDirRecursive(ctx context.Context, job *model.Job, dirPath string, totalFiles int, deletedFiles *int) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	entries, err := s.fs.ReadDir(dirPath)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		entryPath := filepath.Join(dirPath, entry.Name())
-
-		if entry.IsDir() {
-			if err := s.deleteDirRecursive(ctx, job, entryPath, totalFiles, deletedFiles); err != nil {
-				return err
-			}
-		} else {
-			if err := s.fs.Remove(entryPath); err != nil {
-				return err
-			}
-
-			*deletedFiles++
+	deletedFiles := 0
+	for index := len(manifest) - 1; index >= 0; index-- {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		entry := manifest[index]
+		if err := s.fs.Remove(entry.Path); err != nil {
+			return err
+		}
+		if !entry.Metadata.IsDir() {
+			deletedFiles++
 			if totalFiles > 0 {
-				progress := int(float64(*deletedFiles) / float64(totalFiles) * 100)
-				if progress != job.Progress {
-					job.Progress = progress
-					s.broadcastUpdate(job)
-				}
+				progress := int(float64(deletedFiles) / float64(totalFiles) * 100)
+				s.updateProgress(job, progress)
 			}
 		}
 	}
-
-	// Remove the directory itself
-	return s.fs.Remove(dirPath)
+	return s.fs.Remove(sourcePath)
 }
 
-// countFiles counts the total number of files in a directory recursively
-func (s *jobService) countFiles(path string) (int, error) {
-	info, err := s.fs.Stat(path)
-	if err != nil {
-		return 0, err
-	}
-
-	if !info.IsDir() {
-		return 1, nil
-	}
-
-	var count int
-	entries, err := s.fs.ReadDir(path)
-	if err != nil {
-		return 0, err
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			subCount, err := s.countFiles(filepath.Join(path, entry.Name()))
-			if err != nil {
-				return 0, err
-			}
-			count += subCount
-		} else {
-			count++
+func (s *jobService) collectManifest(ctx context.Context, root string) ([]WalkEntry, int, error) {
+	manifest := make([]WalkEntry, 0, 128)
+	fileCount := 0
+	err := s.walker.Walk(ctx, root, WalkOptions{IncludeHidden: true, LoadMetadata: true}, func(entry WalkEntry) error {
+		manifest = append(manifest, entry)
+		if !entry.Metadata.IsDir() {
+			fileCount++
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, 0, err
 	}
-
-	return count, nil
+	return manifest, fileCount, nil
 }
 
 func jobSourcePath(job *model.Job) string {
@@ -646,6 +585,52 @@ func jobDestPath(job *model.Job) string {
 		return job.ResolvedDestPath
 	}
 	return job.DestPath
+}
+
+func (s *jobService) snapshotJob(job *model.Job) *model.Job {
+	s.jobMu.RLock()
+	defer s.jobMu.RUnlock()
+	snapshot := *job
+	return &snapshot
+}
+
+func (s *jobService) jobState(job *model.Job) model.JobState {
+	s.jobMu.RLock()
+	defer s.jobMu.RUnlock()
+	return job.State
+}
+
+func (s *jobService) updateJobIf(job *model.Job, update func(*model.Job) bool) *model.Job {
+	s.jobMu.Lock()
+	defer s.jobMu.Unlock()
+	if !update(job) {
+		return nil
+	}
+	snapshot := *job
+	return &snapshot
+}
+
+func (s *jobService) updateAndBroadcast(
+	job *model.Job,
+	update func(*model.Job) bool,
+) *model.Job {
+	s.jobEventMu.Lock()
+	defer s.jobEventMu.Unlock()
+	snapshot := s.updateJobIf(job, update)
+	if snapshot != nil {
+		s.broadcastUpdate(snapshot)
+	}
+	return snapshot
+}
+
+func (s *jobService) updateProgress(job *model.Job, progress int) {
+	s.updateAndBroadcast(job, func(job *model.Job) bool {
+		if job.State.IsTerminal() || job.Progress == progress {
+			return false
+		}
+		job.Progress = progress
+		return true
+	})
 }
 
 // broadcastUpdate sends a job update via WebSocket

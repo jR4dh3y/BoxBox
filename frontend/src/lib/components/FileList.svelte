@@ -270,7 +270,7 @@
 					{@const sizeDescription = item.isDir ? '' : formatFileSize(item.size)}
 					{@const modifiedDescription = formatFileDate(item.modTime)}
 					<tr
-						class="cursor-default transition-colors duration-50 hover:bg-surface-secondary focus:bg-selection focus:outline-none {isSelected(
+						class="file-list-row cursor-default transition-colors duration-50 hover:bg-surface-secondary focus:bg-selection focus:outline-none {isSelected(
 							item.path
 						)
 							? 'bg-selection hover:bg-selection-hover'
@@ -332,3 +332,10 @@
 		onClose={handleContextMenuClose}
 	/>
 {/if}
+
+<style>
+	.file-list-row {
+		content-visibility: auto;
+		contain-intrinsic-size: 32px;
+	}
+</style>

@@ -70,6 +70,9 @@ func NewMemMapFS() *AferoFS {
 
 // ReadDir reads the directory named by dirname and returns a list of directory entries.
 func (a *AferoFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		return os.ReadDir(name)
+	}
 	entries, err := afero.ReadDir(a.fs, name)
 	if err != nil {
 		return nil, err

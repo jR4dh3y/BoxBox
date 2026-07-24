@@ -14,6 +14,7 @@
 		onSearch?: (query: string) => void;
 		onInput?: (query: string) => void;
 		onClear?: () => void;
+		debounceMs?: number;
 	}
 
 	let {
@@ -24,15 +25,19 @@
 		compact = false,
 		onSearch,
 		onInput,
-		onClear
+		onClear,
+		debounceMs = 300
 	}: Props = $props();
 
 	let inputValue = $state('');
+	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
 	$effect(() => {
-		if (value !== inputValue) {
-			inputValue = value;
-		}
+		inputValue = value;
+
+		return () => {
+			if (debounceTimer) clearTimeout(debounceTimer);
+		};
 	});
 
 	function handleSubmit(event: Event): void {
@@ -46,11 +51,13 @@
 	function handleInput(event: Event): void {
 		const target = event.target as HTMLInputElement;
 		inputValue = target.value;
-		onInput?.(inputValue);
+		if (debounceTimer) clearTimeout(debounceTimer);
+		debounceTimer = setTimeout(() => onInput?.(inputValue), debounceMs);
 	}
 
 	function handleClear(): void {
 		inputValue = '';
+		if (debounceTimer) clearTimeout(debounceTimer);
 		onClear?.();
 		onInput?.('');
 	}

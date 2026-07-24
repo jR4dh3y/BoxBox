@@ -41,32 +41,47 @@ type WriteFile interface {
 	io.Closer
 }
 
-// FileService defines the file operations service interface
-type FileService interface {
+// DirectoryReader contains read-only directory operations.
+type DirectoryReader interface {
 	// List returns a paginated list of files in a directory
 	List(ctx context.Context, path string, opts model.ListOptions) (*model.FileList, error)
 	// GetInfo returns metadata for a file or directory
 	GetInfo(ctx context.Context, path string) (*model.FileInfo, error)
-	// CreateDir creates a new directory
-	CreateDir(ctx context.Context, path string) error
-	// Rename renames/moves a file or directory
-	Rename(ctx context.Context, oldPath, newPath string) error
-	// Delete removes a file or directory
-	Delete(ctx context.Context, path string) error
 	// ListMountPoints returns all configured mount points
 	ListMountPoints() []model.MountPoint
 	// GetDriveStats returns disk usage statistics for all mount points
 	GetDriveStats(ctx context.Context) (*model.DriveStatsResponse, error)
 	// ResolvePath resolves a virtual path to a filesystem path
 	ResolvePath(path string) (*model.MountPoint, string, error)
-	// OpenFile opens a file for reading using the filesystem abstraction
-	OpenFile(ctx context.Context, path string) (File, *model.FileInfo, error)
-	// CreateFile creates a new file for writing using the filesystem abstraction
-	CreateFile(ctx context.Context, path string) (WriteFile, error)
-	// WriteFile overwrites an existing file using the filesystem abstraction
+}
+
+// FileCommander contains mutating filesystem operations.
+type FileCommander interface {
+	ResolvePath(path string) (*model.MountPoint, string, error)
 	WriteFile(ctx context.Context, path string, content []byte) error
+	CreateDir(ctx context.Context, path string) error
+	Rename(ctx context.Context, oldPath, newPath string) error
+	Delete(ctx context.Context, path string) error
+	CreateFile(ctx context.Context, path string) (WriteFile, error)
+}
+
+// FileStreamer contains streaming-oriented filesystem operations.
+type FileStreamer interface {
+	OpenFile(ctx context.Context, path string) (File, *model.FileInfo, error)
+	ResolvePath(path string) (*model.MountPoint, string, error)
 	// GetFilesystem returns the underlying filesystem for advanced operations
 	GetFilesystem() filesystem.FS
+}
+
+type FileManager interface {
+	DirectoryReader
+	FileCommander
+}
+
+// FileService is the composed compatibility interface used during wiring.
+type FileService interface {
+	FileManager
+	FileStreamer
 }
 
 // fileService implements FileService
@@ -177,7 +192,8 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 		return nil, ErrNotDirectory
 	}
 
-	// Read directory entries
+	// Read directory entries. Afero's entries already carry metadata; keep a
+	// local metadata cache so non-name sorts never stat the same entry repeatedly.
 	entries, err := s.fs.ReadDir(fsPath)
 	if err != nil {
 		return nil, err
@@ -477,8 +493,22 @@ func (s *fileService) GetFilesystem() filesystem.FS {
 
 // sortEntries sorts directory entries based on the given criteria
 func (s *fileService) sortEntries(entries []fs.DirEntry, sortBy, sortDir string) {
+	infos := make(map[string]fs.FileInfo, len(entries))
+	if sortBy == "size" || sortBy == "modTime" {
+		for _, entry := range entries {
+			if info, err := entry.Info(); err == nil {
+				infos[entry.Name()] = info
+			}
+		}
+	}
+	lessFor := func(entry fs.DirEntry) fs.FileInfo {
+		if info, ok := infos[entry.Name()]; ok {
+			return info
+		}
+		info, _ := entry.Info()
+		return info
+	}
 	sort.Slice(entries, func(i, j int) bool {
-		var less bool
 		iName := entries[i].Name()
 		jName := entries[j].Name()
 		iHidden := strings.HasPrefix(iName, ".")
@@ -488,12 +518,13 @@ func (s *fileService) sortEntries(entries []fs.DirEntry, sortBy, sortDir string)
 			return !iHidden
 		}
 
+		comparison := 0
 		switch sortBy {
 		case "name":
-			less = strings.ToLower(iName) < strings.ToLower(jName)
+			comparison = strings.Compare(strings.ToLower(iName), strings.ToLower(jName))
 		case "size":
-			iInfo, _ := entries[i].Info()
-			jInfo, _ := entries[j].Info()
+			iInfo := lessFor(entries[i])
+			jInfo := lessFor(entries[j])
 			iSize := int64(0)
 			jSize := int64(0)
 			if iInfo != nil {
@@ -502,29 +533,43 @@ func (s *fileService) sortEntries(entries []fs.DirEntry, sortBy, sortDir string)
 			if jInfo != nil {
 				jSize = jInfo.Size()
 			}
-			less = iSize < jSize
+			comparison = compareInt64(iSize, jSize)
 		case "modTime":
-			iInfo, _ := entries[i].Info()
-			jInfo, _ := entries[j].Info()
+			iInfo := lessFor(entries[i])
+			jInfo := lessFor(entries[j])
 			if iInfo != nil && jInfo != nil {
-				less = iInfo.ModTime().Before(jInfo.ModTime())
+				comparison = iInfo.ModTime().Compare(jInfo.ModTime())
 			}
 		case "type":
 			// Directories first, then by name
 			iDir := entries[i].IsDir()
 			jDir := entries[j].IsDir()
 			if iDir != jDir {
-				less = iDir
+				return iDir
 			} else {
-				less = strings.ToLower(iName) < strings.ToLower(jName)
+				comparison = strings.Compare(strings.ToLower(iName), strings.ToLower(jName))
 			}
 		default:
-			less = strings.ToLower(iName) < strings.ToLower(jName)
+			comparison = strings.Compare(strings.ToLower(iName), strings.ToLower(jName))
+		}
+		if comparison == 0 {
+			comparison = strings.Compare(strings.ToLower(iName), strings.ToLower(jName))
 		}
 
 		if sortDir == "desc" {
-			return !less
+			return comparison > 0
 		}
-		return less
+		return comparison < 0
 	})
+}
+
+func compareInt64(left, right int64) int {
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
+	}
 }

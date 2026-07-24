@@ -4,7 +4,7 @@
 	 */
 
 	import type { FileInfo } from '$lib/api/files';
-	import { getPreviewUrl } from '$lib/api/files';
+	import { getThumbnailUrl } from '$lib/api/files';
 	import { formatFileSize, formatFileDate } from '$lib/utils/format';
 	import { getFileTypeDescription, getFileIcon, getPreviewType } from '$lib/utils/fileTypes';
 	import { getFileContextMenuItems } from '$lib/utils/fileContextMenu';
@@ -190,7 +190,9 @@
 					!item.isDir && getPreviewType(item.name) === 'image' && !thumbnailErrors.has(item.path)}
 				{@const detailText = item.isDir ? 'Folder' : sizeDescription}
 				<div
-					class="{tileClass} {isSelected(item.path) ? selectedClass : ''} {isCut(item.path)
+					class="file-grid-item {tileClass} {isSelected(item.path) ? selectedClass : ''} {isCut(
+						item.path
+					)
 						? 'opacity-50'
 						: ''}"
 					role="gridcell"
@@ -206,7 +208,7 @@
 					<div class="{thumbnailClass} {compactMode ? 'h-11' : 'h-16'}">
 						{#if showThumbnail}
 							<img
-								src={getPreviewUrl(item.path)}
+								src={getThumbnailUrl(item.path, compactMode ? 192 : 224, compactMode ? 96 : 144)}
 								alt=""
 								loading="lazy"
 								class="h-full w-full object-cover"
@@ -263,5 +265,10 @@
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		word-break: break-word;
+	}
+
+	.file-grid-item {
+		content-visibility: auto;
+		contain-intrinsic-size: 112px 129px;
 	}
 </style>

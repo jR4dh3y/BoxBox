@@ -14,11 +14,11 @@ import (
 
 // FileHandler handles file-related HTTP requests
 type FileHandler struct {
-	fileService service.FileService
+	fileService service.FileManager
 }
 
 // NewFileHandler creates a new file handler
-func NewFileHandler(fileService service.FileService) *FileHandler {
+func NewFileHandler(fileService service.FileManager) *FileHandler {
 	return &FileHandler{
 		fileService: fileService,
 	}
@@ -28,11 +28,27 @@ func NewFileHandler(fileService service.FileService) *FileHandler {
 func (h *FileHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/", h.ListRoots)
 	r.Get("/stats", h.GetDriveStats)
+	r.Get("/list/*", h.ListPath)
 	r.Get("/*", h.GetPath)
 	r.Post("/*", h.CreateItem)
 	r.Put("/*", h.Rename)
 	r.Patch("/*", h.SaveFileContent)
 	r.Delete("/*", h.Delete)
+}
+
+// ListPath returns a directory page without the polymorphic file-info lookup.
+func (h *FileHandler) ListPath(w http.ResponseWriter, r *http.Request) {
+	path := chi.URLParam(r, "*")
+	if path == "" {
+		writeError(w, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	list, err := h.fileService.List(r.Context(), path, h.parseListOptions(r))
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	writeJSON(w, list, http.StatusOK)
 }
 
 // MountPointResponse represents a mount point in API responses
