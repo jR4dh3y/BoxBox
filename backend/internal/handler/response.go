@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/homelab/filemanager/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 )
 
 // writeError writes an error response with the specified message, code, and status

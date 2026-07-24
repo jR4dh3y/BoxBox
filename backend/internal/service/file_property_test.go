@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/homelab/filemanager/internal/model"
-	"github.com/homelab/filemanager/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
@@ -181,7 +181,7 @@ func TestWriteFileOverwritesExistingFileOnly(t *testing.T) {
 	}
 }
 
-// **Feature: homelab-file-manager, Property 1: Directory Listing Metadata Completeness**
+// **Feature: boxbox, Property 1: Directory Listing Metadata Completeness**
 // **Validates: Requirements 1.1**
 //
 // Property: For any valid directory path, the listing response SHALL contain items
@@ -310,7 +310,7 @@ func TestProperty_DirectoryListingMetadataCompleteness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// **Feature: homelab-file-manager, Property 2: Pagination Correctness**
+// **Feature: boxbox, Property 2: Pagination Correctness**
 // **Validates: Requirements 1.3**
 //
 // Property: For any directory with N items and requested page size P,
@@ -459,7 +459,7 @@ func TestProperty_PaginationCorrectness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// **Feature: homelab-file-manager, Property 3: Non-Existent Path Returns 404**
+// **Feature: boxbox, Property 3: Non-Existent Path Returns 404**
 // **Validates: Requirements 1.5, 3.4**
 //
 // Property: For any path that does not exist in the filesystem,
@@ -551,7 +551,7 @@ func TestProperty_NonExistentPathReturnsError(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// **Feature: homelab-file-manager, Property 15: File Rename Correctness**
+// **Feature: boxbox, Property 15: File Rename Correctness**
 // **Validates: Requirements 8.1**
 //
 // Property: For any successful rename operation from path A to path B,
@@ -691,7 +691,7 @@ func TestProperty_FileRenameCorrectness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// **Feature: homelab-file-manager, Property 16: Directory Creation Correctness**
+// **Feature: boxbox, Property 16: Directory Creation Correctness**
 // **Validates: Requirements 8.2**
 //
 // Property: For any successful directory creation at path P,
@@ -819,7 +819,7 @@ func TestProperty_DirectoryCreationCorrectness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// **Feature: homelab-file-manager, Property 17: File Deletion Correctness**
+// **Feature: boxbox, Property 17: File Deletion Correctness**
 // **Validates: Requirements 8.3**
 //
 // Property: For any successful delete operation on path P,

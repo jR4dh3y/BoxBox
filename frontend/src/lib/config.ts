@@ -57,5 +57,5 @@ export const CONFIG = {
 export const STORAGE_KEYS = {
 	ACCESS_TOKEN: 'accessToken',
 	REFRESH_TOKEN: 'refreshToken',
-	SETTINGS: 'filemanager_settings'
+	SETTINGS: 'boxbox_settings'
 } as const;

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/homelab/filemanager/internal/service"
+	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
 
 // ContextKey is a type for context keys to avoid collisions

@@ -1,4 +1,4 @@
-// Package middleware provides HTTP middleware for the file manager API.
+// Package middleware provides HTTP middleware for the BoxBox API.
 //
 // # Available Middleware
 //

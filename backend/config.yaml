@@ -4,10 +4,10 @@
 port: 80
 host: "0.0.0.0"
 
-# JWT authentication secret. Override with FM_JWT_SECRET.
+# JWT authentication secret. Override with BOXBOX_JWT_SECRET.
 jwt_secret: "change-me-in-production-use-a-long-random-string"
 
-# Users can be configured here or with FM_USERS_<username> environment variables.
+# Users can be configured here or with BOXBOX_USERS_<username> environment variables.
 # At least one user is required.
 # users:
 #   admin: "change-me"

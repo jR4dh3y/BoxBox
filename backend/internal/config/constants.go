@@ -91,7 +91,7 @@ const (
 	SessionCleanupInterval = 1 * time.Hour
 
 	// DefaultUploadTempDir is where chunk files are stored before final assembly
-	DefaultUploadTempDir = "/tmp/filemanager"
+	DefaultUploadTempDir = "/tmp/boxbox"
 )
 
 // ============================================================================

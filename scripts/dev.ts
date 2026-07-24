@@ -145,7 +145,7 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 // Main entry point
 async function main(): Promise<void> {
   console.log(`
-${colors.bold}${colors.cyan}Homelab File Manager - Development Mode${colors.reset}
+${colors.bold}${colors.cyan}BoxBox - Development Mode${colors.reset}
 ${colors.dim}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${colors.reset}
 `);
 

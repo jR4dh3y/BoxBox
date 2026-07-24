@@ -1,4 +1,4 @@
-// Package model contains all data models for the homelab file manager.
+// Package model contains all data models for BoxBox.
 //
 // This package is organized into separate files:
 //   - file.go: FileInfo, FileList, ListOptions for directory browsing

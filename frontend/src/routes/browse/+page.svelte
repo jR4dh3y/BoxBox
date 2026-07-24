@@ -675,7 +675,7 @@
 </script>
 
 <svelte:head>
-	<title>File Manager</title>
+	<title>BoxBox</title>
 </svelte:head>
 
 <div class="flex h-screen w-full overflow-hidden bg-surface-primary">

@@ -4,6 +4,7 @@
 	 */
 	import { authStore, authError, isAuthLoading } from '$lib/stores/auth';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { Button, Input, Spinner } from '$lib/components/ui';
 	import { X, FolderOpen, AlertTriangle } from 'lucide-svelte';
 
@@ -19,7 +20,7 @@
 
 		const success = await authStore.login(username.trim(), password);
 		if (success) {
-			goto('/browse');
+			goto(resolve('/browse'));
 		}
 	}
 
@@ -29,7 +30,7 @@
 </script>
 
 <svelte:head>
-	<title>Login - File Manager</title>
+	<title>Login - BoxBox</title>
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center bg-surface-primary p-4">
@@ -39,7 +40,7 @@
 		<div class="mb-8 flex flex-col items-center">
 			<div class="mb-2 flex items-center gap-3">
 				<span class="text-accent"><FolderOpen size={32} /></span>
-				<h1 class="m-0 text-2xl font-semibold text-text-primary">File Manager</h1>
+				<h1 class="m-0 text-2xl font-semibold text-text-primary">BoxBox</h1>
 			</div>
 			<p class="m-0 text-sm text-text-secondary">Sign in to access your files</p>
 		</div>
