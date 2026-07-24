@@ -78,6 +78,7 @@ type uploadSession struct {
 	tempDir        string
 	createdAt      time.Time
 	lastActivity   time.Time
+	activeRequests int
 	processMu      sync.Mutex
 	mu             sync.RWMutex
 }
@@ -156,6 +157,7 @@ func (s *uploadService) AcceptChunk(
 	if err != nil {
 		return nil, err
 	}
+	defer session.release()
 	session.processMu.Lock()
 	defer session.processMu.Unlock()
 
@@ -223,6 +225,7 @@ func (s *uploadService) getOrCreate(path string, chunk UploadChunk) (*uploadSess
 			existing.chunkSize != chunk.ChunkSize || existing.totalSize != chunk.TotalSize {
 			return nil, ErrUploadConflict
 		}
+		existing.acquire()
 		return existing, nil
 	}
 
@@ -244,6 +247,7 @@ func (s *uploadService) getOrCreate(path string, chunk UploadChunk) (*uploadSess
 		tempDir:        tempDir,
 		createdAt:      now,
 		lastActivity:   now,
+		activeRequests: 1,
 	}
 	s.sessions[chunk.UploadID] = session
 	return session, nil
@@ -315,7 +319,8 @@ func (s *uploadService) cleanupExpired() {
 	now := time.Now()
 	for id, session := range s.sessions {
 		session.mu.RLock()
-		expired := now.Sub(session.lastActivity) > config.SessionTimeout
+		expired := session.activeRequests == 0 &&
+			now.Sub(session.lastActivity) > config.SessionTimeout
 		session.mu.RUnlock()
 		if expired {
 			_ = os.RemoveAll(session.tempDir)
@@ -331,6 +336,20 @@ func (s *uploadService) deleteSession(id string) {
 		_ = os.RemoveAll(session.tempDir)
 		delete(s.sessions, id)
 	}
+}
+
+func (s *uploadSession) acquire() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeRequests++
+	s.lastActivity = time.Now()
+}
+
+func (s *uploadSession) release() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeRequests--
+	s.lastActivity = time.Now()
 }
 
 func (s *uploadSession) hasChunk(index int) bool {
