@@ -6,13 +6,13 @@ BoxBox is built for private homelab use. It can modify real host files, so treat
 
 Before exposing BoxBox beyond your own machine:
 
-- Set `FM_JWT_SECRET` to a long random value.
-- Set `FM_USERS_admin` or configure users in `config.yaml`.
+- Set `BOXBOX_JWT_SECRET` to a long random value.
+- Set `BOXBOX_USERS_admin` or configure users in `config.yaml`.
 - Use a reverse proxy with HTTPS.
 - Mount only the directories BoxBox needs.
 - Use `read_only: true` for backups and sensitive locations.
 - Avoid exposing `/host_root` unless you really need whole-host browsing.
-- Restrict WebSocket origins with `allowed_origins` or `FM_ALLOWED_ORIGINS`.
+- Restrict WebSocket origins with `allowed_origins` or `BOXBOX_ALLOWED_ORIGINS`.
 - Put the service behind your normal VPN, Tailscale, WireGuard, or trusted reverse proxy access controls when possible.
 
 ## Authentication Model
@@ -32,7 +32,7 @@ users:
 ```
 
 ```bash
-FM_USERS_admin="a-long-password"
+BOXBOX_USERS_admin="a-long-password"
 ```
 
 Current limitation: passwords are compared from configured values, not stored as password hashes. Keep config files and environment handling private.
@@ -101,7 +101,7 @@ allowed_origins:
 Or through env:
 
 ```bash
-FM_ALLOWED_ORIGINS="https://boxbox.example.com,*.internal.example.com"
+BOXBOX_ALLOWED_ORIGINS="https://boxbox.example.com,*.internal.example.com"
 ```
 
 ## Reverse Proxy Checklist
@@ -118,18 +118,18 @@ If you use Traefik or another reverse proxy, add routing and TLS configuration a
 
 ## Upload Safety
 
-Chunked uploads are assembled in `/tmp/filemanager` by default and moved into the final destination when complete. Configure enough disk space for temporary chunks:
+Chunked uploads are assembled in `/tmp/boxbox` by default and moved into the final destination when complete. Configure enough disk space for temporary chunks:
 
 ```yaml
 volumes:
-  - filemanager-temp:/tmp/filemanager
+  - boxbox-temp:/tmp/boxbox
 ```
 
 Use `max_upload_mb` to cap accepted upload sizes.
 
 ## Operational Checklist
 
-- Rotate `FM_JWT_SECRET` if it was ever committed or shared.
+- Rotate `BOXBOX_JWT_SECRET` if it was ever committed or shared.
 - Rotate admin passwords after test deployments.
 - Review mounted paths after adding new host disks.
 - Check logs for repeated failed logins or path validation errors.

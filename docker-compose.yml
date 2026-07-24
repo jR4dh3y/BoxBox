@@ -12,21 +12,21 @@
 # =============================================================================
 
 services:
-  filemanager:
+  boxbox:
     image: ${BOXBOX_IMAGE:-ghcr.io/jr4dh3y/boxbox:latest}
-    container_name: filemanager
+    container_name: boxbox
     restart: unless-stopped
     env_file:
       - .env
     ports:
       - "${HOST_PORT:-8080}:80"
     environment:
-      - FM_JWT_SECRET=${FM_JWT_SECRET:?Set FM_JWT_SECRET in .env}
-      - FM_USERS_admin=${FM_USERS_admin:?Set FM_USERS_admin in .env}
-      - FM_RATE_LIMIT_RPS=${FM_RATE_LIMIT_RPS:-10}
-      - FM_ALLOWED_ORIGINS=${FM_ALLOWED_ORIGINS:-}
+      - BOXBOX_JWT_SECRET=${BOXBOX_JWT_SECRET:?Set BOXBOX_JWT_SECRET in .env}
+      - BOXBOX_USERS_admin=${BOXBOX_USERS_admin:?Set BOXBOX_USERS_admin in .env}
+      - BOXBOX_RATE_LIMIT_RPS=${BOXBOX_RATE_LIMIT_RPS:-10}
+      - BOXBOX_ALLOWED_ORIGINS=${BOXBOX_ALLOWED_ORIGINS:-}
       - CONFIG_PATH=/app/config.yaml
-      - TMPDIR=/tmp/filemanager
+      - TMPDIR=/tmp/boxbox
     volumes:
       # Configuration
       - ./backend/config.yaml:/app/config.yaml:ro
@@ -48,8 +48,8 @@ services:
       - ${VIDEOS_PATH:-${HOME_PATH:-${HOME:-/home/user}}/Videos}:/home/user/Videos
 
       # Persistent storage
-      - filemanager-temp:/tmp/filemanager
-      - filemanager-data:/data
+      - boxbox-temp:/tmp/boxbox
+      - boxbox-data:/data
 
     # Security: Run without full privileges, only necessary capabilities
     privileged: false
@@ -78,7 +78,7 @@ services:
       start_period: 10s
 
 volumes:
-  filemanager-temp:
+  boxbox-temp:
     driver: local
-  filemanager-data:
+  boxbox-data:
     driver: local

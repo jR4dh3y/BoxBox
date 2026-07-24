@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/gorilla/websocket"
-	"github.com/homelab/filemanager/internal/config"
-	"github.com/homelab/filemanager/internal/service"
-	ws "github.com/homelab/filemanager/internal/websocket"
+	"github.com/jR4dh3y/BoxBox/backend/internal/config"
+	"github.com/jR4dh3y/BoxBox/backend/internal/service"
+	ws "github.com/jR4dh3y/BoxBox/backend/internal/websocket"
 )
 
 // WebSocketHandler handles WebSocket connections

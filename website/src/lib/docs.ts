@@ -44,6 +44,12 @@ const docNav = [
       "Deploy from GHCR with Compose, port binding, and optional reverse proxy examples.",
   },
   {
+    slug: "release",
+    title: "Release Workflow",
+    description:
+      "Use test branches, test GHCR images, and stable tags without moving latest too early.",
+  },
+  {
     slug: "configuration",
     title: "Configuration",
     description:

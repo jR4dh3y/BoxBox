@@ -251,7 +251,7 @@
 	{#if isPreviewing}
 		<div class="flex flex-col gap-4">
 			<div
-				class="relative h-[340px] overflow-hidden rounded-lg border border-border-primary bg-surface-secondary"
+				class="relative h-85 overflow-hidden rounded-lg border border-border-primary bg-surface-secondary"
 				style:background-image={previewImageStyle}
 				style:background-size={previewBackgroundStyle.size}
 				style:background-repeat={previewBackgroundStyle.repeat}
@@ -303,7 +303,7 @@
 					<ImageIcon size={16} class="shrink-0 text-accent" />
 					<span class="block w-56 truncate" title={previewName}>{previewName}</span>
 					<span
-						class="pointer-events-none absolute top-6 left-6 z-10 hidden max-w-[28rem] rounded border border-border-primary bg-surface-elevated px-2 py-1 text-xs font-normal whitespace-normal text-text-primary shadow-lg group-hover:block"
+						class="pointer-events-none absolute top-6 left-6 z-10 hidden max-w-md rounded border border-border-primary bg-surface-elevated px-2 py-1 text-xs font-normal whitespace-normal text-text-primary shadow-lg group-hover:block"
 					>
 						{previewName}
 					</span>

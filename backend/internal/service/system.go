@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"github.com/homelab/filemanager/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 )
 
 // SystemService provides system-level information

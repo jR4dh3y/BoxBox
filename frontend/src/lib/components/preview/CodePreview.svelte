@@ -37,7 +37,7 @@
 	}
 
 	function defineTheme(monacoApi: typeof Monaco) {
-		monacoApi.editor.defineTheme('filemanager-dark', {
+		monacoApi.editor.defineTheme('boxbox-dark', {
 			base: 'vs-dark',
 			inherit: true,
 			rules: [],
@@ -60,7 +60,7 @@
 		const createdEditor = monacoApi.editor.create(containerElement, {
 			value: content ?? '',
 			language: language,
-			theme: 'filemanager-dark',
+			theme: 'boxbox-dark',
 			readOnly: false,
 			minimap: { enabled: true },
 			scrollBeyondLastLine: false,

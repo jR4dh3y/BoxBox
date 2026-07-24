@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/homelab/filemanager/internal/model"
-	"github.com/homelab/filemanager/internal/service"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
 
 // SearchHandler handles search-related HTTP requests

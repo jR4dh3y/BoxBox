@@ -1,11 +1,11 @@
 # =============================================================================
-# Homelab File Manager - Unified Multi-Stage Dockerfile
+# BoxBox - Unified Multi-Stage Dockerfile
 # =============================================================================
 # This Dockerfile builds both frontend and backend into a single container.
 # Frontend is compiled to static files and embedded in the Go binary via go:embed.
 #
-# Build: docker build -t filemanager .
-# Run:   docker run -p 80:80 -v /your/files:/media/files filemanager
+# Build: docker build -t boxbox .
+# Run:   docker run -p 80:80 -v /your/files:/media/files boxbox
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -26,7 +26,7 @@ RUN bun run build
 # -----------------------------------------------------------------------------
 # Stage 2: Build Backend with Go (embeds frontend assets)
 # -----------------------------------------------------------------------------
-FROM golang:1.24-alpine AS backend-builder
+FROM golang:1.26-alpine AS backend-builder
 
 WORKDIR /app
 
@@ -53,7 +53,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # -----------------------------------------------------------------------------
 # Stage 3: Minimal Production Runtime
 # -----------------------------------------------------------------------------
-FROM alpine:3.20
+FROM alpine:3.24
 
 WORKDIR /app
 
@@ -70,10 +70,10 @@ COPY --from=backend-builder /server /app/server
 COPY backend/config.yaml /app/config.yaml
 
 # Create writable runtime directories
-RUN mkdir -p /data /tmp/filemanager && chmod 1777 /tmp /tmp/filemanager
+RUN mkdir -p /data /tmp/boxbox && chmod 1777 /tmp /tmp/boxbox
 
 # Store upload chunk temp files on a dedicated writable path
-ENV TMPDIR=/tmp/filemanager
+ENV TMPDIR=/tmp/boxbox
 
 # Expose the server port (port 80 for Traefik compatibility)
 EXPOSE 80

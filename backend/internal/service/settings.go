@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/homelab/filemanager/internal/config"
-	"github.com/homelab/filemanager/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/config"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 )
 
 type SettingsService interface {
