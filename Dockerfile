@@ -26,7 +26,7 @@ RUN bun run build
 # -----------------------------------------------------------------------------
 # Stage 2: Build Backend with Go (embeds frontend assets)
 # -----------------------------------------------------------------------------
-FROM golang:1.24-alpine AS backend-builder
+FROM golang:1.26-alpine AS backend-builder
 
 WORKDIR /app
 
@@ -53,7 +53,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # -----------------------------------------------------------------------------
 # Stage 3: Minimal Production Runtime
 # -----------------------------------------------------------------------------
-FROM alpine:3.20
+FROM alpine:3.24
 
 WORKDIR /app
 
