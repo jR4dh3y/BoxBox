@@ -8,12 +8,7 @@
 		useQueryClient,
 		type InfiniteData
 	} from '@tanstack/svelte-query';
-	import {
-		afterNavigate,
-		goto,
-		pushState as pushHistoryState,
-		replaceState as replaceHistoryState
-	} from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import Sidebar from '$lib/components/Sidebar.svelte';
@@ -21,7 +16,7 @@
 	import FileList from '$lib/components/FileList.svelte';
 	import FileGrid from '$lib/components/FileGrid.svelte';
 	import StatusBar from '$lib/components/StatusBar.svelte';
-	import SystemDriveCard from '$lib/components/SystemDriveCard.svelte';
+	import DriveCard from '$lib/components/DriveCard.svelte';
 	import FilePreview from '$lib/components/FilePreview.svelte';
 	import BrowseDialogs from '$lib/components/BrowseDialogs.svelte';
 	import UploadPanel from '$lib/components/UploadPanel.svelte';
@@ -35,6 +30,7 @@
 	import { jobsStore } from '$lib/stores/jobs';
 	import {
 		listRoots,
+		getDriveStats,
 		listDirectory,
 		search,
 		createDirectory,
@@ -43,15 +39,14 @@
 		deleteFile,
 		getDownloadUrl
 	} from '$lib/api/files';
-	import { getSystemDrives, type SystemDrivesResponse } from '$lib/api/system';
 	import { createCopyJob, createMoveJob, createDeleteJob } from '$lib/api/jobs';
-	import { mapSystemMountToBrowsePath } from '$lib/utils/format';
 	import { canPreview, getFileTypeDescription } from '$lib/utils/fileTypes';
 	import type { SortField, SortDir, ViewMode } from '$lib/types/files';
 	import type {
 		FileInfo,
 		FileList as FileListType,
 		ListOptions,
+		DriveStatsResponse,
 		RootsResponse,
 		SearchResponse
 	} from '$lib/api/files';
@@ -132,9 +127,9 @@
 		queryFn: () => listRoots()
 	}));
 
-	const systemDrivesQuery = createQuery<SystemDrivesResponse>(() => ({
-		queryKey: ['system', 'drives'],
-		queryFn: () => getSystemDrives(),
+	const driveStatsQuery = createQuery<DriveStatsResponse>(() => ({
+		queryKey: [...fileQueryKeys.roots(), 'stats'],
+		queryFn: () => getDriveStats(),
 		enabled: path === ''
 	}));
 
@@ -170,7 +165,7 @@
 	);
 	const searchResults = $derived(searchQueryResult.data?.results ?? []);
 	const roots = $derived(rootsQuery.data?.roots ?? []);
-	const systemDrives = $derived(systemDrivesQuery.data?.drives ?? []);
+	const drives = $derived(driveStatsQuery.data?.drives ?? []);
 	const isAtRoot = $derived(path === '');
 
 	// Clipboard state for context menu
@@ -215,7 +210,7 @@
 		return 'This folder is empty';
 	});
 
-	const itemCount = $derived(isAtRoot ? systemDrives.length : displayItems.length);
+	const itemCount = $derived(isAtRoot ? drives.length : displayItems.length);
 	const selectedCount = $derived(selectedPaths.size);
 	const historyIndex = $derived((page.state as BrowsePageState).browseHistoryIndex ?? 0);
 	const canGoBack = $derived(historyIndex > 0);
@@ -255,13 +250,22 @@
 			else url.searchParams.delete(key);
 		}
 		if (options.replaceState) {
-			replaceHistoryState(url, page.state);
+			void goto(`${resolve('/browse')}${url.search}${url.hash}`, {
+				replaceState: true,
+				noScroll: true,
+				keepFocus: true,
+				state: page.state
+			});
 			return;
 		}
 
 		const nextIndex = historyIndex + 1;
 		historyMaxIndex = nextIndex;
-		pushHistoryState(url, { ...page.state, browseHistoryIndex: nextIndex });
+		void goto(`${resolve('/browse')}${url.search}${url.hash}`, {
+			noScroll: true,
+			keepFocus: true,
+			state: { ...page.state, browseHistoryIndex: nextIndex }
+		});
 	}
 
 	function handleNavigate(newPath: string) {
@@ -286,7 +290,7 @@
 
 	function handleRefresh() {
 		if (isAtRoot) {
-			systemDrivesQuery.refetch();
+			driveStatsQuery.refetch();
 		} else {
 			directoryQuery.refetch();
 		}
@@ -677,7 +681,7 @@
 
 <div class="flex h-screen w-full overflow-hidden bg-surface-primary">
 	<!-- Sidebar -->
-	<Sidebar currentPath={path} onNavigate={handleNavigate} />
+	<Sidebar currentPath={path} {roots} onNavigate={handleNavigate} />
 
 	<!-- Main content area -->
 	<div class="flex min-w-0 flex-1 flex-col">
@@ -726,24 +730,19 @@
 			{#if isAtRoot}
 				<!-- This Server view - show drive cards -->
 				<div class="p-6">
-					{#if rootsQuery.isLoading || systemDrivesQuery.isLoading}
+					{#if rootsQuery.isLoading || driveStatsQuery.isLoading}
 						<div class="flex items-center gap-2 py-5 text-sm text-text-secondary">
 							<Spinner size="sm" />
 							<span>Loading drives...</span>
 						</div>
-					{:else if systemDrives.length === 0}
-						<div class="py-5 text-sm text-text-secondary">No storage devices found</div>
+					{:else if drives.length === 0}
+						<div class="py-5 text-sm text-text-secondary">No configured storage found</div>
 					{:else}
 						<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-							{#each systemDrives as drive (drive.mountPoint)}
-								<SystemDriveCard
+							{#each drives as drive (drive.name)}
+								<DriveCard
 									{drive}
-									onClick={() => {
-										// Map system mount point to a configured BoxBox mount path.
-										const browsePath = mapSystemMountToBrowsePath(drive.mountPoint, roots);
-
-										handleNavigate(browsePath);
-									}}
+									onClick={() => handleNavigate(drive.name)}
 								/>
 							{/each}
 						</div>

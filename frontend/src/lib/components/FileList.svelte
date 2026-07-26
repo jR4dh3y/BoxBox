@@ -81,6 +81,11 @@
 			onSelectionChange?.(newSelection);
 		}
 
+		if (item.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+			onItemClick?.(item);
+			return;
+		}
+
 		if (
 			previewOnSingleClick &&
 			!item.isDir &&

@@ -96,12 +96,12 @@
 	oncontextmenu={handleContextMenu}
 >
 	<div
-		class="flex w-16 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary"
+		class="flex w-22 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary"
 	>
-		<HardDrive size={24} />
+		<HardDrive size={22} />
 	</div>
 
-	<div class="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
+	<div class="flex min-w-0 flex-1 flex-col gap-1.5">
 		{#if renaming}
 			<InlineRename value={displayName} onSave={handleSaveRename} onCancel={handleCancelRename} />
 		{:else}
@@ -122,20 +122,22 @@
 		</div>
 		{#if drive.device}
 			<div
-				class="truncate font-mono text-[10px] text-text-muted"
+				class="truncate font-mono text-[11px] text-text-muted"
 				title="{drive.device} ({drive.fsType || 'unknown'})"
 			>
-				{drive.device}{#if drive.fsType}
-					· {drive.fsType}{/if}
+				{drive.device}
+				{#if drive.fsType}
+					<span class="text-text-secondary"> · {drive.fsType}</span>
+				{/if}
 			</div>
 		{/if}
 
-		<div class="flex items-center gap-3">
+		<div class="mt-0.5 flex items-center gap-3">
 			<div class="flex-1">
 				<ProgressBar value={drive.usedPct} size="sm" variant={progressVariant} />
 			</div>
 			<span
-				class="shrink-0 text-[11px] {drive.usedPct >= 90
+				class="shrink-0 text-[11px] font-medium {drive.usedPct >= 90
 					? 'text-danger'
 					: drive.usedPct >= 75
 						? 'text-warning'

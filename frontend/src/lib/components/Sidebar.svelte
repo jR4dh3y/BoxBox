@@ -5,34 +5,25 @@
 	import {
 		ChevronDown,
 		Server,
-		Monitor,
-		Download,
-		FileText,
-		Music,
-		Image,
-		Video,
+		HardDrive,
 		Star,
 		X
 	} from 'lucide-svelte';
 	import { settingsStore } from '$lib/stores/settings';
+	import type { MountPoint } from '$lib/api/files';
 
 	interface Props {
 		currentPath?: string;
+		roots?: MountPoint[];
 		onNavigate?: (path: string) => void;
 	}
 
-	let { currentPath = '', onNavigate }: Props = $props();
+	let { currentPath = '', roots = [], onNavigate }: Props = $props();
 
-	// Quick access places
-	const places = [
+	const places = $derived([
 		{ name: 'This Server', path: '', icon: Server },
-		{ name: 'Desktop', path: 'desktop', icon: Monitor },
-		{ name: 'Downloads', path: 'downloads', icon: Download },
-		{ name: 'Documents', path: 'documents', icon: FileText },
-		{ name: 'Music', path: 'music', icon: Music },
-		{ name: 'Pictures', path: 'pictures', icon: Image },
-		{ name: 'Videos', path: 'videos', icon: Video }
-	];
+		...roots.map((root) => ({ name: root.name, path: root.name, icon: HardDrive }))
+	]);
 
 	function isActive(path: string): boolean {
 		if (path === '' && currentPath === '') return true;
