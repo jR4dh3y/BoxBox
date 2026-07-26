@@ -84,6 +84,26 @@ Frontend app:
 bun run --cwd frontend build
 ```
 
+Self-contained executable with the embedded frontend:
+
+```bash
+bun run build:single
+./dist/boxbox -config backend/config.yaml
+```
+
+The build command uses Bun to generate the static frontend and Go to produce the
+only runtime artifact. Bun is not required on the machine that runs the binary.
+
+For local testing without login credentials:
+
+```bash
+./dist/boxbox --dev -config backend/config.dev.yaml
+```
+
+Development mode disables HTTP and WebSocket authentication and always binds to
+`127.0.0.1`, even if the configuration specifies another host. Never use it for
+a shared or production deployment.
+
 Production container:
 
 ```bash

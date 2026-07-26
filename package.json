@@ -9,6 +9,7 @@
     "dev:frontend": "bun run --cwd frontend dev",
     "dev:backend": "air -c backend/.air.toml",
     "build": "bun run build:frontend",
+    "build:single": "bash scripts/build-single.sh",
     "build:frontend": "bun run --cwd frontend build",
     "install:frontend": "bun install --cwd frontend"
   }

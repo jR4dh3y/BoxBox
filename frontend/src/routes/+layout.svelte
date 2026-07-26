@@ -1,7 +1,7 @@
 <script lang="ts">
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
-	import { authStore, isAuthenticated } from '$lib/stores/auth';
+	import { authStore, isAuthenticated, isDevelopment } from '$lib/stores/auth';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -75,7 +75,7 @@
 		if (!initialized) return;
 
 		if ($isAuthenticated) {
-			websocketStore.connect();
+			websocketStore.connect($isDevelopment);
 
 			if (!authWasActive) {
 				authWasActive = true;
@@ -133,7 +133,7 @@
 				{@render children()}
 			{:else}
 				<div class="flex min-h-screen flex-col bg-surface-primary">
-					{#if $isAuthenticated && !isLoginPage}
+					{#if $isAuthenticated && !$isDevelopment && !isLoginPage}
 						<header
 							class="sticky top-0 z-50 border-b border-border-secondary bg-surface-primary px-4"
 						>

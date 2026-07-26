@@ -1,0 +1,24 @@
+# Local host configuration for `boxbox --dev`.
+#
+# Authentication is disabled by the --dev flag, and the server additionally
+# forces the host to 127.0.0.1 so it cannot be exposed to the network.
+port: 8080
+host: "127.0.0.1"
+
+# Placeholder values are replaced inside the process by --dev.
+jwt_secret: "development-only"
+
+max_upload_mb: 10240
+chunk_size_mb: 5
+rate_limit_rps: 10
+data_dir: "/tmp/boxbox-dev"
+allowed_origins: []
+
+mount_points:
+  - name: "home"
+    path: "/home/radhey"
+    read_only: false
+
+  - name: "project"
+    path: "/home/radhey/code/BoxBox"
+    read_only: false

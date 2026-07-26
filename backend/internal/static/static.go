@@ -6,6 +6,7 @@
 package static
 
 import (
+	"bytes"
 	"embed"
 	"io"
 	"io/fs"
@@ -25,19 +26,26 @@ type Handler struct {
 }
 
 // NewHandler creates a static file handler from embedded files
-func NewHandler() (*Handler, error) {
+func NewHandler(devMode ...bool) (*Handler, error) {
 	// Get sub-filesystem starting at "dist"
 	fsys, err := fs.Sub(embeddedFiles, "dist")
 	if err != nil {
 		return nil, err
 	}
-
 	// Pre-load index.html for SPA fallback
 	indexHTML, err := fs.ReadFile(fsys, "index.html")
 	if err != nil {
 		// If index.html doesn't exist, create a placeholder
 		// This allows the binary to run even without embedded frontend (dev mode)
 		indexHTML = []byte(`<!DOCTYPE html><html><head><title>BoxBox</title></head><body><h1>Frontend not embedded</h1><p>Build with frontend assets to enable the web UI.</p></body></html>`)
+	}
+	if len(devMode) > 0 && devMode[0] {
+		indexHTML = bytes.Replace(
+			indexHTML,
+			[]byte("<head>"),
+			[]byte(`<head><meta name="boxbox-dev-mode" content="true">`),
+			1,
+		)
 	}
 
 	return &Handler{
@@ -57,6 +65,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	if path == "" {
 		path = "index.html"
+	}
+
+	// Development mode modifies index.html at startup, so serve the in-memory
+	// version instead of an unmodified pre-compressed copy.
+	if path == "index.html" && bytes.Contains(h.indexHTML, []byte(`name="boxbox-dev-mode"`)) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		if r.Method == http.MethodGet {
+			w.Write(h.indexHTML)
+		}
+		return
 	}
 
 	// Check for pre-compressed versions based on Accept-Encoding

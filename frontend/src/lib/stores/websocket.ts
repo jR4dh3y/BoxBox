@@ -204,7 +204,7 @@ function createWebSocketStore() {
 	/**
 	 * Connect to WebSocket server
 	 */
-	function connect(): void {
+	function connect(allowUnauthenticated = false): void {
 		// Don't connect if already connected or connecting
 		const currentState = get({ subscribe });
 		if (
@@ -216,7 +216,7 @@ function createWebSocketStore() {
 
 		// Check for auth token
 		const token = getAccessToken();
-		if (!token) {
+		if (!token && !allowUnauthenticated) {
 			update((state) => ({
 				...state,
 				connectionState: 'disconnected',

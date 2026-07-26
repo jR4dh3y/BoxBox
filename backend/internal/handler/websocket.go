@@ -15,6 +15,7 @@ type WebSocketHandler struct {
 	hub            *ws.Hub
 	authService    service.AuthService
 	allowedOrigins []string
+	devMode        bool
 	upgrader       websocket.Upgrader
 }
 
@@ -35,6 +36,11 @@ func NewWebSocketHandler(hub *ws.Hub, authService service.AuthService, allowedOr
 	}
 
 	return h
+}
+
+// SetDevMode disables WebSocket authentication for loopback-only development.
+func (h *WebSocketHandler) SetDevMode(enabled bool) {
+	h.devMode = enabled
 }
 
 // checkOrigin validates the request origin against allowed origins.
@@ -94,18 +100,23 @@ func matchOrigin(origin, allowed string) bool {
 
 // ServeWS handles WebSocket upgrade requests with authentication
 func (h *WebSocketHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
-	// Extract token from query parameter or Authorization header
-	token := h.extractToken(r)
-	if token == "" {
-		http.Error(w, "Missing authentication token", http.StatusUnauthorized)
-		return
-	}
+	userID := "dev"
 
-	// Validate the token
-	claims, err := h.authService.ValidateAccessToken(token)
-	if err != nil {
-		http.Error(w, "Invalid authentication token", http.StatusUnauthorized)
-		return
+	// Extract token from query parameter or Authorization header
+	if !h.devMode {
+		token := h.extractToken(r)
+		if token == "" {
+			http.Error(w, "Missing authentication token", http.StatusUnauthorized)
+			return
+		}
+
+		// Validate the token
+		claims, err := h.authService.ValidateAccessToken(token)
+		if err != nil {
+			http.Error(w, "Invalid authentication token", http.StatusUnauthorized)
+			return
+		}
+		userID = claims.UserID
 	}
 
 	// Upgrade the HTTP connection to WebSocket
@@ -116,7 +127,7 @@ func (h *WebSocketHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create a new client and register with the hub
-	client := ws.NewClient(h.hub, conn, claims.UserID)
+	client := ws.NewClient(h.hub, conn, userID)
 	h.hub.Register(client)
 
 	// Start the client's read and write pumps in separate goroutines

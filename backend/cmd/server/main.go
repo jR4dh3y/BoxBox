@@ -29,7 +29,15 @@ import (
 func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "", "Path to configuration file")
+	devMode := flag.Bool("dev", false, "Run locally without authentication (forces host to 127.0.0.1)")
 	flag.Parse()
+
+	if *devMode {
+		// These values exist only in this process and satisfy production-oriented
+		// config validation. Authentication is bypassed below.
+		os.Setenv("BOXBOX_JWT_SECRET", "boxbox-development-mode-not-for-production")
+		os.Setenv("BOXBOX_USERS_dev", "development-mode")
+	}
 
 	// Configure zerolog
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
@@ -41,6 +49,10 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
 	cfg := loadResult.Config
+	if *devMode {
+		cfg.Host = "127.0.0.1"
+		log.Warn().Msg("DEVELOPMENT MODE: authentication disabled; listening on loopback only")
+	}
 
 	for _, warning := range loadResult.Warnings {
 		log.Warn().
@@ -60,7 +72,7 @@ func main() {
 	defer cancel()
 
 	// Initialize components
-	server, hub, jobService, authService, streamHandler, err := initializeServer(cfg)
+	server, hub, jobService, authService, streamHandler, err := initializeServer(cfg, *devMode)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize server")
 	}
@@ -102,7 +114,7 @@ func main() {
 }
 
 // initializeServer creates and configures all server components
-func initializeServer(cfg *model.ServerConfig) (*http.Server, *websocket.Hub, service.JobService, service.AuthService, *handler.StreamHandler, error) {
+func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *websocket.Hub, service.JobService, service.AuthService, *handler.StreamHandler, error) {
 	// Create filesystem abstraction (using real OS filesystem)
 	fs := filesystem.NewOsFS()
 
@@ -165,11 +177,12 @@ func initializeServer(cfg *model.ServerConfig) (*http.Server, *websocket.Hub, se
 	jobHandler := handler.NewJobHandler(jobService)
 	searchHandler := handler.NewSearchHandler(searchService)
 	wsHandler := handler.NewWebSocketHandler(hub, authService, cfg.AllowedOrigins)
+	wsHandler.SetDevMode(devMode)
 	systemHandler := handler.NewSystemHandler(systemService)
 	settingsHandler := handler.NewSettingsHandler(settingsService)
 
 	// Create router
-	router := createRouter(cfg, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, mountPoints)
+	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, mountPoints)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -186,6 +199,7 @@ func initializeServer(cfg *model.ServerConfig) (*http.Server, *websocket.Hub, se
 // createRouter sets up chi router with all routes and middleware
 func createRouter(
 	cfg *model.ServerConfig,
+	devMode bool,
 	authService service.AuthService,
 	authHandler *handler.AuthHandler,
 	fileHandler *handler.FileHandler,
@@ -229,7 +243,9 @@ func createRouter(
 
 		// Protected routes (auth required)
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.JWTAuth(authService))
+			if !devMode {
+				r.Use(middleware.JWTAuth(authService))
+			}
 
 			// File operations with mount point guard
 			r.Route("/files", func(r chi.Router) {
@@ -270,7 +286,7 @@ func createRouter(
 
 	// Static file handler for SPA frontend (catch-all)
 	// This must be after all API routes
-	staticHandler, err := static.NewHandler()
+	staticHandler, err := static.NewHandler(devMode)
 	if err != nil {
 		log.Warn().Err(err).Msg("Static handler not available, frontend will not be served")
 	} else {
