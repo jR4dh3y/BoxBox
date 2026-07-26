@@ -128,6 +128,33 @@ function getServerBackgroundPath(backgroundImage: string): string | null {
 	return path || null;
 }
 
+export function getBackgroundImageLabel(backgroundImage: string | null): string | null {
+	const normalized = normalizeBackgroundImage(backgroundImage);
+	if (!normalized) return null;
+
+	if (isInlineWallpaperDataUrl(normalized) || isLocalWallpaperReference(normalized)) {
+		return 'Local image selected';
+	}
+
+	const serverPath = getServerBackgroundPath(normalized);
+	const displayPath = serverPath ?? normalized;
+
+	try {
+		const url = new URL(displayPath);
+		const fileName = url.pathname.split('/').filter(Boolean).pop();
+		return fileName ? decodeURIComponent(fileName) : url.hostname;
+	} catch {
+		const fileName = displayPath.split('/').filter(Boolean).pop();
+		if (!fileName) return 'Wallpaper selected';
+
+		try {
+			return decodeURIComponent(fileName);
+		} catch {
+			return fileName;
+		}
+	}
+}
+
 export function resolveBackgroundImage(backgroundImage: string | null): string | null {
 	const normalized = normalizeBackgroundImage(backgroundImage);
 	if (!normalized) return null;

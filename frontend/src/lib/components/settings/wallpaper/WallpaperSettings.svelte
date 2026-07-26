@@ -1,7 +1,11 @@
 <script lang="ts">
-	import { Image as ImageIcon, ScanSearch, Sparkles } from 'lucide-svelte';
+	import { Check, Image as ImageIcon, ScanSearch, Sparkles } from 'lucide-svelte';
 	import { Button, Select, Toggle } from '$lib/components/ui';
-	import { isValidBackgroundImage, normalizeBackgroundImage } from '$lib/stores/settings';
+	import {
+		getBackgroundImageLabel,
+		isValidBackgroundImage,
+		normalizeBackgroundImage
+	} from '$lib/stores/settings';
 	import {
 		DEFAULT_BACKGROUND_IMAGE_MODE,
 		WALLPAPER_DISPLAY_OPTIONS,
@@ -41,6 +45,7 @@
 
 	const backgroundImageIsValid = $derived(isValidBackgroundImage(backgroundImage));
 	const hasBackgroundImage = $derived(normalizeBackgroundImage(backgroundImage) !== null);
+	const selectedWallpaperLabel = $derived(getBackgroundImageLabel(backgroundImage));
 	const normalizedMode = $derived(normalizeBackgroundImageMode(backgroundImageMode));
 
 	function handleBackgroundClear() {
@@ -69,10 +74,19 @@
 			{/if}
 		</div>
 
-		<div class="flex min-w-64 flex-1 justify-end gap-2">
+		<div class="flex min-w-64 flex-1 items-center justify-end gap-2">
+			{#if selectedWallpaperLabel}
+				<div
+					class="flex min-w-0 max-w-48 items-center gap-1.5 text-xs text-accent"
+					title={selectedWallpaperLabel}
+				>
+					<Check size={12} class="shrink-0" />
+					<span class="truncate">{selectedWallpaperLabel}</span>
+				</div>
+			{/if}
 			<Button variant="secondary" size="sm" onclick={() => (wallpaperDialogOpen = true)}>
 				<ImageIcon size={14} />
-				Choose Wallpaper
+				{hasBackgroundImage ? 'Change Wallpaper' : 'Choose Wallpaper'}
 			</Button>
 			<Button
 				variant="secondary"
