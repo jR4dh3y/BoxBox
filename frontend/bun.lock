@@ -9,7 +9,7 @@
         "@noble/hashes": "^2.2.0",
         "@tanstack/svelte-query": "^6.0.14",
         "docx-preview": "^0.3.7",
-        "lucide-svelte": "^0.562.0",
+        "lucide-svelte": "^1.0.1",
         "monaco-editor": "^0.55.1",
         "pptx-preview": "^1.0.7",
       },
@@ -392,7 +392,7 @@
 
     "lodash.merge": ["lodash.merge@4.6.2", "", {}, "sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ=="],
 
-    "lucide-svelte": ["lucide-svelte@0.562.0", "", { "peerDependencies": { "svelte": "^3 || ^4 || ^5.0.0-next.42" } }, "sha512-kSJDH/55lf0mun/o4nqWBXOcq0fWYzPeIjbTD97ywoeumAB9kWxtM06gC7oynqjtK3XhAljWSz5RafIzPEYIQA=="],
+    "lucide-svelte": ["lucide-svelte@1.0.1", "", { "peerDependencies": { "svelte": "^3 || ^4 || ^5.0.0-next.42" } }, "sha512-WvzZgk0pqzgda+AErLvgWxHkfg/+GgUwqKMRHvzt0IqyMdmyEDzDCk3Z+Wo/3y753oIgx8u9Q4eUbWkghFa8Jg=="],
 
     "magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 
