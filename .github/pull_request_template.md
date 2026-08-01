@@ -12,7 +12,7 @@
 
 ## Safety checklist
 
-- [ ] I kept public release publishing limited to `ghcr.io/jr4dh3y/boxbox:latest` and `v*` tags.
+- [ ] I kept stable release publishing limited to `ghcr.io/jr4dh3y/boxbox:latest` and `v*` tags; development builds use `nightly` or branch-scoped tags.
 - [ ] I did not make branch/test images replace `latest`.
 - [ ] I considered upgrade, rollback, permissions, storage, and configuration impact for self-hosted deployments.
 - [ ] I did not commit secrets, private paths, generated local files, or environment-specific config.

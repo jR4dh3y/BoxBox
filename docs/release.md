@@ -1,6 +1,6 @@
 # Release Workflow
 
-Use this workflow to keep `latest` stable while still getting GitHub-built images for server testing.
+Use this workflow to keep `latest` stable while still getting automatic nightly and branch images for testing.
 
 ## v0.2.0 Upgrade Notes
 
@@ -57,8 +57,27 @@ Rollback is still changing `BOXBOX_IMAGE` to the last known-good tag, then pulli
 
 - Do normal development on a branch, not on `master`.
 - Use `test/*` when you want GitHub to build a clearly unstable test image for that branch.
+- The nightly workflow checks `master` once per day and publishes only when it changed since the last successful nightly.
 - Public releases come from `v*` tags. Stable tags such as `v0.2.0` update `latest`; optional prerelease tags such as `v0.2.0-rc.1` do not.
 - Keep `master` protected in GitHub so changes land through pull requests after CI passes.
+
+## Nightly Channel
+
+At 02:00 Asia/Kolkata each day, the nightly workflow checks the newest commit on `master`. If that commit has not already had a successful nightly run, it publishes these multi-platform images:
+
+```text
+ghcr.io/jr4dh3y/boxbox:nightly
+ghcr.io/jr4dh3y/boxbox:nightly-<full-commit-sha>
+```
+
+Use `nightly` to follow the newest development build. Use the commit-specific tag when you need a reproducible deployment or want to roll back after a later nightly breaks. Nightly images never update `latest` and are not stable releases.
+
+```bash
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:nightly docker compose pull
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:nightly docker compose up -d
+```
+
+The workflow can also be run manually for `master` from the GitHub Actions page. Manual runs always rebuild, even when the commit has already been published. Concurrent runs are cancelled so the rolling tag converges on a single build.
 
 ## 1. Work on a Test Branch
 
