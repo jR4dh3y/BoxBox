@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -55,7 +54,6 @@ type JobListResponse struct {
 	Jobs []JobResponse `json:"jobs"`
 }
 
-
 // List returns all jobs
 // GET /api/v1/jobs
 func (h *JobHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +96,7 @@ func (h *JobHandler) Get(w http.ResponseWriter, r *http.Request) {
 // POST /api/v1/jobs
 func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateJobRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
@@ -179,5 +177,3 @@ func (h *JobHandler) toJobResponse(job *model.Job) JobResponse {
 
 	return resp
 }
-
-

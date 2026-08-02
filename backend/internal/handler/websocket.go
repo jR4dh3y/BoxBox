@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gorilla/websocket"
@@ -20,8 +21,7 @@ type WebSocketHandler struct {
 }
 
 // NewWebSocketHandler creates a new WebSocket handler with optional origin restrictions.
-// If allowedOrigins is nil or empty, all origins are allowed (homelab mode).
-// Otherwise, only origins in the list are permitted.
+// If allowedOrigins is nil or empty, browser connections must be same-origin.
 func NewWebSocketHandler(hub *ws.Hub, authService service.AuthService, allowedOrigins []string) *WebSocketHandler {
 	h := &WebSocketHandler{
 		hub:            hub,
@@ -44,15 +44,7 @@ func (h *WebSocketHandler) SetDevMode(enabled bool) {
 }
 
 // checkOrigin validates the request origin against allowed origins.
-// Returns true if:
-// - No allowed origins are configured (allow all - homelab mode)
-// - The origin matches one of the allowed origins
 func (h *WebSocketHandler) checkOrigin(r *http.Request) bool {
-	// If no restrictions configured, allow all (homelab mode)
-	if len(h.allowedOrigins) == 0 {
-		return true
-	}
-
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		// No origin header - could be same-origin or curl/etc
@@ -60,8 +52,16 @@ func (h *WebSocketHandler) checkOrigin(r *http.Request) bool {
 		return true
 	}
 
+	if len(h.allowedOrigins) == 0 {
+		parsed, err := url.Parse(origin)
+		return err == nil && strings.EqualFold(parsed.Host, r.Host)
+	}
+
 	// Check against allowed origins
 	for _, allowed := range h.allowedOrigins {
+		if allowed == "*" {
+			return true
+		}
 		if matchOrigin(origin, allowed) {
 			return true
 		}
@@ -80,19 +80,13 @@ func matchOrigin(origin, allowed string) bool {
 
 	// Wildcard subdomain match (e.g., "*.example.com")
 	if strings.HasPrefix(allowed, "*.") {
-		suffix := allowed[1:] // Keep the dot: ".example.com"
-		// Origin format: "https://sub.example.com" or "http://example.com:3000"
-		// Extract host from origin
-		host := origin
-		if idx := strings.Index(origin, "://"); idx != -1 {
-			host = origin[idx+3:]
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Hostname() == "" {
+			return false
 		}
-		// Remove port if present
-		if idx := strings.LastIndex(host, ":"); idx != -1 {
-			host = host[:idx]
-		}
-		// Check if host ends with the suffix or equals the domain (without leading dot)
-		return strings.HasSuffix(host, suffix) || host == allowed[2:]
+		domain := strings.ToLower(allowed[2:])
+		host := strings.ToLower(parsed.Hostname())
+		return host == domain || strings.HasSuffix(host, "."+domain)
 	}
 
 	return false
@@ -101,6 +95,7 @@ func matchOrigin(origin, allowed string) bool {
 // ServeWS handles WebSocket upgrade requests with authentication
 func (h *WebSocketHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	userID := "dev"
+	username := "dev"
 
 	// Extract token from query parameter or Authorization header
 	if !h.devMode {
@@ -117,6 +112,7 @@ func (h *WebSocketHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		userID = claims.UserID
+		username = claims.Username
 	}
 
 	// Upgrade the HTTP connection to WebSocket
@@ -127,7 +123,7 @@ func (h *WebSocketHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create a new client and register with the hub
-	client := ws.NewClient(h.hub, conn, userID)
+	client := ws.NewClient(h.hub, conn, userID, username)
 	h.hub.Register(client)
 
 	// Start the client's read and write pumps in separate goroutines

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
@@ -148,7 +147,7 @@ func (h *FileHandler) CreateItem(w http.ResponseWriter, r *http.Request) {
 	basePath := chi.URLParam(r, "*")
 
 	var req CreateItemRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
@@ -230,7 +229,7 @@ func (h *FileHandler) SaveFileContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req SaveFileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
@@ -259,7 +258,7 @@ func (h *FileHandler) Rename(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req RenameRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}

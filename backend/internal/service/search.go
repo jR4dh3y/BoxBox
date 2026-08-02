@@ -56,11 +56,15 @@ func (s *searchService) Search(ctx context.Context, path, query string) ([]model
 	}
 
 	// Resolve the path to filesystem path
-	_, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mountPoints)
+	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mountPoints)
 	if err != nil {
 		if errors.Is(err, validator.ErrOutsideMountPoint) {
 			return nil, ErrMountPointNotFound
 		}
+		return nil, err
+	}
+	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
 		return nil, err
 	}
 

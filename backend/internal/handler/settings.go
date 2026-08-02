@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -48,7 +47,7 @@ func (h *SettingsHandler) GetDriveNames(w http.ResponseWriter, r *http.Request) 
 
 func (h *SettingsHandler) SetDriveName(w http.ResponseWriter, r *http.Request) {
 	var req model.DriveNamesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}

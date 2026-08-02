@@ -44,19 +44,29 @@ func (w *filesystemWalker) Walk(
 	opts WalkOptions,
 	visit func(WalkEntry) error,
 ) error {
+	if opts.MaxEntries <= 0 {
+		opts.MaxEntries = 100_000
+	}
 	visited := 0
 	var walkDir func(string, string) error
 	walkDir = func(currentPath, relativeBase string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if visited >= opts.MaxEntries {
+			return ErrDirectoryTooLarge
+		}
 
-		entries, err := w.fs.ReadDir(currentPath)
+		remaining := opts.MaxEntries - visited
+		entries, truncated, err := w.fs.ReadDirLimit(currentPath, remaining)
 		if err != nil {
 			if opts.SkipUnreadable {
 				return nil
 			}
 			return err
+		}
+		if truncated {
+			return ErrDirectoryTooLarge
 		}
 
 		for _, entry := range entries {
@@ -66,8 +76,11 @@ func (w *filesystemWalker) Walk(
 			if !opts.IncludeHidden && strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
+			if entry.Type()&fs.ModeSymlink != 0 {
+				continue
+			}
 			if opts.MaxEntries > 0 && visited >= opts.MaxEntries {
-				return nil
+				return ErrDirectoryTooLarge
 			}
 
 			relativePath := filepath.Join(relativeBase, entry.Name())

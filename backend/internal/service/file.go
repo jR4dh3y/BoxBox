@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
@@ -26,6 +27,7 @@ var (
 	ErrPermissionDenied   = errors.New("permission denied")
 	ErrInvalidOperation   = errors.New("invalid operation")
 	ErrMountPointNotFound = errors.New("mount point not found")
+	ErrDirectoryTooLarge  = errors.New("directory exceeds entry limit")
 )
 
 // File represents an open file that can be read and seeked
@@ -172,11 +174,15 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 	}
 
 	// Resolve the path to filesystem path
-	_, fsPath, err := s.ResolvePath(path)
+	mount, fsPath, err := s.ResolvePath(path)
 	if err != nil {
 		if errors.Is(err, validator.ErrOutsideMountPoint) {
 			return nil, ErrMountPointNotFound
 		}
+		return nil, err
+	}
+	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
 		return nil, err
 	}
 
@@ -194,9 +200,13 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 
 	// Read directory entries. Afero's entries already carry metadata; keep a
 	// local metadata cache so non-name sorts never stat the same entry repeatedly.
-	entries, err := s.fs.ReadDir(fsPath)
+	const maxDirectoryEntries = 10_000
+	entries, truncated, err := s.fs.ReadDirLimit(fsPath, maxDirectoryEntries)
 	if err != nil {
 		return nil, err
+	}
+	if truncated {
+		return nil, ErrDirectoryTooLarge
 	}
 
 	// Apply filter
@@ -250,11 +260,15 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 // GetInfo returns metadata for a file or directory
 func (s *fileService) GetInfo(ctx context.Context, path string) (*model.FileInfo, error) {
 	// Resolve the path to filesystem path
-	_, fsPath, err := s.ResolvePath(path)
+	mount, fsPath, err := s.ResolvePath(path)
 	if err != nil {
 		if errors.Is(err, validator.ErrOutsideMountPoint) {
 			return nil, ErrMountPointNotFound
 		}
+		return nil, err
+	}
+	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
 		return nil, err
 	}
 
@@ -286,6 +300,10 @@ func (s *fileService) CreateDir(ctx context.Context, path string) error {
 	if mount.ReadOnly {
 		return ErrPermissionDenied
 	}
+	fsPath, err = resolveWritablePathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
+		return err
+	}
 
 	// Check if path already exists
 	exists, err := s.fs.Exists(fsPath)
@@ -315,6 +333,10 @@ func (s *fileService) Rename(ctx context.Context, oldPath, newPath string) error
 	if oldMount.ReadOnly {
 		return ErrPermissionDenied
 	}
+	oldFsPath, err = resolveExistingPathWithinMount(s.fs, oldMount, oldFsPath)
+	if err != nil {
+		return err
+	}
 
 	// Resolve new path
 	newMount, newFsPath, err := s.ResolvePath(newPath)
@@ -328,6 +350,10 @@ func (s *fileService) Rename(ctx context.Context, oldPath, newPath string) error
 	// Check if new mount is read-only
 	if newMount.ReadOnly {
 		return ErrPermissionDenied
+	}
+	newFsPath, err = resolveWritablePathWithinMount(s.fs, newMount, newFsPath)
+	if err != nil {
+		return err
 	}
 
 	// Check if old path exists
@@ -367,6 +393,10 @@ func (s *fileService) Delete(ctx context.Context, path string) error {
 	if mount.ReadOnly {
 		return ErrPermissionDenied
 	}
+	fsPath, err = resolveWritablePathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
+		return err
+	}
 
 	// Check if path exists
 	exists, err := s.fs.Exists(fsPath)
@@ -384,11 +414,15 @@ func (s *fileService) Delete(ctx context.Context, path string) error {
 // OpenFile opens a file for reading using the filesystem abstraction
 func (s *fileService) OpenFile(ctx context.Context, path string) (File, *model.FileInfo, error) {
 	// Resolve the path to filesystem path
-	_, fsPath, err := s.ResolvePath(path)
+	mount, fsPath, err := s.ResolvePath(path)
 	if err != nil {
 		if errors.Is(err, validator.ErrOutsideMountPoint) {
 			return nil, nil, ErrMountPointNotFound
 		}
+		return nil, nil, err
+	}
+	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -411,6 +445,10 @@ func (s *fileService) OpenFile(ctx context.Context, path string) (File, *model.F
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := verifyOpenFileWithinMount(s.fs, mount, file); err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
 
 	fileInfo := fileutil.ToFileInfo(info.Name(), path, info)
 	return file, &fileInfo, nil
@@ -430,6 +468,10 @@ func (s *fileService) CreateFile(ctx context.Context, path string) (WriteFile, e
 	// Check if mount is read-only
 	if mount.ReadOnly {
 		return nil, ErrPermissionDenied
+	}
+	fsPath, err = resolveWritablePathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
+		return nil, err
 	}
 
 	// New-file creation must not truncate an existing item.
@@ -471,6 +513,10 @@ func (s *fileService) WriteFile(ctx context.Context, path string, content []byte
 	if mount.ReadOnly {
 		return ErrPermissionDenied
 	}
+	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
+		return err
+	}
 
 	info, err := s.fs.Stat(fsPath)
 	if err != nil {
@@ -483,7 +529,29 @@ func (s *fileService) WriteFile(ctx context.Context, path string, content []byte
 		return ErrNotFile
 	}
 
-	return s.fs.WriteFile(fsPath, content, info.Mode().Perm())
+	temporary := fsPath + ".saving." + uuid.NewString()
+	file, err := s.fs.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	complete := false
+	defer func() {
+		_ = file.Close()
+		if !complete {
+			_ = s.fs.Remove(temporary)
+		}
+	}()
+	if _, err := file.Write(content); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := s.fs.Rename(temporary, fsPath); err != nil {
+		return err
+	}
+	complete = true
+	return nil
 }
 
 // GetFilesystem returns the underlying filesystem for advanced operations

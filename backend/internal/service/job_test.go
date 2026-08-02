@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 )
 
@@ -57,6 +59,35 @@ func TestCancelledPendingJobDoesNotExecute(t *testing.T) {
 	}
 	if exists, _ := fs.Exists("/data/backup/copied.txt"); exists {
 		t.Fatal("cancelled pending job created destination")
+	}
+}
+
+func TestJobsAreScopedToAuthenticatedOwner(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	_ = fsys.MkdirAll("/data/media", 0o755)
+	_ = fsys.MkdirAll("/data/backup", 0o755)
+	_ = fsys.WriteFile("/data/media/source.txt", []byte("content"), 0o644)
+	svc := NewJobService(fsys, nil, JobServiceConfig{MountPoints: []model.MountPoint{
+		{Name: "media", Path: "/data/media"},
+		{Name: "backup", Path: "/data/backup"},
+	}})
+
+	alice := authcontext.WithUsername(context.Background(), "alice")
+	bob := authcontext.WithUsername(context.Background(), "bob")
+	job, err := svc.Create(alice, model.JobParams{
+		Type: model.JobTypeCopy, SourcePath: "media/source.txt", DestPath: "backup/copied.txt",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobs, err := svc.List(bob); err != nil || len(jobs) != 0 {
+		t.Fatalf("bob saw alice's jobs: count=%d err=%v", len(jobs), err)
+	}
+	if _, err := svc.Get(bob, job.ID); !errors.Is(err, ErrJobNotFound) {
+		t.Fatalf("bob read alice's job: %v", err)
+	}
+	if err := svc.Cancel(bob, job.ID); !errors.Is(err, ErrJobNotFound) {
+		t.Fatalf("bob cancelled alice's job: %v", err)
 	}
 }
 

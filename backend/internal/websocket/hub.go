@@ -143,7 +143,8 @@ func (h *Hub) UnsubscribeFromJob(client *Client, jobID string) {
 	}
 }
 
-// BroadcastJobUpdate sends a job update to all connected clients
+// BroadcastJobUpdate sends a job update only to clients owned by the user who
+// created the job.
 func (h *Hub) BroadcastJobUpdate(job *model.Job) {
 	update := model.JobUpdate{
 		JobID:    job.ID,
@@ -162,7 +163,17 @@ func (h *Hub) BroadcastJobUpdate(job *model.Job) {
 		return
 	}
 
-	h.broadcast <- data
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for client := range h.clients {
+		if client.Username() != job.Owner {
+			continue
+		}
+		select {
+		case client.send <- data:
+		default:
+		}
+	}
 }
 
 // SendJobUpdateToSubscribers sends a job update only to subscribed clients
@@ -172,7 +183,6 @@ func (h *Hub) SendJobUpdateToSubscribers(job *model.Job) {
 
 	subscribers, ok := h.jobSubscriptions[job.ID]
 	if !ok || len(subscribers) == 0 {
-		// No subscribers, broadcast to all
 		h.mu.RUnlock()
 		h.BroadcastJobUpdate(job)
 		h.mu.RLock()
@@ -202,6 +212,9 @@ func (h *Hub) SendJobUpdateToSubscribers(job *model.Job) {
 	}
 
 	for client := range subscribers {
+		if client.Username() != job.Owner {
+			continue
+		}
 		select {
 		case client.send <- data:
 		default:

@@ -8,8 +8,6 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 )
 
-
-
 // Client represents a WebSocket client connection
 type Client struct {
 	hub *Hub
@@ -20,18 +18,24 @@ type Client struct {
 	// Buffered channel of outbound messages
 	send chan []byte
 
-	// User ID from JWT claims (if authenticated)
-	userID string
+	// User identity from JWT claims (if authenticated)
+	userID   string
+	username string
 }
 
 // NewClient creates a new Client instance
-func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
+func NewClient(hub *Hub, conn *websocket.Conn, userID, username string) *Client {
 	return &Client{
-		hub:    hub,
-		conn:   conn,
-		send:   make(chan []byte, config.WSSendBufferSize),
-		userID: userID,
+		hub:      hub,
+		conn:     conn,
+		send:     make(chan []byte, config.WSSendBufferSize),
+		userID:   userID,
+		username: username,
 	}
+}
+
+func (c *Client) Username() string {
+	return c.username
 }
 
 // ReadPump pumps messages from the websocket connection to the hub

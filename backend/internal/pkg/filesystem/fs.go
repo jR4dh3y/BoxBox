@@ -4,8 +4,11 @@
 package filesystem
 
 import (
+	"errors"
+	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/afero"
 )
@@ -15,6 +18,12 @@ import (
 type FS interface {
 	// ReadDir reads the directory named by dirname and returns a list of directory entries.
 	ReadDir(name string) ([]fs.DirEntry, error)
+
+	// ReadDirLimit reads at most limit entries and reports whether more exist.
+	ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, error)
+
+	// EvalSymlinks returns the path after evaluating symbolic links.
+	EvalSymlinks(path string) (string, error)
 
 	// Stat returns a FileInfo describing the named file.
 	Stat(name string) (fs.FileInfo, error)
@@ -83,6 +92,56 @@ func (a *AferoFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		dirEntries[i] = &dirEntry{info: entry}
 	}
 	return dirEntries, nil
+}
+
+func (a *AferoFS) ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, error) {
+	if limit < 1 {
+		entries, err := a.ReadDir(name)
+		return entries, false, err
+	}
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		directory, err := os.Open(name)
+		if err != nil {
+			return nil, false, err
+		}
+		defer directory.Close()
+		entries, err := directory.ReadDir(limit + 1)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, false, err
+		}
+		truncated := len(entries) > limit
+		if truncated {
+			entries = entries[:limit]
+		}
+		return entries, truncated, nil
+	}
+
+	directory, err := a.fs.Open(name)
+	if err != nil {
+		return nil, false, err
+	}
+	defer directory.Close()
+	infos, err := directory.Readdir(limit + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, false, err
+	}
+	truncated := len(infos) > limit
+	if truncated {
+		infos = infos[:limit]
+	}
+	entries := make([]fs.DirEntry, len(infos))
+	for index, info := range infos {
+		entries[index] = &dirEntry{info: info}
+	}
+	return entries, truncated, nil
+}
+
+func (a *AferoFS) EvalSymlinks(path string) (string, error) {
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		return filepath.EvalSymlinks(path)
+	}
+	// MemMapFs does not implement symbolic links.
+	return filepath.Clean(path), nil
 }
 
 // Stat returns a FileInfo describing the named file.

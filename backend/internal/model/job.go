@@ -25,6 +25,7 @@ const (
 // Job represents a background job for file operations
 type Job struct {
 	ID                 string    `json:"id"`
+	Owner              string    `json:"-"`
 	Type               JobType   `json:"type"`
 	State              JobState  `json:"state"`
 	Progress           int       `json:"progress"` // 0-100
@@ -32,6 +33,8 @@ type Job struct {
 	DestPath           string    `json:"destPath,omitempty"`
 	ResolvedSourcePath string    `json:"-"`
 	ResolvedDestPath   string    `json:"-"`
+	ResolvedSourceRoot string    `json:"-"`
+	ResolvedDestRoot   string    `json:"-"`
 	Error              string    `json:"error,omitempty"`
 	CreatedAt          time.Time `json:"createdAt"`
 	StartedAt          time.Time `json:"startedAt,omitempty"`

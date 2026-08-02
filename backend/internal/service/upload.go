@@ -156,6 +156,10 @@ func (s *uploadService) AcceptChunk(
 	if mount.ReadOnly {
 		return nil, ErrPermissionDenied
 	}
+	destination, err = resolveWritablePathWithinMount(s.files.GetFilesystem(), mount, destination)
+	if err != nil {
+		return nil, err
+	}
 	session, err := s.getOrCreate(path, chunk)
 	if err != nil {
 		return nil, err
@@ -180,7 +184,7 @@ func (s *uploadService) AcceptChunk(
 	}
 
 	chunkPath := filepath.Join(session.tempDir, fmt.Sprintf("chunk_%d", chunk.ChunkIndex))
-	chunkFile, err := os.OpenFile(chunkPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	chunkFile, err := os.OpenFile(chunkPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("create chunk: %w", err)
 	}
@@ -235,7 +239,10 @@ func (s *uploadService) getOrCreate(path string, chunk UploadChunk) (*uploadSess
 		return existing, nil
 	}
 
-	if err := os.MkdirAll(s.tempRoot, 0o755); err != nil {
+	if err := os.MkdirAll(s.tempRoot, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(s.tempRoot, 0o700); err != nil {
 		return nil, err
 	}
 	tempDir, err := os.MkdirTemp(s.tempRoot, "upload-*")
@@ -270,7 +277,7 @@ func (s *uploadService) assemble(
 		return err
 	}
 	temporary := destination + ".uploading." + session.id
-	destinationFile, err := fsys.OpenFile(temporary, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	destinationFile, err := fsys.OpenFile(temporary, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o644)
 	if err != nil {
 		return err
 	}

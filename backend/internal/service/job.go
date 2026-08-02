@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
 	"github.com/jR4dh3y/BoxBox/backend/internal/websocket"
@@ -177,8 +179,11 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 	}
 
 	destFsPath := ""
+	destRoot := ""
+	var destMount *model.MountPoint
 	if params.DestPath != "" {
-		destMount, resolvedDestPath, err := s.resolveJobPath(params.DestPath)
+		var resolvedDestPath string
+		destMount, resolvedDestPath, err = s.resolveJobDestination(params.DestPath)
 		if err != nil {
 			return nil, err
 		}
@@ -186,6 +191,7 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 			return nil, ErrPermissionDenied
 		}
 		destFsPath = resolvedDestPath
+		destRoot = destMount.Path
 	}
 
 	if params.Type == model.JobTypeMove || params.Type == model.JobTypeDelete {
@@ -197,6 +203,7 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 	// Create job
 	job := &model.Job{
 		ID:                 uuid.New().String(),
+		Owner:              authcontext.Username(ctx),
 		Type:               params.Type,
 		State:              model.JobStatePending,
 		Progress:           0,
@@ -204,6 +211,8 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 		DestPath:           params.DestPath,
 		ResolvedSourcePath: sourceFsPath,
 		ResolvedDestPath:   destFsPath,
+		ResolvedSourceRoot: sourceMount.Path,
+		ResolvedDestRoot:   destRoot,
 		CreatedAt:          time.Now(),
 	}
 
@@ -237,13 +246,36 @@ func (s *jobService) resolveJobPath(path string) (*model.MountPoint, string, err
 		return nil, "", ErrInvalidJobParams
 	}
 
-	return mount, fsPath, nil
+	resolved, err := resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
+		return nil, "", err
+	}
+	return mount, resolved, nil
+}
+
+func (s *jobService) resolveJobDestination(path string) (*model.MountPoint, string, error) {
+	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mountPoints)
+	if err != nil {
+		if errors.Is(err, validator.ErrOutsideMountPoint) || errors.Is(err, validator.ErrMountPointNotFound) {
+			return nil, "", ErrMountPointNotFound
+		}
+		return nil, "", ErrInvalidJobParams
+	}
+	resolved, err := resolveWritablePathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
+		return nil, "", err
+	}
+	return mount, resolved, nil
 }
 
 // Get returns a job by ID
 func (s *jobService) Get(ctx context.Context, jobID string) (*model.Job, error) {
 	if value, ok := s.allJobs.Load(jobID); ok {
-		return s.snapshotJob(value.(*model.Job)), nil
+		job := value.(*model.Job)
+		if !canAccessJob(ctx, job) {
+			return nil, ErrJobNotFound
+		}
+		return s.snapshotJob(job), nil
 	}
 	return nil, ErrJobNotFound
 }
@@ -252,7 +284,10 @@ func (s *jobService) Get(ctx context.Context, jobID string) (*model.Job, error) 
 func (s *jobService) List(ctx context.Context) ([]*model.Job, error) {
 	var jobs []*model.Job
 	s.allJobs.Range(func(key, value interface{}) bool {
-		jobs = append(jobs, s.snapshotJob(value.(*model.Job)))
+		job := value.(*model.Job)
+		if canAccessJob(ctx, job) {
+			jobs = append(jobs, s.snapshotJob(job))
+		}
 		return true
 	})
 	return jobs, nil
@@ -267,6 +302,9 @@ func (s *jobService) Cancel(ctx context.Context, jobID string) error {
 	}
 
 	job := jobValue.(*model.Job)
+	if !canAccessJob(ctx, job) {
+		return ErrJobNotFound
+	}
 	cancelled := s.updateAndBroadcast(job, func(job *model.Job) bool {
 		if job.State != model.JobStatePending && job.State != model.JobStateRunning {
 			return false
@@ -286,6 +324,13 @@ func (s *jobService) Cancel(ctx context.Context, jobID string) error {
 	}
 
 	return nil
+}
+
+func canAccessJob(ctx context.Context, job *model.Job) bool {
+	username := authcontext.Username(ctx)
+	// Empty identities are retained for internal callers and existing service
+	// tests; HTTP requests always receive an authenticated identity.
+	return username == "" || job.Owner == username
 }
 
 // execute runs a job
@@ -314,7 +359,16 @@ func (s *jobService) execute(ctx context.Context, job *model.Job) {
 	if started == nil {
 		return
 	}
-	var err error
+	err := s.revalidateJobPaths(job)
+	if err != nil {
+		s.updateAndBroadcast(job, func(job *model.Job) bool {
+			job.State = model.JobStateFailed
+			job.Error = err.Error()
+			job.CompletedAt = time.Now()
+			return true
+		})
+		return
+	}
 	switch started.Type {
 	case model.JobTypeCopy:
 		err = s.executeCopy(jobCtx, job)
@@ -348,6 +402,25 @@ func (s *jobService) execute(ctx context.Context, job *model.Job) {
 	})
 }
 
+func (s *jobService) revalidateJobPaths(job *model.Job) error {
+	sourceMount := &model.MountPoint{Path: job.ResolvedSourceRoot}
+	source, err := resolveExistingPathWithinMount(s.fs, sourceMount, job.ResolvedSourcePath)
+	if err != nil {
+		return err
+	}
+	job.ResolvedSourcePath = source
+
+	if job.ResolvedDestPath != "" {
+		destMount := &model.MountPoint{Path: job.ResolvedDestRoot}
+		destination, err := resolveWritablePathWithinMount(s.fs, destMount, job.ResolvedDestPath)
+		if err != nil {
+			return err
+		}
+		job.ResolvedDestPath = destination
+	}
+	return nil
+}
+
 // executeCopy copies a file or directory
 func (s *jobService) executeCopy(ctx context.Context, job *model.Job) error {
 	sourcePath := jobSourcePath(job)
@@ -372,6 +445,11 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 		return err
 	}
 	defer src.Close()
+	if job.ResolvedSourceRoot != "" {
+		if err := verifyOpenFileWithinMount(s.fs, &model.MountPoint{Path: job.ResolvedSourceRoot}, src); err != nil {
+			return err
+		}
+	}
 
 	// Ensure destination directory exists
 	destDir := filepath.Dir(destPath)
@@ -379,7 +457,7 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 		return err
 	}
 
-	dst, err := s.fs.Create(destPath)
+	dst, err := s.fs.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return err
 	}
@@ -454,6 +532,8 @@ func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 			DestPath:           targetPath,
 			ResolvedSourcePath: entry.Path,
 			ResolvedDestPath:   targetPath,
+			ResolvedSourceRoot: job.ResolvedSourceRoot,
+			ResolvedDestRoot:   job.ResolvedDestRoot,
 		}
 		if err := s.copyFile(ctx, tempJob, 0); err != nil {
 			return err
