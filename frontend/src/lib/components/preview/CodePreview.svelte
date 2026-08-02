@@ -7,7 +7,7 @@
 	import { getFileContent, saveFileContent, type FileInfo } from '$lib/api/files';
 	import { Button, Spinner } from '$lib/components/ui';
 	import { loadMonacoLanguage } from './monacoLanguages';
-	import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
+	import type * as Monaco from 'monaco-editor/editor/editor.api.js';
 
 	interface Props {
 		url: string;
@@ -114,9 +114,9 @@
 		// Dynamically import Monaco Editor
 		try {
 			const [monacoModule, editorWorkerModule, jsonWorkerModule] = await Promise.all([
-				import('monaco-editor/esm/vs/editor/editor.api.js'),
-				import('monaco-editor/esm/vs/editor/editor.worker.js?worker'),
-				import('monaco-editor/esm/vs/language/json/json.worker.js?worker'),
+				import('monaco-editor/editor/editor.api.js'),
+				import('monaco-editor/editor/editor.worker.js?worker'),
+				import('monaco-editor/language/json/json.worker.js?worker'),
 				loadMonacoLanguage(language)
 			]);
 			monaco = monacoModule;
