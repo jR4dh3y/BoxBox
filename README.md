@@ -36,7 +36,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Open `http://localhost:8080` and sign in as `admin` with the password from `BOXBOX_USERS_admin`. For reverse proxy examples, local source builds, and update workflows, see [docs/docker.md](docs/docker.md).
+Generate the bcrypt value requested by `.env`, then open `http://localhost:8080` and sign in as `admin` with the plaintext password you hashed. For reverse proxy examples, local source builds, and update workflows, see [docs/docker.md](docs/docker.md).
 
 ## Features
 

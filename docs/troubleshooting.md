@@ -16,20 +16,20 @@ HOST_PORT=8081
 docker compose up -d
 ```
 
-## Login Uses `admin:admin`
+## Server Rejects the Configured User
 
-That means no users were configured. Set a user through env or YAML:
+BoxBox requires a bcrypt hash, not a plaintext configured password:
 
 ```bash
-BOXBOX_USERS_admin="a-long-password"
+BOXBOX_USERS_admin='$2b$12$...'
 ```
 
 ```yaml
 users:
-  admin: "a-long-password"
+  admin: "$2b$12$..."
 ```
 
-Restart after changing credentials.
+Generate it with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`, then restart.
 
 ## `jwt_secret is required`
 

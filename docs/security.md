@@ -7,12 +7,12 @@ BoxBox is built for private homelab use. It can modify real host files, so treat
 Before exposing BoxBox beyond your own machine:
 
 - Set `BOXBOX_JWT_SECRET` to a long random value.
-- Set `BOXBOX_USERS_admin` or configure users in `config.yaml`.
+- Set `BOXBOX_USERS_admin` to a bcrypt hash or configure a bcrypt hash in `config.yaml`.
 - Use a reverse proxy with HTTPS.
 - Mount only the directories BoxBox needs.
 - Use `read_only: true` for backups and sensitive locations.
-- Avoid exposing `/host_root` unless you really need whole-host browsing.
-- Restrict WebSocket origins with `allowed_origins` or `BOXBOX_ALLOWED_ORIGINS`.
+- Do not expose `/host_root`; whole-host browsing is intentionally absent from the default deployment.
+- Keep the default same-origin WebSocket policy or use a narrow `allowed_origins` list.
 - Put the service behind your normal VPN, Tailscale, WireGuard, or trusted reverse proxy access controls when possible.
 
 ## Authentication Model
@@ -20,32 +20,29 @@ Before exposing BoxBox beyond your own machine:
 BoxBox uses JWT access and refresh tokens:
 
 - Access tokens expire after 15 minutes.
-- Refresh tokens expire after 7 days.
-- Logout revokes the submitted refresh token.
+- Refresh tokens expire after 7 days and are rotated in an HttpOnly, SameSite=Strict cookie.
+- Access tokens stay in browser memory and logout revokes both current tokens.
 - Auth endpoints are rate-limited per client IP.
+- Repeated failures trigger exponential per-account lockouts.
 
-Users are currently configured as username/password pairs in YAML or environment variables:
+Generate bcrypt hashes with `htpasswd` (from `apache2-utils` on Debian/Ubuntu):
+
+```bash
+htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2
+```
+
+Store only the resulting hash:
 
 ```yaml
 users:
-  admin: "a-long-password"
+  admin: "$2b$12$..."
 ```
 
 ```bash
-BOXBOX_USERS_admin="a-long-password"
+BOXBOX_USERS_admin='$2b$12$...'
 ```
 
-Current limitation: passwords are compared from configured values, not stored as password hashes. Keep config files and environment handling private.
-
-## Default Credential Fallback
-
-If no users are configured, the server falls back to:
-
-```text
-admin:admin
-```
-
-This is a development convenience only. The server logs a warning when it happens.
+Plaintext configured passwords and JWT secrets shorter than 32 bytes are rejected at startup. If no users are configured, the server also refuses to start.
 
 ## Mount Point Safety
 
@@ -63,16 +60,7 @@ mount_points:
     read_only: true
 ```
 
-Avoid broad host paths unless the deployment is private and intentional:
-
-```yaml
-mount_points:
-  - name: "root"
-    path: "/host_root"
-    read_only: false
-```
-
-The default compose file includes `/host_root` because it is useful for a personal server, but it has a large blast radius if credentials are weak or the service is exposed.
+The default compose file does not mount `/`. A mount that resolves to `/` is rejected unless `allow_root_mount: true` is explicitly configured after reviewing the risk.
 
 ## Path Validation
 
@@ -88,7 +76,7 @@ Read-only mount points also block write operations after path resolution.
 
 ## WebSocket Origins
 
-With no `allowed_origins`, BoxBox allows WebSocket upgrades from any origin for simple homelab setups.
+With no `allowed_origins`, BoxBox accepts browser WebSocket upgrades only when `Origin` matches the request host. A literal `*` is supported as an explicit, risky opt-out.
 
 Restrict origins for browser-exposed deployments:
 
@@ -115,6 +103,8 @@ Use your proxy to provide:
 - Optional extra auth, IP allow-listing, or VPN-only access.
 
 If you use Traefik or another reverse proxy, add routing and TLS configuration according to that proxy's setup. The default compose file uses normal host port binding.
+
+Forwarded client-IP headers are ignored unless the direct proxy IP/CIDR is configured in `trusted_proxies` or `BOXBOX_TRUSTED_PROXIES`.
 
 ## Upload Safety
 

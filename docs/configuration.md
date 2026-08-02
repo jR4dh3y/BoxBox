@@ -24,15 +24,18 @@ host: "0.0.0.0"
 jwt_secret: "replace-with-a-long-random-secret"
 
 users:
-  admin: "replace-with-a-long-unique-password"
-  media: "another-password"
+  admin: "$2b$12$..."
+  media: "$2b$12$..."
 
-rate_limit_rps: 10
+rate_limit_rps: 2
 
 allowed_origins:
   - "http://localhost:8080"
   - "https://boxbox.example.com"
   - "*.internal.example.com"
+
+trusted_proxies:
+  - "172.18.0.0/16"
 
 max_upload_mb: 10240
 chunk_size_mb: 5
@@ -62,29 +65,31 @@ mount_points:
 | --- | --- | --- |
 | `port` | `80` | HTTP port inside the container or process. |
 | `host` | `0.0.0.0` | Bind address. |
-| `jwt_secret` | Required | JWT signing secret. Use a long random value. |
-| `rate_limit_rps` | `10` | Auth endpoint requests per second per client IP. |
-| `allowed_origins` | `[]` | WebSocket origin allow-list. Empty allows all origins. |
+| `jwt_secret` | Required | JWT signing secret of at least 32 bytes. |
+| `rate_limit_rps` | `2` | Auth endpoint requests per second per client IP. |
+| `allowed_origins` | `[]` | WebSocket origin allow-list. Empty enforces same-origin; `*` explicitly allows all. |
+| `trusted_proxies` | `[]` | Proxy IPs/CIDRs allowed to supply client-IP headers. |
+| `allow_root_mount` | `false` | Explicit override required for a mount resolving to `/`. |
 | `max_upload_mb` | `10240` | Maximum upload size in MiB. |
 | `chunk_size_mb` | `5` | Backend chunk configuration value. Browser uploads currently send 10 MiB chunks by default. |
 
 ## Users
 
-Users are configured as a map of username to password:
+Users are configured as a map of username to bcrypt hash:
 
 ```yaml
 users:
-  admin: "a-long-password"
+  admin: "$2b$12$..."
 ```
 
 You can also set users through environment variables:
 
 ```bash
-BOXBOX_USERS_admin="a-long-password"
-BOXBOX_USERS_radhey="another-password"
+BOXBOX_USERS_admin='$2b$12$...'
+BOXBOX_USERS_radhey='$2b$12$...'
 ```
 
-If no users are configured, BoxBox fails to start. Set at least one user before deploying.
+Generate a hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`. If no users are configured, or a configured value is plaintext, BoxBox fails to start.
 
 ## Environment Variables
 
@@ -99,6 +104,8 @@ Environment overrides use the `BOXBOX_` prefix:
 | `BOXBOX_MAX_UPLOAD_MB` | `max_upload_mb` |
 | `BOXBOX_CHUNK_SIZE_MB` | `chunk_size_mb` |
 | `BOXBOX_ALLOWED_ORIGINS` | `allowed_origins`, comma-separated |
+| `BOXBOX_TRUSTED_PROXIES` | `trusted_proxies`, comma-separated CIDRs |
+| `BOXBOX_ALLOW_ROOT_MOUNT` | `allow_root_mount` |
 | `BOXBOX_USERS_<username>` | `users.<username>` |
 
 `CONFIG_PATH` is also supported as a convenience for selecting the YAML file path.

@@ -20,7 +20,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Open `http://localhost:8080` and sign in as `admin` with the password you set in `BOXBOX_USERS_admin`.
+Open `http://localhost:8080` and sign in as `admin` with the plaintext password used to generate `BOXBOX_USERS_admin`.
 
 For a single-container `docker run` command or local source build, use the separate alternatives in [Docker deployment](/docs/docker/).
 
@@ -30,9 +30,11 @@ Before starting a reachable deployment, change at least:
 
 ```bash
 BOXBOX_JWT_SECRET="$(openssl rand -base64 32)"
-BOXBOX_USERS_admin="a-long-unique-password"
+BOXBOX_USERS_admin='paste-a-bcrypt-hash-here'
 HOST_PORT=8080
 ```
+
+Generate the hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`. Keep hashes single-quoted in `.env` so Docker Compose treats `$` literally.
 
 Also edit `backend/config.yaml` if you want to expose different paths. The default sidebar folders map to `$HOME/Desktop`, `$HOME/Downloads`, and the other standard home folders unless you set `HOME_PATH`; override `DESKTOP_PATH`, `DOWNLOADS_PATH`, `DOCUMENTS_PATH`, `MUSIC_PATH`, `PICTURES_PATH`, or `VIDEOS_PATH` in `.env` to point one shortcut somewhere custom.
 

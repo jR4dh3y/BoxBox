@@ -26,14 +26,16 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 - Mount points are configured in `config.yaml` and can be customized by binding another config file to `/app/config.yaml`.
 - Environment overrides use the `BOXBOX_` prefix, for example `BOXBOX_JWT_SECRET` and `BOXBOX_USERS_admin`.
 
-## Default Credentials
+## Required Credentials
 
-If no users are configured, BoxBox falls back to `admin:admin` and logs a warning. Do not run a reachable deployment without setting at least:
+BoxBox refuses to start without a user, a bcrypt password hash, and a JWT secret of at least 32 bytes:
 
 ```bash
 BOXBOX_JWT_SECRET="$(openssl rand -base64 32)"
-BOXBOX_USERS_admin="a-long-unique-password"
+BOXBOX_USERS_admin='paste-a-bcrypt-hash-here'
 ```
+
+Generate the hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`.
 
 ## Scope
 

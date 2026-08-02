@@ -31,14 +31,18 @@ Set these values in `.env` before starting:
 
 ```env
 BOXBOX_JWT_SECRET=generate-a-long-random-secret
-BOXBOX_USERS_admin=replace-this-password
+BOXBOX_USERS_admin='$2b$12$paste-generated-hash-here'
 HOST_PORT=8080
 # Optional: defaults to the HOME of the user running docker compose.
 # HOME_PATH=/home/your-user
 # Optional: point sidebar shortcuts somewhere other than HOME_PATH/<Folder>.
 # DOWNLOADS_PATH=/mnt/downloads
-BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:latest
+PUID=10001
+PGID=10001
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
 ```
+
+Generate the password hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`. Keep the hash single-quoted because bcrypt hashes contain `$`.
 
 Open `http://localhost:8080`, or use the host and port you configured with `HOST_PORT`.
 
@@ -47,7 +51,7 @@ Open `http://localhost:8080`, or use the host and port you configured with `HOST
 Release images are published to GitHub Container Registry:
 
 ```bash
-docker pull ghcr.io/jr4dh3y/boxbox:latest
+docker pull ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
 ```
 
 Stable release tags update `latest`. Prerelease tags such as `v0.2.0-rc.1` publish versioned images without moving `latest`, and test branch images publish under branch-scoped tags such as `branch-test-my-change`.
@@ -96,21 +100,24 @@ mount_points:
     read_only: false
 EOF
 
-docker pull ghcr.io/jr4dh3y/boxbox:latest
+docker pull ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
 
 docker run -d \
   --name boxbox \
+  --user 10001:10001 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
   -p 8080:80 \
   -e BOXBOX_JWT_SECRET="$(openssl rand -base64 32)" \
-  -e BOXBOX_USERS_admin="replace-this-password" \
+  -e BOXBOX_USERS_admin='paste-a-bcrypt-hash-here' \
   -v "$PWD/config.yaml:/app/config.yaml:ro" \
   -v "$HOME:/home/user" \
   -v boxbox-data:/data \
   -v boxbox-temp:/tmp/boxbox \
-  ghcr.io/jr4dh3y/boxbox:latest
+  ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
 ```
 
-Open `http://localhost:8080` and sign in as `admin` with the password you set in `BOXBOX_USERS_admin`.
+Open `http://localhost:8080` and sign in as `admin` with the plaintext password used to generate the hash.
 
 ## Alternative: Local Source Builds
 
@@ -132,7 +139,6 @@ The default compose file mounts:
 | --- | --- | --- |
 | `./backend/config.yaml` | `/app/config.yaml` | Runtime configuration. |
 | `/media/devmon` | `/media/devmon` | Auto-discovered removable drives. |
-| `/` | `/host_root` | Host root browsing. High blast radius. |
 | `${HOME_PATH}` or host `$HOME` | `/home/user` | User home directory browsing. |
 | `${DESKTOP_PATH}` or `$HOME/Desktop` | `/home/user/Desktop` | Desktop sidebar shortcut. |
 | `${DOWNLOADS_PATH}` or `$HOME/Downloads` | `/home/user/Downloads` | Downloads sidebar shortcut. |
@@ -154,7 +160,6 @@ The compose file uses `rslave` for host mount paths so new host mounts can appea
 ```yaml
 volumes:
   - /media/devmon:/media/devmon:rslave
-  - /:/host_root:rslave
 ```
 
 ## Updating
@@ -177,7 +182,7 @@ docker compose up -d
 For a `docker run` deployment:
 
 ```bash
-docker pull ghcr.io/jr4dh3y/boxbox:latest
+docker pull ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
 docker stop boxbox
 docker rm boxbox
 # Re-run the docker run command with the same volumes and env values.
@@ -199,4 +204,4 @@ The health response is:
 
 ## Permission Notes
 
-The container runs with a small set of Linux capabilities in compose so it can read and manage a variety of host-owned files without full privileged mode. If a path still returns permission errors, check the host path permissions and consider narrowing BoxBox to directories owned by a consistent user or group.
+The container runs as UID/GID `10001:10001` by default and drops all Linux capabilities. Set `PUID`/`PGID` before first start if your mounted files use another identity. BoxBox does not chown host paths or existing named volumes; grant that identity only the host permissions it needs.
