@@ -155,12 +155,6 @@ func (h *StreamHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, info.Name))
 	w.Header().Set("Accept-Ranges", "bytes")
-	// Allow cross-origin requests for media playback
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Range")
-	w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges")
-
 	// Avoid response transformation by intermediate proxies/CDNs.
 	w.Header().Set("Cache-Control", "no-transform")
 
@@ -176,6 +170,13 @@ type UploadRequest struct {
 	ChunkSize   int64
 	TotalSize   int64
 	Checksum    string // SHA256 checksum for final verification
+}
+
+func (r UploadRequest) ExpectedSize() int64 {
+	if r.ChunkIndex == r.TotalChunks-1 {
+		return r.TotalSize - int64(r.ChunkIndex)*r.ChunkSize
+	}
+	return r.ChunkSize
 }
 
 // Upload handles chunked file uploads
@@ -213,9 +214,12 @@ func (h *StreamHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		ChunkSize:   uploadReq.ChunkSize,
 		TotalSize:   uploadReq.TotalSize,
 		Checksum:    uploadReq.Checksum,
-	}, r.Body)
+	}, http.MaxBytesReader(w, r.Body, uploadReq.ExpectedSize()))
 	if err != nil {
+		var maxBytesError *http.MaxBytesError
 		switch {
+		case errors.As(err, &maxBytesError):
+			writeError(w, "Upload chunk exceeds declared size", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge)
 		case errors.Is(err, service.ErrPermissionDenied):
 			writeError(w, "Mount point is read-only", model.ErrCodeReadOnly, http.StatusForbidden)
 		case errors.Is(err, service.ErrUploadConflict):

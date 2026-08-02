@@ -27,6 +27,7 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrPermissionDenied, "Permission denied", model.ErrCodePermissionDenied, http.StatusForbidden},
 	{service.ErrMountPointNotFound, "Mount point not found", model.ErrCodeAccessDenied, http.StatusForbidden},
 	{service.ErrInvalidOperation, "Invalid operation", model.ErrCodeValidationError, http.StatusBadRequest},
+	{service.ErrDirectoryTooLarge, "Directory exceeds server entry limit", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
 	{service.ErrThumbnailTooLarge, "Image exceeds thumbnail limits", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
 
 	// Path validation errors

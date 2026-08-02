@@ -18,7 +18,7 @@ import (
 // **Validates: Requirements 7.3**
 //
 // Property: For any API response, the headers SHALL include X-Content-Type-Options,
-// X-Frame-Options, and Content-Security-Policy.
+// Content-Security-Policy and Referrer-Policy.
 
 func TestSecurityHeadersPresence(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
@@ -66,14 +66,14 @@ func TestSecurityHeadersPresence(t *testing.T) {
 		pathGen,
 	))
 
-	properties.Property("all responses include X-Frame-Options header", prop.ForAll(
+	properties.Property("legacy X-Frame-Options is omitted in favor of CSP", prop.ForAll(
 		func(method string, path string) bool {
 			req := httptest.NewRequest(method, path, nil)
 			rec := httptest.NewRecorder()
 
 			handler.ServeHTTP(rec, req)
 
-			return rec.Header().Get("X-Frame-Options") == "DENY"
+			return rec.Header().Get("X-Frame-Options") == ""
 		},
 		methodGen,
 		pathGen,
@@ -93,14 +93,14 @@ func TestSecurityHeadersPresence(t *testing.T) {
 		pathGen,
 	))
 
-	properties.Property("all responses include X-XSS-Protection header", prop.ForAll(
+	properties.Property("legacy X-XSS-Protection is omitted", prop.ForAll(
 		func(method string, path string) bool {
 			req := httptest.NewRequest(method, path, nil)
 			rec := httptest.NewRecorder()
 
 			handler.ServeHTTP(rec, req)
 
-			return rec.Header().Get("X-XSS-Protection") == "1; mode=block"
+			return rec.Header().Get("X-XSS-Protection") == ""
 		},
 		methodGen,
 		pathGen,

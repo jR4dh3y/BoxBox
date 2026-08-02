@@ -76,7 +76,7 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 	v.SetDefault("host", "0.0.0.0")
 	v.SetDefault("max_upload_mb", DefaultMaxUploadMB) // 10GB default
 	v.SetDefault("chunk_size_mb", 5)                  // 5MB chunks
-	v.SetDefault("rate_limit_rps", 10.0)
+	v.SetDefault("rate_limit_rps", 2.0)
 	v.SetDefault("data_dir", DefaultDataDir)
 
 	if configPath == "" {
@@ -110,6 +110,7 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 		"max_upload_mb",
 		"chunk_size_mb",
 		"data_dir",
+		"allow_root_mount",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind environment variable %q: %w", key, err)
@@ -168,6 +169,9 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 
 	if origins := os.Getenv("BOXBOX_ALLOWED_ORIGINS"); origins != "" {
 		cfg.AllowedOrigins = splitEnvList(origins)
+	}
+	if proxies := os.Getenv("BOXBOX_TRUSTED_PROXIES"); proxies != "" {
+		cfg.TrustedProxies = splitEnvList(proxies)
 	}
 
 	if err := cfg.Validate(); err != nil {

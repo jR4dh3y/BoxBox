@@ -7,17 +7,21 @@ host: "0.0.0.0"
 # JWT authentication secret. Override with BOXBOX_JWT_SECRET.
 jwt_secret: "change-me-in-production-use-a-long-random-string"
 
-# Users can be configured here or with BOXBOX_USERS_<username> environment variables.
+# Users are bcrypt hashes configured here or with BOXBOX_USERS_<username>.
 # At least one user is required.
 # users:
-#   admin: "change-me"
+#   admin: "$2b$12$..."
 
 # Auth endpoint rate limit per client IP.
-rate_limit_rps: 10
+rate_limit_rps: 2
 
 # Optional WebSocket/CORS origin allow-list.
-# Empty list allows all origins for simple homelab use.
+# Empty means same-origin only. A literal "*" explicitly allows all origins
+# and should be used only after reviewing the cross-site WebSocket risk.
 allowed_origins: []
+
+# Forwarding headers are ignored unless the direct peer is in this CIDR list.
+trusted_proxies: []
 
 # Upload settings
 max_upload_mb: 10240  # 10GB max upload size
@@ -31,10 +35,6 @@ mount_points:
     path: "/media/devmon"
     read_only: false
     auto_discover: true  # Auto-detect mounted drives in /media/devmon
-
-  - name: "root"
-    path: "/host_root"
-    read_only: true
 
   - name: "home"
     path: "/home/user"

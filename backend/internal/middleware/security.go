@@ -15,28 +15,13 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		// Prevent MIME type sniffing
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 
-		// Prevent clickjacking
-		w.Header().Set("X-Frame-Options", "DENY")
-
-		// Enable XSS filter in browsers
-		w.Header().Set("X-XSS-Protection", "1; mode=block")
-
-		// Content Security Policy - permissive for Monaco editor and SPA frontend
-		// - 'unsafe-eval': Required by Monaco editor for syntax highlighting
-		// - 'unsafe-inline': Required for SvelteKit bootstrapping and Tailwind/Monaco inline styles
-		// - blob: Required for Monaco web workers
-		// - data: Required for fonts and embedded images
-		// - ws:/wss: Required for WebSocket connections
-		csp := strings.Join([]string{
-			"default-src 'self'",
-			"script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://static.cloudflareinsights.com",
-			"style-src 'self' 'unsafe-inline'",
-			"font-src 'self' data:",
-			"img-src 'self' data: blob:",
-			"worker-src 'self' blob:",
-			"connect-src 'self' ws: wss:",
-		}, "; ")
-		w.Header().Set("Content-Security-Policy", csp)
+		// SvelteKit emits hash-based script/style directives in the prerendered
+		// HTML. These response-wide directives enforce framing and navigation
+		// restrictions without weakening those generated hashes.
+		w.Header().Set(
+			"Content-Security-Policy",
+			"object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'",
+		)
 
 		// Referrer Policy
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")

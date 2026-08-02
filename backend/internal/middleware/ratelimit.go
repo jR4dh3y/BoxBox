@@ -4,6 +4,8 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"net/netip"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,11 +16,18 @@ import (
 // It uses a token bucket algorithm to allow bursts while enforcing
 // a sustained rate limit.
 type RateLimiter struct {
-	limiters map[string]*rate.Limiter
-	mu       sync.RWMutex
-	rps      float64 // requests per second
-	burst    int     // max burst size
-	lastDrop time.Time
+	limiters        map[string]*clientLimiter
+	mu              sync.RWMutex
+	rps             float64
+	burst           int
+	idleTTL         time.Duration
+	lastCleanup     time.Time
+	cleanupInterval time.Duration
+}
+
+type clientLimiter struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
 }
 
 // NewRateLimiter creates a new rate limiter with the specified requests per second.
@@ -33,69 +42,57 @@ func NewRateLimiter(rps float64) *RateLimiter {
 		burst = 1
 	}
 	return &RateLimiter{
-		limiters: make(map[string]*rate.Limiter),
-		rps:      rps,
-		burst:    burst,
-		lastDrop: time.Now(),
+		limiters:        make(map[string]*clientLimiter),
+		rps:             rps,
+		burst:           burst,
+		idleTTL:         30 * time.Minute,
+		lastCleanup:     time.Now(),
+		cleanupInterval: 5 * time.Minute,
 	}
 }
 
 // getLimiter returns the rate limiter for the given IP address,
 // creating one if it doesn't exist.
 func (rl *RateLimiter) getLimiter(ip string) *rate.Limiter {
-	rl.mu.RLock()
-	limiter, exists := rl.limiters[ip]
-	rl.mu.RUnlock()
-
-	if exists {
-		return limiter
-	}
-
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	// Double-check after acquiring write lock
-	if limiter, exists = rl.limiters[ip]; exists {
-		return limiter
+	now := time.Now()
+	if entry, exists := rl.limiters[ip]; exists {
+		entry.lastSeen = now
+		return entry.limiter
 	}
 
-	limiter = rate.NewLimiter(rate.Limit(rl.rps), rl.burst)
-	rl.limiters[ip] = limiter
+	limiter := rate.NewLimiter(rate.Limit(rl.rps), rl.burst)
+	rl.limiters[ip] = &clientLimiter{limiter: limiter, lastSeen: now}
 	return limiter
 }
 
 // Allow returns true if the request from the given IP should be allowed.
 func (rl *RateLimiter) Allow(ip string) bool {
-	rl.dropLimitersPeriodically()
+	rl.cleanupIfDue()
 	return rl.getLimiter(ip).Allow()
 }
 
-func (rl *RateLimiter) dropLimitersPeriodically() {
+func (rl *RateLimiter) cleanupIfDue() {
 	rl.mu.RLock()
-	due := time.Since(rl.lastDrop) >= 10*time.Minute
+	due := time.Since(rl.lastCleanup) >= rl.cleanupInterval
 	rl.mu.RUnlock()
 	if !due {
 		return
 	}
-
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	if time.Since(rl.lastDrop) < 10*time.Minute {
-		return
-	}
-	rl.limiters = make(map[string]*rate.Limiter)
-	rl.lastDrop = time.Now()
+	rl.cleanup()
 }
 
 // RateLimit returns a middleware that limits requests per IP address.
 // Requests that exceed the rate limit receive a 429 Too Many Requests response.
-func RateLimit(rps float64) func(http.Handler) http.Handler {
+func RateLimit(rps float64, trustedProxyValues ...string) func(http.Handler) http.Handler {
 	limiter := NewRateLimiter(rps)
+	trustedProxies := parseTrustedProxies(trustedProxyValues)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := getClientIP(r)
+			ip := getClientIPFromTrustedProxies(r, trustedProxies)
 
 			if !limiter.Allow(ip) {
 				w.Header().Set("Content-Type", "application/json")
@@ -120,6 +117,58 @@ func getClientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
+func getClientIPFromTrustedProxies(r *http.Request, trusted []netip.Prefix) string {
+	remote := getClientIP(r)
+	remoteIP, err := netip.ParseAddr(remote)
+	if err != nil || !isTrustedProxy(remoteIP, trusted) {
+		return remote
+	}
+
+	forwarded := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	for i := len(forwarded) - 1; i >= 0; i-- {
+		candidate, err := netip.ParseAddr(strings.TrimSpace(forwarded[i]))
+		if err != nil {
+			continue
+		}
+		if !isTrustedProxy(candidate, trusted) {
+			return candidate.String()
+		}
+	}
+	if realIP, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("X-Real-IP"))); err == nil {
+		return realIP.String()
+	}
+	return remote
+}
+
+func parseTrustedProxies(values []string) []netip.Prefix {
+	var prefixes []netip.Prefix
+	for _, value := range values {
+		for _, item := range strings.Split(value, ",") {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			if prefix, err := netip.ParsePrefix(item); err == nil {
+				prefixes = append(prefixes, prefix.Masked())
+				continue
+			}
+			if address, err := netip.ParseAddr(item); err == nil {
+				prefixes = append(prefixes, netip.PrefixFrom(address, address.BitLen()))
+			}
+		}
+	}
+	return prefixes
+}
+
+func isTrustedProxy(address netip.Addr, trusted []netip.Prefix) bool {
+	for _, prefix := range trusted {
+		if prefix.Contains(address) {
+			return true
+		}
+	}
+	return false
+}
+
 // StartCleanup starts a background goroutine that periodically removes
 // stale rate limiters to prevent memory growth.
 func (rl *RateLimiter) StartCleanup(interval time.Duration, stopCh <-chan struct{}) {
@@ -138,11 +187,16 @@ func (rl *RateLimiter) StartCleanup(interval time.Duration, stopCh <-chan struct
 	}()
 }
 
-// cleanup removes all rate limiters. Since limiters are created lazily
-// and are lightweight, this is a simple way to prevent unbounded growth.
+// cleanup removes only idle client buckets, preserving active clients' rate
+// history and preventing periodic brute-force windows.
 func (rl *RateLimiter) cleanup() {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	// Create a new map instead of deleting entries (more efficient)
-	rl.limiters = make(map[string]*rate.Limiter)
+	rl.lastCleanup = time.Now()
+	cutoff := time.Now().Add(-rl.idleTTL)
+	for key, entry := range rl.limiters {
+		if entry.lastSeen.Before(cutoff) {
+			delete(rl.limiters, key)
+		}
+	}
 }

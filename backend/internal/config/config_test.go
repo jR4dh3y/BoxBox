@@ -8,12 +8,17 @@ import (
 	"testing"
 )
 
+const (
+	testHashA = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+	testHashB = "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWx"
+)
+
 func TestLoadUsesBoxBoxEnvironmentPrefix(t *testing.T) {
 	clearConfigEnv(t)
 	configPath := writeMinimalConfig(t)
 
-	t.Setenv("BOXBOX_JWT_SECRET", "unit-test-secret")
-	t.Setenv("BOXBOX_USERS_admin", "unit-test-password")
+	t.Setenv("BOXBOX_JWT_SECRET", "unit-test-secret-at-least-thirty-two-bytes")
+	t.Setenv("BOXBOX_USERS_admin", testHashA)
 	t.Setenv("BOXBOX_ALLOWED_ORIGINS", "https://boxbox.example.com, *.internal.example.com ")
 	t.Setenv("BOXBOX_PORT", "9090")
 
@@ -23,11 +28,11 @@ func TestLoadUsesBoxBoxEnvironmentPrefix(t *testing.T) {
 	}
 	cfg := result.Config
 
-	if cfg.JWTSecret != "unit-test-secret" {
-		t.Fatalf("JWTSecret = %q, want unit-test-secret", cfg.JWTSecret)
+	if cfg.JWTSecret != "unit-test-secret-at-least-thirty-two-bytes" {
+		t.Fatalf("JWTSecret = %q, want strong unit-test secret", cfg.JWTSecret)
 	}
-	if cfg.Users["admin"] != "unit-test-password" {
-		t.Fatalf("Users[admin] = %q, want unit-test-password", cfg.Users["admin"])
+	if cfg.Users["admin"] != testHashA {
+		t.Fatalf("Users[admin] = %q, want test hash", cfg.Users["admin"])
 	}
 	if cfg.Port != 9090 {
 		t.Fatalf("Port = %d, want 9090", cfg.Port)
@@ -45,8 +50,8 @@ func TestLoadSupportsLegacyFMEnvironmentAliases(t *testing.T) {
 	clearConfigEnv(t)
 	configPath := writeMinimalConfig(t)
 
-	t.Setenv("FM_JWT_SECRET", "legacy-secret")
-	t.Setenv("FM_USERS_admin", "legacy-password")
+	t.Setenv("FM_JWT_SECRET", "legacy-secret-at-least-thirty-two-bytes")
+	t.Setenv("FM_USERS_admin", testHashA)
 	t.Setenv("FM_ALLOWED_ORIGINS", "https://legacy.example.com, *.legacy.example.com ")
 	t.Setenv("FM_PORT", "9091")
 	t.Setenv("FM_HOST", "127.0.0.1")
@@ -60,11 +65,11 @@ func TestLoadSupportsLegacyFMEnvironmentAliases(t *testing.T) {
 	}
 	cfg := result.Config
 
-	if cfg.JWTSecret != "legacy-secret" {
-		t.Fatalf("JWTSecret = %q, want legacy-secret", cfg.JWTSecret)
+	if cfg.JWTSecret != "legacy-secret-at-least-thirty-two-bytes" {
+		t.Fatalf("JWTSecret = %q, want strong legacy secret", cfg.JWTSecret)
 	}
-	if cfg.Users["admin"] != "legacy-password" {
-		t.Fatalf("Users[admin] = %q, want legacy-password", cfg.Users["admin"])
+	if cfg.Users["admin"] != testHashA {
+		t.Fatalf("Users[admin] = %q, want legacy test hash", cfg.Users["admin"])
 	}
 	if cfg.Port != 9091 {
 		t.Fatalf("Port = %d, want 9091", cfg.Port)
@@ -106,10 +111,10 @@ func TestLoadPrefersBoxBoxEnvironmentOverLegacyAliases(t *testing.T) {
 	clearConfigEnv(t)
 	configPath := writeMinimalConfig(t)
 
-	t.Setenv("FM_JWT_SECRET", "legacy-secret")
-	t.Setenv("BOXBOX_JWT_SECRET", "boxbox-secret")
-	t.Setenv("FM_USERS_admin", "legacy-password")
-	t.Setenv("BOXBOX_USERS_admin", "boxbox-password")
+	t.Setenv("FM_JWT_SECRET", "legacy-secret-at-least-thirty-two-bytes")
+	t.Setenv("BOXBOX_JWT_SECRET", "boxbox-secret-at-least-thirty-two-bytes")
+	t.Setenv("FM_USERS_admin", testHashA)
+	t.Setenv("BOXBOX_USERS_admin", testHashB)
 	t.Setenv("FM_ALLOWED_ORIGINS", "https://legacy.example.com")
 	t.Setenv("BOXBOX_ALLOWED_ORIGINS", "https://boxbox.example.com")
 	t.Setenv("FM_PORT", "9091")
@@ -121,11 +126,11 @@ func TestLoadPrefersBoxBoxEnvironmentOverLegacyAliases(t *testing.T) {
 	}
 	cfg := result.Config
 
-	if cfg.JWTSecret != "boxbox-secret" {
-		t.Fatalf("JWTSecret = %q, want boxbox-secret", cfg.JWTSecret)
+	if cfg.JWTSecret != "boxbox-secret-at-least-thirty-two-bytes" {
+		t.Fatalf("JWTSecret = %q, want strong boxbox secret", cfg.JWTSecret)
 	}
-	if cfg.Users["admin"] != "boxbox-password" {
-		t.Fatalf("Users[admin] = %q, want boxbox-password", cfg.Users["admin"])
+	if cfg.Users["admin"] != testHashB {
+		t.Fatalf("Users[admin] = %q, want replacement test hash", cfg.Users["admin"])
 	}
 	if cfg.Port != 9092 {
 		t.Fatalf("Port = %d, want 9092", cfg.Port)
@@ -146,15 +151,15 @@ func TestLoadStillReturnsConfigOnly(t *testing.T) {
 	clearConfigEnv(t)
 	configPath := writeMinimalConfig(t)
 
-	t.Setenv("BOXBOX_JWT_SECRET", "unit-test-secret")
-	t.Setenv("BOXBOX_USERS_admin", "unit-test-password")
+	t.Setenv("BOXBOX_JWT_SECRET", "unit-test-secret-at-least-thirty-two-bytes")
+	t.Setenv("BOXBOX_USERS_admin", testHashA)
 
 	cfg, err := Load(configPath)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.JWTSecret != "unit-test-secret" {
-		t.Fatalf("JWTSecret = %q, want unit-test-secret", cfg.JWTSecret)
+	if cfg.JWTSecret != "unit-test-secret-at-least-thirty-two-bytes" {
+		t.Fatalf("JWTSecret = %q, want strong unit-test secret", cfg.JWTSecret)
 	}
 }
 
@@ -167,9 +172,9 @@ func TestLoadWarnsForDeprecatedConfigSearchPath(t *testing.T) {
 		t.Fatalf("create legacy config dir: %v", err)
 	}
 	configPath := filepath.Join(legacyConfigDir, "config.yaml")
-	content := []byte(`jwt_secret: unit-test-secret
+	content := []byte(`jwt_secret: unit-test-secret-at-least-thirty-two-bytes
 users:
-  admin: unit-test-password
+  admin: "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 mount_points:
   - name: home
     path: /tmp
@@ -187,8 +192,8 @@ mount_points:
 		t.Fatalf("loadWithReport() error = %v", err)
 	}
 
-	if result.Config.JWTSecret != "unit-test-secret" {
-		t.Fatalf("JWTSecret = %q, want unit-test-secret", result.Config.JWTSecret)
+	if result.Config.JWTSecret != "unit-test-secret-at-least-thirty-two-bytes" {
+		t.Fatalf("JWTSecret = %q, want strong unit-test secret", result.Config.JWTSecret)
 	}
 	if !hasWarning(result.Warnings, filepath.Join(legacyConfigDir, "config.yaml")) {
 		t.Fatalf("Warnings = %#v, want warning for legacy config path", result.Warnings)

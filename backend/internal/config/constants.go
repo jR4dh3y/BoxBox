@@ -108,6 +108,16 @@ const (
 
 	// TokenCleanupInterval is how often to run revoked token cleanup
 	TokenCleanupInterval = 1 * time.Hour
+
+	// LoginLockoutThreshold is the number of consecutive failures allowed
+	// before per-account exponential backoff begins.
+	LoginLockoutThreshold = 5
+
+	// LoginLockoutBaseDelay is the first lockout duration.
+	LoginLockoutBaseDelay = 1 * time.Second
+
+	// LoginLockoutMaxDelay caps exponential account lockouts.
+	LoginLockoutMaxDelay = 15 * time.Minute
 )
 
 // ============================================================================

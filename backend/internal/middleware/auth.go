@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
 
@@ -28,8 +29,9 @@ func JWTAuth(authService service.AuthService) func(next http.Handler) http.Handl
 				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
 			}
 
-			// If no header token, try query parameter (for media streaming)
-			if tokenString == "" {
+			// Browser media elements cannot attach Authorization headers. Query
+			// tokens are therefore accepted only by the streaming route.
+			if tokenString == "" && strings.HasPrefix(r.URL.Path, "/api/v1/stream/") {
 				tokenString = r.URL.Query().Get("token")
 			}
 
@@ -55,9 +57,21 @@ func JWTAuth(authService service.AuthService) func(next http.Handler) http.Handl
 
 			// Add claims to context
 			ctx := context.WithValue(r.Context(), UserClaimsKey, claims)
+			ctx = authcontext.WithUsername(ctx, claims.Username)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// DevelopmentAuth adds the same identity context as JWTAuth while --dev
+// bypasses token verification.
+func DevelopmentAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims := &service.Claims{UserID: "dev", Username: "dev", TokenType: service.TokenTypeAccess}
+		ctx := context.WithValue(r.Context(), UserClaimsKey, claims)
+		ctx = authcontext.WithUsername(ctx, "dev")
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // writeAuthError writes an authentication error response

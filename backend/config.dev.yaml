@@ -10,7 +10,7 @@ jwt_secret: "development-only"
 
 max_upload_mb: 10240
 chunk_size_mb: 5
-rate_limit_rps: 10
+rate_limit_rps: 2
 data_dir: "/tmp/boxbox-dev"
 allowed_origins: []
 

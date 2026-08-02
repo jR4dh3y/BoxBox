@@ -15,6 +15,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 	"github.com/jR4dh3y/BoxBox/backend/internal/handler"
@@ -36,7 +37,13 @@ func main() {
 		// These values exist only in this process and satisfy production-oriented
 		// config validation. Authentication is bypassed below.
 		os.Setenv("BOXBOX_JWT_SECRET", "boxbox-development-mode-not-for-production")
-		os.Setenv("BOXBOX_USERS_dev", "development-mode")
+		// Authentication is bypassed, but configuration still requires the
+		// bcrypt storage format used in production.
+		devPasswordHash, hashErr := bcrypt.GenerateFromPassword([]byte("development-mode"), bcrypt.MinCost)
+		if hashErr != nil {
+			log.Fatal().Err(hashErr).Msg("Failed to initialize development credentials")
+		}
+		os.Setenv("BOXBOX_USERS_dev", string(devPasswordHash))
 	}
 
 	// Configure zerolog
@@ -215,7 +222,7 @@ func createRouter(
 
 	// Global middleware
 	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.Logger)
+	r.Use(middleware.RequestLogger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.SecurityHeaders)
 
@@ -237,13 +244,15 @@ func createRouter(
 		// Public routes (no auth required)
 		// Auth routes are rate-limited to prevent brute force attacks
 		r.Route("/auth", func(r chi.Router) {
-			r.Use(middleware.RateLimit(cfg.RateLimitRPS))
+			r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
 			authHandler.RegisterRoutes(r)
 		})
 
 		// Protected routes (auth required)
 		r.Group(func(r chi.Router) {
-			if !devMode {
+			if devMode {
+				r.Use(middleware.DevelopmentAuth)
+			} else {
 				r.Use(middleware.JWTAuth(authService))
 			}
 

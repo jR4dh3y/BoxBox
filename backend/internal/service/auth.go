@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"sync"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Auth-related errors
@@ -38,9 +39,10 @@ type Claims struct {
 
 // TokenPair contains both access and refresh tokens
 type TokenPair struct {
-	AccessToken  string    `json:"accessToken"`
-	RefreshToken string    `json:"refreshToken"`
-	ExpiresAt    time.Time `json:"expiresAt"`
+	AccessToken      string    `json:"accessToken"`
+	RefreshToken     string    `json:"-"`
+	ExpiresAt        time.Time `json:"expiresAt"`
+	RefreshExpiresAt time.Time `json:"-"`
 }
 
 // AuthService defines the authentication service interface
@@ -50,7 +52,7 @@ type AuthService interface {
 	ValidateToken(tokenString string) (*Claims, error)
 	ValidateAccessToken(tokenString string) (*Claims, error)
 	ValidateRefreshToken(tokenString string) (*Claims, error)
-	Logout(ctx context.Context, refreshToken string) error
+	Logout(ctx context.Context, refreshToken, accessToken string) error
 	StartCleanup(ctx context.Context)
 	StopCleanup()
 }
@@ -60,11 +62,19 @@ type authService struct {
 	jwtSecret          []byte
 	accessTokenExpiry  time.Duration
 	refreshTokenExpiry time.Duration
-	users              map[string]string // username -> password (in production, use proper storage)
-	revokedTokens      map[string]time.Time
+	users              map[string]string // username -> bcrypt password hash
+	dummyPasswordHash  []byte
+	revokedRefresh     map[[sha256.Size]byte]time.Time
+	revokedAccess      map[string]time.Time
+	loginFailures      map[string]loginFailure
 	mu                 sync.RWMutex
 	stopCh             chan struct{}
 	wg                 sync.WaitGroup
+}
+
+type loginFailure struct {
+	count       int
+	lockedUntil time.Time
 }
 
 // AuthServiceConfig holds configuration for the auth service
@@ -72,7 +82,7 @@ type AuthServiceConfig struct {
 	JWTSecret          string
 	AccessTokenExpiry  time.Duration
 	RefreshTokenExpiry time.Duration
-	Users              map[string]string // username -> password
+	Users              map[string]string // username -> bcrypt password hash
 }
 
 // NewAuthService creates a new authentication service
@@ -87,46 +97,86 @@ func NewAuthService(cfg AuthServiceConfig) AuthService {
 		cfg.Users = make(map[string]string)
 	}
 
+	var dummyHash []byte
+	for _, configuredHash := range cfg.Users {
+		dummyHash = []byte(configuredHash)
+		break
+	}
+	if len(dummyHash) == 0 {
+		dummyHash, _ = bcrypt.GenerateFromPassword([]byte("boxbox-invalid-user-password"), bcrypt.DefaultCost)
+	}
+
 	return &authService{
 		jwtSecret:          []byte(cfg.JWTSecret),
 		accessTokenExpiry:  cfg.AccessTokenExpiry,
 		refreshTokenExpiry: cfg.RefreshTokenExpiry,
 		users:              cfg.Users,
-		revokedTokens:      make(map[string]time.Time),
+		dummyPasswordHash:  dummyHash,
+		revokedRefresh:     make(map[[sha256.Size]byte]time.Time),
+		revokedAccess:      make(map[string]time.Time),
+		loginFailures:      make(map[string]loginFailure),
 		stopCh:             make(chan struct{}),
 	}
 }
 
 // Login authenticates a user and returns a token pair
 func (s *authService) Login(ctx context.Context, username, password string) (*TokenPair, error) {
-	// Validate credentials
-	storedPassword, exists := s.users[username]
-	if !exists || subtle.ConstantTimeCompare([]byte(storedPassword), []byte(password)) != 1 {
+	storedHash, exists := s.users[username]
+	hash := []byte(storedHash)
+	if !exists {
+		hash = s.dummyPasswordHash
+	}
+
+	// Always execute the same expensive comparison, including for unknown and
+	// temporarily locked accounts, to avoid username-enumeration timing leaks.
+	passwordMatches := bcrypt.CompareHashAndPassword(hash, []byte(password)) == nil
+	if !exists {
 		return nil, ErrInvalidCredentials
 	}
+
+	s.mu.Lock()
+	failure := s.loginFailures[username]
+	if time.Now().Before(failure.lockedUntil) {
+		s.mu.Unlock()
+		return nil, ErrInvalidCredentials
+	}
+	if !passwordMatches {
+		failure.count++
+		if failure.count >= config.LoginLockoutThreshold {
+			exponent := min(failure.count-config.LoginLockoutThreshold, 9)
+			delay := config.LoginLockoutBaseDelay * time.Duration(1<<exponent)
+			if delay > config.LoginLockoutMaxDelay {
+				delay = config.LoginLockoutMaxDelay
+			}
+			failure.lockedUntil = time.Now().Add(delay)
+		}
+		s.loginFailures[username] = failure
+		s.mu.Unlock()
+		return nil, ErrInvalidCredentials
+	}
+	delete(s.loginFailures, username)
+	s.mu.Unlock()
 
 	return s.generateTokenPair(username)
 }
 
 // Refresh generates a new token pair from a valid refresh token
 func (s *authService) Refresh(ctx context.Context, refreshToken string) (*TokenPair, error) {
-	// Check if token is revoked
-	s.mu.RLock()
-	if _, revoked := s.revokedTokens[refreshToken]; revoked {
-		s.mu.RUnlock()
-		return nil, ErrTokenRevoked
-	}
-	s.mu.RUnlock()
-
 	// Parse and validate the refresh token
-	claims, err := s.ValidateRefreshToken(refreshToken)
+	claims, err := s.validateToken(refreshToken, TokenTypeRefresh)
 	if err != nil {
 		return nil, err
 	}
 
-	// Revoke the old refresh token
+	// Rotate once. The check-and-revoke is atomic so concurrent replays cannot
+	// both mint a new token pair.
+	tokenHash := sha256.Sum256([]byte(refreshToken))
 	s.mu.Lock()
-	s.revokedTokens[refreshToken] = time.Now()
+	if _, revoked := s.revokedRefresh[tokenHash]; revoked {
+		s.mu.Unlock()
+		return nil, ErrTokenRevoked
+	}
+	s.revokedRefresh[tokenHash] = claims.ExpiresAt.Time
 	s.mu.Unlock()
 
 	// Generate new token pair
@@ -139,12 +189,23 @@ func (s *authService) ValidateToken(tokenString string) (*Claims, error) {
 }
 
 func (s *authService) ValidateAccessToken(tokenString string) (*Claims, error) {
-	return s.validateToken(tokenString, TokenTypeAccess)
+	claims, err := s.validateToken(tokenString, TokenTypeAccess)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	_, revoked := s.revokedAccess[claims.ID]
+	s.mu.RUnlock()
+	if revoked {
+		return nil, ErrTokenRevoked
+	}
+	return claims, nil
 }
 
 func (s *authService) ValidateRefreshToken(tokenString string) (*Claims, error) {
+	tokenHash := sha256.Sum256([]byte(tokenString))
 	s.mu.RLock()
-	_, revoked := s.revokedTokens[tokenString]
+	_, revoked := s.revokedRefresh[tokenHash]
 	s.mu.RUnlock()
 	if revoked {
 		return nil, ErrTokenRevoked
@@ -155,12 +216,8 @@ func (s *authService) ValidateRefreshToken(tokenString string) (*Claims, error) 
 
 func (s *authService) validateToken(tokenString string, expectedType TokenType) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		// Validate signing method
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, ErrInvalidToken
-		}
 		return s.jwtSecret, nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer("boxbox"))
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
@@ -180,15 +237,30 @@ func (s *authService) validateToken(tokenString string, expectedType TokenType) 
 	return claims, nil
 }
 
-// Logout revokes a refresh token
-func (s *authService) Logout(ctx context.Context, refreshToken string) error {
-	if _, err := s.ValidateRefreshToken(refreshToken); err != nil {
+// Logout revokes a refresh token and, when supplied, the current access token.
+func (s *authService) Logout(ctx context.Context, refreshToken, accessToken string) error {
+	refreshClaims, err := s.validateToken(refreshToken, TokenTypeRefresh)
+	if err != nil {
 		return err
 	}
 
+	refreshHash := sha256.Sum256([]byte(refreshToken))
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.revokedTokens[refreshToken] = time.Now()
+	if _, revoked := s.revokedRefresh[refreshHash]; revoked {
+		s.mu.Unlock()
+		return ErrTokenRevoked
+	}
+	s.revokedRefresh[refreshHash] = refreshClaims.ExpiresAt.Time
+	s.mu.Unlock()
+
+	if accessToken != "" {
+		accessClaims, err := s.validateToken(accessToken, TokenTypeAccess)
+		if err == nil && accessClaims.Username == refreshClaims.Username && accessClaims.ID != "" {
+			s.mu.Lock()
+			s.revokedAccess[accessClaims.ID] = accessClaims.ExpiresAt.Time
+			s.mu.Unlock()
+		}
+	}
 	return nil
 }
 
@@ -204,6 +276,7 @@ func (s *authService) generateTokenPair(username string) (*TokenPair, error) {
 		Username:  username,
 		TokenType: TokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        generateTokenID(),
 			ExpiresAt: jwt.NewNumericDate(accessExpiry),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
@@ -225,6 +298,7 @@ func (s *authService) generateTokenPair(username string) (*TokenPair, error) {
 		Username:  username,
 		TokenType: TokenTypeRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        generateTokenID(),
 			ExpiresAt: jwt.NewNumericDate(refreshExpiry),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
@@ -240,16 +314,22 @@ func (s *authService) generateTokenPair(username string) (*TokenPair, error) {
 	}
 
 	return &TokenPair{
-		AccessToken:  accessTokenString,
-		RefreshToken: refreshTokenString,
-		ExpiresAt:    accessExpiry,
+		AccessToken:      accessTokenString,
+		RefreshToken:     refreshTokenString,
+		ExpiresAt:        accessExpiry,
+		RefreshExpiresAt: refreshExpiry,
 	}, nil
 }
 
-// generateUserID creates a deterministic user ID from username
+// generateUserID creates a stable, non-plaintext user ID for token claims.
 func generateUserID(username string) string {
-	b := make([]byte, 8)
-	rand.Read(b)
+	sum := sha256.Sum256([]byte(username))
+	return hex.EncodeToString(sum[:8])
+}
+
+func generateTokenID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
@@ -259,10 +339,20 @@ func (s *authService) CleanupExpiredTokens() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cutoff := time.Now().Add(-s.refreshTokenExpiry)
-	for token, revokedAt := range s.revokedTokens {
-		if revokedAt.Before(cutoff) {
-			delete(s.revokedTokens, token)
+	now := time.Now()
+	for tokenHash, expiresAt := range s.revokedRefresh {
+		if !expiresAt.After(now) {
+			delete(s.revokedRefresh, tokenHash)
+		}
+	}
+	for tokenID, expiresAt := range s.revokedAccess {
+		if !expiresAt.After(now) {
+			delete(s.revokedAccess, tokenID)
+		}
+	}
+	for username, failure := range s.loginFailures {
+		if failure.count == 0 || now.Sub(failure.lockedUntil) > config.LoginLockoutMaxDelay {
+			delete(s.loginFailures, username)
 		}
 	}
 }

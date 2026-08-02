@@ -1,8 +1,10 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
@@ -35,26 +37,21 @@ type LoginRequest struct {
 
 // LoginResponse represents the login response body
 type LoginResponse struct {
-	AccessToken  string `json:"accessToken"`
-	RefreshToken string `json:"refreshToken"`
-	ExpiresAt    string `json:"expiresAt"`
+	AccessToken string `json:"accessToken"`
+	ExpiresAt   string `json:"expiresAt"`
 }
 
-// RefreshRequest represents the refresh token request body
-type RefreshRequest struct {
-	RefreshToken string `json:"refreshToken"`
-}
-
-// LogoutRequest represents the logout request body
-type LogoutRequest struct {
-	RefreshToken string `json:"refreshToken"`
-}
+const refreshCookieName = "boxbox_refresh"
 
 // Login handles user login requests
 // POST /api/v1/auth/login
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	if !sameOriginRequest(r) {
+		writeError(w, "Cross-origin authentication request rejected", "FORBIDDEN", http.StatusForbidden)
+		return
+	}
 	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeError(w, "Invalid request body", "VALIDATION_ERROR", http.StatusBadRequest)
 		return
 	}
@@ -77,11 +74,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return token pair
+	h.setRefreshCookie(w, r, tokenPair.RefreshToken, tokenPair.RefreshExpiresAt)
 	resp := LoginResponse{
-		AccessToken:  tokenPair.AccessToken,
-		RefreshToken: tokenPair.RefreshToken,
-		ExpiresAt:    tokenPair.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		AccessToken: tokenPair.AccessToken,
+		ExpiresAt:   tokenPair.ExpiresAt.Format(time.RFC3339),
 	}
 
 	writeJSON(w, resp, http.StatusOK)
@@ -90,21 +86,20 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // Refresh handles token refresh requests
 // POST /api/v1/auth/refresh
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
-	var req RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "Invalid request body", "VALIDATION_ERROR", http.StatusBadRequest)
+	if !sameOriginRequest(r) {
+		writeError(w, "Cross-origin authentication request rejected", "FORBIDDEN", http.StatusForbidden)
 		return
 	}
-
-	// Validate required fields
-	if req.RefreshToken == "" {
-		writeError(w, "Refresh token is required", "VALIDATION_ERROR", http.StatusBadRequest)
+	refreshToken, err := h.refreshTokenFromCookie(r)
+	if err != nil {
+		writeError(w, "Invalid refresh token", "TOKEN_INVALID", http.StatusUnauthorized)
 		return
 	}
 
 	// Attempt refresh
-	tokenPair, err := h.authService.Refresh(r.Context(), req.RefreshToken)
+	tokenPair, err := h.authService.Refresh(r.Context(), refreshToken)
 	if err != nil {
+		h.clearRefreshCookie(w, r)
 		switch err {
 		case service.ErrTokenExpired:
 			writeError(w, "Refresh token expired", "TOKEN_INVALID", http.StatusUnauthorized)
@@ -118,11 +113,10 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return new token pair
+	h.setRefreshCookie(w, r, tokenPair.RefreshToken, tokenPair.RefreshExpiresAt)
 	resp := LoginResponse{
-		AccessToken:  tokenPair.AccessToken,
-		RefreshToken: tokenPair.RefreshToken,
-		ExpiresAt:    tokenPair.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		AccessToken: tokenPair.AccessToken,
+		ExpiresAt:   tokenPair.ExpiresAt.Format(time.RFC3339),
 	}
 
 	writeJSON(w, resp, http.StatusOK)
@@ -131,20 +125,20 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 // Logout handles user logout requests
 // POST /api/v1/auth/logout
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	var req LogoutRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "Invalid request body", "VALIDATION_ERROR", http.StatusBadRequest)
+	if !sameOriginRequest(r) {
+		writeError(w, "Cross-origin authentication request rejected", "FORBIDDEN", http.StatusForbidden)
 		return
 	}
-
-	// Validate required fields
-	if req.RefreshToken == "" {
-		writeError(w, "Refresh token is required", "VALIDATION_ERROR", http.StatusBadRequest)
+	refreshToken, err := h.refreshTokenFromCookie(r)
+	if err != nil {
+		h.clearRefreshCookie(w, r)
+		writeError(w, "Invalid refresh token", "TOKEN_INVALID", http.StatusUnauthorized)
 		return
 	}
+	h.clearRefreshCookie(w, r)
 
-	// Revoke the refresh token
-	if err := h.authService.Logout(r.Context(), req.RefreshToken); err != nil {
+	accessToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if err := h.authService.Logout(r.Context(), refreshToken, accessToken); err != nil {
 		switch err {
 		case service.ErrTokenExpired, service.ErrTokenRevoked, service.ErrInvalidToken:
 			writeError(w, "Invalid refresh token", "TOKEN_INVALID", http.StatusUnauthorized)
@@ -155,4 +149,51 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]string{"message": "Logged out successfully"}, http.StatusOK)
+}
+
+func (h *AuthHandler) refreshTokenFromCookie(r *http.Request) (string, error) {
+	cookie, err := r.Cookie(refreshCookieName)
+	if err != nil || cookie.Value == "" {
+		return "", http.ErrNoCookie
+	}
+	return cookie.Value, nil
+}
+
+func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    token,
+		Path:     "/api/v1/auth",
+		Expires:  expiresAt,
+		MaxAge:   max(1, int(time.Until(expiresAt).Seconds())),
+		HttpOnly: true,
+		Secure:   requestIsHTTPS(r),
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func (h *AuthHandler) clearRefreshCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    "",
+		Path:     "/api/v1/auth",
+		Expires:  time.Unix(1, 0),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   requestIsHTTPS(r),
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func requestIsHTTPS(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func sameOriginRequest(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	return err == nil && parsed.Host != "" && strings.EqualFold(parsed.Host, r.Host)
 }

@@ -38,7 +38,7 @@ func (s *testAuthService) Refresh(ctx context.Context, refreshToken string) (*se
 	return nil, nil
 }
 
-func (s *testAuthService) Logout(ctx context.Context, refreshToken string) error {
+func (s *testAuthService) Logout(ctx context.Context, refreshToken, accessToken string) error {
 	return nil
 }
 
@@ -86,6 +86,30 @@ func (s *testAuthService) StartCleanup(ctx context.Context) {
 
 func (s *testAuthService) StopCleanup() {
 	// No-op for testing
+}
+
+func TestJWTAuthAcceptsQueryTokensOnlyForStreams(t *testing.T) {
+	const secret = "test-secret-key-for-jwt-signing"
+	token := generateValidToken(secret, "admin", time.Hour)
+	handler := JWTAuth(newTestAuthService(secret))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	for _, test := range []struct {
+		path string
+		want int
+	}{
+		{path: "/api/v1/stream/preview/home/photo.png?token=" + token, want: http.StatusNoContent},
+		{path: "/api/v1/files/home/photo.png?token=" + token, want: http.StatusUnauthorized},
+		{path: "/api/v1/jobs?token=" + token, want: http.StatusUnauthorized},
+	} {
+		request := httptest.NewRequest(http.MethodGet, test.path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Errorf("%s: status = %d, want %d", test.path, response.Code, test.want)
+		}
+	}
 }
 
 // generateValidToken creates a valid JWT token for testing
