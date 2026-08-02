@@ -13,18 +13,19 @@
 
 services:
   boxbox:
-    image: ${BOXBOX_IMAGE:-ghcr.io/jr4dh3y/boxbox:latest}
+    image: ${BOXBOX_IMAGE:-ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962}
     container_name: boxbox
     restart: unless-stopped
+    user: "${PUID:-10001}:${PGID:-10001}"
     env_file:
       - .env
     ports:
       - "${HOST_PORT:-8080}:80"
     environment:
       - BOXBOX_JWT_SECRET=${BOXBOX_JWT_SECRET:?Set BOXBOX_JWT_SECRET in .env}
-      - BOXBOX_USERS_admin=${BOXBOX_USERS_admin:?Set BOXBOX_USERS_admin in .env}
-      - BOXBOX_RATE_LIMIT_RPS=${BOXBOX_RATE_LIMIT_RPS:-10}
+      - BOXBOX_RATE_LIMIT_RPS=${BOXBOX_RATE_LIMIT_RPS:-2}
       - BOXBOX_ALLOWED_ORIGINS=${BOXBOX_ALLOWED_ORIGINS:-}
+      - BOXBOX_TRUSTED_PROXIES=${BOXBOX_TRUSTED_PROXIES:-}
       - CONFIG_PATH=/app/config.yaml
       - TMPDIR=/tmp/boxbox
     volumes:
@@ -34,7 +35,6 @@ services:
       # Mount points for file access (customize these for your setup)
       # rslave enables mount propagation so container sees new host mounts
       - /media/devmon:/media/devmon:rslave
-      - /:/host_root:ro,rslave
       - ${HOME_PATH:-${HOME:-/home/user}}:/home/user
 
       # Sidebar quick-access folders. By default these point inside HOME_PATH,
@@ -51,12 +51,10 @@ services:
       - boxbox-temp:/tmp/boxbox
       - boxbox-data:/data
 
-    # Security: Run without full privileges, only necessary capabilities
+    # Security: run unprivileged and drop every Linux capability.
     privileged: false
-    cap_add:
-      - DAC_READ_SEARCH  # Read files regardless of permission bits
-      - CHOWN            # Change file ownership
-      - FOWNER           # Bypass permission checks for file owner
+    cap_drop:
+      - ALL
 
     security_opt:
       - no-new-privileges:true

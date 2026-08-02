@@ -11,7 +11,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Build Frontend with Bun
 # -----------------------------------------------------------------------------
-FROM oven/bun:1-alpine AS frontend-builder
+FROM oven/bun:1-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0 AS frontend-builder
 
 WORKDIR /app
 
@@ -26,7 +26,7 @@ RUN bun run build
 # -----------------------------------------------------------------------------
 # Stage 2: Build Backend with Go (embeds frontend assets)
 # -----------------------------------------------------------------------------
-FROM golang:1.26-alpine AS backend-builder
+FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS backend-builder
 
 WORKDIR /app
 
@@ -53,7 +53,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # -----------------------------------------------------------------------------
 # Stage 3: Minimal Production Runtime
 # -----------------------------------------------------------------------------
-FROM alpine:3.24
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 WORKDIR /app
 
@@ -69,8 +69,12 @@ COPY --from=backend-builder /server /app/server
 # Copy default config
 COPY backend/config.yaml /app/config.yaml
 
-# Create writable runtime directories
-RUN mkdir -p /data /tmp/boxbox && chmod 1777 /tmp /tmp/boxbox
+# Create writable runtime directories owned by the unprivileged runtime user.
+RUN addgroup -g 10001 boxbox \
+    && adduser -D -H -u 10001 -G boxbox boxbox \
+    && mkdir -p /data /tmp/boxbox \
+    && chown -R boxbox:boxbox /app /data /tmp/boxbox \
+    && chmod 0700 /tmp/boxbox
 
 # Store upload chunk temp files on a dedicated writable path
 ENV TMPDIR=/tmp/boxbox
@@ -81,6 +85,8 @@ EXPOSE 80
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget -qO- http://localhost:80/health | grep -q 'ok' || exit 1
+
+USER 10001:10001
 
 # Run the server
 ENTRYPOINT ["/app/server"]
