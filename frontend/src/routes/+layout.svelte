@@ -1,6 +1,5 @@
 <script lang="ts">
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
 	import { authStore, isAuthenticated, isDevelopment } from '$lib/stores/auth';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -50,8 +49,9 @@
 	const backgroundStyle = $derived(getWallpaperBackgroundStyle(backgroundImageMode));
 
 	onMount(() => {
-		authStore.initialize();
-		initialized = true;
+		void authStore.initialize().finally(() => {
+			initialized = true;
+		});
 	});
 
 	onDestroy(() => {
@@ -103,8 +103,6 @@
 		goto(resolve('/login'));
 	}
 </script>
-
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
 
 <div
 	class="app-shell"

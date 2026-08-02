@@ -8,12 +8,11 @@ export {
 	apiRequest,
 	ApiRequestError,
 	getAccessToken,
-	getRefreshToken,
-	setTokens,
+	setAccessToken,
 	clearTokens,
 	isAuthenticated,
 	type ApiError,
-	type TokenPair,
+	type AccessTokenResponse,
 	type RequestOptions
 } from './client';
 

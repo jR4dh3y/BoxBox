@@ -66,27 +66,28 @@ export const storage = {
 /**
  * Auth token storage - typed accessors
  */
+let inMemoryAccessToken: string | null = null;
+
 export const tokenStorage = {
 	getAccessToken(): string | null {
-		return storage.getString(STORAGE_KEYS.ACCESS_TOKEN);
+		return inMemoryAccessToken;
 	},
 
-	getRefreshToken(): string | null {
-		return storage.getString(STORAGE_KEYS.REFRESH_TOKEN);
-	},
-
-	setTokens(accessToken: string, refreshToken: string): void {
-		storage.setString(STORAGE_KEYS.ACCESS_TOKEN, accessToken);
-		storage.setString(STORAGE_KEYS.REFRESH_TOKEN, refreshToken);
+	setAccessToken(accessToken: string): void {
+		inMemoryAccessToken = accessToken;
+		// Remove tokens written by older BoxBox releases.
+		storage.remove(STORAGE_KEYS.ACCESS_TOKEN);
+		storage.remove(STORAGE_KEYS.REFRESH_TOKEN);
 	},
 
 	clearTokens(): void {
+		inMemoryAccessToken = null;
 		storage.remove(STORAGE_KEYS.ACCESS_TOKEN);
 		storage.remove(STORAGE_KEYS.REFRESH_TOKEN);
 	},
 
 	hasTokens(): boolean {
-		return storage.has(STORAGE_KEYS.ACCESS_TOKEN);
+		return inMemoryAccessToken !== null;
 	}
 };
 

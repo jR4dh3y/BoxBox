@@ -36,9 +36,8 @@ export class ApiRequestError extends Error {
 /**
  * Token pair returned from auth endpoints
  */
-export interface TokenPair {
+export interface AccessTokenResponse {
 	accessToken: string;
-	refreshToken: string;
 	expiresAt: string;
 }
 
@@ -52,15 +51,8 @@ export function getAccessToken(): string | null {
 /**
  * Get stored refresh token
  */
-export function getRefreshToken(): string | null {
-	return tokenStorage.getRefreshToken();
-}
-
-/**
- * Store tokens in localStorage
- */
-export function setTokens(accessToken: string, refreshToken: string): void {
-	tokenStorage.setTokens(accessToken, refreshToken);
+export function setAccessToken(accessToken: string): void {
+	tokenStorage.setAccessToken(accessToken);
 }
 
 /**
@@ -91,11 +83,6 @@ async function refreshAccessToken(): Promise<boolean> {
 		return refreshPromise;
 	}
 
-	const refreshToken = getRefreshToken();
-	if (!refreshToken) {
-		return false;
-	}
-
 	isRefreshing = true;
 	refreshPromise = (async () => {
 		try {
@@ -104,7 +91,7 @@ async function refreshAccessToken(): Promise<boolean> {
 				headers: {
 					'Content-Type': 'application/json'
 				},
-				body: JSON.stringify({ refreshToken })
+				credentials: 'same-origin'
 			});
 
 			if (!response.ok) {
@@ -113,8 +100,8 @@ async function refreshAccessToken(): Promise<boolean> {
 				return false;
 			}
 
-			const data: TokenPair = await response.json();
-			setTokens(data.accessToken, data.refreshToken);
+			const data: AccessTokenResponse = await response.json();
+			setAccessToken(data.accessToken);
 			return true;
 		} catch {
 			clearTokens();
@@ -219,7 +206,8 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
 	const fetchOptions: RequestInit = {
 		method,
 		headers: requestHeaders,
-		signal
+		signal,
+		credentials: 'same-origin'
 	};
 
 	if (body) {

@@ -43,12 +43,20 @@ function createAuthStore() {
 	let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 	/**
-	 * Initialize auth state from stored tokens
+	 * Initialize auth state from the HttpOnly refresh-token cookie
 	 */
-	function initialize(): void {
+	async function initialize(): Promise<void> {
 		const isDevelopment =
 			document.querySelector('meta[name="boxbox-dev-mode"]')?.getAttribute('content') === 'true';
-		const isAuth = checkAuth();
+		let isAuth = checkAuth();
+		if (!isDevelopment && !isAuth) {
+			try {
+				await apiRefresh();
+				isAuth = true;
+			} catch {
+				isAuth = false;
+			}
+		}
 		update((state) => ({
 			...state,
 			isAuthenticated: isDevelopment || isAuth,

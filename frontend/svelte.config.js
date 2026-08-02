@@ -8,6 +8,23 @@ const config = {
 	preprocess: vitePreprocess(),
 
 	kit: {
+		csp: {
+			mode: 'hash',
+			directives: {
+				'default-src': ['self'],
+				'script-src': ['self'],
+				'style-src': ['self', 'unsafe-inline'],
+				'font-src': ['self', 'data:'],
+				'img-src': ['self', 'data:', 'blob:'],
+				'media-src': ['self', 'blob:'],
+				'frame-src': ['self', 'blob:'],
+				'worker-src': ['self', 'blob:'],
+				'connect-src': ['self', 'ws:', 'wss:'],
+				'object-src': ['none'],
+				'base-uri': ['self'],
+				'form-action': ['self']
+			}
+		},
 		// Static adapter for single-container Docker deployment
 		// Frontend is embedded in Go binary via go:embed
 		adapter: adapter({

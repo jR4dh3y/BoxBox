@@ -3,13 +3,7 @@
  * Requirements: 7.1
  */
 
-import {
-	apiRequest,
-	setTokens,
-	clearTokens,
-	getRefreshToken,
-	isAuthenticated as checkAuth
-} from './client';
+import { apiRequest, setAccessToken, clearTokens, isAuthenticated as checkAuth } from './client';
 
 /**
  * Login request
@@ -24,15 +18,7 @@ export interface LoginRequest {
  */
 export interface LoginResponse {
 	accessToken: string;
-	refreshToken: string;
 	expiresAt: string;
-}
-
-/**
- * Logout request
- */
-interface LogoutRequest {
-	refreshToken: string;
 }
 
 /**
@@ -56,7 +42,7 @@ export async function login(username: string, password: string): Promise<LoginRe
 	});
 
 	// Store tokens on successful login
-	setTokens(response.accessToken, response.refreshToken);
+	setAccessToken(response.accessToken);
 
 	return response;
 }
@@ -66,20 +52,12 @@ export async function login(username: string, password: string): Promise<LoginRe
  * POST /api/v1/auth/refresh
  */
 export async function refresh(): Promise<LoginResponse> {
-	const refreshToken = getRefreshToken();
-
-	if (!refreshToken) {
-		throw new Error('No refresh token available');
-	}
-
 	const response = await apiRequest<LoginResponse>('/auth/refresh', {
 		method: 'POST',
-		body: { refreshToken },
 		skipAuth: true
 	});
 
-	// Store new tokens
-	setTokens(response.accessToken, response.refreshToken);
+	setAccessToken(response.accessToken);
 
 	return response;
 }
@@ -89,19 +67,12 @@ export async function refresh(): Promise<LoginResponse> {
  * POST /api/v1/auth/logout
  */
 export async function logout(): Promise<void> {
-	const refreshToken = getRefreshToken();
-
-	if (refreshToken) {
-		try {
-			const body: LogoutRequest = { refreshToken };
-			await apiRequest<MessageResponse>('/auth/logout', {
-				method: 'POST',
-				body,
-				skipAuth: true
-			});
-		} catch {
-			// Ignore errors during logout - we'll clear tokens anyway
-		}
+	try {
+		await apiRequest<MessageResponse>('/auth/logout', {
+			method: 'POST'
+		});
+	} catch {
+		// Ignore errors during logout - we'll clear the in-memory token anyway.
 	}
 
 	// Always clear tokens locally
@@ -116,4 +87,4 @@ export function isAuthenticated(): boolean {
 }
 
 // Re-export token utilities for convenience
-export { getAccessToken, getRefreshToken, clearTokens } from './client';
+export { getAccessToken, clearTokens } from './client';
