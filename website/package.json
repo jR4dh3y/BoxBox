@@ -17,7 +17,7 @@
     "astro": "^6.4.6",
     "entities": "^8.0.0",
     "marked": "^18.0.7",
-    "sanitize-html": "^2.17.5",
+    "sanitize-html": "^2.17.6",
     "shiki": "^4.3.1",
     "tailwindcss": "^4.3.3"
   },
