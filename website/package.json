@@ -14,7 +14,7 @@
   "dependencies": {
     "@lucide/astro": "^1.28.0",
     "@tailwindcss/vite": "^4.3.3",
-    "astro": "^6.4.6",
+    "astro": "^7.1.6",
     "entities": "^8.0.0",
     "marked": "^18.0.7",
     "sanitize-html": "^2.17.6",
