@@ -42,7 +42,7 @@
 		"@e965/xlsx": "^0.20.3",
 		"@noble/hashes": "^2.2.0",
 		"@tanstack/svelte-query": "^6.0.14",
-		"docx-preview": "^0.3.7",
+		"docx-preview": "^0.4.0",
 		"lucide-svelte": "^1.0.1",
 		"monaco-editor": "^0.56.0",
 		"pptx-preview": "^1.0.7"
