@@ -68,11 +68,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Prepare image name
+      - name: Prepare dedicated nightly image name
         if: steps.nightly.outputs.publish == 'true'
         id: image
         shell: bash
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/boxbox-nightly" >> "$GITHUB_OUTPUT"
 
       - name: Extract Docker metadata
         if: steps.nightly.outputs.publish == 'true'
@@ -82,8 +82,8 @@ jobs:
           images: ${{ steps.image.outputs.name }}
           flavor: latest=false
           tags: |
-            type=raw,value=nightly
-            type=raw,value=nightly-${{ github.sha }}
+            type=raw,value=latest
+            type=raw,value=${{ github.sha }}
 
       - name: Build and push nightly image
         if: steps.nightly.outputs.publish == 'true'

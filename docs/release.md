@@ -1,6 +1,6 @@
 # Release Workflow
 
-Use this workflow to keep `latest` stable while still getting automatic nightly and branch images for testing.
+Use this workflow to keep stable releases and nightly builds in separate GHCR packages while still getting automatic nightly and branch images for testing.
 
 ## v0.2.2 Release Notes
 
@@ -92,15 +92,15 @@ Rollback is still changing `BOXBOX_IMAGE` to the last known-good tag, then pulli
 At 02:00 Asia/Kolkata each day, the nightly workflow checks the newest commit on `master`. If that commit has not already had a successful nightly run, it publishes these multi-platform images:
 
 ```text
-ghcr.io/jr4dh3y/boxbox:nightly
-ghcr.io/jr4dh3y/boxbox:nightly-<full-commit-sha>
+ghcr.io/jr4dh3y/boxbox-nightly:latest
+ghcr.io/jr4dh3y/boxbox-nightly:<full-commit-sha>
 ```
 
-Use `nightly` to follow the newest development build. Use the commit-specific tag when you need a reproducible deployment or want to roll back after a later nightly breaks. Nightly images never update `latest` and are not stable releases.
+Nightly is a dedicated GHCR package, not a tag in the stable `ghcr.io/jr4dh3y/boxbox` package. Use `boxbox-nightly:latest` to follow the newest development build. Use the commit-specific tag when you need a reproducible deployment or want to roll back after a later nightly breaks. The Nightly workflow does not update the stable package, and the release workflow does not update the Nightly package.
 
 ```bash
-BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:nightly docker compose pull
-BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:nightly docker compose up -d
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox-nightly:latest docker compose pull
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox-nightly:latest docker compose up -d
 ```
 
 The workflow can also be run manually for `master` from the GitHub Actions page. Manual runs always rebuild, even when the commit has already been published. Concurrent runs are cancelled so the rolling tag converges on a single build.
