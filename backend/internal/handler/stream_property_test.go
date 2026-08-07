@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -89,6 +90,96 @@ func TestUploadRejectsInvalidUploadID(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
+func TestPreviewSandboxesContentAndBlocksActiveDocuments(t *testing.T) {
+	tests := []struct {
+		name            string
+		filename        string
+		content         []byte
+		wantDisposition string
+	}{
+		{
+			name:            "HTML is downloaded",
+			filename:        "attack.html",
+			content:         []byte(`<script>window.top.location = "https://attacker.example"</script>`),
+			wantDisposition: "attachment",
+		},
+		{
+			name:            "SVG is downloaded",
+			filename:        "attack.svg",
+			content:         []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`),
+			wantDisposition: "attachment",
+		},
+		{
+			name:            "PDF remains inline",
+			filename:        "document.pdf",
+			content:         []byte("%PDF-1.7\n"),
+			wantDisposition: "inline",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler, fs, _ := setupTestStreamHandler()
+			router := createStreamTestRouter(handler)
+			if err := fs.WriteFile("/data/media/"+test.filename, test.content, 0o644); err != nil {
+				t.Fatalf("write fixture: %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/preview/media/"+test.filename, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("Content-Security-Policy"); got != streamSandboxCSP {
+				t.Fatalf("Content-Security-Policy = %q, want %q", got, streamSandboxCSP)
+			}
+			disposition, params, err := mime.ParseMediaType(rec.Header().Get("Content-Disposition"))
+			if err != nil {
+				t.Fatalf("parse Content-Disposition: %v", err)
+			}
+			if disposition != test.wantDisposition {
+				t.Fatalf("disposition = %q, want %q", disposition, test.wantDisposition)
+			}
+			if params["filename"] != test.filename {
+				t.Fatalf("filename = %q, want %q", params["filename"], test.filename)
+			}
+		})
+	}
+}
+
+func TestStreamResponsesEncodeQuotedFilenames(t *testing.T) {
+	handler, fs, _ := setupTestStreamHandler()
+	router := createStreamTestRouter(handler)
+	filename := `evil"name.txt`
+	if err := fs.WriteFile("/data/media/"+filename, []byte("safe text"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	for _, route := range []string{"preview", "download"} {
+		t.Run(route, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/"+route+"/media/"+filename, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+			}
+			_, params, err := mime.ParseMediaType(rec.Header().Get("Content-Disposition"))
+			if err != nil {
+				t.Fatalf("parse Content-Disposition: %v", err)
+			}
+			if params["filename"] != filename {
+				t.Fatalf("filename = %q, want %q", params["filename"], filename)
+			}
+			if got := rec.Header().Get("Content-Security-Policy"); got != streamSandboxCSP {
+				t.Fatalf("Content-Security-Policy = %q, want %q", got, streamSandboxCSP)
+			}
+		})
 	}
 }
 

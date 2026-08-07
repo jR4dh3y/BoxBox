@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
@@ -17,6 +19,8 @@ import (
 )
 
 var errUploadTooLarge = errors.New("upload too large")
+
+const streamSandboxCSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'"
 
 // StreamHandler handles streaming upload and download operations
 type StreamHandler struct {
@@ -124,7 +128,8 @@ func (h *StreamHandler) Download(w http.ResponseWriter, r *http.Request) {
 
 	// Set response headers
 	w.Header().Set("Content-Type", mimeType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, info.Name))
+	w.Header().Set("Content-Disposition", streamContentDisposition("attachment", info.Name))
+	w.Header().Set("Content-Security-Policy", streamSandboxCSP)
 	w.Header().Set("Accept-Ranges", "bytes")
 
 	// Use http.ServeContent for efficient range-based streaming
@@ -151,9 +156,18 @@ func (h *StreamHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	// Detect MIME type using extension + content sniffing fallback
 	mimeType := detectStreamMimeType(file, info.Name)
 
+	// Active document formats must never execute in the application origin.
+	// The sandbox protects supported inline previews, while attachment disposition
+	// prevents browsers from rendering executable HTML/XML formats at all.
+	disposition := "inline"
+	if isActivePreviewMimeType(mimeType) {
+		disposition = "attachment"
+	}
+
 	// Set response headers for inline viewing
 	w.Header().Set("Content-Type", mimeType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, info.Name))
+	w.Header().Set("Content-Disposition", streamContentDisposition(disposition, info.Name))
+	w.Header().Set("Content-Security-Policy", streamSandboxCSP)
 	w.Header().Set("Accept-Ranges", "bytes")
 	// Avoid response transformation by intermediate proxies/CDNs.
 	w.Header().Set("Cache-Control", "no-transform")
@@ -366,6 +380,31 @@ func detectStreamMimeType(file io.ReadSeeker, filename string) string {
 	}
 
 	return "application/octet-stream"
+}
+
+func isActivePreviewMimeType(value string) bool {
+	mediaType, _, err := mime.ParseMediaType(value)
+	if err != nil {
+		mediaType = strings.TrimSpace(strings.SplitN(value, ";", 2)[0])
+	}
+
+	switch strings.ToLower(mediaType) {
+	case "text/html", "image/svg+xml", "application/xhtml+xml", "text/xml", "application/xml":
+		return true
+	default:
+		return false
+	}
+}
+
+func streamContentDisposition(disposition, filename string) string {
+	header := mime.FormatMediaType(disposition, map[string]string{"filename": filename})
+	if header != "" {
+		return header
+	}
+
+	// FormatMediaType only rejects invalid disposition tokens. Keep the response
+	// safely downloadable if a future caller passes one accidentally.
+	return mime.FormatMediaType("attachment", map[string]string{"filename": filename})
 }
 
 // UploadStatus returns the status of an upload session

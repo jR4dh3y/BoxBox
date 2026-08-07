@@ -24,6 +24,7 @@
 		<iframe
 			src={url}
 			title={filename}
+			sandbox=""
 			onerror={handleError}
 			class="h-full w-full border-none bg-white"
 		></iframe>
