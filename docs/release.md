@@ -2,6 +2,32 @@
 
 Use this workflow to keep `latest` stable while still getting automatic nightly and branch images for testing.
 
+## v0.2.2 Release Notes
+
+`v0.2.2` is a security and deployment-focused release. It adds the single-binary build and loopback-only development mode, refactors browsing/streaming and uploads, fixes upload finalization races, and adds stronger mount, job, preview, authentication, and container isolation.
+
+Before upgrading, read the [security guide](/docs/security/) and update deployment configuration:
+
+- Configure every user with a bcrypt password hash.
+- Set a non-placeholder `BOXBOX_JWT_SECRET` of at least 32 bytes.
+- Ensure bind mounts are accessible to the default UID/GID `10001:10001`, or set `PUID` and `PGID`.
+- Do not expect the old host-root mount; it is removed by default and requires explicit `allow_root_mount: true`.
+- Existing browser sessions must authenticate again because refresh tokens moved to an HttpOnly cookie.
+
+The stable Docker workflow runs from the `v0.2.2` tag and publishes:
+
+```text
+ghcr.io/jr4dh3y/boxbox:v0.2.2
+ghcr.io/jr4dh3y/boxbox:latest
+```
+
+To update an existing deployment after the image is published:
+
+```bash
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.2.2 docker compose pull
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.2.2 docker compose up -d
+```
+
 ## v0.2.0 Upgrade Notes
 
 BoxBox `v0.2.0` keeps old FileManager deployment names working so upgrades do not hard-break existing servers. The old names are deprecated and should be renamed before a future breaking release.
