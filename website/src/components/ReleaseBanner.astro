@@ -1,0 +1,64 @@
+---
+// Fetches the latest release from the server-side cached API endpoint and shows
+// a dismissible banner on the landing page. The endpoint caches the GitHub API
+// response so we don't burn the unauthenticated rate limit on every page view.
+import { Rocket } from '@lucide/astro';
+---
+
+<div id="release-banner" class="hidden">
+  <a
+    id="release-banner-link"
+    href="/docs/release/"
+    class="group flex items-center justify-center gap-3 px-4 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-accent/90 to-accent-muted/80 hover:from-accent hover:to-accent-muted transition-colors relative"
+  >
+    <Rocket class="w-4 h-4 shrink-0" />
+    <span id="release-banner-text" class="truncate">New release available</span>
+    <span class="hidden sm:inline text-white/70 group-hover:text-white transition-colors">
+      View release notes →
+    </span>
+  </a>
+  <button
+    id="release-banner-close"
+    type="button"
+    aria-label="Dismiss release banner"
+    class="absolute right-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+  </button>
+</div>
+
+<script>
+  const banner = document.getElementById('release-banner');
+  const text = document.getElementById('release-banner-text');
+  const link = document.getElementById('release-banner-link') as HTMLAnchorElement;
+  const close = document.getElementById('release-banner-close');
+
+  if (banner && text && link && close) {
+    // Respect a previous dismissal for this release.
+    const open = () => banner.classList.remove('hidden');
+
+    fetch('/api/releases.json')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((release) => {
+        if (!release || !release.tagName) return;
+
+        const dismissed = localStorage.getItem('boxbox-dismissed-release');
+        if (dismissed !== release.tagName) {
+          text.textContent = `${release.name || release.tagName} is here — self-host the latest BoxBox.`;
+          open();
+        }
+
+        close.addEventListener('click', () => {
+          banner.classList.add('hidden');
+          try {
+            localStorage.setItem('boxbox-dismissed-release', release.tagName);
+          } catch {
+            // Storage may be unavailable; dismissal is best-effort.
+          }
+        });
+      })
+      .catch(() => {
+        // No release info available; keep the banner hidden.
+      });
+  }
+</script>

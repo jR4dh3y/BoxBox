@@ -2,6 +2,8 @@
 import Layout from '../layouts/Layout.astro';
 import FeaturesBento from '../components/FeaturesBento.astro';
 import AppInterfaceDemo from '../components/AppInterfaceDemo.astro';
+import ReleaseBanner from '../components/ReleaseBanner.astro';
+import SiteFooter from '../components/SiteFooter.astro';
 
 import {
   CirclePlay,
@@ -9,7 +11,8 @@ import {
 } from '@lucide/astro';
 ---
 <Layout title="BoxBox | Self-hosted File Manager">
-<section class="relative min-h-screen flex flex-col items-center justify-start pt-32 pb-20 px-4 text-center overflow-hidden z-10">
+<ReleaseBanner />
+<section class="relative min-h-screen flex flex-col items-center justify-start pt-20 pb-20 px-4 text-center overflow-hidden z-10">
 
   <h1 class="text-5xl md:text-7xl lg:text-8xl font-black mb-6 max-w-5xl mx-auto tracking-tight leading-tight animate-fade-in-up text-white" style="animation-delay: 200ms;">
     The file manager your <span class="text-accent">homelab</span> deserves.
@@ -37,16 +40,6 @@ import {
 <FeaturesBento />
 
 <!-- Footer -->
-<footer class="py-6 bg-surface-primary border-t border-border-primary relative z-10">
-  <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between text-sm text-text-muted gap-4">
-    <div class="flex items-center gap-2">
-      <span class="font-medium text-text-primary">BoxBox</span>
-    </div>
-
-    <div class="flex items-center gap-2">
-      Built by<a href="https://github.com/jR4dh3y" target="_blank" class="text-accent hover:text-white transition-colors">jR4dh3y</a>
-    </div>
-  </div>
-</footer>
+<SiteFooter />
 
 </Layout>

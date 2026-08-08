@@ -1,0 +1,74 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Privacy Policy | BoxBox">
+  <main class="relative z-10 min-h-screen bg-[#0d0d0d] text-text-primary px-4 py-16">
+    <div class="mx-auto max-w-3xl">
+      <a href="/" class="text-sm text-accent hover:text-white transition-colors">
+        ← Back to home
+      </a>
+
+      <h1 class="mt-4 text-4xl font-black tracking-tight text-white">Privacy Policy</h1>
+      <p class="mt-2 text-sm text-text-muted">
+        Last updated: August 2026
+      </p>
+
+      <div class="mt-10 space-y-8 text-text-secondary leading-relaxed">
+        <section>
+          <h2 class="text-xl font-semibold text-text-primary mb-3">Self-hosted by design</h2>
+          <p>
+            BoxBox is a self-hosted file manager. When you run it on your own server, all of
+            your files, credentials, and activity stay on hardware that <em>you</em> control.
+            BoxBox does not phone home, does not collect telemetry, and does not route your data
+            through any third-party service.
+          </p>
+        </section>
+
+        <section>
+          <h2 class="text-xl font-semibold text-text-primary mb-3">Your data stays on your server</h2>
+          <p>
+            The files you manage, the accounts you configure, and the uploads you make are stored
+            and processed entirely on your own BoxBox instance. There is no cloud component, no
+            analytics, and no backend operated by the project that sees your content.
+          </p>
+        </section>
+
+        <section>
+          <h2 class="text-xl font-semibold text-text-primary mb-3">This website (boxbox.radhey.dev)</h2>
+          <p>
+            The public project website is hosted on Vercel and served statically. It does not set
+            tracking cookies. To show the latest release banner, the site fetches public release
+            metadata from the GitHub API; that request is cached server-side and contains no
+            personal information about you.
+          </p>
+        </section>
+
+        <section>
+          <h2 class="text-xl font-semibold text-text-primary mb-3">GitHub</h2>
+          <p>
+            Source code, releases, and issue tracking live on GitHub, which is governed by
+            GitHub's own privacy and data policies. Anything you post publicly there
+            (issues, comments, pull requests) is subject to those policies.
+          </p>
+        </section>
+
+        <section>
+          <h2 class="text-xl font-semibold text-text-primary mb-3">Changes to this policy</h2>
+          <p>
+            This policy may be updated as the project evolves. Material changes will be reflected
+            here with an updated revision date.
+          </p>
+        </section>
+
+        <section>
+          <h2 class="text-xl font-semibold text-text-primary mb-3">Contact</h2>
+          <p>
+            For privacy or security questions, open an issue on the
+            <a href="https://github.com/jR4dh3y/BoxBox" target="_blank" class="text-accent hover:text-white transition-colors"> GitHub repository</a>.
+          </p>
+        </section>
+      </div>
+    </div>
+  </main>
+</Layout>
