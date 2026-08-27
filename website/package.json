@@ -26,6 +26,6 @@
     "@astrojs/check": "^0.9.10",
     "@types/node": "^26",
     "@types/sanitize-html": "^2.16.1",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }
