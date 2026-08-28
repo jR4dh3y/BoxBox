@@ -110,8 +110,6 @@ func (s *jobService) Stop() {
 
 // worker processes jobs from the work queue
 func (s *jobService) worker(ctx context.Context) {
-	defer s.wg.Done()
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -129,7 +127,6 @@ func (s *jobService) worker(ctx context.Context) {
 
 // cleanupLoop periodically creates cleanup jobs
 func (s *jobService) cleanupLoop(ctx context.Context) {
-	defer s.wg.Done()
 	ticker := time.NewTicker(config.JobCleanupInterval)
 	defer ticker.Stop()
 
