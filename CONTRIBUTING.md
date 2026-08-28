@@ -52,7 +52,7 @@ docker build -t boxbox:local .
 
 - Do normal work on feature branches.
 - Use `test/*` branches when you want GitHub to build a clearly unstable test image.
-- Test images use tags like `ghcr.io/jr4dh3y/boxbox:branch-test-my-change` and never replace `latest`.
+- Test images use tags like `ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change` and never replace `latest`.
 - Public releases come from `v*` tags after changes are merged to `master`.
 
 See [docs/release.md](docs/release.md) for the full release flow.
