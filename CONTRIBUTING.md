@@ -13,7 +13,7 @@ Thanks for helping improve BoxBox. Keep changes focused, easy to review, and saf
 
 Requirements:
 
-- Go 1.24+
+- Go 1.27+
 - Bun 1.1+
 - Node.js 22+
 

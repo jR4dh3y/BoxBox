@@ -1,6 +1,6 @@
 # Docker Deployment
 
-BoxBox builds into one container: Bun compiles the SvelteKit frontend, Go embeds those static files, and the runtime image starts one HTTP server on port `80`.
+BoxBox builds into one container: Bun compiles the SvelteKit frontend, Go embeds those static files, and the runtime image starts one HTTP server on port `8080`.
 
 ## Prerequisites
 
@@ -54,7 +54,7 @@ Release images are published to GitHub Container Registry:
 docker pull ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
 ```
 
-Stable release tags update `latest`. Prerelease tags such as `v0.2.0-rc.1` publish versioned images without moving `latest`, and test branch images publish under branch-scoped tags such as `branch-test-my-change`.
+Stable release tags update `latest`. Prerelease tags such as `v0.2.0-rc.1` publish versioned images without moving `latest`, nightly builds publish to the dedicated `boxbox-nightly` package, and test branch images publish under branch-scoped tags in the `boxbox-branch` package, such as `ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change`.
 
 See [Release workflow](/docs/release/) for the full test-branch and stable-release process.
 
@@ -71,7 +71,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.boxbox.rule=Host(`boxbox.example.test`)"
       - "traefik.http.routers.boxbox.entrypoints=web"
-      - "traefik.http.services.boxbox.loadbalancer.server.port=80"
+      - "traefik.http.services.boxbox.loadbalancer.server.port=8080"
     networks:
       - proxy
 
@@ -91,7 +91,7 @@ mkdir -p boxbox
 cd boxbox
 
 cat > config.yaml <<'EOF'
-port: 80
+port: 8080
 host: "0.0.0.0"
 jwt_secret: "replace-this-with-a-long-random-secret"
 mount_points:
@@ -107,7 +107,7 @@ docker run -d \
   --user 10001:10001 \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
-  -p 8080:80 \
+  -p 8080:8080 \
   -e BOXBOX_JWT_SECRET="$(openssl rand -base64 32)" \
   -e BOXBOX_USERS_admin='paste-a-bcrypt-hash-here' \
   -v "$PWD/config.yaml:/app/config.yaml:ro" \

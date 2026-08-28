@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
@@ -91,13 +91,15 @@ func NewJobService(fsys filesystem.FS, hub *websocket.Hub, cfg JobServiceConfig)
 // Start starts the job executor workers
 func (s *jobService) Start(ctx context.Context) {
 	for i := 0; i < s.workers; i++ {
-		s.wg.Add(1)
-		go s.worker(ctx)
+		s.wg.Go(func() {
+			s.worker(ctx)
+		})
 	}
 
 	// Start cleanup goroutine
-	s.wg.Add(1)
-	go s.cleanupLoop(ctx)
+	s.wg.Go(func() {
+		s.cleanupLoop(ctx)
+	})
 }
 
 // Stop stops the job executor

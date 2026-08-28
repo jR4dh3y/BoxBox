@@ -5,7 +5,7 @@ BoxBox exposes a REST API, streaming endpoints, and a WebSocket endpoint under `
 ## Base URLs
 
 ```text
-http://localhost:8080/api/v1   # if Docker maps 8080 -> container port 80
+http://localhost:8080/api/v1   # if Docker maps 8080 -> container port 8080
 http://localhost/api/v1        # inside a reverse proxy host
 ```
 

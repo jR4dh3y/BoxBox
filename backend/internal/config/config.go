@@ -72,7 +72,7 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 	warnings := make([]MigrationWarning, 0)
 
 	// Set defaults
-	v.SetDefault("port", 80)
+	v.SetDefault("port", 8080)
 	v.SetDefault("host", "0.0.0.0")
 	v.SetDefault("max_upload_mb", DefaultMaxUploadMB) // 10GB default
 	v.SetDefault("chunk_size_mb", 5)                  // 5MB chunks

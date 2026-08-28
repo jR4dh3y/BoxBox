@@ -80,31 +80,30 @@ func (s *searchService) Search(ctx context.Context, path, query string) ([]model
 		return nil, ErrNotDirectory
 	}
 
-	// Perform a bounded recursive search. This prevents one request from
-	// retaining an arbitrarily large result set in memory.
+	// Perform a bounded recursive search using WalkSeq iterator
 	queryLower := strings.ToLower(query)
 	results := make([]model.FileInfo, 0, 64)
 	const maxSearchResults = 1000
-	err = s.walker.Walk(ctx, fsPath, WalkOptions{
+
+	for entry, err := range s.walker.WalkSeq(ctx, fsPath, WalkOptions{
 		IncludeHidden:  true,
 		SkipUnreadable: true,
-	}, func(entry WalkEntry) error {
+	}) {
+		if err != nil {
+			return nil, err
+		}
 		if len(results) >= maxSearchResults {
-			return errSearchLimit
+			break
 		}
 		if !strings.Contains(strings.ToLower(entry.DirEntry.Name()), queryLower) {
-			return nil
+			continue
 		}
 		info, err := entry.DirEntry.Info()
 		if err != nil {
-			return nil
+			continue
 		}
 		virtualPath := filepath.ToSlash(filepath.Join(path, entry.RelativePath))
 		results = append(results, fileutil.ToFileInfo(info.Name(), virtualPath, info))
-		return nil
-	})
-	if err != nil && !errors.Is(err, errSearchLimit) {
-		return nil, err
 	}
 
 	return results, nil

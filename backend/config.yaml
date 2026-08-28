@@ -1,7 +1,7 @@
 # BoxBox Configuration
 
 # Server settings
-port: 80
+port: 8080
 host: "0.0.0.0"
 
 # JWT authentication secret. Override with BOXBOX_JWT_SECRET.

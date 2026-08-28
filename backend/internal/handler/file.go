@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/container"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
@@ -84,14 +85,13 @@ type SaveFileRequest struct {
 func (h *FileHandler) ListRoots(w http.ResponseWriter, r *http.Request) {
 	mounts := h.fileService.ListMountPoints()
 
-	roots := make([]MountPointResponse, len(mounts))
-	for i, mount := range mounts {
-		roots[i] = MountPointResponse{
+	roots := container.NewSlice(mounts...).Map(func(mount model.MountPoint) MountPointResponse {
+		return MountPointResponse{
 			Name:     mount.Name,
 			Path:     mount.Path,
 			ReadOnly: mount.ReadOnly,
 		}
-	}
+	}).ToSlice()
 
 	writeJSON(w, RootsResponse{Roots: roots}, http.StatusOK)
 }

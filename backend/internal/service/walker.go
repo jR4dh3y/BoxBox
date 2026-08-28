@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io/fs"
+	"iter"
 	"path/filepath"
 	"strings"
 
@@ -28,6 +30,7 @@ type WalkOptions struct {
 // Walker provides one cancellation-aware traversal policy for services.
 type Walker interface {
 	Walk(ctx context.Context, root string, opts WalkOptions, visit func(WalkEntry) error) error
+	WalkSeq(ctx context.Context, root string, opts WalkOptions) iter.Seq2[WalkEntry, error]
 }
 
 type filesystemWalker struct {
@@ -36,6 +39,22 @@ type filesystemWalker struct {
 
 func NewWalker(fsys filesystem.FS) Walker {
 	return &filesystemWalker{fs: fsys}
+}
+
+// WalkSeq returns an iterator sequence over traversal entries (Go 1.23+ iter.Seq2).
+func (w *filesystemWalker) WalkSeq(ctx context.Context, root string, opts WalkOptions) iter.Seq2[WalkEntry, error] {
+	return func(yield func(WalkEntry, error) bool) {
+		stopErr := errors.New("iteration stopped")
+		err := w.Walk(ctx, root, opts, func(entry WalkEntry) error {
+			if !yield(entry, nil) {
+				return stopErr
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, stopErr) {
+			yield(WalkEntry{}, err)
+		}
+	}
 }
 
 func (w *filesystemWalker) Walk(

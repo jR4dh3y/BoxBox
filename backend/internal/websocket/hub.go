@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"sync"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
@@ -72,13 +73,11 @@ func (h *Hub) unregisterClient(client *Client) {
 	if _, ok := h.clients[client]; ok {
 		delete(h.clients, client)
 
-		// Remove from all job subscriptions
-		for jobID, subscribers := range h.jobSubscriptions {
+		// Remove from all job subscriptions using maps.DeleteFunc
+		maps.DeleteFunc(h.jobSubscriptions, func(_ string, subscribers map[*Client]bool) bool {
 			delete(subscribers, client)
-			if len(subscribers) == 0 {
-				delete(h.jobSubscriptions, jobID)
-			}
-		}
+			return len(subscribers) == 0
+		})
 
 		close(client.send)
 	}

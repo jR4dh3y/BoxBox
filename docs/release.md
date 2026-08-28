@@ -121,8 +121,10 @@ Pushing a `test/*` branch runs:
 For `test/my-change`, the branch image tag is:
 
 ```text
-ghcr.io/jr4dh3y/boxbox:branch-test-my-change
+ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change
 ```
+
+Branch images are a dedicated GHCR package, like nightly, so test builds never touch the stable `boxbox` package.
 
 The workflow also publishes a `sha-<short-sha>` tag for immutable testing.
 
@@ -131,14 +133,14 @@ The workflow also publishes a `sha-<short-sha>` tag for immutable testing.
 On the server, point Compose at the branch image:
 
 ```bash
-BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:branch-test-my-change docker compose pull
-BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:branch-test-my-change docker compose up -d
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change docker compose pull
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change docker compose up -d
 ```
 
 Or edit `.env` and keep the tag there while testing:
 
 ```env
-BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:branch-test-my-change
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change
 ```
 
 Then run:
