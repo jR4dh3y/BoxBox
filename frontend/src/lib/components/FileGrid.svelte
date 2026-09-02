@@ -90,6 +90,29 @@
 		if (event.key === 'Enter' || event.key === ' ') {
 			event.preventDefault();
 			onItemClick?.(item);
+			return;
+		}
+
+		// Match the shortcuts advertised in the context menu (F2, Del, Ctrl/Cmd+C/X/V)
+		const targetItems = selectedPaths.has(item.path)
+			? items.filter((selectedItem) => selectedPaths.has(selectedItem.path))
+			: [item];
+
+		if (event.key === 'Delete') {
+			event.preventDefault();
+			onContextMenuAction?.('delete', targetItems);
+		} else if (event.key === 'F2') {
+			event.preventDefault();
+			onContextMenuAction?.('rename', targetItems);
+		} else if ((event.key === 'c' || event.key === 'C') && (event.ctrlKey || event.metaKey)) {
+			event.preventDefault();
+			onContextMenuAction?.('copy', targetItems);
+		} else if ((event.key === 'x' || event.key === 'X') && (event.ctrlKey || event.metaKey)) {
+			event.preventDefault();
+			onContextMenuAction?.('cut', targetItems);
+		} else if ((event.key === 'v' || event.key === 'V') && (event.ctrlKey || event.metaKey)) {
+			event.preventDefault();
+			onContextMenuAction?.('paste', targetItems);
 		}
 	}
 
