@@ -13,8 +13,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
@@ -36,10 +36,10 @@ var (
 type ShareService interface {
 	// Create shares an existing regular file and returns the new share.
 	Create(ctx context.Context, username string, path string, permissions model.SharePermissions, expiresAt time.Time) (*model.Share, error)
-	// List returns active (non-revoked, non-expired) shares, newest first.
-	List() ([]model.Share, error)
-	// Revoke permanently disables a share by ID.
-	Revoke(id string) error
+	// List returns the user's active (non-revoked, non-expired) shares, newest first.
+	List(username string) ([]model.Share, error)
+	// Revoke permanently disables one of the user's shares by ID.
+	Revoke(username string, id string) error
 	// ResolveForRecipient returns the share for a token, or ErrShareNotFound for
 	// unknown, expired, or revoked tokens.
 	ResolveForRecipient(token string) (*model.Share, error)
@@ -65,6 +65,7 @@ type shareService struct {
 	filePath       string
 	maxUploadBytes int64
 	mounts         func() []model.MountPoint
+	storageErr     error
 	mu             sync.RWMutex
 }
 
@@ -100,15 +101,20 @@ func NewShareService(fsys filesystem.FS, cfg ShareServiceConfig) ShareService {
 	if mounts == nil {
 		mounts = func() []model.MountPoint { return nil }
 	}
-	return &shareService{
+	shareSvc := &shareService{
 		fs:             fsys,
 		filePath:       filepath.Join(dataDir, config.SharesFileName),
 		maxUploadBytes: maxUploadBytes,
 		mounts:         mounts,
 	}
+	shareSvc.storageErr = shareSvc.secureExistingStore()
+	return shareSvc
 }
 
 func (s *shareService) Create(ctx context.Context, username string, path string, permissions model.SharePermissions, expiresAt time.Time) (*model.Share, error) {
+	if s.storageErr != nil {
+		return nil, s.storageErr
+	}
 	if username == "" {
 		return nil, ErrInvalidOperation
 	}
@@ -141,7 +147,7 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		return nil, err
 	}
 	share := model.Share{
-		ID:          uuid.NewString(),
+		ID:          uuid.New().String(),
 		Token:       token,
 		MountName:   mount.Name,
 		RelPath:     relPath,
@@ -162,7 +168,14 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 	return &share, nil
 }
 
-func (s *shareService) List() ([]model.Share, error) {
+func (s *shareService) List(username string) ([]model.Share, error) {
+	if s.storageErr != nil {
+		return nil, s.storageErr
+	}
+	if username == "" {
+		return nil, ErrInvalidOperation
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -170,7 +183,7 @@ func (s *shareService) List() ([]model.Share, error) {
 	now := time.Now()
 	shares := make([]model.Share, 0, len(data.Shares))
 	for _, record := range data.Shares {
-		if record.Revoked || isExpired(record.ExpiresAt, now) {
+		if record.CreatedBy != username || record.Revoked || isExpired(record.ExpiresAt, now) {
 			continue
 		}
 		shares = append(shares, fromShareRecord(record))
@@ -179,13 +192,20 @@ func (s *shareService) List() ([]model.Share, error) {
 	return shares, nil
 }
 
-func (s *shareService) Revoke(id string) error {
+func (s *shareService) Revoke(username string, id string) error {
+	if s.storageErr != nil {
+		return s.storageErr
+	}
+	if username == "" {
+		return ErrInvalidOperation
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	data := s.loadLocked()
 	for i := range data.Shares {
-		if data.Shares[i].ID == id {
+		if data.Shares[i].ID == id && data.Shares[i].CreatedBy == username {
 			data.Shares[i].Revoked = true
 			return s.saveLocked(data)
 		}
@@ -194,10 +214,17 @@ func (s *shareService) Revoke(id string) error {
 }
 
 func (s *shareService) ResolveForRecipient(token string) (*model.Share, error) {
+	if s.storageErr != nil {
+		return nil, s.storageErr
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	now := time.Now()
+	return s.resolveActiveShareLocked(token, time.Now())
+}
+
+func (s *shareService) resolveActiveShareLocked(token string, now time.Time) (*model.Share, error) {
 	for _, record := range s.loadLocked().Shares {
 		if record.Token != token {
 			continue
@@ -268,7 +295,7 @@ func (s *shareService) WriteForRecipient(ctx context.Context, token string, body
 	// Write to a temporary file next to the resolved target, then rename over
 	// it. Renaming the resolved path never writes through a symlink and leaves
 	// the original intact if the upload fails partway.
-	temporary := fsPath + ".share." + uuid.NewString()
+	temporary := fsPath + ".share." + uuid.New().String()
 	file, err := s.fs.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
 	if err != nil {
 		return 0, err
@@ -297,7 +324,37 @@ func (s *shareService) WriteForRecipient(ctx context.Context, token string, body
 	if err := file.Close(); err != nil {
 		return 0, err
 	}
-	if err := s.fs.Rename(temporary, fsPath); err != nil {
+
+	// Keep revocation and the final rename in one read-side critical section.
+	// A revocation that wins the lock makes this upload discard its temp file.
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	share, err = s.resolveActiveShareLocked(token, time.Now())
+	if err != nil {
+		return 0, err
+	}
+	if !share.Permissions.Write {
+		return 0, ErrPermissionDenied
+	}
+	finalMount, finalPath, err := s.resolveShareTarget(share)
+	if err != nil {
+		return 0, err
+	}
+	if finalMount.ReadOnly {
+		return 0, ErrPermissionDenied
+	}
+	if finalPath != fsPath {
+		return 0, ErrShareNotFound
+	}
+	finalInfo, err := s.statTarget(finalPath)
+	if err != nil {
+		return 0, err
+	}
+	if !finalInfo.Mode().IsRegular() {
+		return 0, ErrNotFile
+	}
+	if err := s.fs.Rename(temporary, finalPath); err != nil {
 		return 0, err
 	}
 	complete = true
@@ -336,6 +393,19 @@ func (s *shareService) statTarget(fsPath string) (fs.FileInfo, error) {
 	return s.fs.Stat(fsPath)
 }
 
+// secureExistingStore tightens storage created by earlier BoxBox versions
+// before its bearer tokens can be served.
+func (s *shareService) secureExistingStore() error {
+	exists, err := s.fs.Exists(s.filePath)
+	if err != nil || !exists {
+		return err
+	}
+	if err := s.fs.Chmod(filepath.Dir(s.filePath), 0o700); err != nil {
+		return err
+	}
+	return s.fs.Chmod(s.filePath, 0o600)
+}
+
 func (s *shareService) loadLocked() *sharesData {
 	data := &sharesData{Shares: []shareRecord{}}
 	exists, err := s.fs.Exists(s.filePath)
@@ -358,7 +428,11 @@ func (s *shareService) loadLocked() *sharesData {
 }
 
 func (s *shareService) saveLocked(data *sharesData) error {
-	if err := s.fs.MkdirAll(filepath.Dir(s.filePath), 0755); err != nil {
+	directory := filepath.Dir(s.filePath)
+	if err := s.fs.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	if err := s.fs.Chmod(directory, 0o700); err != nil {
 		return err
 	}
 	fileData, err := json.MarshalIndent(data, "", "  ")
@@ -367,8 +441,12 @@ func (s *shareService) saveLocked(data *sharesData) error {
 	}
 	// Write to a temporary sibling, then rename so a crash mid-write can never
 	// leave a half-written shares file behind.
-	temporary := s.filePath + ".tmp." + uuid.NewString()
-	if err := s.fs.WriteFile(temporary, fileData, 0644); err != nil {
+	temporary := s.filePath + ".tmp." + uuid.New().String()
+	if err := s.fs.WriteFile(temporary, fileData, 0o600); err != nil {
+		_ = s.fs.Remove(temporary)
+		return err
+	}
+	if err := s.fs.Chmod(temporary, 0o600); err != nil {
 		_ = s.fs.Remove(temporary)
 		return err
 	}
@@ -376,7 +454,7 @@ func (s *shareService) saveLocked(data *sharesData) error {
 		_ = s.fs.Remove(temporary)
 		return err
 	}
-	return nil
+	return s.fs.Chmod(s.filePath, 0o600)
 }
 
 func generateShareToken() (string, error) {

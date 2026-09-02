@@ -54,8 +54,12 @@ func createShareTestRouter(handler *ShareHandler) *chi.Mux {
 // newShareManagementRequest builds an authenticated management request the way
 // the JWT middleware would: with the username in the request context.
 func newShareManagementRequest(method, target string, body io.Reader) *http.Request {
+	return newShareManagementRequestForUser("owner", method, target, body)
+}
+
+func newShareManagementRequestForUser(username, method, target string, body io.Reader) *http.Request {
 	req := httptest.NewRequest(method, target, body)
-	return req.WithContext(authcontext.WithUsername(req.Context(), "owner"))
+	return req.WithContext(authcontext.WithUsername(req.Context(), username))
 }
 
 func createShareViaAPI(t *testing.T, router *chi.Mux, path string, permissions model.SharePermissions, expiresInSeconds *int64) model.ShareResponse {
@@ -153,20 +157,35 @@ func TestCreateShareRejectsInvalidTargetsViaAPI(t *testing.T) {
 	}
 }
 
-func TestCreateShareRequiresUsername(t *testing.T) {
+func TestShareManagementRequiresUsername(t *testing.T) {
 	handler, _, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
 
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/api/v1/shares",
-		bytes.NewBufferString(`{"path":"media/file.txt","permissions":{"view":true}}`),
-	)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	tests := []struct {
+		name   string
+		method string
+		target string
+		body   string
+	}{
+		{name: "create", method: http.MethodPost, target: "/api/v1/shares", body: `{"path":"media/file.txt","permissions":{"view":true}}`},
+		{name: "list", method: http.MethodGet, target: "/api/v1/shares"},
+		{name: "revoke", method: http.MethodDelete, target: "/api/v1/shares/share-id"},
+	}
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var body io.Reader
+			if test.body != "" {
+				body = strings.NewReader(test.body)
+			}
+			req := httptest.NewRequest(test.method, test.target, body)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+			}
+		})
 	}
 }
 
@@ -228,6 +247,44 @@ func TestShareListAndRevokeViaAPI(t *testing.T) {
 	}
 }
 
+func TestShareManagementIsScopedToOwnerViaAPI(t *testing.T) {
+	handler, _, shareSvc := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+
+	owner := createShareViaAPI(t, router, "media/file.txt", model.SharePermissions{View: true}, nil)
+	other, err := shareSvc.Create(context.Background(), "other", "media/file.txt", model.SharePermissions{Download: true}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listReq := newShareManagementRequestForUser("other", http.MethodGet, "/api/v1/shares", nil)
+	listRec := httptest.NewRecorder()
+	router.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d: %s", listRec.Code, listRec.Body.String())
+	}
+	var list model.ShareListResponse
+	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Shares) != 1 || list.Shares[0].ID != other.ID {
+		t.Fatalf("other user's list = %+v, want only %q", list.Shares, other.ID)
+	}
+	if strings.Contains(listRec.Body.String(), owner.Token) {
+		t.Fatalf("other user's list leaked owner token: %s", listRec.Body.String())
+	}
+
+	revokeReq := newShareManagementRequestForUser("other", http.MethodDelete, "/api/v1/shares/"+owner.ID, nil)
+	revokeRec := httptest.NewRecorder()
+	router.ServeHTTP(revokeRec, revokeReq)
+	if revokeRec.Code != http.StatusNotFound {
+		t.Fatalf("cross-owner revoke status = %d, want 404", revokeRec.Code)
+	}
+	if _, err := shareSvc.ResolveForRecipient(owner.Token); err != nil {
+		t.Fatalf("owner share was revoked by another user: %v", err)
+	}
+}
+
 func TestShareInfoOmitsInternalPaths(t *testing.T) {
 	handler, _, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
@@ -273,7 +330,7 @@ func TestShareRecipientEndpointsAreUniformlyNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := shareSvc.Revoke(revoked.ID); err != nil {
+	if err := shareSvc.Revoke("owner", revoked.ID); err != nil {
 		t.Fatal(err)
 	}
 

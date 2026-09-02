@@ -293,7 +293,7 @@ Response uses `201 Created`:
 GET /api/v1/shares
 ```
 
-Returns only active (non-revoked, non-expired) shares. Each entry includes the `token`, `url`, `fileName`, mount-relative `path`, `permissions`, and expiry.
+Returns only the authenticated caller's active (non-revoked, non-expired) shares. Each entry includes the `token`, `url`, `fileName`, mount-relative `path`, `permissions`, and expiry.
 
 ### Revoke a Share
 
@@ -301,7 +301,7 @@ Returns only active (non-revoked, non-expired) shares. Each entry includes the `
 DELETE /api/v1/shares/{id}
 ```
 
-Unknown ids return `404`. Revoked links stop working immediately.
+Unknown ids and links owned by another user return `404`. Revoked links stop working immediately.
 
 ### Recipient Endpoints
 
@@ -341,7 +341,7 @@ Content-Type: application/octet-stream
 [file body]
 ```
 
-Requires the `write` permission and a writable mount point. The body replaces the shared file atomically (temporary file plus rename) and is capped by `max_upload_mb`:
+Requires the `write` permission and a writable mount point. The body replaces the shared file atomically (temporary file plus rename) and is capped by `max_upload_mb`. If a revocation completes while the body is still uploading, the pending overwrite is discarded:
 
 ```json
 {

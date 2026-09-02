@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
@@ -36,6 +39,21 @@ func newShareTestService(fsys filesystem.FS, mounts func() []model.MountPoint) S
 		DataDir: "/data",
 		Mounts:  mounts,
 	})
+}
+
+type renameGateFS struct {
+	filesystem.FS
+	renameStarted chan struct{}
+	allowRename   <-chan struct{}
+	once          sync.Once
+}
+
+func (f *renameGateFS) Rename(oldpath, newpath string) error {
+	if strings.Contains(oldpath, ".share.") {
+		f.once.Do(func() { close(f.renameStarted) })
+		<-f.allowRename
+	}
+	return f.FS.Rename(oldpath, newpath)
 }
 
 func TestShareCreateRejectsInvalidTargets(t *testing.T) {
@@ -124,7 +142,7 @@ func TestShareResolveForRecipientIsUniform(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := shares.Revoke(revoked.ID); err != nil {
+	if err := shares.Revoke("owner", revoked.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -171,7 +189,7 @@ func TestShareRevokeUnknownID(t *testing.T) {
 	setupShareTestFS(fsys)
 	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
 
-	if err := shares.Revoke("missing-id"); !errors.Is(err, ErrShareNotFound) {
+	if err := shares.Revoke("owner", "missing-id"); !errors.Is(err, ErrShareNotFound) {
 		t.Fatalf("Revoke() error = %v, want %v", err, ErrShareNotFound)
 	}
 }
@@ -194,11 +212,11 @@ func TestShareListReturnsActiveSharesOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := shares.Revoke(revoked.ID); err != nil {
+	if err := shares.Revoke("owner", revoked.ID); err != nil {
 		t.Fatal(err)
 	}
 
-	listed, err := shares.List()
+	listed, err := shares.List("owner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,5 +455,187 @@ func TestShareRejectsSymlinkEscapingMount(t *testing.T) {
 
 	if _, err := shares.Create(context.Background(), "owner", "media/escape.txt", model.SharePermissions{View: true}, time.Time{}); !errors.Is(err, ErrPermissionDenied) {
 		t.Fatalf("Create() through escaping symlink = %v, want %v", err, ErrPermissionDenied)
+	}
+}
+
+func TestShareManagementIsScopedToOwner(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
+
+	aliceShare, err := shares.Create(context.Background(), "alice", "media/file.txt", model.SharePermissions{View: true}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bobShare, err := shares.Create(context.Background(), "bob", "media/file.txt", model.SharePermissions{Download: true}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listed, err := shares.List("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].ID != aliceShare.ID {
+		t.Fatalf("List(alice) = %+v, want only %q", listed, aliceShare.ID)
+	}
+	if _, err := shares.List(""); !errors.Is(err, ErrInvalidOperation) {
+		t.Fatalf("List(empty) error = %v, want %v", err, ErrInvalidOperation)
+	}
+
+	if err := shares.Revoke("alice", bobShare.ID); !errors.Is(err, ErrShareNotFound) {
+		t.Fatalf("Revoke(alice, bob) error = %v, want %v", err, ErrShareNotFound)
+	}
+	if _, err := shares.ResolveForRecipient(bobShare.Token); err != nil {
+		t.Fatalf("bob share was revoked by alice: %v", err)
+	}
+	if err := shares.Revoke("bob", bobShare.ID); err != nil {
+		t.Fatalf("Revoke(bob, bob) = %v", err)
+	}
+}
+
+func TestShareRevocationDuringUploadPreventsCommit(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
+
+	share, err := shares.Create(context.Background(), "owner", "media/file.txt", model.SharePermissions{Write: true}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	uploadResult := make(chan error, 1)
+	go func() {
+		_, err := shares.WriteForRecipient(context.Background(), share.Token, reader)
+		uploadResult <- err
+	}()
+
+	if _, err := writer.Write([]byte("replacement")); err != nil {
+		t.Fatal(err)
+	}
+	if err := shares.Revoke("owner", share.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-uploadResult:
+		if !errors.Is(err, ErrShareNotFound) {
+			t.Fatalf("WriteForRecipient() error = %v, want %v", err, ErrShareNotFound)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("WriteForRecipient() did not finish after the upload body closed")
+	}
+
+	content, err := fsys.ReadFile("/data/media/file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "shared content" {
+		t.Fatalf("target content after revocation = %q, want original", content)
+	}
+}
+
+func TestShareRevokeWaitsForInFlightCommit(t *testing.T) {
+	backingFS := filesystem.NewMemMapFS()
+	setupShareTestFS(backingFS)
+	allowRename := make(chan struct{})
+	fsys := &renameGateFS{
+		FS:            backingFS,
+		renameStarted: make(chan struct{}),
+		allowRename:   allowRename,
+	}
+	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
+
+	share, err := shares.Create(context.Background(), "owner", "media/file.txt", model.SharePermissions{Write: true}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var releaseOnce sync.Once
+	releaseRename := func() { releaseOnce.Do(func() { close(allowRename) }) }
+	t.Cleanup(releaseRename)
+
+	uploadResult := make(chan error, 1)
+	go func() {
+		_, err := shares.WriteForRecipient(context.Background(), share.Token, strings.NewReader("replacement"))
+		uploadResult <- err
+	}()
+
+	select {
+	case <-fsys.renameStarted:
+	case <-time.After(time.Second):
+		t.Fatal("upload did not reach its final rename")
+	}
+
+	revokeStarted := make(chan struct{})
+	revokeResult := make(chan error, 1)
+	go func() {
+		close(revokeStarted)
+		revokeResult <- shares.Revoke("owner", share.ID)
+	}()
+	<-revokeStarted
+
+	select {
+	case err := <-revokeResult:
+		t.Fatalf("Revoke() returned %v before the final rename finished", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	releaseRename()
+	if err := <-uploadResult; err != nil {
+		t.Fatalf("WriteForRecipient() = %v", err)
+	}
+	if err := <-revokeResult; err != nil {
+		t.Fatalf("Revoke() = %v", err)
+	}
+}
+
+func TestShareStoreUsesPrivatePermissions(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	media := filepath.Join(root, "media")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(media, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(media, "file.txt"), []byte("shared content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sharesPath := filepath.Join(dataDir, config.SharesFileName)
+	if err := os.WriteFile(sharesPath, []byte(`{"shares":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	shares := NewShareService(filesystem.NewOsFS(), ShareServiceConfig{
+		DataDir: dataDir,
+		Mounts: func() []model.MountPoint {
+			return []model.MountPoint{{Name: "media", Path: media}}
+		},
+	})
+	assertPrivatePermissions(t, dataDir, 0o700)
+	assertPrivatePermissions(t, sharesPath, 0o600)
+
+	if _, err := shares.Create(context.Background(), "owner", "media/file.txt", model.SharePermissions{View: true}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	assertPrivatePermissions(t, dataDir, 0o700)
+	assertPrivatePermissions(t, sharesPath, 0o600)
+}
+
+func assertPrivatePermissions(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s permissions = %04o, want %04o", path, got, want)
 	}
 }

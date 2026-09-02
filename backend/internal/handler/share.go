@@ -97,7 +97,13 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 // List returns the caller's active share links
 // GET /api/v1/shares
 func (h *ShareHandler) List(w http.ResponseWriter, r *http.Request) {
-	shares, err := h.shareService.List()
+	username := authcontext.Username(r.Context())
+	if username == "" {
+		writeError(w, "Authentication required", model.ErrCodeUnauthorized, http.StatusUnauthorized)
+		return
+	}
+
+	shares, err := h.shareService.List(username)
 	if err != nil {
 		HandleServiceError(w, err)
 		return
@@ -123,13 +129,19 @@ func (h *ShareHandler) List(w http.ResponseWriter, r *http.Request) {
 // Revoke permanently disables a share link
 // DELETE /api/v1/shares/{id}
 func (h *ShareHandler) Revoke(w http.ResponseWriter, r *http.Request) {
+	username := authcontext.Username(r.Context())
+	if username == "" {
+		writeError(w, "Authentication required", model.ErrCodeUnauthorized, http.StatusUnauthorized)
+		return
+	}
+
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		writeError(w, "Share id is required", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
 
-	if err := h.shareService.Revoke(id); err != nil {
+	if err := h.shareService.Revoke(username, id); err != nil {
 		HandleServiceError(w, err)
 		return
 	}
