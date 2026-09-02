@@ -15,7 +15,7 @@
     "@astrojs/vercel": "^11.0.5",
     "@lucide/astro": "^1.30.0",
     "@tailwindcss/vite": "^4.3.3",
-    "astro": "^7.1.6",
+    "astro": "^7.2.9",
     "entities": "^8.0.0",
     "marked": "^18.0.9",
     "sanitize-html": "^2.17.6",
