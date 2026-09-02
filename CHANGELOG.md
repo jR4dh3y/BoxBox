@@ -5,6 +5,7 @@
 ### Added
 
 - Added standard range-over-func iterator `WalkSeq` (`iter.Seq2[WalkEntry, error]`) to the `Walker` filesystem traversal service.
+- Added single-file share links with view, download, and optional write permissions, optional expiry, revocation, and a public token-authenticated recipient page with inline previews and recipient overwrites.
 
 ### Changed
 

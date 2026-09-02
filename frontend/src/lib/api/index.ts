@@ -59,3 +59,22 @@ export {
 
 // System API
 export { getSystemDrives, type SystemDrive, type SystemDrivesResponse } from './system';
+
+// Shares API
+export {
+	createShare,
+	listShares,
+	revokeShare,
+	getShareInfo,
+	sharePageUrl,
+	shareDownloadUrl,
+	sharePreviewUrl,
+	shareUploadUrl,
+	hasShareExpiry,
+	type SharePermissions,
+	type ShareRecord,
+	type ShareListResponse,
+	type CreateShareOptions,
+	type CreateShareResponse,
+	type ShareInfoResponse
+} from './shares';

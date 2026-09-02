@@ -29,6 +29,11 @@ const frontendHost = process.env.BOXBOX_LOCAL_FRONTEND_HOST ?? "127.0.0.1";
 let frontendPort = Number(process.env.BOXBOX_LOCAL_FRONTEND_PORT ?? "5173");
 const username = process.env.BOXBOX_LOCAL_USER ?? "admin";
 const password = process.env.BOXBOX_LOCAL_PASSWORD ?? "admin";
+// Config validation accepts bcrypt hashes only. This constant is bcrypt("admin")
+// at cost 10; override it when BOXBOX_LOCAL_PASSWORD is changed.
+const passwordHash =
+  process.env.BOXBOX_LOCAL_PASSWORD_HASH ??
+  "$2a$10$ljkiC8HJ/N8OwzsamygF9OC1yTIRhLYkGFQa7yH0nsMdS7Mb1Z8O2";
 const homePath = process.env.BOXBOX_LOCAL_HOME ?? homedir();
 const localUser =
   process.env.USER ?? homePath.split("/").filter(Boolean).at(-1) ?? "user";
@@ -161,8 +166,10 @@ max_upload_mb: 10240
 chunk_size_mb: 5
 data_dir: ${yamlString(dataDir)}
 allowed_origins: []
+# Loopback-only local test instance; the read-only root mount below requires this opt-in.
+allow_root_mount: true
 users:
-  ${yamlString(username)}: ${yamlString(password)}
+  ${yamlString(username)}: ${yamlString(passwordHash)}
 mount_points:
 ${writeDriveMounts()}
   - name: ${yamlString("root")}
@@ -182,6 +189,7 @@ ${writeQuickAccessMounts()}
 }
 
 function writeViteConfig(): string {
+  const backendOrigin = `http://${backendHost}:${backendPort}`;
   const config = `import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
@@ -194,12 +202,19 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: ${JSON.stringify(`http://${backendHost}:${backendPort}`)},
+        target: ${JSON.stringify(backendOrigin)},
         changeOrigin: true,
-        ws: true
+        ws: true,
+        // The backend enforces same-Origin auth; changeOrigin rewrites Host but
+        // not Origin, so rewrite it here or login is rejected as cross-origin.
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.setHeader('Origin', ${JSON.stringify(backendOrigin)});
+          });
+        }
       },
       '/health': {
-        target: ${JSON.stringify(`http://${backendHost}:${backendPort}`)},
+        target: ${JSON.stringify(backendOrigin)},
         changeOrigin: true
       }
     }

@@ -117,6 +117,21 @@ volumes:
 
 Use `max_upload_mb` to cap accepted upload sizes.
 
+## Share Links
+
+Share links expose exactly one file to anyone holding the token URL:
+
+- Tokens are 256-bit random values (43 URL-safe characters); possession of the token is the only credential for recipient endpoints.
+- Recipient endpoints are public and rate-limited per client IP, separately from the stricter auth budget.
+- Unknown, expired, and revoked tokens all return the same `404`, so recipients cannot probe why a link stopped working.
+- Share management is scoped to the creating account: users can list and revoke only their own links.
+- Owners can revoke a link at any time; expiry is optional (`expiresInSeconds` at creation). A revocation that completes during an upload prevents that upload's final overwrite.
+- The shared file is re-resolved against the current mount configuration on every recipient access. Removed or renamed mounts invalidate the link, and a mount that became read-only still serves reads while denying overwrites.
+- Recipient downloads and previews carry the same sandboxed `Content-Security-Policy` as the app's streaming endpoints, and active document formats (HTML, SVG, XML) are forced to download instead of rendering inline.
+- Recipient overwrites are single-shot, capped by `max_upload_mb`, and applied atomically (temporary file plus rename), so a failed upload never corrupts the original.
+- Recipient metadata responses never include mount names or internal paths.
+- The share store directory is restricted to owner access (`0700`) and its token-bearing `shares.json` file to `0600`, including existing stores when the service initializes.
+
 ## Operational Checklist
 
 - Rotate `BOXBOX_JWT_SECRET` if it was ever committed or shared.

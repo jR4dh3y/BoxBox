@@ -43,6 +43,7 @@ Generate the bcrypt value requested by `.env`, then open `http://localhost:8080`
 - Browse multiple configured mount points from one web UI.
 - Upload large files with chunked and resumable upload support.
 - Preview common image, audio, video, PDF, and code/text files.
+- Share single files with expiring, revocable links.
 - Copy, move, and delete files through background jobs.
 - Track job progress through WebSocket updates.
 - Search directories by file or folder name.
