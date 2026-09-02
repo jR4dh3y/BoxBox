@@ -254,6 +254,104 @@ Final response:
 GET /api/v1/stream/upload/status/?uploadId=upload_123
 ```
 
+## Share Links
+
+Share links expose exactly one existing file through a token URL. Management endpoints require a JWT; recipient endpoints are public and authenticate by share token alone.
+
+### Create a Share
+
+```http
+POST /api/v1/shares
+Content-Type: application/json
+
+{
+  "path": "home/projects/notes.txt",
+  "permissions": { "view": true, "download": true, "write": false },
+  "expiresInSeconds": 3600
+}
+```
+
+`expiresInSeconds` is optional; omit it for a share that never expires. `write` is rejected for files on read-only mount points.
+
+Response uses `201 Created`:
+
+```json
+{
+  "id": "b0c1d2e3-...",
+  "token": "7nArUufciyjMLLFstZGU_zIerVgTpr2Qr2eL1lUTJFY",
+  "url": "/s/7nArUufciyjMLLFstZGU_zIerVgTpr2Qr2eL1lUTJFY",
+  "fileName": "notes.txt",
+  "permissions": { "view": true, "download": true, "write": false },
+  "createdAt": "2026-09-02T09:00:00Z",
+  "expiresAt": "2026-09-02T10:00:00Z"
+}
+```
+
+### List Active Shares
+
+```http
+GET /api/v1/shares
+```
+
+Returns only active (non-revoked, non-expired) shares. Each entry includes the `token`, `url`, `fileName`, mount-relative `path`, `permissions`, and expiry.
+
+### Revoke a Share
+
+```http
+DELETE /api/v1/shares/{id}
+```
+
+Unknown ids return `404`. Revoked links stop working immediately.
+
+### Recipient Endpoints
+
+Recipient endpoints are public (no JWT) and rate-limited per client IP. The share token in the path is the only credential.
+
+```http
+GET /api/v1/share/{token}
+```
+
+Returns recipient-facing metadata only; mount names and internal paths are never included:
+
+```json
+{
+  "fileName": "notes.txt",
+  "size": 1024,
+  "mimeType": "text/plain; charset=utf-8",
+  "permissions": { "view": true, "download": true, "write": false },
+  "expiresAt": "2026-09-02T10:00:00Z"
+}
+```
+
+```http
+GET /api/v1/share/{token}/download
+GET /api/v1/share/{token}/preview
+```
+
+Download streams the file as an attachment; preview streams it inline for browser media. Both support HTTP range requests, set a sandboxed `Content-Security-Policy`, and force attachment disposition for active document formats (HTML, SVG, XML).
+
+Unknown, expired, and revoked tokens all return the same `404`, so recipients cannot distinguish between them. Requests the share's permissions do not allow return `403`.
+
+### Overwrite Through a Share
+
+```http
+POST /api/v1/share/{token}/upload
+Content-Type: application/octet-stream
+
+[file body]
+```
+
+Requires the `write` permission and a writable mount point. The body replaces the shared file atomically (temporary file plus rename) and is capped by `max_upload_mb`:
+
+```json
+{
+  "fileName": "notes.txt",
+  "size": 2048
+}
+```
+
+`403` means the share does not allow updates; `413` means the body exceeded the size limit.
+
 ## Search
 
 ```http

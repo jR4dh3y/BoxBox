@@ -177,6 +177,14 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 		DataDir: cfg.DataDir,
 	})
 
+	// Shares re-resolve their target against the live mount list on every
+	// recipient access, so they receive a mounts provider instead of a snapshot.
+	shareService := service.NewShareService(fs, service.ShareServiceConfig{
+		DataDir:        cfg.DataDir,
+		MaxUploadBytes: int64(cfg.MaxUploadMB) * 1024 * 1024,
+		Mounts:         func() []model.MountPoint { return mountPoints },
+	})
+
 	// Create handlers
 	authHandler := handler.NewAuthHandler(authService)
 	fileHandler := handler.NewFileHandler(fileService)
@@ -187,9 +195,10 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 	wsHandler.SetDevMode(devMode)
 	systemHandler := handler.NewSystemHandler(systemService)
 	settingsHandler := handler.NewSettingsHandler(settingsService)
+	shareHandler := handler.NewShareHandler(shareService, cfg.MaxUploadMB)
 
 	// Create router
-	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, mountPoints)
+	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -202,6 +211,12 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 
 	return server, hub, jobService, authService, streamHandler, nil
 }
+
+// shareRateLimitRPS bounds the public share-link endpoints. It is higher than
+// the auth default because a single recipient page load fires info, preview,
+// and media range requests in quick succession, which a 2 rps budget would
+// reject with 429s.
+const shareRateLimitRPS = 5.0
 
 // createRouter sets up chi router with all routes and middleware
 func createRouter(
@@ -216,6 +231,7 @@ func createRouter(
 	wsHandler *handler.WebSocketHandler,
 	systemHandler *handler.SystemHandler,
 	settingsHandler *handler.SettingsHandler,
+	shareHandler *handler.ShareHandler,
 	mountPoints []model.MountPoint,
 ) chi.Router {
 	r := chi.NewRouter()
@@ -246,6 +262,12 @@ func createRouter(
 		r.Route("/auth", func(r chi.Router) {
 			r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
 			authHandler.RegisterRoutes(r)
+		})
+
+		// Public share-link routes (the share token is the only credential)
+		r.Route("/share", func(r chi.Router) {
+			r.Use(middleware.RateLimit(shareRateLimitRPS, cfg.TrustedProxies...))
+			shareHandler.RegisterPublicRoutes(r)
 		})
 
 		// Protected routes (auth required)
@@ -286,6 +308,11 @@ func createRouter(
 			// Settings operations
 			r.Route("/settings", func(r chi.Router) {
 				settingsHandler.RegisterRoutes(r)
+			})
+
+			// Share link management
+			r.Route("/shares", func(r chi.Router) {
+				shareHandler.RegisterRoutes(r)
 			})
 		})
 
