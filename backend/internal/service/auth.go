@@ -2,12 +2,13 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"maps"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
@@ -328,9 +329,7 @@ func generateUserID(username string) string {
 }
 
 func generateTokenID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	return uuid.New().String()
 }
 
 // CleanupExpiredTokens removes expired tokens from the revoked list
@@ -340,28 +339,20 @@ func (s *authService) CleanupExpiredTokens() {
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	for tokenHash, expiresAt := range s.revokedRefresh {
-		if !expiresAt.After(now) {
-			delete(s.revokedRefresh, tokenHash)
-		}
-	}
-	for tokenID, expiresAt := range s.revokedAccess {
-		if !expiresAt.After(now) {
-			delete(s.revokedAccess, tokenID)
-		}
-	}
-	for username, failure := range s.loginFailures {
-		if failure.count == 0 || now.Sub(failure.lockedUntil) > config.LoginLockoutMaxDelay {
-			delete(s.loginFailures, username)
-		}
-	}
+	maps.DeleteFunc(s.revokedRefresh, func(_ [sha256.Size]byte, expiresAt time.Time) bool {
+		return !expiresAt.After(now)
+	})
+	maps.DeleteFunc(s.revokedAccess, func(_ string, expiresAt time.Time) bool {
+		return !expiresAt.After(now)
+	})
+	maps.DeleteFunc(s.loginFailures, func(_ string, failure loginFailure) bool {
+		return failure.count == 0 || now.Sub(failure.lockedUntil) > config.LoginLockoutMaxDelay
+	})
 }
 
 // StartCleanup starts the periodic cleanup of expired tokens
 func (s *authService) StartCleanup(ctx context.Context) {
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		ticker := time.NewTicker(config.TokenCleanupInterval)
 		defer ticker.Stop()
 
@@ -375,7 +366,7 @@ func (s *authService) StartCleanup(ctx context.Context) {
 				s.CleanupExpiredTokens()
 			}
 		}
-	}()
+	})
 }
 
 // StopCleanup stops the cleanup goroutine

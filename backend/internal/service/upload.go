@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,11 +115,9 @@ func (s *uploadService) StartCleanup(parent context.Context) {
 	}
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
-	s.wg.Add(1)
 	s.mu.Unlock()
 
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		ticker := time.NewTicker(config.SessionCleanupInterval)
 		defer ticker.Stop()
 		for {
@@ -129,7 +128,7 @@ func (s *uploadService) StartCleanup(parent context.Context) {
 				s.cleanupExpired()
 			}
 		}
-	}()
+	})
 }
 
 func (s *uploadService) StopCleanup() {
@@ -330,16 +329,17 @@ func (s *uploadService) cleanupExpired() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
-	for id, session := range s.sessions {
+	maps.DeleteFunc(s.sessions, func(_ string, session *uploadSession) bool {
 		session.mu.RLock()
 		expired := session.activeRequests == 0 &&
 			now.Sub(session.lastActivity) > config.SessionTimeout
 		session.mu.RUnlock()
 		if expired {
 			_ = os.RemoveAll(session.tempDir)
-			delete(s.sessions, id)
+			return true
 		}
-	}
+		return false
+	})
 }
 
 func (s *uploadService) releaseSession(session *uploadSession) {

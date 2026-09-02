@@ -37,8 +37,8 @@ type Job struct {
 	ResolvedDestRoot   string    `json:"-"`
 	Error              string    `json:"error,omitempty"`
 	CreatedAt          time.Time `json:"createdAt"`
-	StartedAt          time.Time `json:"startedAt,omitempty"`
-	CompletedAt        time.Time `json:"completedAt,omitempty"`
+	StartedAt          time.Time `json:"startedAt,omitzero"`
+	CompletedAt        time.Time `json:"completedAt,omitzero"`
 }
 
 // JobUpdate represents a progress update for a job sent via WebSocket

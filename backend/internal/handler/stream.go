@@ -230,10 +230,11 @@ func (h *StreamHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		Checksum:    uploadReq.Checksum,
 	}, http.MaxBytesReader(w, r.Body, uploadReq.ExpectedSize()))
 	if err != nil {
-		var maxBytesError *http.MaxBytesError
-		switch {
-		case errors.As(err, &maxBytesError):
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			writeError(w, "Upload chunk exceeds declared size", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge)
+			return
+		}
+		switch {
 		case errors.Is(err, service.ErrPermissionDenied):
 			writeError(w, "Mount point is read-only", model.ErrCodeReadOnly, http.StatusForbidden)
 		case errors.Is(err, service.ErrUploadConflict):

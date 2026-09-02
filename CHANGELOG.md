@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added standard range-over-func iterator `WalkSeq` (`iter.Seq2[WalkEntry, error]`) to the `Walker` filesystem traversal service.
+
+### Changed
+
+- Upgraded Go toolchain and module directives to Go 1.27.
+- Migrated Docker multi-stage build image to `golang:1.27-alpine`.
+- Replaced external dependency `github.com/google/uuid` with Go 1.27 standard library `uuid`.
+- Refactored background worker, upload session, and token cleanup lifecycles to use `sync.WaitGroup.Go`.
+- Refactored token, upload session, and WebSocket subscription pruning to use `maps.DeleteFunc`.
+- Refactored recursive file search to consume the `WalkSeq` iterator.
+- Updated error inspection to use `errors.AsType`.
+- Modernized async job timestamp serialization with `omitzero`.
+
 ## [0.2.2] - 2026-08-08
 
 This release improves file browsing, upload reliability, deployment, and security.

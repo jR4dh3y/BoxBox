@@ -20,7 +20,7 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 
 - The production image is a single container.
 - The preferred deployment is Docker Compose pulling `ghcr.io/jr4dh3y/boxbox`.
-- The server listens on port `80` by default.
+- The server listens on port `8080` by default.
 - The frontend static build is embedded into the Go binary.
 - API routes live under `/api/v1`; `/health` is also available at the root.
 - Mount points are configured in `config.yaml` and can be customized by binding another config file to `/app/config.yaml`.

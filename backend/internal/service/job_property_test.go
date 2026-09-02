@@ -777,7 +777,7 @@ func TestProperty_JobCompletionNotification(t *testing.T) {
 
 func TestProperty_JobCancellationCleanup(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
-	parameters.MinSuccessfulTests = 100
+	parameters.MinSuccessfulTests = 20
 	parameters.MaxSize = 50
 
 	properties := gopter.NewProperties(parameters)

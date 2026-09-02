@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"uuid"
 
-	"github.com/google/uuid"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
@@ -529,7 +529,7 @@ func (s *fileService) WriteFile(ctx context.Context, path string, content []byte
 		return ErrNotFile
 	}
 
-	temporary := fsPath + ".saving." + uuid.NewString()
+	temporary := fsPath + ".saving." + uuid.New().String()
 	file, err := s.fs.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
 	if err != nil {
 		return err

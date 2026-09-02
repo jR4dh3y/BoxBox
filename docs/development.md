@@ -4,7 +4,7 @@ This guide covers the local BoxBox development workflow.
 
 ## Prerequisites
 
-- Go 1.25+
+- Go 1.27+
 - Bun 1.1+
 - Node.js 22+ for Svelte tooling compatibility
 - `air` for backend hot reload:

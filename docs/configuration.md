@@ -18,7 +18,7 @@ The Docker image includes `/app/config.yaml`, and the compose file bind-mounts `
 ## Full Example
 
 ```yaml
-port: 80
+port: 8080
 host: "0.0.0.0"
 
 jwt_secret: "replace-with-a-long-random-secret"
@@ -63,7 +63,7 @@ mount_points:
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `port` | `80` | HTTP port inside the container or process. |
+| `port` | `8080` | HTTP port inside the container or process. |
 | `host` | `0.0.0.0` | Bind address. |
 | `jwt_secret` | Required | JWT signing secret of at least 32 bytes. |
 | `rate_limit_rps` | `2` | Auth endpoint requests per second per client IP. |
