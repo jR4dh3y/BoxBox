@@ -4,7 +4,6 @@
 
 ### Added
 
-- Added `internal/pkg/container` generic functional collection library (`Box[T]`, `Result[T]`, `Slice[T]`, `PagedList[T]`) using Go 1.27 method type parameters (`.Map[U]()`, `.FlatMap[U]()`, `.Reduce[U]()`).
 - Added standard range-over-func iterator `WalkSeq` (`iter.Seq2[WalkEntry, error]`) to the `Walker` filesystem traversal service.
 
 ### Changed

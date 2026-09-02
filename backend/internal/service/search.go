@@ -15,10 +15,7 @@ import (
 )
 
 // Search service errors
-var (
-	ErrEmptyQuery  = errors.New("search query cannot be empty")
-	errSearchLimit = errors.New("search result limit reached")
-)
+var ErrEmptyQuery = errors.New("search query cannot be empty")
 
 // SearchService defines the search operations service interface
 type SearchService interface {

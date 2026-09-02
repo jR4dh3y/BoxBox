@@ -21,7 +21,6 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/handler"
 	"github.com/jR4dh3y/BoxBox/backend/internal/middleware"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
-	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/container"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 	"github.com/jR4dh3y/BoxBox/backend/internal/static"
@@ -140,14 +139,15 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 		}
 	}
 
-	// Convert config mount points to model mount points using Go 1.27 generic method
-	mountPoints := container.NewSlice(cfg.MountPoints...).Map(func(mp model.MountPoint) model.MountPoint {
-		return model.MountPoint{
+	// Convert config mount points to model mount points
+	mountPoints := make([]model.MountPoint, len(cfg.MountPoints))
+	for i, mp := range cfg.MountPoints {
+		mountPoints[i] = model.MountPoint{
 			Name:     mp.Name,
 			Path:     mp.Path,
 			ReadOnly: mp.ReadOnly,
 		}
-	}).ToSlice()
+	}
 
 	// Create WebSocket hub
 	hub := websocket.NewHub()
