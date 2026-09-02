@@ -179,6 +179,9 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 
 	// Shares re-resolve their target against the live mount list on every
 	// recipient access, so they receive a mounts provider instead of a snapshot.
+	// Deliberately the configured list, not discovered sub-mounts: discovery
+	// replaces auto-discover parents with sub-mount names, which would break
+	// every share whose path is rooted at a configured name like "drives".
 	shareService := service.NewShareService(fs, service.ShareServiceConfig{
 		DataDir:        cfg.DataDir,
 		MaxUploadBytes: int64(cfg.MaxUploadMB) * 1024 * 1024,
