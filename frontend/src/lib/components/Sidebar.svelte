@@ -2,13 +2,7 @@
 	/**
 	 * Sidebar component - navigation panel with places and favorites
 	 */
-	import {
-		ChevronDown,
-		Server,
-		HardDrive,
-		Star,
-		X
-	} from 'lucide-svelte';
+	import { ChevronDown, Server, HardDrive, Star, X } from 'lucide-svelte';
 	import { settingsStore } from '$lib/stores/settings';
 	import type { MountPoint } from '$lib/api/files';
 

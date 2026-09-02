@@ -20,15 +20,7 @@ import {
 } from 'lucide-svelte';
 
 export type PreviewType =
-	| 'video'
-	| 'audio'
-	| 'image'
-	| 'pdf'
-	| 'code'
-	| 'text'
-	| 'office'
-	| 'notebook'
-	| 'unsupported';
+	'video' | 'audio' | 'image' | 'pdf' | 'code' | 'text' | 'office' | 'notebook' | 'unsupported';
 export type FileCategory = keyof typeof FILE_EXTENSIONS | 'unknown';
 
 /**

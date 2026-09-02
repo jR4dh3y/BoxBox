@@ -11,15 +11,27 @@
 	const sizeClasses = {
 		sm: 'text-[8px] leading-[1.1]',
 		md: 'text-xs leading-[1.2]',
-		lg: 'text-sm leading-[1.2]',
+		lg: 'text-sm leading-[1.2]'
 	};
 </script>
 
-<pre class="font-mono text-center font-bold whitespace-pre select-none {sizeClasses[size]}">
-<span class="text-danger">██████╗</span> <span class="text-warning">██╗</span> <span class="text-success">██████╗</span> <span class="text-accent">██████╗</span>
-<span class="text-danger"> ██╔══██╗</span><span class="text-warning">██║</span><span class="text-success">██╔════╝</span><span class="text-accent">██╔═══██╗</span>
-<span class="text-danger"> ██████╔╝</span><span class="text-warning">██║</span><span class="text-success">██║     </span><span class="text-accent">██║   ██║</span>
-<span class="text-danger"> ██╔═══╝ </span><span class="text-warning">██║</span><span class="text-success">██║     </span><span class="text-accent">██║   ██║</span>
-<span class="text-danger"> ██║     </span><span class="text-warning">██║</span><span class="text-success">╚██████╗</span><span class="text-accent">╚██████╔╝</span>
-<span class="text-danger">╚═╝     </span><span class="text-warning">╚═╝</span> <span class="text-success">╚═════╝</span> <span class="text-accent">╚═════╝</span>
+<pre class="text-center font-mono font-bold whitespace-pre select-none {sizeClasses[size]}">
+<span class="text-danger">██████╗</span> <span class="text-warning">██╗</span> <span
+		class="text-success">██████╗</span
+	> <span class="text-accent">██████╗</span>
+<span class="text-danger"> ██╔══██╗</span><span class="text-warning">██║</span><span
+		class="text-success">██╔════╝</span
+	><span class="text-accent">██╔═══██╗</span>
+<span class="text-danger"> ██████╔╝</span><span class="text-warning">██║</span><span
+		class="text-success"
+		>██║     </span><span class="text-accent">██║   ██║</span>
+<span class="text-danger"> ██╔═══╝ </span><span class="text-warning">██║</span><span
+		class="text-success"
+		>██║     </span><span class="text-accent">██║   ██║</span>
+<span class="text-danger"> ██║     </span><span class="text-warning">██║</span><span
+		class="text-success">╚██████╗</span
+	><span class="text-accent">╚██████╔╝</span>
+<span class="text-danger">╚═╝     </span><span class="text-warning">╚═╝</span> <span
+		class="text-success">╚═════╝</span
+	> <span class="text-accent">╚═════╝</span>
 </pre>

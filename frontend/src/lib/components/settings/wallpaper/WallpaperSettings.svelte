@@ -77,7 +77,7 @@
 		<div class="flex min-w-64 flex-1 items-center justify-end gap-2">
 			{#if selectedWallpaperLabel}
 				<div
-					class="flex min-w-0 max-w-48 items-center gap-1.5 text-xs text-accent"
+					class="flex max-w-48 min-w-0 items-center gap-1.5 text-xs text-accent"
 					title={selectedWallpaperLabel}
 				>
 					<Check size={12} class="shrink-0" />

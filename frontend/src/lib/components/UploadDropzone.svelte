@@ -71,10 +71,12 @@
 </script>
 
 <div
-	class="flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg cursor-pointer transition-all min-h-[150px]
-		{isDragOver ? 'border-accent bg-accent/10 border-solid' : 'border-border-primary bg-surface-secondary hover:border-text-muted hover:bg-surface-tertiary'}
-		{disabled ? 'opacity-50 cursor-not-allowed' : ''}
-		focus:outline-2 focus:outline-accent focus:outline-offset-2"
+	class="flex min-h-[150px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-all
+		{isDragOver
+		? 'border-solid border-accent bg-accent/10'
+		: 'border-border-primary bg-surface-secondary hover:border-text-muted hover:bg-surface-tertiary'}
+		{disabled ? 'cursor-not-allowed opacity-50' : ''}
+		focus:outline-2 focus:outline-offset-2 focus:outline-accent"
 	ondragover={handleDragOver}
 	ondragleave={handleDragLeave}
 	ondrop={handleDrop}
@@ -92,14 +94,18 @@
 		{multiple}
 		{disabled}
 		onchange={handleFileChange}
-		class="absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0"
+		class="absolute -m-px h-px w-px overflow-hidden border-0 p-0 whitespace-nowrap"
 		style="clip: rect(0, 0, 0, 0);"
 		aria-hidden="true"
 		tabindex="-1"
 	/>
 
 	<div class="flex flex-col items-center gap-3 text-center">
-		<div class="flex items-center justify-center w-12 h-12 {isDragOver ? 'text-accent' : 'text-text-muted'}">
+		<div
+			class="flex h-12 w-12 items-center justify-center {isDragOver
+				? 'text-accent'
+				: 'text-text-muted'}"
+		>
 			<Upload size={48} />
 		</div>
 
@@ -108,7 +114,7 @@
 				<span class="text-sm text-text-primary">Drop files here</span>
 			{:else}
 				<span class="text-sm text-text-secondary">
-					<span class="text-accent font-medium">Click to upload</span> or drag and drop
+					<span class="font-medium text-accent">Click to upload</span> or drag and drop
 				</span>
 				<span class="text-xs text-text-muted">
 					{#if accept}

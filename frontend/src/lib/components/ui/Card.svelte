@@ -14,14 +14,15 @@
 
 	const variantClasses: Record<string, string> = {
 		default: '',
-		interactive: 'cursor-pointer transition-all duration-150 hover:bg-surface-tertiary hover:border-border-focus',
+		interactive:
+			'cursor-pointer transition-all duration-150 hover:bg-surface-tertiary hover:border-border-focus'
 	};
 
 	const paddingClasses: Record<string, string> = {
 		none: '',
 		sm: 'p-2',
 		md: 'p-4',
-		lg: 'p-6',
+		lg: 'p-6'
 	};
 
 	const isButton = $derived(variant === 'interactive' && onclick);

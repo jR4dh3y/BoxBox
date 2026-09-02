@@ -1,7 +1,6 @@
 type LanguageLoader = () => Promise<unknown>;
 
-const loadBasicLanguages = () =>
-	import('monaco-editor/basic-languages/monaco.contribution.js');
+const loadBasicLanguages = () => import('monaco-editor/basic-languages/monaco.contribution.js');
 const loadJsonLanguage = () => import('monaco-editor/language/json/monaco.contribution.js');
 
 const languageLoaders: Record<string, LanguageLoader> = {
