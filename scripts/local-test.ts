@@ -29,6 +29,12 @@ const frontendHost = process.env.BOXBOX_LOCAL_FRONTEND_HOST ?? "127.0.0.1";
 let frontendPort = Number(process.env.BOXBOX_LOCAL_FRONTEND_PORT ?? "5173");
 const username = process.env.BOXBOX_LOCAL_USER ?? "admin";
 const password = process.env.BOXBOX_LOCAL_PASSWORD ?? "admin";
+
+// The generated config mounts /, home, and the repo with a known default
+// login, so only allow binding beyond loopback when the user opts in.
+function isLoopback(host: string): boolean {
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
 const homePath = process.env.BOXBOX_LOCAL_HOME ?? homedir();
 const localUser =
   process.env.USER ?? homePath.split("/").filter(Boolean).at(-1) ?? "user";
@@ -513,6 +519,29 @@ async function findAvailablePort(
 async function main(): Promise<void> {
   if (!existsSync(homePath)) {
     throw new Error(`BOXBOX_LOCAL_HOME does not exist: ${homePath}`);
+  }
+
+  // Binding beyond loopback exposes the host filesystem (/, home, repo) over
+  // the network with the documented default login, so require an explicit
+  // opt-in plus a non-default password before honoring a non-loopback host.
+  if (!isLoopback(backendHost) || !isLoopback(frontendHost)) {
+    const optedIn = process.env.BOXBOX_LOCAL_ALLOW_NETWORK === "1";
+    const hasCustomPassword =
+      process.env.BOXBOX_LOCAL_PASSWORD !== undefined && password !== "admin";
+    if (!optedIn || !hasCustomPassword) {
+      console.error(
+        `${colors.red}Refusing to bind beyond loopback.${colors.reset}\n` +
+        `The local test config exposes the host filesystem (/, home, repo) with a ` +
+        `known default login. To serve on ${backendHost}:${backendPort} / ` +
+        `${frontendHost}:${frontendPort}, set BOXBOX_LOCAL_ALLOW_NETWORK=1 and a ` +
+        `non-default BOXBOX_LOCAL_PASSWORD.`,
+      );
+      process.exit(1);
+    }
+    console.warn(
+      `${colors.yellow}WARNING: binding beyond loopback; the host filesystem is ` +
+        `reachable over the network.${colors.reset}`,
+    );
   }
 
   cleanupStaleViteConfigs();
