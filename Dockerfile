@@ -13,7 +13,7 @@
 # Static assets are architecture-independent, so this stage always runs on the
 # builder's native platform instead of emulating the target arch.
 # -----------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM oven/bun:1-alpine@sha256:07235578f79ef8c6f97d94aee7938e76f5cdba5f21ae5dbfdd3d3d38058437eb AS frontend-builder
+FROM --platform=$BUILDPLATFORM oven/bun:1-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS frontend-builder
 
 WORKDIR /app
 
