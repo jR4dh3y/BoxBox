@@ -46,6 +46,10 @@ var serviceErrorMappings = []ErrorMapping{
 	// Search service errors
 	{service.ErrEmptyQuery, "Search query cannot be empty", model.ErrCodeValidationError, http.StatusBadRequest},
 
+	// Share service errors
+	{service.ErrShareNotFound, "Share not found", model.ErrCodeNotFound, http.StatusNotFound},
+	{service.ErrShareTooLarge, "Upload exceeds the size limit", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
+
 	// Auth service errors
 	{service.ErrInvalidCredentials, "Invalid credentials", model.ErrCodeUnauthorized, http.StatusUnauthorized},
 	{service.ErrInvalidToken, "Invalid token", model.ErrCodeTokenInvalid, http.StatusUnauthorized},

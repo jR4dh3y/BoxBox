@@ -131,6 +131,9 @@ const (
 
 	// DriveNamesFileName is the filename for storing custom drive names
 	DriveNamesFileName = "drive-names.json"
+
+	// SharesFileName is the filename for storing share link records
+	SharesFileName = "shares.json"
 )
 
 // ============================================================================

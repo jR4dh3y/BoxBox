@@ -19,6 +19,7 @@
 	import DriveCard from '$lib/components/DriveCard.svelte';
 	import FilePreview from '$lib/components/FilePreview.svelte';
 	import BrowseDialogs from '$lib/components/BrowseDialogs.svelte';
+	import ShareModal from '$lib/components/ShareModal.svelte';
 	import UploadPanel from '$lib/components/UploadPanel.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
 	import { Spinner } from '$lib/components/ui';
@@ -83,6 +84,12 @@
 
 	// Properties dialog state
 	let propertiesDialog = $state<{ open: boolean; file: FileInfo | null }>({
+		open: false,
+		file: null
+	});
+
+	// Share dialog state
+	let shareDialog = $state<{ open: boolean; file: FileInfo | null }>({
 		open: false,
 		file: null
 	});
@@ -408,6 +415,15 @@
 
 			case 'download':
 				handleDownload(items);
+				break;
+
+			case 'share':
+				if (items.length === 1 && !items[0].isDir) {
+					shareDialog = {
+						open: true,
+						file: items[0]
+					};
+				}
 				break;
 
 			case 'properties':
@@ -822,6 +838,13 @@
 	onCloseRename={() => (renameDialog = { open: false, file: null, newName: '' })}
 	onCloseDelete={() => (deleteDialog = { open: false, items: [] })}
 	onCloseProperties={() => (propertiesDialog = { open: false, file: null })}
+/>
+
+<!-- Share Modal -->
+<ShareModal
+	open={shareDialog.open}
+	file={shareDialog.file}
+	onclose={() => (shareDialog = { open: false, file: null })}
 />
 
 <!-- Hidden file input for upload button -->
