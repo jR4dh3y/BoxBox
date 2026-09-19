@@ -32,9 +32,13 @@
 	});
 
 	// Public routes that don't require authentication
-	const publicRoutes = ['/login'];
-	const isWorkspacePage = $derived(
-		page.url.pathname.startsWith('/browse') || page.url.pathname.startsWith('/settings')
+	// '/s/' rather than '/s' so the prefix cannot also match '/settings'
+	const publicRoutes = ['/login', '/s/'];
+	// Full-bleed pages render without the standard page chrome
+	const isFullBleedPage = $derived(
+		page.url.pathname.startsWith('/browse') ||
+			page.url.pathname.startsWith('/settings') ||
+			page.url.pathname.startsWith('/s/')
 	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
 	const backgroundImageMode = $derived(
@@ -127,7 +131,7 @@
 				<div class="flex min-h-screen items-center justify-center bg-surface-primary">
 					<Spinner size="lg" />
 				</div>
-			{:else if isWorkspacePage}
+			{:else if isFullBleedPage}
 				{@render children()}
 			{:else}
 				<div class="flex min-h-screen flex-col bg-surface-primary">
