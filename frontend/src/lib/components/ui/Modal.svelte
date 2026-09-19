@@ -35,10 +35,21 @@
 			onclose?.();
 		}
 	}
+
+	let dialogEl = $state<HTMLDivElement | undefined>();
+
+	$effect(() => {
+		if (open) {
+			// Focus into the dialog so Escape/typing reach it immediately
+			// (otherwise a keyboard opener like F2 leaves focus on the page behind).
+			(dialogEl?.querySelector<HTMLElement>('input') ?? dialogEl)?.focus();
+		}
+	});
 </script>
 
 {#if open}
 	<div
+		bind:this={dialogEl}
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
 		role="dialog"
 		aria-modal="true"
