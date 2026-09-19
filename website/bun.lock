@@ -5,7 +5,7 @@
     "": {
       "name": "website",
       "dependencies": {
-        "@astrojs/vercel": "^11.0.8",
+        "@astrojs/vercel": "^11.0.10",
         "@lucide/astro": "^1.41.0",
         "@tailwindcss/vite": "^4.3.3",
         "astro": "^7.3.1",
