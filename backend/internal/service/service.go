@@ -8,6 +8,8 @@
 //   - JobService: Background job execution with progress tracking
 //   - SearchService: Recursive file search
 //   - SystemService: System information and drive discovery
+//   - SettingsService: Custom drive name persistence
+//   - ShareService: Single-file share links
 //
 // # Error Handling
 //

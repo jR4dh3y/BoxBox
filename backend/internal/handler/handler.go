@@ -10,6 +10,7 @@
 //   - SearchHandler: File search operations
 //   - WebSocketHandler: Real-time updates via WebSocket
 //   - SystemHandler: System information (drives, mount points)
+//   - ShareHandler: Share link management and token-authenticated recipient access
 //
 // # Error Handling
 //
