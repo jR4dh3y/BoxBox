@@ -39,7 +39,8 @@ export interface ShareListResponse {
  * Options when creating a share link
  */
 export interface CreateShareOptions {
-	permissions: SharePermissions;
+	/** Legacy file permission payload; folder shares may use explicit permissions. */
+	permissions?: SharePermissions;
 	/** Seconds until the share expires; omitted means it never expires */
 	expiresInSeconds?: number;
 }
@@ -82,7 +83,7 @@ export async function createShare(
 ): Promise<CreateShareResponse> {
 	return api.post<CreateShareResponse>('/shares', {
 		path,
-		permissions: options.permissions,
+		...(options.permissions ? { permissions: options.permissions } : {}),
 		expiresInSeconds: options.expiresInSeconds ?? null
 	});
 }

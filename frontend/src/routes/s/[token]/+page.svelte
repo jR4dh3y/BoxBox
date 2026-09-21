@@ -7,7 +7,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { AlertTriangle, Download, FolderOpen, Upload } from 'lucide-svelte';
-	import { Badge, Button, ProgressBar, Spinner, Toast } from '$lib/components/ui';
+	import { Button, ProgressBar, Spinner, Toast } from '$lib/components/ui';
 	import {
 		ApiRequestError,
 		getShareInfo,
@@ -140,11 +140,11 @@
 
 <div class="flex min-h-screen items-center justify-center bg-surface-primary p-4">
 	<div
-		class="w-full max-w-[640px] rounded-lg border border-border-primary bg-surface-secondary p-8 shadow"
+		class="w-full max-w-[720px] rounded-lg border border-border-primary bg-surface-secondary p-8 shadow"
 	>
-		<div class="mb-6 flex items-center gap-3">
+		<div class="mb-8 flex items-center gap-2">
 			<span class="text-accent"><FolderOpen size={24} /></span>
-			<span class="text-lg font-semibold text-text-primary">BoxBox</span>
+			<span class="text-base font-semibold tracking-tight text-text-primary">BoxBox</span>
 		</div>
 
 		{#if loading}
@@ -171,27 +171,23 @@
 		{:else if info}
 			<div class="flex items-center gap-4">
 				<span class="shrink-0 text-accent"><TypeIcon size={40} /></span>
-				<div class="min-w-0">
-					<h1 class="m-0 truncate text-lg font-semibold text-text-primary" title={info.fileName}>
-						{info.fileName}
-					</h1>
-					<p class="m-0 text-sm text-text-secondary">
-						{formatFileSize(info.size)} • {getFileTypeDescription(info.fileName)}
+				<div class="flex min-w-0 flex-1 items-start justify-between gap-4">
+					<div class="min-w-0">
+						<h1 class="m-0 truncate text-lg font-semibold text-text-primary" title={info.fileName}>
+							{info.fileName}
+						</h1>
+						<p class="m-0 text-sm text-text-secondary">
+							{formatFileSize(info.size)} • {getFileTypeDescription(info.fileName)}
+						</p>
+					</div>
+					<p class="m-0 shrink-0 text-right text-xs text-text-muted">
+						{#if hasShareExpiry(info.expiresAt)}
+							Expires {formatRelativeTime(info.expiresAt)}
+						{:else}
+							Never expires
+						{/if}
 					</p>
 				</div>
-			</div>
-
-			<div class="mt-4 flex flex-wrap items-center gap-2">
-				{#if info.permissions.view}<Badge variant="info">View</Badge>{/if}
-				{#if info.permissions.download}<Badge variant="success">Download</Badge>{/if}
-				{#if info.permissions.write}<Badge variant="warning">Write</Badge>{/if}
-				<span class="text-xs text-text-muted">
-					{#if hasShareExpiry(info.expiresAt)}
-						Expires {formatRelativeTime(info.expiresAt)}
-					{:else}
-						Never expires
-					{/if}
-				</span>
 			</div>
 
 			{#if info.permissions.view}

@@ -118,6 +118,9 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 	if username == "" {
 		return nil, ErrInvalidOperation
 	}
+	// File links always provide the complete file experience. Folder links are
+	// the place for collaboration permissions.
+	permissions = model.SharePermissions{View: true, Download: true}
 
 	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mounts())
 	if err != nil {
