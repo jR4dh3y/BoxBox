@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/afero"
 )
@@ -70,6 +71,15 @@ type AferoFS struct {
 	fs afero.Fs
 }
 
+var errInvalidFilesystemPath = errors.New("invalid filesystem path")
+
+func validateFilesystemPath(path string) error {
+	if strings.ContainsRune(path, '\x00') || strings.Contains(path, "..") {
+		return errInvalidFilesystemPath
+	}
+	return nil
+}
+
 // NewOsFS creates a new AferoFS using the real OS filesystem
 func NewOsFS() *AferoFS {
 	return &AferoFS{fs: afero.NewOsFs()}
@@ -82,6 +92,10 @@ func NewMemMapFS() *AferoFS {
 
 // ReadDir reads the directory named by dirname and returns a list of directory entries.
 func (a *AferoFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if err := validateFilesystemPath(name); err != nil {
+		return nil, err
+	}
+	name = filepath.Clean("/" + name)
 	if _, ok := a.fs.(*afero.OsFs); ok {
 		return os.ReadDir(name)
 	}
@@ -98,6 +112,10 @@ func (a *AferoFS) ReadDir(name string) ([]fs.DirEntry, error) {
 }
 
 func (a *AferoFS) ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, error) {
+	if err := validateFilesystemPath(name); err != nil {
+		return nil, false, err
+	}
+	name = filepath.Clean("/" + name)
 	if limit < 1 {
 		entries, err := a.ReadDir(name)
 		return entries, false, err
@@ -140,6 +158,10 @@ func (a *AferoFS) ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, err
 }
 
 func (a *AferoFS) EvalSymlinks(path string) (string, error) {
+	if err := validateFilesystemPath(path); err != nil {
+		return "", err
+	}
+	path = filepath.Clean("/" + path)
 	if _, ok := a.fs.(*afero.OsFs); ok {
 		return filepath.EvalSymlinks(path)
 	}
@@ -149,66 +171,122 @@ func (a *AferoFS) EvalSymlinks(path string) (string, error) {
 
 // Stat returns a FileInfo describing the named file.
 func (a *AferoFS) Stat(name string) (fs.FileInfo, error) {
+	if err := validateFilesystemPath(name); err != nil {
+		return nil, err
+	}
+	name = filepath.Clean("/" + name)
 	return a.fs.Stat(name)
 }
 
 // Open opens the named file for reading.
 func (a *AferoFS) Open(name string) (afero.File, error) {
+	if err := validateFilesystemPath(name); err != nil {
+		return nil, err
+	}
+	name = filepath.Clean("/" + name)
 	return a.fs.Open(name)
 }
 
 // Create creates or truncates the named file.
 func (a *AferoFS) Create(name string) (afero.File, error) {
+	if err := validateFilesystemPath(name); err != nil {
+		return nil, err
+	}
+	name = filepath.Clean("/" + name)
 	return a.fs.Create(name)
 }
 
 // Remove removes the named file or empty directory.
 func (a *AferoFS) Remove(name string) error {
+	if err := validateFilesystemPath(name); err != nil {
+		return err
+	}
+	name = filepath.Clean("/" + name)
 	return a.fs.Remove(name)
 }
 
 // RemoveAll removes path and any children it contains.
 func (a *AferoFS) RemoveAll(path string) error {
+	if err := validateFilesystemPath(path); err != nil {
+		return err
+	}
+	path = filepath.Clean("/" + path)
 	return a.fs.RemoveAll(path)
 }
 
 // Rename renames (moves) oldpath to newpath.
 func (a *AferoFS) Rename(oldpath, newpath string) error {
+	if err := validateFilesystemPath(oldpath); err != nil {
+		return err
+	}
+	if err := validateFilesystemPath(newpath); err != nil {
+		return err
+	}
+	oldpath = filepath.Clean("/" + oldpath)
+	newpath = filepath.Clean("/" + newpath)
 	return a.fs.Rename(oldpath, newpath)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.
 func (a *AferoFS) MkdirAll(path string, perm os.FileMode) error {
+	if err := validateFilesystemPath(path); err != nil {
+		return err
+	}
+	path = filepath.Clean("/" + path)
 	return a.fs.MkdirAll(path, perm)
 }
 
 // Chmod changes the mode bits of the named file or directory.
 func (a *AferoFS) Chmod(name string, mode os.FileMode) error {
+	if err := validateFilesystemPath(name); err != nil {
+		return err
+	}
+	name = filepath.Clean("/" + name)
 	return a.fs.Chmod(name, mode)
 }
 
 // Exists checks if a file or directory exists at the given path.
 func (a *AferoFS) Exists(path string) (bool, error) {
+	if err := validateFilesystemPath(path); err != nil {
+		return false, err
+	}
+	path = filepath.Clean("/" + path)
 	return afero.Exists(a.fs, path)
 }
 
 // IsDir checks if the path is a directory.
 func (a *AferoFS) IsDir(path string) (bool, error) {
+	if err := validateFilesystemPath(path); err != nil {
+		return false, err
+	}
+	path = filepath.Clean("/" + path)
 	return afero.IsDir(a.fs, path)
 }
 
 // OpenFile opens a file using the given flags and permissions.
 func (a *AferoFS) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	if err := validateFilesystemPath(name); err != nil {
+		return nil, err
+	}
+	name = filepath.Clean("/" + name)
 	return a.fs.OpenFile(name, flag, perm)
 }
 
 // WriteFile writes data to a file, creating it if necessary.
 func (a *AferoFS) WriteFile(name string, data []byte, perm os.FileMode) error {
+	if err := validateFilesystemPath(name); err != nil {
+		return err
+	}
+	name = filepath.Clean("/" + name)
 	return afero.WriteFile(a.fs, name, data, perm)
 }
 
 // ReadFile reads the entire contents of a file.
 func (a *AferoFS) ReadFile(name string) ([]byte, error) {
+	if err := validateFilesystemPath(name); err != nil {
+		return nil, err
+	}
+	name = filepath.Clean("/" + name)
 	return afero.ReadFile(a.fs, name)
 }
 

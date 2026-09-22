@@ -43,6 +43,7 @@
 	let folderItems = $state<ShareItem[]>([]);
 	let folderLoading = $state(false);
 	let folderError = $state<string | null>(null);
+	let folderRequestId = 0;
 
 	const previewType = $derived(info ? getPreviewType(info.fileName) : 'unsupported');
 	const previewUrl = $derived(token ? sharePreviewUrl(token) : '');
@@ -62,6 +63,7 @@
 		info = null;
 		textContent = null;
 		textFailed = false;
+		folderRequestId += 1;
 		folderPath = '';
 		folderItems = [];
 		try {
@@ -80,13 +82,16 @@
 	}
 
 	async function loadFolder(path: string) {
+		const requestId = ++folderRequestId;
 		folderLoading = true;
 		folderError = null;
 		try {
 			const response = await listShareItems(token, path);
+			if (requestId !== folderRequestId) return;
 			folderPath = response.path;
 			folderItems = response.items;
 		} catch (error) {
+			if (requestId !== folderRequestId) return;
 			if (error instanceof ApiRequestError && error.status === 404) {
 				gone = true;
 				folderError = null;
@@ -94,7 +99,7 @@
 				folderError = error instanceof Error ? error.message : 'Unable to load this folder.';
 			}
 		} finally {
-			folderLoading = false;
+			if (requestId === folderRequestId) folderLoading = false;
 		}
 	}
 
