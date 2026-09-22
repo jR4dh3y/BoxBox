@@ -76,5 +76,8 @@ export {
 	type ShareListResponse,
 	type CreateShareOptions,
 	type CreateShareResponse,
-	type ShareInfoResponse
+	type ShareInfoResponse,
+	listShareItems,
+	type ShareItem,
+	type ShareDirectoryResponse
 } from './shares';

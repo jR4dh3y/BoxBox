@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -63,17 +64,9 @@ func TestShareCreateRejectsInvalidTargets(t *testing.T) {
 		perms   model.SharePermissions
 		wantErr error
 	}{
-		{name: "mount root is a directory", path: "media", wantErr: ErrNotFile},
-		{name: "nested directory", path: "media/subdir", wantErr: ErrNotFile},
 		{name: "missing file", path: "media/missing.txt", wantErr: ErrPathNotFound},
 		{name: "outside mounts", path: "elsewhere/file.txt", wantErr: validator.ErrOutsideMountPoint},
 		{name: "path traversal", path: "media/../../etc/passwd", wantErr: validator.ErrPathTraversal},
-		{
-			name:    "read-only mount with write permission",
-			path:    "archive/file.txt",
-			perms:   model.SharePermissions{View: true, Write: true},
-			wantErr: ErrPermissionDenied,
-		},
 	}
 
 	for _, test := range tests {
@@ -90,6 +83,158 @@ func TestShareCreateRejectsInvalidTargets(t *testing.T) {
 				t.Fatal("Create() returned a share despite the error")
 			}
 		})
+	}
+}
+
+func TestShareCreateSupportsFoldersAndSimplifiesFilePermissions(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
+
+	folder, err := shares.Create(
+		context.Background(),
+		"owner",
+		"media/subdir",
+		model.SharePermissions{View: true, Write: true},
+		time.Time{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !folder.IsFolder || !folder.Permissions.View || !folder.Permissions.Download || !folder.Permissions.Write {
+		t.Fatalf("folder share = %+v", folder)
+	}
+
+	file, err := shares.Create(
+		context.Background(),
+		"owner",
+		"archive/file.txt",
+		model.SharePermissions{Write: true},
+		time.Time{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.IsFolder || !file.Permissions.View || !file.Permissions.Download || file.Permissions.Write {
+		t.Fatalf("file share = %+v", file)
+	}
+}
+
+func TestShareFolderListsNestedItemsAndKeepsPathsRelative(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	_ = fsys.WriteFile("/data/media/subdir/notes.txt", []byte("notes"), 0o644)
+	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
+
+	folder, err := shares.Create(context.Background(), "owner", "media/subdir", model.SharePermissions{Write: true}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := shares.ListForRecipient(context.Background(), folder.Token, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.Path != "" || len(root.Items) != 1 || root.Items[0].Path != "notes.txt" {
+		t.Fatalf("root listing = %+v", root)
+	}
+
+	file, info, err := shares.OpenForRecipientPath(context.Background(), folder.Token, "notes.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if info.Name != "notes.txt" {
+		t.Fatalf("nested file info = %+v", info)
+	}
+	content, err := io.ReadAll(file)
+	if err != nil || string(content) != "notes" {
+		t.Fatalf("nested file content = %q, err=%v", content, err)
+	}
+}
+
+func TestShareFolderEditorCanCreateFileButViewerCannot(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
+
+	editor, err := shares.Create(context.Background(), "owner", "media/subdir", model.SharePermissions{Write: true}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), editor.Token, "new.txt", strings.NewReader("new content")); err != nil {
+		t.Fatal(err)
+	}
+	content, err := fsys.ReadFile("/data/media/subdir/new.txt")
+	if err != nil || string(content) != "new content" {
+		t.Fatalf("created file = %q, err=%v", content, err)
+	}
+
+	viewer, err := shares.Create(context.Background(), "owner", "media/subdir", model.SharePermissions{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), viewer.Token, "blocked.txt", strings.NewReader("blocked")); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("viewer write error = %v, want %v", err, ErrPermissionDenied)
+	}
+}
+
+func TestShareFolderRejectsInvalidRecipientPaths(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
+	folder, err := shares.Create(context.Background(), "owner", "media/subdir", model.SharePermissions{Write: true}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := shares.ListForRecipient(context.Background(), folder.Token, "../media"); !errors.Is(err, validator.ErrPathTraversal) {
+		t.Fatalf("ListForRecipient() traversal error = %v, want %v", err, validator.ErrPathTraversal)
+	}
+	if _, err := shares.ListForRecipient(context.Background(), folder.Token, "missing"); !errors.Is(err, ErrPathNotFound) {
+		t.Fatalf("ListForRecipient() missing path error = %v, want %v", err, ErrPathNotFound)
+	}
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), folder.Token, "../escape.txt", strings.NewReader("escape")); !errors.Is(err, validator.ErrPathTraversal) {
+		t.Fatalf("WriteForRecipientPath() traversal error = %v, want %v", err, validator.ErrPathTraversal)
+	}
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), folder.Token, "missing/child.txt", strings.NewReader("child")); !errors.Is(err, ErrPathNotFound) {
+		t.Fatalf("WriteForRecipientPath() missing parent error = %v, want %v", err, ErrPathNotFound)
+	}
+}
+
+func TestShareLegacyFilePermissionsAreNormalized(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	record := shareRecord{
+		ID:        "legacy-id",
+		Token:     "legacy-token",
+		MountName: "media",
+		RelPath:   "file.txt",
+		Permissions: model.SharePermissions{
+			Write: true,
+		},
+		FileName:  "file.txt",
+		CreatedAt: time.Now().UTC(),
+		CreatedBy: "owner",
+	}
+	data, err := json.Marshal(sharesData{Shares: []shareRecord{record}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.WriteFile(filepath.Join("/data", config.SharesFileName), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
+	share, err := shares.ResolveForRecipient(record.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !share.Permissions.View || !share.Permissions.Download || share.Permissions.Write {
+		t.Fatalf("legacy file permissions = %+v", share.Permissions)
+	}
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), record.Token, "file.txt", strings.NewReader("should stay read-only")); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("legacy file upload error = %v, want %v", err, ErrPermissionDenied)
 	}
 }
 
@@ -173,8 +318,8 @@ func TestShareResolveForRecipientIsUniform(t *testing.T) {
 				t.Fatalf("OpenForRecipient() error = %v, want %v", err, ErrShareNotFound)
 			}
 
-			if _, err := shares.WriteForRecipient(context.Background(), test.token, strings.NewReader("data")); !errors.Is(err, ErrShareNotFound) {
-				t.Fatalf("WriteForRecipient() error = %v, want %v", err, ErrShareNotFound)
+			if _, _, err := shares.WriteForRecipientPath(context.Background(), test.token, "data.txt", strings.NewReader("data")); !errors.Is(err, ErrShareNotFound) {
+				t.Fatalf("WriteForRecipientPath() error = %v, want %v", err, ErrShareNotFound)
 			}
 		})
 	}
@@ -242,16 +387,16 @@ func TestShareRecipientRevalidatesLiveMounts(t *testing.T) {
 	setupShareTestFS(fsys)
 	mounts := shareTestMounts()
 	shares := newShareTestService(fsys, func() []model.MountPoint { return mounts })
-	perms := model.SharePermissions{View: true, Download: true, Write: true}
+	perms := model.SharePermissions{Write: true}
 
-	share, err := shares.Create(context.Background(), "owner", "media/file.txt", perms, time.Time{})
+	share, err := shares.Create(context.Background(), "owner", "media", perms, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	file, info, err := shares.OpenForRecipient(context.Background(), share.Token)
+	file, info, err := shares.OpenForRecipientPath(context.Background(), share.Token, "file.txt")
 	if err != nil {
-		t.Fatalf("OpenForRecipient() against live mount = %v", err)
+		t.Fatalf("OpenForRecipientPath() against live mount = %v", err)
 	}
 	_ = file.Close()
 	if info.Name != "file.txt" {
@@ -260,23 +405,23 @@ func TestShareRecipientRevalidatesLiveMounts(t *testing.T) {
 
 	// The mount disappears: the share must fail like any other missing token.
 	mounts = nil
-	if _, _, err := shares.OpenForRecipient(context.Background(), share.Token); !errors.Is(err, ErrShareNotFound) {
-		t.Fatalf("OpenForRecipient() after mount removal = %v, want %v", err, ErrShareNotFound)
+	if _, _, err := shares.OpenForRecipientPath(context.Background(), share.Token, "file.txt"); !errors.Is(err, ErrShareNotFound) {
+		t.Fatalf("OpenForRecipientPath() after mount removal = %v, want %v", err, ErrShareNotFound)
 	}
 
 	// The mount returns read-only: reads keep working, writes are denied.
 	mounts = []model.MountPoint{{Name: "media", Path: "/data/media", ReadOnly: true}}
-	file, _, err = shares.OpenForRecipient(context.Background(), share.Token)
+	file, _, err = shares.OpenForRecipientPath(context.Background(), share.Token, "file.txt")
 	if err != nil {
-		t.Fatalf("OpenForRecipient() on read-only mount = %v", err)
+		t.Fatalf("OpenForRecipientPath() on read-only mount = %v", err)
 	}
 	_ = file.Close()
-	if _, err := shares.WriteForRecipient(context.Background(), share.Token, strings.NewReader("new")); !errors.Is(err, ErrPermissionDenied) {
-		t.Fatalf("WriteForRecipient() on read-only mount = %v, want %v", err, ErrPermissionDenied)
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), share.Token, "new.txt", strings.NewReader("new")); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("WriteForRecipientPath() on read-only mount = %v, want %v", err, ErrPermissionDenied)
 	}
 }
 
-func TestShareWriteForRecipientWithoutPermission(t *testing.T) {
+func TestShareFileUploadIsAlwaysDenied(t *testing.T) {
 	fsys := filesystem.NewMemMapFS()
 	setupShareTestFS(fsys)
 	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
@@ -285,19 +430,44 @@ func TestShareWriteForRecipientWithoutPermission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := shares.WriteForRecipient(context.Background(), share.Token, strings.NewReader("new")); !errors.Is(err, ErrPermissionDenied) {
-		t.Fatalf("WriteForRecipient() without write permission = %v, want %v", err, ErrPermissionDenied)
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), share.Token, "file.txt", strings.NewReader("new")); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("WriteForRecipientPath() for a file share = %v, want %v", err, ErrPermissionDenied)
 	}
 }
 
-func TestShareOverwriteIsAtomicAndBounded(t *testing.T) {
+func TestShareRecipientRejectsChangedFolderTarget(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	mounts := shareTestMounts()
+	shares := newShareTestService(fsys, func() []model.MountPoint { return mounts })
+
+	share, err := shares.Create(context.Background(), "owner", "media/subdir", model.SharePermissions{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.Remove("/data/media/subdir"); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.WriteFile("/data/media/subdir", []byte("the folder was replaced"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := shares.InfoForRecipient(context.Background(), share.Token); !errors.Is(err, ErrShareNotFound) {
+		t.Fatalf("InfoForRecipient() after folder replacement = %v, want %v", err, ErrShareNotFound)
+	}
+	if _, err := shares.ListForRecipient(context.Background(), share.Token, ""); !errors.Is(err, ErrShareNotFound) {
+		t.Fatalf("ListForRecipient() after folder replacement = %v, want %v", err, ErrShareNotFound)
+	}
+}
+
+func TestShareFolderUploadIsAtomicAndBounded(t *testing.T) {
 	root := t.TempDir()
 	media := filepath.Join(root, "media")
 	if err := os.MkdirAll(media, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	target := filepath.Join(media, "file.txt")
-	if err := os.WriteFile(target, []byte("original"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	fsys := filesystem.NewOsFS()
@@ -312,17 +482,20 @@ func TestShareOverwriteIsAtomicAndBounded(t *testing.T) {
 	})
 	perms := model.SharePermissions{View: true, Download: true, Write: true}
 
-	share, err := shares.Create(context.Background(), "owner", "media/file.txt", perms, time.Time{})
+	share, err := shares.Create(context.Background(), "owner", "media", perms, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	written, err := shares.WriteForRecipient(context.Background(), share.Token, strings.NewReader("replacement"))
+	written, fileName, err := shares.WriteForRecipientPath(context.Background(), share.Token, "file.txt", strings.NewReader("replacement"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	if fileName != "file.txt" {
+		t.Fatalf("WriteForRecipientPath() file name = %q, want file.txt", fileName)
+	}
 	if written != int64(len("replacement")) {
-		t.Fatalf("WriteForRecipient() wrote %d bytes, want %d", written, len("replacement"))
+		t.Fatalf("WriteForRecipientPath() wrote %d bytes, want %d", written, len("replacement"))
 	}
 	got, err := os.ReadFile(target)
 	if err != nil {
@@ -331,12 +504,19 @@ func TestShareOverwriteIsAtomicAndBounded(t *testing.T) {
 	if string(got) != "replacement" {
 		t.Fatalf("target content = %q, want %q", got, "replacement")
 	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := info.Mode().Perm(), os.FileMode(0o600); got != want {
+		t.Fatalf("replacement mode = %o, want %o", got, want)
+	}
 	assertOnlyEntries(t, media, "file.txt")
 
 	// An oversized upload is rejected and leaves the previous content intact.
 	oversized := strings.NewReader("this replacement is far longer than the configured limit")
-	if _, err := shares.WriteForRecipient(context.Background(), share.Token, oversized); !errors.Is(err, ErrShareTooLarge) {
-		t.Fatalf("oversized WriteForRecipient() = %v, want %v", err, ErrShareTooLarge)
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), share.Token, "file.txt", oversized); !errors.Is(err, ErrShareTooLarge) {
+		t.Fatalf("oversized WriteForRecipientPath() = %v, want %v", err, ErrShareTooLarge)
 	}
 	got, err = os.ReadFile(target)
 	if err != nil {
@@ -348,8 +528,8 @@ func TestShareOverwriteIsAtomicAndBounded(t *testing.T) {
 	assertOnlyEntries(t, media, "file.txt")
 
 	// An empty upload is rejected without touching the target.
-	if _, err := shares.WriteForRecipient(context.Background(), share.Token, bytes.NewReader(nil)); !errors.Is(err, ErrInvalidOperation) {
-		t.Fatalf("empty WriteForRecipient() = %v, want %v", err, ErrInvalidOperation)
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), share.Token, "file.txt", bytes.NewReader(nil)); !errors.Is(err, ErrInvalidOperation) {
+		t.Fatalf("empty WriteForRecipientPath() = %v, want %v", err, ErrInvalidOperation)
 	}
 	got, err = os.ReadFile(target)
 	if err != nil {
@@ -401,15 +581,15 @@ func TestShareWriteRenamesOverResolvedTargetNotSymlink(t *testing.T) {
 	})
 
 	// Sharing a symlink pins the resolved target inside the mount.
-	share, err := shares.Create(context.Background(), "owner", "media/link.txt", model.SharePermissions{Write: true}, time.Time{})
+	share, err := shares.Create(context.Background(), "owner", "media", model.SharePermissions{Write: true}, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if share.RelPath != "real.txt" {
-		t.Fatalf("share RelPath = %q, want real.txt", share.RelPath)
+	if !share.IsFolder || share.RelPath != "" {
+		t.Fatalf("share = %+v, want a folder rooted at media", share)
 	}
 
-	if _, err := shares.WriteForRecipient(context.Background(), share.Token, strings.NewReader("replaced")); err != nil {
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), share.Token, "link.txt", strings.NewReader("replaced")); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(realFile)
@@ -499,7 +679,7 @@ func TestShareRevocationDuringUploadPreventsCommit(t *testing.T) {
 	setupShareTestFS(fsys)
 	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
 
-	share, err := shares.Create(context.Background(), "owner", "media/file.txt", model.SharePermissions{Write: true}, time.Time{})
+	share, err := shares.Create(context.Background(), "owner", "media", model.SharePermissions{Write: true}, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -508,7 +688,7 @@ func TestShareRevocationDuringUploadPreventsCommit(t *testing.T) {
 	defer writer.Close()
 	uploadResult := make(chan error, 1)
 	go func() {
-		_, err := shares.WriteForRecipient(context.Background(), share.Token, reader)
+		_, _, err := shares.WriteForRecipientPath(context.Background(), share.Token, "file.txt", reader)
 		uploadResult <- err
 	}()
 
@@ -525,10 +705,10 @@ func TestShareRevocationDuringUploadPreventsCommit(t *testing.T) {
 	select {
 	case err := <-uploadResult:
 		if !errors.Is(err, ErrShareNotFound) {
-			t.Fatalf("WriteForRecipient() error = %v, want %v", err, ErrShareNotFound)
+			t.Fatalf("WriteForRecipientPath() error = %v, want %v", err, ErrShareNotFound)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("WriteForRecipient() did not finish after the upload body closed")
+		t.Fatal("WriteForRecipientPath() did not finish after the upload body closed")
 	}
 
 	content, err := fsys.ReadFile("/data/media/file.txt")
@@ -551,7 +731,7 @@ func TestShareRevokeWaitsForInFlightCommit(t *testing.T) {
 	}
 	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
 
-	share, err := shares.Create(context.Background(), "owner", "media/file.txt", model.SharePermissions{Write: true}, time.Time{})
+	share, err := shares.Create(context.Background(), "owner", "media", model.SharePermissions{Write: true}, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -562,7 +742,7 @@ func TestShareRevokeWaitsForInFlightCommit(t *testing.T) {
 
 	uploadResult := make(chan error, 1)
 	go func() {
-		_, err := shares.WriteForRecipient(context.Background(), share.Token, strings.NewReader("replacement"))
+		_, _, err := shares.WriteForRecipientPath(context.Background(), share.Token, "file.txt", strings.NewReader("replacement"))
 		uploadResult <- err
 	}()
 
@@ -588,7 +768,7 @@ func TestShareRevokeWaitsForInFlightCommit(t *testing.T) {
 
 	releaseRename()
 	if err := <-uploadResult; err != nil {
-		t.Fatalf("WriteForRecipient() = %v", err)
+		t.Fatalf("WriteForRecipientPath() = %v", err)
 	}
 	if err := <-revokeResult; err != nil {
 		t.Fatalf("Revoke() = %v", err)

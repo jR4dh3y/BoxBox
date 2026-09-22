@@ -1,6 +1,6 @@
 /**
  * Share links API module
- * Single-file share links with token-authenticated recipient access
+ * File and folder share links with token-authenticated recipient access
  */
 
 import { api, apiRequest } from './client';
@@ -23,6 +23,7 @@ export interface ShareRecord {
 	url: string;
 	fileName: string;
 	path: string;
+	isFolder: boolean;
 	permissions: SharePermissions;
 	createdAt: string;
 	expiresAt?: string;
@@ -53,6 +54,7 @@ export interface CreateShareResponse {
 	token: string;
 	url: string;
 	fileName: string;
+	isFolder: boolean;
 	permissions: SharePermissions;
 	createdAt: string;
 	expiresAt?: string;
@@ -65,8 +67,26 @@ export interface ShareInfoResponse {
 	fileName: string;
 	size: number;
 	mimeType: string;
+	isFolder: boolean;
 	permissions: SharePermissions;
 	expiresAt?: string;
+}
+
+/**
+ * One entry in a shared folder. Paths are relative to the shared folder.
+ */
+export interface ShareItem {
+	name: string;
+	path: string;
+	size: number;
+	isDir: boolean;
+	modTime: string;
+	mimeType?: string;
+}
+
+export interface ShareDirectoryResponse {
+	path: string;
+	items: ShareItem[];
 }
 
 interface RevokeShareResponse {
@@ -74,7 +94,7 @@ interface RevokeShareResponse {
 }
 
 /**
- * Create a share link for a single file
+ * Create a share link for a file or folder
  * POST /api/v1/shares
  */
 export async function createShare(
@@ -114,6 +134,16 @@ export async function getShareInfo(token: string): Promise<ShareInfoResponse> {
 }
 
 /**
+ * List a shared folder path. The path is relative to the shared folder root.
+ */
+export async function listShareItems(token: string, path = ''): Promise<ShareDirectoryResponse> {
+	const query = path ? `?path=${encodeURIComponent(path)}` : '';
+	return apiRequest<ShareDirectoryResponse>(`/share/${encodeURIComponent(token)}/items${query}`, {
+		skipAuth: true
+	});
+}
+
+/**
  * URL of the public recipient page for a share
  */
 export function sharePageUrl(token: string): string {
@@ -123,22 +153,25 @@ export function sharePageUrl(token: string): string {
 /**
  * Download URL for a shared file (attachment disposition)
  */
-export function shareDownloadUrl(token: string): string {
-	return `/api/v1/share/${encodeURIComponent(token)}/download`;
+export function shareDownloadUrl(token: string, path?: string): string {
+	const query = path ? `?path=${encodeURIComponent(path)}` : '';
+	return `/api/v1/share/${encodeURIComponent(token)}/download${query}`;
 }
 
 /**
  * Inline preview URL for a shared file (browser media streaming with ranges)
  */
-export function sharePreviewUrl(token: string): string {
-	return `/api/v1/share/${encodeURIComponent(token)}/preview`;
+export function sharePreviewUrl(token: string, path?: string): string {
+	const query = path ? `?path=${encodeURIComponent(path)}` : '';
+	return `/api/v1/share/${encodeURIComponent(token)}/preview${query}`;
 }
 
 /**
- * Overwrite URL for a shared file
+ * Upload URL for a file below a shared folder
  */
-export function shareUploadUrl(token: string): string {
-	return `/api/v1/share/${encodeURIComponent(token)}/upload`;
+export function shareUploadUrl(token: string, path?: string): string {
+	const query = path ? `?path=${encodeURIComponent(path)}` : '';
+	return `/api/v1/share/${encodeURIComponent(token)}/upload${query}`;
 }
 
 /**

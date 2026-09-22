@@ -3,6 +3,8 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -44,12 +46,13 @@ func (h *ShareHandler) RegisterRoutes(r chi.Router) {
 // path is the only credential.
 func (h *ShareHandler) RegisterPublicRoutes(r chi.Router) {
 	r.Get("/{token}", h.GetInfo)
+	r.Get("/{token}/items", h.ListItems)
 	r.Get("/{token}/download", h.Download)
 	r.Get("/{token}/preview", h.Preview)
 	r.Post("/{token}/upload", h.Upload)
 }
 
-// Create creates a share link for a single existing file
+// Create creates a share link for an existing file or folder.
 // POST /api/v1/shares
 func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 	username := authcontext.Username(r.Context())
@@ -89,6 +92,7 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 		URL:         "/s/" + share.Token,
 		FileName:    share.FileName,
 		Permissions: share.Permissions,
+		IsFolder:    share.IsFolder,
 		CreatedAt:   share.CreatedAt,
 		ExpiresAt:   share.ExpiresAt,
 	}, http.StatusCreated)
@@ -116,14 +120,19 @@ func (h *ShareHandler) List(w http.ResponseWriter, r *http.Request) {
 			Token:       share.Token,
 			URL:         "/s/" + share.Token,
 			FileName:    share.FileName,
-			Path:        share.MountName + "/" + share.RelPath,
+			Path:        shareDisplayPath(share),
 			Permissions: share.Permissions,
+			IsFolder:    share.IsFolder,
 			CreatedAt:   share.CreatedAt,
 			ExpiresAt:   share.ExpiresAt,
 		})
 	}
 
 	writeJSON(w, model.ShareListResponse{Shares: items}, http.StatusOK)
+}
+
+func shareDisplayPath(share model.Share) string {
+	return path.Join(share.MountName, strings.ReplaceAll(share.RelPath, "\\", "/"))
 }
 
 // Revoke permanently disables a share link
@@ -164,20 +173,36 @@ func (h *ShareHandler) GetInfo(w http.ResponseWriter, r *http.Request) {
 		HandleServiceError(w, err)
 		return
 	}
-	file, info, err := h.shareService.OpenForRecipient(r.Context(), token)
+	info, mimeType, err := h.shareService.InfoForRecipient(r.Context(), token)
 	if err != nil {
 		HandleServiceError(w, err)
 		return
 	}
-	defer file.Close()
 
 	writeJSON(w, model.ShareInfoResponse{
 		FileName:    info.Name,
 		Size:        info.Size,
-		MimeType:    detectStreamMimeType(file, info.Name),
+		MimeType:    mimeType,
 		Permissions: share.Permissions,
+		IsFolder:    share.IsFolder,
 		ExpiresAt:   share.ExpiresAt,
 	}, http.StatusOK)
+}
+
+// ListItems returns the visible entries below a shared folder.
+// GET /api/v1/share/{token}/items?path=relative/path
+func (h *ShareHandler) ListItems(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		writeError(w, "Share token is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	items, err := h.shareService.ListForRecipient(r.Context(), token, r.URL.Query().Get("path"))
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	writeJSON(w, items, http.StatusOK)
 }
 
 // Download streams the shared file as an attachment with Range support
@@ -198,7 +223,13 @@ func (h *ShareHandler) Download(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "This share does not allow downloads", model.ErrCodePermissionDenied, http.StatusForbidden)
 		return
 	}
-	file, info, err := h.shareService.OpenForRecipient(r.Context(), token)
+	var file service.File
+	var info *model.FileInfo
+	if share.IsFolder {
+		file, info, err = h.shareService.OpenForRecipientPath(r.Context(), token, r.URL.Query().Get("path"))
+	} else {
+		file, info, err = h.shareService.OpenForRecipient(r.Context(), token)
+	}
 	if err != nil {
 		HandleServiceError(w, err)
 		return
@@ -232,7 +263,13 @@ func (h *ShareHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "This share does not allow previews", model.ErrCodePermissionDenied, http.StatusForbidden)
 		return
 	}
-	file, info, err := h.shareService.OpenForRecipient(r.Context(), token)
+	var file service.File
+	var info *model.FileInfo
+	if share.IsFolder {
+		file, info, err = h.shareService.OpenForRecipientPath(r.Context(), token, r.URL.Query().Get("path"))
+	} else {
+		file, info, err = h.shareService.OpenForRecipient(r.Context(), token)
+	}
 	if err != nil {
 		HandleServiceError(w, err)
 		return
@@ -256,7 +293,7 @@ func (h *ShareHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, info.Name, info.ModTime, file)
 }
 
-// Upload overwrites the shared file with the request body in a single shot
+// Upload adds or replaces a file below a writable shared folder.
 // POST /api/v1/share/{token}/upload
 func (h *ShareHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
@@ -270,7 +307,7 @@ func (h *ShareHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		HandleServiceError(w, err)
 		return
 	}
-	if !share.Permissions.Write {
+	if !share.IsFolder || !share.Permissions.Write {
 		writeError(w, "This share does not allow updates", model.ErrCodePermissionDenied, http.StatusForbidden)
 		return
 	}
@@ -284,7 +321,9 @@ func (h *ShareHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, h.maxUploadBytes)
-	written, err := h.shareService.WriteForRecipient(r.Context(), token, r.Body)
+	written, fileName, err := h.shareService.WriteForRecipientPath(
+		r.Context(), token, r.URL.Query().Get("path"), r.Body,
+	)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
@@ -296,7 +335,7 @@ func (h *ShareHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, model.ShareUploadResponse{
-		FileName: share.FileName,
+		FileName: fileName,
 		Size:     written,
 	}, http.StatusOK)
 }

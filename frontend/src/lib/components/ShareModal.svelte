@@ -3,7 +3,7 @@
 	 * ShareModal - Create and manage share links for a single file
 	 */
 	import { Check, Copy, Link2, Trash2 } from 'lucide-svelte';
-	import { Badge, Button, Modal, Select, Spinner } from '$lib/components/ui';
+	import { Button, Modal, Select, Spinner } from '$lib/components/ui';
 	import {
 		createShare,
 		hasShareExpiry,
@@ -196,11 +196,7 @@
 				<label for="share-expiry" class="text-sm font-medium text-text-secondary">Expires</label>
 				<Select id="share-expiry" options={EXPIRY_OPTIONS} bind:value={expiry} />
 			</div>
-			<Button
-				variant="primary"
-				disabled={creating || loading}
-				onclick={() => void handleCreate()}
-			>
+			<Button variant="primary" disabled={creating || loading} onclick={() => void handleCreate()}>
 				{#if creating}
 					<Spinner size="sm" />
 					<span>Creating...</span>
