@@ -63,6 +63,7 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 	const hasMultiple = items.length > 1;
 	const hasFolder = items.some((i) => i.isDir);
 	const singleFile = items.length === 1 && !items[0].isDir;
+	const singleItem = items.length === 1;
 	const singleFolder = !hasMultiple && items[0]?.isDir ? items[0] : null;
 	const isFavorite = singleFolder ? favoritePaths.has(singleFolder.path) : false;
 	const createItems: ContextMenuItem[] = includeCreateActions
@@ -99,7 +100,12 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 		{ id: 'delete', label: 'Delete', icon: Trash2, shortcut: 'Del' },
 		{ id: 'separator-2', label: '', separator: true },
 		{ id: 'download', label: 'Download', icon: Download, disabled: hasFolder },
-		{ id: 'share', label: 'Share…', icon: Share2, disabled: !singleFile },
+		{
+			id: 'share',
+			label: singleFile ? 'Share file…' : 'Share folder…',
+			icon: Share2,
+			disabled: !singleItem
+		},
 		{ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple }
 	];
 }

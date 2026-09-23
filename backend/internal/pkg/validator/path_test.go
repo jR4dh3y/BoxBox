@@ -224,6 +224,35 @@ func TestValidatePathAgainstMountsRejectsTraversalBeforeMountMatching(t *testing
 	}
 }
 
+func TestSanitizePathRejectsEncodedAndSeparatorEscapes(t *testing.T) {
+	tests := []string{
+		"../secret.txt",
+		"%2e%2e/secret.txt",
+		`media\..\secret.txt`,
+		"/../../secret.txt",
+	}
+
+	for _, requestedPath := range tests {
+		t.Run(requestedPath, func(t *testing.T) {
+			if _, err := SanitizePath("/data", requestedPath); err == nil {
+				t.Fatalf("expected %q to be rejected", requestedPath)
+			}
+		})
+	}
+}
+
+func TestValidatePathAgainstMountsAcceptsSafeAbsoluteVirtualPath(t *testing.T) {
+	mounts := []model.MountPoint{{Name: "media", Path: "/data/media"}}
+
+	_, got, err := ValidatePathAgainstMounts("/media/notes.txt", mounts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "/data/media/notes.txt" {
+		t.Fatalf("resolved path = %q, want /data/media/notes.txt", got)
+	}
+}
+
 // TestSafePathsAreAccepted ensures valid paths without traversal are accepted
 func TestSafePathsAreAccepted(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()

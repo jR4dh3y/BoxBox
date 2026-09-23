@@ -3,7 +3,7 @@
 	 * ShareModal - Create and manage share links for a single file
 	 */
 	import { Check, Copy, Link2, Trash2 } from 'lucide-svelte';
-	import { Badge, Button, Modal, Select, Spinner, Toggle } from '$lib/components/ui';
+	import { Button, Modal, Select, Spinner } from '$lib/components/ui';
 	import {
 		createShare,
 		hasShareExpiry,
@@ -11,7 +11,6 @@
 		revokeShare,
 		type CreateShareResponse,
 		type FileInfo,
-		type SharePermissions,
 		type ShareRecord
 	} from '$lib/api';
 	import { toastStore } from '$lib/stores/toast.svelte';
@@ -37,7 +36,6 @@
 	let loading = $state(false);
 	let creating = $state(false);
 	let error = $state<string | null>(null);
-	let permissions = $state<SharePermissions>({ view: true, download: true, write: false });
 	let expiry = $state('0');
 	let created = $state<CreateShareResponse | null>(null);
 	let copied = $state(false);
@@ -50,7 +48,6 @@
 
 	$effect(() => {
 		if (open && file) {
-			permissions = { view: true, download: true, write: false };
 			expiry = '0';
 			created = null;
 			copied = false;
@@ -79,7 +76,6 @@
 		try {
 			const expiresInSeconds = expiry === '0' ? undefined : Number(expiry);
 			created = await createShare(file.path, {
-				permissions,
 				...(expiresInSeconds ? { expiresInSeconds } : {})
 			});
 			copied = false;
@@ -153,11 +149,6 @@
 								{share.url}
 							</span>
 							<span class="text-xs text-text-muted">{formatExpiry(share)}</span>
-							<span class="flex items-center gap-1">
-								{#if share.permissions.view}<Badge variant="info">View</Badge>{/if}
-								{#if share.permissions.download}<Badge variant="success">Download</Badge>{/if}
-								{#if share.permissions.write}<Badge variant="warning">Write</Badge>{/if}
-							</span>
 							<Button
 								variant="ghost"
 								size="icon"
@@ -198,31 +189,14 @@
 
 		<section class="flex flex-col gap-3">
 			<h3 class="mb-0 text-sm font-medium text-text-primary">Create a share link</h3>
-			<div class="flex flex-wrap items-center gap-4">
-				<Toggle id="share-permission-view" label="View" bind:checked={permissions.view} />
-				<Toggle
-					id="share-permission-download"
-					label="Download"
-					bind:checked={permissions.download}
-				/>
-				<Toggle id="share-permission-write" label="Write" bind:checked={permissions.write} />
-			</div>
-			{#if permissions.write}
-				<p class="m-0 text-xs text-text-muted">
-					Write lets recipients replace this file through the share link.
-				</p>
-			{/if}
+			<p class="m-0 text-sm text-text-secondary">
+				Anyone with the link can preview and download this file.
+			</p>
 			<div class="flex flex-col gap-2">
 				<label for="share-expiry" class="text-sm font-medium text-text-secondary">Expires</label>
 				<Select id="share-expiry" options={EXPIRY_OPTIONS} bind:value={expiry} />
 			</div>
-			<Button
-				variant="primary"
-				disabled={creating ||
-					loading ||
-					(!permissions.view && !permissions.download && !permissions.write)}
-				onclick={() => void handleCreate()}
-			>
+			<Button variant="primary" disabled={creating || loading} onclick={() => void handleCreate()}>
 				{#if creating}
 					<Spinner size="sm" />
 					<span>Creating...</span>

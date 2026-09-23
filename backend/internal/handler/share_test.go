@@ -23,6 +23,7 @@ func setupTestShareHandler() (*ShareHandler, *filesystem.AferoFS, service.ShareS
 	fs := filesystem.NewMemMapFS()
 	_ = fs.MkdirAll("/data", 0755)
 	_ = fs.MkdirAll("/data/media", 0755)
+	_ = fs.MkdirAll("/data/media/shared", 0755)
 	_ = fs.MkdirAll("/data/archive", 0755)
 	_ = fs.WriteFile("/data/media/file.txt", []byte("shared content"), 0644)
 	_ = fs.WriteFile("/data/archive/file.txt", []byte("archived content"), 0644)
@@ -124,9 +125,7 @@ func TestCreateShareRejectsInvalidTargetsViaAPI(t *testing.T) {
 		perms      model.SharePermissions
 		wantStatus int
 	}{
-		{name: "directory", path: "media", perms: model.SharePermissions{View: true}, wantStatus: http.StatusBadRequest},
 		{name: "missing file", path: "media/missing.txt", perms: model.SharePermissions{View: true}, wantStatus: http.StatusNotFound},
-		{name: "read-only mount with write", path: "archive/file.txt", perms: model.SharePermissions{Write: true}, wantStatus: http.StatusForbidden},
 		{name: "empty path", path: "", perms: model.SharePermissions{View: true}, wantStatus: http.StatusBadRequest},
 		{name: "negative expiry", path: "media/file.txt", perms: model.SharePermissions{View: true}, wantStatus: http.StatusBadRequest},
 	}
@@ -154,6 +153,16 @@ func TestCreateShareRejectsInvalidTargetsViaAPI(t *testing.T) {
 				t.Fatalf("status = %d, want %d: %s", rec.Code, test.wantStatus, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestCreateFolderShareViaAPI(t *testing.T) {
+	handler, _, _ := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+
+	response := createShareViaAPI(t, router, "media/shared", model.SharePermissions{Write: true}, nil)
+	if !response.IsFolder || !response.Permissions.View || !response.Permissions.Download || !response.Permissions.Write {
+		t.Fatalf("folder response = %+v", response)
 	}
 }
 
@@ -317,6 +326,104 @@ func TestShareInfoOmitsInternalPaths(t *testing.T) {
 	}
 }
 
+func TestShareFolderItemsAndNestedDownloadViaAPI(t *testing.T) {
+	handler, fs, _ := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+	if err := fs.WriteFile("/data/media/shared/notes.txt", []byte("notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	share := createShareViaAPI(t, router, "media/shared", model.SharePermissions{}, nil)
+
+	itemsReq := httptest.NewRequest(http.MethodGet, "/api/v1/share/"+share.Token+"/items", nil)
+	itemsRec := httptest.NewRecorder()
+	router.ServeHTTP(itemsRec, itemsReq)
+	if itemsRec.Code != http.StatusOK {
+		t.Fatalf("items status = %d: %s", itemsRec.Code, itemsRec.Body.String())
+	}
+	var items model.ShareDirectoryResponse
+	if err := json.Unmarshal(itemsRec.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if items.Path != "" || len(items.Items) != 1 || items.Items[0].Path != "notes.txt" {
+		t.Fatalf("folder items = %+v", items)
+	}
+
+	downloadReq := httptest.NewRequest(http.MethodGet, "/api/v1/share/"+share.Token+"/download?path=notes.txt", nil)
+	downloadRec := httptest.NewRecorder()
+	router.ServeHTTP(downloadRec, downloadReq)
+	if downloadRec.Code != http.StatusOK || downloadRec.Body.String() != "notes" {
+		t.Fatalf("nested download status=%d body=%q", downloadRec.Code, downloadRec.Body.String())
+	}
+}
+
+func TestShareFolderRejectsInvalidPathsViaAPI(t *testing.T) {
+	handler, _, _ := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+	share := createShareViaAPI(t, router, "media/shared", model.SharePermissions{Write: true}, nil)
+
+	traversalReq := httptest.NewRequest(http.MethodGet, "/api/v1/share/"+share.Token+"/items?path=../media", nil)
+	traversalRec := httptest.NewRecorder()
+	router.ServeHTTP(traversalRec, traversalReq)
+	if traversalRec.Code != http.StatusBadRequest {
+		t.Fatalf("traversal listing status = %d, want 400: %s", traversalRec.Code, traversalRec.Body.String())
+	}
+
+	missingReq := httptest.NewRequest(http.MethodGet, "/api/v1/share/"+share.Token+"/download?path=missing.txt", nil)
+	missingRec := httptest.NewRecorder()
+	router.ServeHTTP(missingRec, missingReq)
+	if missingRec.Code != http.StatusNotFound {
+		t.Fatalf("missing nested download status = %d, want 404: %s", missingRec.Code, missingRec.Body.String())
+	}
+
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path=../escape.txt", strings.NewReader("escape"))
+	uploadRec := httptest.NewRecorder()
+	router.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusBadRequest {
+		t.Fatalf("traversal upload status = %d, want 400: %s", uploadRec.Code, uploadRec.Body.String())
+	}
+
+	missingParentReq := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path=missing/child.txt", strings.NewReader("child"))
+	missingParentRec := httptest.NewRecorder()
+	router.ServeHTTP(missingParentRec, missingParentReq)
+	if missingParentRec.Code != http.StatusNotFound {
+		t.Fatalf("missing parent upload status = %d, want 404: %s", missingParentRec.Code, missingParentRec.Body.String())
+	}
+}
+
+func TestShareFolderViewerAndReadOnlyMountCannotUploadViaAPI(t *testing.T) {
+	handler, _, _ := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+
+	viewer := createShareViaAPI(t, router, "media/shared", model.SharePermissions{}, nil)
+	viewerReq := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+viewer.Token+"/upload?path=notes.txt", strings.NewReader("notes"))
+	viewerRec := httptest.NewRecorder()
+	router.ServeHTTP(viewerRec, viewerReq)
+	if viewerRec.Code != http.StatusForbidden {
+		t.Fatalf("viewer upload status = %d, want 403", viewerRec.Code)
+	}
+
+	readOnly := createShareViaAPI(t, router, "archive", model.SharePermissions{}, nil)
+	readOnlyReq := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+readOnly.Token+"/upload?path=file.txt", strings.NewReader("blocked"))
+	readOnlyRec := httptest.NewRecorder()
+	router.ServeHTTP(readOnlyRec, readOnlyReq)
+	if readOnlyRec.Code != http.StatusForbidden {
+		t.Fatalf("read-only folder upload status = %d, want 403", readOnlyRec.Code)
+	}
+}
+
+func TestShareFileUploadIsRejectedViaAPI(t *testing.T) {
+	handler, _, _ := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+	share := createShareViaAPI(t, router, "media/file.txt", model.SharePermissions{Write: true}, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload", strings.NewReader("blocked"))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("file upload status = %d, want 403", rec.Code)
+	}
+}
+
 func TestShareRecipientEndpointsAreUniformlyNotFound(t *testing.T) {
 	handler, _, shareSvc := setupTestShareHandler()
 	router := createShareTestRouter(handler)
@@ -471,26 +578,26 @@ func TestShareStreamingRequiresPermission(t *testing.T) {
 	downloadReq := httptest.NewRequest(http.MethodGet, "/api/v1/share/"+viewOnly.Token+"/download", nil)
 	downloadRec := httptest.NewRecorder()
 	router.ServeHTTP(downloadRec, downloadReq)
-	if downloadRec.Code != http.StatusForbidden {
-		t.Fatalf("download without permission status = %d, want 403", downloadRec.Code)
+	if downloadRec.Code != http.StatusOK {
+		t.Fatalf("file download status = %d, want 200", downloadRec.Code)
 	}
 
 	downloadOnly := createShareViaAPI(t, router, "media/file.txt", model.SharePermissions{Download: true}, nil)
 	previewReq := httptest.NewRequest(http.MethodGet, "/api/v1/share/"+downloadOnly.Token+"/preview", nil)
 	previewRec := httptest.NewRecorder()
 	router.ServeHTTP(previewRec, previewReq)
-	if previewRec.Code != http.StatusForbidden {
-		t.Fatalf("preview without permission status = %d, want 403", previewRec.Code)
+	if previewRec.Code != http.StatusOK {
+		t.Fatalf("file preview status = %d, want 200", previewRec.Code)
 	}
 }
 
-func TestShareUploadOverwritesFileViaAPI(t *testing.T) {
+func TestShareFolderUploadOverwritesFileViaAPI(t *testing.T) {
 	handler, fs, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
 
-	share := createShareViaAPI(t, router, "media/file.txt", model.SharePermissions{View: true, Write: true}, nil)
+	share := createShareViaAPI(t, router, "media", model.SharePermissions{Write: true}, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload", strings.NewReader("new contents"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path=file.txt", strings.NewReader("new contents"))
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -516,7 +623,7 @@ func TestShareUploadOverwritesFileViaAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name() != "file.txt" {
+	if len(entries) != 2 || entries[0].Name() != "file.txt" || entries[1].Name() != "shared" {
 		t.Fatalf("unexpected leftover entries after upload: %v", entries)
 	}
 }
@@ -525,8 +632,8 @@ func TestShareUploadRejectsInvalidRequests(t *testing.T) {
 	handler, _, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
 
-	readOnly := createShareViaAPI(t, router, "media/file.txt", model.SharePermissions{View: true}, nil)
-	writable := createShareViaAPI(t, router, "media/file.txt", model.SharePermissions{View: true, Write: true}, nil)
+	readOnly := createShareViaAPI(t, router, "media", model.SharePermissions{}, nil)
+	writable := createShareViaAPI(t, router, "media", model.SharePermissions{Write: true}, nil)
 
 	tests := []struct {
 		name       string
@@ -556,12 +663,12 @@ func TestShareUploadEnforcesMaxBytes(t *testing.T) {
 	// NewShareHandler(_, 1) caps uploads at 1 MiB.
 	handler, fs, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
-	share := createShareViaAPI(t, router, "media/file.txt", model.SharePermissions{Write: true}, nil)
+	share := createShareViaAPI(t, router, "media", model.SharePermissions{Write: true}, nil)
 
 	oversized := bytes.Repeat([]byte("a"), 1<<20+1)
 
 	// A declared Content-Length above the limit is rejected up front.
-	declaredReq := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload", bytes.NewReader(oversized))
+	declaredReq := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path=large.bin", bytes.NewReader(oversized))
 	declaredRec := httptest.NewRecorder()
 	router.ServeHTTP(declaredRec, declaredReq)
 	if declaredRec.Code != http.StatusRequestEntityTooLarge {
@@ -571,7 +678,7 @@ func TestShareUploadEnforcesMaxBytes(t *testing.T) {
 	// A chunked body that lies about its size is cut off by MaxBytesReader.
 	chunkedReq := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/share/"+share.Token+"/upload",
+		"/api/v1/share/"+share.Token+"/upload?path=large.bin",
 		io.NopCloser(bytes.NewReader(oversized)),
 	)
 	chunkedReq.ContentLength = -1

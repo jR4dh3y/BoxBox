@@ -9,8 +9,10 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"uuid"
@@ -32,9 +34,9 @@ var (
 	ErrShareTooLarge = errors.New("share upload exceeds size limit")
 )
 
-// ShareService manages single-file share links.
+// ShareService manages file and folder share links.
 type ShareService interface {
-	// Create shares an existing regular file and returns the new share.
+	// Create shares an existing file or directory and returns the new share.
 	Create(ctx context.Context, username string, path string, permissions model.SharePermissions, expiresAt time.Time) (*model.Share, error)
 	// List returns the user's active (non-revoked, non-expired) shares, newest first.
 	List(username string) ([]model.Share, error)
@@ -46,9 +48,16 @@ type ShareService interface {
 	// OpenForRecipient opens the shared file for reading after re-validating the
 	// target against the live mount list.
 	OpenForRecipient(ctx context.Context, token string) (File, *model.FileInfo, error)
-	// WriteForRecipient atomically overwrites the shared file from body and
-	// returns the number of bytes written.
-	WriteForRecipient(ctx context.Context, token string, body io.Reader) (int64, error)
+	// InfoForRecipient returns metadata for either a shared file or folder.
+	InfoForRecipient(ctx context.Context, token string) (*model.FileInfo, string, error)
+	// ListForRecipient returns entries below a shared folder. relativePath is
+	// always relative to the folder root.
+	ListForRecipient(ctx context.Context, token string, relativePath string) (*model.ShareDirectoryResponse, error)
+	// OpenForRecipientPath opens a file below a shared folder.
+	OpenForRecipientPath(ctx context.Context, token string, relativePath string) (File, *model.FileInfo, error)
+	// WriteForRecipientPath creates or replaces a file below a writable shared
+	// folder and returns the number of bytes written and its name.
+	WriteForRecipientPath(ctx context.Context, token string, relativePath string, body io.Reader) (int64, string, error)
 }
 
 // ShareServiceConfig holds configuration for the share service.
@@ -76,6 +85,7 @@ type shareRecord struct {
 	Token       string                 `json:"token"`
 	MountName   string                 `json:"mountName"`
 	RelPath     string                 `json:"relPath"`
+	IsFolder    bool                   `json:"isFolder"`
 	Permissions model.SharePermissions `json:"permissions"`
 	FileName    string                 `json:"fileName"`
 	CreatedAt   time.Time              `json:"createdAt"`
@@ -118,13 +128,9 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 	if username == "" {
 		return nil, ErrInvalidOperation
 	}
-
 	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mounts())
 	if err != nil {
 		return nil, err
-	}
-	if permissions.Write && mount.ReadOnly {
-		return nil, ErrPermissionDenied
 	}
 	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
 	if err != nil {
@@ -134,12 +140,32 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() {
+	isFolder := info.IsDir()
+	if !isFolder && !info.Mode().IsRegular() {
 		return nil, ErrNotFile
 	}
-	relPath, err := filepath.Rel(mount.Path, fsPath)
+	if isFolder {
+		// Folder links use a small, Drive-like permission model: viewers can
+		// browse/download and editors can also add or replace files.
+		permissions = model.SharePermissions{View: true, Download: true, Write: permissions.Write}
+	} else {
+		// A file link always includes the complete file experience. There is no
+		// useful standalone "edit" mode for a single file share.
+		permissions = model.SharePermissions{View: true, Download: true}
+	}
+	if permissions.Write && mount.ReadOnly {
+		return nil, ErrPermissionDenied
+	}
+	mountRoot, err := s.fs.EvalSymlinks(mount.Path)
 	if err != nil {
 		return nil, err
+	}
+	relPath, err := filepath.Rel(mountRoot, fsPath)
+	if err != nil {
+		return nil, err
+	}
+	if relPath == "." {
+		relPath = ""
 	}
 
 	token, err := generateShareToken()
@@ -151,6 +177,7 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		Token:       token,
 		MountName:   mount.Name,
 		RelPath:     relPath,
+		IsFolder:    isFolder,
 		Permissions: permissions,
 		FileName:    info.Name(),
 		CreatedAt:   time.Now().UTC(),
@@ -268,37 +295,183 @@ func (s *shareService) OpenForRecipient(ctx context.Context, token string) (File
 	return file, &fileInfo, nil
 }
 
-func (s *shareService) WriteForRecipient(ctx context.Context, token string, body io.Reader) (int64, error) {
+func (s *shareService) InfoForRecipient(ctx context.Context, token string) (*model.FileInfo, string, error) {
 	share, err := s.ResolveForRecipient(token)
 	if err != nil {
-		return 0, err
+		return nil, "", err
 	}
-	if !share.Permissions.Write {
-		return 0, ErrPermissionDenied
-	}
-
-	mount, fsPath, err := s.resolveShareTarget(share)
+	_, fsPath, err := s.resolveShareTarget(share)
 	if err != nil {
-		return 0, err
-	}
-	if mount.ReadOnly {
-		return 0, ErrPermissionDenied
+		return nil, "", err
 	}
 	info, err := s.statTarget(fsPath)
 	if err != nil {
-		return 0, err
+		return nil, "", err
 	}
-	if !info.Mode().IsRegular() {
-		return 0, ErrNotFile
+	if share.IsFolder && !info.IsDir() {
+		return nil, "", ErrNotDirectory
+	}
+	if !share.IsFolder && !info.Mode().IsRegular() {
+		return nil, "", ErrNotFile
+	}
+	result := fileutil.ToFileInfo(info.Name(), share.MountName+"/"+share.RelPath, info)
+	if share.IsFolder {
+		return &result, "inode/directory", nil
+	}
+	return &result, fileutil.DetectMimeType(info.Name()), nil
+}
+
+func (s *shareService) ListForRecipient(ctx context.Context, token string, relativePath string) (*model.ShareDirectoryResponse, error) {
+	share, err := s.ResolveForRecipient(token)
+	if err != nil {
+		return nil, err
+	}
+	if !share.Permissions.View {
+		return nil, ErrPermissionDenied
+	}
+	_, target, _, err := s.resolveFolderPath(share, relativePath, false)
+	if err != nil {
+		return nil, err
+	}
+	info, err := s.statTarget(target)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, ErrNotDirectory
 	}
 
-	// Write to a temporary file next to the resolved target, then rename over
-	// it. Renaming the resolved path never writes through a symlink and leaves
-	// the original intact if the upload fails partway.
-	temporary := fsPath + ".share." + uuid.New().String()
-	file, err := s.fs.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	const maxShareEntries = 10_000
+	entries, truncated, err := s.fs.ReadDirLimit(target, maxShareEntries)
 	if err != nil {
-		return 0, err
+		return nil, err
+	}
+	if truncated {
+		return nil, ErrDirectoryTooLarge
+	}
+
+	cleanPath, err := cleanShareRelativePath(relativePath)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]model.ShareItem, 0, len(entries))
+	for _, entry := range entries {
+		itemPath := filepath.ToSlash(filepath.Join(cleanPath, entry.Name()))
+		_, resolvedEntry, _, resolveErr := s.resolveFolderPath(share, itemPath, false)
+		if resolveErr != nil {
+			// Do not expose broken links or entries that escape the shared root.
+			continue
+		}
+		entryInfo, statErr := s.statTarget(resolvedEntry)
+		if statErr != nil || (!entryInfo.IsDir() && !entryInfo.Mode().IsRegular()) {
+			continue
+		}
+		item := model.ShareItem{
+			Name:    entryInfo.Name(),
+			Path:    itemPath,
+			Size:    entryInfo.Size(),
+			IsDir:   entryInfo.IsDir(),
+			ModTime: entryInfo.ModTime(),
+		}
+		if !entryInfo.IsDir() {
+			item.MimeType = fileutil.DetectMimeType(entryInfo.Name())
+		}
+		items = append(items, item)
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].IsDir != items[j].IsDir {
+			return items[i].IsDir
+		}
+		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+	})
+	return &model.ShareDirectoryResponse{Path: cleanPath, Items: items}, nil
+}
+
+func (s *shareService) OpenForRecipientPath(ctx context.Context, token string, relativePath string) (File, *model.FileInfo, error) {
+	share, err := s.ResolveForRecipient(token)
+	if err != nil {
+		return nil, nil, err
+	}
+	_, target, _, err := s.resolveFolderPath(share, relativePath, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := s.statTarget(target)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil, ErrNotFile
+	}
+	file, err := s.fs.Open(target)
+	if err != nil {
+		return nil, nil, err
+	}
+	mount, _, err := s.resolveShareTarget(share)
+	if err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
+	if err := verifyOpenFileWithinMount(s.fs, mount, file); err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
+	cleanPath, err := cleanShareRelativePath(relativePath)
+	if err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
+	fileInfo := fileutil.ToFileInfo(info.Name(), cleanPath, info)
+	return file, &fileInfo, nil
+}
+
+func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, relativePath string, body io.Reader) (int64, string, error) {
+	share, err := s.ResolveForRecipient(token)
+	if err != nil {
+		return 0, "", err
+	}
+	if !share.IsFolder || !share.Permissions.Write {
+		return 0, "", ErrPermissionDenied
+	}
+
+	mount, target, _, err := s.resolveFolderPath(share, relativePath, true)
+	if err != nil {
+		return 0, "", err
+	}
+	if mount.ReadOnly {
+		return 0, "", ErrPermissionDenied
+	}
+	replacementMode := os.FileMode(0o644)
+	if exists, existsErr := s.fs.Exists(target); existsErr != nil {
+		return 0, "", existsErr
+	} else if exists {
+		info, statErr := s.fs.Stat(target)
+		if statErr != nil {
+			return 0, "", statErr
+		}
+		if info.IsDir() || !info.Mode().IsRegular() {
+			return 0, "", ErrNotFile
+		}
+		replacementMode = info.Mode().Perm()
+	}
+	parentInfo, err := s.statTarget(filepath.Dir(target))
+	if err != nil {
+		return 0, "", err
+	}
+	if !parentInfo.IsDir() {
+		return 0, "", ErrNotDirectory
+	}
+
+	temporary := target + ".share." + uuid.New().String()
+	file, err := s.fs.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, replacementMode)
+	if err != nil {
+		return 0, "", err
+	}
+	if err := s.fs.Chmod(temporary, replacementMode); err != nil {
+		_ = file.Close()
+		_ = s.fs.Remove(temporary)
+		return 0, "", err
 	}
 	complete := false
 	defer func() {
@@ -310,55 +483,117 @@ func (s *shareService) WriteForRecipient(ctx context.Context, token string, body
 
 	written, copyErr := io.Copy(file, io.LimitReader(body, s.maxUploadBytes+1))
 	if copyErr != nil {
-		return 0, copyErr
+		return 0, "", copyErr
 	}
 	if written == 0 {
-		return 0, ErrInvalidOperation
+		return 0, "", ErrInvalidOperation
 	}
 	if written > s.maxUploadBytes {
-		return 0, ErrShareTooLarge
+		return 0, "", ErrShareTooLarge
 	}
 	if err := file.Sync(); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if err := file.Close(); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 
-	// Keep revocation and the final rename in one read-side critical section.
-	// A revocation that wins the lock makes this upload discard its temp file.
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
 	share, err = s.resolveActiveShareLocked(token, time.Now())
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
-	if !share.Permissions.Write {
-		return 0, ErrPermissionDenied
+	if !share.IsFolder || !share.Permissions.Write {
+		return 0, "", ErrPermissionDenied
 	}
-	finalMount, finalPath, err := s.resolveShareTarget(share)
+	finalMount, finalPath, _, err := s.resolveFolderPath(share, relativePath, true)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
-	if finalMount.ReadOnly {
-		return 0, ErrPermissionDenied
+	if finalMount.ReadOnly || finalPath != target {
+		return 0, "", ErrPermissionDenied
 	}
-	if finalPath != fsPath {
-		return 0, ErrShareNotFound
-	}
-	finalInfo, err := s.statTarget(finalPath)
-	if err != nil {
-		return 0, err
-	}
-	if !finalInfo.Mode().IsRegular() {
-		return 0, ErrNotFile
+	if exists, existsErr := s.fs.Exists(finalPath); existsErr != nil {
+		return 0, "", existsErr
+	} else if exists {
+		finalInfo, statErr := s.fs.Stat(finalPath)
+		if statErr != nil {
+			return 0, "", statErr
+		}
+		if finalInfo.IsDir() || !finalInfo.Mode().IsRegular() {
+			return 0, "", ErrNotFile
+		}
+		if err := s.fs.Chmod(temporary, finalInfo.Mode().Perm()); err != nil {
+			return 0, "", err
+		}
 	}
 	if err := s.fs.Rename(temporary, finalPath); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	complete = true
-	return written, nil
+	return written, filepath.Base(finalPath), nil
+}
+
+func (s *shareService) resolveFolderPath(share *model.Share, relativePath string, allowMissing bool) (*model.MountPoint, string, string, error) {
+	if !share.IsFolder {
+		return nil, "", "", ErrNotDirectory
+	}
+	mount, root, err := s.resolveShareTarget(share)
+	if err != nil {
+		return nil, "", "", err
+	}
+	rootInfo, err := s.statTarget(root)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if !rootInfo.IsDir() {
+		return nil, "", "", ErrNotDirectory
+	}
+	cleanPath, err := cleanShareRelativePath(relativePath)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if cleanPath == "" {
+		return mount, root, root, nil
+	}
+	candidate := filepath.Join(root, filepath.FromSlash(cleanPath))
+	if allowMissing {
+		resolved, resolveErr := resolveWritablePathWithinMount(s.fs, mount, candidate)
+		if resolveErr != nil {
+			return nil, "", "", resolveErr
+		}
+		if !pathWithinRoot(root, resolved) {
+			return nil, "", "", ErrPermissionDenied
+		}
+		return mount, resolved, root, nil
+	}
+	resolved, resolveErr := resolveExistingPathWithinMount(s.fs, mount, candidate)
+	if resolveErr != nil {
+		return nil, "", "", resolveErr
+	}
+	if !pathWithinRoot(root, resolved) {
+		return nil, "", "", ErrPermissionDenied
+	}
+	return mount, resolved, root, nil
+}
+
+func cleanShareRelativePath(relativePath string) (string, error) {
+	if strings.ContainsRune(relativePath, 0) {
+		return "", validator.ErrInvalidPath
+	}
+	normalized := strings.ReplaceAll(relativePath, "\\", "/")
+	if strings.HasPrefix(normalized, "/") {
+		return "", validator.ErrPathTraversal
+	}
+	cleaned := path.Clean(normalized)
+	if cleaned == "." {
+		return "", nil
+	}
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", validator.ErrPathTraversal
+	}
+	return cleaned, nil
 }
 
 // resolveShareTarget re-resolves a share's mount-relative path against the live
@@ -374,7 +609,20 @@ func (s *shareService) resolveShareTarget(share *model.Share) (*model.MountPoint
 	}
 	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
 	if err != nil {
+		if errors.Is(err, ErrPathNotFound) || errors.Is(err, ErrPermissionDenied) {
+			return nil, "", ErrShareNotFound
+		}
 		return nil, "", err
+	}
+	info, err := s.statTarget(fsPath)
+	if err != nil {
+		if errors.Is(err, ErrPathNotFound) {
+			return nil, "", ErrShareNotFound
+		}
+		return nil, "", err
+	}
+	if (share.IsFolder && !info.IsDir()) || (!share.IsFolder && !info.Mode().IsRegular()) {
+		return nil, "", ErrShareNotFound
 	}
 	return mount, fsPath, nil
 }
@@ -475,6 +723,7 @@ func toShareRecord(share model.Share) shareRecord {
 		Token:       share.Token,
 		MountName:   share.MountName,
 		RelPath:     share.RelPath,
+		IsFolder:    share.IsFolder,
 		Permissions: share.Permissions,
 		FileName:    share.FileName,
 		CreatedAt:   share.CreatedAt,
@@ -485,11 +734,12 @@ func toShareRecord(share model.Share) shareRecord {
 }
 
 func fromShareRecord(record shareRecord) model.Share {
-	return model.Share{
+	share := model.Share{
 		ID:          record.ID,
 		Token:       record.Token,
 		MountName:   record.MountName,
 		RelPath:     record.RelPath,
+		IsFolder:    record.IsFolder,
 		Permissions: record.Permissions,
 		FileName:    record.FileName,
 		CreatedAt:   record.CreatedAt,
@@ -497,4 +747,14 @@ func fromShareRecord(record shareRecord) model.Share {
 		Revoked:     record.Revoked,
 		CreatedBy:   record.CreatedBy,
 	}
+	if share.IsFolder {
+		share.Permissions = model.SharePermissions{
+			View:     true,
+			Download: true,
+			Write:    share.Permissions.Write,
+		}
+	} else {
+		share.Permissions = model.SharePermissions{View: true, Download: true}
+	}
+	return share
 }
