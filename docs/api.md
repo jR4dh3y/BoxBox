@@ -290,7 +290,7 @@ Response uses `201 Created`:
   "token": "7nArUufciyjMLLFstZGU_zIerVgTpr2Qr2eL1lUTJFY",
   "url": "/s/7nArUufciyjMLLFstZGU_zIerVgTpr2Qr2eL1lUTJFY",
   "fileName": "shared",
-  "permissions": { "view": true, "download": true, "upload": true, "delete": false, "canReplace": false, "write": true },
+  "permissions": { "view": true, "download": true, "upload": true, "delete": false, "canReplace": false, "write": false },
   "maxUploadBytes": 104857600,
   "isFolder": true,
   "createdAt": "2026-09-02T09:00:00Z",
@@ -343,7 +343,7 @@ Returns recipient-facing metadata only; mount names and internal paths are never
   "fileName": "shared",
   "size": 1024,
   "mimeType": "application/octet-stream",
-  "permissions": { "view": true, "download": true, "upload": true, "delete": false, "canReplace": false, "write": true },
+  "permissions": { "view": true, "download": true, "upload": true, "delete": false, "canReplace": false, "write": false },
   "maxUploadBytes": 104857600,
   "isFolder": true,
   "expiresAt": "2026-09-02T10:00:00Z"
