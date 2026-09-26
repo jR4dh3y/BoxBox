@@ -280,7 +280,7 @@ Content-Type: application/json
 }
 ```
 
-`expiresInSeconds` is optional; omit it for a share that never expires. Folder links always allow viewing and downloading. Set `upload` to allow new files, and set both `upload` and `delete` to allow replacing or removing items below the shared folder. The optional `maxUploadBytes` value is a per-file cap; omitting it uses the server's `max_upload_mb` limit. The server cap always applies. File links always use view/download permissions. Share responses include the effective `canReplace` capability; it is true when delete is allowed or a persisted legacy `write` permission retains replacement access. For existing v1 clients, responses also include deprecated `write` as an alias for `upload`; new clients should use `upload`, `delete`, and `canReplace`. Requests cannot set `canReplace`.
+`expiresInSeconds` is optional; omit it for a share that never expires. Folder links always allow viewing and downloading. Set `upload` to allow new files, and set both `upload` and `delete` to allow replacing or removing items below the shared folder. The optional `maxUploadBytes` value is a per-file cap; omitting it uses the server's `max_upload_mb` limit. The server cap always applies. File links always use view/download permissions. Share responses include the effective `canReplace` capability; it is true when delete is allowed or a persisted legacy `write` permission retains replacement access. For existing v1 clients, responses also include deprecated `write` as an alias for `canReplace`; new clients should use `upload`, `delete`, and `canReplace`. Requests cannot set `canReplace`.
 
 Response uses `201 Created`:
 
