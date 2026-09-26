@@ -11,8 +11,15 @@ import { api, apiRequest } from './client';
 export interface SharePermissions {
 	view: boolean;
 	download: boolean;
-	write: boolean;
+	upload: boolean;
+	delete: boolean;
+	canReplace: boolean;
 }
+
+export type SharePermissionInput = Pick<
+	SharePermissions,
+	'view' | 'download' | 'upload' | 'delete'
+>;
 
 /**
  * Active share in the owner's share list
@@ -25,6 +32,7 @@ export interface ShareRecord {
 	path: string;
 	isFolder: boolean;
 	permissions: SharePermissions;
+	maxUploadBytes: number;
 	createdAt: string;
 	expiresAt?: string;
 }
@@ -40,8 +48,10 @@ export interface ShareListResponse {
  * Options when creating a share link
  */
 export interface CreateShareOptions {
-	/** Legacy file permission payload; folder shares may use explicit permissions. */
-	permissions?: SharePermissions;
+	/** File shares always use view/download; folder shares can also upload or delete. */
+	permissions?: SharePermissionInput;
+	/** Optional per-file upload cap; omitted means the server's configured maximum. */
+	maxUploadBytes?: number;
 	/** Seconds until the share expires; omitted means it never expires */
 	expiresInSeconds?: number;
 }
@@ -56,6 +66,7 @@ export interface CreateShareResponse {
 	fileName: string;
 	isFolder: boolean;
 	permissions: SharePermissions;
+	maxUploadBytes: number;
 	createdAt: string;
 	expiresAt?: string;
 }
@@ -69,6 +80,7 @@ export interface ShareInfoResponse {
 	mimeType: string;
 	isFolder: boolean;
 	permissions: SharePermissions;
+	maxUploadBytes: number;
 	expiresAt?: string;
 }
 
@@ -89,7 +101,7 @@ export interface ShareDirectoryResponse {
 	items: ShareItem[];
 }
 
-interface RevokeShareResponse {
+interface ShareActionResponse {
 	success: boolean;
 }
 
@@ -104,6 +116,7 @@ export async function createShare(
 	return api.post<CreateShareResponse>('/shares', {
 		path,
 		...(options.permissions ? { permissions: options.permissions } : {}),
+		...(options.maxUploadBytes !== undefined ? { maxUploadBytes: options.maxUploadBytes } : {}),
 		expiresInSeconds: options.expiresInSeconds ?? null
 	});
 }
@@ -120,8 +133,17 @@ export async function listShares(): Promise<ShareListResponse> {
  * Revoke a share link
  * DELETE /api/v1/shares/{id}
  */
-export async function revokeShare(id: string): Promise<RevokeShareResponse> {
-	return api.delete<RevokeShareResponse>(`/shares/${encodeURIComponent(id)}`);
+export async function revokeShare(id: string): Promise<ShareActionResponse> {
+	return api.delete<ShareActionResponse>(`/shares/${encodeURIComponent(id)}`);
+}
+
+/** Remove an item below a shared folder. The token is the only credential. */
+export async function deleteShareItem(token: string, path: string): Promise<ShareActionResponse> {
+	return apiRequest<ShareActionResponse>(`/share/${encodeURIComponent(token)}/items`, {
+		method: 'DELETE',
+		skipAuth: true,
+		params: { path }
+	});
 }
 
 /**
@@ -156,6 +178,12 @@ export function sharePageUrl(token: string): string {
 export function shareDownloadUrl(token: string, path?: string): string {
 	const query = path ? `?path=${encodeURIComponent(path)}` : '';
 	return `/api/v1/share/${encodeURIComponent(token)}/download${query}`;
+}
+
+/** Download a shared folder or subfolder as a ZIP archive. */
+export function shareArchiveUrl(token: string, path?: string): string {
+	const query = path ? `?path=${encodeURIComponent(path)}` : '';
+	return `/api/v1/share/${encodeURIComponent(token)}/archive${query}`;
 }
 
 /**

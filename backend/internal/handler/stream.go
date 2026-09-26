@@ -16,6 +16,7 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
+	"github.com/rs/zerolog/log"
 )
 
 var errUploadTooLarge = errors.New("upload too large")
@@ -51,6 +52,7 @@ func NewStreamHandler(fileService service.FileService, chunkSizeMB int, maxUploa
 // RegisterRoutes registers stream routes on the given router
 func (h *StreamHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/download/*", h.Download)
+	r.Get("/archive/*", h.Archive)
 	r.Get("/preview/*", h.Preview)
 	r.Get("/thumbnail/*", h.Thumbnail)
 	r.Post("/upload/*", h.Upload)
@@ -134,6 +136,27 @@ func (h *StreamHandler) Download(w http.ResponseWriter, r *http.Request) {
 
 	// Use http.ServeContent for efficient range-based streaming
 	http.ServeContent(w, r, info.Name, info.ModTime, file)
+}
+
+// Archive streams a folder as a bounded ZIP attachment.
+func (h *StreamHandler) Archive(w http.ResponseWriter, r *http.Request) {
+	path := chi.URLParam(r, "*")
+	if path == "" {
+		writeError(w, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	archive, err := h.fileService.PrepareDirectoryArchive(r.Context(), path)
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", streamContentDisposition("attachment", archive.Name+".zip"))
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if err := archive.WriteTo(r.Context(), w); err != nil {
+		log.Error().Err(err).Msg("Could not finish folder archive")
+	}
 }
 
 // Preview handles file preview requests (inline viewing) with Range header support

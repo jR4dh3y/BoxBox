@@ -198,6 +198,14 @@ GET /api/v1/stream/download/{path}
 
 The download endpoint supports HTTP range requests.
 
+### Folder Archive
+
+```http
+GET /api/v1/stream/archive/{folderPath}
+```
+
+Requires authentication and streams the folder as an `application/zip` attachment.
+
 ### Preview
 
 ```http
@@ -256,7 +264,7 @@ GET /api/v1/stream/upload/status/?uploadId=upload_123
 
 ## Share Links
 
-Share links expose exactly one existing file through a token URL. Management endpoints require a JWT; recipient endpoints are public and authenticate by share token alone.
+Share links expose an existing file or folder through a token URL. Management endpoints require a JWT; recipient endpoints are public and authenticate by share token alone.
 
 ### Create a Share
 
@@ -265,13 +273,14 @@ POST /api/v1/shares
 Content-Type: application/json
 
 {
-  "path": "home/projects/notes.txt",
-  "permissions": { "view": true, "download": true, "write": false },
+  "path": "home/projects/shared",
+  "permissions": { "view": true, "download": true, "upload": true, "delete": false },
+  "maxUploadBytes": 104857600,
   "expiresInSeconds": 3600
 }
 ```
 
-`expiresInSeconds` is optional; omit it for a share that never expires. `write` is rejected for files on read-only mount points.
+`expiresInSeconds` is optional; omit it for a share that never expires. Folder links always allow viewing and downloading. Set `upload` to allow new files, and set both `upload` and `delete` to allow replacing or removing items below the shared folder. The optional `maxUploadBytes` value is a per-file cap; omitting it uses the server's `max_upload_mb` limit. The server cap always applies. File links always use view/download permissions. Share responses include the effective `canReplace` capability; it is true when delete is allowed or a persisted legacy `write` permission retains replacement access. Requests cannot set `canReplace`.
 
 Response uses `201 Created`:
 
@@ -280,8 +289,10 @@ Response uses `201 Created`:
   "id": "b0c1d2e3-...",
   "token": "7nArUufciyjMLLFstZGU_zIerVgTpr2Qr2eL1lUTJFY",
   "url": "/s/7nArUufciyjMLLFstZGU_zIerVgTpr2Qr2eL1lUTJFY",
-  "fileName": "notes.txt",
-  "permissions": { "view": true, "download": true, "write": false },
+  "fileName": "shared",
+  "permissions": { "view": true, "download": true, "upload": true, "delete": false, "canReplace": false },
+  "maxUploadBytes": 104857600,
+  "isFolder": true,
   "createdAt": "2026-09-02T09:00:00Z",
   "expiresAt": "2026-09-02T10:00:00Z"
 }
@@ -293,7 +304,21 @@ Response uses `201 Created`:
 GET /api/v1/shares
 ```
 
-Returns only the authenticated caller's active (non-revoked, non-expired) shares. Each entry includes the `token`, `url`, `fileName`, mount-relative `path`, `permissions`, and expiry.
+Returns only the authenticated caller's active (non-revoked, non-expired) shares. Each entry includes the `token`, `url`, `fileName`, mount-relative `path`, `permissions`, `maxUploadBytes`, `isFolder`, and expiry.
+
+### Update a Folder Share
+
+```http
+PATCH /api/v1/shares/{id}
+Content-Type: application/json
+
+{
+  "permissions": { "view": true, "download": true, "upload": true, "delete": true },
+  "maxUploadBytes": 52428800
+}
+```
+
+Updates permissions and the per-file upload cap on an active folder share owned by the caller. `delete` requires `upload`; a value of `0` for `maxUploadBytes` restores the server's configured maximum.
 
 ### Revoke a Share
 
@@ -315,10 +340,12 @@ Returns recipient-facing metadata only; mount names and internal paths are never
 
 ```json
 {
-  "fileName": "notes.txt",
+  "fileName": "shared",
   "size": 1024,
-  "mimeType": "text/plain; charset=utf-8",
-  "permissions": { "view": true, "download": true, "write": false },
+  "mimeType": "application/octet-stream",
+  "permissions": { "view": true, "download": true, "upload": true, "delete": false, "canReplace": false },
+  "maxUploadBytes": 104857600,
+  "isFolder": true,
   "expiresAt": "2026-09-02T10:00:00Z"
 }
 ```
@@ -326,22 +353,26 @@ Returns recipient-facing metadata only; mount names and internal paths are never
 ```http
 GET /api/v1/share/{token}/download
 GET /api/v1/share/{token}/preview
+GET /api/v1/share/{token}/items?path=reports
+GET /api/v1/share/{token}/archive?path=reports
+POST /api/v1/share/{token}/upload?path=reports/new.txt
+DELETE /api/v1/share/{token}/items?path=reports/old.txt
 ```
 
-Download streams the file as an attachment; preview streams it inline for browser media. Both support HTTP range requests, set a sandboxed `Content-Security-Policy`, and force attachment disposition for active document formats (HTML, SVG, XML).
+Folder item paths are relative to the share root. Archive downloads include only paths inside that root. Delete requires the `delete` permission and cannot remove the shared root. Download streams a file as an attachment; preview streams it inline for browser media. Both support HTTP range requests, set a sandboxed `Content-Security-Policy`, and force attachment disposition for active document formats (HTML, SVG, XML).
 
 Unknown, expired, and revoked tokens all return the same `404`, so recipients cannot distinguish between them. Requests the share's permissions do not allow return `403`.
 
-### Overwrite Through a Share
+### Upload Through a Folder Share
 
 ```http
-POST /api/v1/share/{token}/upload
+POST /api/v1/share/{token}/upload?path=reports/new.txt
 Content-Type: application/octet-stream
 
 [file body]
 ```
 
-Requires the `write` permission and a writable mount point. The body replaces the shared file atomically (temporary file plus rename) and is capped by `max_upload_mb`. If a revocation completes while the body is still uploading, the pending overwrite is discarded:
+Requires the `upload` permission and a writable mount point. Upload-only links create new files but cannot replace an existing item; links with `delete` can also replace or delete items below the shared folder. Uploads are atomically published and capped by both the per-link `maxUploadBytes` and server `max_upload_mb` limits. If a revocation completes while the body is still uploading, the pending upload is discarded:
 
 ```json
 {
@@ -350,7 +381,7 @@ Requires the `write` permission and a writable mount point. The body replaces th
 }
 ```
 
-`403` means the share does not allow updates; `413` means the body exceeded the size limit.
+`403` means the share does not allow this operation; `413` means the body exceeded a size limit. Existing persisted `write` links retain their historical replacement behavior but do not gain delete permission.
 
 ## Search
 

@@ -17,6 +17,7 @@
 	} from '$lib/stores/settings';
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import WallpaperSettings from '$lib/components/settings/wallpaper/WallpaperSettings.svelte';
+	import ShareLinksSettings from '$lib/components/settings/ShareLinksSettings.svelte';
 	import { Button, ProgressButton, Select, Toggle } from '$lib/components/ui';
 	import { normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
 	import {
@@ -34,13 +35,15 @@
 		Palette,
 		RotateCcw,
 		Save,
+		Share2,
 		Settings,
 		User,
 		PaintRollerIcon,
 		X
 	} from 'lucide-svelte';
 
-	type SettingsSectionId = 'display' | 'personalization' | 'behavior' | 'defaults' | 'account';
+	type SettingsSectionId =
+		'display' | 'personalization' | 'behavior' | 'defaults' | 'sharing' | 'account';
 	type SettingsCategory = 'all' | SettingsSectionId;
 	type ApplyProgressVariant = 'default' | 'success' | 'danger';
 
@@ -99,6 +102,11 @@
 			id: 'defaults',
 			label: 'Default View',
 			icon: Layout
+		},
+		{
+			id: 'sharing',
+			label: 'Shared Links',
+			icon: Share2
 		},
 		{
 			id: 'account',
@@ -364,11 +372,16 @@
 		categoryAllows('account') &&
 			matchesSearch('account', 'session', 'reset defaults', 'logout', 'local preferences')
 	);
+	const showSharingSection = $derived(
+		categoryAllows('sharing') &&
+			matchesSearch('sharing', 'share links', 'active links', 'revoke links')
+	);
 	const hasSearchResults = $derived(
 		showDisplaySection ||
 			showPersonalizationSection ||
 			showBehaviorSection ||
 			showDefaultsSection ||
+			showSharingSection ||
 			showAccountSection
 	);
 </script>
@@ -692,6 +705,20 @@
 								</div>
 							{/if}
 						</div>
+					</section>
+				{/if}
+
+				{#if showSharingSection}
+					<section id="sharing" class={panelClass}>
+						<div class={panelHeaderClass}>
+							<div>
+								<h2 class="m-0 flex items-center gap-2 text-sm font-medium">
+									<Share2 size={16} class="text-accent" />
+									Shared Links
+								</h2>
+							</div>
+						</div>
+						<ShareLinksSettings />
 					</section>
 				{/if}
 

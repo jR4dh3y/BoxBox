@@ -37,9 +37,11 @@ var (
 // ShareService manages file and folder share links.
 type ShareService interface {
 	// Create shares an existing file or directory and returns the new share.
-	Create(ctx context.Context, username string, path string, permissions model.SharePermissions, expiresAt time.Time) (*model.Share, error)
+	Create(ctx context.Context, username string, path string, settings ShareSettings, expiresAt time.Time) (*model.Share, error)
 	// List returns the user's active (non-revoked, non-expired) shares, newest first.
 	List(username string) ([]model.Share, error)
+	// Update changes the permissions and upload limit on one of the user's folder shares.
+	Update(username string, id string, settings ShareSettings) (*model.Share, error)
 	// Revoke permanently disables one of the user's shares by ID.
 	Revoke(username string, id string) error
 	// ResolveForRecipient returns the share for a token, or ErrShareNotFound for
@@ -58,6 +60,16 @@ type ShareService interface {
 	// WriteForRecipientPath creates or replaces a file below a writable shared
 	// folder and returns the number of bytes written and its name.
 	WriteForRecipientPath(ctx context.Context, token string, relativePath string, body io.Reader) (int64, string, error)
+	// DeleteForRecipientPath removes a file or subfolder below a deletable share.
+	DeleteForRecipientPath(ctx context.Context, token string, relativePath string) error
+	// PrepareDirectoryArchive validates a recipient folder and prepares its ZIP archive.
+	PrepareDirectoryArchive(ctx context.Context, token string, relativePath string) (*DirectoryArchive, error)
+}
+
+// ShareSettings contains the recipient capabilities and per-link upload limit.
+type ShareSettings struct {
+	Permissions    model.SharePermissions
+	MaxUploadBytes int64
 }
 
 // ShareServiceConfig holds configuration for the share service.
@@ -81,17 +93,19 @@ type shareService struct {
 // shareRecord is the persistence shape for a share. It is separate from
 // model.Share so internal routing fields stay out of any marshaled API response.
 type shareRecord struct {
-	ID          string                 `json:"id"`
-	Token       string                 `json:"token"`
-	MountName   string                 `json:"mountName"`
-	RelPath     string                 `json:"relPath"`
-	IsFolder    bool                   `json:"isFolder"`
-	Permissions model.SharePermissions `json:"permissions"`
-	FileName    string                 `json:"fileName"`
-	CreatedAt   time.Time              `json:"createdAt"`
-	ExpiresAt   time.Time              `json:"expiresAt,omitempty"`
-	Revoked     bool                   `json:"revoked"`
-	CreatedBy   string                 `json:"createdBy"`
+	ID             string                 `json:"id"`
+	Token          string                 `json:"token"`
+	MountName      string                 `json:"mountName"`
+	RelPath        string                 `json:"relPath"`
+	IsFolder       bool                   `json:"isFolder"`
+	Permissions    model.SharePermissions `json:"permissions"`
+	MaxUploadBytes int64                  `json:"maxUploadBytes,omitempty"`
+	LegacyReplace  bool                   `json:"legacyReplace,omitempty"`
+	FileName       string                 `json:"fileName"`
+	CreatedAt      time.Time              `json:"createdAt"`
+	ExpiresAt      time.Time              `json:"expiresAt,omitempty"`
+	Revoked        bool                   `json:"revoked"`
+	CreatedBy      string                 `json:"createdBy"`
 }
 
 type sharesData struct {
@@ -121,12 +135,16 @@ func NewShareService(fsys filesystem.FS, cfg ShareServiceConfig) ShareService {
 	return shareSvc
 }
 
-func (s *shareService) Create(ctx context.Context, username string, path string, permissions model.SharePermissions, expiresAt time.Time) (*model.Share, error) {
+func (s *shareService) Create(ctx context.Context, username string, path string, settings ShareSettings, expiresAt time.Time) (*model.Share, error) {
 	if s.storageErr != nil {
 		return nil, s.storageErr
 	}
 	if username == "" {
 		return nil, ErrInvalidOperation
+	}
+	maxUploadBytes, err := s.resolveUploadLimit(settings.MaxUploadBytes)
+	if err != nil {
+		return nil, err
 	}
 	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mounts())
 	if err != nil {
@@ -141,19 +159,26 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		return nil, err
 	}
 	isFolder := info.IsDir()
+	permissions := settings.Permissions
 	if !isFolder && !info.Mode().IsRegular() {
 		return nil, ErrNotFile
 	}
 	if isFolder {
-		// Folder links use a small, Drive-like permission model: viewers can
-		// browse/download and editors can also add or replace files.
-		permissions = model.SharePermissions{View: true, Download: true, Write: permissions.Write}
+		if permissions.Delete && !permissions.Upload {
+			return nil, ErrInvalidOperation
+		}
+		permissions.View = true
+		permissions.Download = true
+		if !permissions.Upload {
+			permissions.Delete = false
+			permissions.LegacyReplace = false
+		}
 	} else {
 		// A file link always includes the complete file experience. There is no
 		// useful standalone "edit" mode for a single file share.
 		permissions = model.SharePermissions{View: true, Download: true}
 	}
-	if permissions.Write && mount.ReadOnly {
+	if (permissions.Upload || permissions.Delete) && mount.ReadOnly {
 		return nil, ErrPermissionDenied
 	}
 	mountRoot, err := s.fs.EvalSymlinks(mount.Path)
@@ -173,16 +198,17 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		return nil, err
 	}
 	share := model.Share{
-		ID:          uuid.New().String(),
-		Token:       token,
-		MountName:   mount.Name,
-		RelPath:     relPath,
-		IsFolder:    isFolder,
-		Permissions: permissions,
-		FileName:    info.Name(),
-		CreatedAt:   time.Now().UTC(),
-		ExpiresAt:   expiresAt,
-		CreatedBy:   username,
+		ID:             uuid.New().String(),
+		Token:          token,
+		MountName:      mount.Name,
+		RelPath:        relPath,
+		IsFolder:       isFolder,
+		Permissions:    permissions,
+		MaxUploadBytes: maxUploadBytes,
+		FileName:       info.Name(),
+		CreatedAt:      time.Now().UTC(),
+		ExpiresAt:      expiresAt,
+		CreatedBy:      username,
 	}
 
 	s.mu.Lock()
@@ -193,6 +219,16 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		return nil, err
 	}
 	return &share, nil
+}
+
+func (s *shareService) resolveUploadLimit(requested int64) (int64, error) {
+	if requested < 0 || requested > s.maxUploadBytes {
+		return 0, ErrInvalidOperation
+	}
+	if requested == 0 {
+		return s.maxUploadBytes, nil
+	}
+	return requested, nil
 }
 
 func (s *shareService) List(username string) ([]model.Share, error) {
@@ -213,7 +249,7 @@ func (s *shareService) List(username string) ([]model.Share, error) {
 		if record.CreatedBy != username || record.Revoked || isExpired(record.ExpiresAt, now) {
 			continue
 		}
-		shares = append(shares, fromShareRecord(record))
+		shares = append(shares, s.shareFromRecord(record))
 	}
 	sort.Slice(shares, func(i, j int) bool { return shares[i].CreatedAt.After(shares[j].CreatedAt) })
 	return shares, nil
@@ -240,6 +276,63 @@ func (s *shareService) Revoke(username string, id string) error {
 	return ErrShareNotFound
 }
 
+func (s *shareService) Update(username string, id string, settings ShareSettings) (*model.Share, error) {
+	if s.storageErr != nil {
+		return nil, s.storageErr
+	}
+	if username == "" {
+		return nil, ErrInvalidOperation
+	}
+	maxUploadBytes, err := s.resolveUploadLimit(settings.MaxUploadBytes)
+	if err != nil {
+		return nil, err
+	}
+	requestedPermissions := settings.Permissions
+	if !requestedPermissions.View && !requestedPermissions.Download && !requestedPermissions.Upload && !requestedPermissions.Delete {
+		return nil, ErrInvalidOperation
+	}
+	if requestedPermissions.Delete && !requestedPermissions.Upload {
+		return nil, ErrInvalidOperation
+	}
+	permissions := model.SharePermissions{
+		View:          true,
+		Download:      true,
+		Upload:        requestedPermissions.Upload,
+		Delete:        requestedPermissions.Delete,
+		LegacyReplace: requestedPermissions.LegacyReplace && requestedPermissions.Upload && !requestedPermissions.Delete,
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data := s.loadLocked()
+	for i := range data.Shares {
+		record := &data.Shares[i]
+		if record.ID != id {
+			continue
+		}
+		if record.CreatedBy != username || record.Revoked || isExpired(record.ExpiresAt, time.Now()) || !record.IsFolder {
+			return nil, ErrShareNotFound
+		}
+		share := fromShareRecord(*record)
+		mount, _, err := s.resolveShareTarget(&share)
+		if err != nil {
+			return nil, err
+		}
+		if (permissions.Upload || permissions.Delete) && mount.ReadOnly {
+			return nil, ErrPermissionDenied
+		}
+		share.Permissions = permissions
+		share.MaxUploadBytes = maxUploadBytes
+		data.Shares[i] = toShareRecord(share)
+		if err := s.saveLocked(data); err != nil {
+			return nil, err
+		}
+		return &share, nil
+	}
+	return nil, ErrShareNotFound
+}
+
 func (s *shareService) ResolveForRecipient(token string) (*model.Share, error) {
 	if s.storageErr != nil {
 		return nil, s.storageErr
@@ -259,7 +352,7 @@ func (s *shareService) resolveActiveShareLocked(token string, now time.Time) (*m
 		if record.Revoked || isExpired(record.ExpiresAt, now) {
 			return nil, ErrShareNotFound
 		}
-		share := fromShareRecord(record)
+		share := s.shareFromRecord(record)
 		return &share, nil
 	}
 	return nil, ErrShareNotFound
@@ -388,6 +481,21 @@ func (s *shareService) ListForRecipient(ctx context.Context, token string, relat
 	return &model.ShareDirectoryResponse{Path: cleanPath, Items: items}, nil
 }
 
+func (s *shareService) PrepareDirectoryArchive(ctx context.Context, token string, relativePath string) (*DirectoryArchive, error) {
+	share, err := s.ResolveForRecipient(token)
+	if err != nil {
+		return nil, err
+	}
+	if !share.Permissions.Download {
+		return nil, ErrPermissionDenied
+	}
+	_, target, root, err := s.resolveFolderPath(share, relativePath, false)
+	if err != nil {
+		return nil, err
+	}
+	return prepareDirectoryArchive(ctx, s.fs, target, root)
+}
+
 func (s *shareService) OpenForRecipientPath(ctx context.Context, token string, relativePath string) (File, *model.FileInfo, error) {
 	share, err := s.ResolveForRecipient(token)
 	if err != nil {
@@ -431,8 +539,11 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	if err != nil {
 		return 0, "", err
 	}
-	if !share.IsFolder || !share.Permissions.Write {
+	if !share.IsFolder || !share.Permissions.Upload {
 		return 0, "", ErrPermissionDenied
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, "", err
 	}
 
 	mount, target, _, err := s.resolveFolderPath(share, relativePath, true)
@@ -442,10 +553,14 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	if mount.ReadOnly {
 		return 0, "", ErrPermissionDenied
 	}
+	canReplace := share.Permissions.Delete || share.Permissions.LegacyReplace
 	replacementMode := os.FileMode(0o644)
 	if exists, existsErr := s.fs.Exists(target); existsErr != nil {
 		return 0, "", existsErr
 	} else if exists {
+		if !canReplace {
+			return 0, "", ErrPermissionDenied
+		}
 		info, statErr := s.fs.Stat(target)
 		if statErr != nil {
 			return 0, "", statErr
@@ -481,14 +596,14 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 		}
 	}()
 
-	written, copyErr := io.Copy(file, io.LimitReader(body, s.maxUploadBytes+1))
+	written, copyErr := io.Copy(file, io.LimitReader(body, share.MaxUploadBytes+1))
 	if copyErr != nil {
 		return 0, "", copyErr
 	}
 	if written == 0 {
 		return 0, "", ErrInvalidOperation
 	}
-	if written > s.maxUploadBytes {
+	if written > share.MaxUploadBytes {
 		return 0, "", ErrShareTooLarge
 	}
 	if err := file.Sync(); err != nil {
@@ -498,14 +613,18 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 		return 0, "", err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	share, err = s.resolveActiveShareLocked(token, time.Now())
 	if err != nil {
 		return 0, "", err
 	}
-	if !share.IsFolder || !share.Permissions.Write {
+	if !share.IsFolder || !share.Permissions.Upload {
 		return 0, "", ErrPermissionDenied
+	}
+	canReplace = share.Permissions.Delete || share.Permissions.LegacyReplace
+	if written > share.MaxUploadBytes {
+		return 0, "", ErrShareTooLarge
 	}
 	finalMount, finalPath, _, err := s.resolveFolderPath(share, relativePath, true)
 	if err != nil {
@@ -517,6 +636,9 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	if exists, existsErr := s.fs.Exists(finalPath); existsErr != nil {
 		return 0, "", existsErr
 	} else if exists {
+		if !canReplace {
+			return 0, "", ErrPermissionDenied
+		}
 		finalInfo, statErr := s.fs.Stat(finalPath)
 		if statErr != nil {
 			return 0, "", statErr
@@ -528,11 +650,50 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 			return 0, "", err
 		}
 	}
-	if err := s.fs.Rename(temporary, finalPath); err != nil {
+	if canReplace {
+		err = s.fs.Rename(temporary, finalPath)
+	} else {
+		err = s.fs.RenameNoReplace(temporary, finalPath)
+		if errors.Is(err, fs.ErrExist) {
+			return 0, "", ErrPermissionDenied
+		}
+	}
+	if err != nil {
 		return 0, "", err
 	}
 	complete = true
 	return written, filepath.Base(finalPath), nil
+}
+
+func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string, relativePath string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	share, err := s.resolveActiveShareLocked(token, time.Now())
+	if err != nil {
+		return err
+	}
+	if !share.IsFolder || !share.Permissions.Delete {
+		return ErrPermissionDenied
+	}
+	mount, target, root, err := s.resolveFolderPath(share, relativePath, false)
+	if err != nil {
+		return err
+	}
+	if mount.ReadOnly || target == root || !pathWithinRoot(root, target) {
+		return ErrPermissionDenied
+	}
+	info, err := s.statTarget(target)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() && !info.Mode().IsRegular() {
+		return ErrNotFile
+	}
+	return s.fs.RemoveAll(target)
 }
 
 func (s *shareService) resolveFolderPath(share *model.Share, relativePath string, allowMissing bool) (*model.MountPoint, string, string, error) {
@@ -719,42 +880,56 @@ func isExpired(expiresAt time.Time, now time.Time) bool {
 
 func toShareRecord(share model.Share) shareRecord {
 	return shareRecord{
-		ID:          share.ID,
-		Token:       share.Token,
-		MountName:   share.MountName,
-		RelPath:     share.RelPath,
-		IsFolder:    share.IsFolder,
-		Permissions: share.Permissions,
-		FileName:    share.FileName,
-		CreatedAt:   share.CreatedAt,
-		ExpiresAt:   share.ExpiresAt,
-		Revoked:     share.Revoked,
-		CreatedBy:   share.CreatedBy,
+		ID:             share.ID,
+		Token:          share.Token,
+		MountName:      share.MountName,
+		RelPath:        share.RelPath,
+		IsFolder:       share.IsFolder,
+		Permissions:    share.Permissions,
+		MaxUploadBytes: share.MaxUploadBytes,
+		LegacyReplace:  share.Permissions.LegacyReplace,
+		FileName:       share.FileName,
+		CreatedAt:      share.CreatedAt,
+		ExpiresAt:      share.ExpiresAt,
+		Revoked:        share.Revoked,
+		CreatedBy:      share.CreatedBy,
 	}
 }
 
 func fromShareRecord(record shareRecord) model.Share {
-	share := model.Share{
-		ID:          record.ID,
-		Token:       record.Token,
-		MountName:   record.MountName,
-		RelPath:     record.RelPath,
-		IsFolder:    record.IsFolder,
-		Permissions: record.Permissions,
-		FileName:    record.FileName,
-		CreatedAt:   record.CreatedAt,
-		ExpiresAt:   record.ExpiresAt,
-		Revoked:     record.Revoked,
-		CreatedBy:   record.CreatedBy,
+	permissions := record.Permissions
+	permissions.LegacyReplace = record.LegacyReplace || permissions.LegacyReplace
+	if !permissions.Upload {
+		permissions.Delete = false
+		permissions.LegacyReplace = false
 	}
-	if share.IsFolder {
-		share.Permissions = model.SharePermissions{
-			View:     true,
-			Download: true,
-			Write:    share.Permissions.Write,
-		}
-	} else {
+	share := model.Share{
+		ID:             record.ID,
+		Token:          record.Token,
+		MountName:      record.MountName,
+		RelPath:        record.RelPath,
+		IsFolder:       record.IsFolder,
+		Permissions:    permissions,
+		MaxUploadBytes: record.MaxUploadBytes,
+		FileName:       record.FileName,
+		CreatedAt:      record.CreatedAt,
+		ExpiresAt:      record.ExpiresAt,
+		Revoked:        record.Revoked,
+		CreatedBy:      record.CreatedBy,
+	}
+	if !share.IsFolder {
 		share.Permissions = model.SharePermissions{View: true, Download: true}
+	} else {
+		share.Permissions.View = true
+		share.Permissions.Download = true
+	}
+	return share
+}
+
+func (s *shareService) shareFromRecord(record shareRecord) model.Share {
+	share := fromShareRecord(record)
+	if share.MaxUploadBytes <= 0 || share.MaxUploadBytes > s.maxUploadBytes {
+		share.MaxUploadBytes = s.maxUploadBytes
 	}
 	return share
 }

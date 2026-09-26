@@ -44,6 +44,9 @@ type FS interface {
 	// Rename renames (moves) oldpath to newpath.
 	Rename(oldpath, newpath string) error
 
+	// RenameNoReplace publishes oldpath at newpath only if newpath does not exist.
+	RenameNoReplace(oldpath, newpath string) error
+
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
 
@@ -225,6 +228,74 @@ func (a *AferoFS) Rename(oldpath, newpath string) error {
 	oldpath = filepath.Clean("/" + oldpath)
 	newpath = filepath.Clean("/" + newpath)
 	return a.fs.Rename(oldpath, newpath)
+}
+
+func (a *AferoFS) RenameNoReplace(oldpath, newpath string) error {
+	if err := validateFilesystemPath(oldpath); err != nil {
+		return err
+	}
+	if err := validateFilesystemPath(newpath); err != nil {
+		return err
+	}
+	oldpath = filepath.Clean("/" + oldpath)
+	newpath = filepath.Clean("/" + newpath)
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		return renameNoReplaceWithLink(oldpath, newpath, os.Link)
+	}
+	if _, err := a.fs.Stat(newpath); err == nil {
+		return fs.ErrExist
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return a.fs.Rename(oldpath, newpath)
+}
+
+func renameNoReplaceWithLink(oldpath, newpath string, link func(string, string) error) error {
+	if err := link(oldpath, newpath); err == nil {
+		if err := os.Remove(oldpath); err != nil {
+			_ = os.Remove(newpath)
+			return err
+		}
+		return nil
+	} else if errors.Is(err, fs.ErrExist) {
+		return err
+	}
+
+	return copyNoReplace(oldpath, newpath)
+}
+
+func copyNoReplace(oldpath, newpath string) error {
+	source, err := os.Open(oldpath)
+	if err != nil {
+		return err
+	}
+	info, err := source.Stat()
+	if err != nil {
+		_ = source.Close()
+		return err
+	}
+	destination, err := os.OpenFile(newpath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		_ = source.Close()
+		return err
+	}
+
+	_, copyErr := io.Copy(destination, source)
+	sourceCloseErr := source.Close()
+	destinationCloseErr := destination.Close()
+	if err := errors.Join(copyErr, sourceCloseErr, destinationCloseErr); err != nil {
+		_ = os.Remove(newpath)
+		return err
+	}
+	if err := os.Chmod(newpath, info.Mode().Perm()); err != nil {
+		_ = os.Remove(newpath)
+		return err
+	}
+	if err := os.Remove(oldpath); err != nil {
+		_ = os.Remove(newpath)
+		return err
+	}
+	return nil
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.
