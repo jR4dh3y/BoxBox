@@ -37,24 +37,26 @@ func TestSharePermissionsPreferExplicitUploadOverLegacyWrite(t *testing.T) {
 	}
 }
 
-func TestSharePermissionsResponseReportsEffectiveReplacement(t *testing.T) {
+func TestSharePermissionsResponseReportsLegacyWriteAccess(t *testing.T) {
 	tests := []struct {
-		name        string
-		permissions SharePermissions
-		want        bool
+		name            string
+		permissions     SharePermissions
+		wantCanReplace  bool
+		wantLegacyWrite bool
 	}{
-		{name: "legacy write", permissions: SharePermissions{Upload: true, LegacyReplace: true}, want: true},
-		{name: "upload only", permissions: SharePermissions{Upload: true}, want: false},
-		{name: "upload and delete", permissions: SharePermissions{Upload: true, Delete: true}, want: true},
+		{name: "view only", permissions: SharePermissions{View: true}, wantCanReplace: false, wantLegacyWrite: false},
+		{name: "legacy write", permissions: SharePermissions{Upload: true, LegacyReplace: true}, wantCanReplace: true, wantLegacyWrite: true},
+		{name: "upload only", permissions: SharePermissions{Upload: true}, wantCanReplace: false, wantLegacyWrite: true},
+		{name: "upload and delete", permissions: SharePermissions{Upload: true, Delete: true}, wantCanReplace: true, wantLegacyWrite: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			response := test.permissions.ToResponse()
-			if response.CanReplace != test.want {
-				t.Fatalf("canReplace = %t, want %t", response.CanReplace, test.want)
+			if response.CanReplace != test.wantCanReplace {
+				t.Fatalf("canReplace = %t, want %t", response.CanReplace, test.wantCanReplace)
 			}
-			if response.Write != test.want {
-				t.Fatalf("legacy write alias = %t, want canReplace=%t", response.Write, test.want)
+			if response.Write != test.wantLegacyWrite {
+				t.Fatalf("legacy write alias = %t, want upload=%t", response.Write, test.wantLegacyWrite)
 			}
 			data, err := json.Marshal(response)
 			if err != nil {
@@ -64,8 +66,8 @@ func TestSharePermissionsResponseReportsEffectiveReplacement(t *testing.T) {
 			if err := json.Unmarshal(data, &fields); err != nil {
 				t.Fatal(err)
 			}
-			if got, ok := fields["write"].(bool); !ok || got != test.want {
-				t.Fatalf("serialized write alias = %v, want canReplace=%t", fields["write"], test.want)
+			if got, ok := fields["write"].(bool); !ok || got != test.wantLegacyWrite {
+				t.Fatalf("serialized write alias = %v, want upload=%t", fields["write"], test.wantLegacyWrite)
 			}
 		})
 	}

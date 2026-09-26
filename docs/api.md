@@ -280,7 +280,7 @@ Content-Type: application/json
 }
 ```
 
-`expiresInSeconds` is optional; omit it for a share that never expires. Folder links always allow viewing and downloading. Set `upload` to allow new files, and set both `upload` and `delete` to allow replacing or removing items below the shared folder. The optional `maxUploadBytes` value is a per-file cap; omitting it uses the server's `max_upload_mb` limit. The server cap always applies. File links always use view/download permissions. Share responses include the effective `canReplace` capability; it is true when delete is allowed or a persisted legacy `write` permission retains replacement access. For existing v1 clients, responses also include deprecated `write` as an alias for `canReplace`; new clients should use `upload`, `delete`, and `canReplace`. Requests cannot set `canReplace`.
+`expiresInSeconds` is optional; omit it for a share that never expires. Folder links always allow viewing and downloading. Set `upload` to allow new files, and set both `upload` and `delete` to allow replacing or removing items below the shared folder. The optional `maxUploadBytes` value is a per-file cap; omitting it uses the server's `max_upload_mb` limit. The server cap always applies. File links always use view/download permissions. Share responses include the effective `canReplace` capability; it is true when delete is allowed or a persisted legacy `write` permission retains replacement access. For existing v1 clients, deprecated `write` mirrors `upload` so upload-only links remain usable; new clients should use `upload`, `delete`, and `canReplace`. Requests cannot set `canReplace`.
 
 Response uses `201 Created`:
 
@@ -290,7 +290,7 @@ Response uses `201 Created`:
   "token": "7nArUufciyjMLLFstZGU_zIerVgTpr2Qr2eL1lUTJFY",
   "url": "/s/7nArUufciyjMLLFstZGU_zIerVgTpr2Qr2eL1lUTJFY",
   "fileName": "shared",
-  "permissions": { "view": true, "download": true, "upload": true, "delete": false, "canReplace": false, "write": false },
+  "permissions": { "view": true, "download": true, "upload": true, "delete": false, "canReplace": false, "write": true },
   "maxUploadBytes": 104857600,
   "isFolder": true,
   "createdAt": "2026-09-02T09:00:00Z",
@@ -343,7 +343,7 @@ Returns recipient-facing metadata only; mount names and internal paths are never
   "fileName": "shared",
   "size": 1024,
   "mimeType": "application/octet-stream",
-  "permissions": { "view": true, "download": true, "upload": true, "delete": false, "canReplace": false, "write": false },
+  "permissions": { "view": true, "download": true, "upload": true, "delete": false, "canReplace": false, "write": true },
   "maxUploadBytes": 104857600,
   "isFolder": true,
   "expiresAt": "2026-09-02T10:00:00Z"
