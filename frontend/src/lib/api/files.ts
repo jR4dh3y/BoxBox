@@ -286,6 +286,14 @@ export function getDownloadUrl(path: string): string {
 	return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
 }
 
+/** Get the download URL for a folder ZIP archive. */
+export function getDirectoryArchiveUrl(path: string): string {
+	const token = tokenStorage.getAccessToken();
+	const encodedPath = encodeRoutePath(path);
+	const baseUrl = `/api/v1/stream/archive/${encodedPath}`;
+	return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+}
+
 /**
  * Fetch file content as text (for code/text preview)
  */

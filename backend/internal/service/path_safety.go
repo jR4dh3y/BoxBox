@@ -74,6 +74,14 @@ func startsWithParent(path string) bool {
 }
 
 func verifyOpenFileWithinMount(fsys boxfs.FS, mount *model.MountPoint, opened any) error {
+	root, err := fsys.EvalSymlinks(mount.Path)
+	if err != nil {
+		return err
+	}
+	return verifyOpenFileWithinRoot(fsys, root, opened)
+}
+
+func verifyOpenFileWithinRoot(fsys boxfs.FS, root string, opened any) error {
 	if runtime.GOOS != "linux" {
 		return nil
 	}
@@ -86,7 +94,7 @@ func verifyOpenFileWithinMount(fsys boxfs.FS, mount *model.MountPoint, opened an
 		return nil
 	}
 	actual = strings.TrimSuffix(actual, " (deleted)")
-	root, err := fsys.EvalSymlinks(mount.Path)
+	root, err = fsys.EvalSymlinks(root)
 	if err != nil {
 		return err
 	}

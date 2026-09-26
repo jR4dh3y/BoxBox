@@ -4,19 +4,23 @@
 	import { page } from '$app/state';
 	import {
 		AlertTriangle,
+		Archive,
 		ChevronRight,
 		Download,
 		FileText,
 		FolderOpen,
 		Home,
-		Upload
+		Upload,
+		Trash2
 	} from 'lucide-svelte';
 	import { Button, ProgressBar, Spinner, Toast } from '$lib/components/ui';
 	import {
 		ApiRequestError,
 		getShareInfo,
 		hasShareExpiry,
+		deleteShareItem,
 		listShareItems,
+		shareArchiveUrl,
 		shareDownloadUrl,
 		sharePreviewUrl,
 		shareUploadUrl,
@@ -26,6 +30,7 @@
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { getFileIcon, getPreviewType, getFileTypeDescription } from '$lib/utils/fileTypes';
 	import { formatFileSize, formatRelativeTime } from '$lib/utils/format';
+	import { getShareAccessLabel } from '$lib/utils/shareAccess';
 
 	const TEXT_PREVIEW_LIMIT_BYTES = 1024 * 1024;
 	const token = $derived(page.params.token ?? '');
@@ -123,6 +128,30 @@
 		window.open(itemPath ? shareDownloadUrl(token, itemPath) : downloadUrl, '_blank');
 	}
 
+	function handleArchiveDownload() {
+		window.open(shareArchiveUrl(token, folderPath || undefined), '_blank');
+	}
+
+	async function handleDeleteItem(item: ShareItem) {
+		if (
+			!info?.permissions.delete ||
+			!window.confirm(`Delete ${item.name} from this shared folder?`)
+		) {
+			return;
+		}
+		try {
+			await deleteShareItem(token, item.path);
+			toastStore.success(`${item.name} deleted from the shared folder`);
+			await loadFolder(folderPath);
+		} catch (error) {
+			if (error instanceof ApiRequestError && error.status === 404) {
+				gone = true;
+				return;
+			}
+			toastStore.error(error instanceof Error ? error.message : 'Unable to delete this item');
+		}
+	}
+
 	function openFolderItem(item: ShareItem) {
 		if (item.isDir) {
 			void loadFolder(item.path);
@@ -152,6 +181,11 @@
 	}
 
 	function uploadFile(file: File) {
+		if (!info?.permissions.upload) return;
+		if (info.maxUploadBytes > 0 && file.size > info.maxUploadBytes) {
+			toastStore.error(`This link allows files up to ${formatFileSize(info.maxUploadBytes)}.`);
+			return;
+		}
 		const relativePath = folderPath ? `${folderPath}/${file.name}` : file.name;
 		uploading = true;
 		uploadProgress = 0;
@@ -168,7 +202,11 @@
 				toastStore.success('File added to the shared folder');
 				void loadFolder(folderPath);
 			} else if (xhr.status === 403) {
-				toastStore.error('This shared folder is view-only');
+				toastStore.error(
+					info?.permissions.upload
+						? 'This link cannot replace an existing file.'
+						: 'This shared folder is view-only'
+				);
 			} else if (xhr.status === 413) {
 				toastStore.error('File too large');
 			} else if (xhr.status === 404) {
@@ -235,7 +273,7 @@
 									{info.fileName}
 								</h1>
 								<p class="m-0 text-sm text-text-secondary">
-									Shared folder · {info.permissions.write ? 'Editor access' : 'Viewer access'}
+									Shared folder · {getShareAccessLabel(info.permissions)} access
 								</p>
 							</div>
 						</div>
@@ -265,12 +303,26 @@
 								>
 							{/each}
 						</nav>
-						{#if info.permissions.write}
-							<Button variant="secondary" size="sm" disabled={uploading} onclick={handleUploadClick}
-								><Upload size={16} />{uploading ? 'Uploading...' : 'Add files'}</Button
-							>
-						{/if}
+						<div class="flex flex-wrap items-center gap-2">
+							{#if info.permissions.download}
+								<Button variant="secondary" size="sm" onclick={handleArchiveDownload}
+									><Archive size={16} />Download ZIP</Button
+								>
+							{/if}
+							{#if info.permissions.upload}
+								<Button
+									variant="secondary"
+									size="sm"
+									disabled={uploading}
+									onclick={handleUploadClick}
+									><Upload size={16} />{uploading ? 'Uploading...' : 'Add files'}</Button
+								>
+							{/if}
+						</div>
 					</div>
+					{#if info.permissions.upload}<p class="mt-2 text-xs text-text-muted">
+							Uploads are limited to {formatFileSize(info.maxUploadBytes)} per file.
+						</p>{/if}
 
 					{#if uploading}<div class="mt-3">
 							<ProgressBar value={uploadProgress} showLabel />
@@ -310,7 +362,7 @@
 									<span class="hidden shrink-0 text-xs text-text-muted sm:inline"
 										>{item.isDir ? 'Folder' : formatFileSize(item.size)}</span
 									>
-									{#if !item.isDir}
+									{#if !item.isDir && info.permissions.download}
 										<button
 											type="button"
 											class="rounded p-2 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary"
@@ -325,6 +377,15 @@
 											title="Open {item.name}"
 											aria-label="Open {item.name}"
 											onclick={() => openFolderItem(item)}><ChevronRight size={17} /></button
+										>
+									{/if}
+									{#if info.permissions.delete}
+										<button
+											type="button"
+											class="rounded p-2 text-text-secondary hover:bg-danger/15 hover:text-danger"
+											title="Delete {item.name}"
+											aria-label="Delete {item.name}"
+											onclick={() => void handleDeleteItem(item)}><Trash2 size={17} /></button
 										>
 									{/if}
 								</div>

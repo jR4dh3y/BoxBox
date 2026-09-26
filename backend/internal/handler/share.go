@@ -12,6 +12,7 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
+	"github.com/rs/zerolog/log"
 )
 
 // ShareHandler handles share link management and recipient access.
@@ -38,6 +39,7 @@ func NewShareHandler(shareService service.ShareService, maxUploadMB int) *ShareH
 func (h *ShareHandler) RegisterRoutes(r chi.Router) {
 	r.Post("/", h.Create)
 	r.Get("/", h.List)
+	r.Patch("/{id}", h.Update)
 	r.Delete("/{id}", h.Revoke)
 }
 
@@ -47,7 +49,9 @@ func (h *ShareHandler) RegisterRoutes(r chi.Router) {
 func (h *ShareHandler) RegisterPublicRoutes(r chi.Router) {
 	r.Get("/{token}", h.GetInfo)
 	r.Get("/{token}/items", h.ListItems)
+	r.Delete("/{token}/items", h.DeleteItem)
 	r.Get("/{token}/download", h.Download)
+	r.Get("/{token}/archive", h.Archive)
 	r.Get("/{token}/preview", h.Preview)
 	r.Post("/{token}/upload", h.Upload)
 }
@@ -80,21 +84,25 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 		expiresAt = time.Now().Add(time.Duration(*req.ExpiresInSeconds) * time.Second)
 	}
 
-	share, err := h.shareService.Create(r.Context(), username, req.Path, req.Permissions, expiresAt)
+	share, err := h.shareService.Create(r.Context(), username, req.Path, service.ShareSettings{
+		Permissions:    req.Permissions,
+		MaxUploadBytes: req.MaxUploadBytes,
+	}, expiresAt)
 	if err != nil {
 		HandleServiceError(w, err)
 		return
 	}
 
 	writeJSON(w, model.ShareResponse{
-		ID:          share.ID,
-		Token:       share.Token,
-		URL:         "/s/" + share.Token,
-		FileName:    share.FileName,
-		Permissions: share.Permissions,
-		IsFolder:    share.IsFolder,
-		CreatedAt:   share.CreatedAt,
-		ExpiresAt:   share.ExpiresAt,
+		ID:             share.ID,
+		Token:          share.Token,
+		URL:            "/s/" + share.Token,
+		FileName:       share.FileName,
+		Permissions:    share.Permissions.ToResponse(),
+		MaxUploadBytes: share.MaxUploadBytes,
+		IsFolder:       share.IsFolder,
+		CreatedAt:      share.CreatedAt,
+		ExpiresAt:      share.ExpiresAt,
 	}, http.StatusCreated)
 }
 
@@ -115,20 +123,25 @@ func (h *ShareHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]model.ShareSummary, 0, len(shares))
 	for _, share := range shares {
-		items = append(items, model.ShareSummary{
-			ID:          share.ID,
-			Token:       share.Token,
-			URL:         "/s/" + share.Token,
-			FileName:    share.FileName,
-			Path:        shareDisplayPath(share),
-			Permissions: share.Permissions,
-			IsFolder:    share.IsFolder,
-			CreatedAt:   share.CreatedAt,
-			ExpiresAt:   share.ExpiresAt,
-		})
+		items = append(items, shareSummary(share))
 	}
 
 	writeJSON(w, model.ShareListResponse{Shares: items}, http.StatusOK)
+}
+
+func shareSummary(share model.Share) model.ShareSummary {
+	return model.ShareSummary{
+		ID:             share.ID,
+		Token:          share.Token,
+		URL:            "/s/" + share.Token,
+		FileName:       share.FileName,
+		Path:           shareDisplayPath(share),
+		Permissions:    share.Permissions.ToResponse(),
+		MaxUploadBytes: share.MaxUploadBytes,
+		IsFolder:       share.IsFolder,
+		CreatedAt:      share.CreatedAt,
+		ExpiresAt:      share.ExpiresAt,
+	}
 }
 
 func shareDisplayPath(share model.Share) string {
@@ -158,6 +171,34 @@ func (h *ShareHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"success": true}, http.StatusOK)
 }
 
+// Update changes the access on one of the caller's active folder shares.
+func (h *ShareHandler) Update(w http.ResponseWriter, r *http.Request) {
+	username := authcontext.Username(r.Context())
+	if username == "" {
+		writeError(w, "Authentication required", model.ErrCodeUnauthorized, http.StatusUnauthorized)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, "Share id is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	var req model.UpdateShareRequest
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	share, err := h.shareService.Update(username, id, service.ShareUpdateSettings{
+		Permissions:    req.Permissions,
+		MaxUploadBytes: req.MaxUploadBytes,
+	})
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	writeJSON(w, shareSummary(*share), http.StatusOK)
+}
+
 // GetInfo returns recipient-facing metadata for a share token. It never exposes
 // mount names or internal paths.
 // GET /api/v1/share/{token}
@@ -180,12 +221,13 @@ func (h *ShareHandler) GetInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, model.ShareInfoResponse{
-		FileName:    info.Name,
-		Size:        info.Size,
-		MimeType:    mimeType,
-		Permissions: share.Permissions,
-		IsFolder:    share.IsFolder,
-		ExpiresAt:   share.ExpiresAt,
+		FileName:       info.Name,
+		Size:           info.Size,
+		MimeType:       mimeType,
+		Permissions:    share.Permissions.ToResponse(),
+		MaxUploadBytes: share.MaxUploadBytes,
+		IsFolder:       share.IsFolder,
+		ExpiresAt:      share.ExpiresAt,
 	}, http.StatusOK)
 }
 
@@ -203,6 +245,24 @@ func (h *ShareHandler) ListItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, items, http.StatusOK)
+}
+
+// DeleteItem removes a file or subfolder below a share that grants deletion.
+func (h *ShareHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		writeError(w, "Share token is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	if r.URL.Query().Get("path") == "" {
+		writeError(w, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	if err := h.shareService.DeleteForRecipientPath(r.Context(), token, r.URL.Query().Get("path")); err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"success": true}, http.StatusOK)
 }
 
 // Download streams the shared file as an attachment with Range support
@@ -242,6 +302,27 @@ func (h *ShareHandler) Download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Accept-Ranges", "bytes")
 
 	http.ServeContent(w, r, info.Name, info.ModTime, file)
+}
+
+// Archive streams a ZIP containing a shared folder or a folder below it.
+func (h *ShareHandler) Archive(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		writeError(w, "Share token is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	archive, err := h.shareService.PrepareDirectoryArchive(r.Context(), token, r.URL.Query().Get("path"))
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", streamContentDisposition("attachment", archive.Name+".zip"))
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if err := archive.WriteTo(r.Context(), w); err != nil {
+		log.Error().Err(err).Msg("Could not finish shared-folder archive")
+	}
 }
 
 // Preview streams the shared file inline with Range support. Active document
@@ -307,20 +388,24 @@ func (h *ShareHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		HandleServiceError(w, err)
 		return
 	}
-	if !share.IsFolder || !share.Permissions.Write {
-		writeError(w, "This share does not allow updates", model.ErrCodePermissionDenied, http.StatusForbidden)
+	if !share.IsFolder || !share.Permissions.Upload {
+		writeError(w, "This share does not allow uploads", model.ErrCodePermissionDenied, http.StatusForbidden)
 		return
 	}
 	if r.ContentLength == 0 {
 		writeError(w, "Request body is required", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
-	if r.ContentLength > h.maxUploadBytes {
+	maxUploadBytes := share.MaxUploadBytes
+	if maxUploadBytes <= 0 || maxUploadBytes > h.maxUploadBytes {
+		maxUploadBytes = h.maxUploadBytes
+	}
+	if r.ContentLength > maxUploadBytes {
 		writeError(w, "Upload exceeds the size limit", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge)
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, h.maxUploadBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	written, fileName, err := h.shareService.WriteForRecipientPath(
 		r.Context(), token, r.URL.Query().Get("path"), r.Body,
 	)

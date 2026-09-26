@@ -39,7 +39,8 @@
 		createFile,
 		rename,
 		deleteFile,
-		getDownloadUrl
+		getDownloadUrl,
+		getDirectoryArchiveUrl
 	} from '$lib/api/files';
 	import { createCopyJob, createMoveJob, createDeleteJob } from '$lib/api/jobs';
 	import { canPreview, getFileTypeDescription } from '$lib/utils/fileTypes';
@@ -528,10 +529,10 @@
 	 */
 	function handleDownload(items: FileInfo[]) {
 		for (const item of items) {
-			if (!item.isDir) {
-				const downloadUrl = getDownloadUrl(item.path);
-				window.open(downloadUrl, '_blank');
-			}
+			const downloadUrl = item.isDir
+				? getDirectoryArchiveUrl(item.path)
+				: getDownloadUrl(item.path);
+			window.open(downloadUrl, '_blank');
 		}
 	}
 

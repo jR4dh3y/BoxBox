@@ -99,7 +99,12 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 		{ id: 'rename', label: 'Rename', icon: Pencil, shortcut: 'F2', disabled: hasMultiple },
 		{ id: 'delete', label: 'Delete', icon: Trash2, shortcut: 'Del' },
 		{ id: 'separator-2', label: '', separator: true },
-		{ id: 'download', label: 'Download', icon: Download, disabled: hasFolder },
+		{
+			id: 'download',
+			label: singleFolder ? 'Download as ZIP' : 'Download',
+			icon: Download,
+			disabled: hasFolder && !singleFolder
+		},
 		{
 			id: 'share',
 			label: singleFile ? 'Share file…' : 'Share folder…',

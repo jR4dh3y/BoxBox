@@ -70,6 +70,7 @@ type FileCommander interface {
 // FileStreamer contains streaming-oriented filesystem operations.
 type FileStreamer interface {
 	OpenFile(ctx context.Context, path string) (File, *model.FileInfo, error)
+	PrepareDirectoryArchive(ctx context.Context, path string) (*DirectoryArchive, error)
 	ResolvePath(path string) (*model.MountPoint, string, error)
 	// GetFilesystem returns the underlying filesystem for advanced operations
 	GetFilesystem() filesystem.FS
@@ -452,6 +453,24 @@ func (s *fileService) OpenFile(ctx context.Context, path string) (File, *model.F
 
 	fileInfo := fileutil.ToFileInfo(info.Name(), path, info)
 	return file, &fileInfo, nil
+}
+
+func (s *fileService) PrepareDirectoryArchive(ctx context.Context, path string) (*DirectoryArchive, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	mount, fsPath, err := s.ResolvePath(path)
+	if err != nil {
+		if errors.Is(err, validator.ErrOutsideMountPoint) {
+			return nil, ErrMountPointNotFound
+		}
+		return nil, err
+	}
+	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	if err != nil {
+		return nil, err
+	}
+	return prepareDirectoryArchive(ctx, s.fs, fsPath, mount.Path)
 }
 
 // CreateFile creates a new file for writing using the filesystem abstraction

@@ -8,11 +8,12 @@
 		revokeShare,
 		type CreateShareResponse,
 		type FileInfo,
-		type SharePermissions,
+		type SharePermissionInput,
 		type ShareRecord
 	} from '$lib/api';
 	import { toastStore } from '$lib/stores/toast.svelte';
-	import { formatDate } from '$lib/utils/format';
+	import { formatDate, formatFileSize } from '$lib/utils/format';
+	import { getShareAccessLabel } from '$lib/utils/shareAccess';
 
 	interface Props {
 		open?: boolean;
@@ -26,7 +27,14 @@
 		{ value: '604800', label: '1 week' },
 		{ value: '2592000', label: '30 days' }
 	];
-	let access = $state<'view' | 'edit'>('view');
+	type FolderShareAccess = 'view' | 'upload' | 'upload-delete';
+	const ACCESS_OPTIONS: Array<{ value: FolderShareAccess; label: string; detail: string }> = [
+		{ value: 'view', label: 'View only', detail: 'Browse and download files' },
+		{ value: 'upload', label: 'Upload only', detail: 'Add files, but not replace or delete' },
+		{ value: 'upload-delete', label: 'Upload + delete', detail: 'Add, replace, and remove files' }
+	];
+	let access = $state<FolderShareAccess>('view');
+	let maxUploadMB = $state<number | undefined>(undefined);
 	let expiry = $state('0');
 	let creating = $state(false);
 	let loading = $state(false);
@@ -43,6 +51,7 @@
 	$effect(() => {
 		if (open && folder) {
 			access = 'view';
+			maxUploadMB = undefined;
 			expiry = '0';
 			created = null;
 			copied = false;
@@ -66,16 +75,28 @@
 
 	async function handleCreate() {
 		if (!folder || creating) return;
+		if (
+			access !== 'view' &&
+			maxUploadMB !== undefined &&
+			(!Number.isSafeInteger(maxUploadMB) || maxUploadMB < 1)
+		) {
+			error = 'Enter a positive whole number for the upload limit.';
+			return;
+		}
 		creating = true;
 		error = null;
 		try {
-			const permissions: SharePermissions = {
+			const permissions: SharePermissionInput = {
 				view: true,
 				download: true,
-				write: access === 'edit'
+				upload: access !== 'view',
+				delete: access === 'upload-delete'
 			};
 			created = await createShare(folder.path, {
 				permissions,
+				...(access !== 'view' && maxUploadMB !== undefined
+					? { maxUploadBytes: maxUploadMB * 1024 * 1024 }
+					: {}),
 				...(expiry !== '0' ? { expiresInSeconds: Number(expiry) } : {})
 			});
 			await loadShares();
@@ -164,9 +185,10 @@
 							<span class="min-w-0 flex-1 truncate text-sm text-text-primary" title={share.url}
 								>{share.url}</span
 							>
-							<span class="text-xs text-text-muted"
-								>{share.permissions.write ? 'Editor' : 'Viewer'}</span
-							>
+							<span class="text-xs text-text-muted">{getShareAccessLabel(share.permissions)}</span>
+							{#if share.permissions.upload}<span class="text-xs text-text-muted"
+									>Max {formatFileSize(share.maxUploadBytes)} per file</span
+								>{/if}
 							<span class="text-xs text-text-muted">{formatExpiry(share)}</span>
 							<Button
 								variant="ghost"
@@ -183,15 +205,16 @@
 		</section>
 		<div class="flex flex-col gap-4">
 			<div>
-				<p class="mb-2 text-sm font-medium text-text-primary">People with this link</p>
-				<div class="grid grid-cols-2 gap-2">
-					{#each [{ value: 'view', label: 'Viewer', detail: 'Can open files' }, { value: 'edit', label: 'Editor', detail: 'Can update files' }] as option (option.value)}
+				<p class="mb-2 text-sm font-medium text-text-primary">Folder access</p>
+				<div class="grid gap-2 sm:grid-cols-3">
+					{#each ACCESS_OPTIONS as option (option.value)}
 						<button
 							type="button"
 							class="rounded border px-3 py-2 text-left {access === option.value
 								? 'border-accent bg-accent/10'
 								: 'border-border-primary'}"
-							onclick={() => (access = option.value as 'view' | 'edit')}
+							aria-pressed={access === option.value}
+							onclick={() => (access = option.value)}
 						>
 							<span class="block text-sm font-medium text-text-primary">{option.label}</span>
 							<span class="block text-xs text-text-muted">{option.detail}</span>
@@ -199,6 +222,25 @@
 					{/each}
 				</div>
 			</div>
+			{#if access !== 'view'}
+				<div>
+					<label
+						for="folder-share-upload-limit"
+						class="mb-2 block text-sm font-medium text-text-secondary"
+						>Maximum upload size per file (MB)</label
+					>
+					<input
+						id="folder-share-upload-limit"
+						type="number"
+						min="1"
+						step="1"
+						bind:value={maxUploadMB}
+						placeholder="Server maximum"
+						class="h-9 w-full rounded border border-border-primary bg-surface-primary px-3 text-sm text-text-primary placeholder:text-text-muted"
+					/>
+					<p class="mt-1 text-xs text-text-muted">Leave blank to use the server's maximum.</p>
+				</div>
+			{/if}
 			<div>
 				<label for="folder-share-expiry" class="mb-2 block text-sm font-medium text-text-secondary"
 					>Link expires</label

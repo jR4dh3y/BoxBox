@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -64,11 +65,22 @@ func newShareManagementRequestForUser(username, method, target string, body io.R
 }
 
 func createShareViaAPI(t *testing.T, router *chi.Mux, path string, permissions model.SharePermissions, expiresInSeconds *int64) model.ShareResponse {
+	return createShareViaAPIWithOptions(t, router, path, permissions, expiresInSeconds, nil)
+}
+
+func createShareViaAPIWithLimit(t *testing.T, router *chi.Mux, path string, permissions model.SharePermissions, maxUploadBytes int64) model.ShareResponse {
+	return createShareViaAPIWithOptions(t, router, path, permissions, nil, &maxUploadBytes)
+}
+
+func createShareViaAPIWithOptions(t *testing.T, router *chi.Mux, path string, permissions model.SharePermissions, expiresInSeconds *int64, maxUploadBytes *int64) model.ShareResponse {
 	t.Helper()
 
 	body := map[string]any{"path": path, "permissions": permissions}
 	if expiresInSeconds != nil {
 		body["expiresInSeconds"] = *expiresInSeconds
+	}
+	if maxUploadBytes != nil {
+		body["maxUploadBytes"] = *maxUploadBytes
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
@@ -110,7 +122,7 @@ func TestCreateShareViaAPI(t *testing.T) {
 	if response.FileName != "file.txt" {
 		t.Fatalf("fileName = %q, want file.txt", response.FileName)
 	}
-	if !response.Permissions.View || !response.Permissions.Download || response.Permissions.Write {
+	if !response.Permissions.View || !response.Permissions.Download || response.Permissions.Upload || response.Permissions.Delete {
 		t.Fatalf("permissions = %+v", response.Permissions)
 	}
 	if response.ExpiresAt.IsZero() {
@@ -160,8 +172,8 @@ func TestCreateFolderShareViaAPI(t *testing.T) {
 	handler, _, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
 
-	response := createShareViaAPI(t, router, "media/shared", model.SharePermissions{Write: true}, nil)
-	if !response.IsFolder || !response.Permissions.View || !response.Permissions.Download || !response.Permissions.Write {
+	response := createShareViaAPI(t, router, "media/shared", model.SharePermissions{Upload: true}, nil)
+	if !response.IsFolder || !response.Permissions.View || !response.Permissions.Download || !response.Permissions.Upload || response.Permissions.Delete {
 		t.Fatalf("folder response = %+v", response)
 	}
 }
@@ -195,6 +207,45 @@ func TestShareManagementRequiresUsername(t *testing.T) {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 			}
 		})
+	}
+}
+
+func TestShareLegacyReplacementCapabilityInResponses(t *testing.T) {
+	handler, _, shareService := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+	share, err := shareService.Create(context.Background(), "owner", "media/shared", service.ShareSettings{
+		Permissions: model.SharePermissions{Upload: true, LegacyReplace: true},
+	}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	infoReq := httptest.NewRequest(http.MethodGet, "/api/v1/share/"+share.Token, nil)
+	infoRec := httptest.NewRecorder()
+	router.ServeHTTP(infoRec, infoReq)
+	if infoRec.Code != http.StatusOK {
+		t.Fatalf("share info status = %d, want %d: %s", infoRec.Code, http.StatusOK, infoRec.Body.String())
+	}
+	var info model.ShareInfoResponse
+	if err := json.NewDecoder(infoRec.Body).Decode(&info); err != nil {
+		t.Fatal(err)
+	}
+	if !info.Permissions.CanReplace || info.Permissions.Delete {
+		t.Fatalf("recipient permissions = %+v, want replace without delete", info.Permissions)
+	}
+
+	listReq := newShareManagementRequest(http.MethodGet, "/api/v1/shares", nil)
+	listRec := httptest.NewRecorder()
+	router.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("share list status = %d, want %d: %s", listRec.Code, http.StatusOK, listRec.Body.String())
+	}
+	var list model.ShareListResponse
+	if err := json.NewDecoder(listRec.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Shares) != 1 || !list.Shares[0].Permissions.CanReplace || list.Shares[0].Permissions.Delete {
+		t.Fatalf("owner share permissions = %+v, want replace without delete", list.Shares)
 	}
 }
 
@@ -256,12 +307,39 @@ func TestShareListAndRevokeViaAPI(t *testing.T) {
 	}
 }
 
+func TestSharePermissionOnlyUpdatePreservesUploadLimit(t *testing.T) {
+	handler, _, _ := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+	share := createShareViaAPIWithLimit(t, router, "media/shared", model.SharePermissions{Upload: true}, 8)
+
+	updateReq := newShareManagementRequest(http.MethodPatch, "/api/v1/shares/"+share.ID, strings.NewReader(`{"permissions":{"upload":true}}`))
+	updateRec := httptest.NewRecorder()
+	router.ServeHTTP(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("permissions-only update status = %d, want 200: %s", updateRec.Code, updateRec.Body.String())
+	}
+	var updated model.ShareSummary
+	if err := json.Unmarshal(updateRec.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.MaxUploadBytes != 8 {
+		t.Fatalf("permissions-only update raised upload limit to %d, want 8", updated.MaxUploadBytes)
+	}
+
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path=too-large.txt", strings.NewReader("123456789"))
+	uploadRec := httptest.NewRecorder()
+	router.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("upload over preserved limit status = %d, want 413: %s", uploadRec.Code, uploadRec.Body.String())
+	}
+}
+
 func TestShareManagementIsScopedToOwnerViaAPI(t *testing.T) {
 	handler, _, shareSvc := setupTestShareHandler()
 	router := createShareTestRouter(handler)
 
 	owner := createShareViaAPI(t, router, "media/file.txt", model.SharePermissions{View: true}, nil)
-	other, err := shareSvc.Create(context.Background(), "other", "media/file.txt", model.SharePermissions{Download: true}, time.Time{})
+	other, err := shareSvc.Create(context.Background(), "other", "media/file.txt", service.ShareSettings{Permissions: model.SharePermissions{Download: true}}, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +399,7 @@ func TestShareInfoOmitsInternalPaths(t *testing.T) {
 	if info.FileName != "file.txt" || info.Size != int64(len("shared content")) || info.MimeType == "" {
 		t.Fatalf("info = %+v", info)
 	}
-	if !info.Permissions.View || !info.Permissions.Download || info.Permissions.Write {
+	if !info.Permissions.View || !info.Permissions.Download || info.Permissions.Upload || info.Permissions.Delete {
 		t.Fatalf("info permissions = %+v", info.Permissions)
 	}
 }
@@ -359,7 +437,7 @@ func TestShareFolderItemsAndNestedDownloadViaAPI(t *testing.T) {
 func TestShareFolderRejectsInvalidPathsViaAPI(t *testing.T) {
 	handler, _, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
-	share := createShareViaAPI(t, router, "media/shared", model.SharePermissions{Write: true}, nil)
+	share := createShareViaAPI(t, router, "media/shared", model.SharePermissions{Upload: true}, nil)
 
 	traversalReq := httptest.NewRequest(http.MethodGet, "/api/v1/share/"+share.Token+"/items?path=../media", nil)
 	traversalRec := httptest.NewRecorder()
@@ -414,7 +492,7 @@ func TestShareFolderViewerAndReadOnlyMountCannotUploadViaAPI(t *testing.T) {
 func TestShareFileUploadIsRejectedViaAPI(t *testing.T) {
 	handler, _, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
-	share := createShareViaAPI(t, router, "media/file.txt", model.SharePermissions{Write: true}, nil)
+	share := createShareViaAPI(t, router, "media/file.txt", model.SharePermissions{Upload: true}, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload", strings.NewReader("blocked"))
 	rec := httptest.NewRecorder()
@@ -427,7 +505,7 @@ func TestShareFileUploadIsRejectedViaAPI(t *testing.T) {
 func TestShareRecipientEndpointsAreUniformlyNotFound(t *testing.T) {
 	handler, _, shareSvc := setupTestShareHandler()
 	router := createShareTestRouter(handler)
-	perms := model.SharePermissions{View: true, Download: true, Write: true}
+	perms := service.ShareSettings{Permissions: model.SharePermissions{View: true, Download: true, Upload: true}}
 
 	expired, err := shareSvc.Create(context.Background(), "owner", "media/file.txt", perms, time.Now().Add(-time.Hour))
 	if err != nil {
@@ -595,7 +673,7 @@ func TestShareFolderUploadOverwritesFileViaAPI(t *testing.T) {
 	handler, fs, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
 
-	share := createShareViaAPI(t, router, "media", model.SharePermissions{Write: true}, nil)
+	share := createShareViaAPI(t, router, "media", model.SharePermissions{Upload: true, Delete: true}, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path=file.txt", strings.NewReader("new contents"))
 	rec := httptest.NewRecorder()
@@ -633,7 +711,7 @@ func TestShareUploadRejectsInvalidRequests(t *testing.T) {
 	router := createShareTestRouter(handler)
 
 	readOnly := createShareViaAPI(t, router, "media", model.SharePermissions{}, nil)
-	writable := createShareViaAPI(t, router, "media", model.SharePermissions{Write: true}, nil)
+	writable := createShareViaAPI(t, router, "media", model.SharePermissions{Upload: true}, nil)
 
 	tests := []struct {
 		name       string
@@ -663,7 +741,7 @@ func TestShareUploadEnforcesMaxBytes(t *testing.T) {
 	// NewShareHandler(_, 1) caps uploads at 1 MiB.
 	handler, fs, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
-	share := createShareViaAPI(t, router, "media", model.SharePermissions{Write: true}, nil)
+	share := createShareViaAPI(t, router, "media", model.SharePermissions{Upload: true}, nil)
 
 	oversized := bytes.Repeat([]byte("a"), 1<<20+1)
 
@@ -694,5 +772,146 @@ func TestShareUploadEnforcesMaxBytes(t *testing.T) {
 	}
 	if string(content) != "shared content" {
 		t.Fatalf("target content after rejected uploads = %q, want original", content)
+	}
+}
+
+func TestShareUploadOnlyRespectsPerLinkLimitAndCannotOverwriteViaAPI(t *testing.T) {
+	handler, fs, _ := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+	share := createShareViaAPIWithLimit(t, router, "media", model.SharePermissions{Upload: true}, 4)
+	if share.MaxUploadBytes != 4 {
+		t.Fatalf("share upload limit = %d, want 4", share.MaxUploadBytes)
+	}
+
+	denied := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path=file.txt", strings.NewReader("no"))
+	deniedRec := httptest.NewRecorder()
+	router.ServeHTTP(deniedRec, denied)
+	if deniedRec.Code != http.StatusForbidden {
+		t.Fatalf("upload-only overwrite status = %d, want 403: %s", deniedRec.Code, deniedRec.Body.String())
+	}
+
+	allowed := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path=new.txt", strings.NewReader("four"))
+	allowedRec := httptest.NewRecorder()
+	router.ServeHTTP(allowedRec, allowed)
+	if allowedRec.Code != http.StatusOK {
+		t.Fatalf("upload-only create status = %d, want 200: %s", allowedRec.Code, allowedRec.Body.String())
+	}
+
+	tooLarge := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path=large.txt", strings.NewReader("five!"))
+	tooLargeRec := httptest.NewRecorder()
+	router.ServeHTTP(tooLargeRec, tooLarge)
+	if tooLargeRec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("per-link oversize status = %d, want 413: %s", tooLargeRec.Code, tooLargeRec.Body.String())
+	}
+	if exists, err := fs.Exists("/data/media/large.txt"); err != nil || exists {
+		t.Fatalf("oversize upload left a file (exists=%t, err=%v)", exists, err)
+	}
+}
+
+func TestShareUpdateAndRecipientDeleteViaAPI(t *testing.T) {
+	handler, fs, _ := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+	if err := fs.WriteFile("/data/media/shared/note.txt", []byte("note"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	share := createShareViaAPIWithLimit(t, router, "media/shared", model.SharePermissions{Upload: true}, 8)
+
+	deletePath := "/api/v1/share/" + share.Token + "/items?path=note.txt"
+	deniedDelete := httptest.NewRequest(http.MethodDelete, deletePath, nil)
+	deniedDeleteRec := httptest.NewRecorder()
+	router.ServeHTTP(deniedDeleteRec, deniedDelete)
+	if deniedDeleteRec.Code != http.StatusForbidden {
+		t.Fatalf("upload-only delete status = %d, want 403: %s", deniedDeleteRec.Code, deniedDeleteRec.Body.String())
+	}
+
+	maxUploadBytes := int64(16)
+	updatedRequest := model.UpdateShareRequest{
+		Permissions:    model.SharePermissions{Upload: true, Delete: true},
+		MaxUploadBytes: &maxUploadBytes,
+	}
+	updatedBody, err := json.Marshal(updatedRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updateReq := newShareManagementRequest(http.MethodPatch, "/api/v1/shares/"+share.ID, bytes.NewReader(updatedBody))
+	updateRec := httptest.NewRecorder()
+	router.ServeHTTP(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200: %s", updateRec.Code, updateRec.Body.String())
+	}
+	var updated model.ShareSummary
+	if err := json.Unmarshal(updateRec.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Permissions.Upload || !updated.Permissions.Delete || updated.MaxUploadBytes != 16 {
+		t.Fatalf("updated share = %+v", updated)
+	}
+
+	wrongOwnerReq := newShareManagementRequestForUser("other", http.MethodPatch, "/api/v1/shares/"+share.ID, bytes.NewReader(updatedBody))
+	wrongOwnerRec := httptest.NewRecorder()
+	router.ServeHTTP(wrongOwnerRec, wrongOwnerReq)
+	if wrongOwnerRec.Code != http.StatusNotFound {
+		t.Fatalf("other owner's update status = %d, want 404", wrongOwnerRec.Code)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, deletePath, nil)
+	deleteRec := httptest.NewRecorder()
+	router.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("authorized delete status = %d, want 200: %s", deleteRec.Code, deleteRec.Body.String())
+	}
+	if exists, err := fs.Exists("/data/media/shared/note.txt"); err != nil || exists {
+		t.Fatalf("deleted item remains (exists=%t, err=%v)", exists, err)
+	}
+}
+
+func TestShareFolderArchiveViaAPI(t *testing.T) {
+	handler, fs, _ := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+	if err := fs.MkdirAll("/data/media/shared/nested", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile("/data/media/shared/nested/note.txt", []byte("archive note"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	share := createShareViaAPI(t, router, "media/shared", model.SharePermissions{}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/share/"+share.Token+"/archive", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("archive status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/zip" {
+		t.Fatalf("archive Content-Type = %q, want application/zip", got)
+	}
+	if got := rec.Header().Get("Content-Disposition"); !strings.Contains(got, "shared.zip") {
+		t.Fatalf("archive Content-Disposition = %q", got)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range reader.File {
+		if entry.Name != "shared/nested/note.txt" {
+			continue
+		}
+		file, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if readErr != nil || closeErr != nil {
+			t.Fatalf("read archive item: read=%v close=%v", readErr, closeErr)
+		}
+		if string(content) != "archive note" {
+			t.Fatalf("archive content = %q", content)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("ZIP is missing shared/nested/note.txt: %+v", reader.File)
 	}
 }
