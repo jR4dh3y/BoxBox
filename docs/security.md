@@ -132,6 +132,7 @@ Share links expose one file or a folder tree to anyone holding the token URL:
 - Folder ZIP archives validate traversal and resolved paths against the share root before streaming.
 - Recipient metadata responses never include mount names or internal paths.
 - The share store directory is restricted to owner access (`0700`) and its token-bearing `shares.json` file to `0600`, including existing stores when the service initializes.
+- Before downgrading to a version predating split upload/delete permissions, back up `shares.json`; older versions cannot preserve the new per-link permissions and upload caps if they rewrite the store.
 
 ## Operational Checklist
 

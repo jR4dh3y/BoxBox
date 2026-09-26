@@ -53,6 +53,20 @@ func TestSharePermissionsResponseReportsEffectiveReplacement(t *testing.T) {
 			if response.CanReplace != test.want {
 				t.Fatalf("canReplace = %t, want %t", response.CanReplace, test.want)
 			}
+			if response.Write != test.permissions.Upload {
+				t.Fatalf("legacy write alias = %t, want upload=%t", response.Write, test.permissions.Upload)
+			}
+			data, err := json.Marshal(response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]any
+			if err := json.Unmarshal(data, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if got, ok := fields["write"].(bool); !ok || got != test.permissions.Upload {
+				t.Fatalf("serialized write alias = %v, want upload=%t", fields["write"], test.permissions.Upload)
+			}
 		})
 	}
 }

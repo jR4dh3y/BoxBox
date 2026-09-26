@@ -45,6 +45,7 @@ type SharePermissionsResponse struct {
 	Upload     bool `json:"upload"`
 	Delete     bool `json:"delete"`
 	CanReplace bool `json:"canReplace"`
+	Write      bool `json:"write"` // Deprecated alias for Upload.
 }
 
 func (p SharePermissions) ToResponse() SharePermissionsResponse {
@@ -54,6 +55,7 @@ func (p SharePermissions) ToResponse() SharePermissionsResponse {
 		Upload:     p.Upload,
 		Delete:     p.Delete,
 		CanReplace: p.Delete || p.LegacyReplace,
+		Write:      p.Upload,
 	}
 }
 
