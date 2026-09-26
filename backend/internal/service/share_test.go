@@ -255,9 +255,10 @@ func TestShareLegacyFolderWriteKeepsReplacementOnlyForLegacyUpdates(t *testing.T
 		t.Fatalf("legacy delete error = %v, want %v", err, ErrPermissionDenied)
 	}
 
-	updated, err := shares.Update("owner", share.ID, ShareSettings{
+	maxUploadBytes := int64(24)
+	updated, err := shares.Update("owner", share.ID, ShareUpdateSettings{
 		Permissions:    model.SharePermissions{Upload: true, LegacyReplace: true},
-		MaxUploadBytes: 24,
+		MaxUploadBytes: &maxUploadBytes,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -269,9 +270,9 @@ func TestShareLegacyFolderWriteKeepsReplacementOnlyForLegacyUpdates(t *testing.T
 		t.Fatalf("legacy replacement stopped after settings update: %v", err)
 	}
 
-	modernUpdate, err := shares.Update("owner", share.ID, ShareSettings{
+	modernUpdate, err := shares.Update("owner", share.ID, ShareUpdateSettings{
 		Permissions:    model.SharePermissions{View: true, Download: true, Upload: true},
-		MaxUploadBytes: 24,
+		MaxUploadBytes: &maxUploadBytes,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -625,9 +626,10 @@ func TestShareUploadOnlyCannotReplaceOrDeleteAndEnforcesLinkLimit(t *testing.T) 
 		t.Fatalf("oversized upload left a file (exists=%t, err=%v)", exists, err)
 	}
 
-	managed, err := shares.Update("owner", share.ID, ShareSettings{
+	newLimit := int64(8)
+	managed, err := shares.Update("owner", share.ID, ShareUpdateSettings{
 		Permissions:    model.SharePermissions{Upload: true, Delete: true},
-		MaxUploadBytes: 8,
+		MaxUploadBytes: &newLimit,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -651,9 +653,9 @@ func TestShareUploadOnlyCannotReplaceOrDeleteAndEnforcesLinkLimit(t *testing.T) 
 		t.Fatalf("managed delete left a file (exists=%t, err=%v)", exists, err)
 	}
 
-	viewer, err := shares.Update("owner", share.ID, ShareSettings{
+	viewer, err := shares.Update("owner", share.ID, ShareUpdateSettings{
 		Permissions:    model.SharePermissions{View: true},
-		MaxUploadBytes: 8,
+		MaxUploadBytes: &newLimit,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -776,6 +778,49 @@ func TestShareWriteRenamesOverResolvedTargetNotSymlink(t *testing.T) {
 		t.Fatal("symlink entry was replaced by a regular file")
 	}
 	assertOnlyEntries(t, media, "real.txt", "link.txt")
+}
+
+func TestShareDeleteRemovesSymlinkWithoutDeletingTarget(t *testing.T) {
+	root := t.TempDir()
+	media := filepath.Join(root, "media")
+	target := filepath.Join(media, "target")
+	if err := os.MkdirAll(filepath.Join(target, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	targetFile := filepath.Join(target, "nested", "keep.txt")
+	if err := os.WriteFile(targetFile, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(media, "linked")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	shares := NewShareService(filesystem.NewOsFS(), ShareServiceConfig{
+		DataDir: filepath.Join(root, "data"),
+		Mounts: func() []model.MountPoint {
+			return []model.MountPoint{{Name: "media", Path: media}}
+		},
+	})
+	share, err := shares.Create(context.Background(), "owner", "media", ShareSettings{
+		Permissions: model.SharePermissions{Upload: true, Delete: true},
+	}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := shares.DeleteForRecipientPath(context.Background(), share.Token, "linked"); err != nil {
+		t.Fatalf("delete symlink entry: %v", err)
+	}
+	if _, err := os.Lstat(link); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("symlink still exists or could not be inspected: %v", err)
+	}
+	content, err := os.ReadFile(targetFile)
+	if err != nil {
+		t.Fatalf("symlink target was removed: %v", err)
+	}
+	if string(content) != "keep" {
+		t.Fatalf("symlink target content = %q, want keep", content)
+	}
 }
 
 func TestShareRejectsSymlinkEscapingMount(t *testing.T) {

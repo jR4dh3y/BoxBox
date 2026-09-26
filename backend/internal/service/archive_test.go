@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -119,42 +118,91 @@ func TestDirectoryArchiveEscapesDistinctNamesWithoutCollisions(t *testing.T) {
 	}
 }
 
-func TestDirectoryArchiveRejectsCaseInsensitiveNameCollisions(t *testing.T) {
+func TestDirectoryArchivePreservesNamesThatCollideOnWindows(t *testing.T) {
 	fsys := filesystem.NewMemMapFS()
-	if err := fsys.MkdirAll("/data/media/folder", 0o755); err != nil {
-		t.Fatal(err)
+	for _, path := range []string{
+		"/data/media/folder",
+		"/data/media/folder/Group",
+		"/data/media/folder/group",
+	} {
+		if err := fsys.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	for _, name := range []string{"Foo.txt", "foo.txt"} {
-		if err := fsys.WriteFile("/data/media/folder/"+name, []byte(name), 0o644); err != nil {
+	files := map[string]string{
+		"Foo.txt":          "uppercase",
+		"foo.txt":          "lowercase",
+		"report":           "plain extensionless",
+		"report.":          "trailing dot",
+		"CON.txt":          "reserved uppercase",
+		"con.txt":          "reserved lowercase",
+		"Group/inside.txt": "first directory",
+		"group/inside.txt": "second directory",
+	}
+	for name, content := range files {
+		if err := fsys.WriteFile("/data/media/folder/"+name, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	if _, err := prepareDirectoryArchive(context.Background(), fsys, "/data/media/folder", "/data/media"); !errors.Is(err, ErrInvalidOperation) {
-		t.Fatalf("prepare archive error = %v, want %v", err, ErrInvalidOperation)
-	}
-}
-
-func TestDirectoryArchiveRejectsWindowsTrailingDotCollisions(t *testing.T) {
-	fsys := filesystem.NewMemMapFS()
-	if err := fsys.MkdirAll("/data/media/folder", 0o755); err != nil {
+	archive, err := prepareDirectoryArchive(context.Background(), fsys, "/data/media/folder", "/data/media")
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"report", "report."} {
-		if err := fsys.WriteFile("/data/media/folder/"+name, []byte(name), 0o644); err != nil {
+	var output bytes.Buffer
+	if err := archive.WriteTo(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := make(map[string]bool, len(files))
+	for _, content := range files {
+		want[content] = true
+	}
+	seenNames := make(map[string]struct{}, len(files))
+	for _, entry := range reader.File {
+		if entry.FileInfo().IsDir() {
+			continue
+		}
+		key := archiveNameKey(entry.Name)
+		if _, exists := seenNames[key]; exists {
+			t.Fatalf("portable ZIP path collision at %q", entry.Name)
+		}
+		seenNames[key] = struct{}{}
+		file, err := entry.Open()
+		if err != nil {
 			t.Fatal(err)
 		}
+		content, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if readErr != nil || closeErr != nil {
+			t.Fatalf("read %q: read=%v close=%v", entry.Name, readErr, closeErr)
+		}
+		if !want[string(content)] {
+			t.Fatalf("unexpected or duplicate file content %q in %q", content, entry.Name)
+		}
+		delete(want, string(content))
 	}
-
-	if _, err := prepareDirectoryArchive(context.Background(), fsys, "/data/media/folder", "/data/media"); !errors.Is(err, ErrInvalidOperation) {
-		t.Fatalf("prepare archive error = %v, want %v", err, ErrInvalidOperation)
+	if len(want) != 0 {
+		t.Fatalf("archive omitted valid files: %v", want)
 	}
 }
 
-func TestArchiveCollisionKeyRejectsWindowsDotSegments(t *testing.T) {
-	for _, name := range []string{"folder/. /file.txt", "folder/.. /file.txt", ".. "} {
-		if _, ok := archiveCollisionKey(name); ok {
-			t.Errorf("archiveCollisionKey(%q) accepted a Windows dot segment", name)
+func TestArchiveComponentsRemainSafeForWindowsExtraction(t *testing.T) {
+	allocator := newArchiveNameAllocator()
+	root := sanitizeArchiveComponent("folder")
+	for _, component := range []string{".", "..", ".. ", "report."} {
+		got := allocator.component(root, component)
+		if got == "" || got == "." || got == ".." || strings.TrimRight(got, " .") == "" {
+			t.Errorf("component %q produced unsafe ZIP name %q", component, got)
+		}
+	}
+	for _, component := range []string{"CON", "con.txt", "nul", "COM1.log"} {
+		got := sanitizeArchiveComponent(component)
+		if isWindowsReservedArchiveName(got) {
+			t.Errorf("reserved device %q stayed reserved as %q", component, got)
 		}
 	}
 }

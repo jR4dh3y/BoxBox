@@ -39,14 +39,11 @@ func TestAferoFSKeepsSafePathsAndRejectsTraversal(t *testing.T) {
 	}
 }
 
-func TestRenameNoReplaceFallsBackWhenHardLinksAreUnsupported(t *testing.T) {
+func TestRenameNoReplaceDoesNotPublishWhenHardLinksAreUnsupported(t *testing.T) {
 	directory := t.TempDir()
 	source := filepath.Join(directory, "staged.txt")
 	destination := filepath.Join(directory, "uploaded.txt")
-	if err := os.WriteFile(source, []byte("upload"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(source, 0o640); err != nil {
+	if err := os.WriteFile(source, []byte("complete upload"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 
@@ -54,29 +51,19 @@ func TestRenameNoReplaceFallsBackWhenHardLinksAreUnsupported(t *testing.T) {
 	err := renameNoReplaceWithLink(source, destination, func(string, string) error {
 		return errLinkUnsupported
 	})
-	if err != nil {
-		t.Fatalf("rename with copy fallback: %v", err)
+	if !errors.Is(err, errLinkUnsupported) {
+		t.Fatalf("rename error = %v, want hard-link error", err)
 	}
-	if _, err := os.Stat(source); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("staged file still exists: %v", err)
+	data, err := os.ReadFile(source)
+	if err != nil || string(data) != "complete upload" {
+		t.Fatalf("staged source after failure = %q, error = %v", data, err)
 	}
-	data, err := os.ReadFile(destination)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != "upload" {
-		t.Fatalf("destination = %q, want upload", data)
-	}
-	info, err := os.Stat(destination)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := info.Mode().Perm(); got != 0o640 {
-		t.Fatalf("destination mode = %04o, want 0640", got)
+	if _, err := os.Stat(destination); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("destination appeared before atomic publication: %v", err)
 	}
 }
 
-func TestRenameNoReplaceFallbackDoesNotOverwrite(t *testing.T) {
+func TestRenameNoReplacePublishesAtomicallyWithoutOverwriting(t *testing.T) {
 	directory := t.TempDir()
 	source := filepath.Join(directory, "staged.txt")
 	destination := filepath.Join(directory, "uploaded.txt")
@@ -87,9 +74,8 @@ func TestRenameNoReplaceFallbackDoesNotOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := renameNoReplaceWithLink(source, destination, func(string, string) error {
-		return errors.New("hard links unsupported")
-	})
+	fsys := NewOsFS()
+	err := fsys.RenameNoReplace(source, destination)
 	if !errors.Is(err, fs.ErrExist) {
 		t.Fatalf("rename error = %v, want fs.ErrExist", err)
 	}
@@ -99,5 +85,38 @@ func TestRenameNoReplaceFallbackDoesNotOverwrite(t *testing.T) {
 	}
 	if string(data) != "existing" {
 		t.Fatalf("existing destination = %q, want unchanged", data)
+	}
+	if err := os.Remove(destination); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.RenameNoReplace(source, destination); err != nil {
+		t.Fatalf("publish complete upload: %v", err)
+	}
+	if _, err := os.Stat(source); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("source remains after successful publish: %v", err)
+	}
+	data, err = os.ReadFile(destination)
+	if err != nil || string(data) != "new" {
+		t.Fatalf("published destination = %q, error = %v", data, err)
+	}
+}
+
+func TestAferoFSLstatDoesNotFollowSymlinks(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "target.txt")
+	link := filepath.Join(directory, "link.txt")
+	if err := os.WriteFile(target, []byte("target"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	info, err := NewOsFS().Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("Lstat mode = %v, want symlink", info.Mode())
 	}
 }

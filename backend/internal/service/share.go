@@ -41,7 +41,7 @@ type ShareService interface {
 	// List returns the user's active (non-revoked, non-expired) shares, newest first.
 	List(username string) ([]model.Share, error)
 	// Update changes the permissions and upload limit on one of the user's folder shares.
-	Update(username string, id string, settings ShareSettings) (*model.Share, error)
+	Update(username string, id string, settings ShareUpdateSettings) (*model.Share, error)
 	// Revoke permanently disables one of the user's shares by ID.
 	Revoke(username string, id string) error
 	// ResolveForRecipient returns the share for a token, or ErrShareNotFound for
@@ -70,6 +70,12 @@ type ShareService interface {
 type ShareSettings struct {
 	Permissions    model.SharePermissions
 	MaxUploadBytes int64
+}
+
+// ShareUpdateSettings distinguishes an omitted upload limit from an explicit one.
+type ShareUpdateSettings struct {
+	Permissions    model.SharePermissions
+	MaxUploadBytes *int64
 }
 
 // ShareServiceConfig holds configuration for the share service.
@@ -276,16 +282,12 @@ func (s *shareService) Revoke(username string, id string) error {
 	return ErrShareNotFound
 }
 
-func (s *shareService) Update(username string, id string, settings ShareSettings) (*model.Share, error) {
+func (s *shareService) Update(username string, id string, settings ShareUpdateSettings) (*model.Share, error) {
 	if s.storageErr != nil {
 		return nil, s.storageErr
 	}
 	if username == "" {
 		return nil, ErrInvalidOperation
-	}
-	maxUploadBytes, err := s.resolveUploadLimit(settings.MaxUploadBytes)
-	if err != nil {
-		return nil, err
 	}
 	requestedPermissions := settings.Permissions
 	if !requestedPermissions.View && !requestedPermissions.Download && !requestedPermissions.Upload && !requestedPermissions.Delete {
@@ -314,13 +316,20 @@ func (s *shareService) Update(username string, id string, settings ShareSettings
 		if record.CreatedBy != username || record.Revoked || isExpired(record.ExpiresAt, time.Now()) || !record.IsFolder {
 			return nil, ErrShareNotFound
 		}
-		share := fromShareRecord(*record)
+		share := s.shareFromRecord(*record)
 		mount, _, err := s.resolveShareTarget(&share)
 		if err != nil {
 			return nil, err
 		}
 		if (permissions.Upload || permissions.Delete) && mount.ReadOnly {
 			return nil, ErrPermissionDenied
+		}
+		maxUploadBytes := share.MaxUploadBytes
+		if settings.MaxUploadBytes != nil {
+			maxUploadBytes, err = s.resolveUploadLimit(*settings.MaxUploadBytes)
+			if err != nil {
+				return nil, err
+			}
 		}
 		share.Permissions = permissions
 		share.MaxUploadBytes = maxUploadBytes
@@ -683,17 +692,36 @@ func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string,
 	if err != nil {
 		return err
 	}
-	if mount.ReadOnly || target == root || !pathWithinRoot(root, target) {
-		return ErrPermissionDenied
-	}
-	info, err := s.statTarget(target)
+	cleanPath, err := cleanShareRelativePath(relativePath)
 	if err != nil {
 		return err
 	}
-	if !info.IsDir() && !info.Mode().IsRegular() {
-		return ErrNotFile
+	entryPath := filepath.Join(root, filepath.FromSlash(cleanPath))
+	if mount.ReadOnly || cleanPath == "" || !pathWithinRoot(root, target) || !pathWithinRoot(root, entryPath) {
+		return ErrPermissionDenied
 	}
-	return s.fs.RemoveAll(target)
+	components := strings.Split(cleanPath, "/")
+	current := root
+	for index, component := range components {
+		current = filepath.Join(current, component)
+		info, err := s.fs.Lstat(current)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			if index != len(components)-1 {
+				return ErrPermissionDenied
+			}
+			return s.fs.Remove(current)
+		}
+		if index < len(components)-1 && !info.IsDir() {
+			return ErrNotDirectory
+		}
+		if index == len(components)-1 && !info.IsDir() && !info.Mode().IsRegular() {
+			return ErrNotFile
+		}
+	}
+	return s.fs.RemoveAll(entryPath)
 }
 
 func (s *shareService) resolveFolderPath(share *model.Share, relativePath string, allowMissing bool) (*model.MountPoint, string, string, error) {

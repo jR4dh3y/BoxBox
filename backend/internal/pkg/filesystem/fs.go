@@ -29,6 +29,9 @@ type FS interface {
 	// Stat returns a FileInfo describing the named file.
 	Stat(name string) (fs.FileInfo, error)
 
+	// Lstat returns information about the path without following a final symlink.
+	Lstat(name string) (fs.FileInfo, error)
+
 	// Open opens the named file for reading.
 	Open(name string) (afero.File, error)
 
@@ -181,6 +184,21 @@ func (a *AferoFS) Stat(name string) (fs.FileInfo, error) {
 	return a.fs.Stat(name)
 }
 
+func (a *AferoFS) Lstat(name string) (fs.FileInfo, error) {
+	if err := validateFilesystemPath(name); err != nil {
+		return nil, err
+	}
+	name = filepath.Clean("/" + name)
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		return os.Lstat(name)
+	}
+	if lstat, ok := a.fs.(afero.Lstater); ok {
+		info, _, err := lstat.LstatIfPossible(name)
+		return info, err
+	}
+	return a.fs.Stat(name)
+}
+
 // Open opens the named file for reading.
 func (a *AferoFS) Open(name string) (afero.File, error) {
 	if err := validateFilesystemPath(name); err != nil {
@@ -240,7 +258,7 @@ func (a *AferoFS) RenameNoReplace(oldpath, newpath string) error {
 	oldpath = filepath.Clean("/" + oldpath)
 	newpath = filepath.Clean("/" + newpath)
 	if _, ok := a.fs.(*afero.OsFs); ok {
-		return renameNoReplaceWithLink(oldpath, newpath, os.Link)
+		return renameNoReplaceOS(oldpath, newpath)
 	}
 	if _, err := a.fs.Stat(newpath); err == nil {
 		return fs.ErrExist
@@ -251,44 +269,7 @@ func (a *AferoFS) RenameNoReplace(oldpath, newpath string) error {
 }
 
 func renameNoReplaceWithLink(oldpath, newpath string, link func(string, string) error) error {
-	if err := link(oldpath, newpath); err == nil {
-		if err := os.Remove(oldpath); err != nil {
-			_ = os.Remove(newpath)
-			return err
-		}
-		return nil
-	} else if errors.Is(err, fs.ErrExist) {
-		return err
-	}
-
-	return copyNoReplace(oldpath, newpath)
-}
-
-func copyNoReplace(oldpath, newpath string) error {
-	source, err := os.Open(oldpath)
-	if err != nil {
-		return err
-	}
-	info, err := source.Stat()
-	if err != nil {
-		_ = source.Close()
-		return err
-	}
-	destination, err := os.OpenFile(newpath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
-	if err != nil {
-		_ = source.Close()
-		return err
-	}
-
-	_, copyErr := io.Copy(destination, source)
-	sourceCloseErr := source.Close()
-	destinationCloseErr := destination.Close()
-	if err := errors.Join(copyErr, sourceCloseErr, destinationCloseErr); err != nil {
-		_ = os.Remove(newpath)
-		return err
-	}
-	if err := os.Chmod(newpath, info.Mode().Perm()); err != nil {
-		_ = os.Remove(newpath)
+	if err := link(oldpath, newpath); err != nil {
 		return err
 	}
 	if err := os.Remove(oldpath); err != nil {

@@ -307,6 +307,33 @@ func TestShareListAndRevokeViaAPI(t *testing.T) {
 	}
 }
 
+func TestSharePermissionOnlyUpdatePreservesUploadLimit(t *testing.T) {
+	handler, _, _ := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+	share := createShareViaAPIWithLimit(t, router, "media/shared", model.SharePermissions{Upload: true}, 8)
+
+	updateReq := newShareManagementRequest(http.MethodPatch, "/api/v1/shares/"+share.ID, strings.NewReader(`{"permissions":{"upload":true}}`))
+	updateRec := httptest.NewRecorder()
+	router.ServeHTTP(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("permissions-only update status = %d, want 200: %s", updateRec.Code, updateRec.Body.String())
+	}
+	var updated model.ShareSummary
+	if err := json.Unmarshal(updateRec.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.MaxUploadBytes != 8 {
+		t.Fatalf("permissions-only update raised upload limit to %d, want 8", updated.MaxUploadBytes)
+	}
+
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path=too-large.txt", strings.NewReader("123456789"))
+	uploadRec := httptest.NewRecorder()
+	router.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("upload over preserved limit status = %d, want 413: %s", uploadRec.Code, uploadRec.Body.String())
+	}
+}
+
 func TestShareManagementIsScopedToOwnerViaAPI(t *testing.T) {
 	handler, _, shareSvc := setupTestShareHandler()
 	router := createShareTestRouter(handler)
@@ -797,9 +824,10 @@ func TestShareUpdateAndRecipientDeleteViaAPI(t *testing.T) {
 		t.Fatalf("upload-only delete status = %d, want 403: %s", deniedDeleteRec.Code, deniedDeleteRec.Body.String())
 	}
 
+	maxUploadBytes := int64(16)
 	updatedRequest := model.UpdateShareRequest{
 		Permissions:    model.SharePermissions{Upload: true, Delete: true},
-		MaxUploadBytes: 16,
+		MaxUploadBytes: &maxUploadBytes,
 	}
 	updatedBody, err := json.Marshal(updatedRequest)
 	if err != nil {

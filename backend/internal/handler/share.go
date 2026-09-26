@@ -188,7 +188,7 @@ func (h *ShareHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
-	share, err := h.shareService.Update(username, id, service.ShareSettings{
+	share, err := h.shareService.Update(username, id, service.ShareUpdateSettings{
 		Permissions:    req.Permissions,
 		MaxUploadBytes: req.MaxUploadBytes,
 	})

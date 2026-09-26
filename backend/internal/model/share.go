@@ -87,7 +87,7 @@ type CreateShareRequest struct {
 // UpdateShareRequest changes the access granted by an active folder share.
 type UpdateShareRequest struct {
 	Permissions    SharePermissions `json:"permissions"`
-	MaxUploadBytes int64            `json:"maxUploadBytes"`
+	MaxUploadBytes *int64           `json:"maxUploadBytes,omitempty"`
 }
 
 // ShareResponse is returned when a share link is created
