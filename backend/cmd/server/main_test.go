@@ -5,6 +5,8 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,10 +52,23 @@ func realSubmount(t *testing.T) (parent, mountPoint string) {
 		if info, err := os.Stat(mp); err != nil || !info.IsDir() || syscall.Statfs(mp, &stat) != nil {
 			continue
 		}
+		if !isReadableDirectory(mp) {
+			continue
+		}
 		return filepath.Dir(mp), mp
 	}
 	t.Skip("host has no real submount to discover")
 	return "", ""
+}
+
+func isReadableDirectory(path string) bool {
+	dir, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer dir.Close()
+	_, err = dir.ReadDir(1)
+	return err == nil || errors.Is(err, io.EOF)
 }
 
 func TestInitializeServerExpandsAutoDiscoverMounts(t *testing.T) {
