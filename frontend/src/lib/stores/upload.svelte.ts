@@ -10,6 +10,7 @@ import {
 	generateUploadId,
 	getChunkCount
 } from '$lib/utils/upload';
+import { getUploadConfig } from '$lib/api/system';
 import { CONFIG } from '$lib/config';
 
 export type { UploadProgress };
@@ -41,6 +42,10 @@ class UploadStore {
 	private controllers = new Map<string, AbortController>();
 	private activeWorkers = 0;
 	private refreshPending = false;
+
+	/** Server-configured chunk size, loaded before the first upload starts. */
+	private chunkSize = CONFIG.upload.defaultChunkSize;
+	private chunkSizeLoaded = false;
 
 	/** Callback for when upload completes */
 	onComplete?: (fileName: string, success: boolean, error?: string) => void;
@@ -92,7 +97,7 @@ class UploadStore {
 				uploadedSize: 0,
 				percentage: 0,
 				currentChunk: 0,
-				totalChunks: getChunkCount(file.size),
+				totalChunks: getChunkCount(file.size, this.chunkSize),
 				status: 'pending'
 			};
 
@@ -122,12 +127,25 @@ class UploadStore {
 		}
 	}
 
+	/** Keeps the default chunk size when the server cannot be reached. */
+	private async loadChunkSize(): Promise<void> {
+		if (this.chunkSizeLoaded) return;
+		try {
+			this.chunkSize = (await getUploadConfig()).chunkSizeBytes;
+			this.chunkSizeLoaded = true;
+		} catch {
+			// Retry on the next upload.
+		}
+	}
+
 	private async processItem(item: QueueItem): Promise<void> {
 		const controller = new AbortController();
 		this.controllers.set(item.uploadId, controller);
 
+		await this.loadChunkSize();
 		const options: UploadOptions = {
 			uploadId: item.uploadId,
+			chunkSize: this.chunkSize,
 			signal: controller.signal,
 			onProgress: (progress) => {
 				this.updateProgress(item.uploadId, progress);
@@ -138,7 +156,7 @@ class UploadStore {
 			const result = await resumeUpload(item.file, item.destPath, item.uploadId, options);
 
 			if (result.success) {
-				const totalChunks = getChunkCount(item.file.size);
+				const totalChunks = getChunkCount(item.file.size, this.chunkSize);
 				this.updateProgress(item.uploadId, {
 					uploadId: item.uploadId,
 					fileName: item.file.name,
@@ -182,7 +200,7 @@ class UploadStore {
 			uploadedSize: 0,
 			percentage: 0,
 			currentChunk: 0,
-			totalChunks: getChunkCount(item.file.size),
+			totalChunks: getChunkCount(item.file.size, this.chunkSize),
 			status: 'error',
 			error
 		});

@@ -37,7 +37,7 @@ func setupTestStreamHandler() (*StreamHandler, *filesystem.AferoFS, service.File
 	}
 
 	fileSvc := service.NewFileService(fs, service.FileServiceConfig{MountPoints: mounts})
-	streamHandler := NewStreamHandler(fileSvc, 1, 100) // 1MB chunks, 100MB max for testing
+	streamHandler := NewStreamHandler(fileSvc, 100) // 100MB max for testing
 
 	return streamHandler, fs, fileSvc
 }

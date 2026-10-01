@@ -447,6 +447,18 @@ System drives:
 GET /api/v1/system/drives
 ```
 
+Upload settings:
+
+```http
+GET /api/v1/system/upload
+```
+
+```json
+{
+  "chunkSizeBytes": 10485760
+}
+```
+
 Custom drive names:
 
 ```http

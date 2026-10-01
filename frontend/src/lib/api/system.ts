@@ -24,6 +24,19 @@ export interface SystemDrivesResponse {
 	drives: SystemDrive[];
 }
 
+/** Upload settings chosen by the server operator */
+export interface UploadConfig {
+	chunkSizeBytes: number;
+}
+
+/**
+ * Get the chunk size uploads should use
+ * GET /api/v1/system/upload
+ */
+export async function getUploadConfig(): Promise<UploadConfig> {
+	return api.get<UploadConfig>('/system/upload');
+}
+
 /**
  * Get all system drives/filesystems
  * GET /api/v1/system/drives

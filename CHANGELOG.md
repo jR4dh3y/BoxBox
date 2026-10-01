@@ -13,6 +13,7 @@
 
 ### Changed
 
+- Browser uploads now use the configured `chunk_size_mb`, served by `GET /api/v1/system/upload`. The default and the bundled `config.yaml` are now 10 MiB, which matches what browsers sent before.
 - Upgraded Go toolchain and module directives to Go 1.27.
 - Migrated Docker multi-stage build image to `golang:1.27-alpine`.
 - Replaced external dependency `github.com/google/uuid` with Go 1.27 standard library `uuid`.
