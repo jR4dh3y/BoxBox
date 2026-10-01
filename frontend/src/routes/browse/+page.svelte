@@ -29,7 +29,7 @@
 	import { clipboardStore } from '$lib/stores/clipboard.svelte';
 	import { uploadStore } from '$lib/stores/upload.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
-	import { jobsStore } from '$lib/stores/jobs';
+	import { jobsStore } from '$lib/stores/jobs.svelte';
 	import {
 		listRoots,
 		getDriveStats,

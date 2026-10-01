@@ -9,8 +9,8 @@
 	import { CONFIG } from '$lib/config';
 	import { Spinner, Button } from '$lib/components/ui';
 	import { FolderOpen } from 'lucide-svelte';
-	import { activeJobs, jobsStore } from '$lib/stores/jobs';
-	import { websocketStore } from '$lib/stores/websocket';
+	import { jobsStore } from '$lib/stores/jobs.svelte';
+	import { websocketStore } from '$lib/stores/websocket.svelte';
 	import {
 		applyAccentColor,
 		resolvedBackgroundImageUrl,
@@ -95,7 +95,7 @@
 	$effect(() => {
 		if (!initialized || !$isAuthenticated) return;
 
-		websocketStore.syncJobSubscriptions($activeJobs.map((job) => job.id));
+		websocketStore.syncJobSubscriptions(jobsStore.active.map((job) => job.id));
 	});
 
 	$effect(() => {
