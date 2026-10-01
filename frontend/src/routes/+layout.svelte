@@ -1,6 +1,6 @@
 <script lang="ts">
 	import './layout.css';
-	import { authStore, isAuthenticated, isDevelopment } from '$lib/stores/auth';
+	import { authStore } from '$lib/stores/auth.svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -69,9 +69,9 @@
 		const currentPath = page.url.pathname;
 		const isPublicRoute = publicRoutes.some((route) => currentPath.startsWith(route));
 
-		if (!$isAuthenticated && !isPublicRoute) {
+		if (!authStore.isAuthenticated && !isPublicRoute) {
 			goto(resolve('/login'));
-		} else if ($isAuthenticated && currentPath.startsWith('/login')) {
+		} else if (authStore.isAuthenticated && currentPath.startsWith('/login')) {
 			goto(resolve('/browse'));
 		}
 	});
@@ -79,8 +79,8 @@
 	$effect(() => {
 		if (!initialized) return;
 
-		if ($isAuthenticated) {
-			websocketStore.connect($isDevelopment);
+		if (authStore.isAuthenticated) {
+			websocketStore.connect(authStore.isDevelopment);
 
 			if (!authWasActive) {
 				authWasActive = true;
@@ -94,7 +94,7 @@
 	});
 
 	$effect(() => {
-		if (!initialized || !$isAuthenticated) return;
+		if (!initialized || !authStore.isAuthenticated) return;
 
 		websocketStore.syncJobSubscriptions(jobsStore.active.map((job) => job.id));
 	});
@@ -155,7 +155,7 @@
 				{@render children()}
 			{:else}
 				<div class="flex min-h-screen flex-col bg-surface-primary">
-					{#if $isAuthenticated && !$isDevelopment && !isLoginPage}
+					{#if authStore.isAuthenticated && !authStore.isDevelopment && !isLoginPage}
 						<header
 							class="sticky top-0 z-50 border-b border-border-secondary bg-surface-primary px-4"
 						>
@@ -174,7 +174,7 @@
 						</header>
 					{/if}
 					<main
-						class="flex flex-1 flex-col {$isAuthenticated && !isLoginPage
+						class="flex flex-1 flex-col {authStore.isAuthenticated && !isLoginPage
 							? 'mx-auto w-full max-w-[1400px] p-6'
 							: ''}"
 					>

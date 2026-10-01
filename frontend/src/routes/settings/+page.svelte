@@ -5,7 +5,7 @@
 	import { onDestroy, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { authStore } from '$lib/stores/auth';
+	import { authStore } from '$lib/stores/auth.svelte';
 	import { settingsStore, type UserSettings } from '$lib/stores/settings.svelte';
 	import {
 		DEFAULT_ACCENT_COLOR,
