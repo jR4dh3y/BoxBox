@@ -16,7 +16,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseJobUpdate(payload: unknown): JobUpdate | null {
 	if (!isRecord(payload)) return null;
 	const { jobId, state, progress, error } = payload;
-	if (typeof jobId !== 'string' || !isJobState(state) || typeof progress !== 'number') {
+	if (
+		typeof jobId !== 'string' ||
+		!isJobState(state) ||
+		typeof progress !== 'number' ||
+		!Number.isInteger(progress) ||
+		progress < 0 ||
+		progress > 100
+	) {
 		return null;
 	}
 	return { jobId, state, progress, error: typeof error === 'string' ? error : undefined };

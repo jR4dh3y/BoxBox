@@ -154,7 +154,7 @@ class WebSocketStore {
 			if (message) {
 				this.handleServerMessage(message);
 			} else {
-				console.warn('Ignoring unrecognised WebSocket message:', text);
+				console.warn('Ignoring unrecognised WebSocket message');
 			}
 		}
 	}

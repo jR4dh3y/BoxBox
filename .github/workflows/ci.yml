@@ -48,6 +48,10 @@ jobs:
         working-directory: frontend
         run: bun run check
 
+      - name: Test frontend logic
+        working-directory: frontend
+        run: bun run test
+
       - name: Build Svelte app
         working-directory: frontend
         run: bun run build
