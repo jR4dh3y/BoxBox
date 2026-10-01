@@ -183,12 +183,12 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 	// Create handlers
 	authHandler := handler.NewAuthHandler(authService)
 	fileHandler := handler.NewFileHandler(fileService)
-	streamHandler := handler.NewStreamHandler(fileService, cfg.ChunkSizeMB, cfg.MaxUploadMB)
+	streamHandler := handler.NewStreamHandler(fileService, cfg.MaxUploadMB)
 	jobHandler := handler.NewJobHandler(jobService)
 	searchHandler := handler.NewSearchHandler(searchService)
 	wsHandler := handler.NewWebSocketHandler(hub, authService, cfg.AllowedOrigins)
 	wsHandler.SetDevMode(devMode)
-	systemHandler := handler.NewSystemHandler(systemService)
+	systemHandler := handler.NewSystemHandler(systemService, cfg.ChunkSizeMB)
 	settingsHandler := handler.NewSettingsHandler(settingsService)
 	shareHandler := handler.NewShareHandler(shareService, cfg.MaxUploadMB)
 
