@@ -15,7 +15,6 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 	"github.com/jR4dh3y/BoxBox/backend/internal/handler"
@@ -34,16 +33,9 @@ func main() {
 	flag.Parse()
 
 	if *devMode {
-		// These values exist only in this process and satisfy production-oriented
-		// config validation. Authentication is bypassed below.
-		os.Setenv("BOXBOX_JWT_SECRET", "boxbox-development-mode-not-for-production")
-		// Authentication is bypassed, but configuration still requires the
-		// bcrypt storage format used in production.
-		devPasswordHash, hashErr := bcrypt.GenerateFromPassword([]byte("development-mode"), bcrypt.MinCost)
-		if hashErr != nil {
-			log.Fatal().Err(hashErr).Msg("Failed to initialize development credentials")
+		if err := setDevCredentials(); err != nil {
+			log.Fatal().Err(err).Msg("Failed to initialize development credentials")
 		}
-		os.Setenv("BOXBOX_USERS_dev", string(devPasswordHash))
 	}
 
 	// Configure zerolog
