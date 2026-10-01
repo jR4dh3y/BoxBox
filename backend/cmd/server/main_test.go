@@ -9,14 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 )
 
-// realSubmount returns a real (non-virtual) mount point and its parent
-// directory, or skips when the host has none.
+// realSubmount returns a mounted directory that statfs can read, and its parent,
+// or skips when the host has none. File bind mounts such as /etc/hosts are not discoverable.
 func realSubmount(t *testing.T) (parent, mountPoint string) {
 	t.Helper()
 	file, err := os.Open("/proc/self/mountinfo")
@@ -41,6 +42,10 @@ func realSubmount(t *testing.T) (parent, mountPoint string) {
 			continue
 		}
 		if _, err := os.ReadDir(filepath.Dir(mp)); err != nil {
+			continue
+		}
+		var stat syscall.Statfs_t
+		if info, err := os.Stat(mp); err != nil || !info.IsDir() || syscall.Statfs(mp, &stat) != nil {
 			continue
 		}
 		return filepath.Dir(mp), mp
@@ -75,9 +80,14 @@ func TestInitializeServerExpandsAutoDiscoverMounts(t *testing.T) {
 	if len(body.Drives) == 0 {
 		t.Fatalf("no drives returned, want submounts of %s", parent)
 	}
+	found := false
 	for _, drive := range body.Drives {
 		if drive.Name == "drives" {
 			t.Fatalf("auto_discover ignored: %s returned unexpanded; want submounts such as %s", parent, mountPoint)
 		}
+		found = found || drive.Name == filepath.Base(mountPoint)
+	}
+	if !found {
+		t.Fatalf("drives %+v do not include the submount %s", body.Drives, mountPoint)
 	}
 }
