@@ -2,6 +2,7 @@
  * WebSocket connection that carries job progress from the server
  */
 
+import { untrack } from 'svelte';
 import { getAccessToken } from '$lib/api/client';
 import { parseServerMessage, type WSServerMessage } from '$lib/api/websocket';
 import { CONFIG } from '$lib/config';
@@ -35,7 +36,10 @@ class WebSocketStore {
 	private subscribedJobs = new Set<string>();
 
 	connect(allowUnauthenticated = false): void {
-		if (this.connectionState === 'connected' || this.connectionState === 'connecting') return;
+		// An effect calls this. It must not depend on the state it changes, or every
+		// state change would reconnect at once and skip the backoff delay.
+		const state = untrack(() => this.connectionState);
+		if (state === 'connected' || state === 'connecting') return;
 
 		if (!getAccessToken() && !allowUnauthenticated) {
 			this.connectionState = 'disconnected';
