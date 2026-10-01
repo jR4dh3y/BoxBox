@@ -13,7 +13,22 @@ export type JobType = 'copy' | 'move' | 'delete';
 /**
  * Job states
  */
-export type JobState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+const JOB_STATES = ['pending', 'running', 'completed', 'failed', 'cancelled'] as const;
+export type JobState = (typeof JOB_STATES)[number];
+
+export function isJobState(value: unknown): value is JobState {
+	return JOB_STATES.some((state) => state === value);
+}
+
+/**
+ * Job progress pushed over the WebSocket
+ */
+export interface JobUpdate {
+	jobId: string;
+	state: JobState;
+	progress: number;
+	error?: string;
+}
 
 /**
  * Job information

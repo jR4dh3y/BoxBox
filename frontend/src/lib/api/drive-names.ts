@@ -29,12 +29,12 @@ export async function getDriveNames(): Promise<DriveNamesResponse> {
  * Set a custom name for a mount point
  */
 export async function setDriveName(request: DriveNamesRequest): Promise<void> {
-	return api.put<void>('/settings/drive-names', request);
+	await api.put<unknown>('/settings/drive-names', request);
 }
 
 /**
  * Remove a custom name for a mount point
  */
 export async function deleteDriveName(mountPoint: string): Promise<void> {
-	return api.delete<void>(`/settings/drive-names/${encodeURIComponent(mountPoint)}`);
+	await api.delete<unknown>(`/settings/drive-names/${encodeURIComponent(mountPoint)}`);
 }

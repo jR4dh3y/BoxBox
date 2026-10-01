@@ -170,9 +170,13 @@ async function parseResponse<T>(response: Response): Promise<T> {
 		throw new ApiRequestError(errorData.error, response.status, errorData.code, errorData.details);
 	}
 
-	// Handle empty responses
-	if (response.status === 204 || !contentType?.includes('application/json')) {
-		return {} as T;
+	// Every endpoint answers with JSON. Anything else (such as the SPA fallback page) is not a success.
+	if (!contentType?.includes('application/json')) {
+		throw new ApiRequestError(
+			'Unexpected response from server',
+			response.status,
+			'INVALID_RESPONSE'
+		);
 	}
 
 	return response.json();
