@@ -33,6 +33,8 @@ class WebSocketStore {
 	private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 	private pingInterval: ReturnType<typeof setInterval> | null = null;
 	private reconnectAttempts = 0;
+	/** Retries reuse the mode of the last connect(); a --dev server has no token to send. */
+	private allowUnauthenticated = false;
 	private subscribedJobs = new Set<string>();
 
 	connect(allowUnauthenticated = false): void {
@@ -40,6 +42,8 @@ class WebSocketStore {
 		// state change would reconnect at once and skip the backoff delay.
 		const state = untrack(() => this.connectionState);
 		if (state === 'connected' || state === 'connecting') return;
+
+		this.allowUnauthenticated = allowUnauthenticated;
 
 		if (!getAccessToken() && !allowUnauthenticated) {
 			this.connectionState = 'disconnected';
@@ -141,7 +145,7 @@ class WebSocketStore {
 		);
 		this.reconnectAttempts += 1;
 		this.connectionState = 'reconnecting';
-		this.reconnectTimeout = setTimeout(() => this.connect(), delay);
+		this.reconnectTimeout = setTimeout(() => this.connect(this.allowUnauthenticated), delay);
 	}
 
 	/** The server may batch several JSON messages in one frame, one per line. */
