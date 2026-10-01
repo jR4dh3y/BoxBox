@@ -1,6 +1,5 @@
 /**
  * Job API module for background job operations
- * Requirements: 4.1, 4.4, 4.5
  */
 
 import { api } from './client';

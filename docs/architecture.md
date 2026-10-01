@@ -36,7 +36,8 @@ backend/
   internal/middleware/ auth, rate limit, security, mount guards
   internal/model/      config, file, job, error, drive models
   internal/pkg/        filesystem, file utility, path validation helpers
-  internal/service/    auth, file, search, job, system, settings services
+  internal/service/    auth, file, search, job, system, settings services;
+                       mounts.go resolves every virtual path
   internal/static/     embedded frontend assets
   internal/websocket/  hub, client, message protocol
 ```
@@ -77,6 +78,10 @@ POST /api/v1/jobs
   -> WebSocket progress updates
 ```
 
+## Path Resolution
+
+Every service turns a virtual path such as `media/movies/a.mkv` into a real path through one function, `mounts.resolve` in `internal/service/mounts.go`. The caller states how it uses the path (read an existing path, modify an existing path, or create one). `resolve` then checks the mount name, rejects traversal, refuses writes to read-only mounts, and resolves symlinks so the result stays inside its mount.
+
 ## Frontend App
 
 ```text
@@ -85,7 +90,8 @@ frontend/src/
   lib/api/             typed API functions
   lib/components/      app UI and preview components
   lib/components/ui/   reusable base UI primitives
-  lib/stores/          auth, files, jobs, upload, websocket state
+  lib/browse/          browse page logic: location, data, actions, uploads, selection
+  lib/stores/          auth, jobs, settings, upload, websocket state (runes)
   lib/types/           shared TypeScript types
   lib/utils/           upload, file type, formatting, storage helpers
 ```

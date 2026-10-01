@@ -254,7 +254,6 @@ func (s *testableJobService) captureJobUpdates(ctx context.Context, jobID string
 }
 
 // **Feature: boxbox, Property 7: Job Progress Monotonicity**
-// **Validates: Requirements 4.2**
 //
 // Property: For any background job, the progress value SHALL be between 0 and 100 inclusive,
 // and progress updates SHALL be monotonically non-decreasing until completion.
@@ -493,7 +492,6 @@ func TestProperty_JobProgressMonotonicity(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 8: Job Completion Notification**
-// **Validates: Requirements 4.3, 5.2, 5.3**
 //
 // Property: For any background job that reaches completed, failed, or cancelled state,
 // a WebSocket notification SHALL be sent to all connected clients containing the job ID and final state.
@@ -770,7 +768,6 @@ func TestProperty_JobCompletionNotification(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 9: Job Cancellation Cleanup**
-// **Validates: Requirements 4.5**
 //
 // Property: For any cancelled copy or move job, partial destination files SHALL be removed
 // and the source SHALL remain unchanged.
