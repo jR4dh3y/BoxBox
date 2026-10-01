@@ -43,7 +43,7 @@
 	"dependencies": {
 		"@e965/xlsx": "^0.20.3",
 		"@noble/hashes": "^2.4.0",
-		"@tanstack/svelte-query": "^6.1.48",
+		"@tanstack/svelte-query": "^6.3.0",
 		"docx-preview": "^0.4.0",
 		"lucide-svelte": "^1.0.1",
 		"monaco-editor": "^0.56.0",
