@@ -49,6 +49,15 @@ afterEach(() => {
 	});
 });
 
+/** Drops the newest socket, then runs the retry the store scheduled. Returns the new socket. */
+function dropAndRetry(): FakeSocket {
+	const before = FakeSocket.instances.length;
+	FakeSocket.instances.at(-1)?.onclose?.({ code: 1006 });
+	scheduled.shift()?.();
+	assert.equal(FakeSocket.instances.length, before + 1, 'the retry must open a new socket');
+	return FakeSocket.instances[before];
+}
+
 describe('websocket reconnect backoff', () => {
 	test('a connect() call from an effect does not retry on its own state changes', () => {
 		const stop = connectFromEffect();
@@ -66,24 +75,41 @@ describe('websocket reconnect backoff', () => {
 
 	test('delays double on each failed attempt and stop at the maximum', () => {
 		websocketStore.connect(true);
-		for (let attempt = 0; attempt < 8; attempt++) {
-			FakeSocket.instances.at(-1)?.onclose?.({ code: 1006 });
-			scheduled.shift()?.();
-		}
+		for (let attempt = 0; attempt < 8; attempt++) dropAndRetry();
+		FakeSocket.instances.at(-1)?.onclose?.({ code: 1006 });
 
 		const { initialReconnectDelayMs: first, maxReconnectDelayMs: max } = CONFIG.websocket;
 		assert.deepEqual(
 			delays,
-			Array.from({ length: 8 }, (_, attempt) => Math.min(first * 2 ** attempt, max))
+			Array.from({ length: 9 }, (_, attempt) => Math.min(first * 2 ** attempt, max))
 		);
 	});
 
-	test('a clean close does not reconnect, and an open connection resets the delay', () => {
+	test('retries stop at the configured attempt limit', () => {
+		const { maxReconnectAttempts } = CONFIG.websocket;
 		websocketStore.connect(true);
-		const [socket] = FakeSocket.instances;
-		socket.onclose?.({ code: 1006 });
-		scheduled.shift()?.();
-		FakeSocket.instances.at(-1)?.onopen?.();
+		for (let attempt = 0; attempt < maxReconnectAttempts; attempt++) dropAndRetry();
+
+		const sockets = FakeSocket.instances.length;
+		FakeSocket.instances.at(-1)?.onclose?.({ code: 1006 });
+
+		assert.equal(delays.length, maxReconnectAttempts, 'no retry may be scheduled past the limit');
+		assert.equal(scheduled.length, 0);
+		assert.equal(FakeSocket.instances.length, sockets);
+		assert.equal(websocketStore.connectionState, 'disconnected');
+		assert.equal(websocketStore.error, 'Max reconnection attempts reached');
+	});
+
+	test('retries keep the connection mode, so a dev server without a token reconnects', () => {
+		websocketStore.connect(true);
+		dropAndRetry();
+		dropAndRetry();
+		assert.equal(websocketStore.connectionState, 'connecting');
+	});
+
+	test('an open connection resets the delay, and a clean close does not reconnect', () => {
+		websocketStore.connect(true);
+		dropAndRetry().onopen?.();
 		FakeSocket.instances.at(-1)?.onclose?.({ code: 1006 });
 		assert.deepEqual(delays, [
 			CONFIG.websocket.initialReconnectDelayMs,
