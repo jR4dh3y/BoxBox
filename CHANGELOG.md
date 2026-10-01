@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- Fixed `boxbox --dev` failing at startup with `password for user "dev" must be a bcrypt hash`. Its placeholder password was hashed below the minimum bcrypt cost that configuration validation requires.
 - Fixed `auto_discover` mount points being returned as one unexpanded drive instead of one drive per mounted subdirectory.
 
 ### Changed
