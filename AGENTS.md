@@ -7,7 +7,7 @@ Read the code that runs before you change it. Prefer the smallest complete chang
 ## Commands
 
 - Backend, from `backend/`: `go vet ./...` and `go test ./...`. The service tests take about 80 seconds. Add `-race` for concurrency changes.
-- Frontend, from `frontend/`: `bun run format`, `bun run check`, `bun run lint`, `bun run test`, `bun run build`. Tests use `node:test` and run under `bun test`.
+- Frontend, from `frontend/`: `bun run format`, `bun run check`, `bun run lint`, `bun run test`, `bun run build`. Tests use `node:test` and run under `bun test`. A test that imports `.svelte.ts` code needs the preload in `frontend/test/`, which `bun run test` already uses.
 - Add a package with `bun add`. Do not edit `package.json` by hand.
 
 ## Code
