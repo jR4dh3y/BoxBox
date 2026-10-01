@@ -5,7 +5,9 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,9 +72,7 @@ func TestInitializeServerExpandsAutoDiscoverMounts(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	server.Handler.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/files/stats", nil))
-	var body struct {
-		Drives []struct{ Name, Path string }
-	}
+	var body model.DriveStatsResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode stats: %v (status %d)", err, rec.Code)
 	}
@@ -80,14 +80,44 @@ func TestInitializeServerExpandsAutoDiscoverMounts(t *testing.T) {
 	if len(body.Drives) == 0 {
 		t.Fatalf("no drives returned, want submounts of %s", parent)
 	}
+	driveName := filepath.Base(mountPoint)
 	found := false
 	for _, drive := range body.Drives {
 		if drive.Name == "drives" {
 			t.Fatalf("auto_discover ignored: %s returned unexpanded; want submounts such as %s", parent, mountPoint)
 		}
-		found = found || drive.Name == filepath.Base(mountPoint)
+		found = found || drive.Name == driveName
 	}
 	if !found {
 		t.Fatalf("drives %+v do not include the submount %s", body.Drives, mountPoint)
+	}
+
+	rootsRec := httptest.NewRecorder()
+	server.Handler.ServeHTTP(rootsRec, httptest.NewRequest(http.MethodGet, "/api/v1/files/", nil))
+	var roots struct {
+		Roots []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		}
+	}
+	if err := json.Unmarshal(rootsRec.Body.Bytes(), &roots); err != nil {
+		t.Fatalf("decode roots: %v (status %d)", err, rootsRec.Code)
+	}
+	rootFound := false
+	for _, root := range roots.Roots {
+		if root.Name == driveName && root.Path == mountPoint {
+			rootFound = true
+			break
+		}
+	}
+	if !rootFound {
+		t.Fatalf("roots %+v do not include discovered mount %s at %s", roots.Roots, driveName, mountPoint)
+	}
+
+	driveRec := httptest.NewRecorder()
+	drivePath := "/api/v1/files/" + url.PathEscape(driveName)
+	server.Handler.ServeHTTP(driveRec, httptest.NewRequest(http.MethodGet, drivePath, nil))
+	if driveRec.Code != http.StatusOK {
+		t.Fatalf("open discovered drive %q: status %d, body: %s", driveName, driveRec.Code, driveRec.Body.String())
 	}
 }

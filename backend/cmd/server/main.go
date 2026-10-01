@@ -131,7 +131,8 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 		}
 	}
 
-	mountPoints := cfg.MountPoints
+	configuredMountPoints := cfg.MountPoints
+	mountPoints := service.DiscoverMountPoints(fs, configuredMountPoints)
 
 	// Create WebSocket hub
 	hub := websocket.NewHub()
@@ -161,15 +162,15 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 		DataDir: cfg.DataDir,
 	})
 
-	// Shares re-resolve their target against the live mount list on every
-	// recipient access, so they receive a mounts provider instead of a snapshot.
-	// Deliberately the configured list, not discovered sub-mounts: discovery
-	// replaces auto-discover parents with sub-mount names, which would break
-	// every share whose path is rooted at a configured name like "drives".
+	// Keep configured names for existing shares and discovered names for shares
+	// created from the drives shown in the browser.
+	shareMountPoints := make([]model.MountPoint, 0, len(configuredMountPoints)+len(mountPoints))
+	shareMountPoints = append(shareMountPoints, configuredMountPoints...)
+	shareMountPoints = append(shareMountPoints, mountPoints...)
 	shareService := service.NewShareService(fs, service.ShareServiceConfig{
 		DataDir:        cfg.DataDir,
 		MaxUploadBytes: int64(cfg.MaxUploadMB) * 1024 * 1024,
-		Mounts:         func() []model.MountPoint { return mountPoints },
+		Mounts:         func() []model.MountPoint { return shareMountPoints },
 	})
 
 	// Create handlers
