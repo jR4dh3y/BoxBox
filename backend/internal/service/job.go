@@ -15,7 +15,6 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
-	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
 	"github.com/jR4dh3y/BoxBox/backend/internal/websocket"
 )
 
@@ -50,18 +49,18 @@ type runningJob struct {
 
 // jobService implements JobService
 type jobService struct {
-	fs          filesystem.FS
-	hub         *websocket.Hub
-	jobs        sync.Map // map[string]*runningJob
-	allJobs     sync.Map // map[string]*model.Job - stores all jobs including completed
-	jobMu       sync.RWMutex
-	jobEventMu  sync.Mutex
-	workQueue   chan *model.Job
-	workers     int
-	wg          sync.WaitGroup
-	stopCh      chan struct{}
-	mountPoints []model.MountPoint
-	walker      Walker
+	fs         filesystem.FS
+	hub        *websocket.Hub
+	jobs       sync.Map // map[string]*runningJob
+	allJobs    sync.Map // map[string]*model.Job - stores all jobs including completed
+	jobMu      sync.RWMutex
+	jobEventMu sync.Mutex
+	workQueue  chan *model.Job
+	workers    int
+	wg         sync.WaitGroup
+	stopCh     chan struct{}
+	mounts     *mounts
+	walker     Walker
 }
 
 // JobServiceConfig holds configuration for the job service
@@ -78,13 +77,13 @@ func NewJobService(fsys filesystem.FS, hub *websocket.Hub, cfg JobServiceConfig)
 	}
 
 	return &jobService{
-		fs:          fsys,
-		hub:         hub,
-		workQueue:   make(chan *model.Job, config.JobQueueSize),
-		workers:     workers,
-		stopCh:      make(chan struct{}),
-		mountPoints: cfg.MountPoints,
-		walker:      NewWalker(fsys),
+		fs:        fsys,
+		hub:       hub,
+		workQueue: make(chan *model.Job, config.JobQueueSize),
+		workers:   workers,
+		stopCh:    make(chan struct{}),
+		mounts:    newMounts(fsys, fixedMounts(cfg.MountPoints)),
+		walker:    NewWalker(fsys),
 	}
 }
 
@@ -172,7 +171,7 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 		return nil, ErrInvalidJobParams
 	}
 
-	sourceMount, sourceFsPath, err := s.resolveJobPath(params.SourcePath)
+	sourceMount, sourceFsPath, err := s.resolveJobPath(params.SourcePath, readExisting)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +181,7 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 	var destMount *model.MountPoint
 	if params.DestPath != "" {
 		var resolvedDestPath string
-		destMount, resolvedDestPath, err = s.resolveJobDestination(params.DestPath)
+		destMount, resolvedDestPath, err = s.resolveJobPath(params.DestPath, writeMaybeMissing)
 		if err != nil {
 			return nil, err
 		}
@@ -236,35 +235,15 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 	return s.snapshotJob(job), nil
 }
 
-func (s *jobService) resolveJobPath(path string) (*model.MountPoint, string, error) {
-	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mountPoints)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) || errors.Is(err, validator.ErrMountPointNotFound) {
-			return nil, "", ErrMountPointNotFound
-		}
+func (s *jobService) resolveJobPath(path string, access pathAccess) (*model.MountPoint, string, error) {
+	mount, resolved, err := s.mounts.resolve(path, access)
+	switch {
+	case errors.Is(err, ErrMountPointNotFound):
+		return nil, "", ErrMountPointNotFound
+	case isMalformedPath(err):
 		return nil, "", ErrInvalidJobParams
 	}
-
-	resolved, err := resolveExistingPathWithinMount(s.fs, mount, fsPath)
-	if err != nil {
-		return nil, "", err
-	}
-	return mount, resolved, nil
-}
-
-func (s *jobService) resolveJobDestination(path string) (*model.MountPoint, string, error) {
-	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mountPoints)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) || errors.Is(err, validator.ErrMountPointNotFound) {
-			return nil, "", ErrMountPointNotFound
-		}
-		return nil, "", ErrInvalidJobParams
-	}
-	resolved, err := resolveWritablePathWithinMount(s.fs, mount, fsPath)
-	if err != nil {
-		return nil, "", err
-	}
-	return mount, resolved, nil
+	return mount, resolved, err
 }
 
 // Get returns a job by ID
