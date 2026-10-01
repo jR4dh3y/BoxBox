@@ -15,7 +15,6 @@ import (
 )
 
 // **Feature: boxbox, Property 14: Security Headers Presence**
-// **Validates: Requirements 7.3**
 //
 // Property: For any API response, the headers SHALL include X-Content-Type-Options,
 // Content-Security-Policy and Referrer-Policy.
@@ -123,7 +122,6 @@ func TestSecurityHeadersPresence(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 10: Mount Point Isolation**
-// **Validates: Requirements 6.2, 6.3**
 //
 // Property: For any path not prefixed by a configured mount point name,
 // the API SHALL return HTTP 403 status code.
@@ -225,7 +223,6 @@ func TestMountPointIsolation(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 11: Read-Only Mount Enforcement**
-// **Validates: Requirements 6.4**
 //
 // Property: For any mount point configured as read-only, write operations
 // (POST, PUT, DELETE to files) SHALL return HTTP 403 status code.

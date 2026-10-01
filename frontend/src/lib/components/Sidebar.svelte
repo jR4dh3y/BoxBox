@@ -3,7 +3,7 @@
 	 * Sidebar component - navigation panel with places and favorites
 	 */
 	import { ChevronDown, Server, HardDrive, Star, X } from 'lucide-svelte';
-	import { settingsStore } from '$lib/stores/settings';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import type { MountPoint } from '$lib/api/files';
 
 	interface Props {
@@ -89,10 +89,10 @@
 		</button>
 		{#if !favoritesCollapsed}
 			<div class="pb-2">
-				{#if $settingsStore.favoriteFolders.length === 0}
+				{#if settingsStore.current.favoriteFolders.length === 0}
 					<div class="px-5 py-2 text-xs text-text-muted italic">No favorites yet</div>
 				{:else}
-					{#each $settingsStore.favoriteFolders as fav (fav.path)}
+					{#each settingsStore.current.favoriteFolders as fav (fav.path)}
 						<div class="group relative">
 							<button
 								type="button"

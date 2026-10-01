@@ -9,7 +9,6 @@ import (
 )
 
 // SecurityHeaders adds security headers to all responses
-// Implements: Requirements 7.3
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Prevent MIME type sniffing
@@ -32,7 +31,6 @@ func SecurityHeaders(next http.Handler) http.Handler {
 
 // MountPointGuard creates a middleware that validates paths against configured mount points
 // and enforces read-only restrictions
-// Implements: Requirements 6.2, 6.3, 6.4
 func MountPointGuard(mounts []model.MountPoint) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

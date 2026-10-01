@@ -11,7 +11,7 @@ export const CONFIG = {
 		accessTokenExpiryMs: 15 * 60 * 1000
 	},
 	upload: {
-		/** Default chunk size for uploads (10MB) */
+		/** Chunk size used until the server reports its configured value (10MB) */
 		defaultChunkSize: 10 * 1024 * 1024,
 		/** Maximum concurrent uploads */
 		maxConcurrentUploads: 3

@@ -2,7 +2,7 @@
 	/**
 	 * Login page component
 	 */
-	import { authStore, authError, isAuthLoading } from '$lib/stores/auth';
+	import { authStore } from '$lib/stores/auth.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { Button, Input, Spinner } from '$lib/components/ui';
@@ -46,13 +46,13 @@
 		</div>
 
 		<form class="flex flex-col gap-5" onsubmit={handleSubmit}>
-			{#if $authError}
+			{#if authStore.error}
 				<div
 					class="flex items-center gap-2 rounded border border-danger/30 bg-danger/20 px-4 py-3 text-sm text-danger"
 					role="alert"
 				>
 					<span class="shrink-0"><AlertTriangle size={16} /></span>
-					<span class="flex-1">{$authError}</span>
+					<span class="flex-1">{authStore.error}</span>
 					<button
 						type="button"
 						class="ml-auto flex h-6 w-6 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 text-xl text-danger transition-colors hover:bg-danger/30"
@@ -73,7 +73,7 @@
 					placeholder="Enter your username"
 					autocomplete="username"
 					required
-					disabled={$isAuthLoading}
+					disabled={authStore.isLoading}
 				/>
 			</div>
 
@@ -86,16 +86,16 @@
 					placeholder="Enter your password"
 					autocomplete="current-password"
 					required
-					disabled={$isAuthLoading}
+					disabled={authStore.isLoading}
 				/>
 			</div>
 
 			<Button
 				type="submit"
 				variant="primary"
-				disabled={$isAuthLoading || !username.trim() || !password}
+				disabled={authStore.isLoading || !username.trim() || !password}
 			>
-				{#if $isAuthLoading}
+				{#if authStore.isLoading}
 					<Spinner size="sm" />
 					<span>Signing in...</span>
 				{:else}

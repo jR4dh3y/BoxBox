@@ -1,7 +1,6 @@
 <script lang="ts">
 	/**
 	 * FileList component with sortable columns - FilePilot style
-	 * Requirements: 1.1, 1.2, Context Menu
 	 */
 
 	import type { FileInfo } from '$lib/api/files';

@@ -182,7 +182,6 @@ func TestWriteFileOverwritesExistingFileOnly(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 1: Directory Listing Metadata Completeness**
-// **Validates: Requirements 1.1**
 //
 // Property: For any valid directory path, the listing response SHALL contain items
 // where each item includes non-empty name, valid path, non-negative size, boolean isDir flag,
@@ -311,7 +310,6 @@ func TestProperty_DirectoryListingMetadataCompleteness(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 2: Pagination Correctness**
-// **Validates: Requirements 1.3**
 //
 // Property: For any directory with N items and requested page size P,
 // the returned items count SHALL be at most P, and the totalCount SHALL equal N
@@ -460,7 +458,6 @@ func TestProperty_PaginationCorrectness(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 3: Non-Existent Path Returns 404**
-// **Validates: Requirements 1.5, 3.4**
 //
 // Property: For any path that does not exist in the filesystem,
 // requesting that path SHALL return an error (ErrPathNotFound).
@@ -552,7 +549,6 @@ func TestProperty_NonExistentPathReturnsError(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 15: File Rename Correctness**
-// **Validates: Requirements 8.1**
 //
 // Property: For any successful rename operation from path A to path B,
 // the file SHALL exist at path B with identical content and no longer exist at path A.
@@ -692,7 +688,6 @@ func TestProperty_FileRenameCorrectness(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 16: Directory Creation Correctness**
-// **Validates: Requirements 8.2**
 //
 // Property: For any successful directory creation at path P,
 // the path P SHALL exist and be a directory.
@@ -820,7 +815,6 @@ func TestProperty_DirectoryCreationCorrectness(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 17: File Deletion Correctness**
-// **Validates: Requirements 8.3**
 //
 // Property: For any successful delete operation on path P,
 // the path P SHALL no longer exist in the filesystem.

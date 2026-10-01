@@ -1,6 +1,6 @@
 <script lang="ts">
 	import './layout.css';
-	import { authStore, isAuthenticated, isDevelopment } from '$lib/stores/auth';
+	import { authStore } from '$lib/stores/auth.svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -9,13 +9,14 @@
 	import { CONFIG } from '$lib/config';
 	import { Spinner, Button } from '$lib/components/ui';
 	import { FolderOpen } from 'lucide-svelte';
-	import { activeJobs, jobsStore } from '$lib/stores/jobs';
-	import { websocketStore } from '$lib/stores/websocket';
+	import { jobsStore } from '$lib/stores/jobs.svelte';
+	import { websocketStore } from '$lib/stores/websocket.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import {
 		applyAccentColor,
-		resolvedBackgroundImageUrl,
-		settingsStore
-	} from '$lib/stores/settings';
+		resolveBackgroundImage,
+		resolveBackgroundImageUrl
+	} from '$lib/utils/appearance';
 	import { getWallpaperBackgroundStyle, normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
 
 	let { children } = $props();
@@ -42,11 +43,11 @@
 	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
 	const backgroundImageMode = $derived(
-		normalizeBackgroundImageMode($settingsStore.backgroundImageMode)
+		normalizeBackgroundImageMode(settingsStore.current.backgroundImageMode)
 	);
-	const backgroundImage = $derived($resolvedBackgroundImageUrl);
+	let backgroundImage = $state<string | null>(null);
 	const hasBackgroundImage = $derived(backgroundImage !== null);
-	const frostedGlass = $derived(hasBackgroundImage && $settingsStore.frostedGlass);
+	const frostedGlass = $derived(hasBackgroundImage && settingsStore.current.frostedGlass);
 	const backgroundImageStyle = $derived(
 		backgroundImage ? `url(${JSON.stringify(backgroundImage)})` : undefined
 	);
@@ -68,9 +69,9 @@
 		const currentPath = page.url.pathname;
 		const isPublicRoute = publicRoutes.some((route) => currentPath.startsWith(route));
 
-		if (!$isAuthenticated && !isPublicRoute) {
+		if (!authStore.isAuthenticated && !isPublicRoute) {
 			goto(resolve('/login'));
-		} else if ($isAuthenticated && currentPath.startsWith('/login')) {
+		} else if (authStore.isAuthenticated && currentPath.startsWith('/login')) {
 			goto(resolve('/browse'));
 		}
 	});
@@ -78,8 +79,8 @@
 	$effect(() => {
 		if (!initialized) return;
 
-		if ($isAuthenticated) {
-			websocketStore.connect($isDevelopment);
+		if (authStore.isAuthenticated) {
+			websocketStore.connect(authStore.isDevelopment);
 
 			if (!authWasActive) {
 				authWasActive = true;
@@ -93,13 +94,32 @@
 	});
 
 	$effect(() => {
-		if (!initialized || !$isAuthenticated) return;
+		if (!initialized || !authStore.isAuthenticated) return;
 
-		websocketStore.syncJobSubscriptions($activeJobs.map((job) => job.id));
+		websocketStore.syncJobSubscriptions(jobsStore.active.map((job) => job.id));
 	});
 
 	$effect(() => {
-		applyAccentColor($settingsStore.accentColor);
+		applyAccentColor(settingsStore.current.accentColor);
+	});
+
+	// Show the synchronous result first, then the one that needs a local-image lookup.
+	$effect(() => {
+		const requested = settingsStore.current.backgroundImage;
+		let cancelled = false;
+
+		backgroundImage = resolveBackgroundImage(requested);
+		resolveBackgroundImageUrl(requested)
+			.then((url) => {
+				if (!cancelled) backgroundImage = url;
+			})
+			.catch(() => {
+				if (!cancelled) backgroundImage = null;
+			});
+
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	async function handleLogout() {
@@ -135,7 +155,7 @@
 				{@render children()}
 			{:else}
 				<div class="flex min-h-screen flex-col bg-surface-primary">
-					{#if $isAuthenticated && !$isDevelopment && !isLoginPage}
+					{#if authStore.isAuthenticated && !authStore.isDevelopment && !isLoginPage}
 						<header
 							class="sticky top-0 z-50 border-b border-border-secondary bg-surface-primary px-4"
 						>
@@ -154,7 +174,7 @@
 						</header>
 					{/if}
 					<main
-						class="flex flex-1 flex-col {$isAuthenticated && !isLoginPage
+						class="flex flex-1 flex-col {authStore.isAuthenticated && !isLoginPage
 							? 'mx-auto w-full max-w-[1400px] p-6'
 							: ''}"
 					>
