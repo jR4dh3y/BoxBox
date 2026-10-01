@@ -32,10 +32,11 @@ Response:
 ```json
 {
   "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
   "expiresAt": "2026-05-13T10:15:00Z"
 }
 ```
+
+The refresh token is not in the body. The server sets it as the `boxbox_refresh` cookie (`HttpOnly`, `SameSite=Strict`, path `/api/v1/auth`, `Secure` over HTTPS). Send requests with cookies enabled so refresh and logout can use it.
 
 ### Use an Access Token
 
@@ -47,23 +48,18 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 ```http
 POST /api/v1/auth/refresh
-Content-Type: application/json
-
-{
-  "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
-}
 ```
+
+The request has no body. The server reads the `boxbox_refresh` cookie and returns a new `accessToken` and `expiresAt`.
 
 ### Logout
 
 ```http
 POST /api/v1/auth/logout
-Content-Type: application/json
-
-{
-  "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
-}
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 ```
+
+The request has no body. Logout needs a valid refresh cookie, otherwise it returns `401` with `TOKEN_INVALID`. The server revokes that refresh token and clears the cookie. It also revokes the access token when the request carries a valid one for the same user. Without one, the access token stays valid until it expires.
 
 ## Files
 

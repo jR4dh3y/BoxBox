@@ -17,7 +17,6 @@ import (
 )
 
 // **Feature: boxbox, Property 12: Authentication Enforcement**
-// **Validates: Requirements 7.1, 7.5**
 //
 // Property: For any API request without a valid JWT token, the response SHALL be HTTP 401 status code.
 

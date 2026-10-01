@@ -1,6 +1,5 @@
 /**
  * Formatting utilities for file sizes and dates
- * Requirements: 1.1
  */
 
 /**

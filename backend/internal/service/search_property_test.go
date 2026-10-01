@@ -33,7 +33,6 @@ func setupTestSearchService() (SearchService, *filesystem.AferoFS) {
 }
 
 // **Feature: boxbox, Property 18: Search Result Correctness**
-// **Validates: Requirements 9.1, 9.2**
 //
 // Property: For any search query Q in directory D, all returned results SHALL have
 // names containing Q (case-insensitive) and paths prefixed by D.

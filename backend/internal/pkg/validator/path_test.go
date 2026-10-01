@@ -13,7 +13,6 @@ import (
 )
 
 // **Feature: boxbox, Property 13: Path Traversal Prevention**
-// **Validates: Requirements 7.2**
 //
 // Property: For any path containing "..", "/../", or URL-encoded traversal sequences,
 // the API SHALL reject the request with an error.
