@@ -10,7 +10,7 @@ import {
 	isAuthenticated as checkAuth
 } from '$lib/api/auth';
 import { CONFIG } from '$lib/config';
-import { settingsStore } from './settings';
+import { settingsStore } from './settings.svelte';
 
 /**
  * Auth state interface

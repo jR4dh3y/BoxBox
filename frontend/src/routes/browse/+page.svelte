@@ -25,7 +25,7 @@
 	import Toast from '$lib/components/ui/Toast.svelte';
 	import { Spinner } from '$lib/components/ui';
 	import { fileQueryKeys } from '$lib/stores/files';
-	import { settingsStore } from '$lib/stores/settings';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { clipboardStore } from '$lib/stores/clipboard.svelte';
 	import { uploadStore } from '$lib/stores/upload.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
@@ -100,7 +100,7 @@
 		folder: null
 	});
 
-	const settings = $derived($settingsStore);
+	const settings = $derived(settingsStore.current);
 	const path = $derived(page.url.searchParams.get('path')?.replace(/^\/+|\/+$/g, '') ?? '');
 	const segments = $derived(path ? path.split('/') : []);
 	const searchQuery = $derived(page.url.searchParams.get('q') ?? '');
@@ -132,7 +132,7 @@
 	function parseSortField(value: string | null): SortField {
 		if (value === 'size' || value === 'modTime' || value === 'type') return value;
 		if (value === 'name') return value;
-		return settingsStore.getSetting('defaultSortBy');
+		return settingsStore.current.defaultSortBy;
 	}
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({

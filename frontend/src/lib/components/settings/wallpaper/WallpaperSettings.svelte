@@ -5,7 +5,7 @@
 		getBackgroundImageLabel,
 		isValidBackgroundImage,
 		normalizeBackgroundImage
-	} from '$lib/stores/settings';
+	} from '$lib/utils/appearance';
 	import {
 		DEFAULT_BACKGROUND_IMAGE_MODE,
 		WALLPAPER_DISPLAY_OPTIONS,

@@ -11,11 +11,12 @@
 	import { FolderOpen } from 'lucide-svelte';
 	import { jobsStore } from '$lib/stores/jobs.svelte';
 	import { websocketStore } from '$lib/stores/websocket.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import {
 		applyAccentColor,
-		resolvedBackgroundImageUrl,
-		settingsStore
-	} from '$lib/stores/settings';
+		resolveBackgroundImage,
+		resolveBackgroundImageUrl
+	} from '$lib/utils/appearance';
 	import { getWallpaperBackgroundStyle, normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
 
 	let { children } = $props();
@@ -42,11 +43,11 @@
 	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
 	const backgroundImageMode = $derived(
-		normalizeBackgroundImageMode($settingsStore.backgroundImageMode)
+		normalizeBackgroundImageMode(settingsStore.current.backgroundImageMode)
 	);
-	const backgroundImage = $derived($resolvedBackgroundImageUrl);
+	let backgroundImage = $state<string | null>(null);
 	const hasBackgroundImage = $derived(backgroundImage !== null);
-	const frostedGlass = $derived(hasBackgroundImage && $settingsStore.frostedGlass);
+	const frostedGlass = $derived(hasBackgroundImage && settingsStore.current.frostedGlass);
 	const backgroundImageStyle = $derived(
 		backgroundImage ? `url(${JSON.stringify(backgroundImage)})` : undefined
 	);
@@ -99,7 +100,26 @@
 	});
 
 	$effect(() => {
-		applyAccentColor($settingsStore.accentColor);
+		applyAccentColor(settingsStore.current.accentColor);
+	});
+
+	// Show the synchronous result first, then the one that needs a local-image lookup.
+	$effect(() => {
+		const requested = settingsStore.current.backgroundImage;
+		let cancelled = false;
+
+		backgroundImage = resolveBackgroundImage(requested);
+		resolveBackgroundImageUrl(requested)
+			.then((url) => {
+				if (!cancelled) backgroundImage = url;
+			})
+			.catch(() => {
+				if (!cancelled) backgroundImage = null;
+			});
+
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	async function handleLogout() {
