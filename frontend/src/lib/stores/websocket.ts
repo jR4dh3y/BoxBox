@@ -6,25 +6,13 @@
 import { writable, derived, get } from 'svelte/store';
 import { getAccessToken } from '$lib/api/client';
 import { CONFIG } from '$lib/config';
-import { jobsStore, type JobUpdate } from './jobs';
+import { parseServerMessage, type WSServerMessage } from '$lib/api/websocket';
+import { jobsStore } from './jobs';
 
 /**
  * WebSocket connection states
  */
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
-
-/**
- * WebSocket message types from server
- */
-export type ServerMessageType = 'job_update' | 'job_complete' | 'error' | 'pong';
-
-/**
- * WebSocket message from server
- */
-export interface WSServerMessage {
-	type: ServerMessageType;
-	payload: JobUpdate | { message: string };
-}
 
 /**
  * WebSocket message types to server
@@ -144,24 +132,22 @@ function createWebSocketStore() {
 			case 'job_update':
 			case 'job_complete':
 				// Update jobs store with the job update
-				jobsStore.updateFromWebSocket(message.payload as JobUpdate);
+				jobsStore.updateFromWebSocket(message.payload);
 				break;
 
-			case 'error': {
-				const errorPayload = message.payload as { message: string };
+			case 'error':
 				update((state) => ({
 					...state,
-					error: errorPayload.message
+					error: message.payload.message
 				}));
 				break;
-			}
 
 			case 'pong':
 				// Connection is healthy, nothing to do
 				break;
 
 			default:
-				console.warn('Unknown WebSocket message type:', message.type);
+				message satisfies never;
 		}
 	}
 
@@ -176,10 +162,11 @@ function createWebSocketStore() {
 				continue;
 			}
 
-			try {
-				handleServerMessage(JSON.parse(text) as WSServerMessage);
-			} catch (err) {
-				console.error('Failed to parse WebSocket message:', err);
+			const message = parseServerMessage(text);
+			if (message) {
+				handleServerMessage(message);
+			} else {
+				console.warn('Ignoring unrecognised WebSocket message');
 			}
 		}
 	}

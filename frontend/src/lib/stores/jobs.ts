@@ -4,17 +4,7 @@
  */
 
 import { writable, derived } from 'svelte/store';
-import { listJobs, isJobActive, isJobTerminal, type Job, type JobState } from '$lib/api/jobs';
-
-/**
- * Job update from WebSocket
- */
-export interface JobUpdate {
-	jobId: string;
-	state: JobState;
-	progress: number;
-	error?: string;
-}
+import { listJobs, isJobActive, isJobTerminal, type Job, type JobUpdate } from '$lib/api/jobs';
 
 /**
  * Jobs state
