@@ -24,7 +24,8 @@ Read the code that runs before you change it. Prefer the smallest complete chang
 
 ## Backend
 
-- Resolve every virtual path with `mounts.resolve` in `backend/internal/service/mounts.go`. Do not call the validator or the symlink helpers from a service.
+- Resolve every virtual path (`media/movies/a.mkv`) with `mounts.resolve` in `backend/internal/service/mounts.go`. Do not call the validator from a service.
+- Keep the confinement helpers in `path_safety.go` for real paths that are already resolved, such as job revalidation and share sub-folders. They are not a replacement for `mounts.resolve`, and you must not remove them.
 - Map service errors to HTTP in `backend/internal/handler/errors.go`.
 
 ## Frontend

@@ -59,7 +59,7 @@ POST /api/v1/auth/logout
 Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 ```
 
-The request has no body. The server revokes the refresh cookie and the access token, and clears the cookie.
+The request has no body. Logout needs a valid refresh cookie, otherwise it returns `401` with `TOKEN_INVALID`. The server revokes that refresh token and clears the cookie. It also revokes the access token when the request carries a valid one for the same user. Without one, the access token stays valid until it expires.
 
 ## Files
 

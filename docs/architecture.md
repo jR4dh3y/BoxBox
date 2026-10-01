@@ -82,6 +82,8 @@ POST /api/v1/jobs
 
 Every service turns a virtual path such as `media/movies/a.mkv` into a real path through one function, `mounts.resolve` in `internal/service/mounts.go`. The caller states how it uses the path (read an existing path, modify an existing path, or create one). `resolve` then checks the mount name, rejects traversal, refuses writes to read-only mounts, and resolves symlinks so the result stays inside its mount.
 
+Two places start from an already-resolved real path instead: a job re-checks its stored paths before it runs, and a share folder checks its sub-paths against the share root. They call the confinement helpers in `path_safety.go` directly.
+
 ## Frontend App
 
 ```text
