@@ -7,6 +7,10 @@
 - Added standard range-over-func iterator `WalkSeq` (`iter.Seq2[WalkEntry, error]`) to the `Walker` filesystem traversal service.
 - Added single-file share links with view, download, and optional write permissions, optional expiry, revocation, and a public token-authenticated recipient page with inline previews and recipient overwrites.
 
+### Fixed
+
+- Fixed `auto_discover` mount points being returned as one unexpanded drive instead of one drive per mounted subdirectory.
+
 ### Changed
 
 - Upgraded Go toolchain and module directives to Go 1.27.

@@ -139,15 +139,7 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 		}
 	}
 
-	// Convert config mount points to model mount points
-	mountPoints := make([]model.MountPoint, len(cfg.MountPoints))
-	for i, mp := range cfg.MountPoints {
-		mountPoints[i] = model.MountPoint{
-			Name:     mp.Name,
-			Path:     mp.Path,
-			ReadOnly: mp.ReadOnly,
-		}
-	}
+	mountPoints := cfg.MountPoints
 
 	// Create WebSocket hub
 	hub := websocket.NewHub()
