@@ -27,15 +27,20 @@ export function useBrowseUploads(location: BrowseLocation, data: BrowseData) {
 		refreshTimer = setTimeout(() => data.refresh(), 250);
 	};
 
-	function start(entries: UploadEntry[], destination = location.path) {
+	function uploadDestination(): string | null {
 		if (data.isAtRoot) {
 			toastStore.warning('Navigate to a folder first to upload files');
-			return;
+			return null;
 		}
 		if (data.isReadOnly) {
 			toastStore.error('Cannot upload to read-only location');
-			return;
+			return null;
 		}
+		return location.path;
+	}
+
+	function start(entries: UploadEntry[], destination = uploadDestination()) {
+		if (destination === null) return;
 		uploadStore.addFiles(entries, destination);
 	}
 
@@ -80,7 +85,8 @@ export function useBrowseUploads(location: BrowseLocation, data: BrowseData) {
 			const dataTransfer = event.dataTransfer;
 			if (!dataTransfer) return;
 			// Reading a dropped folder is async; upload to where it was dropped.
-			const destination = location.path;
+			const destination = uploadDestination();
+			if (destination === null) return;
 			entriesFromDataTransfer(dataTransfer)
 				.then((entries) => {
 					if (entries.length > 0) start(entries, destination);

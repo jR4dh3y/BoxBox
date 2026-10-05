@@ -44,6 +44,12 @@ func TestShareCreateFolderRequiresFullAccess(t *testing.T) {
 	if code := post(full.Token, "photos"); code != http.StatusCreated {
 		t.Fatalf("creating an existing folder should succeed: status = %d", code)
 	}
+	if err := fs.WriteFile("/data/media/shared/file.txt", []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := post(full.Token, "file.txt"); code != http.StatusConflict {
+		t.Fatalf("creating a folder over an existing file: status = %d", code)
+	}
 	if code := post(uploadDelete.Token, "other"); code != http.StatusForbidden {
 		t.Fatalf("upload + delete link created a folder: status = %d", code)
 	}

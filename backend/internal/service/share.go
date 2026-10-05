@@ -641,6 +641,9 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 		return 0, "", ErrPermissionDenied
 	}
 	canReplace = share.Permissions.Delete || share.Permissions.LegacyReplace
+	if written == 0 && !share.Permissions.Manage {
+		return 0, "", ErrPermissionDenied
+	}
 	if written > share.MaxUploadBytes {
 		return 0, "", ErrShareTooLarge
 	}
@@ -713,35 +716,10 @@ func (s *shareService) CreateFolderForRecipient(ctx context.Context, token strin
 	if mount.ReadOnly || !pathWithinRoot(root, target) || target == root {
 		return ErrPermissionDenied
 	}
-	// Create one level at a time without following links: a writer swapping a
-	// level for a symlink after the check above must not move the new folder
-	// outside the share.
-	current := root
-	for _, component := range strings.Split(cleanPath, "/") {
-		current = filepath.Join(current, component)
-		info, statErr := s.fs.Lstat(current)
-		switch {
-		case statErr == nil && info.Mode()&os.ModeSymlink != 0:
-			return ErrPermissionDenied
-		case statErr == nil && !info.IsDir():
-			return ErrPathExists
-		case statErr == nil:
-		case errors.Is(statErr, fs.ErrNotExist):
-			if err := s.fs.Mkdir(current, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
-				return err
-			}
-		default:
-			return statErr
-		}
-		resolved, err := s.fs.EvalSymlinks(current)
-		if err != nil {
-			return err
-		}
-		if !pathWithinRoot(root, resolved) {
-			return ErrPermissionDenied
-		}
+	if info, err := s.fs.Lstat(target); err == nil && !info.IsDir() {
+		return ErrPathExists
 	}
-	return nil
+	return s.fs.MkdirAllWithin(root, filepath.FromSlash(cleanPath), 0o755)
 }
 
 func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string, relativePath string) error {

@@ -120,3 +120,29 @@ func TestAferoFSLstatDoesNotFollowSymlinks(t *testing.T) {
 		t.Fatalf("Lstat mode = %v, want symlink", info.Mode())
 	}
 }
+
+func TestMkdirAllWithinConfinesBothFilesystems(t *testing.T) {
+	for _, makeFS := range []struct {
+		name string
+		new  func() *AferoFS
+	}{{"disk", NewOsFS}, {"memory", NewMemMapFS}} {
+		t.Run(makeFS.name, func(t *testing.T) {
+			fsys := makeFS.new()
+			root := filepath.Join(t.TempDir(), "shared")
+			if err := fsys.MkdirAll(root, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := fsys.MkdirAllWithin(root, "parent/child", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if isDir, err := fsys.IsDir(filepath.Join(root, "parent/child")); err != nil || !isDir {
+				t.Fatalf("nested folder missing: %v", err)
+			}
+			for _, path := range []string{"../escape", "/escape", "parent/../../escape", "\x00escape"} {
+				if err := fsys.MkdirAllWithin(root, path, 0o755); err == nil {
+					t.Errorf("unsafe relative path accepted: %q", path)
+				}
+			}
+		})
+	}
+}

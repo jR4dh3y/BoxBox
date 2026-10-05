@@ -1,6 +1,7 @@
 <script lang="ts">
 	/** Public recipient page for file and folder share links: path bar on top, file list and preview below. */
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy } from 'svelte';
+	import { afterNavigate, beforeNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		Archive,
@@ -14,7 +15,6 @@
 	import { Button, ProgressBar, Spinner, Toast } from '$lib/components/ui';
 	import {
 		ApiRequestError,
-		createShareFolder,
 		getShareInfo,
 		hasShareExpiry,
 		deleteShareItem,
@@ -22,7 +22,6 @@
 		shareArchiveUrl,
 		shareDownloadUrl,
 		sharePreviewUrl,
-		shareUploadUrl,
 		shareWallpaperUrl,
 		type ShareInfoResponse,
 		type ShareItem
@@ -39,6 +38,7 @@
 		type UploadEntry
 	} from '$lib/utils/uploadEntries';
 	import { loadPreviewComponent } from '$lib/components/preview/registry';
+	import { uploadShareEntries, uploadShareFile } from '$lib/share/uploads';
 
 	interface SelectedFile {
 		/** Path inside the shared folder; undefined for a single-file share. */
@@ -59,10 +59,12 @@
 	let folderLoading = $state(false);
 	let folderError = $state<string | null>(null);
 	let folderRequestId = 0;
+	let shareRequestId = 0;
 	let selected = $state<SelectedFile | null>(null);
 	let uploadInput: HTMLInputElement;
 	let folderUploadInput: HTMLInputElement;
 	let uploadingName = $state<string | null>(null);
+	let uploadController: AbortController | undefined;
 	let uploadProgress = $state(0);
 	let isDragOver = $state(false);
 
@@ -95,13 +97,28 @@
 	const iconButtonClass =
 		'flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent text-text-secondary transition-colors duration-100 hover:bg-surface-elevated hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50';
 
-	onMount(() => {
-		void loadShare();
+	afterNavigate(({ from, to }) => {
+		if (!from || from.params?.token !== to?.params?.token) void loadShare();
 	});
 
-	onDestroy(() => (shareWallpaperStore.current = null));
+	beforeNavigate(({ to }) => {
+		if (to?.params?.token !== token) {
+			uploadController?.abort();
+			uploadController = undefined;
+			uploadingName = null;
+			folderRequestId += 1;
+		}
+	});
+	onDestroy(() => {
+		uploadController?.abort();
+		shareRequestId += 1;
+		folderRequestId += 1;
+		shareWallpaperStore.current = null;
+	});
 
 	async function loadShare() {
+		const requestId = ++shareRequestId;
+		const shareToken = token;
 		loading = true;
 		gone = false;
 		loadError = null;
@@ -111,11 +128,12 @@
 		folderPath = '';
 		folderItems = [];
 		try {
-			const shareInfo = await getShareInfo(token);
+			const shareInfo = await getShareInfo(shareToken);
+			if (requestId !== shareRequestId || shareToken !== token) return;
 			info = shareInfo;
 			shareWallpaperStore.current = shareInfo.wallpaper
 				? {
-						url: shareWallpaperUrl(token, shareInfo.wallpaper.version),
+						url: shareWallpaperUrl(shareToken, shareInfo.wallpaper.version),
 						mode: shareInfo.wallpaper.mode,
 						frostedGlass: shareInfo.wallpaper.frostedGlass
 					}
@@ -126,13 +144,14 @@
 				selected = { name: shareInfo.fileName, size: shareInfo.size };
 			}
 		} catch (error) {
+			if (requestId !== shareRequestId || shareToken !== token) return;
 			if (error instanceof ApiRequestError && error.status === 404) {
 				gone = true;
 			} else {
 				loadError = error instanceof Error ? error.message : 'Unable to load this share.';
 			}
 		} finally {
-			loading = false;
+			if (requestId === shareRequestId && shareToken === token) loading = false;
 		}
 	}
 
@@ -174,16 +193,19 @@
 
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-		const target = event.target as HTMLElement | null;
+		const target = event.target;
 		if (
-			target?.closest(
+			target instanceof Element &&
+			target.closest(
 				'input, textarea, select, audio, video, [contenteditable="true"], .monaco-editor'
 			)
 		) {
 			return;
 		}
+		const offset = event.key === 'ArrowLeft' ? -1 : 1;
+		if (selectedIndex < 0 || !folderFiles[selectedIndex + offset]) return;
 		event.preventDefault();
-		stepFile(event.key === 'ArrowLeft' ? -1 : 1);
+		stepFile(offset);
 	}
 
 	function goToBreadcrumb(index: number) {
@@ -207,7 +229,8 @@
 	}
 
 	function handleUploadChange(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
+		const input = event.currentTarget;
+		if (!(input instanceof HTMLInputElement)) return;
 		const entries = input.files ? entriesFromFiles(input.files) : [];
 		input.value = '';
 		void uploadEntries(entries);
@@ -224,15 +247,21 @@
 		if (!info?.permissions.upload || !event.dataTransfer) return;
 		event.preventDefault();
 		// Reading a dropped folder is async; upload to where it was dropped.
-		const destination = folderPath;
+		const destination = { token, path: folderPath };
 		void entriesFromDataTransfer(event.dataTransfer)
 			.then((entries) => uploadEntries(entries, destination))
 			.catch(() => toastStore.error('Unable to read the dropped items'));
 	}
 
 	/** Upload files one by one into the current folder, creating folders first (full access only). */
-	async function uploadEntries(entries: UploadEntry[], base = folderPath) {
-		if (!info?.permissions.upload || uploadingName || entries.length === 0) return;
+	async function uploadEntries(entries: UploadEntry[], destination = { token, path: folderPath }) {
+		if (
+			destination.token !== token ||
+			!info?.permissions.upload ||
+			uploadingName ||
+			entries.length === 0
+		)
+			return;
 		const tooLarge = entries.find(
 			({ file }) => info && info.maxUploadBytes > 0 && file.size > info.maxUploadBytes
 		);
@@ -248,57 +277,41 @@
 
 		// Claim the busy state before awaiting, so a second pick or drop waits its turn.
 		uploadingName = entries[0].relativePath;
+		const controller = new AbortController();
+		uploadController = controller;
 		try {
-			for (const folder of folders) {
-				await createShareFolder(token, base ? `${base}/${folder}` : folder);
-			}
-			for (const [index, entry] of entries.entries()) {
-				uploadingName =
-					entries.length > 1
-						? `${entry.relativePath} (${index + 1} of ${entries.length})`
-						: entry.relativePath;
-				await uploadFile(entry.file, base ? `${base}/${entry.relativePath}` : entry.relativePath);
-			}
+			await uploadShareEntries({
+				...destination,
+				entries,
+				signal: controller.signal,
+				onFile: (name) => (uploadingName = name),
+				onProgress: (percent) => (uploadProgress = percent)
+			});
 		} catch (error) {
+			if (controller.signal.aborted) return;
 			if (error instanceof ApiRequestError && error.status === 404) {
 				gone = true;
 			} else {
 				toastStore.error(error instanceof Error ? error.message : 'Unable to add these files');
 			}
 		} finally {
-			uploadingName = null;
-			void loadFolder(folderPath);
+			if (uploadController === controller) {
+				uploadController = undefined;
+				uploadingName = null;
+			}
+			if (!controller.signal.aborted && destination.token === token) void loadFolder(folderPath);
 		}
-	}
-
-	function uploadFile(file: Blob, relativePath: string): Promise<void> {
-		uploadProgress = 0;
-		return new Promise((resolve, reject) => {
-			const xhr = new XMLHttpRequest();
-			xhr.open('POST', shareUploadUrl(token, relativePath));
-			xhr.upload.onprogress = (event) => {
-				if (event.lengthComputable) {
-					uploadProgress = Math.round((event.loaded / event.total) * 100);
-				}
-			};
-			xhr.onload = () => {
-				if (xhr.status >= 200 && xhr.status < 300) resolve();
-				else if (xhr.status === 404)
-					reject(new ApiRequestError('Share not found', 404, 'NOT_FOUND'));
-				else if (xhr.status === 403)
-					reject(new Error('This link cannot replace an existing file.'));
-				else if (xhr.status === 413) reject(new Error('File too large'));
-				else reject(new Error('Unable to add this file'));
-			};
-			xhr.onerror = () => reject(new Error('Unable to add this file'));
-			xhr.send(file);
-		});
 	}
 
 	/** Full-access links save edits by replacing the file with the new content. */
 	async function saveSelectedFile(content: string) {
 		if (!selected?.path) return;
-		await uploadFile(new Blob([content], { type: 'text/plain' }), selected.path);
+		await uploadShareFile({
+			token,
+			path: selected.path,
+			file: new Blob([content], { type: 'text/plain' }),
+			onProgress: (percent) => (uploadProgress = percent)
+		});
 		void loadFolder(folderPath);
 	}
 </script>

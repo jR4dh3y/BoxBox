@@ -156,10 +156,15 @@ export async function deleteShareItem(token: string, path: string): Promise<Shar
 }
 
 /** Create a folder (and missing parents) below a full-access shared folder. */
-export async function createShareFolder(token: string, path: string): Promise<ShareActionResponse> {
+export async function createShareFolder(
+	token: string,
+	path: string,
+	signal?: AbortSignal
+): Promise<ShareActionResponse> {
 	return apiRequest<ShareActionResponse>(`/share/${encodeURIComponent(token)}/folders`, {
 		method: 'POST',
 		skipAuth: true,
+		signal,
 		params: { path }
 	});
 }
