@@ -3,7 +3,7 @@
 	import { HardDrive, Pencil, X } from 'lucide-svelte';
 	import { formatFileSize } from '$lib/utils/format';
 	import { Badge, ProgressBar, ContextMenu, InlineRename } from '$lib/components/ui';
-	import { settingsStore } from '$lib/stores/settings';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 
 	interface Props {
 		drive: DriveStats;
@@ -21,7 +21,7 @@
 	const freeFormatted = $derived(formatFileSize(drive.freeBytes));
 
 	// Subscribe to the store reactively so UI updates when drive names change
-	const customName = $derived($settingsStore.driveNameOverrides[drive.name]);
+	const customName = $derived(settingsStore.current.driveNameOverrides[drive.name]);
 	const displayName = $derived(customName || drive.name);
 
 	const progressVariant = $derived.by(() => {

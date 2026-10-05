@@ -1,29 +1,28 @@
 <script lang="ts">
 	import './layout.css';
-	import { authStore, isAuthenticated, isDevelopment } from '$lib/stores/auth';
+	import { authStore } from '$lib/stores/auth.svelte';
 	import { onDestroy, onMount } from 'svelte';
-	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import { CONFIG } from '$lib/config';
 	import { Spinner, Button } from '$lib/components/ui';
-	import { activeJobs, jobsStore } from '$lib/stores/jobs';
-	import { websocketStore } from '$lib/stores/websocket';
+	import { jobsStore } from '$lib/stores/jobs.svelte';
+	import { websocketStore } from '$lib/stores/websocket.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
+	import { shareWallpaperStore } from '$lib/stores/shareWallpaper.svelte';
 	import {
 		applyAccentColor,
-		resolvedBackgroundImageUrl,
-		settingsStore
-	} from '$lib/stores/settings';
-	import { shareWallpaper } from '$lib/stores/shareWallpaper';
+		resolveBackgroundImage,
+		resolveBackgroundImageUrl
+	} from '$lib/utils/appearance';
 	import { getWallpaperBackgroundStyle, normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
-	import { syncShareWallpaper } from '$lib/utils/wallpaperSync';
+	import { syncShareWallpaperOnLogin } from '$lib/utils/wallpaperSync';
 
 	let { children } = $props();
 	let initialized = $state(false);
 	let authWasActive = false;
-	let shareWallpaperChecked = false;
 
 	const queryClient = new QueryClient({
 		defaultOptions: {
@@ -46,19 +45,21 @@
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
 	// Share pages show the share owner's wallpaper, never the visitor's own.
 	const isSharePage = $derived(page.url.pathname.startsWith('/s/'));
-	const ownBackgroundImageMode = $derived(
-		normalizeBackgroundImageMode($settingsStore.backgroundImageMode)
-	);
+	let ownBackgroundImage = $state<string | null>(null);
 	const backgroundImageMode = $derived(
-		isSharePage ? normalizeBackgroundImageMode($shareWallpaper?.mode) : ownBackgroundImageMode
+		normalizeBackgroundImageMode(
+			isSharePage ? shareWallpaperStore.current?.mode : settingsStore.current.backgroundImageMode
+		)
 	);
 	const backgroundImage = $derived(
-		isSharePage ? ($shareWallpaper?.url ?? null) : $resolvedBackgroundImageUrl
+		isSharePage ? (shareWallpaperStore.current?.url ?? null) : ownBackgroundImage
 	);
 	const hasBackgroundImage = $derived(backgroundImage !== null);
 	const frostedGlass = $derived(
 		hasBackgroundImage &&
-			(isSharePage ? ($shareWallpaper?.frostedGlass ?? false) : $settingsStore.frostedGlass)
+			(isSharePage
+				? (shareWallpaperStore.current?.frostedGlass ?? false)
+				: settingsStore.current.frostedGlass)
 	);
 	const backgroundImageStyle = $derived(
 		backgroundImage ? `url(${JSON.stringify(backgroundImage)})` : undefined
@@ -81,9 +82,9 @@
 		const currentPath = page.url.pathname;
 		const isPublicRoute = publicRoutes.some((route) => currentPath.startsWith(route));
 
-		if (!$isAuthenticated && !isPublicRoute) {
+		if (!authStore.isAuthenticated && !isPublicRoute) {
 			goto(resolve('/login'));
-		} else if ($isAuthenticated && currentPath.startsWith('/login')) {
+		} else if (authStore.isAuthenticated && currentPath.startsWith('/login')) {
 			goto(resolve('/browse'));
 		}
 	});
@@ -91,8 +92,8 @@
 	$effect(() => {
 		if (!initialized) return;
 
-		if ($isAuthenticated) {
-			websocketStore.connect($isDevelopment);
+		if (authStore.isAuthenticated) {
+			websocketStore.connect(authStore.isDevelopment);
 
 			if (!authWasActive) {
 				authWasActive = true;
@@ -106,28 +107,36 @@
 	});
 
 	$effect(() => {
-		if (!initialized || !$isAuthenticated) return;
+		if (!initialized || !authStore.isAuthenticated) return;
 
-		websocketStore.syncJobSubscriptions($activeJobs.map((job) => job.id));
+		websocketStore.syncJobSubscriptions(jobsStore.active.map((job) => job.id));
 	});
 
 	$effect(() => {
-		applyAccentColor($settingsStore.accentColor);
+		applyAccentColor(settingsStore.current.accentColor);
 	});
 
-	// Once per session, make the wallpaper share pages show match this browser's wallpaper.
-	// Saving settings syncs it again.
+	// Show the synchronous result first, then the one that needs a local-image lookup.
 	$effect(() => {
-		if (!initialized || !$isAuthenticated || isSharePage || shareWallpaperChecked) return;
-		shareWallpaperChecked = true;
-		const settings = get(settingsStore);
-		syncShareWallpaper(settings.backgroundImage, {
-			mode: normalizeBackgroundImageMode(settings.backgroundImageMode),
-			frostedGlass: settings.frostedGlass
-		}).catch((error) => {
-			// Share pages keep the previous wallpaper; saving settings retries and shows the error.
-			console.warn('Unable to sync the share page wallpaper', error);
-		});
+		const requested = settingsStore.current.backgroundImage;
+		let cancelled = false;
+
+		ownBackgroundImage = resolveBackgroundImage(requested);
+		resolveBackgroundImageUrl(requested)
+			.then((url) => {
+				if (!cancelled) ownBackgroundImage = url;
+			})
+			.catch(() => {
+				if (!cancelled) ownBackgroundImage = null;
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	$effect(() => {
+		if (initialized && authStore.isAuthenticated && !isSharePage) syncShareWallpaperOnLogin();
 	});
 
 	async function handleLogout() {
@@ -163,7 +172,7 @@
 				{@render children()}
 			{:else}
 				<div class="flex min-h-screen flex-col bg-surface-primary">
-					{#if $isAuthenticated && !$isDevelopment && !isLoginPage}
+					{#if authStore.isAuthenticated && !authStore.isDevelopment && !isLoginPage}
 						<header
 							class="sticky top-0 z-50 border-b border-border-secondary bg-surface-primary px-4"
 						>
@@ -181,7 +190,7 @@
 						</header>
 					{/if}
 					<main
-						class="flex flex-1 flex-col {$isAuthenticated && !isLoginPage
+						class="flex flex-1 flex-col {authStore.isAuthenticated && !isLoginPage
 							? 'mx-auto w-full max-w-[1400px] p-6'
 							: ''}"
 					>

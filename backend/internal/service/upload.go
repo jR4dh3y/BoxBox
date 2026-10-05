@@ -148,14 +148,7 @@ func (s *uploadService) AcceptChunk(
 	chunk UploadChunk,
 	body io.Reader,
 ) (*UploadResult, error) {
-	mount, destination, err := s.files.ResolvePath(path)
-	if err != nil {
-		return nil, err
-	}
-	if mount.ReadOnly {
-		return nil, ErrPermissionDenied
-	}
-	destination, err = resolveWritablePathWithinMount(s.files.GetFilesystem(), mount, destination)
+	_, destination, err := s.files.ResolveForWrite(path)
 	if err != nil {
 		return nil, err
 	}

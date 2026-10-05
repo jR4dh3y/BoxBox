@@ -14,6 +14,7 @@ type WallpaperDisplay struct {
 type WallpaperMeta struct {
 	WallpaperDisplay
 	Source      string    `json:"source"`
+	SHA256      string    `json:"sha256"`
 	ContentType string    `json:"contentType"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }

@@ -64,7 +64,7 @@ func TestSetWallpaperRejectsInvalidInput(t *testing.T) {
 		image []byte
 		mode  string
 	}{
-		"not an image": {[]byte("<svg onload=alert(1)>"), "cover"},
+		"not an image": {[]byte("plain text, not a picture"), "cover"},
 		"unknown mode": {testPNG, "sideways"},
 		"empty image":  {nil, "cover"},
 		"html payload": {[]byte("<!DOCTYPE html><script></script>"), "cover"},
@@ -93,5 +93,47 @@ func TestWallpaperUsernameCannotEscapeDataDir(t *testing.T) {
 	}
 	if exists, _ := fs.Exists("/etc/passwd.img"); exists {
 		t.Fatal("wallpaper written outside the data directory")
+	}
+}
+
+func TestWallpaperAcceptsPickerFormatsAndReplacesCleanly(t *testing.T) {
+	fs := filesystem.NewMemMapFS()
+	_ = fs.MkdirAll("/data", 0755)
+	svc := NewSettingsService(fs, SettingsServiceConfig{DataDir: "/data"})
+	display := model.WallpaperDisplay{Mode: "cover"}
+
+	avif := append([]byte{0, 0, 0, 0x1c}, []byte("ftypavif-rest")...)
+	svg := []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>`)
+	for name, tc := range map[string]struct {
+		image []byte
+		want  string
+	}{"avif": {avif, "image/avif"}, "svg": {svg, "image/svg+xml"}} {
+		meta, err := svc.SetWallpaper("owner", tc.image, display, name)
+		if err != nil || meta.ContentType != tc.want {
+			t.Fatalf("%s: meta = %+v, err = %v", name, meta, err)
+		}
+	}
+
+	first, err := svc.SetWallpaper("owner", testPNG, display, "first")
+	if err != nil || len(first.SHA256) != 64 {
+		t.Fatalf("first = %+v, err = %v", first, err)
+	}
+	second, err := svc.SetWallpaper("owner", []byte("\x89PNG\r\n\x1a\nsecond-image"), display, "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := fs.ReadDir("/data/wallpapers")
+	images := 0
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".img") {
+			images++
+		}
+	}
+	if images != 1 {
+		t.Fatalf("replacing a wallpaper left %d image files, want 1", images)
+	}
+	image, meta, err := svc.OpenWallpaper("owner")
+	if err != nil || meta.SHA256 != second.SHA256 || !strings.HasSuffix(string(image), "second-image") {
+		t.Fatalf("OpenWallpaper after replace = %q, %+v, %v", image, meta, err)
 	}
 }

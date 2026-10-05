@@ -18,7 +18,7 @@
 		type ShareInfoResponse,
 		type ShareItem
 	} from '$lib/api';
-	import { shareWallpaper } from '$lib/stores/shareWallpaper';
+	import { shareWallpaperStore } from '$lib/stores/shareWallpaper.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { getFileIcon, getPreviewType } from '$lib/utils/fileTypes';
 	import { formatFileSize, formatRelativeTime } from '$lib/utils/format';
@@ -80,7 +80,7 @@
 		void loadShare();
 	});
 
-	onDestroy(() => shareWallpaper.set(null));
+	onDestroy(() => (shareWallpaperStore.current = null));
 
 	async function loadShare() {
 		loading = true;
@@ -94,15 +94,13 @@
 		try {
 			const shareInfo = await getShareInfo(token);
 			info = shareInfo;
-			shareWallpaper.set(
-				shareInfo.wallpaper
-					? {
-							url: shareWallpaperUrl(token, shareInfo.wallpaper.version),
-							mode: shareInfo.wallpaper.mode,
-							frostedGlass: shareInfo.wallpaper.frostedGlass
-						}
-					: null
-			);
+			shareWallpaperStore.current = shareInfo.wallpaper
+				? {
+						url: shareWallpaperUrl(token, shareInfo.wallpaper.version),
+						mode: shareInfo.wallpaper.mode,
+						frostedGlass: shareInfo.wallpaper.frostedGlass
+					}
+				: null;
 			if (shareInfo.isFolder) {
 				await loadFolder('');
 			} else {
@@ -241,7 +239,7 @@
 
 <!-- Without an owner wallpaper the page is plain; with one, it shows between the panels. -->
 <div
-	class="flex h-screen flex-col gap-3 p-3 text-text-primary {$shareWallpaper
+	class="flex h-screen flex-col gap-3 p-3 text-text-primary {shareWallpaperStore.current
 		? ''
 		: 'bg-surface-primary'}"
 >

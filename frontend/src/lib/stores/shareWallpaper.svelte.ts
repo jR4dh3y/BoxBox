@@ -2,7 +2,6 @@
  * The share owner's wallpaper. Share pages set it so the root layout draws the
  * owner's wallpaper instead of the visitor's own.
  */
-import { writable } from 'svelte/store';
 import type { BackgroundImageMode } from '$lib/utils/wallpaper';
 
 export interface ShareWallpaper {
@@ -11,4 +10,8 @@ export interface ShareWallpaper {
 	frostedGlass: boolean;
 }
 
-export const shareWallpaper = writable<ShareWallpaper | null>(null);
+class ShareWallpaperStore {
+	current = $state.raw<ShareWallpaper | null>(null);
+}
+
+export const shareWallpaperStore = new ShareWallpaperStore();
