@@ -4,6 +4,7 @@
  */
 
 import { api, apiRequest } from './client';
+import type { BackgroundImageMode } from '$lib/utils/wallpaper';
 
 /**
  * Permissions granted to a share recipient
@@ -82,6 +83,12 @@ export interface ShareInfoResponse {
 	permissions: SharePermissions;
 	maxUploadBytes: number;
 	expiresAt?: string;
+	/** The share owner's wallpaper; absent when they have none. */
+	wallpaper?: {
+		mode: BackgroundImageMode;
+		frostedGlass: boolean;
+		version: number;
+	};
 }
 
 /**
@@ -192,6 +199,11 @@ export function shareArchiveUrl(token: string, path?: string): string {
 export function sharePreviewUrl(token: string, path?: string): string {
 	const query = path ? `?path=${encodeURIComponent(path)}` : '';
 	return `/api/v1/share/${encodeURIComponent(token)}/preview${query}`;
+}
+
+/** The share owner's wallpaper image. Version busts the cache when it changes. */
+export function shareWallpaperUrl(token: string, version: number): string {
+	return `/api/v1/share/${encodeURIComponent(token)}/wallpaper?v=${version}`;
 }
 
 /**

@@ -50,6 +50,10 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrShareNotFound, "Share not found", model.ErrCodeNotFound, http.StatusNotFound},
 	{service.ErrShareTooLarge, "Upload exceeds the size limit", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
 
+	// Wallpaper errors
+	{service.ErrWallpaperNotFound, "Wallpaper not found", model.ErrCodeNotFound, http.StatusNotFound},
+	{service.ErrInvalidWallpaper, "Wallpaper must be a JPEG, PNG, GIF, or WebP image up to 20 MB with a valid display mode", model.ErrCodeValidationError, http.StatusBadRequest},
+
 	// Auth service errors
 	{service.ErrInvalidCredentials, "Invalid credentials", model.ErrCodeUnauthorized, http.StatusUnauthorized},
 	{service.ErrInvalidToken, "Invalid token", model.ErrCodeTokenInvalid, http.StatusUnauthorized},

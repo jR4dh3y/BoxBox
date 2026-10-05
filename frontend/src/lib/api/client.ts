@@ -190,9 +190,12 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
 		...headers
 	};
 
-	// Add Content-Type for requests with body
+	// Blobs are sent as-is (binary uploads); everything else is JSON.
+	const isBlobBody = body instanceof Blob;
 	if (body && !requestHeaders['Content-Type']) {
-		requestHeaders['Content-Type'] = 'application/json';
+		requestHeaders['Content-Type'] = isBlobBody
+			? body.type || 'application/octet-stream'
+			: 'application/json';
 	}
 
 	// Add Authorization header if authenticated and not skipping auth
@@ -211,7 +214,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
 	};
 
 	if (body) {
-		fetchOptions.body = JSON.stringify(body);
+		fetchOptions.body = isBlobBody ? body : JSON.stringify(body);
 	}
 
 	let response = await fetch(url, fetchOptions);

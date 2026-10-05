@@ -134,6 +134,7 @@ type ShareInfoResponse struct {
 	MaxUploadBytes int64                    `json:"maxUploadBytes"`
 	IsFolder       bool                     `json:"isFolder"`
 	ExpiresAt      time.Time                `json:"expiresAt,omitempty"`
+	Wallpaper      *ShareWallpaper          `json:"wallpaper,omitempty"`
 }
 
 // ShareItem is a directory entry exposed below a shared folder. Path is

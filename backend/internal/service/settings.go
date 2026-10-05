@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 )
 
@@ -13,10 +14,17 @@ type SettingsService interface {
 	GetDriveNames() (map[string]string, error)
 	SetDriveName(mountPoint, customName string) error
 	DeleteDriveName(mountPoint string) error
+
+	GetWallpaper(username string) (*model.WallpaperMeta, error)
+	OpenWallpaper(username string) ([]byte, *model.WallpaperMeta, error)
+	SetWallpaper(username string, image []byte, display model.WallpaperDisplay, source string) (*model.WallpaperMeta, error)
+	SetWallpaperDisplay(username string, display model.WallpaperDisplay) (*model.WallpaperMeta, error)
+	DeleteWallpaper(username string) error
 }
 
 type settingsService struct {
 	fs       filesystem.FS
+	dataDir  string
 	filePath string
 	mu       sync.RWMutex
 }
@@ -35,7 +43,7 @@ func NewSettingsService(fsys filesystem.FS, cfg SettingsServiceConfig) SettingsS
 		dataDir = config.DefaultDataDir
 	}
 	filePath := filepath.Join(dataDir, config.DriveNamesFileName)
-	return &settingsService{fs: fsys, filePath: filePath}
+	return &settingsService{fs: fsys, dataDir: dataDir, filePath: filePath}
 }
 
 func (s *settingsService) load() (*DriveNamesData, error) {

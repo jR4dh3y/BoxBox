@@ -2,6 +2,7 @@
 	import './layout.css';
 	import { authStore, isAuthenticated, isDevelopment } from '$lib/stores/auth';
 	import { onDestroy, onMount } from 'svelte';
+	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -16,11 +17,14 @@
 		resolvedBackgroundImageUrl,
 		settingsStore
 	} from '$lib/stores/settings';
+	import { shareWallpaper } from '$lib/stores/shareWallpaper';
 	import { getWallpaperBackgroundStyle, normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
+	import { syncShareWallpaper } from '$lib/utils/wallpaperSync';
 
 	let { children } = $props();
 	let initialized = $state(false);
 	let authWasActive = false;
+	let shareWallpaperChecked = false;
 
 	const queryClient = new QueryClient({
 		defaultOptions: {
@@ -41,12 +45,22 @@
 			page.url.pathname.startsWith('/s/')
 	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
-	const backgroundImageMode = $derived(
+	// Share pages show the share owner's wallpaper, never the visitor's own.
+	const isSharePage = $derived(page.url.pathname.startsWith('/s/'));
+	const ownBackgroundImageMode = $derived(
 		normalizeBackgroundImageMode($settingsStore.backgroundImageMode)
 	);
-	const backgroundImage = $derived($resolvedBackgroundImageUrl);
+	const backgroundImageMode = $derived(
+		isSharePage ? normalizeBackgroundImageMode($shareWallpaper?.mode) : ownBackgroundImageMode
+	);
+	const backgroundImage = $derived(
+		isSharePage ? ($shareWallpaper?.url ?? null) : $resolvedBackgroundImageUrl
+	);
 	const hasBackgroundImage = $derived(backgroundImage !== null);
-	const frostedGlass = $derived(hasBackgroundImage && $settingsStore.frostedGlass);
+	const frostedGlass = $derived(
+		hasBackgroundImage &&
+			(isSharePage ? ($shareWallpaper?.frostedGlass ?? false) : $settingsStore.frostedGlass)
+	);
 	const backgroundImageStyle = $derived(
 		backgroundImage ? `url(${JSON.stringify(backgroundImage)})` : undefined
 	);
@@ -100,6 +114,21 @@
 
 	$effect(() => {
 		applyAccentColor($settingsStore.accentColor);
+	});
+
+	// Once per session, make the wallpaper share pages show match this browser's wallpaper.
+	// Saving settings syncs it again.
+	$effect(() => {
+		if (!initialized || !$isAuthenticated || isSharePage || shareWallpaperChecked) return;
+		shareWallpaperChecked = true;
+		const settings = get(settingsStore);
+		syncShareWallpaper(settings.backgroundImage, {
+			mode: normalizeBackgroundImageMode(settings.backgroundImageMode),
+			frostedGlass: settings.frostedGlass
+		}).catch((error) => {
+			// Share pages keep the previous wallpaper; saving settings retries and shows the error.
+			console.warn('Unable to sync the share page wallpaper', error);
+		});
 	});
 
 	async function handleLogout() {

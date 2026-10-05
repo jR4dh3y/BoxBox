@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"errors"
 	"net/http"
 	"path"
@@ -20,16 +21,25 @@ import (
 // authenticate purely by share token.
 type ShareHandler struct {
 	shareService   service.ShareService
+	wallpapers     ShareWallpapers
 	maxUploadBytes int64
 }
 
-// NewShareHandler creates a new share handler
-func NewShareHandler(shareService service.ShareService, maxUploadMB int) *ShareHandler {
+// ShareWallpapers looks up the share owner's wallpaper; share pages draw it behind the files.
+type ShareWallpapers interface {
+	GetWallpaper(username string) (*model.WallpaperMeta, error)
+	OpenWallpaper(username string) ([]byte, *model.WallpaperMeta, error)
+}
+
+// NewShareHandler creates a new share handler. wallpapers may be nil, in which
+// case share pages have no wallpaper.
+func NewShareHandler(shareService service.ShareService, wallpapers ShareWallpapers, maxUploadMB int) *ShareHandler {
 	if maxUploadMB <= 0 {
 		maxUploadMB = config.DefaultMaxUploadMB
 	}
 	return &ShareHandler{
 		shareService:   shareService,
+		wallpapers:     wallpapers,
 		maxUploadBytes: int64(maxUploadMB) * 1024 * 1024,
 	}
 }
@@ -53,6 +63,7 @@ func (h *ShareHandler) RegisterPublicRoutes(r chi.Router) {
 	r.Get("/{token}/download", h.Download)
 	r.Get("/{token}/archive", h.Archive)
 	r.Get("/{token}/preview", h.Preview)
+	r.Get("/{token}/wallpaper", h.Wallpaper)
 	r.Post("/{token}/upload", h.Upload)
 }
 
@@ -228,7 +239,52 @@ func (h *ShareHandler) GetInfo(w http.ResponseWriter, r *http.Request) {
 		MaxUploadBytes: share.MaxUploadBytes,
 		IsFolder:       share.IsFolder,
 		ExpiresAt:      share.ExpiresAt,
+		Wallpaper:      h.shareWallpaper(share.CreatedBy),
 	}, http.StatusOK)
+}
+
+func (h *ShareHandler) shareWallpaper(owner string) *model.ShareWallpaper {
+	if h.wallpapers == nil {
+		return nil
+	}
+	meta, err := h.wallpapers.GetWallpaper(owner)
+	if err != nil {
+		if !errors.Is(err, service.ErrWallpaperNotFound) {
+			log.Warn().Err(err).Msg("Failed to read share owner wallpaper")
+		}
+		return nil
+	}
+	return &model.ShareWallpaper{WallpaperDisplay: meta.WallpaperDisplay, Version: meta.UpdatedAt.UnixMilli()}
+}
+
+// Wallpaper serves the share owner's wallpaper image.
+// GET /api/v1/share/{token}/wallpaper
+func (h *ShareHandler) Wallpaper(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		writeError(w, "Share token is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+
+	share, err := h.shareService.ResolveForRecipient(token)
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	if h.wallpapers == nil {
+		HandleServiceError(w, service.ErrWallpaperNotFound)
+		return
+	}
+	image, meta, err := h.wallpapers.OpenWallpaper(share.CreatedBy)
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", meta.ContentType)
+	w.Header().Set("Content-Security-Policy", streamSandboxCSP)
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeContent(w, r, "", meta.UpdatedAt, bytes.NewReader(image))
 }
 
 // ListItems returns the visible entries below a shared folder.

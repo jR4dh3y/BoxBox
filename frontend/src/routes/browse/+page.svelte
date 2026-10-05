@@ -20,7 +20,6 @@
 	import FilePreview from '$lib/components/FilePreview.svelte';
 	import BrowseDialogs from '$lib/components/BrowseDialogs.svelte';
 	import ShareModal from '$lib/components/ShareModal.svelte';
-	import FolderShareModal from '$lib/components/FolderShareModal.svelte';
 	import UploadPanel from '$lib/components/UploadPanel.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
 	import { Spinner } from '$lib/components/ui';
@@ -91,13 +90,9 @@
 	});
 
 	// Share dialog state
-	let shareDialog = $state<{ open: boolean; file: FileInfo | null }>({
+	let shareDialog = $state<{ open: boolean; item: FileInfo | null }>({
 		open: false,
-		file: null
-	});
-	let folderShareDialog = $state<{ open: boolean; folder: FileInfo | null }>({
-		open: false,
-		folder: null
+		item: null
 	});
 
 	const settings = $derived($settingsStore);
@@ -424,13 +419,8 @@
 				break;
 
 			case 'share':
-				if (items.length === 1 && items[0].isDir) {
-					folderShareDialog = { open: true, folder: items[0] };
-				} else if (items.length === 1) {
-					shareDialog = {
-						open: true,
-						file: items[0]
-					};
+				if (items.length === 1) {
+					shareDialog = { open: true, item: items[0] };
 				}
 				break;
 
@@ -851,13 +841,8 @@
 <!-- Share Modal -->
 <ShareModal
 	open={shareDialog.open}
-	file={shareDialog.file}
-	onclose={() => (shareDialog = { open: false, file: null })}
-/>
-<FolderShareModal
-	open={folderShareDialog.open}
-	folder={folderShareDialog.folder}
-	onclose={() => (folderShareDialog = { open: false, folder: null })}
+	item={shareDialog.item}
+	onclose={() => (shareDialog = { open: false, item: null })}
 />
 
 <!-- Hidden file input for upload button -->
