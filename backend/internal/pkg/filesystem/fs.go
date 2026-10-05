@@ -304,7 +304,7 @@ func (a *AferoFS) MkdirAllWithin(root, path string, perm os.FileMode) error {
 		return directory.MkdirAll(path, perm)
 	}
 	// MemMapFs has no symlinks or external filesystem writers.
-	return a.fs.MkdirAll(filepath.Join(root, path), perm)
+	return a.fs.MkdirAll(filepath.Join(root, filepath.Clean("/"+path)), perm)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.
