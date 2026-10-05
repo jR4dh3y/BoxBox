@@ -15,7 +15,6 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
-	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
 )
 
 // File service errors
@@ -53,13 +52,10 @@ type DirectoryReader interface {
 	ListMountPoints() []model.MountPoint
 	// GetDriveStats returns disk usage statistics for all mount points
 	GetDriveStats(ctx context.Context) (*model.DriveStatsResponse, error)
-	// ResolvePath resolves a virtual path to a filesystem path
-	ResolvePath(path string) (*model.MountPoint, string, error)
 }
 
 // FileCommander contains mutating filesystem operations.
 type FileCommander interface {
-	ResolvePath(path string) (*model.MountPoint, string, error)
 	WriteFile(ctx context.Context, path string, content []byte) error
 	CreateDir(ctx context.Context, path string) error
 	Rename(ctx context.Context, oldPath, newPath string) error
@@ -71,7 +67,8 @@ type FileCommander interface {
 type FileStreamer interface {
 	OpenFile(ctx context.Context, path string) (File, *model.FileInfo, error)
 	PrepareDirectoryArchive(ctx context.Context, path string) (*DirectoryArchive, error)
-	ResolvePath(path string) (*model.MountPoint, string, error)
+	// ResolveForWrite confines a virtual path to a writable mount; the path may not exist yet
+	ResolveForWrite(path string) (*model.MountPoint, string, error)
 	// GetFilesystem returns the underlying filesystem for advanced operations
 	GetFilesystem() filesystem.FS
 }
@@ -89,8 +86,8 @@ type FileService interface {
 
 // fileService implements FileService
 type fileService struct {
-	fs          filesystem.FS
-	mountPoints []model.MountPoint
+	fs     filesystem.FS
+	mounts *mounts
 }
 
 // FileServiceConfig holds configuration for the file service
@@ -101,21 +98,21 @@ type FileServiceConfig struct {
 // NewFileService creates a new file service
 func NewFileService(fsys filesystem.FS, cfg FileServiceConfig) FileService {
 	return &fileService{
-		fs:          fsys,
-		mountPoints: cfg.MountPoints,
+		fs:     fsys,
+		mounts: newMounts(fsys, fixedMounts(cfg.MountPoints)),
 	}
 }
 
 // ListMountPoints returns all configured mount points
 func (s *fileService) ListMountPoints() []model.MountPoint {
-	return s.mountPoints
+	return s.mounts.list()
 }
 
 // GetDriveStats returns disk usage statistics for all mount points
 // Mount points with auto_discover enabled are expanded to their discovered sub-mounts
 func (s *fileService) GetDriveStats(ctx context.Context) (*model.DriveStatsResponse, error) {
 	// Expand auto-discover mount points
-	effectiveMounts := DiscoverMountPoints(s.fs, s.mountPoints)
+	effectiveMounts := DiscoverMountPoints(s.fs, s.mounts.list())
 	drives := make([]model.DriveStats, 0, len(effectiveMounts))
 
 	for _, mount := range effectiveMounts {
@@ -157,9 +154,9 @@ type diskUsage struct {
 	MountPoint string // Actual mount point in the system
 }
 
-// ResolvePath resolves a virtual path to a mount point and filesystem path
-func (s *fileService) ResolvePath(path string) (*model.MountPoint, string, error) {
-	return validator.ValidatePathAgainstMounts(path, s.mountPoints)
+// ResolveForWrite confines a virtual path to a writable mount; the path may not exist yet
+func (s *fileService) ResolveForWrite(path string) (*model.MountPoint, string, error) {
+	return s.mounts.resolve(path, writeMaybeMissing)
 }
 
 // List returns a paginated list of files in a directory
@@ -179,14 +176,7 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 	}
 
 	// Resolve the path to filesystem path
-	mount, fsPath, err := s.ResolvePath(path)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return nil, ErrMountPointNotFound
-		}
-		return nil, err
-	}
-	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	_, fsPath, err := s.mounts.resolve(path, readExisting)
 	if err != nil {
 		return nil, err
 	}
@@ -265,14 +255,7 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 // GetInfo returns metadata for a file or directory
 func (s *fileService) GetInfo(ctx context.Context, path string) (*model.FileInfo, error) {
 	// Resolve the path to filesystem path
-	mount, fsPath, err := s.ResolvePath(path)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return nil, ErrMountPointNotFound
-		}
-		return nil, err
-	}
-	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	_, fsPath, err := s.mounts.resolve(path, readExisting)
 	if err != nil {
 		return nil, err
 	}
@@ -293,19 +276,7 @@ func (s *fileService) GetInfo(ctx context.Context, path string) (*model.FileInfo
 // CreateDir creates a new directory
 func (s *fileService) CreateDir(ctx context.Context, path string) error {
 	// Resolve the path to filesystem path
-	mount, fsPath, err := s.ResolvePath(path)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return ErrMountPointNotFound
-		}
-		return err
-	}
-
-	// Check if mount is read-only
-	if mount.ReadOnly {
-		return ErrPermissionDenied
-	}
-	fsPath, err = resolveWritablePathWithinMount(s.fs, mount, fsPath)
+	_, fsPath, err := s.mounts.resolve(path, writeMaybeMissing)
 	if err != nil {
 		return err
 	}
@@ -326,37 +297,13 @@ func (s *fileService) CreateDir(ctx context.Context, path string) error {
 // Rename renames/moves a file or directory
 func (s *fileService) Rename(ctx context.Context, oldPath, newPath string) error {
 	// Resolve old path
-	oldMount, oldFsPath, err := s.ResolvePath(oldPath)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return ErrMountPointNotFound
-		}
-		return err
-	}
-
-	// Check if old mount is read-only
-	if oldMount.ReadOnly {
-		return ErrPermissionDenied
-	}
-	oldFsPath, err = resolveExistingPathWithinMount(s.fs, oldMount, oldFsPath)
+	_, oldFsPath, err := s.mounts.resolve(oldPath, writeExisting)
 	if err != nil {
 		return err
 	}
 
 	// Resolve new path
-	newMount, newFsPath, err := s.ResolvePath(newPath)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return ErrMountPointNotFound
-		}
-		return err
-	}
-
-	// Check if new mount is read-only
-	if newMount.ReadOnly {
-		return ErrPermissionDenied
-	}
-	newFsPath, err = resolveWritablePathWithinMount(s.fs, newMount, newFsPath)
+	_, newFsPath, err := s.mounts.resolve(newPath, writeMaybeMissing)
 	if err != nil {
 		return err
 	}
@@ -386,19 +333,7 @@ func (s *fileService) Rename(ctx context.Context, oldPath, newPath string) error
 // Delete removes a file or directory
 func (s *fileService) Delete(ctx context.Context, path string) error {
 	// Resolve the path to filesystem path
-	mount, fsPath, err := s.ResolvePath(path)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return ErrMountPointNotFound
-		}
-		return err
-	}
-
-	// Check if mount is read-only
-	if mount.ReadOnly {
-		return ErrPermissionDenied
-	}
-	fsPath, err = resolveWritablePathWithinMount(s.fs, mount, fsPath)
+	_, fsPath, err := s.mounts.resolve(path, writeMaybeMissing)
 	if err != nil {
 		return err
 	}
@@ -419,14 +354,7 @@ func (s *fileService) Delete(ctx context.Context, path string) error {
 // OpenFile opens a file for reading using the filesystem abstraction
 func (s *fileService) OpenFile(ctx context.Context, path string) (File, *model.FileInfo, error) {
 	// Resolve the path to filesystem path
-	mount, fsPath, err := s.ResolvePath(path)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return nil, nil, ErrMountPointNotFound
-		}
-		return nil, nil, err
-	}
-	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	mount, fsPath, err := s.mounts.resolve(path, readExisting)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -463,14 +391,7 @@ func (s *fileService) PrepareDirectoryArchive(ctx context.Context, path string) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	mount, fsPath, err := s.ResolvePath(path)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return nil, ErrMountPointNotFound
-		}
-		return nil, err
-	}
-	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	mount, fsPath, err := s.mounts.resolve(path, readExisting)
 	if err != nil {
 		return nil, err
 	}
@@ -480,19 +401,7 @@ func (s *fileService) PrepareDirectoryArchive(ctx context.Context, path string) 
 // CreateFile creates a new file for writing using the filesystem abstraction
 func (s *fileService) CreateFile(ctx context.Context, path string) (WriteFile, error) {
 	// Resolve the path to filesystem path
-	mount, fsPath, err := s.ResolvePath(path)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return nil, ErrMountPointNotFound
-		}
-		return nil, err
-	}
-
-	// Check if mount is read-only
-	if mount.ReadOnly {
-		return nil, ErrPermissionDenied
-	}
-	fsPath, err = resolveWritablePathWithinMount(s.fs, mount, fsPath)
+	_, fsPath, err := s.mounts.resolve(path, writeMaybeMissing)
 	if err != nil {
 		return nil, err
 	}
@@ -524,19 +433,7 @@ func (s *fileService) CreateFile(ctx context.Context, path string) (WriteFile, e
 // WriteFile overwrites an existing file using the filesystem abstraction
 func (s *fileService) WriteFile(ctx context.Context, path string, content []byte) error {
 	// Resolve the path to filesystem path
-	mount, fsPath, err := s.ResolvePath(path)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return ErrMountPointNotFound
-		}
-		return err
-	}
-
-	// Check if mount is read-only
-	if mount.ReadOnly {
-		return ErrPermissionDenied
-	}
-	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	_, fsPath, err := s.mounts.resolve(path, writeExisting)
 	if err != nil {
 		return err
 	}

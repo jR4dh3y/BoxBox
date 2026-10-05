@@ -25,7 +25,7 @@ trusted_proxies: []
 
 # Upload settings
 max_upload_mb: 10240  # 10GB max upload size
-chunk_size_mb: 5      # 5MB chunk size for uploads
+chunk_size_mb: 10     # 10MB chunk size for browser uploads
 
 # Mount points - directories accessible through the file manager
 # Mounts appear as drives; a mount inside another mount (Downloads inside home)

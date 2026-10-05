@@ -716,17 +716,18 @@ func TestShareUploadRejectsInvalidRequests(t *testing.T) {
 	tests := []struct {
 		name       string
 		token      string
+		path       string
 		body       io.Reader
 		wantStatus int
 	}{
-		{name: "share without write permission", token: readOnly.Token, body: strings.NewReader("data"), wantStatus: http.StatusForbidden},
-		{name: "unknown token", token: "unknown-token", body: strings.NewReader("data"), wantStatus: http.StatusNotFound},
-		{name: "empty body", token: writable.Token, body: nil, wantStatus: http.StatusBadRequest},
+		{name: "share without write permission", token: readOnly.Token, path: "new.txt", body: strings.NewReader("data"), wantStatus: http.StatusForbidden},
+		{name: "unknown token", token: "unknown-token", path: "new.txt", body: strings.NewReader("data"), wantStatus: http.StatusNotFound},
+		{name: "empty body for a new file", token: writable.Token, path: "new.txt", body: nil, wantStatus: http.StatusBadRequest},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+test.token+"/upload", test.body)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+test.token+"/upload?path="+test.path, test.body)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 

@@ -51,3 +51,13 @@ async function collectEntries(entry: FileSystemEntry, prefix: string, entries: U
 		for (const child of batch) await collectEntries(child, relativePath, entries);
 	}
 }
+
+/** Every folder the entries need, parents before children ("a", "a/b"). */
+export function foldersFor(entries: UploadEntry[]): string[] {
+	const folders = new Set<string>();
+	for (const { relativePath } of entries) {
+		const parts = relativePath.split('/').slice(0, -1);
+		parts.forEach((_, index) => folders.add(parts.slice(0, index + 1).join('/')));
+	}
+	return [...folders];
+}

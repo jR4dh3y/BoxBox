@@ -35,23 +35,9 @@ type CreateJobRequest struct {
 	DestPath   string `json:"destPath,omitempty"`
 }
 
-// JobResponse represents a job in API responses
-type JobResponse struct {
-	ID          string `json:"id"`
-	Type        string `json:"type"`
-	State       string `json:"state"`
-	Progress    int    `json:"progress"`
-	SourcePath  string `json:"sourcePath"`
-	DestPath    string `json:"destPath,omitempty"`
-	Error       string `json:"error,omitempty"`
-	CreatedAt   string `json:"createdAt"`
-	StartedAt   string `json:"startedAt,omitempty"`
-	CompletedAt string `json:"completedAt,omitempty"`
-}
-
 // JobListResponse represents the list of jobs
 type JobListResponse struct {
-	Jobs []JobResponse `json:"jobs"`
+	Jobs []*model.Job `json:"jobs"`
 }
 
 // List returns all jobs
@@ -63,13 +49,10 @@ func (h *JobHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := JobListResponse{
-		Jobs: make([]JobResponse, len(jobs)),
+	if jobs == nil {
+		jobs = []*model.Job{}
 	}
-
-	for i, job := range jobs {
-		response.Jobs[i] = h.toJobResponse(job)
-	}
+	response := JobListResponse{Jobs: jobs}
 
 	writeJSON(w, response, http.StatusOK)
 }
@@ -89,7 +72,7 @@ func (h *JobHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, h.toJobResponse(job), http.StatusOK)
+	writeJSON(w, job, http.StatusOK)
 }
 
 // Create creates a new job
@@ -134,7 +117,7 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, h.toJobResponse(job), http.StatusAccepted)
+	writeJSON(w, job, http.StatusAccepted)
 }
 
 // Cancel cancels a running job
@@ -152,28 +135,4 @@ func (h *JobHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]string{"message": "Job cancelled successfully"}, http.StatusOK)
-}
-
-// toJobResponse converts a model.Job to JobResponse
-func (h *JobHandler) toJobResponse(job *model.Job) JobResponse {
-	resp := JobResponse{
-		ID:         job.ID,
-		Type:       string(job.Type),
-		State:      string(job.State),
-		Progress:   job.Progress,
-		SourcePath: job.SourcePath,
-		DestPath:   job.DestPath,
-		Error:      job.Error,
-		CreatedAt:  job.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-	}
-
-	if !job.StartedAt.IsZero() {
-		resp.StartedAt = job.StartedAt.Format("2006-01-02T15:04:05Z07:00")
-	}
-
-	if !job.CompletedAt.IsZero() {
-		resp.CompletedAt = job.CompletedAt.Format("2006-01-02T15:04:05Z07:00")
-	}
-
-	return resp
 }

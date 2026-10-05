@@ -469,10 +469,7 @@ func (h *ShareHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "This share does not allow uploads", model.ErrCodePermissionDenied, http.StatusForbidden)
 		return
 	}
-	if r.ContentLength == 0 {
-		writeError(w, "Request body is required", model.ErrCodeValidationError, http.StatusBadRequest)
-		return
-	}
+	// The service decides empty bodies: they may empty an existing file but not create one.
 	maxUploadBytes := share.MaxUploadBytes
 	if maxUploadBytes <= 0 || maxUploadBytes > h.maxUploadBytes {
 		maxUploadBytes = h.maxUploadBytes

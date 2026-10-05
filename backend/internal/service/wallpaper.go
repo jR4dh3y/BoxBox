@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -32,6 +34,25 @@ var wallpaperContentTypes = map[string]bool{
 	"image/webp": true,
 }
 
+// detectWallpaperType sniffs the image formats the wallpaper picker accepts.
+// http.DetectContentType does not know AVIF or SVG. SVG is safe to store: it is
+// served with the sandbox CSP and only drawn as a CSS background.
+func detectWallpaperType(image []byte) (string, bool) {
+	if contentType := http.DetectContentType(image); wallpaperContentTypes[contentType] {
+		return contentType, true
+	}
+	if len(image) >= 12 && string(image[4:8]) == "ftyp" {
+		if brand := string(image[8:12]); brand == "avif" || brand == "avis" {
+			return "image/avif", true
+		}
+	}
+	head := image[:min(len(image), 1024)]
+	if bytes.Contains(bytes.ToLower(head), []byte("<svg")) {
+		return "image/svg+xml", true
+	}
+	return "", false
+}
+
 // GetWallpaper returns the user's wallpaper metadata, or ErrWallpaperNotFound.
 func (s *settingsService) GetWallpaper(username string) (*model.WallpaperMeta, error) {
 	s.mu.RLock()
@@ -48,7 +69,7 @@ func (s *settingsService) OpenWallpaper(username string) ([]byte, *model.Wallpap
 	if err != nil {
 		return nil, nil, err
 	}
-	image, err := s.fs.ReadFile(s.wallpaperImagePath(username))
+	image, err := s.fs.ReadFile(s.wallpaperImagePath(username, meta.SHA256))
 	if err != nil {
 		return nil, nil, ErrWallpaperNotFound
 	}
@@ -64,10 +85,12 @@ func (s *settingsService) SetWallpaper(username string, image []byte, display mo
 	if username == "" || len(image) == 0 || len(image) > config.MaxWallpaperBytes || !wallpaperModes[display.Mode] || len(source) > maxWallpaperSourceLength {
 		return nil, ErrInvalidWallpaper
 	}
-	contentType := http.DetectContentType(image)
-	if !wallpaperContentTypes[contentType] {
+	contentType, ok := detectWallpaperType(image)
+	if !ok {
 		return nil, ErrInvalidWallpaper
 	}
+	sum := sha256.Sum256(image)
+	digest := hex.EncodeToString(sum[:])
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -75,17 +98,29 @@ func (s *settingsService) SetWallpaper(username string, image []byte, display mo
 	if err := s.fs.MkdirAll(s.wallpapersDir(), 0755); err != nil {
 		return nil, err
 	}
-	if err := s.writeFileAtomicLocked(s.wallpaperImagePath(username), image); err != nil {
+	previous, _ := s.readWallpaperMetaLocked(username)
+
+	// Images are stored by content hash and the metadata names the current one,
+	// so writing the metadata is the single commit point for a replacement.
+	imagePath := s.wallpaperImagePath(username, digest)
+	if err := s.writeFileAtomicLocked(imagePath, image); err != nil {
 		return nil, err
 	}
 	meta := &model.WallpaperMeta{
 		WallpaperDisplay: display,
 		Source:           source,
+		SHA256:           digest,
 		ContentType:      contentType,
 		UpdatedAt:        time.Now().UTC(),
 	}
 	if err := s.writeWallpaperMetaLocked(username, meta); err != nil {
+		if previous == nil || previous.SHA256 != digest {
+			_ = s.fs.Remove(imagePath)
+		}
 		return nil, err
+	}
+	if previous != nil && previous.SHA256 != digest {
+		_ = s.fs.Remove(s.wallpaperImagePath(username, previous.SHA256))
 	}
 	return meta, nil
 }
@@ -116,17 +151,18 @@ func (s *settingsService) DeleteWallpaper(username string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, path := range []string{s.wallpaperMetaPath(username), s.wallpaperImagePath(username)} {
-		exists, err := s.fs.Exists(path)
-		if err != nil {
-			return err
-		}
-		if exists {
-			if err := s.fs.Remove(path); err != nil {
-				return err
-			}
-		}
+	meta, err := s.readWallpaperMetaLocked(username)
+	if errors.Is(err, ErrWallpaperNotFound) {
+		return nil
 	}
+	if err != nil {
+		return err
+	}
+	// Removing the metadata is what deletes the wallpaper; the image follows.
+	if err := s.fs.Remove(s.wallpaperMetaPath(username)); err != nil {
+		return err
+	}
+	_ = s.fs.Remove(s.wallpaperImagePath(username, meta.SHA256))
 	return nil
 }
 
@@ -166,8 +202,8 @@ func (s *settingsService) wallpapersDir() string {
 }
 
 // Usernames are hex-encoded so they can never form a path.
-func (s *settingsService) wallpaperImagePath(username string) string {
-	return filepath.Join(s.wallpapersDir(), hex.EncodeToString([]byte(username))+".img")
+func (s *settingsService) wallpaperImagePath(username, digest string) string {
+	return filepath.Join(s.wallpapersDir(), hex.EncodeToString([]byte(username))+"-"+digest+".img")
 }
 
 func (s *settingsService) wallpaperMetaPath(username string) string {

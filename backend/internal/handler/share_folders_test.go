@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,5 +67,34 @@ func TestShareFullAccessRequiresUploadAndDelete(t *testing.T) {
 	}, time.Time{})
 	if err == nil {
 		t.Fatal("full access without delete was accepted")
+	}
+}
+
+func TestShareUploadCanEmptyExistingFileOnly(t *testing.T) {
+	handler, fs, shareSvc := setupTestShareHandler()
+	router := createShareTestRouter(handler)
+	share, err := shareSvc.Create(context.Background(), "owner", "media/shared", service.ShareSettings{
+		Permissions: model.SharePermissions{Upload: true, Delete: true, Manage: true},
+	}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload := func(path, body string) int {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/share/"+share.Token+"/upload?path="+path, strings.NewReader(body)))
+		return rec.Code
+	}
+
+	if code := upload("notes.txt", "draft"); code != http.StatusOK && code != http.StatusCreated {
+		t.Fatalf("initial upload: status = %d", code)
+	}
+	if code := upload("notes.txt", ""); code != http.StatusOK && code != http.StatusCreated {
+		t.Fatalf("emptying an existing file: status = %d", code)
+	}
+	if content, _ := fs.ReadFile("/data/media/shared/notes.txt"); len(content) != 0 {
+		t.Fatalf("file content = %q, want empty", content)
+	}
+	if code := upload("new.txt", ""); code != http.StatusBadRequest {
+		t.Fatalf("empty new upload: status = %d, want 400", code)
 	}
 }

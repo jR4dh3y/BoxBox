@@ -11,7 +11,7 @@
 	} from 'lucide-svelte';
 	import { Button, Modal, ProgressBar, Select } from '$lib/components/ui';
 	import { listDirectory, listRoots, type FileInfo, type MountPoint } from '$lib/api/files';
-	import { resolveBackgroundImage, toServerBackgroundImage } from '$lib/stores/settings';
+	import { resolveBackgroundImage, toServerBackgroundImage } from '$lib/utils/appearance';
 	import { formatFileSize } from '$lib/utils/format';
 	import {
 		DEFAULT_BACKGROUND_IMAGE_MODE,

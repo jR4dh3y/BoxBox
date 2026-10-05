@@ -3,30 +3,51 @@
 package service
 
 import (
+	"io/fs"
+	"path/filepath"
 	"testing"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 )
 
-func TestDiscoveredDrivesOpenThroughParentMount(t *testing.T) {
-	fs := filesystem.NewMemMapFS()
-	_ = fs.MkdirAll("/media/devmon/SanDisk", 0o755)
-	_ = fs.MkdirAll("/media/devmon/not-mounted", 0o755)
-	entries, err := fs.ReadDir("/media/devmon")
+type unreadableMountFS struct {
+	filesystem.FS
+	path string
+}
+
+func (f unreadableMountFS) ReadDirLimit(path string, limit int) ([]fs.DirEntry, bool, error) {
+	if filepath.Clean(path) == f.path {
+		return nil, false, fs.ErrPermission
+	}
+	return f.FS.ReadDirLimit(path, limit)
+}
+
+func TestFilterMountedDirsSkipsUnreadableMounts(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	for _, path := range []string{"/drives/readable", "/drives/unreadable"} {
+		if err := fsys.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := fsys.ReadDir("/drives")
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	parent := model.MountPoint{Name: "drives", Path: "/media/devmon", AutoDiscover: true}
-	mountSet := map[string]mountInfo{normalizePath("/media/devmon/SanDisk"): {}}
-	discovered := filterMountedDirs(entries, parent, mountSet)
-
-	if len(discovered) != 1 {
-		t.Fatalf("discovered %d drives, want 1: %+v", len(discovered), discovered)
+	mountSet := map[string]mountInfo{
+		normalizePath("/drives/readable"):   {MountPoint: "/drives/readable", FSType: "ext4"},
+		normalizePath("/drives/unreadable"): {MountPoint: "/drives/unreadable", FSType: "ext4"},
 	}
-	drive := discovered[0]
-	if drive.Name != "drives/SanDisk" || drive.Path != "/media/devmon/SanDisk" || drive.Kind != model.MountKindDrive {
-		t.Fatalf("discovered drive = %+v", drive)
+	fsy := unreadableMountFS{FS: fsys, path: "/drives/unreadable"}
+
+	got := filterMountedDirs(fsy, entries, model.MountPoint{Name: "drives", Path: "/drives"}, mountSet)
+	if len(got) != 1 || got[0].Name != "readable" || got[0].Kind != model.MountKindDrive {
+		t.Fatalf("filterMountedDirs() = %+v, want only readable mount", got)
+	}
+}
+
+func TestBPFIsNotAStorageFilesystem(t *testing.T) {
+	if isRealFilesystem("bpf") {
+		t.Fatal("bpf filesystem should not be discovered as a storage drive")
 	}
 }

@@ -99,6 +99,8 @@
 				...(expiry !== '0' ? { expiresInSeconds: Number(expiry) } : {})
 			});
 			createdId = created.id;
+			// Show the new link even if refreshing the list fails.
+			shares = [{ ...created, path: item.path }, ...shares];
 			await loadShares();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Unable to create share link.';

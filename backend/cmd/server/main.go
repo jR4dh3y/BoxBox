@@ -15,7 +15,6 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 	"github.com/jR4dh3y/BoxBox/backend/internal/handler"
@@ -34,16 +33,9 @@ func main() {
 	flag.Parse()
 
 	if *devMode {
-		// These values exist only in this process and satisfy production-oriented
-		// config validation. Authentication is bypassed below.
-		os.Setenv("BOXBOX_JWT_SECRET", "boxbox-development-mode-not-for-production")
-		// Authentication is bypassed, but configuration still requires the
-		// bcrypt storage format used in production.
-		devPasswordHash, hashErr := bcrypt.GenerateFromPassword([]byte("development-mode"), bcrypt.MinCost)
-		if hashErr != nil {
-			log.Fatal().Err(hashErr).Msg("Failed to initialize development credentials")
+		if err := setDevCredentials(); err != nil {
+			log.Fatal().Err(err).Msg("Failed to initialize development credentials")
 		}
-		os.Setenv("BOXBOX_USERS_dev", string(devPasswordHash))
 	}
 
 	// Configure zerolog
@@ -139,9 +131,8 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 		}
 	}
 
-	// Copy the configured mount points, keeping every field (auto_discover, kind).
-	mountPoints := make([]model.MountPoint, len(cfg.MountPoints))
-	copy(mountPoints, cfg.MountPoints)
+	configuredMountPoints := cfg.MountPoints
+	mountPoints := service.DiscoverMountPoints(fs, configuredMountPoints)
 
 	// Create WebSocket hub
 	hub := websocket.NewHub()
@@ -171,26 +162,26 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 		DataDir: cfg.DataDir,
 	})
 
-	// Shares re-resolve their target against the live mount list on every
-	// recipient access, so they receive a mounts provider instead of a snapshot.
-	// Deliberately the configured list, not discovered sub-mounts: discovery
-	// replaces auto-discover parents with sub-mount names, which would break
-	// every share whose path is rooted at a configured name like "drives".
+	// Keep configured names for existing shares and discovered names for shares
+	// created from the drives shown in the browser.
+	shareMountPoints := make([]model.MountPoint, 0, len(configuredMountPoints)+len(mountPoints))
+	shareMountPoints = append(shareMountPoints, configuredMountPoints...)
+	shareMountPoints = append(shareMountPoints, mountPoints...)
 	shareService := service.NewShareService(fs, service.ShareServiceConfig{
 		DataDir:        cfg.DataDir,
 		MaxUploadBytes: int64(cfg.MaxUploadMB) * 1024 * 1024,
-		Mounts:         func() []model.MountPoint { return mountPoints },
+		Mounts:         func() []model.MountPoint { return shareMountPoints },
 	})
 
 	// Create handlers
 	authHandler := handler.NewAuthHandler(authService)
 	fileHandler := handler.NewFileHandler(fileService)
-	streamHandler := handler.NewStreamHandler(fileService, cfg.ChunkSizeMB, cfg.MaxUploadMB)
+	streamHandler := handler.NewStreamHandler(fileService, cfg.MaxUploadMB)
 	jobHandler := handler.NewJobHandler(jobService)
 	searchHandler := handler.NewSearchHandler(searchService)
 	wsHandler := handler.NewWebSocketHandler(hub, authService, cfg.AllowedOrigins)
 	wsHandler.SetDevMode(devMode)
-	systemHandler := handler.NewSystemHandler(systemService)
+	systemHandler := handler.NewSystemHandler(systemService, cfg.ChunkSizeMB)
 	settingsHandler := handler.NewSettingsHandler(settingsService)
 	shareHandler := handler.NewShareHandler(shareService, settingsService, cfg.MaxUploadMB)
 

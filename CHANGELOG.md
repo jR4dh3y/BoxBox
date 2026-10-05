@@ -12,8 +12,14 @@
 - Share pages now show the owner's wallpaper, synced from Settings.
 - Added a `kind` mount option (`drive` or `place`); the sidebar lists Drives and Places separately and only drives appear on This Server.
 
+### Fixed
+
+- Fixed `boxbox --dev` failing at startup with `password for user "dev" must be a bcrypt hash`. Its placeholder password was hashed below the minimum bcrypt cost that configuration validation requires.
+- Fixed `auto_discover` mount points being returned as one unexpanded drive instead of one drive per mounted subdirectory.
+
 ### Changed
 
+- Browser uploads now use the configured `chunk_size_mb`, served by `GET /api/v1/system/upload`. The default and the bundled `config.yaml` are now 10 MiB, which matches what browsers sent before.
 - Upgraded Go toolchain and module directives to Go 1.27.
 - Migrated Docker multi-stage build image to `golang:1.27-alpine`.
 - Replaced external dependency `github.com/google/uuid` with Go 1.27 standard library `uuid`.
@@ -27,7 +33,6 @@
 
 ### Fixed
 
-- `auto_discover` was ignored at startup, so drives under a discovery folder never appeared individually; discovered drives now open through their parent mount.
 - Copying share links failed when BoxBox was opened over plain HTTP on a LAN address.
 - Long dialog titles no longer push the close button out of view.
 

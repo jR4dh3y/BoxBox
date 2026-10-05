@@ -38,7 +38,7 @@ trusted_proxies:
   - "172.18.0.0/16"
 
 max_upload_mb: 10240
-chunk_size_mb: 5
+chunk_size_mb: 10
 
 mount_points:
   - name: "drives"
@@ -71,7 +71,7 @@ mount_points:
 | `trusted_proxies` | `[]` | Proxy IPs/CIDRs allowed to supply client-IP headers. |
 | `allow_root_mount` | `false` | Explicit override required for a mount resolving to `/`. |
 | `max_upload_mb` | `10240` | Maximum upload size in MiB. |
-| `chunk_size_mb` | `5` | Backend chunk configuration value. Browser uploads currently send 10 MiB chunks by default. |
+| `chunk_size_mb` | `10` | Chunk size in MiB that the browser uses for uploads. Lower it when a reverse proxy limits request body size. |
 
 ## Users
 

@@ -1033,3 +1033,51 @@ func assertPrivatePermissions(t *testing.T, path string, want os.FileMode) {
 		t.Fatalf("%s permissions = %04o, want %04o", path, got, want)
 	}
 }
+
+func TestShareCreateFolderRefusesSymlinkedLevels(t *testing.T) {
+	root := t.TempDir()
+	media := filepath.Join(root, "media")
+	shared := filepath.Join(media, "shared")
+	sibling := filepath.Join(media, "sibling")
+	outside := filepath.Join(root, "outside")
+	for _, dir := range []string{shared, sibling, outside} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(sibling, filepath.Join(shared, "to-sibling")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(shared, "to-outside")); err != nil {
+		t.Fatal(err)
+	}
+	shares := NewShareService(filesystem.NewOsFS(), ShareServiceConfig{
+		DataDir: filepath.Join(root, "data"),
+		Mounts: func() []model.MountPoint {
+			return []model.MountPoint{{Name: "media", Path: media}}
+		},
+	})
+	share, err := shares.Create(context.Background(), "owner", "media/shared", ShareSettings{
+		Permissions: model.SharePermissions{Upload: true, Delete: true, Manage: true},
+	}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := shares.CreateFolderForRecipient(context.Background(), share.Token, "real/nested"); err != nil {
+		t.Fatalf("creating a normal nested folder: %v", err)
+	}
+	if info, err := os.Lstat(filepath.Join(shared, "real", "nested")); err != nil || !info.IsDir() {
+		t.Fatalf("nested folder missing: %v", err)
+	}
+	for _, link := range []string{"to-sibling/new", "to-outside/new"} {
+		if err := shares.CreateFolderForRecipient(context.Background(), share.Token, link); err == nil {
+			t.Errorf("%s: folder created through a symlink", link)
+		}
+	}
+	for _, dir := range []string{filepath.Join(sibling, "new"), filepath.Join(outside, "new")} {
+		if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s was created outside the share", dir)
+		}
+	}
+}

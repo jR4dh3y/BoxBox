@@ -27,7 +27,7 @@
 		type ShareInfoResponse,
 		type ShareItem
 	} from '$lib/api';
-	import { shareWallpaper } from '$lib/stores/shareWallpaper';
+	import { shareWallpaperStore } from '$lib/stores/shareWallpaper.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { getFileIcon, getPreviewType } from '$lib/utils/fileTypes';
 	import { formatFileSize, formatRelativeTime } from '$lib/utils/format';
@@ -35,6 +35,7 @@
 	import {
 		entriesFromDataTransfer,
 		entriesFromFiles,
+		foldersFor,
 		type UploadEntry
 	} from '$lib/utils/uploadEntries';
 	import { loadPreviewComponent } from '$lib/components/preview/registry';
@@ -98,7 +99,7 @@
 		void loadShare();
 	});
 
-	onDestroy(() => shareWallpaper.set(null));
+	onDestroy(() => (shareWallpaperStore.current = null));
 
 	async function loadShare() {
 		loading = true;
@@ -112,15 +113,13 @@
 		try {
 			const shareInfo = await getShareInfo(token);
 			info = shareInfo;
-			shareWallpaper.set(
-				shareInfo.wallpaper
-					? {
-							url: shareWallpaperUrl(token, shareInfo.wallpaper.version),
-							mode: shareInfo.wallpaper.mode,
-							frostedGlass: shareInfo.wallpaper.frostedGlass
-						}
-					: null
-			);
+			shareWallpaperStore.current = shareInfo.wallpaper
+				? {
+						url: shareWallpaperUrl(token, shareInfo.wallpaper.version),
+						mode: shareInfo.wallpaper.mode,
+						frostedGlass: shareInfo.wallpaper.frostedGlass
+					}
+				: null;
 			if (shareInfo.isFolder) {
 				await loadFolder('');
 			} else {
@@ -224,13 +223,15 @@
 		isDragOver = false;
 		if (!info?.permissions.upload || !event.dataTransfer) return;
 		event.preventDefault();
+		// Reading a dropped folder is async; upload to where it was dropped.
+		const destination = folderPath;
 		void entriesFromDataTransfer(event.dataTransfer)
-			.then(uploadEntries)
+			.then((entries) => uploadEntries(entries, destination))
 			.catch(() => toastStore.error('Unable to read the dropped items'));
 	}
 
 	/** Upload files one by one into the current folder, creating folders first (full access only). */
-	async function uploadEntries(entries: UploadEntry[]) {
+	async function uploadEntries(entries: UploadEntry[], base = folderPath) {
 		if (!info?.permissions.upload || uploadingName || entries.length === 0) return;
 		const tooLarge = entries.find(
 			({ file }) => info && info.maxUploadBytes > 0 && file.size > info.maxUploadBytes
@@ -239,20 +240,14 @@
 			toastStore.error(`This link allows files up to ${formatFileSize(info.maxUploadBytes)}.`);
 			return;
 		}
-		const folders = [
-			...new Set(
-				entries.flatMap(({ relativePath }) => {
-					const parts = relativePath.split('/').slice(0, -1);
-					return parts.map((_, index) => parts.slice(0, index + 1).join('/'));
-				})
-			)
-		];
+		const folders = foldersFor(entries);
 		if (folders.length > 0 && !info.permissions.manage) {
 			toastStore.error('This link can only receive files, not folders.');
 			return;
 		}
 
-		const base = folderPath;
+		// Claim the busy state before awaiting, so a second pick or drop waits its turn.
+		uploadingName = entries[0].relativePath;
 		try {
 			for (const folder of folders) {
 				await createShareFolder(token, base ? `${base}/${folder}` : folder);
@@ -325,7 +320,7 @@
 
 <!-- Without an owner wallpaper the page is plain; with one, it shows between the panels. -->
 <div
-	class="flex h-screen flex-col gap-3 p-3 text-text-primary {$shareWallpaper
+	class="flex h-screen flex-col gap-3 p-3 text-text-primary {shareWallpaperStore.current
 		? ''
 		: 'bg-surface-primary'}"
 >

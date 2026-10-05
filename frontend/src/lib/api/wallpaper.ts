@@ -13,6 +13,8 @@ export interface WallpaperDisplay {
 export interface StoredWallpaper extends WallpaperDisplay {
 	/** The wallpaper setting value the image was uploaded from. */
 	source: string;
+	/** Hex SHA-256 of the stored image bytes. */
+	sha256: string;
 }
 
 /** The wallpaper stored on the server, or null when there is none. */

@@ -94,7 +94,7 @@ type shareService struct {
 	fs             filesystem.FS
 	filePath       string
 	maxUploadBytes int64
-	mounts         func() []model.MountPoint
+	mounts         *mounts
 	storageErr     error
 	mu             sync.RWMutex
 }
@@ -130,15 +130,15 @@ func NewShareService(fsys filesystem.FS, cfg ShareServiceConfig) ShareService {
 	if maxUploadBytes <= 0 {
 		maxUploadBytes = int64(config.DefaultMaxUploadMB) * 1024 * 1024
 	}
-	mounts := cfg.Mounts
-	if mounts == nil {
-		mounts = func() []model.MountPoint { return nil }
+	mountList := cfg.Mounts
+	if mountList == nil {
+		mountList = func() []model.MountPoint { return nil }
 	}
 	shareSvc := &shareService{
 		fs:             fsys,
 		filePath:       filepath.Join(dataDir, config.SharesFileName),
 		maxUploadBytes: maxUploadBytes,
-		mounts:         mounts,
+		mounts:         newMounts(fsys, mountList),
 	}
 	shareSvc.storageErr = shareSvc.secureExistingStore()
 	return shareSvc
@@ -155,11 +155,7 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 	if err != nil {
 		return nil, err
 	}
-	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mounts())
-	if err != nil {
-		return nil, err
-	}
-	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	mount, fsPath, err := s.mounts.resolve(path, readExisting)
 	if err != nil {
 		return nil, err
 	}
@@ -574,7 +570,8 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	}
 	canReplace := share.Permissions.Delete || share.Permissions.LegacyReplace
 	replacementMode := os.FileMode(0o644)
-	if exists, existsErr := s.fs.Exists(target); existsErr != nil {
+	exists, existsErr := s.fs.Exists(target)
+	if existsErr != nil {
 		return 0, "", existsErr
 	} else if exists {
 		if !canReplace {
@@ -619,7 +616,9 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	if copyErr != nil {
 		return 0, "", copyErr
 	}
-	if written == 0 {
+	// An empty upload is rejected so a failed upload cannot wipe a file. Full
+	// access links edit files, and an edit may leave one empty.
+	if written == 0 && !(exists && share.Permissions.Manage) {
 		return 0, "", ErrInvalidOperation
 	}
 	if written > share.MaxUploadBytes {
@@ -714,13 +713,35 @@ func (s *shareService) CreateFolderForRecipient(ctx context.Context, token strin
 	if mount.ReadOnly || !pathWithinRoot(root, target) || target == root {
 		return ErrPermissionDenied
 	}
-	if info, statErr := s.fs.Stat(target); statErr == nil {
-		if info.IsDir() {
-			return nil
+	// Create one level at a time without following links: a writer swapping a
+	// level for a symlink after the check above must not move the new folder
+	// outside the share.
+	current := root
+	for _, component := range strings.Split(cleanPath, "/") {
+		current = filepath.Join(current, component)
+		info, statErr := s.fs.Lstat(current)
+		switch {
+		case statErr == nil && info.Mode()&os.ModeSymlink != 0:
+			return ErrPermissionDenied
+		case statErr == nil && !info.IsDir():
+			return ErrPathExists
+		case statErr == nil:
+		case errors.Is(statErr, fs.ErrNotExist):
+			if err := s.fs.Mkdir(current, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+				return err
+			}
+		default:
+			return statErr
 		}
-		return ErrPathExists
+		resolved, err := s.fs.EvalSymlinks(current)
+		if err != nil {
+			return err
+		}
+		if !pathWithinRoot(root, resolved) {
+			return ErrPermissionDenied
+		}
 	}
-	return s.fs.MkdirAll(target, 0o755)
+	return nil
 }
 
 func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string, relativePath string) error {
@@ -838,16 +859,9 @@ func cleanShareRelativePath(relativePath string) (string, error) {
 // mount list. A mount that no longer exists makes the share unresolvable, which
 // is reported as ErrShareNotFound so recipients see a uniform failure.
 func (s *shareService) resolveShareTarget(share *model.Share) (*model.MountPoint, string, error) {
-	mount, fsPath, err := validator.ValidatePathAgainstMounts(share.MountName+"/"+share.RelPath, s.mounts())
+	mount, fsPath, err := s.mounts.resolve(share.MountName+"/"+share.RelPath, readExisting)
 	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) || errors.Is(err, validator.ErrMountPointNotFound) {
-			return nil, "", ErrShareNotFound
-		}
-		return nil, "", err
-	}
-	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
-	if err != nil {
-		if errors.Is(err, ErrPathNotFound) || errors.Is(err, ErrPermissionDenied) {
+		if errors.Is(err, ErrMountPointNotFound) || errors.Is(err, ErrPathNotFound) || errors.Is(err, ErrPermissionDenied) {
 			return nil, "", ErrShareNotFound
 		}
 		return nil, "", err

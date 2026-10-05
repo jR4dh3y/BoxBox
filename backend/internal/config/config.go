@@ -75,7 +75,7 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 	v.SetDefault("port", 8080)
 	v.SetDefault("host", "0.0.0.0")
 	v.SetDefault("max_upload_mb", DefaultMaxUploadMB) // 10GB default
-	v.SetDefault("chunk_size_mb", 5)                  // 5MB chunks
+	v.SetDefault("chunk_size_mb", DefaultChunkSizeMB)
 	v.SetDefault("rate_limit_rps", 2.0)
 	v.SetDefault("data_dir", DefaultDataDir)
 

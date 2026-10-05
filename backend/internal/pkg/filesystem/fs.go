@@ -50,6 +50,9 @@ type FS interface {
 	// RenameNoReplace publishes oldpath at newpath only if newpath does not exist.
 	RenameNoReplace(oldpath, newpath string) error
 
+	// Mkdir creates a single directory; it fails if the parent is missing.
+	Mkdir(path string, perm os.FileMode) error
+
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
 
@@ -277,6 +280,15 @@ func renameNoReplaceWithLink(oldpath, newpath string, link func(string, string) 
 		return err
 	}
 	return nil
+}
+
+// Mkdir creates a single directory; it fails if the parent is missing.
+func (a *AferoFS) Mkdir(path string, perm os.FileMode) error {
+	if err := validateFilesystemPath(path); err != nil {
+		return err
+	}
+	path = filepath.Clean("/" + path)
+	return a.fs.Mkdir(path, perm)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.
