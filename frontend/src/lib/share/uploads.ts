@@ -51,9 +51,9 @@ export function uploadShareFile({
 	path: string;
 	file: Blob;
 	signal?: AbortSignal;
-	onProgress: (percent: number) => void;
+	onProgress?: (percent: number) => void;
 }): Promise<void> {
-	onProgress(0);
+	onProgress?.(0);
 	return new Promise((resolve, reject) => {
 		if (signal?.aborted) {
 			reject(signal.reason);
@@ -68,7 +68,7 @@ export function uploadShareFile({
 		};
 		xhr.open('POST', shareUploadUrl(token, path));
 		xhr.upload.onprogress = (event) => {
-			if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+			if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
 		};
 		xhr.onload = () => {
 			if (xhr.status >= 200 && xhr.status < 300) finish();

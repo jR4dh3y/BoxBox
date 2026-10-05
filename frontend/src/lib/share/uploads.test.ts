@@ -35,6 +35,36 @@ afterEach(() => Object.assign(globalThis, { XMLHttpRequest: originalRequest }));
 
 const progress = () => {};
 
+test('an editor save leaves a concurrent batch upload percentage unchanged', async () => {
+	UploadRequest.onSend = () => {};
+	let batchProgress = 0;
+	const batch = uploadShareEntries({
+		token: 'share',
+		path: '',
+		entries: [{ file: new File(['batch'], 'batch.txt'), relativePath: 'batch.txt' }],
+		signal: new AbortController().signal,
+		onFile: progress,
+		onProgress: (percent) => (batchProgress = percent)
+	});
+	const batchRequest = UploadRequest.requests[0];
+	batchRequest.upload.onprogress?.(
+		Object.assign(new Event('progress'), { lengthComputable: true, loaded: 40, total: 100 })
+	);
+	assert.equal(batchProgress, 40);
+
+	const save = uploadShareFile({ token: 'share', path: 'edit.txt', file: new Blob(['saved']) });
+	const saveRequest = UploadRequest.requests[1];
+	assert.equal(batchProgress, 40);
+	saveRequest.upload.onprogress?.(
+		Object.assign(new Event('progress'), { lengthComputable: true, loaded: 80, total: 100 })
+	);
+	assert.equal(batchProgress, 40);
+	saveRequest.onload?.();
+	await save;
+	batchRequest.onload?.();
+	await batch;
+});
+
 test('a batch keeps its original share and folder across asynchronous file requests', async () => {
 	const destination = {
 		token: 'original-share',

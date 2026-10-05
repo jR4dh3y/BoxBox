@@ -8,5 +8,6 @@ export const fileQueryKeys = {
 	directory: (path: string) => [...fileQueryKeys.directories(), path] as const,
 	list: (path: string, options: Omit<ListOptions, 'page'>) =>
 		[...fileQueryKeys.directory(path), options] as const,
-	search: (path: string, query: string) => [...fileQueryKeys.all, 'search', path, query] as const
+	searches: () => [...fileQueryKeys.all, 'search'] as const,
+	search: (path: string, query: string) => [...fileQueryKeys.searches(), path, query] as const
 };

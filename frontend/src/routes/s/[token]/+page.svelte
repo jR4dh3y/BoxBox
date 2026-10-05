@@ -309,8 +309,7 @@
 		await uploadShareFile({
 			token,
 			path: selected.path,
-			file: new Blob([content], { type: 'text/plain' }),
-			onProgress: (percent) => (uploadProgress = percent)
+			file: new Blob([content], { type: 'text/plain' })
 		});
 		void loadFolder(folderPath);
 	}
