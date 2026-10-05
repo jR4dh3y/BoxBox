@@ -1,6 +1,5 @@
 /**
  * Auth API module for authentication operations
- * Requirements: 7.1
  */
 
 import { apiRequest, setAccessToken, clearTokens, isAuthenticated as checkAuth } from './client';

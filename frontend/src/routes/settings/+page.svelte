@@ -5,22 +5,21 @@
 	import { onDestroy, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { authStore } from '$lib/stores/auth';
+	import { authStore } from '$lib/stores/auth.svelte';
+	import { settingsStore, type UserSettings } from '$lib/stores/settings.svelte';
 	import {
 		DEFAULT_ACCENT_COLOR,
 		isValidBackgroundImage,
 		isValidAccentColor,
 		normalizeBackgroundImage,
-		normalizeAccentColor,
-		settingsStore,
-		type UserSettings
-	} from '$lib/stores/settings';
+		normalizeAccentColor
+	} from '$lib/utils/appearance';
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import WallpaperSettings from '$lib/components/settings/wallpaper/WallpaperSettings.svelte';
 	import ShareLinksSettings from '$lib/components/settings/ShareLinksSettings.svelte';
 	import { Button, ProgressButton, Select, Toggle } from '$lib/components/ui';
 	import { normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
-	import { syncShareWallpaper } from '$lib/utils/wallpaperSync';
+	import { publishShareWallpaper } from '$lib/utils/wallpaperSync';
 	import {
 		deleteLocalWallpaper,
 		isInlineWallpaperDataUrl,
@@ -48,7 +47,7 @@
 	type SettingsCategory = 'all' | SettingsSectionId;
 	type ApplyProgressVariant = 'default' | 'success' | 'danger';
 
-	let settings = $state<UserSettings>({ ...$settingsStore });
+	let settings = $state<UserSettings>($state.snapshot(settingsStore.current));
 	let activeCategory = $state<SettingsCategory>('all');
 	let searchQuery = $state('');
 	let isApplyingSettings = $state(false);
@@ -57,7 +56,7 @@
 	let applyProgressVariant = $state<ApplyProgressVariant>('default');
 	let applyProgressResetTimer: ReturnType<typeof setTimeout> | null = null;
 
-	const hasChanges = $derived(JSON.stringify(settings) !== JSON.stringify($settingsStore));
+	const hasChanges = $derived(JSON.stringify(settings) !== JSON.stringify(settingsStore.current));
 	const normalizedSearch = $derived(searchQuery.trim().toLowerCase());
 	const accentColorIsValid = $derived(isValidAccentColor(settings.accentColor));
 	const accentColorValue = $derived(
@@ -196,7 +195,7 @@
 		try {
 			await setApplyProgress(15, 'Validating settings...');
 
-			const previousBackgroundImage = $settingsStore.backgroundImage;
+			const previousBackgroundImage = settingsStore.current.backgroundImage;
 			let backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
 			if (backgroundImage && isInlineWallpaperDataUrl(backgroundImage)) {
 				await setApplyProgress(35, 'Saving wallpaper locally...');
@@ -223,10 +222,7 @@
 			await setApplyProgress(70, 'Updating wallpaper on your share pages...');
 			let shareWallpaperError: string | null = null;
 			try {
-				await syncShareWallpaper(backgroundImage, {
-					mode: nextSettings.backgroundImageMode,
-					frostedGlass: nextSettings.frostedGlass
-				});
+				await publishShareWallpaper();
 			} catch (error) {
 				shareWallpaperError = error instanceof Error ? error.message : String(error);
 			}
@@ -291,7 +287,7 @@
 		applyProgress = 0;
 		applyProgressStatus = '';
 		applyProgressVariant = 'default';
-		settings = { ...$settingsStore };
+		settings = $state.snapshot(settingsStore.current);
 	}
 
 	function handleReset() {
@@ -299,14 +295,11 @@
 		applyProgress = 0;
 		applyProgressStatus = '';
 		applyProgressVariant = 'default';
-		const previousBackgroundImage = $settingsStore.backgroundImage;
+		const previousBackgroundImage = settingsStore.current.backgroundImage;
 		settingsStore.reset();
-		settings = { ...$settingsStore };
+		settings = $state.snapshot(settingsStore.current);
 		cleanupLocalWallpaper(previousBackgroundImage, null);
-		syncShareWallpaper(null, {
-			mode: $settingsStore.backgroundImageMode,
-			frostedGlass: false
-		}).catch((error) => {
+		publishShareWallpaper().catch((error) => {
 			applyProgressVariant = 'danger';
 			applyProgress = 100;
 			applyProgressStatus = `Reset, but share pages still show the old wallpaper: ${

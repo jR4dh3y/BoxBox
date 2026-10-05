@@ -1,6 +1,5 @@
 /**
  * Chunked upload utility with progress tracking and resume support
- * Requirements: 2.1, 2.2, 2.3, 2.5
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';

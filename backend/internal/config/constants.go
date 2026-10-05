@@ -165,7 +165,7 @@ var VirtualFilesystems = map[string]bool{
 	"tmpfs": true, "securityfs": true, "cgroup": true, "cgroup2": true,
 	"pstore": true, "debugfs": true, "tracefs": true, "configfs": true,
 	"fusectl": true, "mqueue": true, "hugetlbfs": true, "binfmt_misc": true,
-	"autofs": true, "overlay": true, "efivarfs": true, "nsfs": true,
+	"autofs": true, "overlay": true, "efivarfs": true, "nsfs": true, "bpf": true,
 	"ramfs": true, "rpc_pipefs": true, "nfsd": true, "squashfs": true,
 }
 

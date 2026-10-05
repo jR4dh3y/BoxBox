@@ -59,7 +59,13 @@ export {
 } from './jobs';
 
 // System API
-export { getSystemDrives, type SystemDrive, type SystemDrivesResponse } from './system';
+export {
+	getSystemDrives,
+	getUploadConfig,
+	type SystemDrive,
+	type SystemDrivesResponse,
+	type UploadConfig
+} from './system';
 
 // Shares API
 export {

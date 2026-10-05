@@ -91,7 +91,7 @@ type shareService struct {
 	fs             filesystem.FS
 	filePath       string
 	maxUploadBytes int64
-	mounts         func() []model.MountPoint
+	mounts         *mounts
 	storageErr     error
 	mu             sync.RWMutex
 }
@@ -127,15 +127,15 @@ func NewShareService(fsys filesystem.FS, cfg ShareServiceConfig) ShareService {
 	if maxUploadBytes <= 0 {
 		maxUploadBytes = int64(config.DefaultMaxUploadMB) * 1024 * 1024
 	}
-	mounts := cfg.Mounts
-	if mounts == nil {
-		mounts = func() []model.MountPoint { return nil }
+	mountList := cfg.Mounts
+	if mountList == nil {
+		mountList = func() []model.MountPoint { return nil }
 	}
 	shareSvc := &shareService{
 		fs:             fsys,
 		filePath:       filepath.Join(dataDir, config.SharesFileName),
 		maxUploadBytes: maxUploadBytes,
-		mounts:         mounts,
+		mounts:         newMounts(fsys, mountList),
 	}
 	shareSvc.storageErr = shareSvc.secureExistingStore()
 	return shareSvc
@@ -152,11 +152,7 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 	if err != nil {
 		return nil, err
 	}
-	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mounts())
-	if err != nil {
-		return nil, err
-	}
-	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	mount, fsPath, err := s.mounts.resolve(path, readExisting)
 	if err != nil {
 		return nil, err
 	}
@@ -789,16 +785,9 @@ func cleanShareRelativePath(relativePath string) (string, error) {
 // mount list. A mount that no longer exists makes the share unresolvable, which
 // is reported as ErrShareNotFound so recipients see a uniform failure.
 func (s *shareService) resolveShareTarget(share *model.Share) (*model.MountPoint, string, error) {
-	mount, fsPath, err := validator.ValidatePathAgainstMounts(share.MountName+"/"+share.RelPath, s.mounts())
+	mount, fsPath, err := s.mounts.resolve(share.MountName+"/"+share.RelPath, readExisting)
 	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) || errors.Is(err, validator.ErrMountPointNotFound) {
-			return nil, "", ErrShareNotFound
-		}
-		return nil, "", err
-	}
-	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
-	if err != nil {
-		if errors.Is(err, ErrPathNotFound) || errors.Is(err, ErrPermissionDenied) {
+		if errors.Is(err, ErrMountPointNotFound) || errors.Is(err, ErrPathNotFound) || errors.Is(err, ErrPermissionDenied) {
 			return nil, "", ErrShareNotFound
 		}
 		return nil, "", err
