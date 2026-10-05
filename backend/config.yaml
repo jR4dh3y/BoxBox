@@ -28,7 +28,8 @@ max_upload_mb: 10240  # 10GB max upload size
 chunk_size_mb: 5      # 5MB chunk size for uploads
 
 # Mount points - directories accessible through the file manager
-# These appear as pinned folders in the UI
+# Mounts appear as drives; a mount inside another mount (Downloads inside home)
+# appears under Places as a shortcut. Set kind: drive or kind: place to override.
 # Set auto_discover: true to automatically detect mounted drives in that directory
 mount_points:
   - name: "drives"

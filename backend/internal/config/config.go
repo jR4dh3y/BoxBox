@@ -140,6 +140,7 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
+	cfg.MountPoints = model.ClassifyMountPoints(cfg.MountPoints)
 
 	// Parse BOXBOX_USERS_* environment variables into the Users map.
 	// Viper's AutomaticEnv doesn't handle map types from env vars like BOXBOX_USERS_username=password.

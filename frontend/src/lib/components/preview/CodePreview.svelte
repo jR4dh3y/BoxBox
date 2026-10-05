@@ -1,10 +1,11 @@
 <script lang="ts">
 	/**
-	 * CodePreview - Code/text viewer with syntax highlighting using Monaco Editor
+	 * CodePreview - Code/text viewer with syntax highlighting using Monaco Editor.
+	 * Editable with a Save bar when onSave is given; read-only otherwise.
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { getMonacoLanguage } from '$lib/utils/fileTypes';
-	import { getFileContent, saveFileContent, type FileInfo } from '$lib/api/files';
+	import { getFileContent } from '$lib/api/files';
 	import { Button, Spinner } from '$lib/components/ui';
 	import { loadMonacoLanguage } from './monacoLanguages';
 	import type * as Monaco from 'monaco-editor/editor/editor.api.js';
@@ -12,11 +13,10 @@
 	interface Props {
 		url: string;
 		filename: string;
-		path: string;
-		onSaved?: (file: FileInfo) => void;
+		onSave?: (content: string) => Promise<void>;
 	}
 
-	let { url, filename, path, onSaved }: Props = $props();
+	let { url, filename, onSave }: Props = $props();
 
 	let containerElement: HTMLDivElement | null = $state(null);
 	let editor: Monaco.editor.IStandaloneCodeEditor | null = $state(null);
@@ -31,6 +31,7 @@
 	let saveMessage = $state<string | null>(null);
 
 	const language = $derived(getMonacoLanguage(filename));
+	const editable = $derived(Boolean(onSave));
 	const canSave = $derived(Boolean(editor) && dirty && !loading && !saving && !error);
 
 	function getErrorMessage(value: unknown): string {
@@ -62,7 +63,7 @@
 			value: content ?? '',
 			language: language,
 			theme: 'boxbox-dark',
-			readOnly: false,
+			readOnly: !editable,
 			minimap: { enabled: true },
 			scrollBeyondLastLine: false,
 			fontSize: 13,
@@ -90,7 +91,7 @@
 	}
 
 	async function handleSave() {
-		if (!editor || saving || !dirty) return;
+		if (!editor || !onSave || saving || !dirty) return;
 
 		saving = true;
 		saveError = null;
@@ -98,11 +99,10 @@
 
 		const nextContent = editor.getValue();
 		try {
-			const savedFile = await saveFileContent(path, nextContent);
+			await onSave(nextContent);
 			content = nextContent;
 			dirty = false;
 			saveMessage = 'Saved';
-			onSaved?.(savedFile);
 		} catch (saveResult) {
 			saveError = getErrorMessage(saveResult);
 		} finally {
@@ -210,7 +210,7 @@
 		<!-- Fallback: plain text display if Monaco fails to load -->
 		<pre
 			class="m-0 flex-1 overflow-auto bg-surface-primary p-4 font-mono text-[13px] leading-relaxed break-words whitespace-pre-wrap text-text-primary">{content}</pre>
-	{:else}
+	{:else if editable}
 		<div
 			class="flex shrink-0 items-center justify-between gap-3 border-b border-border-primary bg-surface-secondary px-3 py-2"
 		>

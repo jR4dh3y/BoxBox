@@ -4,6 +4,7 @@
 	 */
 	import { Check, Copy, Trash2 } from 'lucide-svelte';
 	import { hasShareExpiry, revokeShare, type ShareRecord } from '$lib/api';
+	import { copyText } from '$lib/utils/clipboard';
 	import { getFileIcon } from '$lib/utils/fileTypes';
 	import { formatFileSize, formatRelativeTime } from '$lib/utils/format';
 	import { getShareAccessLabel } from '$lib/utils/shareAccess';
@@ -37,7 +38,7 @@
 
 	async function handleCopy(share: ShareRecord) {
 		try {
-			await navigator.clipboard.writeText(new URL(share.url, window.location.origin).href);
+			await copyText(new URL(share.url, window.location.origin).href);
 			error = null;
 			copiedId = share.id;
 			setTimeout(() => {

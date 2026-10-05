@@ -55,6 +55,7 @@ type MountPointResponse struct {
 	Name     string `json:"name"`
 	Path     string `json:"path"`
 	ReadOnly bool   `json:"readOnly"`
+	Kind     string `json:"kind"`
 }
 
 // RootsResponse represents the list of mount points
@@ -90,6 +91,7 @@ func (h *FileHandler) ListRoots(w http.ResponseWriter, r *http.Request) {
 			Name:     mount.Name,
 			Path:     mount.Path,
 			ReadOnly: mount.ReadOnly,
+			Kind:     mount.Kind,
 		}
 	}
 

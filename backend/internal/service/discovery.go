@@ -82,11 +82,14 @@ func filterMountedDirs(entries []fs.DirEntry, parent model.MountPoint, mountSet 
 			continue
 		}
 
+		// The name is the browse path through the parent mount, so the drive
+		// opens without being a configured mount itself.
 		discovered = append(discovered, model.MountPoint{
-			Name:         entry.Name(),
+			Name:         parent.Name + "/" + entry.Name(),
 			Path:         subPath,
 			ReadOnly:     parent.ReadOnly,
 			AutoDiscover: false,
+			Kind:         model.MountKindDrive,
 		})
 	}
 

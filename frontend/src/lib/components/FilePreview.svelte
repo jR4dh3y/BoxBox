@@ -4,7 +4,7 @@
 	 */
 	import { X, Download, Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import type { FileInfo } from '$lib/api/files';
-	import { getPreviewUrl, getDownloadUrl } from '$lib/api/files';
+	import { getPreviewUrl, getDownloadUrl, saveFileContent } from '$lib/api/files';
 	import { getPreviewType, type PreviewType } from '$lib/utils/fileTypes';
 	import { formatFileSize } from '$lib/utils/format';
 	import { Button, Spinner } from '$lib/components/ui';
@@ -78,6 +78,11 @@
 		if (event.target === event.currentTarget) {
 			onClose();
 		}
+	}
+
+	async function saveContent(content: string) {
+		if (!file) return;
+		onFileSaved?.(await saveFileContent(file.path, content));
 	}
 
 	function toggleFullscreen() {
@@ -194,12 +199,7 @@
 					{:else if PreviewComponent && previewType === 'notebook'}
 						<PreviewComponent url={previewUrl} filename={file.name} />
 					{:else if PreviewComponent && (previewType === 'code' || previewType === 'text')}
-						<PreviewComponent
-							url={previewUrl}
-							filename={file.name}
-							path={file.path}
-							onSaved={onFileSaved}
-						/>
+						<PreviewComponent url={previewUrl} filename={file.name} onSave={saveContent} />
 					{:else}
 						<div class="flex flex-col items-center gap-4 text-sm text-text-secondary">
 							<p>Preview not available for this file type</p>

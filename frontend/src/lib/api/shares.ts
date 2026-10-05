@@ -14,12 +14,14 @@ export interface SharePermissions {
 	download: boolean;
 	upload: boolean;
 	delete: boolean;
+	/** Full access: also create folders and edit files. Requires upload and delete. */
+	manage: boolean;
 	canReplace: boolean;
 }
 
 export type SharePermissionInput = Pick<
 	SharePermissions,
-	'view' | 'download' | 'upload' | 'delete'
+	'view' | 'download' | 'upload' | 'delete' | 'manage'
 >;
 
 /**
@@ -148,6 +150,15 @@ export async function revokeShare(id: string): Promise<ShareActionResponse> {
 export async function deleteShareItem(token: string, path: string): Promise<ShareActionResponse> {
 	return apiRequest<ShareActionResponse>(`/share/${encodeURIComponent(token)}/items`, {
 		method: 'DELETE',
+		skipAuth: true,
+		params: { path }
+	});
+}
+
+/** Create a folder (and missing parents) below a full-access shared folder. */
+export async function createShareFolder(token: string, path: string): Promise<ShareActionResponse> {
+	return apiRequest<ShareActionResponse>(`/share/${encodeURIComponent(token)}/folders`, {
+		method: 'POST',
 		skipAuth: true,
 		params: { path }
 	});

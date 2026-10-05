@@ -20,12 +20,13 @@
 
 	let { open = false, item = null, onclose }: Props = $props();
 
-	type FolderAccess = 'view' | 'upload' | 'upload-delete';
+	type FolderAccess = 'view' | 'upload' | 'upload-delete' | 'full';
 
 	const ACCESS_OPTIONS: Array<{ value: FolderAccess; label: string }> = [
 		{ value: 'view', label: 'View only' },
 		{ value: 'upload', label: 'Upload only' },
-		{ value: 'upload-delete', label: 'Upload + delete' }
+		{ value: 'upload-delete', label: 'Upload + delete' },
+		{ value: 'full', label: 'Full access' }
 	];
 	const EXPIRY_OPTIONS = [
 		{ value: '0', label: 'Never' },
@@ -86,7 +87,8 @@
 						view: true,
 						download: true,
 						upload: access !== 'view',
-						delete: access === 'upload-delete'
+						delete: access === 'upload-delete' || access === 'full',
+						manage: access === 'full'
 					}
 				: undefined;
 			const created = await createShare(item.path, {

@@ -27,6 +27,11 @@
 	import { settingsStore } from '$lib/stores/settings';
 	import { clipboardStore } from '$lib/stores/clipboard.svelte';
 	import { uploadStore } from '$lib/stores/upload.svelte';
+	import {
+		entriesFromDataTransfer,
+		entriesFromFiles,
+		type UploadEntry
+	} from '$lib/utils/uploadEntries';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { jobsStore } from '$lib/stores/jobs';
 	import {
@@ -61,6 +66,7 @@
 
 	// Upload state
 	let fileInputEl: HTMLInputElement;
+	let folderInputEl: HTMLInputElement;
 	let isDragOver = $state(false);
 
 	// Rename dialog state
@@ -606,14 +612,18 @@
 		fileInputEl?.click();
 	}
 
+	function handleUploadFolderClick() {
+		folderInputEl?.click();
+	}
+
 	/**
-	 * Handle files selected from file picker
+	 * Handle files or a folder selected from a picker
 	 */
 	function handleFileInputChange(event: Event) {
 		const input = event.target as HTMLInputElement;
 		const files = input.files;
 		if (files && files.length > 0) {
-			startUploads(Array.from(files));
+			startUploads(entriesFromFiles(files));
 		}
 		// Reset input so the same file can be selected again
 		input.value = '';
@@ -658,16 +668,19 @@
 			return;
 		}
 
-		const files = event.dataTransfer?.files;
-		if (files && files.length > 0) {
-			startUploads(Array.from(files));
-		}
+		const dataTransfer = event.dataTransfer;
+		if (!dataTransfer) return;
+		void entriesFromDataTransfer(dataTransfer)
+			.then((entries) => {
+				if (entries.length > 0) startUploads(entries);
+			})
+			.catch(() => toastStore.error('Unable to read the dropped items'));
 	}
 
 	/**
 	 * Start uploading files
 	 */
-	function startUploads(files: File[]) {
+	function startUploads(entries: UploadEntry[]) {
 		if (!path) {
 			toastStore.warning('Navigate to a folder first to upload files');
 			return;
@@ -679,7 +692,7 @@
 			return;
 		}
 
-		uploadStore.addFiles(files, path);
+		uploadStore.addFiles(entries, path);
 	}
 
 	// Derived: is upload disabled (at root or read-only)
@@ -712,6 +725,7 @@
 			onRefresh={handleRefresh}
 			onSettings={handleSettings}
 			onUpload={handleUploadClick}
+			onUploadFolder={handleUploadFolderClick}
 			{uploadDisabled}
 			showSearch={!isAtRoot}
 			searchValue={searchQuery}
@@ -850,6 +864,13 @@
 	bind:this={fileInputEl}
 	type="file"
 	multiple
+	class="hidden"
+	onchange={handleFileInputChange}
+/>
+<input
+	bind:this={folderInputEl}
+	type="file"
+	webkitdirectory
 	class="hidden"
 	onchange={handleFileInputChange}
 />

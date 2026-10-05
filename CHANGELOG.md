@@ -6,6 +6,11 @@
 
 - Added standard range-over-func iterator `WalkSeq` (`iter.Seq2[WalkEntry, error]`) to the `Walker` filesystem traversal service.
 - Added single-file share links with view, download, and optional write permissions, optional expiry, revocation, and a public token-authenticated recipient page with inline previews and recipient overwrites.
+- Added a "Full access" folder share level that also lets recipients create folders, upload whole folders, and edit text files in the code editor.
+- Added folder uploads (picker and drag and drop) in the file browser and on writable share pages.
+- Added previous/next file navigation (buttons and arrow keys) on share pages.
+- Share pages now show the owner's wallpaper, synced from Settings.
+- Added a `kind` mount option (`drive` or `place`); the sidebar lists Drives and Places separately and only drives appear on This Server.
 
 ### Changed
 
@@ -17,6 +22,14 @@
 - Refactored recursive file search to consume the `WalkSeq` iterator.
 - Updated error inspection to use `errors.AsType`.
 - Modernized async job timestamp serialization with `omitzero`.
+- Merged the file and folder share dialogs into one dialog with a shared links table, also used in Settings.
+- Rebuilt the public share page with a path bar, file list, and preview panel; text files open in a read-only code editor.
+
+### Fixed
+
+- `auto_discover` was ignored at startup, so drives under a discovery folder never appeared individually; discovered drives now open through their parent mount.
+- Copying share links failed when BoxBox was opened over plain HTTP on a LAN address.
+- Long dialog titles no longer push the close button out of view.
 
 ## [0.2.2] - 2026-08-08
 

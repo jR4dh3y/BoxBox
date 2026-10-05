@@ -125,7 +125,18 @@ mount_points:
 
 The `name` is the first segment in API paths. For example, a mount named `media` is browsed through `/api/v1/files/media`.
 
-The built-in sidebar shortcuts use mount names `desktop`, `downloads`, `documents`, `music`, `pictures`, and `videos`. Keep those names if you want the default sidebar entries to open custom locations.
+### Drives and Places
+
+The sidebar lists mounts in two groups. **Drives** are storage roots and also appear as cards on This Server. **Places** are folder shortcuts such as Downloads or Pictures.
+
+BoxBox picks the group automatically: auto-discovered mounts are drives, a mount inside another mount (such as `/home/user/Downloads` inside `/home/user`) is a place, and everything else is a drive. Set `kind` to choose explicitly:
+
+```yaml
+mount_points:
+  - name: "downloads"
+    path: "/srv/downloads"
+    kind: "place"
+```
 
 ### Read-Only Mounts
 

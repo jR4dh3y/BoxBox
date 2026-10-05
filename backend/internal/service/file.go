@@ -119,6 +119,10 @@ func (s *fileService) GetDriveStats(ctx context.Context) (*model.DriveStatsRespo
 	drives := make([]model.DriveStats, 0, len(effectiveMounts))
 
 	for _, mount := range effectiveMounts {
+		// Places are folder shortcuts, not storage; they are not drive cards.
+		if mount.Kind == model.MountKindPlace {
+			continue
+		}
 		stats, err := getDiskUsage(mount.Path)
 		if err != nil {
 			// Skip mounts we can't stat, but continue with others

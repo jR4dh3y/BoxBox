@@ -67,6 +67,7 @@ export {
 	listShares,
 	revokeShare,
 	deleteShareItem,
+	createShareFolder,
 	getShareInfo,
 	sharePageUrl,
 	shareDownloadUrl,

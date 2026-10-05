@@ -8,7 +8,8 @@
 		ChevronUp,
 		FolderUp,
 		RefreshCw,
-		Settings
+		Settings,
+		Upload
 	} from 'lucide-svelte';
 	import EditablePathBar from '$lib/components/EditablePathBar.svelte';
 	import SearchBar from '$lib/components/SearchBar.svelte';
@@ -25,6 +26,7 @@
 		onRefresh?: () => void;
 		onSettings?: () => void;
 		onUpload?: () => void;
+		onUploadFolder?: () => void;
 		uploadDisabled?: boolean;
 		showSearch?: boolean;
 		searchValue?: string;
@@ -46,6 +48,7 @@
 		onRefresh,
 		onSettings,
 		onUpload,
+		onUploadFolder,
 		uploadDisabled = false,
 		showSearch = false,
 		searchValue = '',
@@ -104,6 +107,15 @@
 			disabled={uploadDisabled}
 			onclick={onUpload}
 			title="Upload files"
+		>
+			<Upload size={16} />
+		</button>
+		<button
+			type="button"
+			class={navBtnClass}
+			disabled={uploadDisabled}
+			onclick={onUploadFolder}
+			title="Upload folder"
 		>
 			<FolderUp size={16} />
 		</button>

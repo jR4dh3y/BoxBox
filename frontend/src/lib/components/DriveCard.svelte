@@ -22,7 +22,8 @@
 
 	// Subscribe to the store reactively so UI updates when drive names change
 	const customName = $derived($settingsStore.driveNameOverrides[drive.name]);
-	const displayName = $derived(customName || drive.name);
+	// Discovered drives are named by their browse path ("drives/SanDisk"); show the last part.
+	const displayName = $derived(customName || drive.name.split('/').pop() || drive.name);
 
 	const progressVariant = $derived.by(() => {
 		if (drive.usedPct >= 90) return 'danger' as const;

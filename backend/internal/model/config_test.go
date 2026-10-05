@@ -1,6 +1,9 @@
 package model
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const validTestBcryptHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
@@ -95,5 +98,61 @@ func TestServerConfigRejectsFilesystemRootMountByDefault(t *testing.T) {
 	cfg.AllowRootMount = true
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("explicit root mount override rejected: %v", err)
+	}
+}
+
+func TestClassifyMountPoints(t *testing.T) {
+	kinds := func(mounts []MountPoint) map[string]string {
+		result := make(map[string]string, len(mounts))
+		for _, mount := range ClassifyMountPoints(mounts) {
+			result[mount.Name] = mount.Kind
+		}
+		return result
+	}
+
+	docker := kinds([]MountPoint{
+		{Name: "drives", Path: "/media/devmon", AutoDiscover: true},
+		{Name: "home", Path: "/home/user"},
+		{Name: "downloads", Path: "/home/user/Downloads"},
+		{Name: "pictures", Path: "/home/user/Pictures/"},
+	})
+	want := map[string]string{"drives": MountKindDrive, "home": MountKindDrive, "downloads": MountKindPlace, "pictures": MountKindPlace}
+	for name, kind := range want {
+		if docker[name] != kind {
+			t.Errorf("docker defaults: %s kind = %q, want %q", name, docker[name], kind)
+		}
+	}
+
+	// Everything is inside "/", so a root mount must not turn every mount into a place.
+	withRoot := kinds([]MountPoint{
+		{Name: "root", Path: "/"},
+		{Name: "home", Path: "/home/user"},
+		{Name: "downloads", Path: "/home/user/Downloads"},
+		{Name: "homey", Path: "/home/username"},
+	})
+	if withRoot["root"] != MountKindDrive || withRoot["home"] != MountKindDrive || withRoot["downloads"] != MountKindPlace || withRoot["homey"] != MountKindDrive {
+		t.Errorf("root mount classification = %v", withRoot)
+	}
+
+	explicit := kinds([]MountPoint{
+		{Name: "home", Path: "/home/user", Kind: MountKindPlace},
+		{Name: "downloads", Path: "/home/user/Downloads", Kind: MountKindDrive},
+	})
+	if explicit["home"] != MountKindPlace || explicit["downloads"] != MountKindDrive {
+		t.Errorf("explicit kinds were overridden: %v", explicit)
+	}
+}
+
+func TestValidateRejectsUnknownMountKind(t *testing.T) {
+	cfg := ServerConfig{
+		JWTSecret:   "0123456789abcdef0123456789abcdef",
+		Users:       map[string]string{"admin": validTestBcryptHash},
+		MountPoints: []MountPoint{{Name: "data", Path: "/data", Kind: "shortcut"}},
+		Port:        80,
+		MaxUploadMB: 1,
+		ChunkSizeMB: 1,
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "kind") {
+		t.Fatalf("Validate() = %v, want a kind error", err)
 	}
 }

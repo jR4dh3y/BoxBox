@@ -2,10 +2,19 @@
 	/** Public recipient page for file and folder share links: path bar on top, file list and preview below. */
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { Archive, Download, Trash2, Upload } from 'lucide-svelte';
+	import {
+		Archive,
+		ChevronLeft,
+		ChevronRight,
+		Download,
+		FolderUp,
+		Trash2,
+		Upload
+	} from 'lucide-svelte';
 	import { Button, ProgressBar, Spinner, Toast } from '$lib/components/ui';
 	import {
 		ApiRequestError,
+		createShareFolder,
 		getShareInfo,
 		hasShareExpiry,
 		deleteShareItem,
@@ -23,6 +32,12 @@
 	import { getFileIcon, getPreviewType } from '$lib/utils/fileTypes';
 	import { formatFileSize, formatRelativeTime } from '$lib/utils/format';
 	import { getShareAccessLabel } from '$lib/utils/shareAccess';
+	import {
+		entriesFromDataTransfer,
+		entriesFromFiles,
+		type UploadEntry
+	} from '$lib/utils/uploadEntries';
+	import { loadPreviewComponent } from '$lib/components/preview/registry';
 
 	interface SelectedFile {
 		/** Path inside the shared folder; undefined for a single-file share. */
@@ -31,7 +46,7 @@
 		size: number;
 	}
 
-	const TEXT_PREVIEW_LIMIT_BYTES = 1024 * 1024;
+	const codePreview = loadPreviewComponent('code');
 	const token = $derived(page.params.token ?? '');
 
 	let info = $state<ShareInfoResponse | null>(null);
@@ -44,14 +59,17 @@
 	let folderError = $state<string | null>(null);
 	let folderRequestId = 0;
 	let selected = $state<SelectedFile | null>(null);
-	let textContent = $state<string | null>(null);
-	let textFailed = $state(false);
-	let textRequestId = 0;
 	let uploadInput: HTMLInputElement;
+	let folderUploadInput: HTMLInputElement;
 	let uploadingName = $state<string | null>(null);
 	let uploadProgress = $state(0);
+	let isDragOver = $state(false);
 
 	const breadcrumbs = $derived(folderPath ? folderPath.split('/') : []);
+	const folderFiles = $derived(folderItems.filter((item) => !item.isDir));
+	const selectedIndex = $derived(
+		selected ? folderFiles.findIndex((item) => item.path === selected?.path) : -1
+	);
 	const previewType = $derived(selected ? getPreviewType(selected.name) : 'unsupported');
 	const isTextPreview = $derived(previewType === 'code' || previewType === 'text');
 	const previewUrl = $derived(selected ? sharePreviewUrl(token, selected.path) : '');
@@ -140,25 +158,6 @@
 		}
 	}
 
-	$effect(() => {
-		const url = previewUrl;
-		textContent = null;
-		textFailed = false;
-		if (url && isTextPreview && info?.permissions.view) void loadTextPreview(url);
-	});
-
-	async function loadTextPreview(url: string) {
-		const requestId = ++textRequestId;
-		try {
-			const response = await fetch(url);
-			if (!response.ok) throw new Error('preview request failed');
-			const text = (await response.text()).slice(0, TEXT_PREVIEW_LIMIT_BYTES);
-			if (requestId === textRequestId) textContent = text;
-		} catch {
-			if (requestId === textRequestId) textFailed = true;
-		}
-	}
-
 	function openItem(item: ShareItem) {
 		if (item.isDir) {
 			selected = null;
@@ -166,6 +165,26 @@
 		} else {
 			selected = { path: item.path, name: item.name, size: item.size };
 		}
+	}
+
+	/** Step to the previous (-1) or next (1) file in the current folder. */
+	function stepFile(offset: number) {
+		const item = folderFiles[selectedIndex + offset];
+		if (selectedIndex >= 0 && item) openItem(item);
+	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+		const target = event.target as HTMLElement | null;
+		if (
+			target?.closest(
+				'input, textarea, select, audio, video, [contenteditable="true"], .monaco-editor'
+			)
+		) {
+			return;
+		}
+		event.preventDefault();
+		stepFile(event.key === 'ArrowLeft' ? -1 : 1);
 	}
 
 	function goToBreadcrumb(index: number) {
@@ -190,54 +209,119 @@
 
 	function handleUploadChange(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
+		const entries = input.files ? entriesFromFiles(input.files) : [];
 		input.value = '';
-		if (file && !uploadingName) uploadFile(file);
+		void uploadEntries(entries);
 	}
 
-	function uploadFile(file: File) {
+	function handleDragOver(event: DragEvent) {
 		if (!info?.permissions.upload) return;
-		if (info.maxUploadBytes > 0 && file.size > info.maxUploadBytes) {
+		event.preventDefault();
+		isDragOver = true;
+	}
+
+	function handleDrop(event: DragEvent) {
+		isDragOver = false;
+		if (!info?.permissions.upload || !event.dataTransfer) return;
+		event.preventDefault();
+		void entriesFromDataTransfer(event.dataTransfer)
+			.then(uploadEntries)
+			.catch(() => toastStore.error('Unable to read the dropped items'));
+	}
+
+	/** Upload files one by one into the current folder, creating folders first (full access only). */
+	async function uploadEntries(entries: UploadEntry[]) {
+		if (!info?.permissions.upload || uploadingName || entries.length === 0) return;
+		const tooLarge = entries.find(
+			({ file }) => info && info.maxUploadBytes > 0 && file.size > info.maxUploadBytes
+		);
+		if (tooLarge) {
 			toastStore.error(`This link allows files up to ${formatFileSize(info.maxUploadBytes)}.`);
 			return;
 		}
-		const relativePath = folderPath ? `${folderPath}/${file.name}` : file.name;
-		uploadingName = file.name;
-		uploadProgress = 0;
-		const xhr = new XMLHttpRequest();
-		xhr.open('POST', shareUploadUrl(token, relativePath));
-		xhr.upload.onprogress = (event) => {
-			if (event.lengthComputable) {
-				uploadProgress = Math.round((event.loaded / event.total) * 100);
+		const folders = [
+			...new Set(
+				entries.flatMap(({ relativePath }) => {
+					const parts = relativePath.split('/').slice(0, -1);
+					return parts.map((_, index) => parts.slice(0, index + 1).join('/'));
+				})
+			)
+		];
+		if (folders.length > 0 && !info.permissions.manage) {
+			toastStore.error('This link can only receive files, not folders.');
+			return;
+		}
+
+		const base = folderPath;
+		try {
+			for (const folder of folders) {
+				await createShareFolder(token, base ? `${base}/${folder}` : folder);
 			}
-		};
-		xhr.onload = () => {
-			uploadingName = null;
-			if (xhr.status >= 200 && xhr.status < 300) {
-				void loadFolder(folderPath);
-			} else if (xhr.status === 403) {
-				toastStore.error('This link cannot replace an existing file.');
-			} else if (xhr.status === 413) {
-				toastStore.error('File too large');
-			} else if (xhr.status === 404) {
+			for (const [index, entry] of entries.entries()) {
+				uploadingName =
+					entries.length > 1
+						? `${entry.relativePath} (${index + 1} of ${entries.length})`
+						: entry.relativePath;
+				await uploadFile(entry.file, base ? `${base}/${entry.relativePath}` : entry.relativePath);
+			}
+		} catch (error) {
+			if (error instanceof ApiRequestError && error.status === 404) {
 				gone = true;
 			} else {
-				toastStore.error('Unable to add this file');
+				toastStore.error(error instanceof Error ? error.message : 'Unable to add these files');
 			}
-		};
-		xhr.onerror = () => {
+		} finally {
 			uploadingName = null;
-			toastStore.error('Unable to add this file');
-		};
-		xhr.send(file);
+			void loadFolder(folderPath);
+		}
+	}
+
+	function uploadFile(file: Blob, relativePath: string): Promise<void> {
+		uploadProgress = 0;
+		return new Promise((resolve, reject) => {
+			const xhr = new XMLHttpRequest();
+			xhr.open('POST', shareUploadUrl(token, relativePath));
+			xhr.upload.onprogress = (event) => {
+				if (event.lengthComputable) {
+					uploadProgress = Math.round((event.loaded / event.total) * 100);
+				}
+			};
+			xhr.onload = () => {
+				if (xhr.status >= 200 && xhr.status < 300) resolve();
+				else if (xhr.status === 404)
+					reject(new ApiRequestError('Share not found', 404, 'NOT_FOUND'));
+				else if (xhr.status === 403)
+					reject(new Error('This link cannot replace an existing file.'));
+				else if (xhr.status === 413) reject(new Error('File too large'));
+				else reject(new Error('Unable to add this file'));
+			};
+			xhr.onerror = () => reject(new Error('Unable to add this file'));
+			xhr.send(file);
+		});
+	}
+
+	/** Full-access links save edits by replacing the file with the new content. */
+	async function saveSelectedFile(content: string) {
+		if (!selected?.path) return;
+		await uploadFile(new Blob([content], { type: 'text/plain' }), selected.path);
+		void loadFolder(folderPath);
 	}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <svelte:head>
 	<title>{info?.fileName ?? 'Shared'} - BoxBox</title>
 </svelte:head>
 
-<input bind:this={uploadInput} type="file" class="hidden" onchange={handleUploadChange} />
+<input bind:this={uploadInput} type="file" multiple class="hidden" onchange={handleUploadChange} />
+<input
+	bind:this={folderUploadInput}
+	type="file"
+	webkitdirectory
+	class="hidden"
+	onchange={handleUploadChange}
+/>
 
 <!-- Without an owner wallpaper the page is plain; with one, it shows between the panels. -->
 <div
@@ -279,6 +363,24 @@
 				{/if}
 			{/if}
 		</nav>
+		{#if info?.isFolder && selected}
+			<button
+				type="button"
+				class={iconButtonClass}
+				title="Previous file"
+				aria-label="Previous file"
+				disabled={selectedIndex <= 0}
+				onclick={() => stepFile(-1)}><ChevronLeft size={16} /></button
+			>
+			<button
+				type="button"
+				class={iconButtonClass}
+				title="Next file"
+				aria-label="Next file"
+				disabled={selectedIndex < 0 || selectedIndex >= folderFiles.length - 1}
+				onclick={() => stepFile(1)}><ChevronRight size={16} /></button
+			>
+		{/if}
 		{#if info?.permissions.download && selected}
 			<a
 				class={iconButtonClass}
@@ -299,10 +401,20 @@
 			<button
 				type="button"
 				class={iconButtonClass}
-				title="Upload a file"
-				aria-label="Upload a file"
+				title="Upload files"
+				aria-label="Upload files"
 				disabled={uploadingName !== null}
 				onclick={() => uploadInput?.click()}><Upload size={16} /></button
+			>
+		{/if}
+		{#if info?.permissions.manage}
+			<button
+				type="button"
+				class={iconButtonClass}
+				title="Upload folder"
+				aria-label="Upload folder"
+				disabled={uploadingName !== null}
+				onclick={() => folderUploadInput?.click()}><FolderUp size={16} /></button
 			>
 		{/if}
 	</header>
@@ -321,7 +433,14 @@
 	{:else if info}
 		<div class="flex min-h-0 flex-1 flex-col gap-3 md:flex-row">
 			{#if info.isFolder}
-				<aside class="{panelClass} max-h-[45vh] md:max-h-none md:w-80 md:shrink-0">
+				<aside
+					class="{panelClass} max-h-[45vh] md:max-h-none md:w-80 md:shrink-0 {isDragOver
+						? 'outline-2 outline-accent'
+						: ''}"
+					ondragover={handleDragOver}
+					ondragleave={() => (isDragOver = false)}
+					ondrop={handleDrop}
+				>
 					<div class="min-h-0 flex-1 overflow-auto py-1">
 						{#if folderError}
 							<div class="flex flex-col items-center gap-2 px-3 py-8 text-center">
@@ -426,14 +545,19 @@
 								class="h-full w-full border-0"
 							></iframe>
 						{:else if isTextPreview}
-							{#if textContent !== null}
-								<pre
-									class="m-0 h-full w-full overflow-auto p-4 text-xs leading-5 break-words whitespace-pre-wrap text-text-primary">{textContent}</pre>
-							{:else if textFailed}
-								<p class="m-0 text-[13px] text-text-muted">Preview unavailable.</p>
-							{:else}
+							{#await codePreview}
 								<Spinner />
-							{/if}
+							{:then CodePreview}
+								{#if CodePreview}
+									{#key previewUrl}
+										<CodePreview
+											url={previewUrl}
+											filename={selected.name}
+											onSave={info.permissions.manage ? saveSelectedFile : undefined}
+										/>
+									{/key}
+								{/if}
+							{/await}
 						{:else}
 							<p class="m-0 text-[13px] text-text-muted">No preview for this file type.</p>
 						{/if}
