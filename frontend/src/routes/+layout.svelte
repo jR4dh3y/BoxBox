@@ -9,7 +9,6 @@
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import { CONFIG } from '$lib/config';
 	import { Spinner, Button } from '$lib/components/ui';
-	import { FolderOpen } from 'lucide-svelte';
 	import { activeJobs, jobsStore } from '$lib/stores/jobs';
 	import { websocketStore } from '$lib/stores/websocket';
 	import {
@@ -173,8 +172,7 @@
 									href={resolve('/browse')}
 									class="flex items-center gap-2 text-lg font-semibold text-text-primary no-underline hover:text-accent"
 								>
-									<FolderOpen size={24} class="text-accent" />
-									<span>BoxBox</span>
+									<img src="/logo-boxbox-3d.svg" alt="BoxBox" class="h-9 w-auto" />
 								</a>
 								<nav class="flex items-center gap-4">
 									<Button variant="secondary" size="sm" onclick={handleLogout}>Logout</Button>
