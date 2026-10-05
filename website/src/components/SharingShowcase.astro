@@ -1,0 +1,30 @@
+---
+import { Folder, Link, Timer } from '@lucide/astro';
+---
+
+<article id="sharing" aria-labelledby="sharing-title" class="group relative md:col-span-5 scroll-mt-8 rounded-3xl bg-gradient-to-br from-[#1c1c1c] to-[#121212] border border-white/5 overflow-hidden transition-all duration-500 hover:border-white/10 flex flex-col">
+  <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,_rgba(74,158,255,0.08)_0%,_transparent_60%)] transition-opacity duration-500 opacity-0 group-hover:opacity-100" aria-hidden="true"></div>
+  <div class="p-8 relative z-10">
+    <Link class="pointer-events-none absolute -right-3 -top-3 w-32 h-32 text-accent opacity-[0.06] -rotate-12" stroke-width={1} aria-hidden="true" />
+    <h3 id="sharing-title" class="text-2xl font-bold text-white mb-2">File & folder sharing</h3>
+    <p class="text-text-secondary text-sm">One link for a file or folder. Set upload and delete permissions, choose an expiry, and let recipients browse or download a ZIP.</p>
+  </div>
+
+  <div class="px-8 pb-8 mt-auto relative z-10">
+    <div class="rounded-xl border border-white/10 bg-black/20 p-4" aria-label="Example shared folder: summer-photos, view only, expires in 7 days">
+      <div class="flex items-center gap-3">
+        <Folder class="w-5 h-5 shrink-0 text-folder" />
+        <span class="text-sm font-medium text-white truncate">summer-photos</span>
+        <Link class="w-4 h-4 shrink-0 text-text-secondary ml-auto" />
+      </div>
+      <div class="mt-4 pt-3 border-t border-white/5 flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
+        <span class="rounded bg-accent/10 px-2 py-1 text-accent">View only</span>
+        <span class="flex items-center gap-1.5"><Timer class="w-3.5 h-3.5" />7 days</span>
+      </div>
+    </div>
+  </div>
+</article>
+
+<style>
+  h3 { font-family: 'Bricolage Grotesque', sans-serif; }
+</style>

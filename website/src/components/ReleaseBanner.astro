@@ -5,11 +5,11 @@
 import { Rocket } from '@lucide/astro';
 ---
 
-<div id="release-banner" class="hidden">
+<div id="release-banner" class="hidden relative">
   <a
     id="release-banner-link"
     href="/docs/release/"
-    class="group flex items-center justify-center gap-3 px-4 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-accent/90 to-accent-muted/80 hover:from-accent hover:to-accent-muted transition-colors relative"
+    class="group flex items-center justify-center gap-3 pl-4 pr-12 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-accent/90 to-accent-muted/80 hover:from-accent hover:to-accent-muted transition-colors relative"
   >
     <Rocket class="w-4 h-4 shrink-0" />
     <span id="release-banner-text" class="truncate">New release available</span>
@@ -30,7 +30,7 @@ import { Rocket } from '@lucide/astro';
 <script>
   const banner = document.getElementById('release-banner');
   const text = document.getElementById('release-banner-text');
-  const link = document.getElementById('release-banner-link') as HTMLAnchorElement;
+  const link = document.querySelector<HTMLAnchorElement>('#release-banner-link');
   const close = document.getElementById('release-banner-close');
 
   if (banner && text && link && close) {
