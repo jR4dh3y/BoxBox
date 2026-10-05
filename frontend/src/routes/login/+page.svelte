@@ -37,7 +37,7 @@
 	<div
 		class="w-full max-w-[400px] rounded-lg border border-border-primary bg-surface-secondary p-8"
 	>
-		<div class="mb-6 flex items-center gap-4">
+		<div class="mb-6 flex items-center justify-center gap-4">
 			<img src="/logo-boxbox-3d.svg" alt="BoxBox" class="h-16 w-auto shrink-0" />
 			<div class="min-w-0">
 				<h1 class="m-0 text-xl leading-7 font-semibold text-text-primary">Sign in</h1>
