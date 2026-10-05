@@ -22,9 +22,10 @@ export function useBrowseUploads(location: BrowseLocation, data: BrowseData) {
 			toastStore.error(`Upload failed: ${error || 'Unknown error'}`);
 		}
 	};
+	// Uploads keep their destination while the user navigates, so refresh every folder.
 	uploadStore.onRefreshNeeded = () => {
 		if (refreshTimer) clearTimeout(refreshTimer);
-		refreshTimer = setTimeout(() => data.refresh(), 250);
+		refreshTimer = setTimeout(() => data.refreshAll(), 250);
 	};
 
 	function uploadDestination(): string | null {
