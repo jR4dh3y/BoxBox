@@ -167,15 +167,10 @@ import {
           <div class="bg-black/50 border border-white/10 rounded-lg p-3 font-mono text-[11px] text-white/60">
             <div class="flex items-center gap-2 mb-1">
               <span class="text-accent">~</span>
-              <span class="text-white">docker run -d</span>
+              <span class="text-white">docker compose pull</span>
             </div>
             <div class="pl-4">
-              -p 8080:8080 \<br/>
-              --env-file .env \<br/>
-              -v ./config.yaml:/app/config.yaml:ro \<br/>
-              -v ./data:/data \<br/>
-              -v /srv/media:/srv/media \<br/>
-              ghcr.io/jr4dh3y/boxbox:latest
+              docker compose up -d
             </div>
           </div>
         </div>

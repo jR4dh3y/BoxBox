@@ -211,7 +211,7 @@ import {
   const demo = document.getElementById('demo');
   const wallpaperFade = document.getElementById('demo-wallpaper-fade');
   const root = document.documentElement;
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   const themes = [
     {
@@ -306,9 +306,10 @@ import {
     let ticking = false;
     let themeIndex = 0;
     let themeStarted = false;
+    let themeInterval: number | undefined;
 
     function updateDemoTransform() {
-      if (reducedMotion) {
+      if (motionPreference.matches) {
         demoWindow.style.transform = 'none';
         return;
       }
@@ -332,20 +333,31 @@ import {
       });
     }, { passive: true });
 
-    function startThemeCycle() {
-      if (themeStarted) return;
-
-      themeStarted = true;
-      applyTheme(themes[themeIndex], false, true);
-
-      if (reducedMotion) return;
-
-      window.setInterval(() => {
+    function syncThemeCycle() {
+      if (themeInterval !== undefined) {
+        window.clearInterval(themeInterval);
+        themeInterval = undefined;
+      }
+      if (!themeStarted || motionPreference.matches) return;
+      themeInterval = window.setInterval(() => {
         themeIndex = (themeIndex + 1) % themes.length;
         applyTheme(themes[themeIndex], true, true);
       }, 4800);
     }
 
+    function startThemeCycle() {
+      if (themeStarted) return;
+      themeStarted = true;
+      applyTheme(themes[themeIndex], false, true);
+      syncThemeCycle();
+    }
+
+    motionPreference.addEventListener('change', () => {
+      updateDemoTransform();
+      syncThemeCycle();
+    });
+
+    updateDemoTransform();
     applyTheme(themes[themeIndex], false, false);
 
     if ('IntersectionObserver' in window && demo) {
