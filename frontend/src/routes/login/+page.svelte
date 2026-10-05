@@ -37,8 +37,8 @@
 	<div
 		class="w-full max-w-[400px] rounded-lg border border-border-primary bg-surface-secondary p-8"
 	>
-		<div class="mb-8 flex flex-col items-center">
-			<img src="/logo-boxbox-3d.svg" alt="BoxBox" class="mb-2 h-16 w-auto" />
+		<div class="mb-8 flex items-center justify-center gap-3">
+			<img src="/logo-boxbox-3d.svg" alt="BoxBox" class="h-16 w-auto shrink-0" />
 			<p class="m-0 text-sm text-text-secondary">Sign in to access your files</p>
 		</div>
 
