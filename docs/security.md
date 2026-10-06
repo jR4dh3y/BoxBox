@@ -130,6 +130,8 @@ Share links expose one file or a folder tree to anyone holding the token URL:
 - Recipient downloads and previews carry the same sandboxed `Content-Security-Policy` as the app's streaming endpoints, and active document formats (HTML, SVG, XML) are forced to download instead of rendering inline.
 - Folder uploads are capped by both the per-link `maxUploadBytes` and server `max_upload_mb` limits. Upload-only links cannot replace existing items; delete permission also permits replacement and deletion below (never at) the shared root.
 - Folder ZIP archives validate traversal and resolved paths against the share root before streaming.
+- Full-access links also allow folder creation and empty file edits. Folder creation uses an opened filesystem root to confine mutations if another writer swaps a parent directory for a symlink.
+- Anyone holding an active share link can view the owner's stored wallpaper. The browser keeps the wallpaper owner marker and cancels pending synchronization when the authenticated session ends.
 - Recipient metadata responses never include mount names or internal paths.
 - The share store directory is restricted to owner access (`0700`) and its token-bearing `shares.json` file to `0600`, including existing stores when the service initializes.
 - Before downgrading to a version predating split upload/delete permissions, back up `shares.json`; older versions cannot preserve the new per-link permissions and upload caps if they rewrite the store.
