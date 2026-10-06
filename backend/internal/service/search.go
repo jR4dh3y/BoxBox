@@ -11,7 +11,6 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
-	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
 )
 
 // Search service errors
@@ -25,9 +24,9 @@ type SearchService interface {
 
 // searchService implements SearchService
 type searchService struct {
-	fs          filesystem.FS
-	mountPoints []model.MountPoint
-	walker      Walker
+	fs     filesystem.FS
+	mounts *mounts
+	walker Walker
 }
 
 // SearchServiceConfig holds configuration for the search service
@@ -38,9 +37,9 @@ type SearchServiceConfig struct {
 // NewSearchService creates a new search service
 func NewSearchService(fsys filesystem.FS, cfg SearchServiceConfig) SearchService {
 	return &searchService{
-		fs:          fsys,
-		mountPoints: cfg.MountPoints,
-		walker:      NewWalker(fsys),
+		fs:     fsys,
+		mounts: newMounts(fsys, fixedMounts(cfg.MountPoints)),
+		walker: NewWalker(fsys),
 	}
 }
 
@@ -53,14 +52,7 @@ func (s *searchService) Search(ctx context.Context, path, query string) ([]model
 	}
 
 	// Resolve the path to filesystem path
-	mount, fsPath, err := validator.ValidatePathAgainstMounts(path, s.mountPoints)
-	if err != nil {
-		if errors.Is(err, validator.ErrOutsideMountPoint) {
-			return nil, ErrMountPointNotFound
-		}
-		return nil, err
-	}
-	fsPath, err = resolveExistingPathWithinMount(s.fs, mount, fsPath)
+	_, fsPath, err := s.mounts.resolve(path, readExisting)
 	if err != nil {
 		return nil, err
 	}

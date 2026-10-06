@@ -10,6 +10,7 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --tsgo",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --tsgo --watch",
+		"test": "bun test --conditions browser",
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint ."
 	},
@@ -22,6 +23,7 @@
 		"@tailwindcss/forms": "^0.5.10",
 		"@tailwindcss/typography": "^0.5.20",
 		"@tailwindcss/vite": "^4.3.3",
+		"@types/bun": "^1.4.2",
 		"@types/node": "^26",
 		"@typescript/native": "npm:typescript@7.0.2",
 		"eslint": "^10.11.0",

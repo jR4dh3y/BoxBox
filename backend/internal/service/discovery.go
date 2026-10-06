@@ -48,7 +48,7 @@ func discoverSubMounts(fs filesystem.FS, parent model.MountPoint) []model.MountP
 		return nil
 	}
 
-	return filterMountedDirs(entries, parent, mountSet)
+	return filterMountedDirs(fs, entries, parent, mountSet)
 }
 
 // buildRealMountPointSet reads system mounts and returns only real filesystems
@@ -68,7 +68,7 @@ func buildRealMountPointSet() map[string]mountInfo {
 }
 
 // filterMountedDirs filters directory entries to only those that are mount points
-func filterMountedDirs(entries []fs.DirEntry, parent model.MountPoint, mountSet map[string]mountInfo) []model.MountPoint {
+func filterMountedDirs(fsys filesystem.FS, entries []fs.DirEntry, parent model.MountPoint, mountSet map[string]mountInfo) []model.MountPoint {
 	var discovered []model.MountPoint
 
 	for _, entry := range entries {
@@ -79,6 +79,9 @@ func filterMountedDirs(entries []fs.DirEntry, parent model.MountPoint, mountSet 
 		subPath := filepath.Join(parent.Path, entry.Name())
 
 		if !isMountPoint(subPath, mountSet) {
+			continue
+		}
+		if _, _, err := fsys.ReadDirLimit(subPath, 1); err != nil {
 			continue
 		}
 

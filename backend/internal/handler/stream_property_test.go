@@ -37,7 +37,7 @@ func setupTestStreamHandler() (*StreamHandler, *filesystem.AferoFS, service.File
 	}
 
 	fileSvc := service.NewFileService(fs, service.FileServiceConfig{MountPoints: mounts})
-	streamHandler := NewStreamHandler(fileSvc, 1, 100) // 1MB chunks, 100MB max for testing
+	streamHandler := NewStreamHandler(fileSvc, 100) // 100MB max for testing
 
 	return streamHandler, fs, fileSvc
 }
@@ -279,7 +279,6 @@ func TestUploadRejectsSessionMetadataMismatch(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 4: Upload/Download Round-Trip Integrity**
-// **Validates: Requirements 2.5, 3.1**
 //
 // Property: For any file content uploaded via chunked upload, downloading that file
 // SHALL return byte-identical content with matching checksum.
@@ -444,7 +443,6 @@ func TestProperty_UploadDownloadRoundTripIntegrity(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 5: Resumable Upload Correctness**
-// **Validates: Requirements 2.3**
 //
 // Property: For any upload interrupted after N successful chunks, resuming the upload
 // from chunk N SHALL result in a complete file identical to the original.
@@ -653,7 +651,6 @@ func TestProperty_ResumableUploadCorrectness(t *testing.T) {
 }
 
 // **Feature: boxbox, Property 6: Range Request Correctness**
-// **Validates: Requirements 3.2**
 //
 // Property: For any file and valid byte range [start, end], a Range request SHALL return
 // exactly the bytes from position start to end (inclusive) with HTTP 206 status.

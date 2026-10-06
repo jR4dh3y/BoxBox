@@ -5,7 +5,10 @@ declare global {
 		// interface Error {}
 		// interface Locals {}
 		// interface PageData {}
-		// interface PageState {}
+		interface PageState {
+			/** Position in the browse history, so back and forward can be enabled. */
+			browseHistoryIndex?: number;
+		}
 		// interface Platform {}
 	}
 }
