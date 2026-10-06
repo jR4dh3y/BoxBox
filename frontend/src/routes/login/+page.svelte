@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { Button, Input, Spinner } from '$lib/components/ui';
-	import { X, FolderOpen, AlertTriangle } from 'lucide-svelte';
+	import { X, AlertTriangle } from 'lucide-svelte';
 
 	let username = $state('');
 	let password = $state('');
@@ -37,12 +37,12 @@
 	<div
 		class="w-full max-w-[400px] rounded-lg border border-border-primary bg-surface-secondary p-8"
 	>
-		<div class="mb-8 flex flex-col items-center">
-			<div class="mb-2 flex items-center gap-3">
-				<span class="text-accent"><FolderOpen size={32} /></span>
-				<h1 class="m-0 text-2xl font-semibold text-text-primary">BoxBox</h1>
+		<div class="mb-6 flex items-center justify-center gap-4">
+			<img src="/logo-boxbox-3d.svg" alt="BoxBox" class="h-16 w-auto shrink-0" />
+			<div class="min-w-0">
+				<h1 class="m-0 text-xl leading-7 font-semibold text-text-primary">Sign in</h1>
+				<p class="m-0 text-sm leading-5 text-text-secondary">Access your files</p>
 			</div>
-			<p class="m-0 text-sm text-text-secondary">Sign in to access your files</p>
 		</div>
 
 		<form class="flex flex-col gap-5" onsubmit={handleSubmit}>

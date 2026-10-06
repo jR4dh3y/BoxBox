@@ -1,6 +1,8 @@
 ---
+import type { Server } from '@lucide/astro';
+
 export interface Props {
-  icon: any; // Astro component
+  icon: typeof Server;
   label: string;
   active?: boolean;
 }

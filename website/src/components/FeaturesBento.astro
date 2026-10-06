@@ -1,4 +1,5 @@
 ---
+import SharingShowcase from './SharingShowcase.astro';
 import {
   FolderTree,
   CloudUpload,
@@ -21,7 +22,7 @@ import {
       </div>
       <div class="max-w-md">
         <p class="text-lg text-text-secondary">
-          No bloated electron apps or sluggish web UI. A meticulously crafted, high-performance toolkit designed specifically for bare-metal Linux servers and homelab enthusiasts.
+          Browse your storage, move whole folders, edit a config, or stream a video. The everyday tools for your Linux server, together in one browser window.
         </p>
       </div>
     </div>
@@ -34,11 +35,9 @@ import {
         <div class="absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,_rgba(74,158,255,0.08)_0%,_transparent_50%)] transition-opacity duration-500 opacity-0 group-hover:opacity-100"></div>
         
         <div class="p-8 relative z-10 flex-1">
-          <div class="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-accent mb-6 shadow-inner">
-            <Code class="w-6 h-6" />
-          </div>
+          <Code class="pointer-events-none absolute -right-3 -top-3 w-32 h-32 text-accent opacity-[0.06] -rotate-12" stroke-width={1} aria-hidden="true" />
           <h3 class="text-2xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Monaco Editor Engine</h3>
-          <p class="text-text-secondary max-w-md">Edit config files and code directly in the browser with VS Code's powerful native engine. Full syntax highlighting, minimap, and find/replace.</p>
+          <p class="text-text-secondary max-w-md">Edit config files and code directly in the browser with Monaco, the editor behind VS Code. Syntax highlighting, minimap, and find/replace included.</p>
         </div>
 
         <div class="px-8 pb-0 pt-4 relative z-10 mt-auto">
@@ -52,10 +51,9 @@ import {
               <span class="text-xs text-text-muted font-mono ml-2">docker-compose.yml</span>
             </div>
             <div class="p-4 font-mono text-sm leading-relaxed text-white/70 bg-[#1e1e1e] overflow-hidden" style="font-family: 'JetBrains Mono', monospace;">
-              <div><span class="text-[#c586c0]">version:</span> <span class="text-[#ce9178]">'3.8'</span></div>
-              <div class="mt-1"><span class="text-[#c586c0]">services:</span></div>
+              <div><span class="text-[#c586c0]">services:</span></div>
               <div>&nbsp;&nbsp;<span class="text-[#9cdcfe]">boxbox:</span></div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#c586c0]">image:</span> <span class="text-[#ce9178]">boxbox:local</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#c586c0]">image:</span> <span class="text-[#ce9178]">ghcr.io/jr4dh3y/boxbox:latest</span></div>
               <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#c586c0]">ports:</span></div>
               <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-[#d4d4d4]">-</span> <span class="text-[#b5cea8]">"8080:8080"</span></div>
             </div>
@@ -68,11 +66,9 @@ import {
         <div class="absolute inset-0 bg-[radial-gradient(circle_at_0%_100%,_rgba(243,156,18,0.08)_0%,_transparent_60%)] transition-opacity duration-500 opacity-0 group-hover:opacity-100"></div>
 
         <div class="p-8 pb-0 relative z-10 flex-1">
-          <div class="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-warning mb-6 shadow-inner">
-            <FolderTree class="w-6 h-6" />
-          </div>
-          <h3 class="text-2xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Multi-Mount Nav</h3>
-          <p class="text-text-secondary text-sm">Browse multiple disks, directories, and partitions simultaneously from a single unified interface.</p>
+          <FolderTree class="pointer-events-none absolute -right-3 -top-3 w-32 h-32 text-warning opacity-[0.06] -rotate-12" stroke-width={1} aria-hidden="true" />
+          <h3 class="text-2xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Drives & Places</h3>
+          <p class="text-text-secondary text-sm">Browse configured and discovered drives together. Keep Downloads, Pictures, and other folder shortcuts in their own Places section.</p>
         </div>
 
         <div class="p-8 pt-6 relative z-10 mt-auto">
@@ -108,16 +104,16 @@ import {
         </div>
       </div>
 
+      <SharingShowcase />
+
       <!-- 3. Chunked Transfers -->
-      <div class="group relative md:col-span-5 rounded-3xl bg-gradient-to-bl from-[#1c1c1c] to-[#121212] border border-white/5 overflow-hidden transition-all duration-500 hover:border-white/10 flex flex-col">
+      <div class="group relative md:col-span-4 rounded-3xl bg-gradient-to-bl from-[#1c1c1c] to-[#121212] border border-white/5 overflow-hidden transition-all duration-500 hover:border-white/10 flex flex-col">
         <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,_rgba(16,185,129,0.08)_0%,_transparent_60%)] transition-opacity duration-500 opacity-0 group-hover:opacity-100"></div>
 
         <div class="p-8 relative z-10">
-          <div class="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-success mb-6 shadow-inner">
-            <CloudUpload class="w-6 h-6" />
-          </div>
-          <h3 class="text-2xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Chunked Transfers</h3>
-          <p class="text-text-secondary text-sm">Upload massive files effortlessly. Intelligent chunking ensures resumable, reliable transfers over unstable networks without memory bloat.</p>
+          <CloudUpload class="pointer-events-none absolute -right-3 -top-3 w-32 h-32 text-success opacity-[0.06] -rotate-12" stroke-width={1} aria-hidden="true" />
+          <h3 class="text-2xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Whole folders. Intact.</h3>
+          <p class="text-text-secondary text-sm">Choose a folder or drag one in. Nested file paths stay intact, and large files upload in chunks with progress for each file.</p>
         </div>
 
         <div class="px-8 pb-8 relative z-10 mt-auto">
@@ -133,7 +129,7 @@ import {
             <div class="h-2 flex-1 rounded-sm bg-white/10"></div>
           </div>
           <div class="flex justify-between text-[10px] text-text-muted font-mono uppercase tracking-widest">
-            <span>Uploading...</span>
+            <span>photos/2026/sunset.jpg</span>
             <span class="text-success">65%</span>
           </div>
         </div>
@@ -144,7 +140,7 @@ import {
         <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,_rgba(255,255,255,0.03)_0%,_transparent_60%)]"></div>
 
         <div class="p-8 relative z-10 text-center flex flex-col items-center justify-center h-full">
-          <div class="relative w-16 h-16 mb-6">
+          <div class="relative w-16 h-16 mb-6" aria-hidden="true">
             <div class="absolute inset-0 rounded-full border border-white/20"></div>
             <div class="absolute inset-0 rounded-full border border-white/40 scale-110 opacity-50 animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
             <div class="absolute inset-0 flex items-center justify-center text-white">
@@ -161,50 +157,36 @@ import {
         <div class="absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,_rgba(74,158,255,0.08)_0%,_transparent_60%)] transition-opacity duration-500 opacity-0 group-hover:opacity-100"></div>
 
         <div class="p-8 relative z-10 flex-1">
-          <div class="flex items-center justify-between mb-6">
-            <div class="w-12 h-12 rounded-2xl bg-[#0db7ed]/10 border border-[#0db7ed]/20 flex items-center justify-center text-[#0db7ed] shadow-inner">
-              <Box class="w-6 h-6" />
-            </div>
-            <div class="text-[10px] font-mono text-[#0db7ed] bg-[#0db7ed]/10 px-2 py-1 rounded">25MB Image</div>
-          </div>
+          <Box class="pointer-events-none absolute -right-3 -top-3 w-32 h-32 text-[#0db7ed] opacity-[0.06] -rotate-12" stroke-width={1} aria-hidden="true" />
           <h3 class="text-2xl font-bold text-white mb-2" style="font-family: 'Bricolage Grotesque', sans-serif;">Docker Native</h3>
-          <p class="text-text-secondary text-sm">Spin it up in seconds. Delivered as a lightweight, pre-configured Docker container designed for minimal resource footprint.</p>
+          <p class="text-text-secondary text-sm">Deploy with Docker Compose or run the single binary with the frontend built in. Your files stay on your server.</p>
         </div>
 
         <div class="px-8 pb-8 pt-2 relative z-10 mt-auto">
+          <p class="mb-3 text-xs text-text-secondary">After <a href="/docs/docker/" class="text-accent underline underline-offset-2">configuring users and mount points</a>:</p>
           <div class="bg-black/50 border border-white/10 rounded-lg p-3 font-mono text-[11px] text-white/60">
             <div class="flex items-center gap-2 mb-1">
               <span class="text-accent">~</span>
-              <span class="text-white">docker run -d</span>
+              <span class="text-white">docker compose pull</span>
             </div>
             <div class="pl-4">
-              -p 8080:8080 \<br/>
-              -e BOXBOX_USERS_admin=... \<br/>
-              -v /srv/media:/srv/media \<br/>
-              boxbox:local
+              docker compose up -d
             </div>
           </div>
         </div>
       </div>
 
-    </div>
+    <!-- Media Streaming -->
+    <div class="md:col-span-8 rounded-3xl bg-gradient-to-br from-[#1c1c1c] to-[#121212] border border-white/5 overflow-hidden relative flex flex-col group transition-all duration-500 hover:border-white/10 p-8">
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,_rgba(74,158,255,0.08)_0%,_transparent_60%)] transition-opacity duration-500 opacity-0 group-hover:opacity-100" aria-hidden="true"></div>
+      <CirclePlay class="pointer-events-none absolute -right-3 -top-3 w-32 h-32 text-white opacity-[0.06] -rotate-12" stroke-width={1} aria-hidden="true" />
+      <h3 class="text-2xl font-bold text-white mb-6 relative z-10" style="font-family: 'Bricolage Grotesque', sans-serif;">Media Streaming & Preview</h3>
 
-    <!-- Media Streaming feature standalone row -->
-    <div class="mt-6 rounded-3xl bg-[#161616] border border-white/5 overflow-hidden relative flex flex-col md:flex-row group transition-all duration-500 hover:border-white/10">
-      <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-in-out"></div>
-      
-      <div class="p-8 md:p-12 md:w-1/2 flex flex-col justify-center relative z-10">
-        <div class="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white mb-6 shadow-inner">
-          <CirclePlay class="w-6 h-6" />
-        </div>
-        <h3 class="text-3xl font-bold text-white mb-4" style="font-family: 'Bricolage Grotesque', sans-serif;">Media Streaming & Preview</h3>
-        <p class="text-text-secondary text-lg">Instantly stream video and audio files directly from your server. High-performance previews load without downloading the entire file, saving bandwidth and time.</p>
-      </div>
-
-      <div class="md:w-1/2 bg-[#1e1e1e]/50 border-l border-white/5 p-8 flex items-center justify-center relative z-10 overflow-hidden">
+      <div class="grid lg:grid-cols-[2fr_3fr] items-center gap-6 flex-1 relative z-10">
+        <p class="text-text-secondary text-sm leading-relaxed">Play video and audio straight from your server. Preview files in your browser without downloading them first.</p>
         <button
           type="button"
-          class="w-full max-w-sm aspect-video bg-black/40 border border-white/10 rounded-xl relative shadow-2xl overflow-hidden group-hover:scale-105 transition-transform duration-500"
+          class="w-full aspect-video bg-black/40 border border-white/10 rounded-xl relative shadow-2xl overflow-hidden hover:border-white/30 transition-colors duration-300"
           data-video-preview
           aria-label="Play Never Gonna Give You Up"
         >
@@ -230,6 +212,7 @@ import {
       </div>
     </div>
 
+    </div>
   </div>
 </section>
 
@@ -239,7 +222,7 @@ import {
   if (previewButton) {
     previewButton.addEventListener('click', () => {
       previewButton.outerHTML = `
-        <div class="w-full max-w-sm aspect-video bg-black border border-white/10 rounded-xl relative shadow-2xl overflow-hidden">
+        <div class="w-full aspect-video bg-black border border-white/10 rounded-xl relative shadow-2xl overflow-hidden">
           <iframe
             src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1&rel=0"
             title="Never Gonna Give You Up"

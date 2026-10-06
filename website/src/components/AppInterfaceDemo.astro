@@ -21,7 +21,10 @@ import {
   LoaderCircle,
   X,
   Server,
-  FilePlus
+  FilePlus,
+  HardDrive,
+  FolderUp,
+  Upload
 } from '@lucide/astro';
 ---
 
@@ -29,6 +32,7 @@ import {
   <div class="pointer-events-none absolute left-1/2 top-1/2 h-[86%] w-[118%] -translate-x-1/2 -translate-y-[42%] demo-hero-glow z-0"></div>
   <div
     id="app-window"
+    inert
     class="w-full rounded-[14px] overflow-hidden border border-[#2a2a2a] transition-all duration-300 ease-out bg-[#161616] origin-top relative z-10"
     style="transform: perspective(2000px) translateY(-50px) rotateX(20deg) scale(0.85); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.72), 0 0 96px var(--hero-glow); --hero-wallpaper: url('/wallpapers/evernight.png'); --hero-glow: rgba(146, 124, 255, 0.32); --color-accent: #a892ff; --color-accent-hover: #7b69c5; --color-accent-muted: #473d68; --color-selection: #463c67; --color-selection-hover: #7b69c5; --color-border-focus: #a892ff;"
   >
@@ -41,10 +45,22 @@ import {
         <div class="border-b border-border-secondary">
           <button class="w-full flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
             <ChevronDown class="w-3.5 h-3.5" />
-            <span>Places</span>
+            <span>Drives</span>
           </button>
           <div class="pb-2">
             <SidebarItem icon={Server} label="This Server" active={true} />
+            <SidebarItem icon={HardDrive} label="storage" />
+            <SidebarItem icon={HardDrive} label="archive" />
+            <SidebarItem icon={HardDrive} label="backups" />
+          </div>
+        </div>
+
+        <div class="border-b border-border-secondary">
+          <div class="flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
+            <ChevronDown class="w-3.5 h-3.5" />
+            <span>Places</span>
+          </div>
+          <div class="pb-2">
             <SidebarItem icon={Monitor} label="Desktop" />
             <SidebarItem icon={Download} label="Downloads" />
             <SidebarItem icon={FileText} label="Documents" />
@@ -83,6 +99,8 @@ import {
           </div>
 
           <div class="flex items-center gap-1">
+            <button aria-label="Upload files" class="w-7 h-7 flex items-center justify-center text-text-secondary"><Upload class="w-4 h-4" /></button>
+            <button aria-label="Upload folder" class="w-7 h-7 flex items-center justify-center text-text-secondary"><FolderUp class="w-4 h-4" /></button>
             <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><FilePlus class="w-4 h-4" /></button>
             <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><RefreshCw class="w-4 h-4" /></button>
             <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><Settings class="w-4 h-4" /></button>
@@ -157,11 +175,11 @@ import {
         </div>
       </div>
 
-      <div class="absolute bottom-12 right-6 w-[360px] bg-surface-secondary/92 border border-border-primary rounded-lg shadow-2xl overflow-hidden animate-fade-in-up backdrop-blur-md" style="animation-delay: 1s; z-index: 60; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);">
+      <div class="absolute bottom-12 right-3 sm:right-6 w-[calc(100%-1.5rem)] max-w-[360px] bg-surface-secondary/92 border border-border-primary rounded-lg shadow-2xl overflow-hidden animate-fade-in-up backdrop-blur-md" style="animation-delay: 1s; z-index: 60; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);">
         <div class="px-4 py-2 border-b border-border-primary flex items-center justify-between text-[12px] font-medium bg-surface-tertiary/95">
           <span class="text-text-primary flex items-center gap-2">
             <LoaderCircle class="w-3.5 h-3.5 text-accent animate-spin" />
-            Uploading 1 file...
+            Uploading summer-photos...
           </span>
           <button class="text-text-muted hover:text-text-primary">
             <X class="w-3.5 h-3.5" />
@@ -169,8 +187,8 @@ import {
         </div>
         <div class="p-4 flex flex-col gap-2.5">
           <div class="flex items-center justify-between text-xs">
-            <span class="text-text-primary font-medium truncate pr-4">ubuntu-24.04-live-server-amd64.iso</span>
-            <span class="text-text-secondary font-mono text-[10px] shrink-0">1.8 GB / 2.4 GB</span>
+            <span class="text-text-primary font-medium truncate pr-4">summer-photos/2026/sunset.jpg</span>
+            <span class="text-text-secondary font-mono text-[10px] shrink-0">1.8 / 2.4 MB</span>
           </div>
           <div class="w-full bg-surface-elevated rounded-full h-1.5 overflow-hidden">
             <div class="bg-accent h-full rounded-full transition-all duration-300 relative" style="width: 74%">
@@ -178,13 +196,14 @@ import {
             </div>
           </div>
           <div class="flex justify-between text-[10px] text-text-muted mt-1 font-mono">
-            <span>74% &middot; 12.4 MB/s</span>
-            <span>45s remaining</span>
+            <span>74% &middot; 2 of 3 files</span>
+            <span>Paths preserved</span>
           </div>
         </div>
       </div>
     </div>
   </div>
+  <p class="mt-4 text-sm text-text-secondary">Interface preview with sample files and storage. <a href="#sharing" class="text-accent underline underline-offset-4 hover:text-white">Explore folder sharing</a></p>
 </div>
 
 <script>
@@ -192,6 +211,7 @@ import {
   const demo = document.getElementById('demo');
   const wallpaperFade = document.getElementById('demo-wallpaper-fade');
   const root = document.documentElement;
+  const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   const themes = [
     {
@@ -221,7 +241,7 @@ import {
     }
   ];
 
-  function hexToRgb(hex) {
+  function hexToRgb(hex: string) {
     const cleaned = hex.replace('#', '');
     return [
       Number.parseInt(cleaned.slice(0, 2), 16),
@@ -230,11 +250,11 @@ import {
     ];
   }
 
-  function rgbToHex(rgb) {
+  function rgbToHex(rgb: number[]) {
     return `#${rgb.map((value) => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
   }
 
-  function mixHex(color, target, amount) {
+  function mixHex(color: string, target: string, amount: number) {
     const [r1, g1, b1] = hexToRgb(color);
     const [r2, g2, b2] = hexToRgb(target);
     return rgbToHex([
@@ -244,7 +264,7 @@ import {
     ]);
   }
 
-  function setThemeVars(target, theme) {
+  function setThemeVars(target: HTMLElement, theme: typeof themes[number]) {
     target.style.setProperty('--color-accent', theme.accent);
     target.style.setProperty('--color-border-focus', theme.accent);
     target.style.setProperty('--color-accent-hover', mixHex(theme.accent, '#000000', 0.28));
@@ -253,7 +273,7 @@ import {
     target.style.setProperty('--color-selection-hover', mixHex(theme.accent, '#000000', 0.35));
   }
 
-  function applyTheme(theme, shouldFade = true, syncSiteAccent = false) {
+  function applyTheme(theme: typeof themes[number], shouldFade = true, syncSiteAccent = false) {
     if (!appWindow || !demo) return;
 
     if (wallpaperFade && shouldFade) {
@@ -286,8 +306,13 @@ import {
     let ticking = false;
     let themeIndex = 0;
     let themeStarted = false;
+    let themeInterval: number | undefined;
 
     function updateDemoTransform() {
+      if (motionPreference.matches) {
+        demoWindow.style.transform = 'none';
+        return;
+      }
       const scrollY = window.scrollY;
       const maxScroll = window.innerHeight * 0.6;
       const progress = Math.min(Math.max(scrollY / maxScroll, 0), 1);
@@ -308,18 +333,31 @@ import {
       });
     }, { passive: true });
 
-    function startThemeCycle() {
-      if (themeStarted) return;
-
-      themeStarted = true;
-      applyTheme(themes[themeIndex], false, true);
-
-      window.setInterval(() => {
+    function syncThemeCycle() {
+      if (themeInterval !== undefined) {
+        window.clearInterval(themeInterval);
+        themeInterval = undefined;
+      }
+      if (!themeStarted || motionPreference.matches) return;
+      themeInterval = window.setInterval(() => {
         themeIndex = (themeIndex + 1) % themes.length;
         applyTheme(themes[themeIndex], true, true);
       }, 4800);
     }
 
+    function startThemeCycle() {
+      if (themeStarted) return;
+      themeStarted = true;
+      applyTheme(themes[themeIndex], false, true);
+      syncThemeCycle();
+    }
+
+    motionPreference.addEventListener('change', () => {
+      updateDemoTransform();
+      syncThemeCycle();
+    });
+
+    updateDemoTransform();
     applyTheme(themes[themeIndex], false, false);
 
     if ('IntersectionObserver' in window && demo) {

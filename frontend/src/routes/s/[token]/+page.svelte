@@ -341,7 +341,7 @@
 	<header
 		class="flex shrink-0 items-center gap-2 rounded-lg border border-border-primary bg-surface-primary px-3 py-1.5"
 	>
-		<img src="/logo-box.svg" alt="BoxBox" class="mr-1 h-3.5 shrink-0" />
+		<img src="/logo-boxbox-3d.svg" alt="BoxBox" class="mr-1 h-8 w-auto shrink-0" />
 		<nav
 			class="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border-primary bg-surface-secondary px-2 py-1 text-[13px] whitespace-nowrap"
 			aria-label="Path"

@@ -14,8 +14,8 @@
 
 	/* Text colors */
 	--color-text-primary: #e0e0e0;
-	--color-text-secondary: #888888;
-	--color-text-muted: #666666;
+	--color-text-secondary: #a0a0a0;
+	--color-text-muted: #969696;
 	--color-text-disabled: #444444;
 
 	/* Accent colors */
@@ -67,6 +67,17 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
 .animate-fade-in-up {
   opacity: 0;
   animation: fadeInUp 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .animate-fade-in-up { opacity: 1; animation: none; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+:where(a, button, select):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
 }
 
 .glass-panel {
