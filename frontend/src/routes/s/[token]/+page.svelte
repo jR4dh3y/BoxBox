@@ -1,6 +1,6 @@
 <script lang="ts">
 	/** Public recipient page for file and folder share links: path bar on top, file list and preview below. */
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { afterNavigate, beforeNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
@@ -97,8 +97,9 @@
 	const iconButtonClass =
 		'flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent text-text-secondary transition-colors duration-100 hover:bg-surface-elevated hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50';
 
+	onMount(() => void loadShare());
 	afterNavigate(({ from, to }) => {
-		if (!from || from.params?.token !== to?.params?.token) void loadShare();
+		if (from && from.params?.token !== to?.params?.token) void loadShare();
 	});
 
 	beforeNavigate(({ to }) => {
