@@ -10,6 +10,7 @@ import {
 } from '$lib/api/auth';
 import { CONFIG } from '$lib/config';
 import { settingsStore } from './settings.svelte';
+import { resetShareWallpaperLoginSync } from '$lib/utils/wallpaperSync';
 
 class AuthStore {
 	isAuthenticated = $state(false);
@@ -74,6 +75,7 @@ class AuthStore {
 	}
 
 	private reset(error: string | null = null): void {
+		resetShareWallpaperLoginSync();
 		this.isAuthenticated = false;
 		this.isDevelopment = false;
 		this.isLoading = false;
