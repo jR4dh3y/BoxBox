@@ -50,3 +50,9 @@ vendor/
 
 # Docker
 .docker/
+
+# Local project notes
+/CHANGELOG.md
+/maybe-in-future.md
+/sec-audit.md
+/sec-audit-2026-08-07.md
