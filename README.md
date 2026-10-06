@@ -27,11 +27,11 @@
 BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provides a browser UI for mounted Linux paths, large file and folder uploads, previews, code editing, search, share links, and background file operations.
 
 <p align="center">
-  <a href="https://boxbox.radhey.dev/media/boxbox-promo.mp4">
+  <a href="https://youtu.be/cv2_oNkhYI0">
     <img src=".github/assets/promo-thumbnail.jpg" alt="Watch the 40-second BoxBox promo" width="860">
   </a>
   <br>
-  <sub>Watch BoxBox in 40 seconds. Music: <a href="https://www.youtube.com/watch?v=LL9VJAljSQs">“the kill 2” by Lex Amarni &amp; 2muchmotion</a>.</sub>
+  <sub>Watch BoxBox in 40 seconds <a href="https://youtu.be/cv2_oNkhYI0">on YouTube</a>. Music: <a href="https://www.youtube.com/watch?v=LL9VJAljSQs">“the kill 2” by Lex Amarni &amp; 2muchmotion</a>.</sub>
 </p>
 
 ## Quick Start
