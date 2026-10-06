@@ -37,10 +37,10 @@ function enqueue(task: () => Promise<void>): Promise<void> {
  * user and the server copy differs. Never deletes: a browser without a wallpaper
  * says nothing about the user's choice elsewhere.
  */
-export function syncShareWallpaperOnLogin(): void {
-	if (loginSyncStarted) return;
+export function syncShareWallpaperOnLogin(): Promise<void> {
+	if (loginSyncStarted) return Promise.resolve();
 	loginSyncStarted = true;
-	enqueue(async () => {
+	return enqueue(async () => {
 		const user = currentUsername();
 		const owner = readOwner();
 		const { backgroundImage } = settingsStore.current;
@@ -50,6 +50,11 @@ export function syncShareWallpaperOnLogin(): void {
 	}).catch((error) => {
 		console.warn('Unable to sync the share page wallpaper', error);
 	});
+}
+
+/** Allow the next authenticated session to sync, including after expiry. */
+export function resetShareWallpaperLoginSync(): void {
+	loginSyncStarted = false;
 }
 
 /** After saving settings: make the server copy match exactly, including removal. */
