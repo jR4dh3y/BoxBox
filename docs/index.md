@@ -20,10 +20,11 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 
 - The production image is a single container.
 - The preferred deployment is Docker Compose pulling `ghcr.io/jr4dh3y/boxbox`.
-- The server listens on port `8080` by default.
+- The server listens on port `8080` by default (it was `80` before `v0.3.0`).
 - The frontend static build is embedded into the Go binary.
 - API routes live under `/api/v1`; `/health` is also available at the root.
 - Mount points are configured in `config.yaml` and can be customized by binding another config file to `/app/config.yaml`.
+- Share links and stored wallpapers live in the data directory (`/data` in the container).
 - Environment overrides use the `BOXBOX_` prefix, for example `BOXBOX_JWT_SECRET` and `BOXBOX_USERS_admin`.
 
 ## Required Credentials
@@ -39,4 +40,4 @@ Generate the hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`.
 
 ## Scope
 
-BoxBox is intentionally a focused file manager. It is not a multi-tenant cloud storage platform, public-link sharing service, media server, or identity provider. Keep deployments private, use a reverse proxy with TLS when exposed beyond localhost, and mount only the directories you actually need.
+BoxBox is intentionally a focused file manager. Share links let you hand a file or folder to someone without an account, but BoxBox is not a multi-tenant cloud storage platform, media server, or identity provider. Keep deployments private, use a reverse proxy with TLS when exposed beyond localhost, and mount only the directories you actually need.

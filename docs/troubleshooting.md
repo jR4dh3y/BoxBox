@@ -16,6 +16,16 @@ HOST_PORT=8081
 docker compose up -d
 ```
 
+## Unreachable After Upgrading to v0.3.0
+
+`v0.3.0` changed the default container port from `80` to `8080`. If the container is healthy but the browser or reverse proxy cannot reach it, the port mapping and `config.yaml` disagree. Check which port the server bound:
+
+```bash
+docker compose logs boxbox | grep "Starting HTTP server"
+```
+
+Make the compose port mapping (`HOST_PORT:<port>`), the healthcheck URL, any reverse proxy target, and `port` in `config.yaml` (or `BOXBOX_PORT`) all use the same port. See the [v0.3.0 upgrade notes](/docs/release/).
+
 ## Server Rejects the Configured User
 
 BoxBox requires a bcrypt hash, not a plaintext configured password:
@@ -62,6 +72,8 @@ docker compose exec boxbox ls -la /media/devmon
 
 Remember that `config.yaml` paths are container paths, not host paths.
 
+A mount inside another mount is listed under **Places**, not **Drives**, and does not appear on **This Server**. Set `kind: drive` on the mount point to list it as a drive.
+
 ## Permission Denied
 
 Check host permissions and whether the container path is mounted read-only:
@@ -105,6 +117,14 @@ Or:
 ```text
 /api/v1/stream/preview/home/video.mp4?token=<access-token>
 ```
+
+## Share Link Returns 404
+
+Unknown, expired, and revoked links all return the same `404`. Also check that:
+
+- The link still appears under **Settings → Shared Links** for the account that created it.
+- The shared path still exists and its mount point was not renamed or removed from `config.yaml`.
+- The `boxbox-data` volume was kept when the container was recreated. Links are stored in `/data/shares.json`.
 
 ## WebSocket Does Not Connect
 
