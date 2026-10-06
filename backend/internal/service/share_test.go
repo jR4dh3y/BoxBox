@@ -1033,3 +1033,134 @@ func assertPrivatePermissions(t *testing.T, path string, want os.FileMode) {
 		t.Fatalf("%s permissions = %04o, want %04o", path, got, want)
 	}
 }
+
+func TestShareCreateFolderRefusesSymlinkedLevels(t *testing.T) {
+	root := t.TempDir()
+	media := filepath.Join(root, "media")
+	shared := filepath.Join(media, "shared")
+	sibling := filepath.Join(media, "sibling")
+	outside := filepath.Join(root, "outside")
+	for _, dir := range []string{shared, sibling, outside} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(sibling, filepath.Join(shared, "to-sibling")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(shared, "to-outside")); err != nil {
+		t.Fatal(err)
+	}
+	shares := NewShareService(filesystem.NewOsFS(), ShareServiceConfig{
+		DataDir: filepath.Join(root, "data"),
+		Mounts: func() []model.MountPoint {
+			return []model.MountPoint{{Name: "media", Path: media}}
+		},
+	})
+	share, err := shares.Create(context.Background(), "owner", "media/shared", ShareSettings{
+		Permissions: model.SharePermissions{Upload: true, Delete: true, Manage: true},
+	}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := shares.CreateFolderForRecipient(context.Background(), share.Token, "real/nested"); err != nil {
+		t.Fatalf("creating a normal nested folder: %v", err)
+	}
+	if info, err := os.Lstat(filepath.Join(shared, "real", "nested")); err != nil || !info.IsDir() {
+		t.Fatalf("nested folder missing: %v", err)
+	}
+	for _, link := range []string{"to-sibling/new", "to-outside/new"} {
+		if err := shares.CreateFolderForRecipient(context.Background(), share.Token, link); err == nil {
+			t.Errorf("%s: folder created through a symlink", link)
+		}
+	}
+	for _, dir := range []string{filepath.Join(sibling, "new"), filepath.Join(outside, "new")} {
+		if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s was created outside the share", dir)
+		}
+	}
+}
+
+type folderSwapFS struct {
+	filesystem.FS
+	swap func()
+}
+
+func (f *folderSwapFS) MkdirAllWithin(root, path string, perm os.FileMode) error {
+	f.swap()
+	return f.FS.MkdirAllWithin(root, path, perm)
+}
+
+func TestShareCreateFolderCannotEscapeAfterParentSwap(t *testing.T) {
+	directory := t.TempDir()
+	shared := filepath.Join(directory, "shared")
+	parent := filepath.Join(shared, "parent")
+	outside := filepath.Join(directory, "outside")
+	for _, path := range []string{parent, outside} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fsys := &folderSwapFS{FS: filesystem.NewOsFS(), swap: func() {
+		if err := os.Rename(parent, parent+"-old"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, parent); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	shares := NewShareService(fsys, ShareServiceConfig{
+		DataDir: filepath.Join(directory, "data"),
+		Mounts: func() []model.MountPoint {
+			return []model.MountPoint{{Name: "media", Path: shared}}
+		},
+	})
+	share, err := shares.Create(context.Background(), "owner", "media", ShareSettings{
+		Permissions: model.SharePermissions{Upload: true, Delete: true, Manage: true},
+	}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := shares.CreateFolderForRecipient(context.Background(), share.Token, "parent/new"); err == nil {
+		t.Fatal("parent symlink swap was accepted")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "new")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("folder created outside the share after parent swap: %v", err)
+	}
+}
+
+type shareBodyReader struct {
+	beforeEOF func()
+}
+
+func (r shareBodyReader) Read([]byte) (int, error) {
+	r.beforeEOF()
+	return 0, io.EOF
+}
+
+func TestShareEmptyEditRechecksManagePermission(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newShareTestService(fsys, shareTestMounts)
+	share, err := shares.Create(context.Background(), "owner", "media", ShareSettings{
+		Permissions: model.SharePermissions{Upload: true, Delete: true, Manage: true},
+	}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := shareBodyReader{beforeEOF: func() {
+		if _, err := shares.Update("owner", share.ID, ShareUpdateSettings{
+			Permissions: model.SharePermissions{Upload: true, Delete: true},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	if _, _, err := shares.WriteForRecipientPath(context.Background(), share.Token, "file.txt", body); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("empty edit after permission downgrade = %v, want permission denied", err)
+	}
+	content, err := fsys.ReadFile("/data/media/file.txt")
+	if err != nil || string(content) != "shared content" {
+		t.Fatalf("original file after rejected edit = %q, error = %v", content, err)
+	}
+}

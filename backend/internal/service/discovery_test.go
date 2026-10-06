@@ -41,7 +41,7 @@ func TestFilterMountedDirsSkipsUnreadableMounts(t *testing.T) {
 	fsy := unreadableMountFS{FS: fsys, path: "/drives/unreadable"}
 
 	got := filterMountedDirs(fsy, entries, model.MountPoint{Name: "drives", Path: "/drives"}, mountSet)
-	if len(got) != 1 || got[0].Name != "readable" {
+	if len(got) != 1 || got[0].Name != "readable" || got[0].Kind != model.MountKindDrive {
 		t.Fatalf("filterMountedDirs() = %+v, want only readable mount", got)
 	}
 }

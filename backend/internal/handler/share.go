@@ -60,6 +60,7 @@ func (h *ShareHandler) RegisterPublicRoutes(r chi.Router) {
 	r.Get("/{token}", h.GetInfo)
 	r.Get("/{token}/items", h.ListItems)
 	r.Delete("/{token}/items", h.DeleteItem)
+	r.Post("/{token}/folders", h.CreateFolder)
 	r.Get("/{token}/download", h.Download)
 	r.Get("/{token}/archive", h.Archive)
 	r.Get("/{token}/preview", h.Preview)
@@ -287,6 +288,26 @@ func (h *ShareHandler) Wallpaper(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "", meta.UpdatedAt, bytes.NewReader(image))
 }
 
+// CreateFolder creates a folder (and missing parents) below a full-access share.
+// POST /api/v1/share/{token}/folders?path=relative/path
+func (h *ShareHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		writeError(w, "Share token is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	folderPath := r.URL.Query().Get("path")
+	if folderPath == "" {
+		writeError(w, "Folder path is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	if err := h.shareService.CreateFolderForRecipient(r.Context(), token, folderPath); err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"success": true}, http.StatusCreated)
+}
+
 // ListItems returns the visible entries below a shared folder.
 // GET /api/v1/share/{token}/items?path=relative/path
 func (h *ShareHandler) ListItems(w http.ResponseWriter, r *http.Request) {
@@ -448,10 +469,7 @@ func (h *ShareHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "This share does not allow uploads", model.ErrCodePermissionDenied, http.StatusForbidden)
 		return
 	}
-	if r.ContentLength == 0 {
-		writeError(w, "Request body is required", model.ErrCodeValidationError, http.StatusBadRequest)
-		return
-	}
+	// The service decides empty bodies: they may empty an existing file but not create one.
 	maxUploadBytes := share.MaxUploadBytes
 	if maxUploadBytes <= 0 || maxUploadBytes > h.maxUploadBytes {
 		maxUploadBytes = h.maxUploadBytes

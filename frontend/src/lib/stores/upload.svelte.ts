@@ -12,6 +12,7 @@ import {
 } from '$lib/utils/upload';
 import { getUploadConfig } from '$lib/api/system';
 import { CONFIG } from '$lib/config';
+import type { UploadEntry } from '$lib/utils/uploadEntries';
 
 export type { UploadProgress };
 
@@ -22,6 +23,8 @@ interface QueueItem {
 	file: File;
 	destPath: string;
 	uploadId: string;
+	/** Name shown in progress: the path below the destination. */
+	displayName: string;
 }
 
 /**
@@ -78,22 +81,23 @@ class UploadStore {
 	}
 
 	/**
-	 * Add files to the upload queue
-	 * @param files Files to upload
+	 * Add files to the upload queue. Folder uploads keep each file's relative path;
+	 * the server creates the missing folders.
+	 * @param entries Files with their path below the destination
 	 * @param destPath Destination directory path (virtual path like "media/movies")
 	 */
-	addFiles(files: File[], destPath: string): void {
-		for (const file of files) {
+	addFiles(entries: UploadEntry[], destPath: string): void {
+		for (const { file, relativePath } of entries) {
 			const uploadId = generateUploadId();
-			const filePath = destPath ? `${destPath}/${file.name}` : file.name;
+			const filePath = destPath ? `${destPath}/${relativePath}` : relativePath;
 
 			// Add to queue
-			this.queue.push({ file, destPath: filePath, uploadId });
+			this.queue.push({ file, destPath: filePath, uploadId, displayName: relativePath });
 
 			// Add initial progress entry
 			const progress: UploadProgress = {
 				uploadId,
-				fileName: file.name,
+				fileName: relativePath,
 				totalSize: file.size,
 				uploadedSize: 0,
 				percentage: 0,
@@ -169,7 +173,7 @@ class UploadStore {
 				const totalChunks = getChunkCount(item.file.size, this.chunkSize);
 				this.updateProgress(item.uploadId, {
 					uploadId: item.uploadId,
-					fileName: item.file.name,
+					fileName: item.displayName,
 					totalSize: item.file.size,
 					uploadedSize: item.file.size,
 					percentage: 100,
@@ -178,7 +182,7 @@ class UploadStore {
 					status: 'complete'
 				});
 				this.refreshPending = true;
-				this.onComplete?.(item.file.name, true);
+				this.onComplete?.(item.displayName, true);
 			} else {
 				this.markFailed(item, result.error || 'Upload failed');
 			}
@@ -205,7 +209,7 @@ class UploadStore {
 		}
 		this.updateProgress(item.uploadId, {
 			uploadId: item.uploadId,
-			fileName: item.file.name,
+			fileName: item.displayName,
 			totalSize: item.file.size,
 			uploadedSize: 0,
 			percentage: 0,
@@ -214,14 +218,17 @@ class UploadStore {
 			status: 'error',
 			error
 		});
-		this.onComplete?.(item.file.name, false, error);
+		this.onComplete?.(item.displayName, false, error);
 	}
 
 	/**
 	 * Update progress for an upload
 	 */
 	private updateProgress(uploadId: string, progress: UploadProgress): void {
-		this.uploads = this.uploads.map((u) => (u.uploadId === uploadId ? { ...progress } : u));
+		// Keep the queued display name (the relative path for folder uploads).
+		this.uploads = this.uploads.map((u) =>
+			u.uploadId === uploadId ? { ...progress, fileName: u.fileName } : u
+		);
 	}
 
 	/**

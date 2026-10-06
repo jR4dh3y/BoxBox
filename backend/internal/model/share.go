@@ -7,10 +7,13 @@ import (
 
 // SharePermissions defines what a share-link recipient may do with a shared resource.
 type SharePermissions struct {
-	View          bool `json:"view"`
-	Download      bool `json:"download"`
-	Upload        bool `json:"upload"`
-	Delete        bool `json:"delete"`
+	View     bool `json:"view"`
+	Download bool `json:"download"`
+	Upload   bool `json:"upload"`
+	Delete   bool `json:"delete"`
+	// Manage ("full access") also lets recipients create folders and edit files.
+	// It requires Upload and Delete.
+	Manage        bool `json:"manage"`
 	LegacyReplace bool `json:"-"`
 }
 
@@ -22,6 +25,7 @@ func (p *SharePermissions) UnmarshalJSON(data []byte) error {
 		Download bool  `json:"download"`
 		Upload   *bool `json:"upload"`
 		Delete   bool  `json:"delete"`
+		Manage   bool  `json:"manage"`
 		Write    bool  `json:"write"`
 	}
 	if err := json.Unmarshal(data, &value); err != nil {
@@ -34,6 +38,7 @@ func (p *SharePermissions) UnmarshalJSON(data []byte) error {
 		p.Upload = *value.Upload
 	}
 	p.Delete = value.Delete
+	p.Manage = value.Manage
 	p.LegacyReplace = value.Upload == nil && value.Write
 	return nil
 }
@@ -44,6 +49,7 @@ type SharePermissionsResponse struct {
 	Download   bool `json:"download"`
 	Upload     bool `json:"upload"`
 	Delete     bool `json:"delete"`
+	Manage     bool `json:"manage"`
 	CanReplace bool `json:"canReplace"`
 	Write      bool `json:"write"` // Deprecated alias for Upload.
 }
@@ -54,6 +60,7 @@ func (p SharePermissions) ToResponse() SharePermissionsResponse {
 		Download:   p.Download,
 		Upload:     p.Upload,
 		Delete:     p.Delete,
+		Manage:     p.Manage,
 		CanReplace: p.Delete || p.LegacyReplace,
 		Write:      p.Upload,
 	}

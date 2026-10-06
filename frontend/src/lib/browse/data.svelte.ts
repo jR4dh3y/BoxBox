@@ -156,6 +156,11 @@ export function useBrowseData(location: BrowseLocation) {
 				});
 			}
 		},
+		/** Marks every loaded folder stale, for changes that may land outside the open one. */
+		refreshAll() {
+			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directories() });
+			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.searches() });
+		},
 		/** The toolbar refresh button. */
 		reload() {
 			if (isAtRoot) void driveStatsQuery.refetch();

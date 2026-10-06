@@ -50,6 +50,10 @@ type FS interface {
 	// RenameNoReplace publishes oldpath at newpath only if newpath does not exist.
 	RenameNoReplace(oldpath, newpath string) error
 
+	// MkdirAllWithin creates directories relative to an already resolved root,
+	// keeping the mutation confined even if a parent is replaced by a symlink.
+	MkdirAllWithin(root, path string, perm os.FileMode) error
+
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
 
@@ -277,6 +281,30 @@ func renameNoReplaceWithLink(oldpath, newpath string, link func(string, string) 
 		return err
 	}
 	return nil
+}
+
+// MkdirAllWithin keeps directory creation beneath root at the filesystem boundary.
+func (a *AferoFS) MkdirAllWithin(root, path string, perm os.FileMode) error {
+	if err := validateFilesystemPath(root); err != nil {
+		return err
+	}
+	if err := validateFilesystemPath(path); err != nil {
+		return err
+	}
+	if !fs.ValidPath(filepath.ToSlash(path)) {
+		return errInvalidFilesystemPath
+	}
+	root = filepath.Clean("/" + root)
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		directory, err := os.OpenRoot(root)
+		if err != nil {
+			return err
+		}
+		defer directory.Close()
+		return directory.MkdirAll(path, perm)
+	}
+	// MemMapFs has no symlinks or external filesystem writers.
+	return a.fs.MkdirAll(filepath.Join(root, filepath.Clean("/"+path)), perm)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.

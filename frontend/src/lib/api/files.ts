@@ -37,6 +37,8 @@ export interface MountPoint {
 	path: string;
 	readOnly: boolean;
 	autoDiscover?: boolean;
+	/** Drives are storage roots; places are folder shortcuts such as Downloads. */
+	kind?: 'drive' | 'place';
 }
 
 /**

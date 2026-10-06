@@ -1,8 +1,21 @@
 <script lang="ts">
 	/**
-	 * Sidebar component - navigation panel with places and favorites
+	 * Sidebar component - navigation panel with drives, places, and favorites
 	 */
-	import { ChevronDown, Server, HardDrive, Star, X } from 'lucide-svelte';
+	import {
+		ChevronDown,
+		Download,
+		FileText,
+		Folder,
+		HardDrive,
+		Image,
+		Monitor,
+		Music,
+		Server,
+		Star,
+		Video,
+		X
+	} from 'lucide-svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import type { MountPoint } from '$lib/api/files';
 
@@ -14,10 +27,30 @@
 
 	let { currentPath = '', roots = [], onNavigate }: Props = $props();
 
-	const places = $derived([
+	const PLACE_ICONS: Record<string, typeof Folder> = {
+		desktop: Monitor,
+		downloads: Download,
+		documents: FileText,
+		music: Music,
+		pictures: Image,
+		videos: Video
+	};
+
+	const drives = $derived([
 		{ name: 'This Server', path: '', icon: Server },
-		...roots.map((root) => ({ name: root.name, path: root.name, icon: HardDrive }))
+		...roots
+			.filter((root) => root.kind !== 'place')
+			.map((root) => ({ name: root.name, path: root.name, icon: HardDrive }))
 	]);
+	const places = $derived(
+		roots
+			.filter((root) => root.kind === 'place')
+			.map((root) => ({
+				name: root.name,
+				path: root.name,
+				icon: PLACE_ICONS[root.name.toLowerCase()] ?? Folder
+			}))
+	);
 
 	function isActive(path: string): boolean {
 		if (path === '' && currentPath === '') return true;
@@ -29,6 +62,7 @@
 	}
 
 	// Collapsed sections state
+	let drivesCollapsed = $state(false);
 	let placesCollapsed = $state(false);
 	let favoritesCollapsed = $state(false);
 
@@ -45,34 +79,67 @@
 <aside
 	class="flex w-[220px] min-w-[220px] flex-col overflow-x-hidden overflow-y-auto border-r border-border-secondary bg-surface-primary"
 >
-	<!-- Places Section -->
+	<!-- Drives Section -->
 	<div class="border-b border-border-secondary">
 		<button
 			type="button"
 			class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-3 py-2.5 text-left text-[11px] font-medium tracking-wide text-text-secondary uppercase hover:text-text-primary"
-			onclick={() => (placesCollapsed = !placesCollapsed)}
+			onclick={() => (drivesCollapsed = !drivesCollapsed)}
 		>
 			<ChevronDown
 				size={14}
-				class="shrink-0 transition-transform duration-150 {placesCollapsed ? '-rotate-90' : ''}"
+				class="shrink-0 transition-transform duration-150 {drivesCollapsed ? '-rotate-90' : ''}"
 			/>
-			<span>Places</span>
+			<span>Drives</span>
 		</button>
-		{#if !placesCollapsed}
+		{#if !drivesCollapsed}
 			<div class="pb-2">
-				{#each places as place (place.path)}
+				{#each drives as drive (drive.path)}
 					<button
 						type="button"
-						class="{navItemClass} {isActive(place.path) ? navItemActiveClass : ''}"
-						onclick={() => handleNavigate(place.path)}
+						class="{navItemClass} {isActive(drive.path) ? navItemActiveClass : ''}"
+						onclick={() => handleNavigate(drive.path)}
 					>
-						<place.icon size={16} class="shrink-0 opacity-80" />
-						<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{place.name}</span>
+						<drive.icon size={16} class="shrink-0 opacity-80" />
+						<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{drive.name}</span>
 					</button>
 				{/each}
 			</div>
 		{/if}
 	</div>
+
+	{#if places.length > 0}
+		<!-- Places Section -->
+		<div class="border-b border-border-secondary">
+			<button
+				type="button"
+				class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-3 py-2.5 text-left text-[11px] font-medium tracking-wide text-text-secondary uppercase hover:text-text-primary"
+				onclick={() => (placesCollapsed = !placesCollapsed)}
+			>
+				<ChevronDown
+					size={14}
+					class="shrink-0 transition-transform duration-150 {placesCollapsed ? '-rotate-90' : ''}"
+				/>
+				<span>Places</span>
+			</button>
+			{#if !placesCollapsed}
+				<div class="pb-2">
+					{#each places as place (place.path)}
+						<button
+							type="button"
+							class="{navItemClass} {isActive(place.path) ? navItemActiveClass : ''}"
+							onclick={() => handleNavigate(place.path)}
+						>
+							<place.icon size={16} class="shrink-0 opacity-80" />
+							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+								>{place.name}</span
+							>
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Favorites Section -->
 	<div class="border-b border-border-secondary">

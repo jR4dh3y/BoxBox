@@ -90,6 +90,7 @@ func filterMountedDirs(fsys filesystem.FS, entries []fs.DirEntry, parent model.M
 			Path:         subPath,
 			ReadOnly:     parent.ReadOnly,
 			AutoDiscover: false,
+			Kind:         model.MountKindDrive,
 		})
 	}
 

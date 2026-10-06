@@ -54,6 +54,7 @@
 			onRefresh={data.reload}
 			onSettings={() => goto(resolve('/settings'))}
 			onUpload={uploads.openPicker}
+			onUploadFolder={uploads.openFolderPicker}
 			uploadDisabled={data.uploadDisabled}
 			showSearch={!data.isAtRoot}
 			searchValue={location.searchQuery}
@@ -192,6 +193,13 @@
 	bind:this={uploads.fileInput}
 	type="file"
 	multiple
+	class="hidden"
+	onchange={uploads.handleInputChange}
+/>
+<input
+	bind:this={uploads.folderInput}
+	type="file"
+	webkitdirectory
 	class="hidden"
 	onchange={uploads.handleInputChange}
 />

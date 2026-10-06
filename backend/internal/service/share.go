@@ -62,6 +62,9 @@ type ShareService interface {
 	WriteForRecipientPath(ctx context.Context, token string, relativePath string, body io.Reader) (int64, string, error)
 	// DeleteForRecipientPath removes a file or subfolder below a deletable share.
 	DeleteForRecipientPath(ctx context.Context, token string, relativePath string) error
+	// CreateFolderForRecipient creates a folder (and any missing parents) below a
+	// full-access share.
+	CreateFolderForRecipient(ctx context.Context, token string, relativePath string) error
 	// PrepareDirectoryArchive validates a recipient folder and prepares its ZIP archive.
 	PrepareDirectoryArchive(ctx context.Context, token string, relativePath string) (*DirectoryArchive, error)
 }
@@ -167,6 +170,9 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 	}
 	if isFolder {
 		if permissions.Delete && !permissions.Upload {
+			return nil, ErrInvalidOperation
+		}
+		if permissions.Manage && (!permissions.Upload || !permissions.Delete) {
 			return nil, ErrInvalidOperation
 		}
 		permissions.View = true
@@ -292,11 +298,15 @@ func (s *shareService) Update(username string, id string, settings ShareUpdateSe
 	if requestedPermissions.Delete && !requestedPermissions.Upload {
 		return nil, ErrInvalidOperation
 	}
+	if requestedPermissions.Manage && (!requestedPermissions.Upload || !requestedPermissions.Delete) {
+		return nil, ErrInvalidOperation
+	}
 	permissions := model.SharePermissions{
 		View:          true,
 		Download:      true,
 		Upload:        requestedPermissions.Upload,
 		Delete:        requestedPermissions.Delete,
+		Manage:        requestedPermissions.Manage,
 		LegacyReplace: requestedPermissions.LegacyReplace && requestedPermissions.Upload && !requestedPermissions.Delete,
 	}
 
@@ -560,7 +570,8 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	}
 	canReplace := share.Permissions.Delete || share.Permissions.LegacyReplace
 	replacementMode := os.FileMode(0o644)
-	if exists, existsErr := s.fs.Exists(target); existsErr != nil {
+	exists, existsErr := s.fs.Exists(target)
+	if existsErr != nil {
 		return 0, "", existsErr
 	} else if exists {
 		if !canReplace {
@@ -605,7 +616,9 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	if copyErr != nil {
 		return 0, "", copyErr
 	}
-	if written == 0 {
+	// An empty upload is rejected so a failed upload cannot wipe a file. Full
+	// access links edit files, and an edit may leave one empty.
+	if written == 0 && !(exists && share.Permissions.Manage) {
 		return 0, "", ErrInvalidOperation
 	}
 	if written > share.MaxUploadBytes {
@@ -628,6 +641,9 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 		return 0, "", ErrPermissionDenied
 	}
 	canReplace = share.Permissions.Delete || share.Permissions.LegacyReplace
+	if written == 0 && !share.Permissions.Manage {
+		return 0, "", ErrPermissionDenied
+	}
 	if written > share.MaxUploadBytes {
 		return 0, "", ErrShareTooLarge
 	}
@@ -668,6 +684,42 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	}
 	complete = true
 	return written, filepath.Base(finalPath), nil
+}
+
+func (s *shareService) CreateFolderForRecipient(ctx context.Context, token string, relativePath string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	share, err := s.resolveActiveShareLocked(token, time.Now())
+	if err != nil {
+		return err
+	}
+	if !share.IsFolder || !share.Permissions.Manage {
+		return ErrPermissionDenied
+	}
+	cleanPath, err := cleanShareRelativePath(relativePath)
+	if err != nil {
+		return err
+	}
+	if cleanPath == "" {
+		return ErrInvalidOperation
+	}
+	// allowMissing resolves symlinks in the existing part of the path and keeps the
+	// result inside both the mount and the shared folder.
+	mount, target, root, err := s.resolveFolderPath(share, cleanPath, true)
+	if err != nil {
+		return err
+	}
+	if mount.ReadOnly || !pathWithinRoot(root, target) || target == root {
+		return ErrPermissionDenied
+	}
+	if info, err := s.fs.Lstat(target); err == nil && !info.IsDir() {
+		return ErrPathExists
+	}
+	return s.fs.MkdirAllWithin(root, filepath.FromSlash(cleanPath), 0o755)
 }
 
 func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string, relativePath string) error {
