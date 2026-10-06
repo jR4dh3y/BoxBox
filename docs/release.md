@@ -2,6 +2,46 @@
 
 Use this workflow to keep stable releases and nightly builds in separate GHCR packages while still getting automatic nightly and branch images for testing.
 
+## v0.3.0 Release Notes
+
+`v0.3.0` adds file and folder sharing, folder uploads, separate Drives and Places in the sidebar, and a redesigned share page. It also moves the default container port from `80` to `8080`.
+
+### Highlights
+
+- Share a file or folder with a token link. Folder links offer View only, Upload only, Upload + delete, and Full access. Links can expire, can be revoked, and are managed from **Settings → Shared Links**.
+- Recipients get a public share page with a path bar, file list, previews, a code editor for text files (read-only unless the link has full access), previous/next navigation, and ZIP downloads for folders.
+- Upload whole folders from the file browser or a full-access share page by choosing a folder or dragging one in. Nested paths stay intact.
+- The sidebar lists Drives and Places separately. A mount inside another mount, such as `Downloads` inside `home`, is a place. Set `kind: drive` or `kind: place` on a mount point to choose explicitly.
+- Each user's wallpaper is stored on the server and shown on their share pages.
+- `auto_discover` mounts are no longer dropped at startup, so discovered drives appear again. Inaccessible discovered mounts are skipped.
+- `chunk_size_mb` now controls browser upload chunks. The default is `10`.
+- Context-menu shortcuts (F2, Delete, Ctrl/Cmd+C/X/V) work from the keyboard, and dialogs take focus when they open.
+- The backend now builds with Go 1.27. The frontend state moved to Svelte 5 runes.
+
+### Upgrade notes
+
+- **The container now listens on `8080`.** The container side of the port mapping, the healthcheck, and any reverse proxy that reaches the container directly must use the same port as `port` in `config.yaml` (or `BOXBOX_PORT`). The simplest path is to download the new `docker-compose.yml` and set `port: 8080` in your bind-mounted `config.yaml`. If you keep your v0.2.2 `docker-compose.yml`, which maps and health-checks port `80`, set `BOXBOX_PORT=80` instead.
+- Share links and stored wallpapers live in the data directory (`/data` in the container), in `shares.json` and the `wallpapers/` folder. Keep the `boxbox-data` volume when you recreate the container, or existing links stop working.
+- Nested mounts now appear under Places instead of Drives, and only drives appear on **This Server**. Add `kind: drive` to any mount you want to keep listed as a drive.
+- Back up `shares.json` before downgrading. Older versions cannot keep the per-link upload/delete permissions and upload caps if they rewrite the file.
+- Read the [security guide](/docs/security/#share-links) for how share tokens, rate limits, and recipient access work.
+
+The stable Docker workflow runs from the `v0.3.0` tag and publishes:
+
+```text
+ghcr.io/jr4dh3y/boxbox:v0.3.0
+ghcr.io/jr4dh3y/boxbox:latest
+```
+
+To update an existing deployment after the image is published:
+
+```bash
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.3.0 docker compose pull
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.3.0 docker compose up -d
+```
+
+To roll back, set `BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.2.2` and keep the server on the port your compose file maps and health-checks. With the v0.3.0 compose file, keep `port: 8080` in `config.yaml` (or set `BOXBOX_PORT=8080`); v0.2.2 honors both. Then pull and restart.
+
 ## v0.2.2 Release Notes
 
 `v0.2.2` is a security and deployment-focused release. It adds the single-binary build and loopback-only development mode, refactors browsing/streaming and uploads, fixes upload finalization races, and adds stronger mount, job, preview, authentication, and container isolation.
@@ -173,8 +213,8 @@ When the tested change is merged into `master`, tag the release:
 ```bash
 git switch master
 git pull
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 The release workflow runs the preflight again, publishes the version tags, and updates:

@@ -39,7 +39,7 @@ HOST_PORT=8080
 # DOWNLOADS_PATH=/mnt/downloads
 PUID=10001
 PGID=10001
-BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.3.0
 ```
 
 Generate the password hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`. Keep the hash single-quoted because bcrypt hashes contain `$`.
@@ -51,10 +51,10 @@ Open `http://localhost:8080`, or use the host and port you configured with `HOST
 Release images are published to GitHub Container Registry:
 
 ```bash
-docker pull ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
+docker pull ghcr.io/jr4dh3y/boxbox:v0.3.0
 ```
 
-Stable release tags update `latest`. Prerelease tags such as `v0.2.0-rc.1` publish versioned images without moving `latest`, nightly builds publish to the dedicated `boxbox-nightly` package, and test branch images publish under branch-scoped tags in the `boxbox-branch` package, such as `ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change`.
+Stable release tags update `latest`. Prerelease tags such as `v0.3.1-rc.1` publish versioned images without moving `latest`, nightly builds publish to the dedicated `boxbox-nightly` package, and test branch images publish under branch-scoped tags in the `boxbox-branch` package, such as `ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change`.
 
 See [Release workflow](/docs/release/) for the full test-branch and stable-release process.
 
@@ -100,7 +100,7 @@ mount_points:
     read_only: false
 EOF
 
-docker pull ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
+docker pull ghcr.io/jr4dh3y/boxbox:v0.3.0
 
 docker run -d \
   --name boxbox \
@@ -114,7 +114,7 @@ docker run -d \
   -v "$HOME:/home/user" \
   -v boxbox-data:/data \
   -v boxbox-temp:/tmp/boxbox \
-  ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
+  ghcr.io/jr4dh3y/boxbox:v0.3.0
 ```
 
 Open `http://localhost:8080` and sign in as `admin` with the plaintext password used to generate the hash.
@@ -182,7 +182,7 @@ docker compose up -d
 For a `docker run` deployment:
 
 ```bash
-docker pull ghcr.io/jr4dh3y/boxbox:v0.1.6@sha256:6dbc7f2b935125d534a050da2cda4a1e732660a03ba5d59eaed4bd54d1920962
+docker pull ghcr.io/jr4dh3y/boxbox:v0.3.0
 docker stop boxbox
 docker rm boxbox
 # Re-run the docker run command with the same volumes and env values.

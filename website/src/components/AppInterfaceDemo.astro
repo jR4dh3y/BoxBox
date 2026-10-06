@@ -31,16 +31,40 @@ import {
 <div id="demo" class="w-full max-w-[1400px] mt-24 mb-32 flex flex-col items-center justify-center relative isolate" style="--hero-glow: rgba(146, 124, 255, 0.32);">
   <div class="pointer-events-none absolute left-1/2 top-1/2 h-[86%] w-[118%] -translate-x-1/2 -translate-y-[42%] demo-hero-glow z-0"></div>
   <div
+    id="demo-stage"
+    class="w-full grid grid-cols-1 items-center transition-transform duration-300 ease-out origin-top relative z-10"
+    style="transform: perspective(2000px) translateY(-50px) rotateX(20deg) scale(0.85);"
+  >
+  <div
+    data-slide="0"
+    data-active
+    aria-label="BoxBox promo video"
+    class="demo-slide col-start-1 row-start-1 w-full rounded-[14px] overflow-hidden border border-[#2a2a2a] bg-black"
+    style="box-shadow: 0 24px 70px rgba(0, 0, 0, 0.72), 0 0 96px var(--hero-glow);"
+  >
+    <video
+      id="demo-video"
+      class="block w-full aspect-video"
+      src="/media/boxbox-promo.mp4"
+      poster="/media/boxbox-promo-poster.jpg"
+      muted
+      playsinline
+      controls
+      preload="metadata"
+    ></video>
+  </div>
+  <div
     id="app-window"
+    data-slide="1"
     inert
-    class="w-full rounded-[14px] overflow-hidden border border-[#2a2a2a] transition-all duration-300 ease-out bg-[#161616] origin-top relative z-10"
-    style="transform: perspective(2000px) translateY(-50px) rotateX(20deg) scale(0.85); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.72), 0 0 96px var(--hero-glow); --hero-wallpaper: url('/wallpapers/evernight.png'); --hero-glow: rgba(146, 124, 255, 0.32); --color-accent: #a892ff; --color-accent-hover: #7b69c5; --color-accent-muted: #473d68; --color-selection: #463c67; --color-selection-hover: #7b69c5; --color-border-focus: #a892ff;"
+    class="demo-slide col-start-1 row-start-1 w-full rounded-[14px] overflow-hidden border border-[#2a2a2a] bg-[#161616] relative"
+    style="box-shadow: 0 24px 70px rgba(0, 0, 0, 0.72), 0 0 96px var(--hero-glow); --hero-wallpaper: url('/wallpapers/evernight.png'); --hero-glow: rgba(146, 124, 255, 0.32); --color-accent: #a892ff; --color-accent-hover: #7b69c5; --color-accent-muted: #473d68; --color-selection: #463c67; --color-selection-hover: #7b69c5; --color-border-focus: #a892ff;"
   >
     <div class="absolute inset-0 demo-wallpaper-layer"></div>
     <div id="demo-wallpaper-fade" class="absolute inset-0 demo-wallpaper-fade"></div>
     <div class="absolute inset-0 bg-black/35"></div>
 
-    <div class="flex h-[600px] md:h-[750px] w-full bg-[#161616]/55 text-text-primary text-[13px] font-sans relative z-10 backdrop-blur-[2px]">
+    <div class="flex h-[600px] md:h-auto md:aspect-video w-full bg-[#161616]/55 text-text-primary text-[13px] font-sans relative z-10 backdrop-blur-[2px]">
       <div class="w-[220px] min-w-[220px] bg-[#1e1e1e]/78 border-r border-[#2a2a2a] hidden md:flex md:flex-col backdrop-blur-md">
         <div class="border-b border-border-secondary">
           <button class="w-full flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
@@ -203,12 +227,26 @@ import {
       </div>
     </div>
   </div>
-  <p class="mt-4 text-sm text-text-secondary">Interface preview with sample files and storage. <a href="#sharing" class="text-accent underline underline-offset-4 hover:text-white">Explore folder sharing</a></p>
+  </div>
+  <div class="mt-4 flex items-center justify-center gap-3 text-sm text-text-secondary">
+    <button id="demo-prev" type="button" aria-label="Show promo video" class="demo-arrow" disabled>
+      <ChevronLeft class="w-4 h-4" />
+    </button>
+    <p data-caption="0">BoxBox in 40 seconds. Music: <a href="https://www.youtube.com/watch?v=LL9VJAljSQs" target="_blank" rel="noopener" class="text-accent underline underline-offset-4 hover:text-white">“the kill 2” by Lex Amarni &amp; 2muchmotion</a></p>
+    <p data-caption="1" hidden>Interface preview with sample files and storage. <a href="#sharing" class="text-accent underline underline-offset-4 hover:text-white">Explore folder sharing</a></p>
+    <button id="demo-next" type="button" aria-label="Show interface preview" class="demo-arrow">
+      <ChevronRight class="w-4 h-4" />
+    </button>
+  </div>
 </div>
 
 <script>
   const appWindow = document.getElementById('app-window');
   const demo = document.getElementById('demo');
+  const stage = document.getElementById('demo-stage');
+  const video = document.getElementById('demo-video') as HTMLVideoElement | null;
+  const prevButton = document.getElementById('demo-prev') as HTMLButtonElement | null;
+  const nextButton = document.getElementById('demo-next') as HTMLButtonElement | null;
   const wallpaperFade = document.getElementById('demo-wallpaper-fade');
   const root = document.documentElement;
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -301,8 +339,8 @@ import {
     demo.style.setProperty('--hero-glow', theme.glow);
   }
 
-  if (appWindow) {
-    const demoWindow = appWindow;
+  if (appWindow && stage) {
+    const demoStage = stage;
     let ticking = false;
     let themeIndex = 0;
     let themeStarted = false;
@@ -310,7 +348,7 @@ import {
 
     function updateDemoTransform() {
       if (motionPreference.matches) {
-        demoWindow.style.transform = 'none';
+        demoStage.style.transform = 'none';
         return;
       }
       const scrollY = window.scrollY;
@@ -321,7 +359,7 @@ import {
       const scale = 0.85 + (0.15 * easeProgress);
       const translateY = -50 * (1 - easeProgress);
 
-      demoWindow.style.transform = `perspective(2000px) translateY(${translateY}px) rotateX(${rotateX}deg) scale(${scale})`;
+      demoStage.style.transform = `perspective(2000px) translateY(${translateY}px) rotateX(${rotateX}deg) scale(${scale})`;
     }
 
     window.addEventListener('scroll', () => {
@@ -360,24 +398,88 @@ import {
     updateDemoTransform();
     applyTheme(themes[themeIndex], false, false);
 
+    // Slide 0 is the promo video, slide 1 the interface preview. The video
+    // plays while it is the visible slide and hands over to the preview when
+    // it ends; the theme cycle starts the first time the preview is shown.
+    let activeSlide = 0;
+    let demoVisible = false;
+    // Set when the visitor pauses with the native controls, so scrolling
+    // back into view does not resume playback against their wishes.
+    let userPaused = false;
+    let syncPausesPending = 0;
+
+    function syncVideo() {
+      if (!video) return;
+      if (activeSlide === 0 && demoVisible && !userPaused && !motionPreference.matches) {
+        video.play().catch(() => {
+          // Autoplay can be refused; the native controls still work.
+        });
+      } else if (!video.paused) {
+        syncPausesPending += 1;
+        video.pause();
+      }
+    }
+
+    function showSlide(index: number) {
+      activeSlide = index;
+      document.querySelectorAll<HTMLElement>('#demo [data-slide]').forEach((slide) => {
+        slide.toggleAttribute('data-active', Number(slide.dataset.slide) === index);
+      });
+      document.querySelectorAll<HTMLElement>('#demo [data-caption]').forEach((caption) => {
+        caption.hidden = Number(caption.dataset.caption) !== index;
+      });
+      if (prevButton) prevButton.disabled = index === 0;
+      if (nextButton) nextButton.disabled = index === 1;
+      if (video) video.inert = index !== 0;
+      if (index === 1) startThemeCycle();
+      syncVideo();
+    }
+
+    prevButton?.addEventListener('click', () => {
+      userPaused = false;
+      showSlide(0);
+      nextButton?.focus();
+    });
+    nextButton?.addEventListener('click', () => {
+      showSlide(1);
+      prevButton?.focus();
+    });
+    video?.addEventListener('ended', () => showSlide(1));
+    video?.addEventListener('play', () => {
+      userPaused = false;
+    });
+    video?.addEventListener('pause', () => {
+      if (syncPausesPending > 0) {
+        syncPausesPending -= 1;
+        return;
+      }
+      if (video && !video.ended) userPaused = true;
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (!demoVisible || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest('input, textarea, select, video, [contenteditable]')) return;
+      if (event.key === 'ArrowRight' && activeSlide === 0) showSlide(1);
+      else if (event.key === 'ArrowLeft' && activeSlide === 1) {
+        userPaused = false;
+        showSlide(0);
+      }
+    });
+
+    motionPreference.addEventListener('change', syncVideo);
+    showSlide(0);
+
     if ('IntersectionObserver' in window && demo) {
-      const themeObserver = new IntersectionObserver((entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          startThemeCycle();
-          themeObserver.disconnect();
-        }
-      }, { threshold: 0.22 });
+      const demoObserver = new IntersectionObserver((entries) => {
+        demoVisible = entries.some((entry) => entry.isIntersecting);
+        syncVideo();
+      }, { threshold: 0.4 });
 
-      themeObserver.observe(demo);
+      demoObserver.observe(demo);
     } else {
-      window.addEventListener('scroll', () => {
-        if (!demo || themeStarted) return;
-
-        const rect = demo.getBoundingClientRect();
-        if (rect.top < window.innerHeight * 0.78 && rect.bottom > 0) {
-          startThemeCycle();
-        }
-      }, { passive: true });
+      demoVisible = true;
+      syncVideo();
     }
   }
 </script>
@@ -400,6 +502,48 @@ import {
     opacity: 0;
     pointer-events: none;
     transition: opacity 900ms ease;
+  }
+
+  .demo-slide {
+    transition: opacity 500ms ease, visibility 500ms;
+  }
+
+  /* The hidden slide leaves the grid flow so the stage takes the height of
+     the visible one; on mobile the interface is taller than the video. */
+  .demo-slide:not([data-active]) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    opacity: 0;
+    visibility: hidden;
+  }
+
+  .demo-arrow {
+    display: inline-flex;
+    width: 2rem;
+    height: 2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 1px solid var(--color-border-primary, #333);
+    color: var(--color-text-primary, #e5e5e5);
+    transition: color 150ms ease, border-color 150ms ease, opacity 150ms ease;
+  }
+
+  .demo-arrow:hover:not(:disabled) {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+
+  .demo-arrow:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .demo-slide {
+      transition: none;
+    }
   }
 
   .demo-hero-glow {
