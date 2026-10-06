@@ -134,6 +134,13 @@ const (
 
 	// SharesFileName is the filename for storing share link records
 	SharesFileName = "shares.json"
+
+	// WallpapersDirName is the data subdirectory holding each user's wallpaper,
+	// which share pages show behind the shared files.
+	WallpapersDirName = "wallpapers"
+
+	// MaxWallpaperBytes caps a stored wallpaper image.
+	MaxWallpaperBytes = 20 * 1024 * 1024
 )
 
 // ============================================================================

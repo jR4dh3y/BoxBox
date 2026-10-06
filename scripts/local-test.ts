@@ -61,7 +61,11 @@ const prefixes = {
 const processes: Subprocess[] = [];
 const lineHandlers = new WeakMap<Subprocess, (line: string) => void>();
 const tempDir = mkdtempSync(join(tmpdir(), "boxbox-local-"));
-const dataDir = join(tempDir, "data");
+// BOXBOX_LOCAL_DATA_DIR keeps data (share links, sessions, wallpapers) across
+// restarts; by default it lives in the temp dir and is removed on exit.
+const dataDir = process.env.BOXBOX_LOCAL_DATA_DIR
+  ? resolve(process.env.BOXBOX_LOCAL_DATA_DIR)
+  : join(tempDir, "data");
 const quickAccessStubRoot = join(tempDir, "home-folders");
 const viteConfigPath = join(
   frontendRoot,

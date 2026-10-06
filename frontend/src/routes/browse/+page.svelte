@@ -13,7 +13,6 @@
 	import FilePreview from '$lib/components/FilePreview.svelte';
 	import BrowseDialogs from '$lib/components/BrowseDialogs.svelte';
 	import ShareModal from '$lib/components/ShareModal.svelte';
-	import FolderShareModal from '$lib/components/FolderShareModal.svelte';
 	import UploadPanel from '$lib/components/UploadPanel.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
 	import { Spinner } from '$lib/components/ui';
@@ -183,14 +182,9 @@
 
 <!-- Share Modal -->
 <ShareModal
-	open={actions.shareDialog.open}
-	file={actions.shareDialog.file}
+	open={actions.shareItem !== null}
+	item={actions.shareItem}
 	onclose={actions.closeShare}
-/>
-<FolderShareModal
-	open={actions.folderShareDialog.open}
-	folder={actions.folderShareDialog.folder}
-	onclose={actions.closeFolderShare}
 />
 
 <!-- Hidden file input for upload button -->

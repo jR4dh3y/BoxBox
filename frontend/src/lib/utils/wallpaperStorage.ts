@@ -66,6 +66,19 @@ export async function resolveLocalWallpaperUrl(reference: string): Promise<strin
 	const cachedUrl = localWallpaperUrlCache.get(id);
 	if (cachedUrl) return cachedUrl;
 
+	const blob = await getLocalWallpaperBlob(reference);
+	if (!blob) return null;
+
+	const url = URL.createObjectURL(blob);
+	localWallpaperUrlCache.set(id, url);
+	return url;
+}
+
+/** The stored image for a local wallpaper reference, or null when it is missing. */
+export async function getLocalWallpaperBlob(reference: string): Promise<Blob | null> {
+	const id = getLocalWallpaperId(reference);
+	if (!id) return null;
+
 	const database = await openWallpaperDatabase();
 
 	try {
@@ -75,12 +88,7 @@ export async function resolveLocalWallpaperUrl(reference: string): Promise<strin
 		>;
 		const wallpaper = await requestToPromise(request);
 		await waitForTransaction(transaction);
-
-		if (!wallpaper) return null;
-
-		const url = URL.createObjectURL(wallpaper.blob);
-		localWallpaperUrlCache.set(id, url);
-		return url;
+		return wallpaper?.blob ?? null;
 	} finally {
 		database.close();
 	}
@@ -144,7 +152,7 @@ function waitForTransaction(transaction: IDBTransaction): Promise<void> {
 	});
 }
 
-function dataUrlToBlob(dataUrl: string): Blob {
+export function dataUrlToBlob(dataUrl: string): Blob {
 	const commaIndex = dataUrl.indexOf(',');
 	if (commaIndex === -1) throw new Error('Invalid image data URL.');
 

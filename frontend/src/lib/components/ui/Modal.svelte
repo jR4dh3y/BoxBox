@@ -61,9 +61,11 @@
 			class="mx-4 flex max-h-[90vh] w-full {widthClass} flex-col overflow-hidden rounded-lg border border-border-primary bg-surface-primary shadow-xl"
 		>
 			{#if title}
-				<div class="flex items-center justify-between border-b border-border-secondary px-4 py-3">
-					<h2 class="text-lg font-medium text-text-primary">{title}</h2>
-					<div class="flex items-center gap-2">
+				<div
+					class="flex items-center justify-between gap-3 border-b border-border-secondary px-4 py-3"
+				>
+					<h2 class="min-w-0 truncate text-lg font-medium text-text-primary" {title}>{title}</h2>
+					<div class="flex shrink-0 items-center gap-2">
 						{@render headerActions?.()}
 						<button
 							type="button"

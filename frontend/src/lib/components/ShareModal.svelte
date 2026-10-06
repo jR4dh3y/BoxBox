@@ -1,56 +1,59 @@
 <script lang="ts">
 	/**
-	 * ShareModal - Create and manage share links for a single file
+	 * ShareModal - list an item's share links and create new ones. Folders also choose recipient access.
 	 */
-	import { Check, Copy, Link2, Trash2 } from 'lucide-svelte';
 	import { Button, Modal, Select, Spinner } from '$lib/components/ui';
+	import ShareLinkList from '$lib/components/ShareLinkList.svelte';
 	import {
 		createShare,
-		hasShareExpiry,
 		listShares,
-		revokeShare,
-		type CreateShareResponse,
 		type FileInfo,
+		type SharePermissionInput,
 		type ShareRecord
 	} from '$lib/api';
-	import { toastStore } from '$lib/stores/toast.svelte';
-	import { formatDate } from '$lib/utils/format';
 
 	interface Props {
 		open?: boolean;
-		file?: FileInfo | null;
+		item?: FileInfo | null;
 		onclose?: () => void;
 	}
 
-	let { open = false, file = null, onclose }: Props = $props();
+	let { open = false, item = null, onclose }: Props = $props();
 
+	type FolderAccess = 'view' | 'upload' | 'upload-delete';
+
+	const ACCESS_OPTIONS: Array<{ value: FolderAccess; label: string }> = [
+		{ value: 'view', label: 'View only' },
+		{ value: 'upload', label: 'Upload only' },
+		{ value: 'upload-delete', label: 'Upload + delete' }
+	];
 	const EXPIRY_OPTIONS = [
+		{ value: '0', label: 'Never' },
 		{ value: '3600', label: '1 hour' },
 		{ value: '86400', label: '1 day' },
 		{ value: '604800', label: '7 days' },
-		{ value: '2592000', label: '30 days' },
-		{ value: '0', label: 'Never' }
+		{ value: '2592000', label: '30 days' }
 	];
+	const labelClass = 'mb-1.5 block text-[13px] text-text-secondary';
 
 	let shares = $state<ShareRecord[]>([]);
 	let loading = $state(false);
 	let creating = $state(false);
 	let error = $state<string | null>(null);
+	let access = $state<FolderAccess>('view');
 	let expiry = $state('0');
-	let created = $state<CreateShareResponse | null>(null);
-	let copied = $state(false);
+	let maxUploadMB = $state<number | undefined>(undefined);
+	let createdId = $state<string | null>(null);
 
-	const activeShares = $derived.by(() => {
-		if (!file) return [];
-		return shares.filter((share) => share.path === file.path);
-	});
-	const createdUrl = $derived(created ? `${window.location.origin}${created.url}` : '');
+	const itemShares = $derived(item ? shares.filter((share) => share.path === item.path) : []);
+	const allowsUpload = $derived(item?.isDir === true && access !== 'view');
 
 	$effect(() => {
-		if (open && file) {
+		if (open && item) {
+			access = 'view';
 			expiry = '0';
-			created = null;
-			copied = false;
+			maxUploadMB = undefined;
+			createdId = null;
 			error = null;
 			void loadShares();
 		}
@@ -58,10 +61,8 @@
 
 	async function loadShares() {
 		loading = true;
-		error = null;
 		try {
-			const response = await listShares();
-			shares = response.shares;
+			shares = (await listShares()).shares;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Unable to load share links.';
 		} finally {
@@ -70,15 +71,34 @@
 	}
 
 	async function handleCreate() {
-		if (!file || creating) return;
+		if (!item || creating) return;
+		if (allowsUpload && maxUploadMB !== undefined) {
+			if (!Number.isSafeInteger(maxUploadMB) || maxUploadMB < 1) {
+				error = 'Max upload must be a whole number of MB.';
+				return;
+			}
+		}
 		creating = true;
 		error = null;
 		try {
-			const expiresInSeconds = expiry === '0' ? undefined : Number(expiry);
-			created = await createShare(file.path, {
-				...(expiresInSeconds ? { expiresInSeconds } : {})
+			const permissions: SharePermissionInput | undefined = item.isDir
+				? {
+						view: true,
+						download: true,
+						upload: access !== 'view',
+						delete: access === 'upload-delete'
+					}
+				: undefined;
+			const created = await createShare(item.path, {
+				...(permissions ? { permissions } : {}),
+				...(allowsUpload && maxUploadMB !== undefined
+					? { maxUploadBytes: maxUploadMB * 1024 * 1024 }
+					: {}),
+				...(expiry !== '0' ? { expiresInSeconds: Number(expiry) } : {})
 			});
-			copied = false;
+			createdId = created.id;
+			// Show the new link even if refreshing the list fails.
+			shares = [{ ...created, path: item.path }, ...shares];
 			await loadShares();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Unable to create share link.';
@@ -87,123 +107,63 @@
 		}
 	}
 
-	async function handleRevoke(share: ShareRecord) {
-		try {
-			await revokeShare(share.id);
-			toastStore.success(`Share link for ${share.fileName} revoked`);
-			if (created && created.id === share.id) {
-				created = null;
-				copied = false;
-			}
-			await loadShares();
-		} catch (err) {
-			toastStore.error(err instanceof Error ? err.message : 'Unable to revoke share link.');
-		}
-	}
-
-	async function handleCopy() {
-		if (!createdUrl || copied) return;
-		try {
-			await navigator.clipboard.writeText(createdUrl);
-			copied = true;
-			toastStore.success('Share link copied to clipboard');
-			setTimeout(() => (copied = false), 2000);
-		} catch {
-			toastStore.error('Unable to copy share link');
-		}
-	}
-
-	function formatExpiry(share: ShareRecord): string {
-		if (!hasShareExpiry(share.expiresAt)) return 'Never expires';
-		return `Expires ${formatDate(share.expiresAt, { relative: true })}`;
+	function handleRevoked(share: ShareRecord) {
+		shares = shares.filter((existing) => existing.id !== share.id);
 	}
 </script>
 
-<Modal {open} title="Share File" {onclose}>
-	{#if file}
-		<p class="mt-0 mb-4 truncate text-sm text-text-secondary" title={file.path}>{file.path}</p>
-
+<Modal {open} title={item ? `Share ${item.name}` : 'Share'} {onclose}>
+	{#if item}
 		{#if error}
-			<div
-				class="mb-4 rounded border border-danger/30 bg-danger/20 px-3 py-2 text-sm text-danger"
-				role="alert"
-			>
-				{error}
+			<p class="m-0 mb-3 text-[13px] text-danger" role="alert">{error}</p>
+		{/if}
+
+		{#if loading && shares.length === 0}
+			<div class="mb-4 flex justify-center py-3"><Spinner /></div>
+		{:else if itemShares.length > 0}
+			<div class="mb-4 overflow-hidden rounded border border-border-primary">
+				<ShareLinkList
+					shares={itemShares}
+					showAccess={item.isDir}
+					highlightId={createdId}
+					onrevoked={handleRevoked}
+				/>
 			</div>
 		{/if}
 
-		<section class="mb-4">
-			<h3 class="mb-2 text-sm font-medium text-text-primary">Active share links</h3>
-			{#if loading}
-				<div class="flex justify-center py-4"><Spinner /></div>
-			{:else if activeShares.length === 0}
-				<p class="m-0 text-sm text-text-secondary">No active share links for this file.</p>
-			{:else}
-				<ul class="m-0 flex list-none flex-col gap-2 p-0">
-					{#each activeShares as share (share.id)}
-						<li
-							class="flex flex-wrap items-center gap-2 rounded border border-border-primary bg-surface-tertiary px-3 py-2"
-						>
-							<Link2 size={16} class="shrink-0 text-accent" />
-							<span class="min-w-0 flex-1 truncate text-sm text-text-primary" title={share.url}>
-								{share.url}
-							</span>
-							<span class="text-xs text-text-muted">{formatExpiry(share)}</span>
-							<Button
-								variant="ghost"
-								size="icon"
-								title="Revoke share link"
-								onclick={() => void handleRevoke(share)}
-							>
-								<Trash2 size={16} />
-							</Button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</section>
-
-		{#if created}
-			<section class="mb-4">
-				<h3 class="mb-2 text-sm font-medium text-text-primary">New share link</h3>
-				<div class="flex items-center gap-2">
-					<input
-						type="text"
-						readonly
-						value={createdUrl}
-						class="h-8 min-w-0 flex-1 rounded border border-border-primary bg-surface-primary px-3 text-sm text-text-primary"
-						aria-label="Share link URL"
-					/>
-					<Button variant="secondary" size="sm" onclick={() => void handleCopy()}>
-						{#if copied}
-							<Check size={16} />
-							<span>Copied</span>
-						{:else}
-							<Copy size={16} />
-							<span>Copy</span>
-						{/if}
-					</Button>
+		<div class="grid gap-3 {item.isDir ? 'grid-cols-2' : ''}">
+			{#if item.isDir}
+				<div>
+					<label for="share-access" class={labelClass}>Access</label>
+					<Select id="share-access" options={ACCESS_OPTIONS} bind:value={access} />
 				</div>
-			</section>
-		{/if}
-
-		<section class="flex flex-col gap-3">
-			<h3 class="mb-0 text-sm font-medium text-text-primary">Create a share link</h3>
-			<p class="m-0 text-sm text-text-secondary">
-				Anyone with the link can preview and download this file.
-			</p>
-			<div class="flex flex-col gap-2">
-				<label for="share-expiry" class="text-sm font-medium text-text-secondary">Expires</label>
+			{/if}
+			<div>
+				<label for="share-expiry" class={labelClass}>Expires</label>
 				<Select id="share-expiry" options={EXPIRY_OPTIONS} bind:value={expiry} />
 			</div>
-			<Button variant="primary" disabled={creating || loading} onclick={() => void handleCreate()}>
-				{#if creating}
-					<Spinner size="sm" />
-					<span>Creating...</span>
-				{:else}
-					<span>Create Share Link</span>
-				{/if}
-			</Button>
-		</section>
+		</div>
+
+		{#if allowsUpload}
+			<div class="mt-3">
+				<label for="share-upload-limit" class={labelClass}>Max upload per file (MB)</label>
+				<input
+					id="share-upload-limit"
+					type="number"
+					min="1"
+					step="1"
+					bind:value={maxUploadMB}
+					placeholder="Server limit"
+					class="h-8 w-full rounded border border-border-primary bg-surface-secondary px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-border-focus focus:outline-none"
+				/>
+			</div>
+		{/if}
 	{/if}
+
+	{#snippet footer()}
+		<Button variant="primary" disabled={!item || creating} onclick={() => void handleCreate()}>
+			{#if creating}<Spinner size="sm" />{/if}
+			Create link
+		</Button>
+	{/snippet}
 </Modal>

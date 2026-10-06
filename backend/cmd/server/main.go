@@ -183,7 +183,7 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 	wsHandler.SetDevMode(devMode)
 	systemHandler := handler.NewSystemHandler(systemService, cfg.ChunkSizeMB)
 	settingsHandler := handler.NewSettingsHandler(settingsService)
-	shareHandler := handler.NewShareHandler(shareService, cfg.MaxUploadMB)
+	shareHandler := handler.NewShareHandler(shareService, settingsService, cfg.MaxUploadMB)
 
 	// Create router
 	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints)

@@ -64,11 +64,8 @@ export function useBrowseActions(
 		open: false,
 		file: null
 	});
-	let shareDialog = $state<{ open: boolean; file: FileInfo | null }>({ open: false, file: null });
-	let folderShareDialog = $state<{ open: boolean; folder: FileInfo | null }>({
-		open: false,
-		folder: null
-	});
+	// The file or folder being shared; null when the share dialog is closed.
+	let shareItem = $state<FileInfo | null>(null);
 
 	const favoritePaths = $derived(
 		new SvelteSet(settingsStore.current.favoriteFolders.map((folder) => folder.path))
@@ -191,11 +188,8 @@ export function useBrowseActions(
 		get propertiesDialog() {
 			return propertiesDialog;
 		},
-		get shareDialog() {
-			return shareDialog;
-		},
-		get folderShareDialog() {
-			return folderShareDialog;
+		get shareItem() {
+			return shareItem;
 		},
 		get favoritePaths() {
 			return favoritePaths;
@@ -224,10 +218,7 @@ export function useBrowseActions(
 			propertiesDialog = { open: false, file: null };
 		},
 		closeShare() {
-			shareDialog = { open: false, file: null };
-		},
-		closeFolderShare() {
-			folderShareDialog = { open: false, folder: null };
+			shareItem = null;
 		},
 		confirmCreate,
 		confirmRename,
@@ -299,8 +290,7 @@ export function useBrowseActions(
 					download(items);
 					break;
 				case 'share':
-					if (only?.isDir) folderShareDialog = { open: true, folder: only };
-					else if (only) shareDialog = { open: true, file: only };
+					if (only) shareItem = only;
 					break;
 				case 'properties':
 					if (only) propertiesDialog = { open: true, file: only };

@@ -12,12 +12,14 @@
 	import { jobsStore } from '$lib/stores/jobs.svelte';
 	import { websocketStore } from '$lib/stores/websocket.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
+	import { shareWallpaperStore } from '$lib/stores/shareWallpaper.svelte';
 	import {
 		applyAccentColor,
 		resolveBackgroundImage,
 		resolveBackgroundImageUrl
 	} from '$lib/utils/appearance';
 	import { getWallpaperBackgroundStyle, normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
+	import { syncShareWallpaperOnLogin } from '$lib/utils/wallpaperSync';
 
 	let { children } = $props();
 	let initialized = $state(false);
@@ -42,12 +44,24 @@
 			page.url.pathname.startsWith('/s/')
 	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
+	// Share pages show the share owner's wallpaper, never the visitor's own.
+	const isSharePage = $derived(page.url.pathname.startsWith('/s/'));
+	let ownBackgroundImage = $state<string | null>(null);
 	const backgroundImageMode = $derived(
-		normalizeBackgroundImageMode(settingsStore.current.backgroundImageMode)
+		normalizeBackgroundImageMode(
+			isSharePage ? shareWallpaperStore.current?.mode : settingsStore.current.backgroundImageMode
+		)
 	);
-	let backgroundImage = $state<string | null>(null);
+	const backgroundImage = $derived(
+		isSharePage ? (shareWallpaperStore.current?.url ?? null) : ownBackgroundImage
+	);
 	const hasBackgroundImage = $derived(backgroundImage !== null);
-	const frostedGlass = $derived(hasBackgroundImage && settingsStore.current.frostedGlass);
+	const frostedGlass = $derived(
+		hasBackgroundImage &&
+			(isSharePage
+				? (shareWallpaperStore.current?.frostedGlass ?? false)
+				: settingsStore.current.frostedGlass)
+	);
 	const backgroundImageStyle = $derived(
 		backgroundImage ? `url(${JSON.stringify(backgroundImage)})` : undefined
 	);
@@ -108,18 +122,22 @@
 		const requested = settingsStore.current.backgroundImage;
 		let cancelled = false;
 
-		backgroundImage = resolveBackgroundImage(requested);
+		ownBackgroundImage = resolveBackgroundImage(requested);
 		resolveBackgroundImageUrl(requested)
 			.then((url) => {
-				if (!cancelled) backgroundImage = url;
+				if (!cancelled) ownBackgroundImage = url;
 			})
 			.catch(() => {
-				if (!cancelled) backgroundImage = null;
+				if (!cancelled) ownBackgroundImage = null;
 			});
 
 		return () => {
 			cancelled = true;
 		};
+	});
+
+	$effect(() => {
+		if (initialized && authStore.isAuthenticated && !isSharePage) syncShareWallpaperOnLogin();
 	});
 
 	async function handleLogout() {

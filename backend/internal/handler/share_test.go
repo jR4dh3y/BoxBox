@@ -37,7 +37,7 @@ func setupTestShareHandler() (*ShareHandler, *filesystem.AferoFS, service.ShareS
 		DataDir: "/data",
 		Mounts:  func() []model.MountPoint { return mounts },
 	})
-	return NewShareHandler(shareSvc, 1), fs, shareSvc
+	return NewShareHandler(shareSvc, nil, 1), fs, shareSvc
 }
 
 func createShareTestRouter(handler *ShareHandler) *chi.Mux {
@@ -738,7 +738,7 @@ func TestShareUploadRejectsInvalidRequests(t *testing.T) {
 }
 
 func TestShareUploadEnforcesMaxBytes(t *testing.T) {
-	// NewShareHandler(_, 1) caps uploads at 1 MiB.
+	// NewShareHandler(_, _, 1) caps uploads at 1 MiB.
 	handler, fs, _ := setupTestShareHandler()
 	router := createShareTestRouter(handler)
 	share := createShareViaAPI(t, router, "media", model.SharePermissions{Upload: true}, nil)

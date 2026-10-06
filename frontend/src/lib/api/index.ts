@@ -78,6 +78,7 @@ export {
 	shareDownloadUrl,
 	shareArchiveUrl,
 	sharePreviewUrl,
+	shareWallpaperUrl,
 	shareUploadUrl,
 	hasShareExpiry,
 	type SharePermissions,

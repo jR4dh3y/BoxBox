@@ -1,0 +1,56 @@
+/**
+ * Wallpaper API client - stores the user's wallpaper on the server so their share pages can show it.
+ */
+
+import { ApiRequestError, apiRequest } from './client';
+import type { BackgroundImageMode } from '$lib/utils/wallpaper';
+
+export interface WallpaperDisplay {
+	mode: BackgroundImageMode;
+	frostedGlass: boolean;
+}
+
+export interface StoredWallpaper extends WallpaperDisplay {
+	/** The wallpaper setting value the image was uploaded from. */
+	source: string;
+	/** Hex SHA-256 of the stored image bytes. */
+	sha256: string;
+}
+
+/** The wallpaper stored on the server, or null when there is none. */
+export async function getWallpaper(signal?: AbortSignal): Promise<StoredWallpaper | null> {
+	try {
+		return await apiRequest<StoredWallpaper>('/settings/wallpaper', { signal });
+	} catch (error) {
+		if (error instanceof ApiRequestError && error.status === 404) return null;
+		throw error;
+	}
+}
+
+/** Upload a new wallpaper image with how it should be drawn and where it came from. */
+export async function uploadWallpaper(
+	image: Blob,
+	display: WallpaperDisplay,
+	source: string,
+	signal?: AbortSignal
+): Promise<void> {
+	await apiRequest('/settings/wallpaper', {
+		method: 'PUT',
+		body: image,
+		signal,
+		params: { mode: display.mode, frostedGlass: String(display.frostedGlass), source }
+	});
+}
+
+/** Change how the stored wallpaper is drawn without re-uploading it. */
+export async function updateWallpaperDisplay(
+	display: WallpaperDisplay,
+	signal?: AbortSignal
+): Promise<void> {
+	await apiRequest('/settings/wallpaper', { method: 'PATCH', body: display, signal });
+}
+
+/** Remove the stored wallpaper. */
+export async function deleteWallpaper(signal?: AbortSignal): Promise<void> {
+	await apiRequest('/settings/wallpaper', { method: 'DELETE', signal });
+}

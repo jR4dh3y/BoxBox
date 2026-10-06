@@ -19,6 +19,7 @@
 	import ShareLinksSettings from '$lib/components/settings/ShareLinksSettings.svelte';
 	import { Button, ProgressButton, Select, Toggle } from '$lib/components/ui';
 	import { normalizeBackgroundImageMode } from '$lib/utils/wallpaper';
+	import { publishShareWallpaper } from '$lib/utils/wallpaperSync';
 	import {
 		deleteLocalWallpaper,
 		isInlineWallpaperDataUrl,
@@ -218,11 +219,28 @@
 			settingsStore.set(nextSettings);
 			settings = { ...nextSettings };
 
+			await setApplyProgress(70, 'Updating wallpaper on your share pages...');
+			let shareWallpaperError: string | null = null;
+			try {
+				await publishShareWallpaper();
+			} catch (error) {
+				shareWallpaperError = error instanceof Error ? error.message : String(error);
+			}
+
 			await setApplyProgress(85, 'Refreshing workspace...');
 			cleanupLocalWallpaper(previousBackgroundImage, backgroundImage);
-			applyProgressVariant = 'success';
-			await setApplyProgress(100, 'Settings applied');
-			scheduleApplyProgressReset(900);
+			if (shareWallpaperError) {
+				applyProgressVariant = 'danger';
+				await setApplyProgress(
+					100,
+					`Saved, but share pages still show the old wallpaper: ${shareWallpaperError}`
+				);
+				scheduleApplyProgressReset(6000);
+			} else {
+				applyProgressVariant = 'success';
+				await setApplyProgress(100, 'Settings applied');
+				scheduleApplyProgressReset(900);
+			}
 		} catch (error) {
 			cleanupLocalWallpaper(savedLocalBackgroundImage, null);
 			applyProgressVariant = 'danger';
@@ -281,6 +299,14 @@
 		settingsStore.reset();
 		settings = $state.snapshot(settingsStore.current);
 		cleanupLocalWallpaper(previousBackgroundImage, null);
+		publishShareWallpaper().catch((error) => {
+			applyProgressVariant = 'danger';
+			applyProgress = 100;
+			applyProgressStatus = `Reset, but share pages still show the old wallpaper: ${
+				error instanceof Error ? error.message : String(error)
+			}`;
+			scheduleApplyProgressReset(6000);
+		});
 	}
 
 	async function handleLogout() {
