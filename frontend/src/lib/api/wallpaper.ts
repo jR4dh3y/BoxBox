@@ -18,9 +18,9 @@ export interface StoredWallpaper extends WallpaperDisplay {
 }
 
 /** The wallpaper stored on the server, or null when there is none. */
-export async function getWallpaper(): Promise<StoredWallpaper | null> {
+export async function getWallpaper(signal?: AbortSignal): Promise<StoredWallpaper | null> {
 	try {
-		return await apiRequest<StoredWallpaper>('/settings/wallpaper');
+		return await apiRequest<StoredWallpaper>('/settings/wallpaper', { signal });
 	} catch (error) {
 		if (error instanceof ApiRequestError && error.status === 404) return null;
 		throw error;
@@ -31,21 +31,26 @@ export async function getWallpaper(): Promise<StoredWallpaper | null> {
 export async function uploadWallpaper(
 	image: Blob,
 	display: WallpaperDisplay,
-	source: string
+	source: string,
+	signal?: AbortSignal
 ): Promise<void> {
 	await apiRequest('/settings/wallpaper', {
 		method: 'PUT',
 		body: image,
+		signal,
 		params: { mode: display.mode, frostedGlass: String(display.frostedGlass), source }
 	});
 }
 
 /** Change how the stored wallpaper is drawn without re-uploading it. */
-export async function updateWallpaperDisplay(display: WallpaperDisplay): Promise<void> {
-	await apiRequest('/settings/wallpaper', { method: 'PATCH', body: display });
+export async function updateWallpaperDisplay(
+	display: WallpaperDisplay,
+	signal?: AbortSignal
+): Promise<void> {
+	await apiRequest('/settings/wallpaper', { method: 'PATCH', body: display, signal });
 }
 
 /** Remove the stored wallpaper. */
-export async function deleteWallpaper(): Promise<void> {
-	await apiRequest('/settings/wallpaper', { method: 'DELETE' });
+export async function deleteWallpaper(signal?: AbortSignal): Promise<void> {
+	await apiRequest('/settings/wallpaper', { method: 'DELETE', signal });
 }
