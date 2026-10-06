@@ -13,7 +13,7 @@
 
 services:
   boxbox:
-    image: ${BOXBOX_IMAGE:-ghcr.io/jr4dh3y/boxbox:v0.3.0}
+    image: ${BOXBOX_IMAGE:-ghcr.io/jr4dh3y/boxbox:v0.3.0@sha256:4a508158d224a8616695f84055136a064853d2a99cc08382562c0ce7ecd704f2}
     container_name: boxbox
     restart: unless-stopped
     user: "${PUID:-10001}:${PGID:-10001}"
