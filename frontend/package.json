@@ -46,7 +46,7 @@
 		"@tanstack/svelte-query": "^6.3.0",
 		"docx-preview": "^0.4.0",
 		"lucide-svelte": "^1.0.1",
-		"monaco-editor": "^0.56.0",
+		"monaco-editor": "^0.57.0",
 		"pptx-preview": "^1.0.7"
 	}
 }
