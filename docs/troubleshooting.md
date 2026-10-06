@@ -24,7 +24,7 @@ docker compose up -d
 docker compose logs boxbox | grep "Starting HTTP server"
 ```
 
-Make the compose port mapping (`HOST_PORT:<port>`), the healthcheck URL, any reverse proxy target, and `port` in `config.yaml` (or `BOXBOX_PORT`) all use the same port. See the [v0.3.0 upgrade notes](/docs/release/).
+The container side of the port mapping (`HOST_PORT:<container-port>`), the healthcheck URL, and any reverse proxy that reaches the container directly must use the server port from `config.yaml` (or `BOXBOX_PORT`). `HOST_PORT` can differ; browsers on the host use it. See the [v0.3.0 upgrade notes](/docs/release/).
 
 ## Server Rejects the Configured User
 
@@ -72,7 +72,7 @@ docker compose exec boxbox ls -la /media/devmon
 
 Remember that `config.yaml` paths are container paths, not host paths.
 
-A mount inside another mount is listed under **Places**, not **Drives**, and does not appear on **This Server**. Set `kind: drive` on the mount point to list it as a drive.
+A mount without an explicit `kind` that sits inside another configured mount is listed under **Places**, not **Drives**, and does not appear on **This Server**. Auto-discovered mounts and mounts nested only under a `/` mount stay drives. Set `kind: drive` on the mount point to list it as a drive.
 
 ## Permission Denied
 

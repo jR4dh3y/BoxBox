@@ -406,6 +406,7 @@ import {
     // Set when the visitor pauses with the native controls, so scrolling
     // back into view does not resume playback against their wishes.
     let userPaused = false;
+    let syncPausesPending = 0;
 
     function syncVideo() {
       if (!video) return;
@@ -413,7 +414,8 @@ import {
         video.play().catch(() => {
           // Autoplay can be refused; the native controls still work.
         });
-      } else {
+      } else if (!video.paused) {
+        syncPausesPending += 1;
         video.pause();
       }
     }
@@ -447,8 +449,11 @@ import {
       userPaused = false;
     });
     video?.addEventListener('pause', () => {
-      // Pauses issued by syncVideo happen off-screen or on the other slide.
-      if (video && activeSlide === 0 && demoVisible && !video.ended) userPaused = true;
+      if (syncPausesPending > 0) {
+        syncPausesPending -= 1;
+        return;
+      }
+      if (video && !video.ended) userPaused = true;
     });
 
     document.addEventListener('keydown', (event) => {

@@ -20,7 +20,7 @@ Use this workflow to keep stable releases and nightly builds in separate GHCR pa
 
 ### Upgrade notes
 
-- **The container now listens on `8080`.** The port mapping, the healthcheck, and any reverse proxy must target the same port as `port` in `config.yaml` (or `BOXBOX_PORT`). The simplest path is to download the new `docker-compose.yml` and set `port: 8080` in your bind-mounted `config.yaml`. If you keep your v0.2.2 `docker-compose.yml`, which maps and health-checks port `80`, set `BOXBOX_PORT=80` instead.
+- **The container now listens on `8080`.** The container side of the port mapping, the healthcheck, and any reverse proxy that reaches the container directly must use the same port as `port` in `config.yaml` (or `BOXBOX_PORT`). The simplest path is to download the new `docker-compose.yml` and set `port: 8080` in your bind-mounted `config.yaml`. If you keep your v0.2.2 `docker-compose.yml`, which maps and health-checks port `80`, set `BOXBOX_PORT=80` instead.
 - Share links and stored wallpapers live in the data directory (`/data` in the container), in `shares.json` and the `wallpapers/` folder. Keep the `boxbox-data` volume when you recreate the container, or existing links stop working.
 - Nested mounts now appear under Places instead of Drives, and only drives appear on **This Server**. Add `kind: drive` to any mount you want to keep listed as a drive.
 - Back up `shares.json` before downgrading. Older versions cannot keep the per-link upload/delete permissions and upload caps if they rewrite the file.
