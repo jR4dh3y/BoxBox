@@ -99,7 +99,8 @@
 
 	onMount(() => void loadShare());
 	afterNavigate(({ from, to }) => {
-		if (from && from.params?.token !== to?.params?.token) void loadShare();
+		if (from && from.route.id === to?.route.id && from.params?.token !== to?.params?.token)
+			void loadShare();
 	});
 
 	beforeNavigate(({ to }) => {
