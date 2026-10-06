@@ -3,7 +3,11 @@ import { test } from 'node:test';
 import { setAccessToken } from '$lib/api/client';
 import { authStore } from '$lib/stores/auth.svelte';
 import { settingsStore } from '$lib/stores/settings.svelte';
-import { resetShareWallpaperLoginSync, syncShareWallpaperOnLogin } from './wallpaperSync';
+import {
+	publishShareWallpaper,
+	resetShareWallpaperLoginSync,
+	syncShareWallpaperOnLogin
+} from './wallpaperSync';
 
 test('logout allows wallpaper synchronization once in each new session', async () => {
 	const originalWindow = globalThis.window;
@@ -11,9 +15,18 @@ test('logout allows wallpaper synchronization once in each new session', async (
 	const originalSettings = settingsStore.current;
 	const values = new Map<string, string>();
 	let uploads = 0;
+	let holdRead = false;
+	let notifyRead = () => {};
+	let releaseRead = () => {};
+	const readStarted = new Promise<void>((resolve) => (notifyRead = resolve));
+	const readReleased = new Promise<void>((resolve) => (releaseRead = resolve));
 	const server = Bun.serve({
 		port: 0,
-		fetch(request) {
+		async fetch(request) {
+			if (request.method === 'GET' && holdRead) {
+				notifyRead();
+				await readReleased;
+			}
 			if (request.method === 'PUT') uploads++;
 			return request.method === 'GET'
 				? Response.json({ error: 'Not found', code: 'NOT_FOUND' }, { status: 404 })
@@ -57,7 +70,25 @@ test('logout allows wallpaper synchronization once in each new session', async (
 		settingsStore.current = { ...originalSettings, backgroundImage: null };
 		await syncShareWallpaperOnLogin();
 		assert.equal(uploads, 2, 'an empty browser must not publish a wallpaper');
+
+		await authStore.logout();
+		signIn('alice');
+		settingsStore.current = {
+			...originalSettings,
+			backgroundImage: 'data:image/png;base64,aGVsbG8='
+		};
+		holdRead = true;
+		const pendingSync = syncShareWallpaperOnLogin();
+		await readStarted;
+		const cancelledPublish = assert.rejects(publishShareWallpaper(), { name: 'AbortError' });
+		await authStore.logout();
+		signIn('bob');
+		releaseRead();
+		await pendingSync;
+		await cancelledPublish;
+		assert.equal(uploads, 2, 'an in-flight sync must not publish into the next account');
 	} finally {
+		releaseRead();
 		await authStore.logout();
 		settingsStore.current = originalSettings;
 		Object.assign(globalThis, { window: originalWindow, localStorage: originalStorage });
