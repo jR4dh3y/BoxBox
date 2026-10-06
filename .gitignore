@@ -6,6 +6,7 @@
 # IDE
 .idea/
 .vscode/
+/.hoplite/
 *.swp
 *.swo
 *~
