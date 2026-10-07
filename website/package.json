@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@astrojs/vercel": "^11.0.10",
-    "@lucide/astro": "^1.41.0",
+    "@lucide/astro": "^1.51.0",
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.3.1",
     "entities": "^8.0.0",
