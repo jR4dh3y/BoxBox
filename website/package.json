@@ -18,14 +18,14 @@
     "astro": "^7.3.1",
     "entities": "^8.0.0",
     "marked": "^18.0.11",
-    "sanitize-html": "^2.17.6",
+    "sanitize-html": "^2.18.0",
     "shiki": "^4.4.3",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "@types/node": "^26",
-    "@types/sanitize-html": "^2.16.1",
+    "@types/sanitize-html": "^2.16.2",
     "typescript": "^7.0.2"
   }
 }
