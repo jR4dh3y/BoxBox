@@ -39,6 +39,11 @@
 		data.prefetchDirectory,
 		CONFIG.query.prefetchHoverDelayMs
 	);
+	// A removed row never fires pointerleave, so drop a pending prefetch on navigation and teardown.
+	$effect(() => {
+		void location.path;
+		return () => onFolderHover(null);
+	});
 </script>
 
 <svelte:head>

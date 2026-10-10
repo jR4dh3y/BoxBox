@@ -87,10 +87,39 @@ func TestFileDownloadsAreNotRecompressed(t *testing.T) {
 	}
 }
 
-func TestSmallResponsesAreNotGzipped(t *testing.T) {
+func TestSmallResponsesOnCompressedRoutesAreNotGzipped(t *testing.T) {
 	handler := newCompressionTestServer(t)
-	rec := get(handler, "/api/v1/files/", "gzip")
+	// An empty page of a listing and a search with no matches: both go through the compression middleware.
+	for _, target := range []string{
+		"/api/v1/files/list/files?page=9",
+		"/api/v1/search?path=files&q=zzzzzz",
+	} {
+		plain := get(handler, target, "")
+		zipped := get(handler, target, "gzip")
+		if zipped.Code != http.StatusOK || plain.Code != http.StatusOK {
+			t.Fatalf("%s: status plain %d, gzip %d", target, plain.Code, zipped.Code)
+		}
+		if encoding := zipped.Header().Get("Content-Encoding"); encoding != "" {
+			t.Errorf("%s: a %d byte body must not be gzipped, got encoding %q", target, plain.Body.Len(), encoding)
+		}
+		if !bytes.Equal(zipped.Body.Bytes(), plain.Body.Bytes()) {
+			t.Errorf("%s: body changed when gzip was accepted", target)
+		}
+	}
+}
+
+func TestErrorResponsesKeepTheirStatus(t *testing.T) {
+	handler := newCompressionTestServer(t)
+	rec := get(handler, "/api/v1/search?q=abc", "gzip")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for a search without a path, got %d", rec.Code)
+	}
+}
+
+func TestGzipIsSkippedWhenTheClientRefusesIt(t *testing.T) {
+	handler := newCompressionTestServer(t)
+	rec := get(handler, "/api/v1/files/list/files?page=1&pageSize=50", "gzip;q=0")
 	if encoding := rec.Header().Get("Content-Encoding"); encoding != "" {
-		t.Fatalf("roots is tiny and gzip would grow it, got encoding %q", encoding)
+		t.Fatalf("gzip;q=0 must not be gzipped, got %q", encoding)
 	}
 }

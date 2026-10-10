@@ -1,8 +1,62 @@
 package middleware
 
-import chimiddleware "github.com/go-chi/chi/v5/middleware"
+import (
+	"bytes"
+	"compress/gzip"
+	"net/http"
+	"strconv"
+	"strings"
+)
 
-// JSONCompression gzips JSON responses for clients that accept it. Use it on large listings,
-// which repeat the same keys for every entry, and not on small bodies, which gzip makes bigger.
-// Only application/json is compressed, so file contents and media streams are untouched.
-var JSONCompression = chimiddleware.Compress(5, "application/json")
+// minCompressBytes is the smallest body worth gzipping. Below it the gzip header makes the body larger.
+const minCompressBytes = 1024
+
+// JSONCompression gzips a JSON response that is at least minCompressBytes long, for clients that accept gzip.
+// It buffers the body, so use it on bounded listings and not on streams or downloads.
+func JSONCompression(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Accept-Encoding")
+		if !acceptsGzip(r.Header.Get("Accept-Encoding")) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		buffered := &bufferedResponse{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(buffered, r)
+
+		header := w.Header()
+		body := buffered.body.Bytes()
+		isJSON := strings.HasPrefix(header.Get("Content-Type"), "application/json")
+		if len(body) >= minCompressBytes && isJSON && header.Get("Content-Encoding") == "" {
+			var compressed bytes.Buffer
+			zipper, _ := gzip.NewWriterLevel(&compressed, 5)
+			zipper.Write(body)
+			zipper.Close()
+			body = compressed.Bytes()
+			header.Set("Content-Encoding", "gzip")
+		}
+		header.Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(buffered.status)
+		w.Write(body)
+	})
+}
+
+func acceptsGzip(acceptEncoding string) bool {
+	for _, part := range strings.Split(acceptEncoding, ",") {
+		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if strings.EqualFold(strings.TrimSpace(coding), "gzip") {
+			return strings.TrimSpace(params) != "q=0"
+		}
+	}
+	return false
+}
+
+type bufferedResponse struct {
+	http.ResponseWriter
+	body   bytes.Buffer
+	status int
+}
+
+func (b *bufferedResponse) WriteHeader(status int) { b.status = status }
+
+func (b *bufferedResponse) Write(p []byte) (int, error) { return b.body.Write(p) }
