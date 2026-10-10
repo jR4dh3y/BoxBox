@@ -12,7 +12,7 @@
 		normalizeBackgroundImageMode,
 		type BackgroundImageMode
 	} from '$lib/utils/wallpaper';
-	import WallpaperPickerModal from './WallpaperPickerModal.svelte';
+	import LoadError from '$lib/components/LoadError.svelte';
 
 	interface WallpaperSelection {
 		backgroundImage: string;
@@ -136,12 +136,17 @@
 {/if}
 
 {#if wallpaperDialogOpen}
-	<WallpaperPickerModal
-		open={wallpaperDialogOpen}
-		currentMode={normalizedMode}
-		{frostedGlass}
-		{showHiddenFiles}
-		onapply={handleWallpaperApply}
-		onclose={() => (wallpaperDialogOpen = false)}
-	/>
+	<!-- The picker loads on first open, so it stays out of the settings page's first download. -->
+	{#await import('./WallpaperPickerModal.svelte') then { default: WallpaperPickerModal }}
+		<WallpaperPickerModal
+			open={wallpaperDialogOpen}
+			currentMode={normalizedMode}
+			{frostedGlass}
+			{showHiddenFiles}
+			onapply={handleWallpaperApply}
+			onclose={() => (wallpaperDialogOpen = false)}
+		/>
+	{:catch}
+		<LoadError label="wallpaper picker" onClose={() => (wallpaperDialogOpen = false)} />
+	{/await}
 {/if}

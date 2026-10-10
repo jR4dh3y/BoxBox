@@ -2,7 +2,7 @@
  * File API module for file operations
  */
 
-import { api } from './client';
+import { api, buildUrl } from './client';
 import { tokenStorage } from '$lib/utils/storage';
 
 /**
@@ -166,6 +166,17 @@ export async function getPath(
 	return api.get<FileList | FileInfo>(`/files/${encodeRoutePath(path)}`, params, signal);
 }
 
+function listRequest(path: string, options?: ListOptions) {
+	const params: Record<string, string | number | boolean | undefined> = {};
+	if (options?.page !== undefined) params.page = options.page;
+	if (options?.pageSize !== undefined) params.pageSize = options.pageSize;
+	if (options?.sortBy) params.sortBy = options.sortBy;
+	if (options?.sortDir) params.sortDir = options.sortDir;
+	if (options?.filter) params.filter = options.filter;
+	if (options?.includeHidden !== undefined) params.includeHidden = options.includeHidden;
+	return { endpoint: `/files/list/${encodeRoutePath(path)}`, params };
+}
+
 /**
  * List directory contents with pagination
  * Returns FileList for directories
@@ -175,14 +186,14 @@ export async function listDirectory(
 	options?: ListOptions,
 	signal?: AbortSignal
 ): Promise<FileList> {
-	const params: Record<string, string | number | boolean | undefined> = {};
-	if (options?.page !== undefined) params.page = options.page;
-	if (options?.pageSize !== undefined) params.pageSize = options.pageSize;
-	if (options?.sortBy) params.sortBy = options.sortBy;
-	if (options?.sortDir) params.sortDir = options.sortDir;
-	if (options?.filter) params.filter = options.filter;
-	if (options?.includeHidden !== undefined) params.includeHidden = options.includeHidden;
-	return api.get<FileList>(`/files/list/${encodeRoutePath(path)}`, params, signal);
+	const { endpoint, params } = listRequest(path, options);
+	return api.get<FileList>(endpoint, params, signal);
+}
+
+/** The URL `listDirectory` requests. static/early-fetch.js must start the same one. */
+export function directoryUrl(path: string, options?: ListOptions): string {
+	const { endpoint, params } = listRequest(path, options);
+	return buildUrl(endpoint, params);
 }
 
 /**
