@@ -137,6 +137,8 @@ Cached folder listings are shown at once but never trusted: an open folder alway
 
 The first load starts the folder listing and the session refresh before the app's JavaScript has arrived. `frontend/static/early-fetch.js` makes both requests, and `src/lib/api/earlyStart.ts` hands their results to the app once; anything that does not match, fails or arrives too late is requested again by the app. The script must ask for exactly what `listDirectory` asks for, so change them together: `earlyStart.test.ts` fails when they differ. It is the only place the refresh happens on a page load, because each refresh rotates the refresh token. The server sends the script with `no-cache`, since it has to match the app that loads it.
 
+`vite.config.ts` puts the `node_modules` and `src/lib` code that loads on the first visit into two chunks, so the first load is about 7 requests instead of about 25 and the browser's six connections per host stop queuing them. Grouping by directory keeps the chunks acyclic, and `perf:budget` fails if they ever form a loop: a loop can run a module before its chunk has initialised and leave a blank page, which no build or unit test shows.
+
 ## Backend Patterns
 
 Use the existing Handler -> Service -> Model/Filesystem shape:

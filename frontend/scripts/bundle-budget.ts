@@ -10,25 +10,25 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { findChunkCycles, type ManifestChunk } from './chunk-cycles';
 
 const clientDir = join(import.meta.dir, '..', '.svelte-kit', 'output', 'client');
 const budgetFile = join(import.meta.dir, '..', 'perf-budget.json');
 // Builds of the same source differ by a few bytes, so the budget moves in whole KiB.
 const ROUNDING_BYTES = 1024;
 
-interface ManifestChunk {
-	file: string;
-	imports?: string[];
-}
-
 interface Budget {
 	staticJsBytes: number;
 }
 
-function staticScripts(): string[] {
-	const manifest = JSON.parse(
-		readFileSync(join(clientDir, '.vite', 'manifest.json'), 'utf8')
-	) as Record<string, ManifestChunk>;
+function readManifest(): Record<string, ManifestChunk> {
+	return JSON.parse(readFileSync(join(clientDir, '.vite', 'manifest.json'), 'utf8')) as Record<
+		string,
+		ManifestChunk
+	>;
+}
+
+function staticScripts(manifest: Record<string, ManifestChunk>): string[] {
 	const roots = Object.keys(manifest).filter(
 		(key) => key.includes('/nodes/') || key.includes('/runtime/client/entry')
 	);
@@ -49,10 +49,10 @@ function staticScripts(): string[] {
 	return [...files];
 }
 
-function measure(): { raw: number; gzip: number } {
+function measure(manifest: Record<string, ManifestChunk>): { raw: number; gzip: number } {
 	let raw = 0;
 	let gzip = 0;
-	for (const file of staticScripts()) {
+	for (const file of staticScripts(manifest)) {
 		const content = readFileSync(join(clientDir, file));
 		raw += content.length;
 		gzip += gzipSync(content).length;
@@ -60,9 +60,19 @@ function measure(): { raw: number; gzip: number } {
 	return { raw, gzip };
 }
 
-const { raw: current, gzip } = measure();
+const manifest = readManifest();
+const { raw: current, gzip } = measure(manifest);
 const budget = (JSON.parse(readFileSync(budgetFile, 'utf8')) as Budget).staticJsBytes;
 console.log(`static JS: ${current} B raw (budget ${budget} B), ${gzip} B gzip for reference`);
+
+const cycles = findChunkCycles(manifest);
+if (cycles.length > 0) {
+	console.error(
+		`Chunk import loops (${cycles.length}), such as ${cycles[0].join(' -> ')}.\n` +
+			'A loop can run a module before its chunk has initialised and leave a blank page. Fix the chunk groups in vite.config.ts.'
+	);
+	process.exit(1);
+}
 
 if (current > budget) {
 	console.error(
