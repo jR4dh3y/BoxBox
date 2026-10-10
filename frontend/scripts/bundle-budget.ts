@@ -1,7 +1,7 @@
 /**
  * Ratchet on the JavaScript the app downloads without a dynamic import: the entry points,
- * every route node and all their static imports. Lazy-loaded code is excluded, so moving code behind
- * `import()` lowers this number. The gate is raw bytes: gzip output differs between Bun versions, so a
+ * every route node and all their static imports, plus the scripts the page shell loads by URL
+ * (`early-fetch.js`). Lazy-loaded code is excluded, so moving code behind `import()` lowers this number. The gate is raw bytes: gzip output differs between Bun versions, so a
  * compressed size measured here would not match CI. Gzip is printed for reference only.
  *
  *   bun scripts/bundle-budget.ts          fail if the build is over budget
@@ -11,8 +11,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { findChunkCycles, type ManifestChunk } from './chunk-cycles';
+import { shellScriptPaths } from './shell-scripts';
 
 const clientDir = join(import.meta.dir, '..', '.svelte-kit', 'output', 'client');
+const buildDir = join(import.meta.dir, '..', 'build');
 const budgetFile = join(import.meta.dir, '..', 'perf-budget.json');
 // Builds of the same source differ by a few bytes, so the budget moves in whole KiB.
 const ROUNDING_BYTES = 1024;
@@ -50,10 +52,16 @@ function staticScripts(manifest: Record<string, ManifestChunk>): string[] {
 }
 
 function measure(manifest: Record<string, ManifestChunk>): { raw: number; gzip: number } {
+	const files = [
+		...staticScripts(manifest).map((file) => join(clientDir, file)),
+		...shellScriptPaths(readFileSync(join(buildDir, 'index.html'), 'utf8')).map((file) =>
+			join(buildDir, file)
+		)
+	];
 	let raw = 0;
 	let gzip = 0;
-	for (const file of staticScripts(manifest)) {
-		const content = readFileSync(join(clientDir, file));
+	for (const file of files) {
+		const content = readFileSync(file);
 		raw += content.length;
 		gzip += gzipSync(content).length;
 	}
