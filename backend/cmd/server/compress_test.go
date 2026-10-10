@@ -118,8 +118,10 @@ func TestErrorResponsesKeepTheirStatus(t *testing.T) {
 
 func TestGzipIsSkippedWhenTheClientRefusesIt(t *testing.T) {
 	handler := newCompressionTestServer(t)
-	rec := get(handler, "/api/v1/files/list/files?page=1&pageSize=50", "gzip;q=0")
-	if encoding := rec.Header().Get("Content-Encoding"); encoding != "" {
-		t.Fatalf("gzip;q=0 must not be gzipped, got %q", encoding)
+	for _, acceptEncoding := range []string{"gzip;q=0", "gzip;q=0.0", "gzip; q=0.000"} {
+		rec := get(handler, "/api/v1/files/list/files?page=1&pageSize=50", acceptEncoding)
+		if encoding := rec.Header().Get("Content-Encoding"); encoding != "" {
+			t.Errorf("Accept-Encoding %q must not be gzipped, got %q", acceptEncoding, encoding)
+		}
 	}
 }

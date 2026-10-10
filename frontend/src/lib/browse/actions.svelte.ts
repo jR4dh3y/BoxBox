@@ -80,6 +80,18 @@ export function useBrowseActions(
 		createDialog = { open: false, type: 'file', name: '' };
 	}
 
+	function closeRename() {
+		renameDialog = { open: false, file: null, newName: '' };
+	}
+
+	function closeDelete() {
+		deleteDialog = { open: false, items: [] };
+	}
+
+	function closeProperties() {
+		propertiesDialog = { open: false, file: null };
+	}
+
 	function openCreate(type: 'file' | 'directory') {
 		if (!data.canCreate) {
 			toastStore.error('Cannot create items in this location');
@@ -139,7 +151,7 @@ export function useBrowseActions(
 
 		try {
 			await rename(oldPath, newPath);
-			renameDialog = { open: false, file: null, newName: '' };
+			closeRename();
 			data.refetchDirectory();
 		} catch (error) {
 			console.error('Rename failed:', error);
@@ -169,7 +181,7 @@ export function useBrowseActions(
 
 	async function confirmDelete() {
 		await deleteItems(deleteDialog.items);
-		deleteDialog = { open: false, items: [] };
+		closeDelete();
 	}
 
 	return {
@@ -208,14 +220,14 @@ export function useBrowseActions(
 			renameDialog.newName = name;
 		},
 		closeCreate,
-		closeRename() {
-			renameDialog = { open: false, file: null, newName: '' };
-		},
-		closeDelete() {
-			deleteDialog = { open: false, items: [] };
-		},
-		closeProperties() {
-			propertiesDialog = { open: false, file: null };
+		closeRename,
+		closeDelete,
+		closeProperties,
+		closeDialogs() {
+			closeCreate();
+			closeRename();
+			closeDelete();
+			closeProperties();
 		},
 		closeShare() {
 			shareItem = null;

@@ -10,6 +10,7 @@
 	import FileGrid from '$lib/components/FileGrid.svelte';
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import DriveCard from '$lib/components/DriveCard.svelte';
+	import LazyOverlay from '$lib/components/LazyOverlay.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
 	import { Spinner } from '$lib/components/ui';
 	import { settingsStore } from '$lib/stores/settings.svelte';
@@ -179,41 +180,47 @@
 </div>
 
 {#if actions.previewFile}
-	{#await import('$lib/components/FilePreview.svelte') then { default: FilePreview }}
-		<FilePreview
-			file={actions.previewFile}
-			allFiles={data.previewableFiles}
-			onNavigate={actions.showPreview}
-			onFileSaved={actions.fileSaved}
-			onClose={actions.closePreview}
-		/>
-	{/await}
+	<LazyOverlay
+		load={() => import('$lib/components/FilePreview.svelte')}
+		props={{
+			file: actions.previewFile,
+			allFiles: data.previewableFiles,
+			onNavigate: actions.showPreview,
+			onFileSaved: actions.fileSaved,
+			onClose: actions.closePreview
+		}}
+		onFailed={actions.closePreview}
+	/>
 {/if}
 
 {#if hasOpenDialog}
-	{#await import('$lib/components/BrowseDialogs.svelte') then { default: BrowseDialogs }}
-		<BrowseDialogs
-			createDialog={actions.createDialog}
-			renameDialog={actions.renameDialog}
-			deleteDialog={actions.deleteDialog}
-			propertiesDialog={actions.propertiesDialog}
-			onCreateNameChange={actions.setCreateName}
-			onRenameNameChange={actions.setRenameName}
-			onCreateConfirm={() => void actions.confirmCreate()}
-			onRenameConfirm={() => void actions.confirmRename()}
-			onDeleteConfirm={() => void actions.confirmDelete()}
-			onCloseCreate={actions.closeCreate}
-			onCloseRename={actions.closeRename}
-			onCloseDelete={actions.closeDelete}
-			onCloseProperties={actions.closeProperties}
-		/>
-	{/await}
+	<LazyOverlay
+		load={() => import('$lib/components/BrowseDialogs.svelte')}
+		props={{
+			createDialog: actions.createDialog,
+			renameDialog: actions.renameDialog,
+			deleteDialog: actions.deleteDialog,
+			propertiesDialog: actions.propertiesDialog,
+			onCreateNameChange: actions.setCreateName,
+			onRenameNameChange: actions.setRenameName,
+			onCreateConfirm: () => void actions.confirmCreate(),
+			onRenameConfirm: () => void actions.confirmRename(),
+			onDeleteConfirm: () => void actions.confirmDelete(),
+			onCloseCreate: actions.closeCreate,
+			onCloseRename: actions.closeRename,
+			onCloseDelete: actions.closeDelete,
+			onCloseProperties: actions.closeProperties
+		}}
+		onFailed={actions.closeDialogs}
+	/>
 {/if}
 
 {#if actions.shareItem}
-	{#await import('$lib/components/ShareModal.svelte') then { default: ShareModal }}
-		<ShareModal open item={actions.shareItem} onclose={actions.closeShare} />
-	{/await}
+	<LazyOverlay
+		load={() => import('$lib/components/ShareModal.svelte')}
+		props={{ open: true, item: actions.shareItem, onclose: actions.closeShare }}
+		onFailed={actions.closeShare}
+	/>
 {/if}
 
 <!-- Hidden file input for upload button -->
@@ -234,9 +241,7 @@
 
 <!-- Upload Panel (floating bottom-right) -->
 {#if uploadStore.uploads.length > 0}
-	{#await import('$lib/components/UploadPanel.svelte') then { default: UploadPanel }}
-		<UploadPanel />
-	{/await}
+	<LazyOverlay load={() => import('$lib/components/UploadPanel.svelte')} props={{}} />
 {/if}
 
 <!-- Toast notifications -->

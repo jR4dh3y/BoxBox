@@ -11,6 +11,8 @@ function newestFirst(left: Job, right: Job): number {
 
 class JobsStore {
 	jobs = new SvelteMap<string, Job>();
+	/** Called when a pending or running job ends, however it ends: it may have changed files. */
+	onFinished: (() => void) | null = null;
 	isLoading = $state(false);
 	error = $state<string | null>(null);
 
@@ -49,6 +51,7 @@ class JobsStore {
 			job.completedAt = new Date().toISOString();
 		}
 		this.jobs.set(update.jobId, job);
+		if (isJobActive(existing) && isJobTerminal(job)) this.onFinished?.();
 	}
 
 	reset(): void {

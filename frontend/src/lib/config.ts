@@ -19,6 +19,8 @@ export const CONFIG = {
 	query: {
 		/** Default stale time for queries (1 minute) */
 		staleTimeMs: 60 * 1000,
+		/** An open folder shows its cached page at once but always asks the server to confirm it */
+		directoryStaleTimeMs: 0,
 		/** A hover prefetch is skipped when the folder was loaded this recently (10 seconds) */
 		prefetchStaleTimeMs: 10 * 1000,
 		/** Pause before a hover prefetch starts, so sweeping the pointer across rows fetches nothing */

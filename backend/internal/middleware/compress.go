@@ -43,12 +43,25 @@ func JSONCompression(next http.Handler) http.Handler {
 
 func acceptsGzip(acceptEncoding string) bool {
 	for _, part := range strings.Split(acceptEncoding, ",") {
-		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		coding, params, _ := strings.Cut(part, ";")
 		if strings.EqualFold(strings.TrimSpace(coding), "gzip") {
-			return strings.TrimSpace(params) != "q=0"
+			return gzipQuality(params) > 0
 		}
 	}
 	return false
+}
+
+// gzipQuality reads the q parameter of an Accept-Encoding entry. No q means 1; an unreadable q counts as a refusal.
+func gzipQuality(params string) float64 {
+	name, value, found := strings.Cut(strings.TrimSpace(params), "=")
+	if !found || !strings.EqualFold(strings.TrimSpace(name), "q") {
+		return 1
+	}
+	q, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return 0
+	}
+	return q
 }
 
 type bufferedResponse struct {
