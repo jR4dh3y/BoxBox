@@ -6,6 +6,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { getAccessToken } from '$lib/api/client';
 import { CONFIG } from '$lib/config';
+import { generateUploadId, getChunkCount } from './uploadIds';
 
 const DEFAULT_CHUNK_SIZE = CONFIG.upload.defaultChunkSize;
 
@@ -73,13 +74,6 @@ interface UploadStatusResponse {
 }
 
 /**
- * Generate a unique upload ID
- */
-export function generateUploadId(): string {
-	return `upload_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-}
-
-/**
  * Calculate SHA-256 checksum of a file
  */
 export async function calculateChecksum(file: File): Promise<string> {
@@ -135,13 +129,6 @@ export function* splitFileIntoChunks(
 			isLast: i === totalChunks - 1
 		};
 	}
-}
-
-/**
- * Get the number of chunks for a file
- */
-export function getChunkCount(fileSize: number, chunkSize: number = DEFAULT_CHUNK_SIZE): number {
-	return Math.ceil(fileSize / chunkSize);
 }
 
 function calculateUploadedSize(

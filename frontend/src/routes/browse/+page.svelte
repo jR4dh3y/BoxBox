@@ -11,7 +11,7 @@
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import DriveCard from '$lib/components/DriveCard.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
-	import { Spinner } from '$lib/components/ui';
+	import { Button, Spinner } from '$lib/components/ui';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { uploadStore } from '$lib/stores/upload.svelte';
 	import { useBrowseActions } from '$lib/browse/actions.svelte';
@@ -28,6 +28,15 @@
 	const actions = useBrowseActions(location, data, selection);
 	const uploads = useBrowseUploads(location, data);
 	const settings = $derived(settingsStore.current);
+	// Uploads keep running without their panel, so closing the error only hides the message.
+	let uploadErrorDismissed = $state(false);
+
+	function closeDialogs() {
+		actions.closeCreate();
+		actions.closeRename();
+		actions.closeDelete();
+		actions.closeProperties();
+	}
 	// Overlays load on first use, so they stay out of the browse page's first download.
 	const hasOpenDialog = $derived(
 		actions.createDialog.open ||
@@ -178,6 +187,17 @@
 	</div>
 </div>
 
+{#snippet loadError(label: string, onClose: () => void)}
+	<div
+		role="alert"
+		class="fixed top-4 left-1/2 z-[110] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-border-primary bg-surface-elevated px-4 py-3 text-sm shadow-lg"
+	>
+		<span>Could not load the {label}. Check your connection, then reload.</span>
+		<Button size="sm" onclick={() => window.location.reload()}>Reload</Button>
+		<Button size="sm" variant="secondary" onclick={onClose}>Close</Button>
+	</div>
+{/snippet}
+
 {#if actions.previewFile}
 	{#await import('$lib/components/FilePreview.svelte') then { default: FilePreview }}
 		<FilePreview
@@ -187,6 +207,8 @@
 			onFileSaved={actions.fileSaved}
 			onClose={actions.closePreview}
 		/>
+	{:catch}
+		{@render loadError('preview', actions.closePreview)}
 	{/await}
 {/if}
 
@@ -207,12 +229,16 @@
 			onCloseDelete={actions.closeDelete}
 			onCloseProperties={actions.closeProperties}
 		/>
+	{:catch}
+		{@render loadError('dialog', closeDialogs)}
 	{/await}
 {/if}
 
 {#if actions.shareItem}
 	{#await import('$lib/components/ShareModal.svelte') then { default: ShareModal }}
 		<ShareModal open item={actions.shareItem} onclose={actions.closeShare} />
+	{:catch}
+		{@render loadError('share window', actions.closeShare)}
 	{/await}
 {/if}
 
@@ -236,6 +262,10 @@
 {#if uploadStore.uploads.length > 0}
 	{#await import('$lib/components/UploadPanel.svelte') then { default: UploadPanel }}
 		<UploadPanel />
+	{:catch}
+		{#if !uploadErrorDismissed}
+			{@render loadError('upload panel', () => (uploadErrorDismissed = true))}
+		{/if}
 	{/await}
 {/if}
 
