@@ -133,7 +133,7 @@ bun run --cwd frontend perf:budget
 
 Directory listing and search cost are tracked by `BenchmarkListDirectory` and `BenchmarkSearchWalk`, and gated by `TestListDirectoryAllocationCeiling` and `TestSearchAllocationCeiling` in `backend/internal/service`. Lower a ceiling when you win; never raise one to pass a change.
 
-Cached folder listings are shown at once but never trusted: an open folder always revalidates (`CONFIG.query.directoryStaleTimeMs`), and a finished copy, move or delete job invalidates every cached listing and drive stat. The server does not push file changes, so a change made outside BoxBox appears on the next open or refresh.
+Cached folder listings are shown at once but never trusted: an open folder always revalidates (`directoryQueryOptions`), and a finished copy, move or delete job invalidates every cached listing and drive stat. A job that ends while the WebSocket is down is caught when it reconnects, because the client reloads the job list then. The server does not push file changes, so a change made outside BoxBox appears on the next open or refresh.
 
 ## Backend Patterns
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, describe, test } from 'node:test';
+import { afterEach, beforeEach, describe, test } from 'node:test';
 import { QueryClient } from '@tanstack/svelte-query';
 import type { Job, JobState } from '$lib/api/jobs';
 import { fileQueryKeys } from './files';
@@ -20,8 +20,23 @@ function job(state: JobState): Job {
 const listKey = fileQueryKeys.list('media', { pageSize: 50, sortBy: 'name', sortDir: 'asc' });
 const statsKey = [...fileQueryKeys.roots(), 'stats'];
 
+const realFetch = globalThis.fetch;
+const realWindow = globalThis.window;
+
+/** The server's job list, as `loadJobs` will see it. */
+function serveJobs(...jobs: Job[]) {
+	Object.assign(globalThis, {
+		// The API client builds its URLs from the page origin.
+		window: { location: { origin: 'http://localhost' } },
+		fetch: async () => Response.json({ jobs })
+	});
+}
+
+beforeEach(() => serveJobs());
+
 afterEach(() => {
-	jobsStore.onFinished = null;
+	Object.assign(globalThis, { fetch: realFetch, window: realWindow });
+	jobsStore.onFinished = undefined;
 	jobsStore.reset();
 });
 
@@ -57,12 +72,50 @@ describe('jobsStore.onFinished', () => {
 	});
 });
 
+describe('jobsStore.loadJobs', () => {
+	test('fires when a job we saw running has ended on the server, as after a reconnect', async () => {
+		let calls = 0;
+		jobsStore.onFinished = () => calls++;
+		jobsStore.upsertJob(job('running'));
+
+		serveJobs(job('completed'));
+		await jobsStore.loadJobs();
+
+		assert.equal(calls, 1);
+		assert.equal(jobsStore.jobs.get('job-1')?.state, 'completed');
+	});
+
+	test('stays quiet when the job is still running, was already finished, or is new', async () => {
+		let calls = 0;
+		jobsStore.onFinished = () => calls++;
+		jobsStore.upsertJob(job('running'));
+		jobsStore.upsertJob({ ...job('completed'), id: 'job-2' });
+
+		serveJobs(
+			job('running'),
+			{ ...job('completed'), id: 'job-2' },
+			{ ...job('completed'), id: 'job-3' }
+		);
+		await jobsStore.loadJobs();
+
+		assert.equal(calls, 0);
+	});
+
+	test('the first load, with nothing known yet, fires nothing', async () => {
+		let calls = 0;
+		jobsStore.onFinished = () => calls++;
+		serveJobs(job('completed'));
+		await jobsStore.loadJobs();
+		assert.equal(calls, 0);
+	});
+});
+
 describe('refreshFilesWhenJobsFinish', () => {
 	test('marks cached listings and drive stats stale when a job ends, not before', () => {
 		const queryClient = new QueryClient();
 		queryClient.setQueryData(listKey, { pages: [], pageParams: [] });
 		queryClient.setQueryData(statsKey, { drives: [] });
-		const stop = refreshFilesWhenJobsFinish(queryClient);
+		refreshFilesWhenJobsFinish(queryClient);
 		jobsStore.upsertJob(job('running'));
 
 		jobsStore.updateFromWebSocket({ jobId: 'job-1', state: 'running', progress: 50 });
@@ -71,15 +124,5 @@ describe('refreshFilesWhenJobsFinish', () => {
 		jobsStore.updateFromWebSocket({ jobId: 'job-1', state: 'completed', progress: 100 });
 		assert.equal(queryClient.getQueryState(listKey)?.isInvalidated, true);
 		assert.equal(queryClient.getQueryState(statsKey)?.isInvalidated, true);
-		stop();
-	});
-
-	test('leaves the cache alone after it is stopped', () => {
-		const queryClient = new QueryClient();
-		queryClient.setQueryData(listKey, { pages: [], pageParams: [] });
-		refreshFilesWhenJobsFinish(queryClient)();
-		jobsStore.upsertJob(job('running'));
-		jobsStore.updateFromWebSocket({ jobId: 'job-1', state: 'completed', progress: 100 });
-		assert.equal(queryClient.getQueryState(listKey)?.isInvalidated, false);
 	});
 });

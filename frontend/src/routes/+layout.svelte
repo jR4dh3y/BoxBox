@@ -68,6 +68,7 @@
 	const backgroundStyle = $derived(getWallpaperBackgroundStyle(backgroundImageMode));
 
 	onMount(() => {
+		refreshFilesWhenJobsFinish(queryClient);
 		void authStore.initialize().finally(() => {
 			initialized = true;
 		});
@@ -106,8 +107,6 @@
 			jobsStore.reset();
 		}
 	});
-
-	$effect(() => refreshFilesWhenJobsFinish(queryClient));
 
 	$effect(() => {
 		if (!initialized || !authStore.isAuthenticated) return;
