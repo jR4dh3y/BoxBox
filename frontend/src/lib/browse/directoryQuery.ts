@@ -8,6 +8,8 @@ export function directoryQueryOptions(path: string, options: Omit<ListOptions, '
 		queryKey: fileQueryKeys.list(path, options),
 		queryFn: ({ pageParam, signal }) =>
 			listDirectory(path, { ...options, page: pageParam }, signal),
+		// The cached page shows at once, but the server always confirms it.
+		staleTime: 0,
 		initialPageParam: 1,
 		getNextPageParam: (lastPage) =>
 			lastPage.page * lastPage.pageSize < lastPage.totalCount ? lastPage.page + 1 : undefined

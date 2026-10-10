@@ -9,6 +9,7 @@
 	import { CONFIG } from '$lib/config';
 	import { Spinner, Button } from '$lib/components/ui';
 	import { jobsStore } from '$lib/stores/jobs.svelte';
+	import { refreshFilesWhenJobsFinish } from '$lib/stores/refreshFilesOnJobs';
 	import { websocketStore } from '$lib/stores/websocket.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { shareWallpaperStore } from '$lib/stores/shareWallpaper.svelte';
@@ -67,6 +68,7 @@
 	const backgroundStyle = $derived(getWallpaperBackgroundStyle(backgroundImageMode));
 
 	onMount(() => {
+		refreshFilesWhenJobsFinish(queryClient);
 		void authStore.initialize().finally(() => {
 			initialized = true;
 		});

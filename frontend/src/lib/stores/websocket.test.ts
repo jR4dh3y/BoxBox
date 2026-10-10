@@ -123,3 +123,49 @@ describe('websocket reconnect backoff', () => {
 		assert.equal(websocketStore.connectionState, 'disconnected');
 	});
 });
+
+describe('websocket reconnect job refresh', () => {
+	const realFetch = globalThis.fetch;
+	let jobRequests: string[] = [];
+
+	beforeEach(() => {
+		jobRequests = [];
+		Object.assign(globalThis, {
+			// The API client builds its URLs from the page origin.
+			window: { location: { protocol: 'http:', host: 'localhost', origin: 'http://localhost' } },
+			fetch: async (input: string) => {
+				jobRequests.push(input);
+				return Response.json({ jobs: [] });
+			}
+		});
+	});
+
+	afterEach(() => {
+		Object.assign(globalThis, { fetch: realFetch });
+	});
+
+	/** `loadJobs` reaches `fetch` after a few awaits. */
+	const settle = () => new Promise((resolve) => realSetTimeout(resolve, 0));
+
+	test('reloads jobs after a dropped connection comes back, not on the first open', async () => {
+		websocketStore.connect(true);
+		FakeSocket.instances[0].onopen?.();
+		await settle();
+		assert.deepEqual(jobRequests, []);
+
+		dropAndRetry().onopen?.();
+		await settle();
+		assert.equal(jobRequests.length, 1);
+		assert.match(jobRequests[0], /\/jobs$/);
+	});
+
+	test('does not reload jobs again when a healthy connection simply stays open', async () => {
+		websocketStore.connect(true);
+		dropAndRetry().onopen?.();
+		await settle();
+		const afterReconnect = jobRequests.length;
+		FakeSocket.instances.at(-1)?.onmessage?.({ data: '{"type":"pong"}' });
+		await settle();
+		assert.equal(jobRequests.length, afterReconnect);
+	});
+});

@@ -109,6 +109,8 @@ class WebSocketStore {
 	}
 
 	private handleOpen(): void {
+		// Updates sent while the socket was down are lost, so ask the server where the jobs stand now.
+		if (this.reconnectAttempts > 0) void jobsStore.loadJobs();
 		this.connectionState = 'connected';
 		this.error = null;
 		this.reconnectAttempts = 0;

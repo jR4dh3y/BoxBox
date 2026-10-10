@@ -11,6 +11,8 @@ function newestFirst(left: Job, right: Job): number {
 
 class JobsStore {
 	jobs = new SvelteMap<string, Job>();
+	/** Called when a pending or running job ends, however it ends: it may have changed files. */
+	onFinished?: () => void;
 	isLoading = $state(false);
 	error = $state<string | null>(null);
 
@@ -21,9 +23,12 @@ class JobsStore {
 		this.isLoading = true;
 		this.error = null;
 		try {
+			const wasActive = this.active;
 			const response = await listJobs();
 			this.jobs.clear();
 			for (const job of response.jobs) this.jobs.set(job.id, job);
+			// A job can end while the socket is down, and its message is gone for good.
+			if (wasActive.some((job) => !isJobActive(this.jobs.get(job.id) ?? job))) this.onFinished?.();
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : 'Failed to load jobs';
 		} finally {
@@ -49,6 +54,7 @@ class JobsStore {
 			job.completedAt = new Date().toISOString();
 		}
 		this.jobs.set(update.jobId, job);
+		if (isJobActive(existing) && isJobTerminal(job)) this.onFinished?.();
 	}
 
 	reset(): void {
