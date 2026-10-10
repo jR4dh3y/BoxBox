@@ -129,7 +129,7 @@ bun run --cwd frontend build
 bun run --cwd frontend perf:budget
 ```
 
-`perf:budget` fails when the gzipped JavaScript the app loads without a dynamic import grows past `frontend/perf-budget.json`. After shrinking the bundle, run it with `--lower` to lock the gain in. Never raise the budget to pass.
+`perf:budget` fails when the raw JavaScript the app loads without a dynamic import grows past `frontend/perf-budget.json`. After shrinking the bundle, run it with `--lower` to lock the gain in. Never raise the budget to pass.
 
 Directory listing and search cost are tracked by `BenchmarkListDirectory` and `BenchmarkSearchWalk`, and gated by `TestListDirectoryAllocationCeiling` and `TestSearchAllocationCeiling` in `backend/internal/service`. Lower a ceiling when you win; never raise one to pass a change.
 

@@ -1,7 +1,8 @@
 /**
  * Ratchet on the JavaScript the app downloads without a dynamic import: the entry points,
- * every route node and all their static imports, measured gzipped. Lazy-loaded code is excluded,
- * so moving code behind `import()` lowers this number. Bytes are deterministic where load time is not.
+ * every route node and all their static imports. Lazy-loaded code is excluded, so moving code behind
+ * `import()` lowers this number. The gate is raw bytes: gzip output differs between Bun versions, so a
+ * compressed size measured here would not match CI. Gzip is printed for reference only.
  *
  *   bun scripts/bundle-budget.ts          fail if the build is over budget
  *   bun scripts/bundle-budget.ts --lower  lower the budget to the current size; never raises it
@@ -12,7 +13,8 @@ import { gzipSync } from 'node:zlib';
 
 const clientDir = join(import.meta.dir, '..', '.svelte-kit', 'output', 'client');
 const budgetFile = join(import.meta.dir, '..', 'perf-budget.json');
-const ROUNDING_BYTES = 256;
+// Builds of the same source differ by a few bytes, so the budget moves in whole KiB.
+const ROUNDING_BYTES = 1024;
 
 interface ManifestChunk {
 	file: string;
@@ -20,7 +22,7 @@ interface ManifestChunk {
 }
 
 interface Budget {
-	staticJsGzipBytes: number;
+	staticJsBytes: number;
 }
 
 function staticScripts(): string[] {
@@ -47,16 +49,20 @@ function staticScripts(): string[] {
 	return [...files];
 }
 
-function measure(): number {
-	return staticScripts().reduce(
-		(total, file) => total + gzipSync(readFileSync(join(clientDir, file))).length,
-		0
-	);
+function measure(): { raw: number; gzip: number } {
+	let raw = 0;
+	let gzip = 0;
+	for (const file of staticScripts()) {
+		const content = readFileSync(join(clientDir, file));
+		raw += content.length;
+		gzip += gzipSync(content).length;
+	}
+	return { raw, gzip };
 }
 
-const current = measure();
-const budget = (JSON.parse(readFileSync(budgetFile, 'utf8')) as Budget).staticJsGzipBytes;
-console.log(`static JS: ${current} B gzip (budget ${budget} B)`);
+const { raw: current, gzip } = measure();
+const budget = (JSON.parse(readFileSync(budgetFile, 'utf8')) as Budget).staticJsBytes;
+console.log(`static JS: ${current} B raw (budget ${budget} B), ${gzip} B gzip for reference`);
 
 if (current > budget) {
 	console.error(
@@ -68,7 +74,7 @@ if (current > budget) {
 if (process.argv.includes('--lower')) {
 	const lowered = Math.ceil(current / ROUNDING_BYTES) * ROUNDING_BYTES;
 	if (lowered < budget) {
-		writeFileSync(budgetFile, `${JSON.stringify({ staticJsGzipBytes: lowered }, null, '\t')}\n`);
+		writeFileSync(budgetFile, `${JSON.stringify({ staticJsBytes: lowered }, null, '\t')}\n`);
 		console.log(`budget lowered to ${lowered} B`);
 	}
 }
