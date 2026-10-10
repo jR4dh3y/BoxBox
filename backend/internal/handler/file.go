@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jR4dh3y/BoxBox/backend/internal/middleware"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
@@ -27,7 +28,7 @@ func NewFileHandler(fileService service.FileManager) *FileHandler {
 func (h *FileHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/", h.ListRoots)
 	r.Get("/stats", h.GetDriveStats)
-	r.Get("/list/*", h.ListPath)
+	r.With(middleware.JSONCompression).Get("/list/*", h.ListPath)
 	r.Get("/*", h.GetPath)
 	r.Post("/*", h.CreateItem)
 	r.Put("/*", h.Rename)

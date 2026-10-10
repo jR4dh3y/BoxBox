@@ -34,6 +34,17 @@ Read the code that runs before you change it. Prefer the smallest complete chang
 - A method that an `$effect` calls must not read the state it changes. Wrap that read in `untrack`.
 - The browse page is wired from `lib/browse/`: location, data, actions, uploads and selection.
 
+## Performance
+
+- Measure the journey the user feels, from click to rendered, before you change anything. A component's own loading state does not count.
+- Gate CI on deterministic proxies (allocations, bytes), not wall-clock time. Check that a proxy moves wall-clock time before you trust it, and delete the benchmark if it does not.
+- Every benchmark gets a ceiling that only goes down. Lower it when you win. Never raise it to pass a change.
+- Do not cut requests that do not block the page. A stale view costs more than a background request. Cache only with an invalidation path, and show cached data only while the server confirms it.
+- Keep heavy work off the main thread and load it lazily.
+- Show a spinner only after a short delay. Do not animate per token.
+- Skip a change that adds real complexity for a few milliseconds.
+- When a target is hit, measure the next slow spot. Propose bolder ideas with numbers, and show before/after evidence for visible changes.
+
 ## Verify
 
 - Test the changed behaviour at the nearest real boundary. A build does not prove runtime behaviour.

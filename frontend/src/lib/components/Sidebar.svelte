@@ -23,9 +23,11 @@
 		currentPath?: string;
 		roots?: MountPoint[];
 		onNavigate?: (path: string) => void;
+		/** Path of the folder under the pointer, or null once it leaves */
+		onFolderHover?: (path: string | null) => void;
 	}
 
-	let { currentPath = '', roots = [], onNavigate }: Props = $props();
+	let { currentPath = '', roots = [], onNavigate, onFolderHover }: Props = $props();
 
 	const PLACE_ICONS: Record<string, typeof Folder> = {
 		desktop: Monitor,
@@ -99,6 +101,8 @@
 						type="button"
 						class="{navItemClass} {isActive(drive.path) ? navItemActiveClass : ''}"
 						onclick={() => handleNavigate(drive.path)}
+						onpointerenter={() => drive.path && onFolderHover?.(drive.path)}
+						onpointerleave={() => onFolderHover?.(null)}
 					>
 						<drive.icon size={16} class="shrink-0 opacity-80" />
 						<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{drive.name}</span>
@@ -129,6 +133,8 @@
 							type="button"
 							class="{navItemClass} {isActive(place.path) ? navItemActiveClass : ''}"
 							onclick={() => handleNavigate(place.path)}
+							onpointerenter={() => onFolderHover?.(place.path)}
+							onpointerleave={() => onFolderHover?.(null)}
 						>
 							<place.icon size={16} class="shrink-0 opacity-80" />
 							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
@@ -165,6 +171,8 @@
 								type="button"
 								class="{navItemClass} pr-9 {isActive(fav.path) ? navItemActiveClass : ''}"
 								onclick={() => handleNavigate(fav.path)}
+								onpointerenter={() => onFolderHover?.(fav.path)}
+								onpointerleave={() => onFolderHover?.(null)}
 							>
 								<Star size={16} class="shrink-0 opacity-80" />
 								<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"

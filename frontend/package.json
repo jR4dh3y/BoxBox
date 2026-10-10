@@ -11,6 +11,7 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --tsgo",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --tsgo --watch",
 		"test": "bun test --conditions browser",
+		"perf:budget": "bun scripts/bundle-budget.ts",
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint ."
 	},

@@ -8,9 +8,11 @@
 	interface Props {
 		drive: DriveStats;
 		onClick?: () => void;
+		/** Path of the folder under the pointer, or null once it leaves */
+		onFolderHover?: (path: string | null) => void;
 	}
 
-	let { drive, onClick }: Props = $props();
+	let { drive, onClick, onFolderHover }: Props = $props();
 
 	let renaming = $state(false);
 	let contextMenuOpen = $state(false);
@@ -93,6 +95,8 @@
 	type="button"
 	class="relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-all duration-150 hover:border-border-focus hover:bg-surface-tertiary"
 	onclick={handleCardClick}
+	onpointerenter={() => onFolderHover?.(drive.name)}
+	onpointerleave={() => onFolderHover?.(null)}
 	oncontextmenu={handleContextMenu}
 >
 	<div

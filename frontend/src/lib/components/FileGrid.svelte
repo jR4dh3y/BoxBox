@@ -11,6 +11,8 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { ContextMenu, Spinner } from '$lib/components/ui';
 	import { FolderOpen } from 'lucide-svelte';
+	import { CONFIG } from '$lib/config';
+	import { createDelayedFlag } from '$lib/utils/delayedFlag.svelte';
 
 	let {
 		items = [],
@@ -25,6 +27,7 @@
 		showFileExtensions = true,
 		previewOnSingleClick = false,
 		onItemClick,
+		onFolderHover,
 		onSelectionChange,
 		onContextMenuAction
 	}: {
@@ -40,9 +43,13 @@
 		showFileExtensions?: boolean;
 		previewOnSingleClick?: boolean;
 		onItemClick?: (item: FileInfo) => void;
+		/** Path of the folder under the pointer, or null once it leaves */
+		onFolderHover?: (path: string | null) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
 		onContextMenuAction?: (action: string, items: FileInfo[]) => void;
 	} = $props();
+
+	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
 
 	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
 	let thumbnailErrors = new SvelteSet<string>();
@@ -190,7 +197,7 @@
 	class="relative h-full w-full overflow-auto bg-surface-primary"
 	oncontextmenu={handleBackgroundContextMenu}
 >
-	{#if isLoading}
+	{#if showSpinner.value}
 		<div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-primary/80">
 			<Spinner />
 		</div>
@@ -228,6 +235,8 @@
 					aria-selected={isSelected(item.path)}
 					title={`${item.name}\n${typeDescription}${sizeDescription ? ` - ${sizeDescription}` : ''}\nModified ${modifiedDescription}`}
 					onclick={(e) => handleItemClick(item, e)}
+					onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
+					onpointerleave={() => onFolderHover?.(null)}
 					ondblclick={() => handleOpen(item)}
 					onkeydown={(e) => handleKeyDown(item, e)}
 					oncontextmenu={(e) => handleContextMenu(item, e)}

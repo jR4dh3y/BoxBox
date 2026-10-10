@@ -19,6 +19,10 @@ export const CONFIG = {
 	query: {
 		/** Default stale time for queries (1 minute) */
 		staleTimeMs: 60 * 1000,
+		/** A hover prefetch is skipped when the folder was loaded this recently (10 seconds) */
+		prefetchStaleTimeMs: 10 * 1000,
+		/** Pause before a hover prefetch starts, so sweeping the pointer across rows fetches nothing */
+		prefetchHoverDelayMs: 100,
 		/** Jobs refetch interval (5 seconds) */
 		jobsRefetchIntervalMs: 5000
 	},
@@ -35,6 +39,8 @@ export const CONFIG = {
 	ui: {
 		/** Default page size for file listings */
 		defaultPageSize: 50,
+		/** A load shorter than this never shows a spinner */
+		spinnerDelayMs: 150,
 		/** Debounce delay for search input */
 		searchDebounceMs: 300
 	},

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jR4dh3y/BoxBox/backend/internal/middleware"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
@@ -22,7 +23,7 @@ func NewSearchHandler(searchService service.SearchService) *SearchHandler {
 
 // RegisterRoutes registers search routes on the given router
 func (h *SearchHandler) RegisterRoutes(r chi.Router) {
-	r.Get("/", h.Search)
+	r.With(middleware.JSONCompression).Get("/", h.Search)
 }
 
 // SearchResponse represents the search results response

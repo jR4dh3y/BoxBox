@@ -1,24 +1,19 @@
-import {
-	createInfiniteQuery,
-	createQuery,
-	useQueryClient,
-	type InfiniteData
-} from '@tanstack/svelte-query';
+import { createInfiniteQuery, createQuery, useQueryClient } from '@tanstack/svelte-query';
 import {
 	getDriveStats,
-	listDirectory,
 	listRoots,
 	search,
 	type DriveStatsResponse,
 	type FileInfo,
-	type FileList as FileListType,
 	type ListOptions,
 	type RootsResponse,
 	type SearchResponse
 } from '$lib/api/files';
+import { CONFIG } from '$lib/config';
 import { fileQueryKeys } from '$lib/stores/files';
 import { settingsStore } from '$lib/stores/settings.svelte';
 import { canPreview } from '$lib/utils/fileTypes';
+import { directoryQueryOptions } from './directoryQuery';
 import type { BrowseLocation } from './location.svelte';
 
 /**
@@ -47,19 +42,8 @@ export function useBrowseData(location: BrowseLocation) {
 		enabled: location.path === ''
 	}));
 
-	const directoryQuery = createInfiniteQuery<
-		FileListType,
-		Error,
-		InfiniteData<FileListType>,
-		ReturnType<typeof fileQueryKeys.list>,
-		number
-	>(() => ({
-		queryKey: fileQueryKeys.list(location.path, directoryOptions),
-		queryFn: ({ pageParam, signal }) =>
-			listDirectory(location.path, { ...directoryOptions, page: pageParam }, signal),
-		initialPageParam: 1,
-		getNextPageParam: (lastPage) =>
-			lastPage.page * lastPage.pageSize < lastPage.totalCount ? lastPage.page + 1 : undefined,
+	const directoryQuery = createInfiniteQuery(() => ({
+		...directoryQueryOptions(location.path, directoryOptions),
 		enabled: location.path !== ''
 	}));
 
@@ -147,6 +131,13 @@ export function useBrowseData(location: BrowseLocation) {
 			return isAtRoot || isReadOnly;
 		},
 
+		/** Warms the first page of a folder the user is about to open. Skips folders loaded moments ago. */
+		prefetchDirectory(path: string) {
+			void queryClient.prefetchInfiniteQuery({
+				...directoryQueryOptions(path, directoryOptions),
+				staleTime: CONFIG.query.prefetchStaleTimeMs
+			});
+		},
 		/** Marks the folder (and the search) stale so it loads again. */
 		refresh() {
 			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directory(location.path) });

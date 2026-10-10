@@ -11,6 +11,8 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { Spinner, ContextMenu } from '$lib/components/ui';
 	import { FolderOpen } from 'lucide-svelte';
+	import { CONFIG } from '$lib/config';
+	import { createDelayedFlag } from '$lib/utils/delayedFlag.svelte';
 
 	let {
 		items = [],
@@ -27,6 +29,7 @@
 		showFileExtensions = true,
 		previewOnSingleClick = false,
 		onItemClick,
+		onFolderHover,
 		onSortChange,
 		onSelectionChange,
 		onContextMenuAction
@@ -45,10 +48,14 @@
 		showFileExtensions?: boolean;
 		previewOnSingleClick?: boolean;
 		onItemClick?: (item: FileInfo) => void;
+		/** Path of the folder under the pointer, or null once it leaves */
+		onFolderHover?: (path: string | null) => void;
 		onSortChange?: (field: SortField, dir: SortDir) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
 		onContextMenuAction?: (action: string, items: FileInfo[]) => void;
 	} = $props();
+
+	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
 
 	// Context menu state
 	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
@@ -206,7 +213,7 @@
 	class="relative h-full w-full overflow-auto bg-surface-primary {compactMode ? 'compact' : ''}"
 	oncontextmenu={handleBackgroundContextMenu}
 >
-	{#if isLoading}
+	{#if showSpinner.value}
 		<div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-primary/80">
 			<Spinner />
 		</div>
@@ -303,6 +310,8 @@
 							? 'bg-selection hover:bg-selection-hover'
 							: ''} {isCut(item.path) ? 'opacity-50' : ''}"
 						onclick={(e) => handleRowClick(item, e)}
+						onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
+						onpointerleave={() => onFolderHover?.(null)}
 						onkeydown={(e) => handleKeyDown(item, e)}
 						ondblclick={() => handleDoubleClick(item)}
 						oncontextmenu={(e) => handleContextMenu(item, e)}

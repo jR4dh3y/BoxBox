@@ -10,18 +10,17 @@
 	import FileGrid from '$lib/components/FileGrid.svelte';
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import DriveCard from '$lib/components/DriveCard.svelte';
-	import FilePreview from '$lib/components/FilePreview.svelte';
-	import BrowseDialogs from '$lib/components/BrowseDialogs.svelte';
-	import ShareModal from '$lib/components/ShareModal.svelte';
-	import UploadPanel from '$lib/components/UploadPanel.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
-	import { Spinner } from '$lib/components/ui';
+	import { Button, Spinner } from '$lib/components/ui';
 	import { settingsStore } from '$lib/stores/settings.svelte';
+	import { uploadStore } from '$lib/stores/upload.svelte';
 	import { useBrowseActions } from '$lib/browse/actions.svelte';
 	import { useBrowseData } from '$lib/browse/data.svelte';
 	import { useBrowseLocation } from '$lib/browse/location.svelte';
 	import { useBrowseSelection } from '$lib/browse/selection.svelte';
 	import { useBrowseUploads } from '$lib/browse/uploads.svelte';
+	import { CONFIG } from '$lib/config';
+	import { createHoverIntent } from '$lib/utils/hoverIntent';
 
 	const selection = useBrowseSelection();
 	const location = useBrowseLocation({ onLocationChange: () => selection.clear() });
@@ -29,6 +28,31 @@
 	const actions = useBrowseActions(location, data, selection);
 	const uploads = useBrowseUploads(location, data);
 	const settings = $derived(settingsStore.current);
+	// Uploads keep running without their panel, so closing the error only hides the message.
+	let uploadErrorDismissed = $state(false);
+
+	function closeDialogs() {
+		actions.closeCreate();
+		actions.closeRename();
+		actions.closeDelete();
+		actions.closeProperties();
+	}
+	// Overlays load on first use, so they stay out of the browse page's first download.
+	const hasOpenDialog = $derived(
+		actions.createDialog.open ||
+			actions.renameDialog.open ||
+			actions.deleteDialog.open ||
+			actions.propertiesDialog.open
+	);
+	const onFolderHover = createHoverIntent(
+		data.prefetchDirectory,
+		CONFIG.query.prefetchHoverDelayMs
+	);
+	// A removed row never fires pointerleave, so drop a pending prefetch on navigation and teardown.
+	$effect(() => {
+		void location.path;
+		return () => onFolderHover(null);
+	});
 </script>
 
 <svelte:head>
@@ -37,7 +61,12 @@
 
 <div class="flex h-screen w-full overflow-hidden bg-surface-primary">
 	<!-- Sidebar -->
-	<Sidebar currentPath={location.path} roots={data.roots} onNavigate={location.navigate} />
+	<Sidebar
+		currentPath={location.path}
+		roots={data.roots}
+		onNavigate={location.navigate}
+		{onFolderHover}
+	/>
 
 	<!-- Main content area -->
 	<div class="flex min-w-0 flex-1 flex-col">
@@ -97,7 +126,7 @@
 					{:else}
 						<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
 							{#each data.drives as drive (drive.name)}
-								<DriveCard {drive} onClick={() => location.navigate(drive.name)} />
+								<DriveCard {drive} onClick={() => location.navigate(drive.name)} {onFolderHover} />
 							{/each}
 						</div>
 					{/if}
@@ -116,6 +145,7 @@
 					showFileExtensions={settings.showFileExtensions}
 					previewOnSingleClick={settings.previewOnSingleClick}
 					onItemClick={actions.openFile}
+					{onFolderHover}
 					onSelectionChange={selection.set}
 					onContextMenuAction={actions.handleContextMenuAction}
 				/>
@@ -135,6 +165,7 @@
 					showFileExtensions={settings.showFileExtensions}
 					previewOnSingleClick={settings.previewOnSingleClick}
 					onItemClick={actions.openFile}
+					{onFolderHover}
 					onSortChange={location.setSort}
 					onSelectionChange={selection.set}
 					onContextMenuAction={actions.handleContextMenuAction}
@@ -156,37 +187,60 @@
 	</div>
 </div>
 
-<!-- File Preview Modal -->
-<FilePreview
-	file={actions.previewFile}
-	allFiles={data.previewableFiles}
-	onNavigate={actions.showPreview}
-	onFileSaved={actions.fileSaved}
-	onClose={actions.closePreview}
-/>
+{#snippet loadError(label: string, onClose: () => void)}
+	<div
+		role="alert"
+		class="fixed top-4 left-1/2 z-[110] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-border-primary bg-surface-elevated px-4 py-3 text-sm shadow-lg"
+	>
+		<span>Could not load the {label}. Check your connection, then reload.</span>
+		<Button size="sm" onclick={() => window.location.reload()}>Reload</Button>
+		<Button size="sm" variant="secondary" onclick={onClose}>Close</Button>
+	</div>
+{/snippet}
 
-<BrowseDialogs
-	createDialog={actions.createDialog}
-	renameDialog={actions.renameDialog}
-	deleteDialog={actions.deleteDialog}
-	propertiesDialog={actions.propertiesDialog}
-	onCreateNameChange={actions.setCreateName}
-	onRenameNameChange={actions.setRenameName}
-	onCreateConfirm={() => void actions.confirmCreate()}
-	onRenameConfirm={() => void actions.confirmRename()}
-	onDeleteConfirm={() => void actions.confirmDelete()}
-	onCloseCreate={actions.closeCreate}
-	onCloseRename={actions.closeRename}
-	onCloseDelete={actions.closeDelete}
-	onCloseProperties={actions.closeProperties}
-/>
+{#if actions.previewFile}
+	{#await import('$lib/components/FilePreview.svelte') then { default: FilePreview }}
+		<FilePreview
+			file={actions.previewFile}
+			allFiles={data.previewableFiles}
+			onNavigate={actions.showPreview}
+			onFileSaved={actions.fileSaved}
+			onClose={actions.closePreview}
+		/>
+	{:catch}
+		{@render loadError('preview', actions.closePreview)}
+	{/await}
+{/if}
 
-<!-- Share Modal -->
-<ShareModal
-	open={actions.shareItem !== null}
-	item={actions.shareItem}
-	onclose={actions.closeShare}
-/>
+{#if hasOpenDialog}
+	{#await import('$lib/components/BrowseDialogs.svelte') then { default: BrowseDialogs }}
+		<BrowseDialogs
+			createDialog={actions.createDialog}
+			renameDialog={actions.renameDialog}
+			deleteDialog={actions.deleteDialog}
+			propertiesDialog={actions.propertiesDialog}
+			onCreateNameChange={actions.setCreateName}
+			onRenameNameChange={actions.setRenameName}
+			onCreateConfirm={() => void actions.confirmCreate()}
+			onRenameConfirm={() => void actions.confirmRename()}
+			onDeleteConfirm={() => void actions.confirmDelete()}
+			onCloseCreate={actions.closeCreate}
+			onCloseRename={actions.closeRename}
+			onCloseDelete={actions.closeDelete}
+			onCloseProperties={actions.closeProperties}
+		/>
+	{:catch}
+		{@render loadError('dialog', closeDialogs)}
+	{/await}
+{/if}
+
+{#if actions.shareItem}
+	{#await import('$lib/components/ShareModal.svelte') then { default: ShareModal }}
+		<ShareModal open item={actions.shareItem} onclose={actions.closeShare} />
+	{:catch}
+		{@render loadError('share window', actions.closeShare)}
+	{/await}
+{/if}
 
 <!-- Hidden file input for upload button -->
 <input
@@ -205,7 +259,15 @@
 />
 
 <!-- Upload Panel (floating bottom-right) -->
-<UploadPanel />
+{#if uploadStore.uploads.length > 0}
+	{#await import('$lib/components/UploadPanel.svelte') then { default: UploadPanel }}
+		<UploadPanel />
+	{:catch}
+		{#if !uploadErrorDismissed}
+			{@render loadError('upload panel', () => (uploadErrorDismissed = true))}
+		{/if}
+	{/await}
+{/if}
 
 <!-- Toast notifications -->
 <Toast />
