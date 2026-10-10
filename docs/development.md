@@ -135,6 +135,8 @@ Directory listing and search cost are tracked by `BenchmarkListDirectory` and `B
 
 Cached folder listings are shown at once but never trusted: an open folder always revalidates (`directoryQueryOptions`), and a finished copy, move or delete job invalidates every cached listing and drive stat. A job that ends while the WebSocket is down is caught when it reconnects, because the client reloads the job list then. The server does not push file changes, so a change made outside BoxBox appears on the next open or refresh.
 
+The first load starts the folder listing and the session refresh before the app's JavaScript has arrived. `frontend/static/early-fetch.js` makes both requests, and `src/lib/api/earlyStart.ts` hands their results to the app once; anything that does not match, fails or arrives too late is requested again by the app. The script must ask for exactly what `listDirectory` asks for, so change them together: `earlyStart.test.ts` fails when they differ. It is the only place the refresh happens on a page load, because each refresh rotates the refresh token. The server sends the script with `no-cache`, since it has to match the app that loads it.
+
 ## Backend Patterns
 
 Use the existing Handler -> Service -> Model/Filesystem shape:

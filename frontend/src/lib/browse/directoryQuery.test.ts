@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, test } from 'node:test';
 import { InfiniteQueryObserver, QueryClient } from '@tanstack/svelte-query';
 import { CONFIG } from '$lib/config';
+import type { EarlyStartSource } from '$lib/api/earlyStart';
+import type { FileList } from '$lib/api/files';
 import { directoryQueryOptions } from './directoryQuery';
 
 const realFetch = globalThis.fetch;
@@ -68,5 +70,77 @@ describe('open folder freshness', () => {
 		const confirmed = observer.getCurrentResult().data?.pages[0].items.map((item) => item.name);
 		assert.deepEqual(confirmed, ['a.txt', 'added-outside.txt']);
 		unsubscribe();
+	});
+});
+
+describe('first page from the shell', () => {
+	const page = (number: number, name: string): FileList => ({
+		path: 'media',
+		items: [
+			{
+				name,
+				path: `media/${name}`,
+				isDir: false,
+				size: 1,
+				modTime: '',
+				permissions: '',
+				mimeType: ''
+			}
+		],
+		totalCount: 120,
+		page: number,
+		pageSize: 50
+	});
+	let asked: string[] = [];
+	const source = (early: FileList | null): EarlyStartSource => ({
+		takeSession: async () => null,
+		takeDirectory: async (url) => {
+			asked.push(url);
+			return early;
+		}
+	});
+
+	beforeEach(() => {
+		asked = [];
+		Object.assign(globalThis, {
+			fetch: async (input: string) => {
+				listRequests++;
+				const number = Number(new URL(input).searchParams.get('page'));
+				return Response.json(page(number, `network-${number}.txt`));
+			}
+		});
+	});
+
+	test('is used as it is, with no request of its own', async () => {
+		const queryClient = new QueryClient();
+		const data = await queryClient.fetchInfiniteQuery(
+			directoryQueryOptions('media', options, source(page(1, 'early-1.txt')))
+		);
+		assert.equal(data.pages[0].items[0].name, 'early-1.txt');
+		assert.equal(listRequests, 0);
+		assert.match(asked[0], /\/files\/list\/media\?page=1&pageSize=50&sortBy=name&sortDir=asc/);
+	});
+
+	test('is asked for the first page only; later pages come from the network', async () => {
+		const queryClient = new QueryClient();
+		const data = await queryClient.fetchInfiniteQuery({
+			...directoryQueryOptions('media', options, source(page(1, 'early-1.txt'))),
+			pages: 3
+		});
+		assert.deepEqual(
+			data.pages.map((loaded) => loaded.items[0].name),
+			['early-1.txt', 'network-2.txt', 'network-3.txt']
+		);
+		assert.equal(asked.length, 1);
+		assert.equal(listRequests, 2);
+	});
+
+	test('falls back to the network when the shell has nothing usable', async () => {
+		const queryClient = new QueryClient();
+		const data = await queryClient.fetchInfiniteQuery(
+			directoryQueryOptions('media', options, source(null))
+		);
+		assert.equal(data.pages[0].items[0].name, 'network-1.txt');
+		assert.equal(listRequests, 1);
 	});
 });

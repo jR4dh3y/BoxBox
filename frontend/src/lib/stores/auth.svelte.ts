@@ -6,6 +6,7 @@ import {
 	login as apiLogin,
 	logout as apiLogout,
 	refresh as apiRefresh,
+	restoreSession,
 	isAuthenticated as hasAccessToken
 } from '$lib/api/auth';
 import { CONFIG } from '$lib/config';
@@ -28,7 +29,7 @@ class AuthStore {
 		let isAuthenticated = hasAccessToken();
 		if (!isDevelopment && !isAuthenticated) {
 			try {
-				await apiRefresh();
+				await restoreSession();
 				isAuthenticated = true;
 			} catch {
 				isAuthenticated = false;

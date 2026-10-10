@@ -10,8 +10,9 @@
 	import FileGrid from '$lib/components/FileGrid.svelte';
 	import StatusBar from '$lib/components/StatusBar.svelte';
 	import DriveCard from '$lib/components/DriveCard.svelte';
+	import LoadError from '$lib/components/LoadError.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
-	import { Button, Spinner } from '$lib/components/ui';
+	import { Spinner } from '$lib/components/ui';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { uploadStore } from '$lib/stores/upload.svelte';
 	import { useBrowseActions } from '$lib/browse/actions.svelte';
@@ -187,17 +188,6 @@
 	</div>
 </div>
 
-{#snippet loadError(label: string, onClose: () => void)}
-	<div
-		role="alert"
-		class="fixed top-4 left-1/2 z-[110] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-border-primary bg-surface-elevated px-4 py-3 text-sm shadow-lg"
-	>
-		<span>Could not load the {label}. Check your connection, then reload.</span>
-		<Button size="sm" onclick={() => window.location.reload()}>Reload</Button>
-		<Button size="sm" variant="secondary" onclick={onClose}>Close</Button>
-	</div>
-{/snippet}
-
 {#if actions.previewFile}
 	{#await import('$lib/components/FilePreview.svelte') then { default: FilePreview }}
 		<FilePreview
@@ -208,7 +198,7 @@
 			onClose={actions.closePreview}
 		/>
 	{:catch}
-		{@render loadError('preview', actions.closePreview)}
+		<LoadError label="preview" onClose={actions.closePreview} />
 	{/await}
 {/if}
 
@@ -230,7 +220,7 @@
 			onCloseProperties={actions.closeProperties}
 		/>
 	{:catch}
-		{@render loadError('dialog', closeDialogs)}
+		<LoadError label="dialog" onClose={closeDialogs} />
 	{/await}
 {/if}
 
@@ -238,7 +228,7 @@
 	{#await import('$lib/components/ShareModal.svelte') then { default: ShareModal }}
 		<ShareModal open item={actions.shareItem} onclose={actions.closeShare} />
 	{:catch}
-		{@render loadError('share window', actions.closeShare)}
+		<LoadError label="share window" onClose={actions.closeShare} />
 	{/await}
 {/if}
 
@@ -264,7 +254,7 @@
 		<UploadPanel />
 	{:catch}
 		{#if !uploadErrorDismissed}
-			{@render loadError('upload panel', () => (uploadErrorDismissed = true))}
+			<LoadError label="upload panel" onClose={() => (uploadErrorDismissed = true)} />
 		{/if}
 	{/await}
 {/if}

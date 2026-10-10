@@ -130,7 +130,7 @@ export interface RequestOptions {
 /**
  * Build URL with query parameters
  */
-function buildUrl(
+export function buildUrl(
 	endpoint: string,
 	params?: Record<string, string | number | boolean | undefined>
 ): string {
@@ -150,7 +150,7 @@ function buildUrl(
 /**
  * Parse response and handle errors
  */
-async function parseResponse<T>(response: Response): Promise<T> {
+export async function parseResponse<T>(response: Response): Promise<T> {
 	const contentType = response.headers.get('content-type');
 
 	if (!response.ok) {

@@ -19,6 +19,9 @@ import (
 //go:embed all:dist
 var embeddedFiles embed.FS
 
+// earlyFetchScript is not content-hashed, so a cached copy could outlive the app that expects it.
+const earlyFetchScript = "early-fetch.js"
+
 // Handler serves static files with SPA fallback and compression support
 type Handler struct {
 	fsys      fs.FS
@@ -177,8 +180,8 @@ func (h *Handler) setCacheHeaders(w http.ResponseWriter, path string) {
 	} else if strings.HasPrefix(path, "_app/") {
 		// Other _app files get medium cache
 		w.Header().Set("Cache-Control", "public, max-age=3600")
-	} else if path == "index.html" || path == "" {
-		// HTML should not be cached to ensure updates are picked up
+	} else if path == "index.html" || path == "" || path == earlyFetchScript {
+		// The page and the script that starts its first requests must always match the app they load.
 		w.Header().Set("Cache-Control", "no-cache")
 	} else {
 		// Other static files get short cache

@@ -23,6 +23,8 @@ export const CONFIG = {
 		prefetchStaleTimeMs: 10 * 1000,
 		/** Pause before a hover prefetch starts, so sweeping the pointer across rows fetches nothing */
 		prefetchHoverDelayMs: 100,
+		/** A listing the shell fetched early is dropped when the app is slower than this to ask for it (30 seconds) */
+		earlyListMaxAgeMs: 30 * 1000,
 		/** Jobs refetch interval (5 seconds) */
 		jobsRefetchIntervalMs: 5000
 	},
