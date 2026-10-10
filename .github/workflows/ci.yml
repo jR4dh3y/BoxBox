@@ -56,6 +56,10 @@ jobs:
         working-directory: frontend
         run: bun run build
 
+      - name: Check initial bundle budget
+        working-directory: frontend
+        run: bun run perf:budget
+
   website:
     name: Website build
     runs-on: ubuntu-latest

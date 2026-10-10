@@ -8,8 +8,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
+	"time"
 	"uuid"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
@@ -212,7 +213,7 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 			continue
 		}
 
-		if opts.Filter == "" || strings.Contains(strings.ToLower(entry.Name()), filterLower) {
+		if opts.Filter == "" || containsFold(entry.Name(), filterLower) {
 			filtered = append(filtered, entry)
 		}
 	}
@@ -479,76 +480,70 @@ func (s *fileService) GetFilesystem() filesystem.FS {
 	return s.fs
 }
 
-// sortEntries sorts directory entries based on the given criteria
+// entrySortKey holds what the comparator needs, computed once per entry instead of once per comparison.
+type entrySortKey struct {
+	entry   fs.DirEntry
+	hidden  bool
+	isDir   bool
+	size    int64
+	modTime time.Time
+}
+
+// sortEntries sorts directory entries in place: visible before hidden, then by the requested field.
 func (s *fileService) sortEntries(entries []fs.DirEntry, sortBy, sortDir string) {
-	infos := make(map[string]fs.FileInfo, len(entries))
-	if sortBy == "size" || sortBy == "modTime" {
-		for _, entry := range entries {
+	needsInfo := sortBy == "size" || sortBy == "modTime"
+	keys := make([]entrySortKey, len(entries))
+	for i, entry := range entries {
+		name := entry.Name()
+		key := entrySortKey{
+			entry:  entry,
+			hidden: strings.HasPrefix(name, "."),
+			isDir:  entry.IsDir(),
+		}
+		if needsInfo {
 			if info, err := entry.Info(); err == nil {
-				infos[entry.Name()] = info
+				key.size = info.Size()
+				key.modTime = info.ModTime()
 			}
 		}
+		keys[i] = key
 	}
-	lessFor := func(entry fs.DirEntry) fs.FileInfo {
-		if info, ok := infos[entry.Name()]; ok {
-			return info
-		}
-		info, _ := entry.Info()
-		return info
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		iName := entries[i].Name()
-		jName := entries[j].Name()
-		iHidden := strings.HasPrefix(iName, ".")
-		jHidden := strings.HasPrefix(jName, ".")
 
-		if iHidden != jHidden {
-			return !iHidden
+	slices.SortFunc(keys, func(a, b entrySortKey) int {
+		if a.hidden != b.hidden {
+			if a.hidden {
+				return 1
+			}
+			return -1
 		}
 
 		comparison := 0
 		switch sortBy {
-		case "name":
-			comparison = strings.Compare(strings.ToLower(iName), strings.ToLower(jName))
 		case "size":
-			iInfo := lessFor(entries[i])
-			jInfo := lessFor(entries[j])
-			iSize := int64(0)
-			jSize := int64(0)
-			if iInfo != nil {
-				iSize = iInfo.Size()
-			}
-			if jInfo != nil {
-				jSize = jInfo.Size()
-			}
-			comparison = compareInt64(iSize, jSize)
+			comparison = compareInt64(a.size, b.size)
 		case "modTime":
-			iInfo := lessFor(entries[i])
-			jInfo := lessFor(entries[j])
-			if iInfo != nil && jInfo != nil {
-				comparison = iInfo.ModTime().Compare(jInfo.ModTime())
-			}
+			comparison = a.modTime.Compare(b.modTime)
 		case "type":
-			// Directories first, then by name
-			iDir := entries[i].IsDir()
-			jDir := entries[j].IsDir()
-			if iDir != jDir {
-				return iDir
-			} else {
-				comparison = strings.Compare(strings.ToLower(iName), strings.ToLower(jName))
+			// Directories first in both directions
+			if a.isDir != b.isDir {
+				if a.isDir {
+					return -1
+				}
+				return 1
 			}
-		default:
-			comparison = strings.Compare(strings.ToLower(iName), strings.ToLower(jName))
 		}
 		if comparison == 0 {
-			comparison = strings.Compare(strings.ToLower(iName), strings.ToLower(jName))
+			comparison = compareFold(a.entry.Name(), b.entry.Name())
 		}
-
 		if sortDir == "desc" {
-			return comparison > 0
+			return -comparison
 		}
-		return comparison < 0
+		return comparison
 	})
+
+	for i, key := range keys {
+		entries[i] = key.entry
+	}
 }
 
 func compareInt64(left, right int64) int {

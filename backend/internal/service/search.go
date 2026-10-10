@@ -84,7 +84,7 @@ func (s *searchService) Search(ctx context.Context, path, query string) ([]model
 		if len(results) >= maxSearchResults {
 			break
 		}
-		if !strings.Contains(strings.ToLower(entry.DirEntry.Name()), queryLower) {
+		if !containsFold(entry.DirEntry.Name(), queryLower) {
 			continue
 		}
 		info, err := entry.DirEntry.Info()
