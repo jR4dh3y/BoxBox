@@ -41,27 +41,25 @@ func JSONCompression(next http.Handler) http.Handler {
 	})
 }
 
+// acceptsGzip reports whether the Accept-Encoding header allows gzip. A quality of zero in any
+// spelling (q=0, q=0.0, q=0.000) refuses it, and so does a quality that is not a number.
 func acceptsGzip(acceptEncoding string) bool {
 	for _, part := range strings.Split(acceptEncoding, ",") {
-		coding, params, _ := strings.Cut(part, ";")
-		if strings.EqualFold(strings.TrimSpace(coding), "gzip") {
-			return gzipQuality(params) > 0
+		coding, params, hasParams := strings.Cut(strings.TrimSpace(part), ";")
+		if !strings.EqualFold(strings.TrimSpace(coding), "gzip") {
+			continue
 		}
+		if !hasParams {
+			return true
+		}
+		name, value, _ := strings.Cut(strings.TrimSpace(params), "=")
+		if !strings.EqualFold(strings.TrimSpace(name), "q") {
+			return true
+		}
+		quality, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		return err == nil && quality > 0
 	}
 	return false
-}
-
-// gzipQuality reads the q parameter of an Accept-Encoding entry. No q means 1; an unreadable q counts as a refusal.
-func gzipQuality(params string) float64 {
-	name, value, found := strings.Cut(strings.TrimSpace(params), "=")
-	if !found || !strings.EqualFold(strings.TrimSpace(name), "q") {
-		return 1
-	}
-	q, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	if err != nil {
-		return 0
-	}
-	return q
 }
 
 type bufferedResponse struct {
