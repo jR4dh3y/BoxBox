@@ -82,3 +82,66 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 	// Default to internal server error
 	writeError(w, "Internal server error", model.ErrCodeInternalError, http.StatusInternalServerError)
 }
+
+func writeDesktopAppsError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrDesktopRuntimeUnavailable):
+		writeError(w, "Could not inspect this file type. Make sure GIO is available.", model.ErrCodeInternalError, http.StatusServiceUnavailable)
+	case errors.Is(err, service.ErrDesktopApplicationUnavailable):
+		writeError(w, "That application is no longer available for this file. Refresh the list and try again.", model.ErrCodeNotFound, http.StatusNotFound)
+	case errors.Is(err, service.ErrDesktopTerminalUnavailable):
+		writeError(w, "No supported terminal application is installed.", model.ErrCodeInternalError, http.StatusServiceUnavailable)
+	case errors.Is(err, service.ErrDesktopTerminalLaunchFailed):
+		writeError(w, "Could not open a terminal in that directory.", model.ErrCodeInternalError, http.StatusInternalServerError)
+	case errors.Is(err, service.ErrDesktopLaunchFailed):
+		writeError(w, "Could not launch the selected desktop application.", model.ErrCodeInternalError, http.StatusInternalServerError)
+	default:
+		HandleServiceError(w, err)
+	}
+}
+
+func writeDesktopClipboardError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrDesktopClipboardUnavailable):
+		writeError(w, "Desktop clipboard helper is unavailable", model.ErrCodeInternalError, http.StatusServiceUnavailable)
+	case errors.Is(err, service.ErrDesktopClipboardChanged):
+		writeError(w, "Clipboard changed before the cut completed", model.ErrCodeConflict, http.StatusConflict)
+	default:
+		HandleServiceError(w, err)
+	}
+}
+
+func writeDesktopVolumeError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrDesktopVolumeNotFound):
+		writeError(w, "This removable volume is no longer connected", model.ErrCodeNotFound, http.StatusNotFound)
+	case errors.Is(err, service.ErrDesktopVolumesUnavailable):
+		writeError(w, "Removable drive support is unavailable on this system", "VOLUMES_UNAVAILABLE", http.StatusServiceUnavailable)
+	case errors.Is(err, service.ErrDesktopVolumeNotMounted):
+		writeError(w, "Unmount the volume before ejecting it", model.ErrCodeConflict, http.StatusConflict)
+	default:
+		var commandErr *service.DesktopVolumeCommandError
+		if errors.As(err, &commandErr) {
+			writeError(w, commandErr.UserMessage(), model.ErrCodeConflict, http.StatusConflict)
+			return
+		}
+		writeError(w, "Could not update the removable volume", model.ErrCodeInternalError, http.StatusInternalServerError)
+	}
+}
+
+func writeDesktopTrashError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrTrashUnavailable):
+		writeError(w, "Trash is unavailable on this filesystem", "TRASH_UNAVAILABLE", http.StatusServiceUnavailable)
+	case errors.Is(err, service.ErrTrashItemNotFound):
+		writeError(w, "Trash item not found", model.ErrCodeNotFound, http.StatusNotFound)
+	case errors.Is(err, service.ErrTrashConflict):
+		writeError(w, "The original path already exists", model.ErrCodeConflict, http.StatusConflict)
+	case errors.Is(err, service.ErrTrashCannotRestore):
+		writeError(w, "This Trash item cannot be restored to its original location", model.ErrCodeConflict, http.StatusConflict)
+	case errors.Is(err, service.ErrInvalidTrashItem):
+		writeError(w, "This Trash item cannot be read safely", model.ErrCodeConflict, http.StatusConflict)
+	default:
+		HandleServiceError(w, err)
+	}
+}

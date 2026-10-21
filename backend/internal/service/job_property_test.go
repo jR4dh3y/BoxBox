@@ -126,6 +126,46 @@ func TestJobCreateResolvesVirtualPaths(t *testing.T) {
 	}
 }
 
+func TestRevalidateJobPathsSynchronizesSnapshots(t *testing.T) {
+	svc, fs := setupTestJobService()
+	if err := fs.WriteFile("/data/media/source.bin", []byte("source"), 0644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	job, err := svc.Create(context.Background(), model.JobParams{
+		Type:       model.JobTypeCopy,
+		SourcePath: "media/source.bin",
+		DestPath:   "backup/destination.bin",
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	internal := svc.JobService.(*jobService)
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	workers.Add(2)
+	go func() {
+		defer workers.Done()
+		<-start
+		for range 1000 {
+			if err := internal.revalidateJobPaths(job); err != nil {
+				t.Errorf("revalidate job paths: %v", err)
+				return
+			}
+		}
+	}()
+	go func() {
+		defer workers.Done()
+		<-start
+		for range 1000 {
+			internal.snapshotJob(job)
+		}
+	}()
+	close(start)
+	workers.Wait()
+}
+
 func TestJobCreateRejectsPathsOutsideMounts(t *testing.T) {
 	svc, _ := setupTestJobService()
 	ctx := context.Background()

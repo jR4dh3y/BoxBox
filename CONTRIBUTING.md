@@ -20,8 +20,7 @@ Requirements:
 Install dependencies:
 
 ```bash
-bun install --cwd frontend
-bun install --cwd website
+bun install
 cd backend && go mod download
 ```
 

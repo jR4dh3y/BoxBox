@@ -62,6 +62,7 @@ type FS interface {
 
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
+	Mkdir(path string, perm os.FileMode) error
 
 	// Mkdir creates one new directory and fails when it already exists.
 	Mkdir(path string, perm os.FileMode) error
@@ -93,8 +94,15 @@ type AferoFS struct {
 var errInvalidFilesystemPath = errors.New("invalid filesystem path")
 
 func validateFilesystemPath(path string) error {
-	if strings.ContainsRune(path, '\x00') || strings.Contains(path, "..") {
+	if strings.ContainsRune(path, '\x00') {
 		return errInvalidFilesystemPath
+	}
+
+	normalizedPath := strings.ReplaceAll(path, `\`, "/")
+	for _, component := range strings.Split(normalizedPath, "/") {
+		if component == ".." {
+			return errInvalidFilesystemPath
+		}
 	}
 	return nil
 }

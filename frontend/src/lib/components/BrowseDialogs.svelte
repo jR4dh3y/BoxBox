@@ -14,6 +14,8 @@
 		renameDialog,
 		deleteDialog,
 		propertiesDialog,
+		openWithFile = null,
+		onCloseOpenWith,
 		onCreateNameChange,
 		onRenameNameChange,
 		onCreateConfirm,
@@ -28,6 +30,8 @@
 		renameDialog: RenameDialog;
 		deleteDialog: DeleteDialog;
 		propertiesDialog: PropertiesDialog;
+		openWithFile?: FileInfo | null;
+		onCloseOpenWith?: () => void;
 		onCreateNameChange: (name: string) => void;
 		onRenameNameChange: (name: string) => void;
 		onCreateConfirm: () => void;
@@ -46,6 +50,12 @@
 	const deleteCount = $derived(deleteDialog.items.length);
 	const deleteFirst = $derived(deleteDialog.items[0]);
 </script>
+
+{#if openWithFile}
+	{#await import('#lib/components/desktop/OpenWithDialog.svelte') then { default: OpenWithDialog }}
+		<OpenWithDialog open={true} path={openWithFile.path} onclose={() => onCloseOpenWith?.()} />
+	{/await}
+{/if}
 
 <Modal
 	open={createDialog.open}

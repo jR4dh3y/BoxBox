@@ -14,6 +14,8 @@ import { CONFIG } from '#lib/config.js';
 import { fileQueryKeys } from '#lib/stores/files.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { canPreview } from '#lib/utils/fileTypes.js';
+import { isLocalDesktop } from '#lib/api/desktop.js';
+import { watchDesktopDirectory } from './desktopWatch';
 import { directoryQueryOptions } from './directoryQuery';
 import { sortFiles } from './sortFiles';
 import type { BrowseLocation } from './location.svelte';

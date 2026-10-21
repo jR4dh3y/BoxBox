@@ -5,6 +5,7 @@
 
 import type { ContextMenuItem } from '#lib/components/ui/ContextMenu.svelte';
 import type { FileInfo } from '#lib/api/files.js';
+import { isLocalDesktop } from '#lib/api/desktop.js';
 import {
 	Copy,
 	Scissors,
@@ -17,7 +18,9 @@ import {
 	Info,
 	Pin,
 	PinOff,
-	Share2
+	Share2,
+	AppWindow,
+	Terminal
 } from 'lucide-svelte';
 
 export type FileContextAction =
@@ -32,7 +35,10 @@ export type FileContextAction =
 	| 'delete'
 	| 'download'
 	| 'share'
-	| 'properties';
+	| 'properties'
+	| 'open-with'
+	| 'open-terminal'
+	| 'delete-permanently';
 
 export interface FileContextMenuOptions {
 	/** Selected items for the context menu */
@@ -77,12 +83,27 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 	if (!hasSelection) {
 		return [
 			...createItems,
+			...(isLocalDesktop()
+				? [{ id: 'open-terminal', label: 'Open Terminal Here', icon: Terminal }]
+				: []),
 			{ id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl+V', disabled: !canPaste }
 		];
 	}
 
 	return [
 		...createItems,
+		...(isLocalDesktop()
+			? [
+					{ id: 'open-with', label: 'Open With…', icon: AppWindow, disabled: !singleFile },
+					{
+						id: 'open-terminal',
+						label: 'Open Terminal Here',
+						icon: Terminal,
+						disabled: !singleFolder
+					},
+					{ id: 'separator-desktop', label: '', separator: true }
+				]
+			: []),
 		{ id: 'copy', label: 'Copy', icon: Copy, shortcut: 'Ctrl+C' },
 		{ id: 'cut', label: 'Cut', icon: Scissors, shortcut: 'Ctrl+X' },
 		{ id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl+V', disabled: !canPaste },
@@ -97,7 +118,22 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 			: []),
 		{ id: 'separator-1', label: '', separator: true },
 		{ id: 'rename', label: 'Rename', icon: Pencil, shortcut: 'F2', disabled: hasMultiple },
-		{ id: 'delete', label: 'Delete', icon: Trash2, shortcut: 'Del' },
+		{
+			id: 'delete',
+			label: isLocalDesktop() ? 'Move to Trash' : 'Delete',
+			icon: Trash2,
+			shortcut: 'Del'
+		},
+		...(isLocalDesktop()
+			? [
+					{
+						id: 'delete-permanently',
+						label: 'Delete Permanently…',
+						icon: Trash2,
+						shortcut: 'Shift+Del'
+					}
+				]
+			: []),
 		{ id: 'separator-2', label: '', separator: true },
 		{
 			id: 'download',

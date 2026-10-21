@@ -30,6 +30,7 @@ func TestAferoFSKeepsSafePathsAndRejectsTraversal(t *testing.T) {
 	for _, path := range []string{
 		"../data/media/safe.txt",
 		"/data/media/../secret.txt",
+		`/data/media\..\secret.txt`,
 		"/data/media/\x00secret.txt",
 	} {
 		_, err := fsys.ReadFile(path)

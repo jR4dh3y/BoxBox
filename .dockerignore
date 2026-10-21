@@ -20,9 +20,22 @@ docs/
 !.env.example
 
 # Frontend build artifacts (built in container)
+node_modules
 frontend/node_modules
 frontend/.svelte-kit
 frontend/build
+
+# Other workspace dependencies and generated output
+.hutch
+desktop/node_modules
+desktop/.hutch
+desktop/build
+desktop/artifacts
+desktop/resources
+website/node_modules
+website/dist
+website/.astro
+website/.vercel
 
 # Backend build artifacts (built in container)
 backend/server

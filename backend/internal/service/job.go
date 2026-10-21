@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 	"uuid"
 
@@ -393,8 +395,15 @@ func (s *jobService) execute(ctx context.Context, job *model.Job) {
 }
 
 func (s *jobService) revalidateJobPaths(job *model.Job) error {
-	sourceMount := &model.MountPoint{Path: job.ResolvedSourceRoot}
-	source, err := resolveExistingPathWithinMount(s.fs, sourceMount, job.ResolvedSourcePath)
+	s.jobMu.RLock()
+	sourceRoot := job.ResolvedSourceRoot
+	sourcePath := job.ResolvedSourcePath
+	destinationRoot := job.ResolvedDestRoot
+	destinationPath := job.ResolvedDestPath
+	s.jobMu.RUnlock()
+
+	sourceMount := &model.MountPoint{Path: sourceRoot}
+	source, err := resolveExistingPathWithinMount(s.fs, sourceMount, sourcePath)
 	if err != nil {
 		return err
 	}
@@ -409,9 +418,10 @@ func (s *jobService) revalidateJobPaths(job *model.Job) error {
 	}
 	job.ResolvedSourcePath = source
 
-	if job.ResolvedDestPath != "" {
-		destMount := &model.MountPoint{Path: job.ResolvedDestRoot}
-		destination, err := resolveWritablePathWithinMount(s.fs, destMount, job.ResolvedDestPath)
+	var destination string
+	if destinationPath != "" {
+		destMount := &model.MountPoint{Path: destinationRoot}
+		destination, err = resolveWritablePathWithinMount(s.fs, destMount, destinationPath)
 		if err != nil {
 			return err
 		}
@@ -420,6 +430,7 @@ func (s *jobService) revalidateJobPaths(job *model.Job) error {
 		}
 		job.ResolvedDestPath = destination
 	}
+	s.jobMu.Unlock()
 	return nil
 }
 
@@ -512,7 +523,11 @@ func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 	if err != nil {
 		return err
 	}
-	if err := s.fs.MkdirAll(destPath, 0o755); err != nil {
+	if err := s.fs.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return err
+	}
+	// Claim the destination exclusively so a race cannot merge into another folder.
+	if err := s.fs.Mkdir(destPath, 0o755); err != nil {
 		return err
 	}
 
@@ -555,10 +570,16 @@ func (s *jobService) executeMove(ctx context.Context, job *model.Job) error {
 	destPath := jobDestPath(job)
 
 	// Try simple rename first (works if on same filesystem)
-	err := s.fs.Rename(sourcePath, destPath)
+	err := s.fs.RenameNoReplace(sourcePath, destPath)
 	if err == nil {
 		s.updateProgress(job, 100)
 		return nil
+	}
+	if errors.Is(err, fs.ErrExist) {
+		return ErrPathExists
+	}
+	if !errors.Is(err, syscall.EXDEV) {
+		return err
 	}
 
 	// If rename fails, fall back to copy + delete

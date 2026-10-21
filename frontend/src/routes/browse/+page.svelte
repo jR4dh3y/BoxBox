@@ -36,30 +36,168 @@
 	const selectedBytes = $derived(selectedFileBytes(data.displayItems, selection.paths));
 	// Uploads keep running without their panel, so closing the error only hides the message.
 	let uploadErrorDismissed = $state(false);
+	let launchTabId = $state('');
 
-	function closeDialogs() {
-		actions.closeCreate();
-		actions.closeRename();
-		actions.closeDelete();
-		actions.closeProperties();
-	}
-	// Overlays load on first use, so they stay out of the browse page's first download.
-	const hasOpenDialog = $derived(
-		actions.createDialog.open ||
-			actions.renameDialog.open ||
-			actions.deleteDialog.open ||
-			actions.propertiesDialog.open
-	);
-	const onFolderHover = createHoverIntent(
-		data.prefetchDirectory,
-		CONFIG.query.prefetchHoverDelayMs
-	);
-	// A removed row never fires pointerleave, so drop a pending prefetch on navigation and teardown.
+	const tabs = useBrowseTabs({
+		initialLocation: launchState.location,
+		onActiveLocationChange(snapshot) {
+			if (pendingSelectPath && tabs.activeTabId !== launchTabId) pendingSelectPath = null;
+			syncBrowseUrl(snapshot, pendingSelectPath);
+		}
+	});
+	launchTabId = tabs.activeTabId;
+
+	const activePane = $derived(tabs.activePane);
+	const activeLocation = $derived(activePane?.location);
+	const activeRuntime = $derived(activePane ? (paneRuntimes[activePane.id] ?? null) : null);
+	const settings = $derived(settingsStore.current);
+
+	const onFolderHover = createHoverIntent((path) => {
+		if (path) activeRuntime?.data.prefetchDirectory(path);
+	}, CONFIG.query.prefetchHoverDelayMs);
+
 	$effect(() => {
-		void location.path;
+		void activePane?.id;
+		void activeLocation?.path;
 		return () => onFolderHover(null);
 	});
+
+	function syncBrowseUrl(snapshot: BrowseLocationSnapshot, selectPath: string | null): void {
+		const url = new URL(page.url.href);
+		if (snapshot.path) url.searchParams.set('path', snapshot.path);
+		else url.searchParams.delete('path');
+		if (snapshot.searchQuery) url.searchParams.set('q', snapshot.searchQuery);
+		else url.searchParams.delete('q');
+		url.searchParams.set('sort', snapshot.sortBy);
+		url.searchParams.set('dir', snapshot.sortDir);
+		url.searchParams.set('view', snapshot.viewMode);
+		if (selectPath) url.searchParams.set('select', selectPath);
+		else url.searchParams.delete('select');
+
+		void goto(`${resolve('browse')}${url.search}${url.hash}`, {
+			replace: true,
+			reset: false,
+			state: page.state
+		});
+	}
+
+	function setPaneRuntime(paneId: string, runtime: BrowsePaneRuntime | null): void {
+		if (runtime) {
+			paneRuntimes = { ...paneRuntimes, [paneId]: runtime };
+			return;
+		}
+
+		if (!(paneId in paneRuntimes)) return;
+		const next = { ...paneRuntimes };
+		delete next[paneId];
+		paneRuntimes = next;
+	}
+
+	function handleInitialSelectHandled(path: string): void {
+		if (untrack(() => pendingSelectPath) !== path) return;
+		pendingSelectPath = null;
+		if (activePane) syncBrowseUrl(activePane.location.snapshot, null);
+	}
+
+	function focusActivePane(): void {
+		const paneId = tabs.activePane?.id;
+		if (!paneId) return;
+		void tick().then(() => document.getElementById(`browse-pane-${paneId}`)?.focus());
+	}
+
+	function isEditableTarget(target: EventTarget | null): boolean {
+		return (
+			target instanceof HTMLElement &&
+			(target.isContentEditable ||
+				target.closest('input, textarea, select, [contenteditable="true"]') !== null)
+		);
+	}
+
+	function focusLocation(): void {
+		const input = document.querySelector<HTMLInputElement>('input[aria-label="Location"]');
+		if (input) {
+			input.focus();
+			input.select();
+			return;
+		}
+		const pathBar = document.querySelector<HTMLElement>('[aria-label="Edit location"]');
+		pathBar?.click();
+		void tick().then(() => {
+			const editor = document.querySelector<HTMLInputElement>('input[aria-label="Location"]');
+			editor?.focus();
+			editor?.select();
+		});
+	}
+
+	function handleKeydown(event: KeyboardEvent): void {
+		if (event.defaultPrevented) return;
+		const workspace = document.getElementById('browse-workspace');
+		const insideWorkspace =
+			event.target instanceof Node && workspace?.contains(event.target) === true;
+		if (!insideWorkspace && !activeRuntime?.hasOpenDialog) return;
+
+		const shortcut = getBrowseShortcut({
+			key: event.key,
+			ctrlKey: event.ctrlKey,
+			metaKey: event.metaKey,
+			shiftKey: event.shiftKey,
+			altKey: event.altKey,
+			editable: isEditableTarget(event.target)
+		});
+		if (!shortcut) return;
+		event.preventDefault();
+		if (activeRuntime?.hasOpenDialog) return;
+
+		switch (shortcut) {
+			case 'new-tab':
+				tabs.newTab();
+				focusActivePane();
+				break;
+			case 'close-tab':
+				tabs.closeTab();
+				focusActivePane();
+				break;
+			case 'next-tab':
+				tabs.cycleTab(1);
+				focusActivePane();
+				break;
+			case 'previous-tab':
+				tabs.cycleTab(-1);
+				focusActivePane();
+				break;
+			case 'toggle-split':
+				tabs.toggleSplit();
+				focusActivePane();
+				break;
+			case 'back':
+				activeLocation?.back();
+				break;
+			case 'forward':
+				activeLocation?.forward();
+				break;
+			case 'up':
+				activeLocation?.up();
+				break;
+			case 'refresh':
+				activeRuntime?.data.reload();
+				break;
+			case 'toggle-hidden':
+				settingsStore.set({
+					...settingsStore.current,
+					showHiddenFiles: !settingsStore.current.showHiddenFiles
+				});
+				break;
+			case 'paste':
+				void activeRuntime?.actions.paste.paste();
+				break;
+			case 'focus-location':
+				focusLocation();
+				break;
+		}
+	}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <svelte:head>
 	<title>BoxBox</title>
@@ -68,9 +206,9 @@
 <div class="browse-shell flex h-screen w-full overflow-hidden bg-surface-primary">
 	<!-- Sidebar -->
 	<Sidebar
-		currentPath={location.path}
-		roots={data.roots}
-		onNavigate={location.navigate}
+		currentPath={activeLocation?.path ?? ''}
+		roots={activeRuntime?.data.roots ?? []}
+		onNavigate={(path) => activeLocation?.navigate(path)}
 		{onFolderHover}
 		open={sidebarOpen}
 		onClose={() => (sidebarOpen = false)}

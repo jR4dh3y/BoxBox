@@ -1,4 +1,5 @@
 import { SvelteSet } from 'svelte/reactivity';
+import { isLocalDesktop, openDesktopFile } from '#lib/api/desktop.js';
 import {
 	createDirectory,
 	createFile,
@@ -8,7 +9,8 @@ import {
 	rename,
 	type FileInfo
 } from '#lib/api/files.js';
-import { createCopyJob, createDeleteJob, createMoveJob } from '#lib/api/jobs.js';
+import { createDeleteJob } from '#lib/api/jobs.js';
+import { useBrowsePaste } from './paste.svelte';
 import { clipboardStore } from '#lib/stores/clipboard.svelte.js';
 import { jobsStore } from '#lib/stores/jobs.svelte.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
@@ -51,7 +53,9 @@ export function useBrowseActions(
 	data: BrowseData,
 	selection: BrowseSelection
 ) {
+	const paste = useBrowsePaste(location, data);
 	let previewFile = $state<FileInfo | null>(null);
+	let openWithFile = $state<FileInfo | null>(null);
 	let createDialog = $state<{ open: boolean; type: 'file' | 'directory'; name: string }>({
 		open: false,
 		type: 'file',
@@ -62,7 +66,10 @@ export function useBrowseActions(
 		file: null,
 		newName: ''
 	});
-	let deleteDialog = $state<{ open: boolean; items: FileInfo[] }>({ open: false, items: [] });
+	let deleteDialog = $state<
+		| { open: false; items: FileInfo[] }
+		| { open: true; items: FileInfo[]; mode: 'trash' | 'permanent' }
+	>({ open: false, items: [] });
 	let propertiesDialog = $state<{ open: boolean; file: FileInfo | null }>({
 		open: false,
 		file: null
@@ -110,27 +117,6 @@ export function useBrowseActions(
 		}
 	}
 
-	async function paste() {
-		if (!clipboardStore.hasItems || !location.path) return;
-
-		const operation = clipboardStore.operation;
-		try {
-			for (const item of clipboardStore.items) {
-				const destPath = `${location.path}/${item.name}`;
-				if (operation === 'copy') {
-					jobsStore.upsertJob(await createCopyJob(item.path, destPath));
-				} else if (operation === 'cut') {
-					jobsStore.upsertJob(await createMoveJob(item.path, destPath));
-				}
-			}
-			if (operation === 'cut') clipboardStore.clear();
-			data.refetchDirectory();
-		} catch (error) {
-			console.error('Paste operation failed:', error);
-			toastStore.error(errorMessage(error, 'Paste failed'));
-		}
-	}
-
 	async function confirmRename() {
 		if (!renameDialog.file) return;
 		const newName = validateItemName(renameDialog.newName);
@@ -142,6 +128,10 @@ export function useBrowseActions(
 
 		try {
 			await rename(oldPath, newPath);
+			if (isLocalDesktop()) {
+				const { desktopUndo } = await import('./undo.svelte');
+				desktopUndo.rememberRename(oldPath, newPath);
+			}
 			renameDialog = { open: false, file: null, newName: '' };
 			data.refetchDirectory();
 		} catch (error) {
@@ -151,12 +141,19 @@ export function useBrowseActions(
 	}
 
 	/** Files go at once; folders become background jobs. */
-	async function deleteItems(items: FileInfo[]) {
+	async function deleteItems(items: FileInfo[], permanent = !isLocalDesktop()) {
 		if (items.length === 0) return;
 
 		try {
+			const trashed: string[] = [];
 			for (const item of items) {
-				if (item.isDir) {
+				if (!permanent) {
+					const { trashDesktopFile } = await import('#lib/api/desktopTrash.js');
+					const { desktopUndo } = await import('./undo.svelte');
+					const result = await trashDesktopFile(item.path);
+					trashed.push(result.item.id);
+					desktopUndo.rememberTrash([...trashed]);
+				} else if (item.isDir) {
 					jobsStore.upsertJob(await createDeleteJob(item.path));
 				} else {
 					await deleteFile(item.path);
@@ -171,11 +168,19 @@ export function useBrowseActions(
 	}
 
 	async function confirmDelete() {
-		await deleteItems(deleteDialog.items);
+		if (!deleteDialog.open) return;
+		await deleteItems(deleteDialog.items, deleteDialog.mode === 'permanent');
 		deleteDialog = { open: false, items: [] };
 	}
 
 	return {
+		paste,
+		get openWithFile() {
+			return openWithFile;
+		},
+		closeOpenWith() {
+			openWithFile = null;
+		},
 		get previewFile() {
 			return previewFile;
 		},
@@ -201,7 +206,7 @@ export function useBrowseActions(
 			return cutPaths;
 		},
 		get canPaste() {
-			return clipboardStore.hasItems;
+			return isLocalDesktop() || clipboardStore.hasItems;
 		},
 
 		setCreateName(name: string) {
@@ -232,6 +237,12 @@ export function useBrowseActions(
 				location.navigate(file.path);
 				return;
 			}
+			if (isLocalDesktop()) {
+				void openDesktopFile(file.path).catch((error: unknown) => {
+					toastStore.error(errorMessage(error, 'Open failed'));
+				});
+				return;
+			}
 			if (!canPreview(file.name)) {
 				toastStore.info(`Preview not available for ${getFileTypeDescription(file.name)}`);
 				return;
@@ -252,6 +263,19 @@ export function useBrowseActions(
 		async handleContextMenuAction(action: string, items: FileInfo[]) {
 			const [only] = items.length === 1 ? items : [];
 			switch (action) {
+				case 'open-with':
+					if (isLocalDesktop() && only && !only.isDir) openWithFile = only;
+					break;
+				case 'open-terminal':
+					if (isLocalDesktop()) {
+						try {
+							const { openDesktopTerminal } = await import('#lib/api/desktopApps.js');
+							await openDesktopTerminal(only?.isDir ? only.path : location.path);
+						} catch (error) {
+							toastStore.error(errorMessage(error, 'Could not open a terminal'));
+						}
+					}
+					break;
 				case 'new-file':
 					openCreate('file');
 					break;
@@ -260,12 +284,38 @@ export function useBrowseActions(
 					break;
 				case 'copy':
 					clipboardStore.copy(items);
+					if (isLocalDesktop()) {
+						try {
+							const { writeBrowseClipboard } = await import('./desktopClipboard');
+							await writeBrowseClipboard(items, 'copy');
+						} catch (error) {
+							toastStore.error(
+								errorMessage(
+									error,
+									'Native clipboard unavailable; copying within BoxBox still works'
+								)
+							);
+						}
+					}
 					break;
 				case 'cut':
 					clipboardStore.cut(items);
+					if (isLocalDesktop()) {
+						try {
+							const { writeBrowseClipboard } = await import('./desktopClipboard');
+							await writeBrowseClipboard(items, 'cut');
+						} catch (error) {
+							toastStore.error(
+								errorMessage(
+									error,
+									'Native clipboard unavailable; moving within BoxBox still works'
+								)
+							);
+						}
+					}
 					break;
 				case 'paste':
-					await paste();
+					await paste.paste();
 					break;
 				case 'pin':
 					if (only?.isDir) {
@@ -284,10 +334,13 @@ export function useBrowseActions(
 					break;
 				case 'delete':
 					if (settingsStore.current.confirmDelete) {
-						deleteDialog = { open: true, items };
+						deleteDialog = { open: true, items, mode: isLocalDesktop() ? 'trash' : 'permanent' };
 					} else {
 						await deleteItems(items);
 					}
+					break;
+				case 'delete-permanently':
+					deleteDialog = { open: true, items, mode: 'permanent' };
 					break;
 				case 'download':
 					download(items);

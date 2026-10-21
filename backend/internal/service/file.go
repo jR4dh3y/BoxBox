@@ -27,6 +27,8 @@ var (
 	ErrDirectoryTooLarge  = errors.New("directory exceeds entry limit")
 )
 
+const defaultDirectoryEntryLimit = 10_000
+
 // File represents an open file that can be read and seeked
 type File interface {
 	io.Reader
@@ -86,20 +88,29 @@ type FileService interface {
 
 // fileService implements FileService
 type fileService struct {
-	fs     filesystem.FS
-	mounts *mounts
+	fs                  filesystem.FS
+	mounts              *mounts
+	directoryEntryLimit int
 }
 
 // FileServiceConfig holds configuration for the file service
 type FileServiceConfig struct {
 	MountPoints []model.MountPoint
+	// DirectoryEntryLimit uses the default 10,000-entry cap when zero; negative disables the cap.
+	DirectoryEntryLimit int
 }
 
 // NewFileService creates a new file service
 func NewFileService(fsys filesystem.FS, cfg FileServiceConfig) FileService {
+	directoryEntryLimit := cfg.DirectoryEntryLimit
+	if directoryEntryLimit == 0 {
+		directoryEntryLimit = defaultDirectoryEntryLimit
+	}
+
 	return &fileService{
-		fs:     fsys,
-		mounts: newMounts(fsys, fixedMounts(cfg.MountPoints)),
+		fs:                  fsys,
+		mounts:              newMounts(fsys, fixedMounts(cfg.MountPoints)),
+		directoryEntryLimit: directoryEntryLimit,
 	}
 }
 
