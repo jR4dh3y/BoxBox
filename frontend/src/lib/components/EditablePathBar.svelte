@@ -2,6 +2,8 @@
 	import { Folder, Home, Loader2 } from 'lucide-svelte';
 	import { onDestroy, tick } from 'svelte';
 	import { listDirectory, listRoots } from '#lib/api/files.js';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { desktopInputPath } from '#lib/browse/desktopPath.js';
 
 	interface PathSuggestion {
 		path: string;
@@ -86,7 +88,15 @@
 	}
 
 	function normalizeInputPath(value: string): string {
-		return value
+		let path = value;
+		if (isLocalDesktop()) {
+			try {
+				path = desktopInputPath(value);
+			} catch {
+				return '';
+			}
+		}
+		return path
 			.replaceAll('\\', '/')
 			.replace(/^\/+/, '')
 			.replace(/\/{2,}/g, '/');

@@ -13,6 +13,7 @@
 	} from 'lucide-svelte';
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
 	import SearchBar from '#lib/components/SearchBar.svelte';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
 
 	interface Props {
 		pathSegments?: string[];
@@ -87,7 +88,7 @@
 	<EditablePathBar {pathSegments} {onNavigate} {includeHiddenSuggestions} />
 
 	{#if showSearch}
-		<div class="w-64 shrink-0 lg:w-96">
+		<div class="w-40 min-w-24 shrink lg:w-64">
 			<SearchBar
 				value={searchValue}
 				onInput={onSearchInput}
@@ -127,3 +128,9 @@
 		</button>
 	</div>
 </div>
+
+{#if isLocalDesktop()}
+	{#await import('#lib/components/desktop/DesktopTools.svelte') then { default: DesktopTools }}
+		<DesktopTools path={pathSegments.join('/')} {onNavigate} />
+	{/await}
+{/if}

@@ -30,11 +30,32 @@ func TestAferoFSKeepsSafePathsAndRejectsTraversal(t *testing.T) {
 	for _, path := range []string{
 		"../data/media/safe.txt",
 		"/data/media/../secret.txt",
+		`/data/media\..\secret.txt`,
 		"/data/media/\x00secret.txt",
 	} {
 		_, err := fsys.ReadFile(path)
 		if !errors.Is(err, errInvalidFilesystemPath) {
 			t.Errorf("read %q error = %v, want invalid filesystem path", path, err)
+		}
+	}
+}
+
+func TestAferoFSReadsNamesWithDotSubstrings(t *testing.T) {
+	directory := t.TempDir()
+	for _, name := range []string{"report..txt", "...hidden"} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fsys := NewOsFS()
+	for _, name := range []string{"report..txt", "...hidden"} {
+		got, err := fsys.ReadFile(filepath.Join(directory, name))
+		if err != nil {
+			t.Fatalf("ReadFile(%q): %v", name, err)
+		}
+		if string(got) != name {
+			t.Fatalf("ReadFile(%q) = %q, want %q", name, got, name)
 		}
 	}
 }

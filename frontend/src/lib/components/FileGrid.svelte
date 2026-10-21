@@ -107,7 +107,7 @@
 
 		if (event.key === 'Delete') {
 			event.preventDefault();
-			onContextMenuAction?.('delete', targetItems);
+			onContextMenuAction?.(event.shiftKey ? 'delete-permanently' : 'delete', targetItems);
 		} else if (event.key === 'F2') {
 			event.preventDefault();
 			onContextMenuAction?.('rename', targetItems);

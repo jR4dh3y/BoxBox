@@ -56,6 +56,7 @@ type FS interface {
 
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
+	Mkdir(path string, perm os.FileMode) error
 
 	// Chmod changes the mode bits of the named file or directory.
 	Chmod(name string, mode os.FileMode) error
@@ -84,8 +85,15 @@ type AferoFS struct {
 var errInvalidFilesystemPath = errors.New("invalid filesystem path")
 
 func validateFilesystemPath(path string) error {
-	if strings.ContainsRune(path, '\x00') || strings.Contains(path, "..") {
+	if strings.ContainsRune(path, '\x00') {
 		return errInvalidFilesystemPath
+	}
+
+	normalizedPath := strings.ReplaceAll(path, `\`, "/")
+	for _, component := range strings.Split(normalizedPath, "/") {
+		if component == ".." {
+			return errInvalidFilesystemPath
+		}
 	}
 	return nil
 }
@@ -314,6 +322,13 @@ func (a *AferoFS) MkdirAll(path string, perm os.FileMode) error {
 	}
 	path = filepath.Clean("/" + path)
 	return a.fs.MkdirAll(path, perm)
+}
+
+func (a *AferoFS) Mkdir(path string, perm os.FileMode) error {
+	if err := validateFilesystemPath(path); err != nil {
+		return err
+	}
+	return a.fs.Mkdir(filepath.Clean("/"+path), perm)
 }
 
 // Chmod changes the mode bits of the named file or directory.

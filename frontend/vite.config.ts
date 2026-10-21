@@ -48,7 +48,10 @@ export default defineConfig({
 					groups: [
 						{
 							name: 'app',
-							test: /node_modules[\\/](?!@sveltejs[\\/]kit[\\/])|[\\/]src[\\/]lib[\\/]/,
+							test: (id) =>
+								!id.includes('/@sveltejs/kit/') &&
+								!id.includes('\\@sveltejs\\kit\\') &&
+								/node_modules[\\/]|[\\/]src[\\/]lib[\\/]/.test(id),
 							tags: ['$initial']
 						}
 					]

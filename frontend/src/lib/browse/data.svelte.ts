@@ -13,6 +13,8 @@ import { CONFIG } from '#lib/config.js';
 import { fileQueryKeys } from '#lib/stores/files.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { canPreview } from '#lib/utils/fileTypes.js';
+import { isLocalDesktop } from '#lib/api/desktop.js';
+import { watchDesktopDirectory } from './desktopWatch';
 import { directoryQueryOptions } from './directoryQuery';
 import type { BrowseLocation } from './location.svelte';
 
@@ -76,6 +78,14 @@ export function useBrowseData(location: BrowseLocation) {
 	const hasMoreItems = $derived(
 		!location.isSearchActive && !isAtRoot && directoryQuery.hasNextPage
 	);
+	$effect(() => {
+		const path = location.path;
+		if (!isLocalDesktop() || !path) return;
+		return watchDesktopDirectory(path, () => {
+			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directory(path) });
+			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.searches() });
+		});
+	});
 
 	return {
 		get roots() {

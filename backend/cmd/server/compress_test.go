@@ -32,7 +32,7 @@ func newCompressionTestServer(t *testing.T) http.Handler {
 		DataDir:     t.TempDir(),
 		MountPoints: []model.MountPoint{{Name: "files", Path: root}},
 	}
-	server, _, _, _, _, err := initializeServer(cfg, true)
+	server, _, _, _, _, err := initializeServer(cfg, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}

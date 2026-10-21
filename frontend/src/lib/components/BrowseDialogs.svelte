@@ -5,7 +5,9 @@
 
 	type CreateDialog = { open: boolean; type: 'file' | 'directory'; name: string };
 	type RenameDialog = { open: boolean; newName: string };
-	type DeleteDialog = { open: boolean; items: FileInfo[] };
+	type DeleteDialog =
+		| { open: false; items: FileInfo[] }
+		| { open: true; items: FileInfo[]; mode: 'trash' | 'permanent' };
 	type PropertiesDialog = { open: boolean; file: FileInfo | null };
 
 	let {
@@ -13,6 +15,8 @@
 		renameDialog,
 		deleteDialog,
 		propertiesDialog,
+		openWithFile = null,
+		onCloseOpenWith,
 		onCreateNameChange,
 		onRenameNameChange,
 		onCreateConfirm,
@@ -27,6 +31,8 @@
 		renameDialog: RenameDialog;
 		deleteDialog: DeleteDialog;
 		propertiesDialog: PropertiesDialog;
+		openWithFile?: FileInfo | null;
+		onCloseOpenWith?: () => void;
 		onCreateNameChange: (name: string) => void;
 		onRenameNameChange: (name: string) => void;
 		onCreateConfirm: () => void;
@@ -42,6 +48,12 @@
 		return (event.target as HTMLInputElement).value;
 	}
 </script>
+
+{#if openWithFile}
+	{#await import('#lib/components/desktop/OpenWithDialog.svelte') then { default: OpenWithDialog }}
+		<OpenWithDialog open={true} path={openWithFile.path} onclose={() => onCloseOpenWith?.()} />
+	{/await}
+{/if}
 
 <Modal
 	open={createDialog.open}
@@ -83,12 +95,22 @@
 	{/snippet}
 </Modal>
 
-<Modal open={deleteDialog.open} title="Delete" onclose={onCloseDelete}>
+<Modal
+	open={deleteDialog.open}
+	title={deleteDialog.open && deleteDialog.mode === 'trash'
+		? 'Move to Trash'
+		: 'Delete Permanently'}
+	onclose={onCloseDelete}
+>
 	<div class="flex flex-col gap-3 text-sm text-text-secondary">
 		<p>
-			Delete {deleteDialog.items.length}
+			{deleteDialog.open && deleteDialog.mode === 'trash' ? 'Move to Trash:' : 'Permanently delete'}
+			{deleteDialog.items.length}
 			{deleteDialog.items.length === 1 ? 'item' : 'items'}?
 		</p>
+		{#if deleteDialog.open && deleteDialog.mode === 'permanent'}
+			<p class="text-danger">This cannot be undone.</p>
+		{/if}
 		{#if deleteDialog.items.length > 0}
 			<ul class="max-h-40 list-none overflow-auto rounded border border-border-secondary p-0">
 				{#each deleteDialog.items as item (item.path)}
@@ -101,7 +123,11 @@
 	</div>
 	{#snippet footer()}
 		<Button variant="secondary" onclick={onCloseDelete}>Cancel</Button>
-		<Button variant="danger" onclick={onDeleteConfirm}>Delete</Button>
+		<Button variant="danger" onclick={onDeleteConfirm}
+			>{deleteDialog.open && deleteDialog.mode === 'trash'
+				? 'Move to Trash'
+				: 'Delete Permanently'}</Button
+		>
 	{/snippet}
 </Modal>
 

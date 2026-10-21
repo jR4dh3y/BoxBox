@@ -1,0 +1,556 @@
+package service
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"mime"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
+)
+
+var (
+	ErrDesktopRuntimeUnavailable     = errors.New("desktop application runtime unavailable")
+	ErrDesktopApplicationUnavailable = errors.New("application is not available for this file")
+	ErrDesktopTerminalUnavailable    = errors.New("no supported terminal is installed")
+	ErrDesktopLaunchFailed           = errors.New("desktop application could not be launched")
+	ErrDesktopTerminalLaunchFailed   = errors.New("terminal could not be launched")
+)
+
+// DesktopApplication is an installed desktop entry associated with a MIME type.
+type DesktopApplication struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Icon      string `json:"icon,omitempty"`
+	IsDefault bool   `json:"isDefault"`
+}
+
+// DesktopAppsResult is returned by GET /api/v1/desktop/apps.
+type DesktopAppsResult struct {
+	MIMEType string               `json:"mimeType"`
+	Apps     []DesktopApplication `json:"apps"`
+}
+
+// DesktopApps exposes the local desktop actions supported by the private app server.
+type DesktopApps interface {
+	ListApps(ctx context.Context, path string) (DesktopAppsResult, error)
+	OpenWith(ctx context.Context, path, appID string) error
+	OpenTerminal(ctx context.Context, path string) error
+}
+
+// DesktopCommandRunner keeps OS process execution replaceable at the process boundary.
+type DesktopCommandRunner interface {
+	Output(ctx context.Context, name string, args ...string) ([]byte, error)
+	Start(name string, args []string, workingDirectory string) error
+	LookPath(name string) (string, error)
+}
+
+type desktopAppsService struct {
+	fs       filesystem.FS
+	mounts   *mounts
+	commands DesktopCommandRunner
+}
+
+// NewDesktopAppsService creates the GIO/XDG-backed desktop integration.
+// Pass nil for commands to use the local OS process runner.
+func NewDesktopAppsService(fsys filesystem.FS, mountPoints []model.MountPoint, commands DesktopCommandRunner) DesktopApps {
+	if commands == nil {
+		commands = osDesktopCommandRunner{}
+	}
+	return &desktopAppsService{
+		fs:       fsys,
+		mounts:   newMounts(fsys, fixedMounts(mountPoints)),
+		commands: commands,
+	}
+}
+
+func (s *desktopAppsService) ListApps(ctx context.Context, path string) (DesktopAppsResult, error) {
+	resolved, err := s.resolveFile(path)
+	if err != nil {
+		return DesktopAppsResult{}, err
+	}
+	mimeType, err := s.detectMIMEType(ctx, resolved)
+	if err != nil {
+		return DesktopAppsResult{}, err
+	}
+	return DesktopAppsResult{MIMEType: mimeType, Apps: s.appsForMIMEType(mimeType)}, nil
+}
+
+func (s *desktopAppsService) OpenWith(ctx context.Context, path, appID string) error {
+	if !validDesktopID(appID) {
+		return ErrDesktopApplicationUnavailable
+	}
+	resolved, err := s.resolveFile(path)
+	if err != nil {
+		return err
+	}
+	mimeType, err := s.detectMIMEType(ctx, resolved)
+	if err != nil {
+		return err
+	}
+	for _, app := range s.installedAppsForMIMEType(mimeType) {
+		if app.application.ID != appID {
+			continue
+		}
+		if err := s.commands.Start("gio", []string{"launch", app.path, resolved}, ""); err != nil {
+			return fmt.Errorf("%w: %v", ErrDesktopLaunchFailed, err)
+		}
+		return nil
+	}
+	return ErrDesktopApplicationUnavailable
+}
+
+func (s *desktopAppsService) OpenTerminal(ctx context.Context, path string) error {
+	resolved, err := s.resolveExistingPath(path)
+	if err != nil {
+		return err
+	}
+	isDirectory, err := s.fs.IsDir(resolved)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrPathNotFound, err)
+	}
+	if !isDirectory {
+		resolved = filepath.Dir(resolved)
+	}
+
+	terminal, err := s.findTerminal()
+	if err != nil {
+		return err
+	}
+	args := terminalArguments(terminal.name, resolved)
+	if err := s.commands.Start(terminal.path, args, resolved); err != nil {
+		return fmt.Errorf("%w: %v", ErrDesktopTerminalLaunchFailed, err)
+	}
+	return nil
+}
+
+func (s *desktopAppsService) resolveFile(path string) (string, error) {
+	resolved, err := s.resolveExistingPath(path)
+	if err != nil {
+		return "", err
+	}
+	isDirectory, err := s.fs.IsDir(resolved)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrPathNotFound, err)
+	}
+	if isDirectory {
+		return "", ErrNotFile
+	}
+	return resolved, nil
+}
+
+func (s *desktopAppsService) resolveExistingPath(path string) (string, error) {
+	_, resolved, err := s.mounts.resolve(path, readExisting)
+	return resolved, err
+}
+
+func (s *desktopAppsService) detectMIMEType(ctx context.Context, path string) (string, error) {
+	output, err := s.commands.Output(ctx, "gio", "info", "--attributes=standard::content-type", path)
+	if err != nil {
+		return "", fmt.Errorf("%w: GIO could not inspect the file: %v", ErrDesktopRuntimeUnavailable, err)
+	}
+	const contentTypePrefix = "standard::content-type:"
+	for _, line := range strings.Split(string(output), "\n") {
+		value, ok := strings.CutPrefix(strings.TrimSpace(line), contentTypePrefix)
+		if !ok {
+			continue
+		}
+		mediaType, _, parseErr := mime.ParseMediaType(strings.TrimSpace(value))
+		if parseErr == nil {
+			return mediaType, nil
+		}
+	}
+	return "", fmt.Errorf("%w: GIO returned no usable content type", ErrDesktopRuntimeUnavailable)
+}
+
+func (s *desktopAppsService) appsForMIMEType(mimeType string) []DesktopApplication {
+	installed := s.installedAppsForMIMEType(mimeType)
+	apps := make([]DesktopApplication, len(installed))
+	for i, app := range installed {
+		apps[i] = app.application
+	}
+	return apps
+}
+
+type installedDesktopApp struct {
+	application DesktopApplication
+	path        string
+	mimeTypes   []string
+}
+
+func (s *desktopAppsService) installedAppsForMIMEType(mimeType string) []installedDesktopApp {
+	apps := readInstalledDesktopApps(s.commands)
+	associations := readMIMEAssociations(mimeType, mimeAppsFiles())
+	orderedIDs := make([]string, 0, len(apps))
+	seen := make(map[string]struct{}, len(apps))
+	appendID := func(id string) {
+		if !validDesktopID(id) {
+			return
+		}
+		if _, exists := apps[id]; !exists {
+			return
+		}
+		if _, exists := seen[id]; exists {
+			return
+		}
+		seen[id] = struct{}{}
+		orderedIDs = append(orderedIDs, id)
+	}
+	for _, id := range associations.defaults {
+		appendID(id)
+	}
+	for _, id := range associations.added {
+		if _, removed := associations.removed[id]; !removed {
+			appendID(id)
+		}
+	}
+
+	var matching []string
+	for id, app := range apps {
+		if _, removed := associations.removed[id]; removed {
+			continue
+		}
+		if matchesMIMEType(app.mimeTypes, mimeType) {
+			matching = append(matching, id)
+		}
+	}
+	sort.Slice(matching, func(i, j int) bool {
+		left := strings.ToLower(apps[matching[i]].application.Name)
+		right := strings.ToLower(apps[matching[j]].application.Name)
+		if left == right {
+			return matching[i] < matching[j]
+		}
+		return left < right
+	})
+	for _, id := range matching {
+		appendID(id)
+	}
+
+	defaultIDs := make(map[string]struct{}, len(associations.defaults))
+	for _, id := range associations.defaults {
+		defaultIDs[id] = struct{}{}
+	}
+	result := make([]installedDesktopApp, 0, len(orderedIDs))
+	for _, id := range orderedIDs {
+		app := apps[id]
+		_, app.application.IsDefault = defaultIDs[id]
+		result = append(result, app)
+	}
+	return result
+}
+
+func readInstalledDesktopApps(commands DesktopCommandRunner) map[string]installedDesktopApp {
+	applications := make(map[string]installedDesktopApp)
+	seen := make(map[string]struct{})
+	for _, directory := range xdgApplicationDirectories() {
+		_ = filepath.WalkDir(directory, func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return nil
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if !entry.Type().IsRegular() || filepath.Ext(entry.Name()) != ".desktop" {
+				return nil
+			}
+			id, ok := desktopIDForPath(directory, path)
+			if !ok {
+				return nil
+			}
+			if _, exists := seen[id]; exists {
+				return nil
+			}
+			app, hidden, err := readDesktopApplication(path, id, commands)
+			if err != nil {
+				return nil
+			}
+			seen[id] = struct{}{}
+			if !hidden && app.application.ID != "" {
+				applications[id] = app
+			}
+			return nil
+		})
+	}
+	return applications
+}
+
+func readDesktopApplication(path, id string, commands DesktopCommandRunner) (installedDesktopApp, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return installedDesktopApp{}, false, err
+	}
+	defer file.Close()
+
+	values := make(map[string]string)
+	inDesktopEntry := false
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			inDesktopEntry = line == "[Desktop Entry]"
+			continue
+		}
+		if !inDesktopEntry || line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			values[key] = unescapeDesktopValue(value)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return installedDesktopApp{}, false, err
+	}
+	if values["Hidden"] == "true" {
+		return installedDesktopApp{}, true, nil
+	}
+	if values["Type"] != "Application" || values["NoDisplay"] == "true" {
+		return installedDesktopApp{}, false, nil
+	}
+	if values["Exec"] == "" && values["DBusActivatable"] != "true" {
+		return installedDesktopApp{}, false, nil
+	}
+	if tryExec := values["TryExec"]; tryExec != "" {
+		if _, err := commands.LookPath(tryExec); err != nil {
+			return installedDesktopApp{}, false, nil
+		}
+	}
+	name := values["Name"]
+	if name == "" {
+		name = strings.TrimSuffix(id, ".desktop")
+	}
+	app := DesktopApplication{ID: id, Name: name, Icon: values["Icon"]}
+	return installedDesktopApp{
+		application: app,
+		path:        path,
+		mimeTypes:   strings.Split(values["MimeType"], ";"),
+	}, false, nil
+}
+
+func desktopIDForPath(root, path string) (string, bool) {
+	relative, err := filepath.Rel(root, path)
+	if err != nil || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	id := strings.ReplaceAll(relative, string(filepath.Separator), "-")
+	return id, validDesktopID(id)
+}
+
+func validDesktopID(id string) bool {
+	return id != "" && filepath.Base(id) == id && !strings.ContainsAny(id, "/\\\x00") && strings.HasSuffix(id, ".desktop")
+}
+
+func unescapeDesktopValue(value string) string {
+	return strings.NewReplacer(`\s`, " ", `\n`, "\n", `\t`, "\t", `\r`, "\r", `\\`, `\`).Replace(value)
+}
+
+func matchesMIMEType(registered []string, mimeType string) bool {
+	for _, candidate := range registered {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == mimeType {
+			return true
+		}
+		if strings.HasSuffix(candidate, "/*") && strings.HasPrefix(mimeType, strings.TrimSuffix(candidate, "*")) {
+			return true
+		}
+	}
+	return false
+}
+
+type mimeTypeAssociations struct {
+	defaults []string
+	added    []string
+	removed  map[string]struct{}
+}
+
+func mimeAppsFiles() []string {
+	configDirectories := []string{xdgHomeDirectory("XDG_CONFIG_HOME", ".config")}
+	configDirectories = append(configDirectories, xdgSearchDirectories("XDG_CONFIG_DIRS", "/etc/xdg")...)
+	dataDirectories := xdgApplicationDirectories()
+	files := make([]string, 0, len(configDirectories)+len(dataDirectories))
+	seen := make(map[string]struct{})
+	for _, directory := range configDirectories {
+		appendUniquePath(&files, seen, filepath.Join(directory, "mimeapps.list"))
+	}
+	for _, directory := range dataDirectories {
+		appendUniquePath(&files, seen, filepath.Join(directory, "mimeapps.list"))
+	}
+	return files
+}
+
+func readMIMEAssociations(mimeType string, files []string) mimeTypeAssociations {
+	associations := mimeTypeAssociations{removed: make(map[string]struct{})}
+	hasDefault := false
+	for _, path := range files {
+		file, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		section := ""
+		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 1024), 1024*1024)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+				section = strings.TrimSuffix(strings.TrimPrefix(line, "["), "]")
+				continue
+			}
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			key, value, ok := strings.Cut(line, "=")
+			if !ok || key != mimeType {
+				continue
+			}
+			ids := desktopIDs(value)
+			switch section {
+			case "Default Applications":
+				if !hasDefault && len(ids) > 0 {
+					associations.defaults = ids
+					hasDefault = true
+				}
+			case "Added Associations":
+				associations.added = append(associations.added, ids...)
+			case "Removed Associations":
+				for _, id := range ids {
+					associations.removed[id] = struct{}{}
+				}
+			}
+		}
+		_ = file.Close()
+	}
+	return associations
+}
+
+func desktopIDs(value string) []string {
+	parts := strings.Split(value, ";")
+	ids := make([]string, 0, len(parts))
+	for _, part := range parts {
+		id := strings.TrimSpace(part)
+		if validDesktopID(id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func xdgApplicationDirectories() []string {
+	dataHome := xdgHomeDirectory("XDG_DATA_HOME", ".local/share")
+	directories := []string{filepath.Join(dataHome, "applications")}
+	for _, directory := range xdgSearchDirectories("XDG_DATA_DIRS", "/usr/local/share:/usr/share") {
+		directories = append(directories, filepath.Join(directory, "applications"))
+	}
+	unique := make([]string, 0, len(directories))
+	seen := make(map[string]struct{})
+	for _, directory := range directories {
+		appendUniquePath(&unique, seen, directory)
+	}
+	return unique
+}
+
+func xdgHomeDirectory(variable, fallbackSuffix string) string {
+	if configured := os.Getenv(variable); filepath.IsAbs(configured) {
+		return filepath.Clean(configured)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(string(filepath.Separator), fallbackSuffix)
+	}
+	return filepath.Join(home, fallbackSuffix)
+}
+
+func xdgSearchDirectories(variable, fallback string) []string {
+	value, exists := os.LookupEnv(variable)
+	if !exists {
+		value = fallback
+	}
+	var directories []string
+	for _, directory := range filepath.SplitList(value) {
+		if filepath.IsAbs(directory) {
+			directories = append(directories, filepath.Clean(directory))
+		}
+	}
+	return directories
+}
+
+func appendUniquePath(paths *[]string, seen map[string]struct{}, path string) {
+	path = filepath.Clean(path)
+	if !filepath.IsAbs(path) {
+		return
+	}
+	if _, exists := seen[path]; exists {
+		return
+	}
+	seen[path] = struct{}{}
+	*paths = append(*paths, path)
+}
+
+type desktopTerminal struct {
+	name string
+	path string
+}
+
+func (s *desktopAppsService) findTerminal() (desktopTerminal, error) {
+	if preferred := strings.TrimSpace(os.Getenv("TERMINAL")); preferred != "" && !strings.ContainsAny(preferred, " \t\r\n") {
+		if path, err := s.commands.LookPath(preferred); err == nil {
+			return desktopTerminal{name: filepath.Base(preferred), path: path}, nil
+		}
+	}
+	for _, name := range []string{
+		"x-terminal-emulator", "kgx", "gnome-terminal", "konsole", "xfce4-terminal", "mate-terminal",
+		"tilix", "kitty", "alacritty", "wezterm", "foot", "xterm",
+	} {
+		if path, err := s.commands.LookPath(name); err == nil {
+			return desktopTerminal{name: name, path: path}, nil
+		}
+	}
+	return desktopTerminal{}, ErrDesktopTerminalUnavailable
+}
+
+func terminalArguments(name, directory string) []string {
+	switch filepath.Base(name) {
+	case "kgx", "gnome-terminal", "xfce4-terminal", "mate-terminal", "tilix":
+		return []string{"--working-directory=" + directory}
+	case "konsole":
+		return []string{"--workdir", directory}
+	case "kitty":
+		return []string{"--directory", directory}
+	case "alacritty":
+		return []string{"--working-directory", directory}
+	case "wezterm":
+		return []string{"start", "--cwd", directory}
+	case "foot":
+		return []string{"--working-directory=" + directory}
+	default:
+		return nil
+	}
+}
+
+type osDesktopCommandRunner struct{}
+
+func (osDesktopCommandRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
+func (osDesktopCommandRunner) Start(name string, args []string, workingDirectory string) error {
+	command := exec.Command(name, args...)
+	command.Dir = workingDirectory
+	if err := command.Start(); err != nil {
+		return err
+	}
+	go func() { _ = command.Wait() }()
+	return nil
+}
+
+func (osDesktopCommandRunner) LookPath(name string) (string, error) {
+	return exec.LookPath(name)
+}

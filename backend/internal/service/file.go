@@ -30,6 +30,8 @@ var (
 	ErrDirectoryTooLarge  = errors.New("directory exceeds entry limit")
 )
 
+const defaultDirectoryEntryLimit = 10_000
+
 // File represents an open file that can be read and seeked
 type File interface {
 	io.Reader
@@ -87,20 +89,29 @@ type FileService interface {
 
 // fileService implements FileService
 type fileService struct {
-	fs     filesystem.FS
-	mounts *mounts
+	fs                  filesystem.FS
+	mounts              *mounts
+	directoryEntryLimit int
 }
 
 // FileServiceConfig holds configuration for the file service
 type FileServiceConfig struct {
 	MountPoints []model.MountPoint
+	// DirectoryEntryLimit uses the default 10,000-entry cap when zero; negative disables the cap.
+	DirectoryEntryLimit int
 }
 
 // NewFileService creates a new file service
 func NewFileService(fsys filesystem.FS, cfg FileServiceConfig) FileService {
+	directoryEntryLimit := cfg.DirectoryEntryLimit
+	if directoryEntryLimit == 0 {
+		directoryEntryLimit = defaultDirectoryEntryLimit
+	}
+
 	return &fileService{
-		fs:     fsys,
-		mounts: newMounts(fsys, fixedMounts(cfg.MountPoints)),
+		fs:                  fsys,
+		mounts:              newMounts(fsys, fixedMounts(cfg.MountPoints)),
+		directoryEntryLimit: directoryEntryLimit,
 	}
 }
 
@@ -196,8 +207,7 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 
 	// Read directory entries. Afero's entries already carry metadata; keep a
 	// local metadata cache so non-name sorts never stat the same entry repeatedly.
-	const maxDirectoryEntries = 10_000
-	entries, truncated, err := s.fs.ReadDirLimit(fsPath, maxDirectoryEntries)
+	entries, truncated, err := s.fs.ReadDirLimit(fsPath, s.directoryEntryLimit)
 	if err != nil {
 		return nil, err
 	}

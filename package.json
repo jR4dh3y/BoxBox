@@ -11,6 +11,16 @@
     "build": "bun run build:frontend",
     "build:single": "bash scripts/build-single.sh",
     "build:frontend": "bun run --cwd frontend build",
-    "install:frontend": "bun install --cwd frontend"
-  }
+    "install:frontend": "bun install --cwd frontend",
+    "dev:desktop": "bun run --cwd desktop dev",
+    "build:desktop": "bun run --cwd desktop build",
+    "check:desktop": "bun run --cwd desktop check",
+    "test:desktop": "bun run --cwd desktop test",
+    "install:desktop": "bun desktop/scripts/install.ts"
+  },
+  "workspaces": [
+    "frontend",
+    "desktop",
+    "website"
+  ]
 }
