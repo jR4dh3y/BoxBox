@@ -91,13 +91,17 @@
 	}
 
 	function handleKeyDown(item: FileInfo, event: KeyboardEvent) {
+		if (
+			event.target instanceof HTMLInputElement &&
+			(event.target.type !== 'checkbox' || event.key === ' ' || event.key === 'Enter')
+		)
+			return;
 		if ((event.key === 'a' || event.key === 'A') && (event.ctrlKey || event.metaKey)) {
 			event.preventDefault();
 			selectionAnchor = item.path;
 			onSelectionChange?.(new SvelteSet(items.map((visibleItem) => visibleItem.path)));
 			return;
 		}
-		if (event.target instanceof HTMLInputElement) return;
 
 		const nextPath = moveFileFocus(event, 'grid');
 		if (nextPath) {
