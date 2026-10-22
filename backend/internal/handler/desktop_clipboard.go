@@ -58,5 +58,5 @@ func (h *DesktopClipboardHandler) UpdateClipboard(w http.ResponseWriter, r *http
 		writeDesktopClipboardError(w, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, desktopActionResponse{OK: true}, http.StatusOK)
 }

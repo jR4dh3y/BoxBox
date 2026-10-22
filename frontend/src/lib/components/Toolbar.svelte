@@ -96,11 +96,12 @@
 		</button>
 	</div>
 
-	<EditablePathBar {pathSegments} {onNavigate} {includeHiddenSuggestions} />
+	<EditablePathBar bind:this={pathBar} {pathSegments} {onNavigate} {includeHiddenSuggestions} />
 
 	{#if showSearch}
 		<div class="w-48 min-w-28 shrink md:w-64 lg:w-96">
 			<SearchBar
+				bind:this={searchBar}
 				value={searchValue}
 				onInput={onSearchInput}
 				onClear={onSearchClear}
@@ -141,6 +142,7 @@
 		{/if}
 		{#if onToggleDetails}
 			<button
+				bind:this={detailsToggle}
 				type="button"
 				class="inline-flex h-7 items-center gap-1.5 rounded px-2 text-xs transition-colors hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent {detailsOpen
 					? 'bg-selection text-text-primary'

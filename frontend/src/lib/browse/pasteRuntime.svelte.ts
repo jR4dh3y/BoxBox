@@ -1,7 +1,11 @@
 import { getJob, type Job } from '#lib/api/jobs.js';
 import { SvelteSet } from 'svelte/reactivity';
 import { isLocalDesktop } from '#lib/api/desktop.js';
-import type { DesktopClipboardContents } from '#lib/api/desktopClipboard.js';
+import {
+	clearDesktopCutClipboard,
+	getDesktopClipboard,
+	type DesktopClipboardContents
+} from '#lib/api/desktopClipboard.js';
 import { clipboardStore } from '#lib/stores/clipboard.svelte.js';
 import {
 	clearBrowseClipboardPublication,
@@ -43,9 +47,11 @@ async function finishCut(
 			}
 			if (pending.size) await new Promise((resolve) => setTimeout(resolve, 1500));
 		}
-		if (clipboard && (selectionId === null || isCurrentBrowseClipboardSelection(selectionId))) {
-			const { clearBrowseCutClipboardAfterMove } = await import('./desktopClipboard');
-			await clearBrowseCutClipboardAfterMove(clipboard);
+		if (
+			clipboard?.operation === 'cut' &&
+			(selectionId === null || isCurrentBrowseClipboardSelection(selectionId))
+		) {
+			await clearDesktopCutClipboard(clipboard.items.map((item) => item.path));
 		}
 		if (
 			selectionId !== null &&
@@ -59,6 +65,48 @@ async function finishCut(
 		}
 	} catch {
 		/* Keep the cut selection when completion cannot be confirmed. */
+	}
+}
+
+interface PasteSource {
+	/** Native clipboard contents, or null when pasting the in-app selection. */
+	clipboard: DesktopClipboardContents | null;
+	selectionId: number | null;
+	items: DesktopClipboardContents['items'];
+	operation: DesktopClipboardContents['operation'] | null;
+}
+
+function inAppPasteSource(): PasteSource {
+	const publication = getBrowseClipboardPublication();
+	return {
+		clipboard: null,
+		selectionId: publication.kind === 'external' ? null : publication.revision,
+		items: clipboardStore.items.map(({ path, name, isDir }) => ({ path, name, isDir })),
+		operation: clipboardStore.operation
+	};
+}
+
+/** Native contents win unless an in-app copy or cut started while they were being read. */
+async function readPasteSource(): Promise<PasteSource> {
+	if (!isLocalDesktop() || !shouldReadNativeBrowseClipboard()) return inAppPasteSource();
+	const started = getBrowseClipboardPublication();
+	const unchanged = () => {
+		const current = getBrowseClipboardPublication();
+		return current.revision === started.revision && current.kind === started.kind;
+	};
+	try {
+		const clipboard = await getDesktopClipboard();
+		if (!unchanged()) return inAppPasteSource();
+		return {
+			clipboard,
+			selectionId: started.kind === 'external' ? null : started.revision,
+			items: clipboard?.items ?? [],
+			operation: clipboard?.operation ?? null
+		};
+	} catch (error) {
+		const fallback = inAppPasteSource();
+		if (unchanged() && fallback.items.length === 0) throw error;
+		return fallback;
 	}
 }
 
@@ -109,53 +157,9 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 		async paste() {
 			if (state.kind !== 'idle' || !location.path || !data.canCreate) return;
 			const destination = location.path;
-			let publication = getBrowseClipboardPublication();
-			let selectionId = publication.kind === 'external' ? null : publication.revision;
 			state = { kind: 'planning' };
 			try {
-				let clipboard: DesktopClipboardContents | null = null;
-				let items = clipboardStore.items.map(({ path, name, isDir }) => ({ path, name, isDir }));
-				let operation = clipboardStore.operation;
-				const useCurrentInAppSelection = () => {
-					publication = getBrowseClipboardPublication();
-					selectionId = publication.kind === 'external' ? null : publication.revision;
-					clipboard = null;
-					items = clipboardStore.items.map(({ path, name, isDir }) => ({ path, name, isDir }));
-					operation = clipboardStore.operation;
-				};
-				if (isLocalDesktop() && shouldReadNativeBrowseClipboard()) {
-					const readStartedAt = getBrowseClipboardPublication();
-					try {
-						const { readBrowseClipboard } = await import('./desktopClipboard');
-						if (!shouldReadNativeBrowseClipboard()) {
-							useCurrentInAppSelection();
-						} else {
-							const nativeClipboard = await readBrowseClipboard();
-							const current = getBrowseClipboardPublication();
-							if (
-								current.revision !== readStartedAt.revision ||
-								current.kind !== readStartedAt.kind
-							) {
-								useCurrentInAppSelection();
-							} else {
-								clipboard = nativeClipboard;
-								items = clipboard?.items ?? [];
-								operation = clipboard?.operation ?? null;
-							}
-						}
-					} catch (error) {
-						const current = getBrowseClipboardPublication();
-						if (
-							!shouldReadNativeBrowseClipboard() ||
-							current.revision !== readStartedAt.revision ||
-							current.kind !== readStartedAt.kind
-						) {
-							useCurrentInAppSelection();
-						} else if (!items.length) {
-							throw error;
-						}
-					}
-				}
+				const { clipboard, selectionId, items, operation } = await readPasteSource();
 				if (!items.length || !operation) {
 					toastStore.info('The clipboard has no files to paste');
 					state = { kind: 'idle' };

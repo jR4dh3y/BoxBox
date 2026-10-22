@@ -71,10 +71,7 @@ function render(): void {
   const shell = element("section", "manager-shell");
   const header = element("header", "manager-header");
   const titleBlock = element("div", "title-block");
-  titleBlock.append(
-    element("h1", undefined, "Connections"),
-    element("p", "subtitle", "Save your BoxBox servers and open them in separate windows."),
-  );
+  titleBlock.append(element("h1", undefined, "Connections"));
   const headerActions = element("div", "header-actions");
   const localButton = button("Local files", "secondary", () => {
     void showLocalFiles();
@@ -204,17 +201,7 @@ function renderConnectionList(): HTMLElement {
     return section;
   }
   if (profiles.length === 0) {
-    const empty = element("div", "empty-state");
-    empty.append(
-      element("h3", undefined, "No servers saved yet"),
-      element("p", undefined, "Add a BoxBox server to keep it one click away."),
-      button("Add your first server", "secondary", () => {
-        editor = { kind: "create" };
-        render();
-        app?.querySelector<HTMLInputElement>("#connection-name")?.focus();
-      }),
-    );
-    section.append(empty);
+    section.append(element("p", "empty-state", "No servers saved"));
     return section;
   }
 

@@ -1,9 +1,4 @@
 <script lang="ts">
-	/**
-	 * FileList component with sortable columns - FilePilot style
-	 */
-
-	import { moveFileFocus } from '#lib/browse/fileShortcuts.js';
 	import type { FileInfo } from '#lib/api/files.js';
 	import type { SortField, SortDir } from '#lib/types/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
@@ -60,7 +55,7 @@
 		onFolderHover?: (path: string | null) => void;
 		onSortChange?: (field: SortField, dir: SortDir) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
-		onContextMenuAction?: (action: string, items: FileInfo[]) => void;
+		onContextMenuAction?: (action: FileContextAction, items: FileInfo[]) => void;
 	} = $props();
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
@@ -356,21 +351,6 @@
 		focusTable();
 	}
 
-	function isSelected(path: string): boolean {
-		return selectedPaths.has(path);
-	}
-
-	function isCut(path: string): boolean {
-		return cutPaths.has(path);
-	}
-
-	function getDisplayName(item: FileInfo): string {
-		if (showFileExtensions || item.isDir) return item.name;
-
-		const dotIndex = item.name.lastIndexOf('.');
-		return dotIndex > 0 ? item.name.slice(0, dotIndex) : item.name;
-	}
-
 	const thClass =
 		'text-left px-3 py-0 bg-surface-secondary border-b border-border-primary font-medium text-text-secondary whitespace-nowrap select-none sticky top-0 z-[5] cursor-pointer transition-colors duration-100 hover:bg-surface-tertiary hover:text-text-primary focus:outline focus:outline-1 focus:outline-accent focus:-outline-offset-1';
 	const thSortedClass = 'text-accent';
@@ -471,14 +451,14 @@
 				{#each items.slice(rowWindow.itemStart, rowWindow.itemEnd) as item, visibleOffset (item.path)}
 					{@const itemIndex = rowWindow.itemStart + visibleOffset}
 					{@const IconComponent = getFileIcon(item.name, item.isDir)}
-					{@const displayName = getDisplayName(item)}
+					{@const displayName = fileDisplayName(item, showFileExtensions)}
 					{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
 					{@const sizeDescription = item.isDir ? '—' : formatFileSize(item.size)}
 					{@const secondaryText = isSelected(item.path)
 						? 'text-text-primary'
 						: 'text-text-secondary'}
 					{@const modifiedDescription = formatFileDate(item.modTime)}
-					{@const hasThumbnail = !item.isDir && getPreviewType(item.name) === 'image'}
+					{@const hasThumbnail = supportsThumbnailFile(item)}
 					<tr
 						style={`height: ${compactMode ? 28 : 32}px`}
 						class="cursor-default transition-colors duration-50 {isSelected(item.path)
@@ -504,12 +484,12 @@
 							<div class="flex min-w-0 items-center gap-2">
 								<input
 									type="checkbox"
-									checked={isSelected(item.path)}
+									checked={selectedPaths.has(item.path)}
 									aria-label={`Select ${item.name}`}
 									class="h-4 w-4 shrink-0 cursor-pointer accent-accent"
 									onclick={(event) => event.stopPropagation()}
 									ondblclick={(event) => event.stopPropagation()}
-									onchange={(event) => handleSelectionCheckbox(item, event.currentTarget.checked)}
+									onchange={(event) => collection.check(item, event.currentTarget.checked)}
 								/>
 								<span
 									class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
@@ -587,8 +567,8 @@
 			{canCreate}
 			x={contextMenu.x}
 			y={contextMenu.y}
-			onSelect={handleContextMenuSelect}
-			onClose={handleContextMenuClose}
+			onSelect={collection.selectMenuAction}
+			onClose={collection.closeMenu}
 		/>
 	{:catch}
 		<LoadError label="file context menu" onClose={handleContextMenuClose} />

@@ -109,11 +109,8 @@ try {
     await readFile(join(fixture, "link.txt"), "utf8"),
     "contents to preserve",
   );
-  response = await fetch(
-    origin + `/api/v1/desktop/open?path=root${fixture}/report..txt`,
-    { method: "POST", headers: { Cookie: cookie } },
-  );
-  assert.equal(response.status, 204);
+  response = await post("open", { path: `root${fixture}/report..txt` });
+  assert.equal(response.status, 200, await response.clone().text());
   assert.equal(await waitForFile(join(fixture, "opened-path")), file);
   response = await fetch(
     origin + `/api/v1/desktop/apps?path=root${fixture}/report..txt`,

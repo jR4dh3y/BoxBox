@@ -28,9 +28,10 @@ try {
   );
   assert.equal(
     (
-      await fetch(origin + "/api/v1/desktop/open?path=outside/file", {
+      await fetch(origin + "/api/v1/desktop/open", {
         method: "POST",
-        headers,
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "outside/file" }),
       })
     ).status,
     403,

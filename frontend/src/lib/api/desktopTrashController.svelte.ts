@@ -2,9 +2,7 @@ import {
 	deleteDesktopTrashItem,
 	listDesktopTrash,
 	restoreDesktopTrashItem,
-	type DesktopTrashActionResponse,
-	type DesktopTrashItem,
-	type DesktopTrashListResponse
+	type DesktopTrashItem
 } from './desktopTrash';
 
 export type DesktopTrashLoadState =
@@ -18,9 +16,9 @@ export type DesktopTrashActionState =
 	| { kind: 'failed'; itemId: string; message: string };
 
 export interface DesktopTrashClient {
-	list(signal?: AbortSignal): Promise<DesktopTrashListResponse>;
-	restore(id: string): Promise<DesktopTrashActionResponse>;
-	delete(id: string): Promise<DesktopTrashActionResponse>;
+	list(signal?: AbortSignal): Promise<DesktopTrashItem[]>;
+	restore(id: string): Promise<void>;
+	delete(id: string): Promise<void>;
 }
 
 const defaultClient: DesktopTrashClient = {
@@ -59,10 +57,10 @@ export class DesktopTrashController {
 		if (this.loadState.kind !== 'ready') this.loadState = { kind: 'loading' };
 		this.refreshing = true;
 		try {
-			const response = await this.#client.list(signal);
+			const items = await this.#client.list(signal);
 			if (revision !== this.#loadRevision) return;
-			this.loadState = { kind: 'ready', items: response.items };
-			if (this.selectedId && !response.items.some((item) => item.id === this.selectedId)) {
+			this.loadState = { kind: 'ready', items };
+			if (this.selectedId && !items.some((item) => item.id === this.selectedId)) {
 				this.selectedId = null;
 			}
 		} catch (error) {
@@ -89,7 +87,7 @@ export class DesktopTrashController {
 	async #runAction(
 		id: string,
 		action: 'restore' | 'delete',
-		operation: (itemId: string) => Promise<DesktopTrashActionResponse>
+		operation: (itemId: string) => Promise<void>
 	): Promise<boolean> {
 		if (this.actionState.kind === 'running') return false;
 		this.actionState = { kind: 'running', itemId: id, action };

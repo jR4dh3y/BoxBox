@@ -1,3 +1,6 @@
+import { api } from './client';
+import { ok } from './parse';
+
 export function isLocalDesktop(): boolean {
 	return (
 		typeof document !== 'undefined' &&
@@ -5,11 +8,9 @@ export function isLocalDesktop(): boolean {
 	);
 }
 
+/** Open a file or folder in the OS default application. */
 export async function openDesktopFile(path: string): Promise<void> {
-	const response = await fetch(`/api/v1/desktop/open?${new URLSearchParams({ path })}`, {
-		method: 'POST'
-	});
-	if (!response.ok) throw new Error('Could not open this file in its default application');
+	ok(await api.post<unknown>('/desktop/open', { path }), 'open response');
 }
 
 export function openConnectionManager(): void {

@@ -68,7 +68,7 @@ describe('desktop volume response parsing', () => {
 		delete missingName.name;
 		assert.throws(
 			() => parseDesktopVolumesResponse({ available: true, volumes: [missingName] }),
-			/Invalid volume name response/
+			/Invalid volume name/
 		);
 		assert.throws(
 			() =>
@@ -76,7 +76,7 @@ describe('desktop volume response parsing', () => {
 					available: true,
 					volumes: [{ ...volume(), mounted: 'yes' }]
 				}),
-			/Invalid mounted state response/
+			/Invalid mounted state/
 		);
 		assert.throws(
 			() =>
@@ -84,7 +84,7 @@ describe('desktop volume response parsing', () => {
 					available: true,
 					volumes: [{ ...volume(), freeBytes: -1 }]
 				}),
-			/Invalid free size response/
+			/Invalid free size/
 		);
 		assert.throws(
 			() => parseDesktopVolumesResponse({ available: true, volumes: {} }),

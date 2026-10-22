@@ -1,4 +1,5 @@
 import { api } from './client';
+import { array, boolean, nonEmptyString, ok, record, string } from './parse';
 
 export interface DesktopTrashItem {
 	id: string;
@@ -9,95 +10,40 @@ export interface DesktopTrashItem {
 	canRestore: boolean;
 }
 
-export interface DesktopTrashListResponse {
-	items: DesktopTrashItem[];
-}
-
-export interface DesktopTrashItemResponse {
-	item: DesktopTrashItem;
-}
-
-export interface DesktopTrashActionResponse {
-	ok: boolean;
-}
-
-interface TrashPathRequest {
-	path: string;
-}
-
-interface TrashItemRequest {
-	id: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function requiredString(value: unknown, label: string): string {
-	if (typeof value !== 'string' || value.length === 0) {
-		throw new Error(`Invalid desktop trash ${label}`);
-	}
-	return value;
-}
-
 function parseDesktopTrashItem(value: unknown): DesktopTrashItem {
-	if (!isRecord(value)) throw new Error('Invalid desktop trash item');
-	const deletedAt = requiredString(value.deletedAt, 'deletion time');
-	if (typeof value.originalPath !== 'string')
-		throw new Error('Invalid desktop trash original path');
-	if (!Number.isFinite(Date.parse(deletedAt)))
+	const item = record(value, 'desktop trash item');
+	const deletedAt = nonEmptyString(item.deletedAt, 'desktop trash deletion time');
+	if (!Number.isFinite(Date.parse(deletedAt))) {
 		throw new Error('Invalid desktop trash deletion time');
-	if (typeof value.isDir !== 'boolean' || typeof value.canRestore !== 'boolean') {
-		throw new Error('Invalid desktop trash item');
 	}
 	return {
-		id: requiredString(value.id, 'item ID'),
-		name: requiredString(value.name, 'item name'),
-		originalPath: value.originalPath,
+		id: nonEmptyString(item.id, 'desktop trash item ID'),
+		name: nonEmptyString(item.name, 'desktop trash item name'),
+		originalPath: string(item.originalPath, 'desktop trash original path'),
 		deletedAt,
-		isDir: value.isDir,
-		canRestore: value.canRestore
+		isDir: boolean(item.isDir, 'desktop trash item'),
+		canRestore: boolean(item.canRestore, 'desktop trash item')
 	};
 }
 
-function parseDesktopTrashList(value: unknown): DesktopTrashListResponse {
-	if (!isRecord(value) || !Array.isArray(value.items)) {
-		throw new Error('Invalid desktop trash list');
-	}
-	return { items: value.items.map((item: unknown) => parseDesktopTrashItem(item)) };
-}
-
-function parseDesktopTrashItemResponse(value: unknown): DesktopTrashItemResponse {
-	if (!isRecord(value)) throw new Error('Invalid desktop trash response');
-	return { item: parseDesktopTrashItem(value.item) };
-}
-
-function parseDesktopTrashAction(value: unknown): DesktopTrashActionResponse {
-	if (!isRecord(value) || value.ok !== true) {
-		throw new Error('Invalid desktop trash action response');
-	}
-	return { ok: true };
-}
-
 /** List the current user's freedesktop trash entries. */
-export async function listDesktopTrash(signal?: AbortSignal): Promise<DesktopTrashListResponse> {
-	return parseDesktopTrashList(await api.get<unknown>('/desktop/trash', undefined, signal));
+export async function listDesktopTrash(signal?: AbortSignal): Promise<DesktopTrashItem[]> {
+	const value = record(await api.get<unknown>('/desktop/trash', undefined, signal), 'trash list');
+	return array(value.items, 'trash list').map(parseDesktopTrashItem);
 }
 
 /** Move a virtual BoxBox path into the desktop trash. */
-export async function trashDesktopFile(path: string): Promise<DesktopTrashItemResponse> {
-	const body: TrashPathRequest = { path };
-	return parseDesktopTrashItemResponse(await api.post<unknown>('/desktop/trash', body));
+export async function trashDesktopFile(path: string): Promise<DesktopTrashItem> {
+	const value = record(await api.post<unknown>('/desktop/trash', { path }), 'trash response');
+	return parseDesktopTrashItem(value.item);
 }
 
 /** Restore one trash entry to its recorded original path. */
-export async function restoreDesktopTrashItem(id: string): Promise<DesktopTrashActionResponse> {
-	const body: TrashItemRequest = { id };
-	return parseDesktopTrashAction(await api.post<unknown>('/desktop/trash/restore', body));
+export async function restoreDesktopTrashItem(id: string): Promise<void> {
+	ok(await api.post<unknown>('/desktop/trash/restore', { id }), 'trash restore response');
 }
 
 /** Permanently remove one trash entry and its contents. */
-export async function deleteDesktopTrashItem(id: string): Promise<DesktopTrashActionResponse> {
-	const body: TrashItemRequest = { id };
-	return parseDesktopTrashAction(await api.post<unknown>('/desktop/trash/delete', body));
+export async function deleteDesktopTrashItem(id: string): Promise<void> {
+	ok(await api.post<unknown>('/desktop/trash/delete', { id }), 'trash delete response');
 }

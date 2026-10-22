@@ -184,6 +184,10 @@ class SettingsStore {
 		this.set({ ...this.current, driveNameOverrides: rest });
 	}
 
+	toggleHiddenFiles(): void {
+		this.set({ ...this.current, showHiddenFiles: !this.current.showHiddenFiles });
+	}
+
 	pinFavoriteFolder(folder: FavoriteFolder): void {
 		if (this.current.favoriteFolders.some((favorite) => favorite.path === folder.path)) return;
 		this.set({ ...this.current, favoriteFolders: [...this.current.favoriteFolders, folder] });

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { AlertTriangle, AppWindow, RotateCw } from 'lucide-svelte';
-	import Button from '#lib/components/ui/Button.svelte';
-	import Modal from '#lib/components/ui/Modal.svelte';
+	import { Button, Modal, Spinner } from '#lib/components/ui/index.js';
+	import { CONFIG } from '#lib/config.js';
+	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import {
 		listDesktopApps,
 		openDesktopWithApp,
@@ -25,6 +25,7 @@
 	let retryToken = $state(0);
 	let requestGeneration = 0;
 
+	const showSpinner = createDelayedFlag(() => loading, CONFIG.ui.spinnerDelayMs);
 	const fileName = $derived(path.split('/').filter(Boolean).at(-1) ?? path);
 
 	$effect(() => {
@@ -80,87 +81,54 @@
 	}
 </script>
 
-<Modal {open} title="Open With" {onclose}>
-	<div class="flex flex-col gap-4">
-		<p class="text-sm text-text-secondary">
-			Choose an application to open <span class="font-medium text-text-primary">{fileName}</span>.
+<Modal {open} title="Open “{fileName}” with" {onclose}>
+	{#if loading}
+		{#if showSpinner.value}
+			<div class="flex items-center gap-2 py-2 text-[13px] text-text-secondary" role="status">
+				<Spinner size="sm" />Loading applications…
+			</div>
+		{/if}
+	{:else if errorMessage}
+		<p class="m-0 flex items-center justify-between gap-3 text-[13px] text-danger" role="alert">
+			{errorMessage}
+			{#if apps.length === 0}
+				<Button variant="secondary" size="sm" onclick={() => (retryToken += 1)}>Try again</Button>
+			{/if}
 		</p>
-
-		{#if errorMessage}
-			<div
-				class="flex items-start gap-2 rounded border border-border-secondary bg-surface-secondary px-3 py-2 text-sm text-text-primary"
-				role="alert"
-			>
-				<AlertTriangle size={17} class="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
-				<p class="min-w-0 flex-1">{errorMessage}</p>
-				<button
-					type="button"
-					class="shrink-0 rounded p-1 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-					aria-label="Try loading applications again"
-					onclick={() => (retryToken += 1)}
+	{:else if apps.length === 0}
+		<p class="m-0 text-[13px] text-text-secondary">
+			No installed application is registered for {mimeType || 'this file'}.
+		</p>
+	{/if}
+	{#if !loading && apps.length > 0}
+		<fieldset
+			class="m-0 max-h-72 overflow-y-auto rounded border border-border-secondary p-0"
+			class:mt-3={errorMessage !== null}
+			disabled={launching}
+		>
+			<legend class="sr-only">Installed applications</legend>
+			{#each apps as app (app.id)}
+				<label
+					class="flex h-8 cursor-pointer items-center gap-3 border-b border-border-secondary px-3 text-[13px] last:border-b-0 hover:bg-surface-secondary has-[:checked]:bg-selection has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
 				>
-					<RotateCw size={15} aria-hidden="true" />
-				</button>
-			</div>
-		{/if}
-
-		{#if loading}
-			<div
-				class="flex flex-col gap-2"
-				role="status"
-				aria-label="Loading applications"
-				aria-live="polite"
-				aria-busy="true"
-			>
-				{#each [0, 1, 2] as row (row)}
-					<div class="h-12 animate-pulse rounded bg-surface-secondary"></div>
-				{/each}
-			</div>
-		{:else if apps.length > 0}
-			<fieldset
-				class="max-h-72 overflow-y-auto rounded border border-border-secondary p-1"
-				disabled={launching}
-			>
-				<legend class="sr-only">Installed applications</legend>
-				{#each apps as app (app.id)}
-					<label
-						class="flex cursor-pointer items-center gap-3 rounded px-3 py-2.5 text-sm transition-colors hover:bg-surface-secondary has-[:checked]:bg-surface-secondary has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent"
-					>
-						<input
-							type="radio"
-							name="desktop-open-with-app"
-							value={app.id}
-							checked={selectedAppId === app.id}
-							onchange={(event) => (selectedAppId = event.currentTarget.value)}
-							class="accent-accent"
-						/>
-						<AppWindow size={18} class="shrink-0 text-text-secondary" aria-hidden="true" />
-						<span class="min-w-0 flex-1 truncate text-text-primary">{app.name}</span>
-						{#if app.isDefault}
-							<span class="shrink-0 text-xs text-text-secondary">Default</span>
-						{/if}
-					</label>
-				{/each}
-			</fieldset>
-		{:else if !errorMessage}
-			<div
-				class="rounded border border-border-secondary bg-surface-secondary px-4 py-5 text-center"
-			>
-				<AppWindow size={22} class="mx-auto mb-2 text-text-secondary" aria-hidden="true" />
-				<p class="text-sm font-medium text-text-primary">No compatible applications found</p>
-				<p class="mt-1 text-sm text-text-secondary">
-					{#if mimeType}
-						No installed app is registered for {mimeType}.
-					{:else}
-						There are no installed apps registered for this file.
+					<input
+						type="radio"
+						name="desktop-open-with-app"
+						value={app.id}
+						checked={selectedAppId === app.id}
+						onchange={(event) => (selectedAppId = event.currentTarget.value)}
+						class="accent-accent"
+					/>
+					<span class="min-w-0 flex-1 truncate text-text-primary">{app.name}</span>
+					{#if app.isDefault}
+						<span class="shrink-0 text-text-muted">Default</span>
 					{/if}
-				</p>
-			</div>
-		{/if}
-	</div>
+				</label>
+			{/each}
+		</fieldset>
+	{/if}
 
 	{#snippet footer()}
-		<Button variant="secondary" onclick={onclose} disabled={launching}>Cancel</Button>
 		<Button
 			variant="primary"
 			onclick={confirmOpen}

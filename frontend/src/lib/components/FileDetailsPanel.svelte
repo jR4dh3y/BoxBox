@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Copy, FolderOpen, Info, Files, X, Download, Pencil, Trash2 } from 'lucide-svelte';
+	import { Copy, X } from 'lucide-svelte';
 	import type { FileInfo } from '#lib/api/files.js';
 	import { formatFileSize } from '#lib/utils/format.js';
 	import { getFileTypeDescription } from '#lib/utils/fileTypes.js';
@@ -9,6 +9,7 @@
 	import FileThumbnail from './FileThumbnail.svelte';
 	import type { BrowsePaneRuntime } from '#lib/browse/pane.svelte.js';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import type { FileContextAction } from '#lib/utils/fileContextMenu.js';
 
 	let { runtime, onClose }: { runtime: BrowsePaneRuntime | null; onClose: () => void } = $props();
 	const files = $derived(
@@ -23,7 +24,7 @@
 	function onNavigate(path: string) {
 		runtime?.pane.location.navigate(path);
 	}
-	function onAction(action: string, files: FileInfo[]) {
+	function onAction(action: FileContextAction, files: FileInfo[]) {
 		void runtime?.actions.handleContextMenuAction(action, files);
 	}
 	function onClear() {
@@ -51,9 +52,7 @@
 	<header
 		class="flex h-11 shrink-0 items-center justify-between border-b border-border-secondary px-4"
 	>
-		<h2 class="flex items-center gap-2 text-[13px] font-medium text-text-primary">
-			<Info size={14} />Details
-		</h2>
+		<h2 class="flex items-center gap-2 text-[13px] font-medium text-text-primary">Details</h2>
 		<button
 			type="button"
 			class="rounded p-1 text-text-secondary hover:bg-surface-elevated hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
@@ -73,7 +72,7 @@
 				{single.isDir ? 'Folder' : getFileTypeDescription(single.name)}
 			</p>
 			<button type="button" class="{control} mt-4 w-full" onclick={() => onOpen(single)}
-				><FolderOpen size={14} />{single.isDir ? 'Open folder' : 'Open'}</button
+				>{single.isDir ? 'Open folder' : 'Open'}</button
 			>
 			<dl class="mt-6 space-y-4 text-xs">
 				<div>
@@ -111,22 +110,16 @@
 				</div>
 			</dl>
 		{:else if files.length > 1}
-			<div
-				class="mb-4 flex h-28 items-center justify-center rounded-lg bg-surface-secondary text-accent"
-			>
-				<Files size={40} strokeWidth={1.3} />
-			</div>
 			<h3 class="text-sm font-medium text-text-primary">{summary.count} items selected</h3>
 			<p class="mt-2 text-xs text-text-secondary">
 				{summary.files} files · {summary.folders} folders
 			</p>
 			<dl class="mt-5 text-xs">
-				<dt class="text-text-secondary">Combined file size</dt>
+				<dt class="text-text-secondary">
+					{summary.folders ? 'Size of selected files (folders excluded)' : 'Size'}
+				</dt>
 				<dd class="mt-1 text-text-primary">{formatFileSize(summary.bytes)}</dd>
 			</dl>
-			{#if summary.folders}<p class="mt-2 text-xs leading-relaxed text-text-secondary">
-					Folder contents are not included in this size.
-				</p>{/if}
 			<ul
 				class="mt-5 max-h-52 space-y-2 overflow-y-auto text-xs text-text-secondary"
 				aria-label="Selected items"
@@ -137,40 +130,28 @@
 			</ul>
 			<button type="button" class="{control} mt-4 w-full" onclick={onClear}>Clear selection</button>
 		{:else}
-			<div class="flex h-28 items-center justify-center text-text-muted">
-				<Info size={32} strokeWidth={1.3} />
-			</div>
-			<h3 class="text-sm font-medium text-text-primary">Select a file or folder</h3>
-			<p class="mt-2 text-xs leading-relaxed text-text-secondary">
-				See its preview, size, and properties here. Use the checkboxes, Ctrl-click, or Shift-click
-				to select several items.
-			</p>
-			<div class="mt-6 border-t border-border-secondary pt-4">
-				<p class="text-xs break-all text-text-primary">{path || 'This server'}</p>
-				<p class="mt-1 text-xs text-text-secondary">{itemCount} items in this view</p>
-			</div>
+			<p class="text-xs break-all text-text-primary">{path || 'This server'}</p>
+			<p class="mt-1 text-xs text-text-secondary">{itemCount} items</p>
 		{/if}
 		{#if files.length}
 			<div class="mt-6 grid grid-cols-2 gap-2 border-t border-border-secondary pt-4">
-				<button type="button" class={control} onclick={() => onAction('copy', files)}
-					><Copy size={13} />Copy</button
-				>
+				<button type="button" class={control} onclick={() => onAction('copy', files)}>Copy</button>
 				{#if summary.files === files.length}<button
 						type="button"
 						class={control}
-						onclick={() => onAction('download', files)}><Download size={13} />Download</button
+						onclick={() => onAction('download', files)}>Download</button
 					>{/if}
 				{#if !readOnly}
 					{#if single}<button
 							type="button"
 							class={control}
-							onclick={() => onAction('rename', files)}><Pencil size={13} />Rename</button
+							onclick={() => onAction('rename', files)}>Rename</button
 						>{/if}
 					<button
 						type="button"
 						class="{control} text-danger"
 						onclick={() => onAction('delete', files)}
-						><Trash2 size={13} />{isLocalDesktop() ? 'Trash' : 'Delete'}</button
+						>{isLocalDesktop() ? 'Trash' : 'Delete'}</button
 					>
 				{/if}
 			</div>

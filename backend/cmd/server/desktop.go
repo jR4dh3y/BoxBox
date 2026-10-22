@@ -3,12 +3,11 @@ package main
 import (
 	"crypto/subtle"
 	"fmt"
-	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/handler"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
@@ -23,9 +22,6 @@ func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {
 	clipboard := handler.NewDesktopClipboardHandler(service.NewDesktopClipboard(filesystem.NewOsFS(), cfg.MountPoints))
 	trash := handler.NewDesktopTrashHandler(service.NewDesktopTrashService(filesystem.NewOsFS(), cfg.MountPoints))
 	volumes := handler.NewDesktopVolumesHandler(service.NewDesktopVolumesService(cfg.MountPoints))
-	open := service.NewDesktopOpener(filesystem.NewOsFS(), cfg.MountPoints, func(path string) error {
-		return exec.Command("xdg-open", path).Run()
-	})
 	router := chi.NewRouter()
 	router.Route("/api/v1/desktop", func(r chi.Router) {
 		r.Get("/watch", watch)
@@ -33,13 +29,6 @@ func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {
 		clipboard.RegisterRoutes(r)
 		volumes.RegisterRoutes(r)
 		trash.RegisterRoutes(r)
-		r.Post("/open", func(w http.ResponseWriter, r *http.Request) {
-			if err := open(r.URL.Query().Get("path")); err != nil {
-				handler.HandleServiceError(w, err)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-		})
 	})
 	router.NotFound(next.ServeHTTP)
 	return router

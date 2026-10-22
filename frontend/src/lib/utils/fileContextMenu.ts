@@ -1,8 +1,3 @@
-/**
- * File Context Menu Configuration
- * Centralized definition of context menu items for file operations
- */
-
 import type { ContextMenuItem } from '#lib/components/ui/ContextMenu.svelte';
 import type { FileInfo } from '#lib/api/files.js';
 import { isLocalDesktop } from '#lib/api/desktop.js';
@@ -53,11 +48,10 @@ export interface FileContextMenuOptions {
 	includeCreateActions?: boolean;
 }
 
-/**
- * Get context menu items for file operations
- * Configures disabled states based on selection
- */
-export function getFileContextMenuItems(options: FileContextMenuOptions): ContextMenuItem[] {
+type FileContextMenuItem = ContextMenuItem<FileContextAction>;
+
+/** Menu entries for the clicked items, or for the folder background when `items` is empty. */
+export function getFileContextMenuItems(options: FileContextMenuOptions): FileContextMenuItem[] {
 	const {
 		items,
 		canPaste,
@@ -65,88 +59,86 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 		canCreate = false,
 		includeCreateActions = true
 	} = options;
-	const hasSelection = items.length > 0;
+	const desktop = isLocalDesktop();
 	const hasMultiple = items.length > 1;
-	const hasFolder = items.some((i) => i.isDir);
 	const singleFile = items.length === 1 && !items[0].isDir;
-	const singleItem = items.length === 1;
 	const singleFolder = !hasMultiple && items[0]?.isDir ? items[0] : null;
-	const isFavorite = singleFolder ? favoritePaths.has(singleFolder.path) : false;
-	const createItems: ContextMenuItem[] = includeCreateActions
-		? [
-				{ id: 'new-file', label: 'New File', icon: FilePlus, disabled: !canCreate },
-				{ id: 'new-folder', label: 'New Folder', icon: FolderPlus, disabled: !canCreate },
-				{ id: 'separator-create', label: '', separator: true }
-			]
-		: [];
+	const paste: FileContextMenuItem = {
+		id: 'paste',
+		label: 'Paste',
+		icon: ClipboardPaste,
+		shortcut: 'Ctrl+V',
+		disabled: !canPaste
+	};
+	const menu: FileContextMenuItem[] = [];
 
-	if (!hasSelection) {
-		return [
-			...createItems,
-			...(isLocalDesktop()
-				? [{ id: 'open-terminal', label: 'Open Terminal Here', icon: Terminal }]
-				: []),
-			{ id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl+V', disabled: !canPaste }
-		];
+	if (includeCreateActions) {
+		menu.push(
+			{ id: 'new-file', label: 'New File', icon: FilePlus, disabled: !canCreate },
+			{ id: 'new-folder', label: 'New Folder', icon: FolderPlus, disabled: !canCreate },
+			'separator'
+		);
 	}
 
-	return [
-		...createItems,
-		...(isLocalDesktop()
-			? [
-					{ id: 'open-with', label: 'Open With…', icon: AppWindow, disabled: !singleFile },
-					{
-						id: 'open-terminal',
-						label: 'Open Terminal Here',
-						icon: Terminal,
-						disabled: !singleFolder
-					},
-					{ id: 'separator-desktop', label: '', separator: true }
-				]
-			: []),
+	if (items.length === 0) {
+		if (desktop) menu.push({ id: 'open-terminal', label: 'Open Terminal Here', icon: Terminal });
+		menu.push(paste);
+		return menu;
+	}
+
+	if (desktop) {
+		menu.push(
+			{ id: 'open-with', label: 'Open With…', icon: AppWindow, disabled: !singleFile },
+			{
+				id: 'open-terminal',
+				label: 'Open Terminal Here',
+				icon: Terminal,
+				disabled: !singleFolder
+			},
+			'separator'
+		);
+	}
+	menu.push(
 		{ id: 'copy', label: 'Copy', icon: Copy, shortcut: 'Ctrl+C' },
 		{ id: 'cut', label: 'Cut', icon: Scissors, shortcut: 'Ctrl+X' },
-		{ id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl+V', disabled: !canPaste },
-		...(singleFolder
-			? [
-					{
-						id: isFavorite ? 'unpin' : 'pin',
-						label: isFavorite ? 'Unpin from Favorites' : 'Pin to Favorites',
-						icon: isFavorite ? PinOff : Pin
-					}
-				]
-			: []),
-		{ id: 'separator-1', label: '', separator: true },
+		paste
+	);
+	if (singleFolder) {
+		const pinned = favoritePaths.has(singleFolder.path);
+		menu.push(
+			pinned
+				? { id: 'unpin', label: 'Unpin from Favorites', icon: PinOff }
+				: { id: 'pin', label: 'Pin to Favorites', icon: Pin }
+		);
+	}
+	menu.push(
+		'separator',
 		{ id: 'rename', label: 'Rename', icon: Pencil, shortcut: 'F2', disabled: hasMultiple },
-		{
-			id: 'delete',
-			label: isLocalDesktop() ? 'Move to Trash' : 'Delete',
+		{ id: 'delete', label: desktop ? 'Move to Trash' : 'Delete', icon: Trash2, shortcut: 'Del' }
+	);
+	if (desktop) {
+		menu.push({
+			id: 'delete-permanently',
+			label: 'Delete Permanently…',
 			icon: Trash2,
-			shortcut: 'Del'
-		},
-		...(isLocalDesktop()
-			? [
-					{
-						id: 'delete-permanently',
-						label: 'Delete Permanently…',
-						icon: Trash2,
-						shortcut: 'Shift+Del'
-					}
-				]
-			: []),
-		{ id: 'separator-2', label: '', separator: true },
+			shortcut: 'Shift+Del'
+		});
+	}
+	menu.push(
+		'separator',
 		{
 			id: 'download',
 			label: singleFolder ? 'Download as ZIP' : 'Download',
 			icon: Download,
-			disabled: hasFolder && !singleFolder
+			disabled: items.some((item) => item.isDir) && !singleFolder
 		},
 		{
 			id: 'share',
 			label: singleFile ? 'Share file…' : 'Share folder…',
 			icon: Share2,
-			disabled: !singleItem
+			disabled: items.length !== 1
 		},
 		{ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple }
-	];
+	);
+	return menu;
 }

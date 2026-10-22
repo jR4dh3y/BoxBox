@@ -1,9 +1,4 @@
 <script lang="ts">
-	/**
-	 * FileGrid component - icon/thumbnail grid for browsing folders
-	 */
-
-	import { moveFileFocus } from '#lib/browse/fileShortcuts.js';
 	import type { FileInfo } from '#lib/api/files.js';
 	import FileThumbnail from '#lib/components/FileThumbnail.svelte';
 	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
@@ -55,7 +50,7 @@
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
-		onContextMenuAction?: (action: string, items: FileInfo[]) => void;
+		onContextMenuAction?: (action: FileContextAction, items: FileInfo[]) => void;
 	} = $props();
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
@@ -546,8 +541,8 @@
 			{canCreate}
 			x={contextMenu.x}
 			y={contextMenu.y}
-			onSelect={handleContextMenuSelect}
-			onClose={handleContextMenuClose}
+			onSelect={collection.selectMenuAction}
+			onClose={collection.closeMenu}
 		/>
 	{:catch}
 		<LoadError label="file context menu" onClose={handleContextMenuClose} />

@@ -77,7 +77,7 @@ func TestDesktopClipboardHandlerDispatchesSetAndClearRequests(t *testing.T) {
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/v1/desktop/clipboard", strings.NewReader(test.body))
 		router.ServeHTTP(response, request)
-		if response.Code != http.StatusNoContent {
+		if response.Code != http.StatusOK {
 			t.Fatalf("POST %s = %d %s", test.body, response.Code, response.Body.String())
 		}
 		if test.clear {
