@@ -22,6 +22,15 @@ export function isTextEntryTarget(target: EventTarget | null): boolean {
 	);
 }
 
+/** Controls that Enter already activates; file rows handle their own Enter. */
+export function isActivatableTarget(target: EventTarget | null): boolean {
+	return (
+		target instanceof Element &&
+		target.closest('button, a[href], summary, [role="button"], [role="tab"], [role="link"]') !==
+			null
+	);
+}
+
 export function getFileShortcut(
 	event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>
 ): FileShortcut | null {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		getFileShortcut,
+		isActivatableTarget,
 		isTextEntryTarget,
 		type FileShortcut
 	} from '#lib/browse/fileShortcuts.js';
@@ -144,7 +145,7 @@
 		)
 			return;
 		const shortcut = getFileShortcut(event);
-		if (!shortcut) return;
+		if (!shortcut || (shortcut === 'open' && isActivatableTarget(event.target))) return;
 		event.preventDefault();
 		const items = data.displayItems.filter((item) => selection.paths.has(item.path));
 		switch (shortcut) {

@@ -23,7 +23,10 @@
 
 	function closeEditor(): void {
 		editing = false;
-		void tick().then(() => pathBar?.focus());
+		// Keep focus the user moved elsewhere; reclaim it only when the editor took it with it.
+		void tick().then(() => {
+			if (!document.activeElement || document.activeElement === document.body) pathBar?.focus();
+		});
 	}
 
 	function activate(event: MouseEvent | KeyboardEvent): void {
