@@ -58,6 +58,32 @@ This opens the remote BoxBox server's login page in a sandboxed CEF window witho
 - Drives lists actual removable-volume state and exposes mount, unmount and eject through the user's GIO services and permissions. An unavailable service or busy volume is reported by the UI.
 - Valid names containing `..` work. The desktop removes the server's 10,000-entry directory cap while retaining paginated rendering; self-hosted instances keep the default cap.
 
+## Keyboard shortcuts
+
+Press F1 or click the toolbar's ? button for the in-app reference. Shortcuts act on the active pane. Text fields keep their normal editing shortcuts, and dialogs block file actions.
+
+| Keys | Action |
+| --- | --- |
+| Arrow keys, Home, End | Move focus and selection in list or grid |
+| Shift + Arrow keys | Extend a selection |
+| Ctrl/Cmd + Arrow keys | Move focus without changing selection |
+| Space / Ctrl/Cmd + Space | Select / toggle the focused item |
+| Ctrl/Cmd + A / Escape | Select all loaded items / clear selection |
+| Enter / Alt + Enter | Open / show Details |
+| Ctrl/Cmd + C, X, V | Copy, cut, paste |
+| Ctrl/Cmd + Shift + N / F2 | New folder / rename |
+| Delete / Shift + Delete | Trash / confirmed permanent delete |
+| Ctrl/Cmd + F / L | Focus search / location |
+| Alt + Left, Right, Up / F5 | Back, forward, parent folder / refresh |
+| Ctrl/Cmd + H | Toggle hidden files |
+| Ctrl/Cmd + T, W | New tab, close tab |
+| Ctrl/Cmd + Tab / Ctrl/Cmd + Shift + Tab | Next / previous tab |
+| F3 | Toggle split pane |
+| Ctrl/Cmd + Z | Undo the last local rename or move to Trash |
+| Ctrl + Shift + O | Open saved connections |
+
+The shared web browser supports these file and navigation shortcuts too. Web deletion uses the server's delete flow. Browsers and host window managers can reserve some combinations before the app receives them.
+
 ## Install as a Linux file manager
 
 After building the stable bundle:

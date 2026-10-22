@@ -26,6 +26,7 @@
 	let uploadErrorDismissed = $state(false);
 	let launchTabId = $state('');
 	let detailsOpen = $state(false);
+	let shortcutsOpen = $state(false);
 
 	const tabs = useBrowseTabs({
 		initialLocation: launchState.location,
@@ -133,11 +134,16 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent): void {
-		if (event.defaultPrevented) return;
+		if (event.defaultPrevented || shortcutsOpen) return;
+		if (event.key === 'F1' && !activeRuntime?.hasOpenDialog) {
+			event.preventDefault();
+			shortcutsOpen = true;
+			return;
+		}
 		const workspace = document.getElementById('browse-workspace');
 		const insideWorkspace =
 			event.target instanceof Node && workspace?.contains(event.target) === true;
-		if (!insideWorkspace && !activeRuntime?.hasOpenDialog) return;
+		if (!insideWorkspace && event.target !== document.body && !activeRuntime?.hasOpenDialog) return;
 
 		const shortcut = getBrowseShortcut({
 			key: event.key,
@@ -190,9 +196,6 @@
 					showHiddenFiles: !settingsStore.current.showHiddenFiles
 				});
 				break;
-			case 'paste':
-				void activeRuntime?.actions.paste.paste();
-				break;
 			case 'focus-location':
 				focusLocation();
 				break;
@@ -238,6 +241,7 @@
 				includeHiddenSuggestions={settings.showHiddenFiles}
 				{detailsOpen}
 				onToggleDetails={() => (detailsOpen = !detailsOpen)}
+				onShortcuts={() => (shortcutsOpen = true)}
 			/>
 		{:catch}
 			<LoadError label="file toolbar" />
@@ -293,3 +297,11 @@
 {/if}
 
 <Toast />
+
+{#if shortcutsOpen}
+	{#await import('#lib/components/KeyboardShortcutsDialog.svelte') then { default: KeyboardShortcutsDialog }}
+		<KeyboardShortcutsDialog onclose={() => (shortcutsOpen = false)} />
+	{:catch}
+		<LoadError label="keyboard shortcuts" onClose={() => (shortcutsOpen = false)} />
+	{/await}
+{/if}

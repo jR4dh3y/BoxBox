@@ -3,6 +3,7 @@
 	 * FileList component with sortable columns - FilePilot style
 	 */
 
+	import { moveFileFocus } from '#lib/browse/fileShortcuts.js';
 	import type { FileInfo } from '#lib/api/files.js';
 	import type { SortField, SortDir } from '#lib/types/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
@@ -113,6 +114,16 @@
 			return;
 		}
 		if (event.target instanceof HTMLInputElement) return;
+
+		const nextPath = moveFileFocus(event, 'list');
+		if (nextPath) {
+			if (!event.ctrlKey && !event.metaKey) {
+				selectionAnchor ??= item.path;
+				updateSelection(nextPath, event.shiftKey ? { type: 'range' } : { type: 'replace' });
+			}
+			return;
+		}
+		if (event.altKey) return;
 
 		if (event.key === 'Enter') {
 			event.preventDefault();
@@ -332,6 +343,7 @@
 						tabindex="0"
 						aria-selected={isSelected(item.path)}
 						data-file-row="true"
+						data-file-path={item.path}
 					>
 						<td class={tdClass}>
 							<div class="flex min-w-0 items-center gap-2">

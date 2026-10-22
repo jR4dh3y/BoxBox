@@ -3,6 +3,7 @@
 	 * FileGrid component - icon/thumbnail grid for browsing folders
 	 */
 
+	import { moveFileFocus } from '#lib/browse/fileShortcuts.js';
 	import type { FileInfo } from '#lib/api/files.js';
 	import FileThumbnail from '#lib/components/FileThumbnail.svelte';
 	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
@@ -97,6 +98,16 @@
 			return;
 		}
 		if (event.target instanceof HTMLInputElement) return;
+
+		const nextPath = moveFileFocus(event, 'grid');
+		if (nextPath) {
+			if (!event.ctrlKey && !event.metaKey) {
+				selectionAnchor ??= item.path;
+				updateSelection(nextPath, event.shiftKey ? { type: 'range' } : { type: 'replace' });
+			}
+			return;
+		}
+		if (event.altKey) return;
 
 		if (event.key === 'Enter') {
 			event.preventDefault();
@@ -247,6 +258,7 @@
 					onkeydown={(e) => handleKeyDown(item, e)}
 					oncontextmenu={(e) => handleContextMenu(item, e)}
 					data-file-item="true"
+					data-file-path={item.path}
 				>
 					<input
 						type="checkbox"
