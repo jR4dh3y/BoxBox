@@ -107,3 +107,43 @@ export async function startServer(binary: string, dataDir: string) {
     throw error;
   }
 }
+
+export type StartedServer = Awaited<ReturnType<typeof startServer>>;
+
+/** Starts the bundled server on first use and reports an unexpected exit once. */
+export class LocalServer {
+  readonly #binary: string;
+  readonly #dataDir: string;
+  readonly #onUnexpectedExit: (code: number) => void;
+  #server: Promise<StartedServer> | undefined;
+  #stopping = false;
+
+  constructor(
+    binary: string,
+    dataDir: string,
+    onUnexpectedExit: (code: number) => void,
+  ) {
+    this.#binary = binary;
+    this.#dataDir = dataDir;
+    this.#onUnexpectedExit = onUnexpectedExit;
+  }
+
+  get(): Promise<StartedServer> {
+    if (this.#stopping) return Promise.reject(new Error("BoxBox Desktop is shutting down"));
+    this.#server ??= startServer(this.#binary, this.#dataDir).then((started) => {
+      void started.exited.then((code) => {
+        if (!this.#stopping) this.#onUnexpectedExit(code);
+      });
+      return started;
+    });
+    // A failed start may be retried by the next window.
+    this.#server.catch(() => (this.#server = undefined));
+    return this.#server;
+  }
+
+  async stop(): Promise<void> {
+    this.#stopping = true;
+    const server = await this.#server?.catch(() => undefined);
+    await server?.stop();
+  }
+}

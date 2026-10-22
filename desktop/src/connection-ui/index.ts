@@ -2,31 +2,30 @@ import { Electroview } from "electrobun/view";
 import type { ConnectionProfile, ConnectionSaveCommand } from "../connections";
 import type { ConnectionsRPC } from "../connections-rpc";
 
-type EditorState =
+type Editor =
   | { readonly kind: "create" }
   | { readonly kind: "update"; readonly profile: ConnectionProfile };
 
-type BusyState =
-  | { readonly kind: "save" }
-  | { readonly kind: "connect"; readonly id: string }
-  | { readonly kind: "remove"; readonly id: string }
-  | { readonly kind: "local" };
+type Profiles =
+  | { readonly kind: "loading" }
+  | { readonly kind: "ready"; readonly profiles: readonly ConnectionProfile[] }
+  | { readonly kind: "failed"; readonly message: string };
 
-const app = document.querySelector<HTMLElement>("#app");
-if (!app) throw new Error("Connections view is missing its root element");
+/** The action in flight; `id` names the row it belongs to. */
+type Busy = { readonly action: "save" | "connect" | "remove" | "local"; readonly id?: string };
 
-const rpc = Electroview.defineRPC<ConnectionsRPC>({
-  handlers: { requests: {} },
-});
+const root = document.querySelector<HTMLElement>("#app");
+if (!root) throw new Error("Connections view is missing its root element");
+const app: HTMLElement = root;
+
+const rpc = Electroview.defineRPC<ConnectionsRPC>({ handlers: { requests: {} } });
 new Electroview({ rpc });
 
-let profiles: ConnectionProfile[] = [];
-let editor: EditorState | undefined;
+let profiles: Profiles = { kind: "loading" };
+let editor: Editor | undefined;
 let confirmRemoveId: string | undefined;
-let busy: BusyState | undefined;
-let loading = true;
-let statusMessage = "";
-let statusKind: "error" | "success" | "info" = "info";
+let busy: Busy | undefined;
+let error = "";
 
 function element<K extends keyof HTMLElementTagNameMap>(
   name: K,
@@ -46,318 +45,187 @@ function button(
 ): HTMLButtonElement {
   const node = element("button", `button button-${style}`, label);
   node.type = "button";
+  node.disabled = busy !== undefined;
   node.addEventListener("click", onClick);
   return node;
 }
 
-function setStatus(message: string, kind: typeof statusKind = "info"): void {
-  statusMessage = message;
-  statusKind = kind;
-  const node = app?.querySelector<HTMLElement>("[data-status]");
-  if (!node) return;
-  node.textContent = message;
-  node.dataset.kind = kind;
-  node.hidden = message.length === 0;
+function running(action: Busy["action"], id?: string): boolean {
+  return busy?.action === action && busy.id === id;
 }
 
-function isBusy(kind: BusyState["kind"], id?: string): boolean {
-  if (!busy || busy.kind !== kind) return false;
-  if (id === undefined) return true;
-  return "id" in busy && busy.id === id;
+function describeError(value: unknown, fallback: string): string {
+  return value instanceof Error && value.message.length > 0 ? value.message : fallback;
 }
 
-function render(): void {
-  if (!app) return;
-  const shell = element("section", "manager-shell");
-  const header = element("header", "manager-header");
-  const titleBlock = element("div", "title-block");
-  titleBlock.append(element("h1", undefined, "Connections"));
-  const headerActions = element("div", "header-actions");
-  const localButton = button("Local files", "secondary", () => {
-    void showLocalFiles();
-  });
-  localButton.disabled = isBusy("local");
-  headerActions.append(
-    localButton,
-    button("Add server", "primary", () => {
-      editor = { kind: "create" };
-      confirmRemoveId = undefined;
-      render();
-      app?.querySelector<HTMLInputElement>("#connection-name")?.focus();
-    }),
-  );
-  header.append(titleBlock, headerActions);
-  shell.append(header);
-
-  const status = element("p", "status-message");
-  status.dataset.status = "";
-  status.dataset.kind = statusKind;
-  status.setAttribute("role", "status");
-  status.setAttribute("aria-live", "polite");
-  status.textContent = statusMessage;
-  status.hidden = statusMessage.length === 0;
-  shell.append(status);
-
-  if (editor) shell.append(renderEditor(editor));
-  shell.append(renderConnectionList());
-  app.replaceChildren(shell);
-}
-
-function renderEditor(current: EditorState): HTMLElement {
-  const panel = element("section", "editor-panel");
-  panel.setAttribute("aria-labelledby", "editor-heading");
-  const heading = element(
-    "h2",
-    undefined,
-    current.kind === "create" ? "Add a server" : "Edit server",
-  );
-  heading.id = "editor-heading";
-  panel.append(heading);
-
-  const form = element("form", "connection-form");
-  const nameLabel = element("label", "field-label", "Connection name");
-  nameLabel.htmlFor = "connection-name";
-  const nameInput = element("input", "text-input");
-  nameInput.id = "connection-name";
-  nameInput.name = "name";
-  nameInput.type = "text";
-  nameInput.required = true;
-  nameInput.maxLength = 80;
-  nameInput.autocomplete = "off";
-  nameInput.spellcheck = false;
-  nameInput.placeholder = "Home server";
-  nameInput.value = current.kind === "update" ? current.profile.name : "";
-
-  const urlLabel = element("label", "field-label", "Server URL");
-  urlLabel.htmlFor = "connection-url";
-  const urlInput = element("input", "text-input");
-  urlInput.id = "connection-url";
-  urlInput.name = "url";
-  urlInput.type = "url";
-  urlInput.required = true;
-  urlInput.maxLength = 2048;
-  urlInput.setAttribute("autocomplete", "url");
-  urlInput.spellcheck = false;
-  urlInput.placeholder = "https://files.example.com";
-  urlInput.value = current.kind === "update" ? current.profile.url : "";
-
-  const help = element(
-    "p",
-    "field-help",
-    "Use an HTTP or HTTPS URL. Add sign-in details on the server itself; BoxBox does not save passwords.",
-  );
-  const fields = element("div", "form-fields");
-  const nameField = element("div", "field");
-  nameField.append(nameLabel, nameInput);
-  const urlField = element("div", "field");
-  urlField.append(urlLabel, urlInput, help);
-  fields.append(nameField, urlField);
-
-  const actions = element("div", "form-actions");
-  const saveButton = element(
-    "button",
-    "button button-primary",
-    isBusy("save") ? "Saving…" : "Save connection",
-  );
-  saveButton.type = "submit";
-  saveButton.disabled = isBusy("save");
-  actions.append(
-    saveButton,
-    button("Cancel", "quiet", () => {
-      editor = undefined;
-      render();
-    }),
-  );
-  form.append(fields, actions);
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const command: ConnectionSaveCommand = current.kind === "create"
-      ? { kind: "create", name: nameInput.value, url: urlInput.value }
-      : {
-          kind: "update",
-          id: current.profile.id,
-          name: nameInput.value,
-          url: urlInput.value,
-        };
-    void saveConnection(command, saveButton);
-  });
-  panel.append(form);
-  return panel;
-}
-
-function renderConnectionList(): HTMLElement {
-  const section = element("section", "connection-list");
-  const listHeader = element("div", "list-heading");
-  listHeader.append(
-    element("h2", undefined, "Saved servers"),
-    element("span", "connection-count", `${profiles.length}`),
-  );
-  section.append(listHeader);
-
-  if (loading) {
-    const loadingRow = element("div", "loading-row", "Loading saved connections…");
-    loadingRow.setAttribute("aria-live", "polite");
-    section.append(loadingRow);
-    return section;
-  }
-  if (profiles.length === 0) {
-    section.append(element("p", "empty-state", "No servers saved"));
-    return section;
-  }
-
-  const list = element("ul", "connection-rows");
-  for (const profile of profiles) {
-    const row = element("li", "connection-row");
-    const details = element("div", "connection-details");
-    details.append(
-      element("span", "connection-dot", ""),
-      element("div", "connection-copy"),
-    );
-    const copy = details.querySelector<HTMLElement>(".connection-copy");
-    copy?.append(
-      element("strong", "connection-name", profile.name),
-      element("span", "connection-url", profile.url),
-    );
-
-    const actions = element("div", "connection-actions");
-    if (confirmRemoveId === profile.id) {
-      const prompt = element("span", "remove-prompt", `Remove ${profile.name}?`);
-      const confirm = button(
-        isBusy("remove", profile.id) ? "Removing…" : "Remove",
-        "danger",
-        () => void removeConnection(profile),
-      );
-      confirm.disabled = isBusy("remove", profile.id);
-      actions.append(
-        prompt,
-        button("Keep", "quiet", () => {
-          confirmRemoveId = undefined;
-          render();
-        }),
-        confirm,
-      );
-    } else {
-      const connect = button(
-        isBusy("connect", profile.id) ? "Opening…" : "Connect",
-        "primary",
-        () => void connectProfile(profile),
-      );
-      connect.disabled = busy !== undefined;
-      const edit = button("Edit", "quiet", () => {
-        editor = { kind: "update", profile };
-        confirmRemoveId = undefined;
-        render();
-        app?.querySelector<HTMLInputElement>("#connection-name")?.focus();
-      });
-      edit.disabled = busy !== undefined;
-      const remove = button("Remove", "quiet", () => {
-        confirmRemoveId = profile.id;
-        editor = undefined;
-        render();
-      });
-      remove.classList.add("danger-text");
-      remove.disabled = busy !== undefined;
-      actions.append(connect, edit, remove);
-    }
-
-    row.append(details, actions);
-    list.append(row);
-  }
-  section.append(list);
-  return section;
-}
-
-async function refreshConnections(message = ""): Promise<void> {
-  loading = true;
-  render();
-  try {
-    profiles = await rpc.request.listConnections();
-    loading = false;
-    statusMessage = message;
-    statusKind = "success";
-    render();
-  } catch (error) {
-    loading = false;
-    statusMessage = describeError(error, "Could not load saved connections");
-    statusKind = "error";
-    render();
-  }
-}
-
-async function saveConnection(
-  command: ConnectionSaveCommand,
-  submitButton: HTMLButtonElement,
+/** Runs one RPC at a time and shows its failure; success is visible in the list itself. */
+async function run(
+  next: Busy,
+  failure: string,
+  operation: () => Promise<void>,
 ): Promise<void> {
-  busy = { kind: "save" };
-  submitButton.disabled = true;
-  submitButton.textContent = "Saving…";
-  setStatus("Saving connection…");
-  try {
-    const profile = await rpc.request.saveConnection(command);
-    editor = undefined;
-    confirmRemoveId = undefined;
-    busy = undefined;
-    await refreshConnections(`${profile.name} saved.`);
-  } catch (error) {
-    busy = undefined;
-    submitButton.disabled = false;
-    submitButton.textContent = "Save connection";
-    setStatus(describeError(error, "Could not save this connection"), "error");
-  }
-}
-
-async function connectProfile(profile: ConnectionProfile): Promise<void> {
-  busy = { kind: "connect", id: profile.id };
+  if (busy) return;
+  busy = next;
+  error = "";
   render();
-  setStatus(`Opening ${profile.name}…`);
   try {
-    await rpc.request.connectProfile({ id: profile.id });
-    statusMessage = `${profile.name} opened in a new window.`;
-    statusKind = "success";
-  } catch (error) {
-    statusMessage = describeError(error, `Could not open ${profile.name}`);
-    statusKind = "error";
+    await operation();
+  } catch (caught) {
+    error = describeError(caught, failure);
   }
   busy = undefined;
   render();
 }
 
-async function removeConnection(profile: ConnectionProfile): Promise<void> {
-  busy = { kind: "remove", id: profile.id };
-  render();
+async function loadProfiles(): Promise<void> {
   try {
-    await rpc.request.removeConnection({ id: profile.id });
-    confirmRemoveId = undefined;
-    busy = undefined;
-    await refreshConnections(`${profile.name} removed.`);
-  } catch (error) {
-    busy = undefined;
-    statusMessage = describeError(error, `Could not remove ${profile.name}`);
-    statusKind = "error";
-    render();
+    profiles = { kind: "ready", profiles: await rpc.request.listConnections() };
+  } catch (caught) {
+    profiles = {
+      kind: "failed",
+      message: describeError(caught, "Could not load saved connections"),
+    };
   }
 }
 
-async function showLocalFiles(): Promise<void> {
-  busy = { kind: "local" };
+function openEditor(next: Editor | undefined): void {
+  editor = next;
+  confirmRemoveId = undefined;
+  error = "";
   render();
-  setStatus("Opening local files…");
-  try {
-    await rpc.request.showLocalFiles();
-    busy = undefined;
-    statusMessage = "Local files opened in a new window.";
-    statusKind = "success";
-  } catch (error) {
-    busy = undefined;
-    statusMessage = describeError(error, "Could not open local files");
-    statusKind = "error";
-  }
-  render();
+  app.querySelector<HTMLInputElement>("#connection-name")?.focus();
 }
 
-function describeError(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message.length > 0 ? error.message : fallback;
+function render(): void {
+  const header = element("header", "manager-header");
+  header.append(
+    element("h1", undefined, "Connections"),
+    button(running("local") ? "Opening…" : "Local files", "secondary", () => {
+      void run({ action: "local" }, "Could not open local files", () =>
+        rpc.request.showLocalFiles(),
+      );
+    }),
+    button("Add server", "primary", () => openEditor({ kind: "create" })),
+  );
+
+  const shell = element("section", "manager-shell");
+  shell.append(header);
+  if (error) {
+    const alert = element("p", "status-message", error);
+    alert.setAttribute("role", "alert");
+    shell.append(alert);
+  }
+  if (editor) shell.append(renderEditor(editor));
+  shell.append(renderProfiles());
+  app.replaceChildren(shell);
+}
+
+function input(id: string, label: string, value: string): [HTMLLabelElement, HTMLInputElement] {
+  const labelNode = element("label", "field-label", label);
+  labelNode.htmlFor = id;
+  const node = element("input", "text-input");
+  node.id = id;
+  node.required = true;
+  node.autocomplete = "off";
+  node.spellcheck = false;
+  node.value = value;
+  return [labelNode, node];
+}
+
+function renderEditor(current: Editor): HTMLElement {
+  const profile = current.kind === "update" ? current.profile : undefined;
+  const [nameLabel, name] = input("connection-name", "Name", profile?.name ?? "");
+  name.maxLength = 80;
+  name.placeholder = "Home server";
+  const [urlLabel, url] = input("connection-url", "Server URL", profile?.url ?? "");
+  url.type = "url";
+  url.maxLength = 2048;
+  url.placeholder = "https://files.example.com";
+
+  const save = element("button", "button button-primary", running("save") ? "Saving…" : "Save");
+  save.type = "submit";
+  save.disabled = busy !== undefined;
+
+  const form = element("form", "connection-form");
+  form.setAttribute("aria-label", profile ? `Edit ${profile.name}` : "Add server");
+  form.append(
+    nameLabel,
+    name,
+    urlLabel,
+    url,
+    save,
+    button("Discard", "quiet", () => openEditor(undefined)),
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const command: ConnectionSaveCommand = profile
+      ? { kind: "update", id: profile.id, name: name.value, url: url.value }
+      : { kind: "create", name: name.value, url: url.value };
+    void run({ action: "save" }, "Could not save this connection", async () => {
+      await rpc.request.saveConnection(command);
+      editor = undefined;
+      await loadProfiles();
+    });
+  });
+  return form;
+}
+
+function renderProfiles(): HTMLElement {
+  if (profiles.kind === "loading") {
+    return element("p", "empty-state", "Loading saved connections…");
+  }
+  if (profiles.kind === "failed") {
+    const failed = element("p", "status-message", profiles.message);
+    failed.setAttribute("role", "alert");
+    return failed;
+  }
+  if (profiles.profiles.length === 0) {
+    return element("p", "empty-state", "No servers saved");
+  }
+
+  const list = element("ul", "connection-rows");
+  list.setAttribute("aria-label", "Saved servers");
+  for (const profile of profiles.profiles) {
+    const row = element("li", "connection-row");
+    row.append(
+      element("span", "connection-name", profile.name),
+      element("span", "connection-url", profile.url),
+    );
+    const actions = element("div", "connection-actions");
+    if (confirmRemoveId === profile.id) {
+      actions.append(
+        button("Keep", "quiet", () => {
+          confirmRemoveId = undefined;
+          render();
+        }),
+        button(running("remove", profile.id) ? "Removing…" : "Remove", "danger", () => {
+          void run({ action: "remove", id: profile.id }, `Could not remove ${profile.name}`, async () => {
+            await rpc.request.removeConnection({ id: profile.id });
+            confirmRemoveId = undefined;
+            await loadProfiles();
+          });
+        }),
+      );
+    } else {
+      actions.append(
+        button(running("connect", profile.id) ? "Opening…" : "Connect", "primary", () => {
+          void run({ action: "connect", id: profile.id }, `Could not open ${profile.name}`, () =>
+            rpc.request.connectProfile({ id: profile.id }),
+          );
+        }),
+        button("Edit", "quiet", () => openEditor({ kind: "update", profile })),
+        button("Remove", "quiet", () => {
+          confirmRemoveId = profile.id;
+          editor = undefined;
+          render();
+        }),
+      );
+    }
+    row.append(actions);
+    list.append(row);
+  }
+  return list;
 }
 
 render();
-void refreshConnections();
+void loadProfiles().then(render);

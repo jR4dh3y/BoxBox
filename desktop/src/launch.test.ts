@@ -21,7 +21,7 @@ import {
   commandLineArguments,
   fileURLPath,
   findLauncherArguments,
-  launchURL,
+  targetArguments,
   parseLaunchTarget,
   virtualPath,
 } from "./launch";
@@ -177,13 +177,17 @@ describe("desktop launch targets", () => {
     expect(url.pathname).toBe("/browse");
     expect(url.searchParams.get("path")).toBe(`root${directory}`);
     expect(url.searchParams.get("select")).toBe(`root${target}`);
-    expect(
-      launchURL(["--select", target], "http://127.0.0.1:4567"),
-    ).toContain("/browse?");
-    expect(launchURL([], "http://127.0.0.1:4567")).toBeUndefined();
     expect(() =>
       browseURL("file:///tmp/app", { path: "root/tmp" }),
     ).toThrow("HTTP(S)");
+  });
+
+  test("turns a target back into absolute launch arguments", () => {
+    expect(targetArguments({ path: "root" })).toEqual(["/"]);
+    expect(targetArguments({ path: "root/home/ana" })).toEqual(["/home/ana"]);
+    expect(
+      targetArguments({ path: "root/home/ana", select: "root/home/ana/a b.txt" }),
+    ).toEqual(["--select", "/home/ana/a b.txt"]);
   });
 
   test("maps the filesystem root to the root mount", () => {

@@ -133,14 +133,11 @@ export function browseURL(origin: string, target: LaunchTarget): string {
   return url.href;
 }
 
-/** Convenience for the main process: parse argv and build its first URL. */
-export function launchURL(
-  args: readonly string[],
-  origin: string,
-  options: LaunchOptions = {},
-): string | undefined {
-  const target = parseLaunchTarget(args, options);
-  return target === undefined ? undefined : browseURL(origin, target);
+/** Absolute-path arguments that reopen `target` in another process. */
+export function targetArguments(target: LaunchTarget): string[] {
+  return target.select === undefined
+    ? [localPathOf(target.path)]
+    : ["--select", localPathOf(target.select)];
 }
 
 /**
@@ -276,6 +273,10 @@ function parseArguments(args: readonly string[]): ParsedArguments {
   }
 
   return { paths, select };
+}
+
+function localPathOf(virtual: string): string {
+  return virtual === "root" ? "/" : virtual.slice("root".length);
 }
 
 function localPath(value: string, cwd: string): string {

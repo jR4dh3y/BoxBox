@@ -3,19 +3,15 @@ import { join, resolve } from "node:path";
 import {
   forwardToRunningInstance,
   instanceDirectory,
+  launchRequest,
   tryAcquireLaunchGuard,
-  type InstanceRequest,
 } from "./instance";
-import { parseLaunchTarget } from "./launch";
-import { remoteURL } from "./target";
+import { parseLaunchTarget, targetArguments } from "./launch";
 
 // Electrobun initializes CEF on its native thread before loading app code.
 // Arbitration must happen in this separate process, before its launcher runs.
 const target = parseLaunchTarget(process.argv.slice(2));
-const remote = process.env.BOXBOX_DESKTOP_URL;
-const request: InstanceRequest = remote
-  ? { kind: "remote", url: remoteURL(remote) }
-  : target ? { kind: "local", target } : { kind: "activate" };
+const request = launchRequest(target, process.env.BOXBOX_DESKTOP_URL);
 const directory = instanceDirectory();
 const deadline = Date.now() + 30_000;
 let launched = false;
@@ -35,12 +31,10 @@ while (Date.now() < deadline) {
       launched = true;
       break;
     }
-    const args = target
-      ? target.select
-        ? ["--select", target.select.slice(4)]
-        : [target.path.slice(4) || "/"]
-      : [];
-    await runNative(resolve(import.meta.dir, "../bin/electrobun-launcher"), args);
+    await runNative(
+      resolve(import.meta.dir, "../bin/electrobun-launcher"),
+      target ? targetArguments(target) : [],
+    );
     launched = true;
     break;
   } finally {
