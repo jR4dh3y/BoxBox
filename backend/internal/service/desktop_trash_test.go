@@ -16,7 +16,19 @@ import (
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
+	"golang.org/x/sys/unix"
 )
+
+func TestDesktopTrashIdentityIncludesCtime(t *testing.T) {
+	location := desktopTrashLocation{root: "/trash", relative: "Trash", home: true}
+	first := unix.Stat_t{Dev: 7, Ino: 42, Ctim: unix.Timespec{Sec: 100, Nsec: 200}}
+	second := first
+	second.Ctim.Nsec++
+
+	if trashItemID(location, "notes.txt", first) == trashItemID(location, "notes.txt", second) {
+		t.Fatal("different ctime generations produced the same trash ID")
+	}
+}
 
 func TestDesktopTrashMoveListRestoreAndDelete(t *testing.T) {
 	root := t.TempDir()
@@ -52,8 +64,17 @@ func TestDesktopTrashMoveListRestoreAndDelete(t *testing.T) {
 	}
 
 	items, err := trash.List(context.Background())
-	if err != nil || len(items) != 1 || items[0].ID != item.ID || !items[0].CanRestore {
-		t.Fatalf("listed items = %#v, error = %v", items, err)
+	if err != nil {
+		t.Fatalf("list trashed item: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("listed %d items, want one: %#v", len(items), items)
+	}
+	if items[0].ID != item.ID {
+		t.Fatalf("Trash returned ID %q, List returned %q after rename", item.ID, items[0].ID)
+	}
+	if !items[0].CanRestore {
+		t.Fatalf("listed item cannot be restored: %#v", items[0])
 	}
 	if err := trash.Restore(context.Background(), item.ID); err != nil {
 		t.Fatal(err)
@@ -72,6 +93,58 @@ func TestDesktopTrashMoveListRestoreAndDelete(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(dataHome, "Trash", "files", "notes.txt")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("permanently deleted item still exists: %v", err)
+	}
+}
+
+func TestDesktopTrashStaleIDCannotRestoreOrDeleteReplacement(t *testing.T) {
+	root := t.TempDir()
+	dataHome := filepath.Join(root, "data")
+	if err := os.Mkdir(dataHome, 0700); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, "notes.txt")
+	if err := os.WriteFile(source, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	trash := newTestDesktopTrash(t, dataHome, []model.MountPoint{{Name: "home", Path: root}}, []linuxMountInfo{{path: root, fstype: "ext4"}}, time.Now())
+
+	stale, err := trash.Trash(context.Background(), "home/notes.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	trashFile := filepath.Join(dataHome, "Trash", "files", "notes.txt")
+	trashInfo := filepath.Join(dataHome, "Trash", "info", "notes.txt.trashinfo")
+	if err := os.Remove(trashFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(trashInfo); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("replacement"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := trash.Trash(context.Background(), "home/notes.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacement.ID == stale.ID {
+		t.Fatalf("replacement reused stale trash ID %q", stale.ID)
+	}
+
+	for name, action := range map[string]func(context.Context, string) error{
+		"restore": trash.Restore,
+		"delete":  trash.Delete,
+	} {
+		if err := action(context.Background(), stale.ID); !errors.Is(err, ErrTrashItemNotFound) {
+			t.Errorf("stale %s error = %v, want ErrTrashItemNotFound", name, err)
+		}
+	}
+	content, err := os.ReadFile(trashFile)
+	if err != nil || string(content) != "replacement" {
+		t.Fatalf("replacement was changed by stale ID: content=%q err=%v", content, err)
+	}
+	if _, err := os.Lstat(source); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("replacement was restored by stale ID: %v", err)
 	}
 }
 

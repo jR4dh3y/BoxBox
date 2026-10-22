@@ -6,6 +6,7 @@
 	import { useBrowseData } from '#lib/browse/data.svelte.js';
 	import { useBrowseUploads } from '#lib/browse/uploads.svelte.js';
 	import type { BrowsePaneState, BrowsePaneRuntime } from '#lib/browse/pane.svelte.js';
+	import type { FileInfo } from '#lib/api/files.js';
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
 	import FileList from '#lib/components/FileList.svelte';
@@ -21,6 +22,7 @@
 		onFocus: () => void;
 		onRuntimeChange: (runtime: BrowsePaneRuntime | null) => void;
 		onInitialSelectHandled: (path: string) => void;
+		onShowDetails: () => void;
 	}
 
 	let {
@@ -29,13 +31,14 @@
 		initialSelectPath = null,
 		onFocus,
 		onRuntimeChange,
-		onInitialSelectHandled
+		onInitialSelectHandled,
+		onShowDetails
 	}: Props = $props();
 
 	// The keyed pane model is stable for this component's lifetime.
 	const paneState = untrack(() => pane);
 	const { location, selection } = paneState;
-	const data = useBrowseData(location);
+	const data = useBrowseData(location, () => paneState.revealHiddenFiles);
 	const actions = useBrowseActions(location, data, selection);
 	const uploads = useBrowseUploads(location, data);
 	const settings = $derived(settingsStore.current);
@@ -44,7 +47,6 @@
 		actions.createDialog.open ||
 			actions.renameDialog.open ||
 			actions.deleteDialog.open ||
-			actions.propertiesDialog.open ||
 			actions.openWithFile !== null
 	);
 	const runtime: BrowsePaneRuntime = {
@@ -80,6 +82,10 @@
 			untrack(() => onInitialSelectHandled(target));
 			return;
 		}
+		if (target.split('/').at(-1)?.startsWith('.') && !paneState.revealHiddenFiles) {
+			untrack(() => paneState.showHiddenFiles());
+			return;
+		}
 
 		const match = data.displayItems.find((item) => item.path === target);
 		if (match) {
@@ -101,8 +107,16 @@
 		actions.closeCreate();
 		actions.closeRename();
 		actions.closeDelete();
-		actions.closeProperties();
 		actions.closeOpenWith();
+	}
+
+	function contextAction(action: string, items: FileInfo[]): void {
+		if (action === 'properties') {
+			selection.set(new SvelteSet(items.map((item) => item.path)));
+			onShowDetails();
+			return;
+		}
+		void actions.handleContextMenuAction(action, items);
 	}
 </script>
 
@@ -164,11 +178,11 @@
 					canPaste={actions.canPaste}
 					canCreate={data.canCreate}
 					showFileExtensions={settings.showFileExtensions}
-					previewOnSingleClick={settings.previewOnSingleClick}
+					fileOpenBehavior={settings.fileOpenBehavior}
 					onItemClick={actions.openFile}
 					{onFolderHover}
 					onSelectionChange={selection.set}
-					onContextMenuAction={actions.handleContextMenuAction}
+					onContextMenuAction={contextAction}
 				/>
 			{:catch}
 				<LoadError label="grid view" inline />
@@ -187,12 +201,12 @@
 				canPaste={actions.canPaste}
 				canCreate={data.canCreate}
 				showFileExtensions={settings.showFileExtensions}
-				previewOnSingleClick={settings.previewOnSingleClick}
+				fileOpenBehavior={settings.fileOpenBehavior}
 				onItemClick={actions.openFile}
 				{onFolderHover}
 				onSortChange={location.setSort}
 				onSelectionChange={selection.set}
-				onContextMenuAction={actions.handleContextMenuAction}
+				onContextMenuAction={contextAction}
 			/>
 		{/if}
 	</div>
@@ -226,10 +240,10 @@
 {#if hasOpenDialog}
 	{#await import('#lib/components/BrowseDialogs.svelte') then { default: BrowseDialogs }}
 		<BrowseDialogs
+			operation={actions.operation}
 			createDialog={actions.createDialog}
 			renameDialog={actions.renameDialog}
 			deleteDialog={actions.deleteDialog}
-			propertiesDialog={actions.propertiesDialog}
 			openWithFile={actions.openWithFile}
 			onCloseOpenWith={actions.closeOpenWith}
 			onCreateNameChange={actions.setCreateName}
@@ -240,7 +254,6 @@
 			onCloseCreate={actions.closeCreate}
 			onCloseRename={actions.closeRename}
 			onCloseDelete={actions.closeDelete}
-			onCloseProperties={actions.closeProperties}
 		/>
 	{:catch}
 		<LoadError label="dialog" onClose={closeDialogs} />

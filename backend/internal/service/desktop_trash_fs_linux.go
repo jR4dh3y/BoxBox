@@ -265,10 +265,13 @@ func readFileAt(parentFD int, name string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(file, maxTrashInfoBytes+1))
 }
 
-func removeTreeAt(parentFD int, name string) error {
+func removeTreeAt(parentFD int, name string, expected *unix.Stat_t) error {
 	var stat unix.Stat_t
 	if err := unix.Fstatat(parentFD, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return err
+	}
+	if expected != nil && !sameTrashEntryIdentity(stat, *expected) {
+		return ErrTrashItemNotFound
 	}
 	if stat.Mode&unix.S_IFMT != unix.S_IFDIR {
 		return unix.Unlinkat(parentFD, name, 0)
@@ -283,7 +286,7 @@ func removeTreeAt(parentFD int, name string) error {
 		return err
 	}
 	for _, child := range children {
-		if err := removeTreeAt(childFD, child.Name()); err != nil && !errors.Is(err, unix.ENOENT) {
+		if err := removeTreeAt(childFD, child.Name(), nil); err != nil && !errors.Is(err, unix.ENOENT) {
 			_ = unix.Close(childFD)
 			return err
 		}

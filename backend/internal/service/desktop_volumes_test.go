@@ -242,6 +242,33 @@ func TestDesktopVolumePollsUntilTheUnmountedStateIsVisible(t *testing.T) {
 	}
 }
 
+func TestDesktopVolumeActionFailsWhenRequestedStateIsNeverObserved(t *testing.T) {
+	runner := &fakeVolumeRunner{listOutputs: [][]byte{
+		[]byte(mountedUSBDriveFixture),
+		[]byte(mountedUSBDriveFixture),
+		[]byte(mountedUSBDriveFixture),
+		[]byte(mountedUSBDriveFixture),
+	}}
+	service := testDesktopVolumesService(runner, nil)
+	initial, err := service.ListVolumes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := firstVolume(t, initial)
+
+	response, err := service.UnmountVolume(context.Background(), volume.ID)
+	if !errors.Is(err, ErrDesktopVolumeActionUnconfirmed) {
+		t.Fatalf("UnmountVolume() error = %v, want unconfirmed action", err)
+	}
+	if len(response.Volumes) != 0 {
+		t.Fatalf("unconfirmed action returned success state: %#v", response)
+	}
+	var commandErr *DesktopVolumeCommandError
+	if !errors.As(err, &commandErr) || !strings.Contains(commandErr.UserMessage(), "did not confirm") {
+		t.Fatalf("unconfirmed action has no clear user message: %v", err)
+	}
+}
+
 func TestDesktopVolumeMountUsesStableUUIDAndRefreshes(t *testing.T) {
 	runner := &fakeVolumeRunner{listOutputs: [][]byte{
 		[]byte(unmountedUSBDriveFixture),

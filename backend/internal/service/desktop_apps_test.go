@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
@@ -21,15 +22,23 @@ type desktopCommandCall struct {
 type fakeDesktopCommandRunner struct {
 	output      []byte
 	outputError error
+	runOutput   []byte
+	runError    error
 	startError  error
 	paths       map[string]string
 	outputs     []desktopCommandCall
+	runs        []desktopCommandCall
 	starts      []desktopCommandCall
 }
 
 func (r *fakeDesktopCommandRunner) Output(_ context.Context, name string, args ...string) ([]byte, error) {
 	r.outputs = append(r.outputs, desktopCommandCall{name: name, args: append([]string(nil), args...)})
 	return r.output, r.outputError
+}
+
+func (r *fakeDesktopCommandRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
+	r.runs = append(r.runs, desktopCommandCall{name: name, args: append([]string(nil), args...)})
+	return r.runOutput, r.runError
 }
 
 func (r *fakeDesktopCommandRunner) Start(name string, args []string, workingDirectory string) error {
@@ -73,19 +82,37 @@ func TestDesktopAppsUseXDGAssociationsAndSafeGioLaunch(t *testing.T) {
 	if err := apps.OpenWith(context.Background(), virtualPath, "Visual Studio Code.desktop"); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.starts) != 1 {
-		t.Fatalf("start calls = %d, want 1", len(runner.starts))
+	if len(runner.runs) != 1 {
+		t.Fatalf("run calls = %d, want 1", len(runner.runs))
 	}
-	call := runner.starts[0]
+	call := runner.runs[0]
 	if call.name != "gio" || !reflect.DeepEqual(call.args, []string{
 		"launch",
 		filepath.Join(xdgApplications(t), "Visual Studio Code.desktop"),
 		filePath,
-	}) || call.dir != "" {
+	}) {
 		t.Fatalf("GIO launch call = %#v", call)
 	}
-	if len(runner.starts) != 1 || len(runner.outputs) != 2 {
-		t.Fatalf("unexpected process calls: starts=%#v outputs=%#v", runner.starts, runner.outputs)
+	if len(runner.starts) != 0 || len(runner.outputs) != 2 {
+		t.Fatalf("unexpected process calls: runs=%#v starts=%#v outputs=%#v", runner.runs, runner.starts, runner.outputs)
+	}
+}
+
+func TestDesktopAppsPropagateGioLaunchFailure(t *testing.T) {
+	root, _ := setupDesktopAppFixture(t)
+	runner := &fakeDesktopCommandRunner{
+		output:    []byte("standard::content-type: text/plain\n"),
+		runOutput: []byte("gio: Failed to execute child process /missing/editor"),
+		runError:  errors.New("exit status 1"),
+	}
+	apps := NewDesktopAppsService(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}}, runner)
+
+	err := apps.OpenWith(context.Background(), "home/My Files/annual report.txt", "Visual Studio Code.desktop")
+	if !errors.Is(err, ErrDesktopLaunchFailed) {
+		t.Fatalf("OpenWith() error = %v, want ErrDesktopLaunchFailed", err)
+	}
+	if !strings.Contains(err.Error(), "Failed to execute child process /missing/editor") {
+		t.Fatalf("launch error lost GIO's reason: %v", err)
 	}
 }
 

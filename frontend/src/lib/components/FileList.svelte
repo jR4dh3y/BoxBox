@@ -6,13 +6,23 @@
 	import type { FileInfo } from '#lib/api/files.js';
 	import type { SortField, SortDir } from '#lib/types/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
-	import { getFileTypeDescription, getFileIcon } from '#lib/utils/fileTypes.js';
+	import { getFileTypeDescription, getFileIcon, getPreviewType } from '#lib/utils/fileTypes.js';
 	import { getFileContextMenuItems } from '#lib/utils/fileContextMenu.js';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { Spinner, ContextMenu } from '#lib/components/ui/index.js';
 	import { FolderOpen } from 'lucide-svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
+	import FileThumbnail from '#lib/components/FileThumbnail.svelte';
+	import {
+		applyFileSelection,
+		fileSelectionGestureFromModifiers,
+		getSelectedContextMenuItems,
+		shouldOpenOnClick,
+		shouldOpenOnDoubleClick,
+		type FileSelectionGesture
+	} from '#lib/browse/fileInteractions.js';
+	import type { FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
 
 	let {
 		items = [],
@@ -27,7 +37,7 @@
 		canPaste = false,
 		canCreate = false,
 		showFileExtensions = true,
-		previewOnSingleClick = false,
+		fileOpenBehavior = 'double-click',
 		onItemClick,
 		onFolderHover,
 		onSortChange,
@@ -46,7 +56,7 @@
 		canPaste?: boolean;
 		canCreate?: boolean;
 		showFileExtensions?: boolean;
-		previewOnSingleClick?: boolean;
+		fileOpenBehavior?: FileOpenBehavior;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -56,6 +66,7 @@
 	} = $props();
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
+	let selectionAnchor: string | null = null;
 
 	// Context menu state
 	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
@@ -70,48 +81,48 @@
 	}
 
 	function handleRowClick(item: FileInfo, event: MouseEvent) {
-		if (event.ctrlKey || event.metaKey) {
-			const newSelection = new SvelteSet<string>(selectedPaths);
-			if (newSelection.has(item.path)) {
-				newSelection.delete(item.path);
-			} else {
-				newSelection.add(item.path);
-			}
-			onSelectionChange?.(newSelection);
-		} else if (event.shiftKey && selectedPaths.size > 0) {
-			const newSelection = new SvelteSet<string>(selectedPaths);
-			newSelection.add(item.path);
-			onSelectionChange?.(newSelection);
-		} else {
-			const newSelection = new SvelteSet<string>([item.path]);
-			onSelectionChange?.(newSelection);
-		}
+		updateSelection(item.path, fileSelectionGestureFromModifiers(event));
+		if (shouldOpenOnClick(fileOpenBehavior, event)) onItemClick?.(item);
+	}
 
-		if (item.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+	function handleDoubleClick(item: FileInfo, event: MouseEvent) {
+		if (shouldOpenOnDoubleClick(fileOpenBehavior, event)) onItemClick?.(item);
+	}
+
+	function updateSelection(itemPath: string, gesture: FileSelectionGesture): void {
+		const result = applyFileSelection(
+			items.map((item) => item.path),
+			selectedPaths,
+			selectionAnchor,
+			itemPath,
+			gesture
+		);
+		selectionAnchor = result.anchorPath;
+		onSelectionChange?.(new SvelteSet(result.paths));
+	}
+
+	function handleSelectionCheckbox(item: FileInfo, selected: boolean): void {
+		updateSelection(item.path, { type: 'set', selected });
+	}
+
+	function handleKeyDown(item: FileInfo, event: KeyboardEvent) {
+		if ((event.key === 'a' || event.key === 'A') && (event.ctrlKey || event.metaKey)) {
+			event.preventDefault();
+			selectionAnchor = item.path;
+			onSelectionChange?.(new SvelteSet(items.map((visibleItem) => visibleItem.path)));
+			return;
+		}
+		if (event.target instanceof HTMLInputElement) return;
+
+		if (event.key === 'Enter') {
+			event.preventDefault();
 			onItemClick?.(item);
 			return;
 		}
 
-		if (
-			previewOnSingleClick &&
-			!item.isDir &&
-			!event.ctrlKey &&
-			!event.metaKey &&
-			!event.shiftKey
-		) {
-			onItemClick?.(item);
-		}
-	}
-
-	function handleDoubleClick(item: FileInfo) {
-		if (previewOnSingleClick && !item.isDir) return;
-		onItemClick?.(item);
-	}
-
-	function handleKeyDown(item: FileInfo, event: KeyboardEvent) {
-		if (event.key === 'Enter' || event.key === ' ') {
+		if (event.key === ' ') {
 			event.preventDefault();
-			onItemClick?.(item);
+			updateSelection(item.path, fileSelectionGestureFromModifiers(event));
 			return;
 		}
 
@@ -141,19 +152,17 @@
 	function handleContextMenu(item: FileInfo, event: MouseEvent) {
 		event.preventDefault();
 
-		// If right-clicked item is not selected, select only that item
+		const selectedItems = getSelectedContextMenuItems(items, selectedPaths, item);
 		if (!selectedPaths.has(item.path)) {
 			const newSelection = new SvelteSet<string>([item.path]);
+			selectionAnchor = item.path;
 			onSelectionChange?.(newSelection);
 		}
-
-		// Get all selected items for context menu
-		const selectedItems = items.filter((i) => selectedPaths.has(i.path) || i.path === item.path);
 
 		contextMenu = {
 			x: event.clientX,
 			y: event.clientY,
-			items: selectedItems.length > 0 ? selectedItems : [item]
+			items: selectedItems
 		};
 	}
 
@@ -162,6 +171,7 @@
 		if (target?.closest('[data-file-row="true"], [data-file-header="true"]')) return;
 
 		event.preventDefault();
+		selectionAnchor = null;
 		onSelectionChange?.(new SvelteSet<string>());
 		contextMenu = {
 			x: event.clientX,
@@ -210,7 +220,9 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="relative h-full w-full overflow-auto bg-surface-primary {compactMode ? 'compact' : ''}"
+	class="file-list-container relative h-full w-full overflow-auto bg-surface-primary {compactMode
+		? 'compact'
+		: ''}"
 	oncontextmenu={handleBackgroundContextMenu}
 >
 	{#if showSpinner.value}
@@ -220,15 +232,16 @@
 	{/if}
 
 	<table
-		class="w-full min-w-[720px] table-fixed border-collapse text-[13px] leading-5"
+		class="w-full table-fixed border-collapse text-[13px] leading-5"
 		role="grid"
 		aria-busy={isLoading}
+		aria-multiselectable="true"
 	>
 		<colgroup>
-			<col />
-			<col class="w-[170px]" />
-			<col class="w-[112px]" />
-			<col class="w-[168px]" />
+			<col class="file-name-column" />
+			<col class="file-type-column" />
+			<col class="file-size-column" />
+			<col class="file-modified-column" />
 		</colgroup>
 		<thead>
 			<tr>
@@ -245,7 +258,7 @@
 					<span class="text-[10px] opacity-80">{getSortIndicator('name')}</span>
 				</th>
 				<th
-					class="{thClass} {sortBy === 'type' ? thSortedClass : ''}"
+					class="file-type-column {thClass} {sortBy === 'type' ? thSortedClass : ''}"
 					onclick={() => handleSort('type')}
 					onkeydown={(e) => e.key === 'Enter' && handleSort('type')}
 					tabindex="0"
@@ -257,7 +270,7 @@
 					<span class="text-[10px] opacity-80">{getSortIndicator('type')}</span>
 				</th>
 				<th
-					class="{thClass} text-right {sortBy === 'size' ? thSortedClass : ''}"
+					class="file-size-column {thClass} text-right {sortBy === 'size' ? thSortedClass : ''}"
 					onclick={() => handleSort('size')}
 					onkeydown={(e) => e.key === 'Enter' && handleSort('size')}
 					tabindex="0"
@@ -269,7 +282,7 @@
 					<span class="text-[10px] opacity-80">{getSortIndicator('size')}</span>
 				</th>
 				<th
-					class="{thClass} {sortBy === 'modTime' ? thSortedClass : ''}"
+					class="file-modified-column {thClass} {sortBy === 'modTime' ? thSortedClass : ''}"
 					onclick={() => handleSort('modTime')}
 					onkeydown={(e) => e.key === 'Enter' && handleSort('modTime')}
 					tabindex="0"
@@ -303,6 +316,7 @@
 					{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
 					{@const sizeDescription = item.isDir ? '' : formatFileSize(item.size)}
 					{@const modifiedDescription = formatFileDate(item.modTime)}
+					{@const hasThumbnail = !item.isDir && getPreviewType(item.name) === 'image'}
 					<tr
 						class="file-list-row cursor-default transition-colors duration-50 hover:bg-surface-secondary focus:bg-selection focus:outline-none {isSelected(
 							item.path
@@ -313,7 +327,7 @@
 						onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
 						onpointerleave={() => onFolderHover?.(null)}
 						onkeydown={(e) => handleKeyDown(item, e)}
-						ondblclick={() => handleDoubleClick(item)}
+						ondblclick={(event) => handleDoubleClick(item, event)}
 						oncontextmenu={(e) => handleContextMenu(item, e)}
 						tabindex="0"
 						aria-selected={isSelected(item.path)}
@@ -321,12 +335,25 @@
 					>
 						<td class={tdClass}>
 							<div class="flex min-w-0 items-center gap-2">
+								<input
+									type="checkbox"
+									checked={isSelected(item.path)}
+									aria-label={`Select ${item.name}`}
+									class="h-4 w-4 shrink-0 cursor-pointer accent-accent"
+									onclick={(event) => event.stopPropagation()}
+									ondblclick={(event) => event.stopPropagation()}
+									onchange={(event) => handleSelectionCheckbox(item, event.currentTarget.checked)}
+								/>
 								<span
-									class="flex w-5 shrink-0 items-center justify-center {item.isDir
+									class="flex h-7 w-12 shrink-0 items-center justify-center overflow-hidden rounded {item.isDir
 										? 'text-folder'
 										: 'text-text-secondary'}"
 								>
-									<IconComponent size={16} />
+									{#if hasThumbnail}
+										<FileThumbnail file={item} width={224} height={96} />
+									{:else}
+										<IconComponent size={16} />
+									{/if}
 								</span>
 								<span
 									class="{clippedCellClass} min-w-0 flex-1 {item.isDir ? 'text-folder' : ''}"
@@ -336,13 +363,13 @@
 								</span>
 							</div>
 						</td>
-						<td class="{tdClass} text-text-secondary">
+						<td class="file-type-column {tdClass} text-text-secondary">
 							<span class={clippedCellClass} title={typeDescription}>{typeDescription}</span>
 						</td>
-						<td class="{tdClass} text-right text-text-secondary tabular-nums">
+						<td class="file-size-column {tdClass} text-right text-text-secondary tabular-nums">
 							<span class={clippedCellClass} title={sizeDescription}>{sizeDescription}</span>
 						</td>
-						<td class="{tdClass} text-text-secondary">
+						<td class="file-modified-column {tdClass} text-text-secondary">
 							<span class={clippedCellClass} title={modifiedDescription}>{modifiedDescription}</span
 							>
 						</td>
@@ -370,6 +397,35 @@
 {/if}
 
 <style>
+	.file-list-container {
+		container-name: file-list;
+		container-type: inline-size;
+	}
+
+	.file-type-column {
+		width: 22%;
+	}
+
+	.file-size-column {
+		width: 14%;
+	}
+
+	.file-modified-column {
+		width: 24%;
+	}
+
+	@container file-list (max-width: 600px) {
+		.file-modified-column {
+			display: none;
+		}
+	}
+
+	@container file-list (max-width: 460px) {
+		.file-type-column {
+			display: none;
+		}
+	}
+
 	.file-list-row {
 		content-visibility: auto;
 		contain-intrinsic-size: 32px;

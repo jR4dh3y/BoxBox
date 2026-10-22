@@ -156,6 +156,12 @@ export function useBrowseLocation(options: BrowseLocationOptions = {}) {
 			return canGoUp;
 		},
 		navigate,
+		restore(snapshot: BrowseLocationSnapshot) {
+			const normalized = normalizeSnapshot(snapshot);
+			const index = history.findIndex((entry) => sameSnapshot(entry, normalized));
+			if (index >= 0) moveHistory(index);
+			else replaceCurrent(normalized);
+		},
 		back() {
 			if (canGoBack) moveHistory(historyIndex - 1);
 		},

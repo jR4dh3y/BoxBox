@@ -38,6 +38,12 @@ export async function verifyNavigation(
 		await page.goto(`${url}/browse?path=perf/Navigation`);
 		await page.getByText('Parent.txt', { exact: true }).waitFor();
 		await page.getByText('Child', { exact: true }).click();
+		assert.equal(new URL(page.url()).searchParams.get('path'), 'perf/Navigation');
+		await page.getByText('Child', { exact: true }).dblclick();
+		await page.getByText('Nested.txt', { exact: true }).waitFor();
+		await page.goBack();
+		await page.getByText('Parent.txt', { exact: true }).waitFor();
+		await page.goForward();
 		await page.getByText('Nested.txt', { exact: true }).waitFor();
 		await page.getByTitle('Back', { exact: true }).click();
 		await page.getByText('Parent.txt', { exact: true }).waitFor();
@@ -72,6 +78,14 @@ export async function verifyNavigation(
 		await page.getByText('No shared links.', { exact: true }).waitFor();
 		await page.reload();
 		await page.getByRole('button', { name: 'Choose Wallpaper', exact: true }).waitFor();
+		await page.locator('#file-open-behavior').selectOption('single-click');
+		await page.getByRole('button', { name: 'Save', exact: true }).click();
+		await page.goto(`${url}/settings`);
+		assert.equal(await page.locator('#file-open-behavior').inputValue(), 'single-click');
+		await page.goto(`${url}/browse?path=perf/Navigation`);
+		await page.getByText('Child', { exact: true }).click();
+		await page.getByText('Nested.txt', { exact: true }).waitFor();
+		await page.goto(`${url}/settings`);
 
 		const created = await context.request.post(`${url}/api/v1/shares`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },

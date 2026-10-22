@@ -11,6 +11,11 @@ import {
 } from '#lib/api/files.js';
 import { createDeleteJob } from '#lib/api/jobs.js';
 import { useBrowsePaste } from './paste.svelte';
+import {
+	beginBrowseClipboardPublication,
+	finishBrowseClipboardPublication,
+	publishBrowseClipboardInOrder
+} from './clipboardPublication';
 import { clipboardStore } from '#lib/stores/clipboard.svelte.js';
 import { jobsStore } from '#lib/stores/jobs.svelte.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
@@ -19,6 +24,8 @@ import { canPreview, getFileTypeDescription } from '#lib/utils/fileTypes.js';
 import type { BrowseData } from './data.svelte';
 import type { BrowseLocation } from './location.svelte';
 import type { BrowseSelection } from './selection.svelte';
+
+export type BrowseOperation = 'creating' | 'renaming' | 'deleting' | null;
 
 function errorMessage(error: unknown, fallback: string): string {
 	return error instanceof Error ? error.message : fallback;
@@ -51,6 +58,7 @@ export function useBrowseActions(
 	selection: BrowseSelection
 ) {
 	const paste = useBrowsePaste(location, data);
+	let operation = $state<BrowseOperation>(null);
 	let previewFile = $state<FileInfo | null>(null);
 	let openWithFile = $state<FileInfo | null>(null);
 	let createDialog = $state<{ open: boolean; type: 'file' | 'directory'; name: string }>({
@@ -67,10 +75,6 @@ export function useBrowseActions(
 		| { open: false; items: FileInfo[] }
 		| { open: true; items: FileInfo[]; mode: 'trash' | 'permanent' }
 	>({ open: false, items: [] });
-	let propertiesDialog = $state<{ open: boolean; file: FileInfo | null }>({
-		open: false,
-		file: null
-	});
 	// The file or folder being shared; null when the share dialog is closed.
 	let shareItem = $state<FileInfo | null>(null);
 
@@ -96,10 +100,11 @@ export function useBrowseActions(
 	}
 
 	async function confirmCreate() {
-		if (!location.path) return;
+		if (operation !== null || !location.path) return;
 		const name = validateItemName(createDialog.name);
 		if (!name) return;
 
+		operation = 'creating';
 		try {
 			const created =
 				createDialog.type === 'file'
@@ -111,63 +116,113 @@ export function useBrowseActions(
 			data.refresh();
 		} catch (error) {
 			toastStore.error(errorMessage(error, 'Create failed'));
+		} finally {
+			operation = null;
 		}
 	}
 
 	async function confirmRename() {
-		if (!renameDialog.file) return;
+		if (operation !== null || !renameDialog.file) return;
+		const file = renameDialog.file;
 		const newName = validateItemName(renameDialog.newName);
 		if (!newName) return;
 
-		const oldPath = renameDialog.file.path;
+		const oldPath = file.path;
 		const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
 		const newPath = parentPath ? `${parentPath}/${newName}` : newName;
 
+		operation = 'renaming';
 		try {
 			await rename(oldPath, newPath);
 			if (isLocalDesktop()) {
 				const { desktopUndo } = await import('./undo.svelte');
 				desktopUndo.rememberRename(oldPath, newPath);
 			}
-			renameDialog = { open: false, file: null, newName: '' };
+			if (
+				renameDialog.open &&
+				renameDialog.file?.path === oldPath &&
+				renameDialog.newName === newName
+			) {
+				renameDialog = { open: false, file: null, newName: '' };
+			}
+			toastStore.success(`${file.name} renamed to ${newName}`);
 			data.refetchDirectory();
 		} catch (error) {
 			console.error('Rename failed:', error);
 			toastStore.error(errorMessage(error, 'Rename failed'));
+		} finally {
+			operation = null;
 		}
 	}
 
 	/** Files go at once; folders become background jobs. */
-	async function deleteItems(items: FileInfo[], permanent = !isLocalDesktop()) {
-		if (items.length === 0) return;
-
+	async function deleteItems(items: FileInfo[], permanent = !isLocalDesktop()): Promise<boolean> {
+		if (operation !== null || items.length === 0) return false;
+		operation = 'deleting';
+		const completed: FileInfo[] = [];
+		const failed: FileInfo[] = [];
+		let lastError: unknown;
 		try {
 			const trashed: string[] = [];
 			for (const item of items) {
-				if (!permanent) {
-					const { trashDesktopFile } = await import('#lib/api/desktopTrash.js');
-					const { desktopUndo } = await import('./undo.svelte');
-					const result = await trashDesktopFile(item.path);
-					trashed.push(result.item.id);
-					desktopUndo.rememberTrash([...trashed]);
-				} else if (item.isDir) {
-					jobsStore.upsertJob(await createDeleteJob(item.path));
-				} else {
-					await deleteFile(item.path);
+				try {
+					if (!permanent) {
+						const { trashDesktopFile } = await import('#lib/api/desktopTrash.js');
+						const { desktopUndo } = await import('./undo.svelte');
+						const result = await trashDesktopFile(item.path);
+						trashed.push(result.item.id);
+						desktopUndo.rememberTrash([...trashed]);
+					} else if (item.isDir) {
+						jobsStore.upsertJob(await createDeleteJob(item.path));
+					} else {
+						await deleteFile(item.path);
+					}
+					completed.push(item);
+				} catch (error) {
+					failed.push(item);
+					lastError = error;
 				}
 			}
-			selection.clear();
-			data.refetchDirectory();
-		} catch (error) {
-			console.error('Delete failed:', error);
-			toastStore.error(errorMessage(error, 'Delete failed'));
+
+			if (completed.length > 0) {
+				const completedPaths = new SvelteSet(completed.map((item) => item.path));
+				selection.set(
+					new SvelteSet([...selection.paths].filter((path) => !completedPaths.has(path)))
+				);
+				data.refetchDirectory();
+			}
+			if (failed.length > 0) {
+				if (deleteDialog.open && deleteDialog.items === items) {
+					deleteDialog = { ...deleteDialog, items: failed };
+				}
+				const progress = completed.length > 0 ? `${completed.length} completed; ` : '';
+				toastStore.error(
+					`${progress}${failed.length} could not be deleted: ${errorMessage(lastError, 'Delete failed')}`
+				);
+				return false;
+			}
+
+			const count = completed.length;
+			if (!permanent) {
+				toastStore.success(`Moved ${count} ${count === 1 ? 'item' : 'items'} to Trash`);
+			} else if (completed.some((item) => item.isDir)) {
+				toastStore.success(`Delete started for ${count} ${count === 1 ? 'item' : 'items'}`);
+			} else {
+				toastStore.success(`Deleted ${count} ${count === 1 ? 'item' : 'items'}`);
+			}
+			return true;
+		} finally {
+			operation = null;
 		}
 	}
 
 	async function confirmDelete() {
 		if (!deleteDialog.open) return;
-		await deleteItems(deleteDialog.items, deleteDialog.mode === 'permanent');
-		deleteDialog = { open: false, items: [] };
+		const dialog = deleteDialog;
+		const completed = await deleteItems(dialog.items, dialog.mode === 'permanent');
+		if (completed && deleteDialog.open && deleteDialog.items === dialog.items) {
+			deleteDialog = { open: false, items: [] };
+		}
 	}
 
 	return {
@@ -190,9 +245,6 @@ export function useBrowseActions(
 		get deleteDialog() {
 			return deleteDialog;
 		},
-		get propertiesDialog() {
-			return propertiesDialog;
-		},
 		get shareItem() {
 			return shareItem;
 		},
@@ -204,6 +256,9 @@ export function useBrowseActions(
 		},
 		get canPaste() {
 			return isLocalDesktop() || clipboardStore.hasItems;
+		},
+		get operation() {
+			return operation;
 		},
 
 		setCreateName(name: string) {
@@ -218,9 +273,6 @@ export function useBrowseActions(
 		},
 		closeDelete() {
 			deleteDialog = { open: false, items: [] };
-		},
-		closeProperties() {
-			propertiesDialog = { open: false, file: null };
 		},
 		closeShare() {
 			shareItem = null;
@@ -282,10 +334,15 @@ export function useBrowseActions(
 				case 'copy':
 					clipboardStore.copy(items);
 					if (isLocalDesktop()) {
+						const selectionId = beginBrowseClipboardPublication();
 						try {
-							const { writeBrowseClipboard } = await import('./desktopClipboard');
-							await writeBrowseClipboard(items, 'copy');
+							await publishBrowseClipboardInOrder(async () => {
+								const { writeBrowseClipboard } = await import('./desktopClipboard');
+								await writeBrowseClipboard(items, 'copy');
+							});
+							finishBrowseClipboardPublication(selectionId, 'published');
 						} catch (error) {
+							finishBrowseClipboardPublication(selectionId, 'failed');
 							toastStore.error(
 								errorMessage(
 									error,
@@ -298,10 +355,15 @@ export function useBrowseActions(
 				case 'cut':
 					clipboardStore.cut(items);
 					if (isLocalDesktop()) {
+						const selectionId = beginBrowseClipboardPublication();
 						try {
-							const { writeBrowseClipboard } = await import('./desktopClipboard');
-							await writeBrowseClipboard(items, 'cut');
+							await publishBrowseClipboardInOrder(async () => {
+								const { writeBrowseClipboard } = await import('./desktopClipboard');
+								await writeBrowseClipboard(items, 'cut');
+							});
+							finishBrowseClipboardPublication(selectionId, 'published');
 						} catch (error) {
+							finishBrowseClipboardPublication(selectionId, 'failed');
 							toastStore.error(
 								errorMessage(
 									error,
@@ -344,9 +406,6 @@ export function useBrowseActions(
 					break;
 				case 'share':
 					if (only) shareItem = only;
-					break;
-				case 'properties':
-					if (only) propertiesDialog = { open: true, file: only };
 					break;
 			}
 		}

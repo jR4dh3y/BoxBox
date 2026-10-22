@@ -3,6 +3,12 @@ import { SvelteSet } from 'svelte/reactivity';
 import { isLocalDesktop } from '#lib/api/desktop.js';
 import type { DesktopClipboardContents } from '#lib/api/desktopClipboard.js';
 import { clipboardStore } from '#lib/stores/clipboard.svelte.js';
+import {
+	clearBrowseClipboardPublication,
+	getBrowseClipboardPublication,
+	isCurrentBrowseClipboardSelection,
+	shouldReadNativeBrowseClipboard
+} from './clipboardPublication';
 import { jobsStore } from '#lib/stores/jobs.svelte.js';
 import { toastStore } from '#lib/stores/toast.svelte.js';
 import type { TransferPlan, TransferQueue, TransferConflictDecision } from './transfers';
@@ -12,13 +18,19 @@ import type { BrowseLocation } from './location.svelte';
 type PasteState =
 	| { kind: 'idle' }
 	| { kind: 'planning' }
-	| { kind: 'conflict'; plan: TransferPlan; clipboard: DesktopClipboardContents | null }
+	| {
+			kind: 'conflict';
+			plan: TransferPlan;
+			clipboard: DesktopClipboardContents | null;
+			selectionId: number | null;
+	  }
 	| { kind: 'submitting'; queue: TransferQueue };
 
 async function finishCut(
 	jobs: readonly Job[],
 	clipboard: DesktopClipboardContents | null,
-	sourcePaths: string[]
+	sourcePaths: string[],
+	selectionId: number | null
 ) {
 	const pending = new SvelteSet(jobs.map((job) => job.id));
 	try {
@@ -31,16 +43,20 @@ async function finishCut(
 			}
 			if (pending.size) await new Promise((resolve) => setTimeout(resolve, 1500));
 		}
-		if (clipboard) {
+		if (clipboard && (selectionId === null || isCurrentBrowseClipboardSelection(selectionId))) {
 			const { clearBrowseCutClipboardAfterMove } = await import('./desktopClipboard');
 			await clearBrowseCutClipboardAfterMove(clipboard);
 		}
 		if (
+			selectionId !== null &&
+			isCurrentBrowseClipboardSelection(selectionId) &&
 			clipboardStore.operation === 'cut' &&
 			clipboardStore.items.length === sourcePaths.length &&
 			clipboardStore.items.every((item) => sourcePaths.includes(item.path))
-		)
+		) {
 			clipboardStore.clear();
+			clearBrowseClipboardPublication(selectionId);
+		}
 	} catch {
 		/* Keep the cut selection when completion cannot be confirmed. */
 	}
@@ -51,7 +67,8 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 	async function submit(
 		plan: TransferPlan,
 		decisions: TransferConflictDecision[],
-		clipboard: DesktopClipboardContents | null
+		clipboard: DesktopClipboardContents | null,
+		selectionId: number | null
 	) {
 		state = { kind: 'planning' };
 		try {
@@ -71,7 +88,8 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 					void finishCut(
 						result.jobs,
 						clipboard,
-						plan.entries.map((entry) => entry.source.path)
+						plan.entries.map((entry) => entry.source.path),
+						selectionId
 					);
 			}
 			data.refreshAll();
@@ -91,19 +109,51 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 		async paste() {
 			if (state.kind !== 'idle' || !location.path || !data.canCreate) return;
 			const destination = location.path;
+			let publication = getBrowseClipboardPublication();
+			let selectionId = publication.kind === 'external' ? null : publication.revision;
 			state = { kind: 'planning' };
 			try {
 				let clipboard: DesktopClipboardContents | null = null;
 				let items = clipboardStore.items.map(({ path, name, isDir }) => ({ path, name, isDir }));
 				let operation = clipboardStore.operation;
-				if (isLocalDesktop()) {
+				const useCurrentInAppSelection = () => {
+					publication = getBrowseClipboardPublication();
+					selectionId = publication.kind === 'external' ? null : publication.revision;
+					clipboard = null;
+					items = clipboardStore.items.map(({ path, name, isDir }) => ({ path, name, isDir }));
+					operation = clipboardStore.operation;
+				};
+				if (isLocalDesktop() && shouldReadNativeBrowseClipboard()) {
+					const readStartedAt = getBrowseClipboardPublication();
 					try {
 						const { readBrowseClipboard } = await import('./desktopClipboard');
-						clipboard = await readBrowseClipboard();
-						items = clipboard?.items ?? [];
-						operation = clipboard?.operation ?? null;
+						if (!shouldReadNativeBrowseClipboard()) {
+							useCurrentInAppSelection();
+						} else {
+							const nativeClipboard = await readBrowseClipboard();
+							const current = getBrowseClipboardPublication();
+							if (
+								current.revision !== readStartedAt.revision ||
+								current.kind !== readStartedAt.kind
+							) {
+								useCurrentInAppSelection();
+							} else {
+								clipboard = nativeClipboard;
+								items = clipboard?.items ?? [];
+								operation = clipboard?.operation ?? null;
+							}
+						}
 					} catch (error) {
-						if (!items.length) throw error;
+						const current = getBrowseClipboardPublication();
+						if (
+							!shouldReadNativeBrowseClipboard() ||
+							current.revision !== readStartedAt.revision ||
+							current.kind !== readStartedAt.kind
+						) {
+							useCurrentInAppSelection();
+						} else if (!items.length) {
+							throw error;
+						}
 					}
 				}
 				if (!items.length || !operation) {
@@ -114,17 +164,18 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 				const { planTransfers } = await import('./transfers');
 				const plan = await planTransfers(operation === 'cut' ? 'move' : 'copy', items, destination);
 				if (plan.entries.some((entry) => entry.kind === 'conflict')) {
-					state = { kind: 'conflict', plan, clipboard };
+					state = { kind: 'conflict', plan, clipboard, selectionId };
 					return;
 				}
-				await submit(plan, [], clipboard);
+				await submit(plan, [], clipboard, selectionId);
 			} catch (error) {
 				state = { kind: 'idle' };
 				toastStore.error(error instanceof Error ? error.message : 'Paste failed');
 			}
 		},
 		apply(decisions: TransferConflictDecision[]) {
-			if (state.kind === 'conflict') void submit(state.plan, decisions, state.clipboard);
+			if (state.kind === 'conflict')
+				void submit(state.plan, decisions, state.clipboard, state.selectionId);
 		},
 		async cancel() {
 			if (state.kind === 'submitting') await state.queue.cancel();

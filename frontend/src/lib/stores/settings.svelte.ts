@@ -14,6 +14,7 @@ import {
 	normalizeBackgroundImageMode,
 	type BackgroundImageMode
 } from '#lib/utils/wallpaper.js';
+import { normalizeFileOpenBehavior, type FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
 import {
 	isInlineWallpaperDataUrl,
 	saveLocalWallpaperDataUrl
@@ -30,7 +31,7 @@ export interface UserSettings {
 	backgroundImage: string | null;
 	backgroundImageMode: BackgroundImageMode;
 	frostedGlass: boolean;
-	previewOnSingleClick: boolean;
+	fileOpenBehavior: FileOpenBehavior;
 	compactMode: boolean;
 	driveNameOverrides: Record<string, string>;
 	favoriteFolders: FavoriteFolder[];
@@ -52,15 +53,27 @@ const defaultSettings: UserSettings = {
 	backgroundImage: null,
 	backgroundImageMode: DEFAULT_BACKGROUND_IMAGE_MODE,
 	frostedGlass: false,
-	previewOnSingleClick: false,
+	fileOpenBehavior: 'double-click',
 	compactMode: false,
 	driveNameOverrides: {},
 	favoriteFolders: []
 };
 
+interface StoredUserSettings extends Partial<UserSettings> {
+	previewOnSingleClick?: unknown;
+}
+
 function loadSettings(): UserSettings {
-	const stored = settingsStorage.get<UserSettings>();
-	const settings = stored ? { ...defaultSettings, ...stored } : defaultSettings;
+	const stored = settingsStorage.get<StoredUserSettings>();
+	const { previewOnSingleClick, ...storedSettings } = stored ?? {};
+	const settings = {
+		...defaultSettings,
+		...storedSettings,
+		fileOpenBehavior: normalizeFileOpenBehavior(
+			storedSettings.fileOpenBehavior,
+			previewOnSingleClick
+		)
+	};
 	return {
 		...settings,
 		backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode)

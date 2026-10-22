@@ -45,8 +45,36 @@
 
 html,
 body {
+	color-scheme: dark;
 	min-height: 100%;
 	background: var(--color-surface-primary);
+}
+
+/* Keep overflow usable without the platform's bright, full-size scrollbars. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--color-surface-elevated) transparent;
+}
+
+::-webkit-scrollbar {
+	width: 7px;
+	height: 7px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	border: 2px solid transparent;
+	border-radius: 8px;
+	background: var(--color-surface-elevated);
+	background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background-color: var(--color-text-muted);
 }
 
 .app-shell {

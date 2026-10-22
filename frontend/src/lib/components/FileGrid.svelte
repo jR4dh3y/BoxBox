@@ -4,15 +4,25 @@
 	 */
 
 	import type { FileInfo } from '#lib/api/files.js';
-	import { getThumbnailUrl } from '#lib/api/files.js';
+	import FileThumbnail from '#lib/components/FileThumbnail.svelte';
+	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
-	import { getFileTypeDescription, getFileIcon, getPreviewType } from '#lib/utils/fileTypes.js';
+	import { getFileTypeDescription, getFileIcon } from '#lib/utils/fileTypes.js';
 	import { getFileContextMenuItems } from '#lib/utils/fileContextMenu.js';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { ContextMenu, Spinner } from '#lib/components/ui/index.js';
 	import { FolderOpen } from 'lucide-svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
+	import {
+		applyFileSelection,
+		fileSelectionGestureFromModifiers,
+		getSelectedContextMenuItems,
+		shouldOpenOnClick,
+		shouldOpenOnDoubleClick,
+		type FileSelectionGesture
+	} from '#lib/browse/fileInteractions.js';
+	import type { FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
 
 	let {
 		items = [],
@@ -25,7 +35,7 @@
 		canPaste = false,
 		canCreate = false,
 		showFileExtensions = true,
-		previewOnSingleClick = false,
+		fileOpenBehavior = 'double-click',
 		onItemClick,
 		onFolderHover,
 		onSelectionChange,
@@ -41,7 +51,7 @@
 		canPaste?: boolean;
 		canCreate?: boolean;
 		showFileExtensions?: boolean;
-		previewOnSingleClick?: boolean;
+		fileOpenBehavior?: FileOpenBehavior;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -50,53 +60,53 @@
 	} = $props();
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
+	let selectionAnchor: string | null = null;
 
 	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
-	let thumbnailErrors = new SvelteSet<string>();
+
+	function updateSelection(itemPath: string, gesture: FileSelectionGesture): void {
+		const result = applyFileSelection(
+			items.map((item) => item.path),
+			selectedPaths,
+			selectionAnchor,
+			itemPath,
+			gesture
+		);
+		selectionAnchor = result.anchorPath;
+		onSelectionChange?.(new SvelteSet(result.paths));
+	}
 
 	function handleItemClick(item: FileInfo, event: MouseEvent) {
-		if (event.ctrlKey || event.metaKey) {
-			const newSelection = new SvelteSet<string>(selectedPaths);
-			if (newSelection.has(item.path)) {
-				newSelection.delete(item.path);
-			} else {
-				newSelection.add(item.path);
-			}
-			onSelectionChange?.(newSelection);
-		} else if (event.shiftKey && selectedPaths.size > 0) {
-			const newSelection = new SvelteSet<string>(selectedPaths);
-			newSelection.add(item.path);
-			onSelectionChange?.(newSelection);
-		} else {
-			const newSelection = new SvelteSet<string>([item.path]);
-			onSelectionChange?.(newSelection);
-		}
+		updateSelection(item.path, fileSelectionGestureFromModifiers(event));
+		if (shouldOpenOnClick(fileOpenBehavior, event)) onItemClick?.(item);
+	}
 
-		if (item.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+	function handleDoubleClick(item: FileInfo, event: MouseEvent) {
+		if (shouldOpenOnDoubleClick(fileOpenBehavior, event)) onItemClick?.(item);
+	}
+
+	function handleSelectionCheckbox(item: FileInfo, selected: boolean): void {
+		updateSelection(item.path, { type: 'set', selected });
+	}
+
+	function handleKeyDown(item: FileInfo, event: KeyboardEvent) {
+		if ((event.key === 'a' || event.key === 'A') && (event.ctrlKey || event.metaKey)) {
+			event.preventDefault();
+			selectionAnchor = item.path;
+			onSelectionChange?.(new SvelteSet(items.map((visibleItem) => visibleItem.path)));
+			return;
+		}
+		if (event.target instanceof HTMLInputElement) return;
+
+		if (event.key === 'Enter') {
+			event.preventDefault();
 			onItemClick?.(item);
 			return;
 		}
 
-		if (
-			previewOnSingleClick &&
-			!item.isDir &&
-			!event.ctrlKey &&
-			!event.metaKey &&
-			!event.shiftKey
-		) {
-			onItemClick?.(item);
-		}
-	}
-
-	function handleOpen(item: FileInfo) {
-		if (previewOnSingleClick && !item.isDir) return;
-		onItemClick?.(item);
-	}
-
-	function handleKeyDown(item: FileInfo, event: KeyboardEvent) {
-		if (event.key === 'Enter' || event.key === ' ') {
+		if (event.key === ' ') {
 			event.preventDefault();
-			onItemClick?.(item);
+			updateSelection(item.path, fileSelectionGestureFromModifiers(event));
 			return;
 		}
 
@@ -126,17 +136,17 @@
 	function handleContextMenu(item: FileInfo, event: MouseEvent) {
 		event.preventDefault();
 
+		const selectedItems = getSelectedContextMenuItems(items, selectedPaths, item);
 		if (!selectedPaths.has(item.path)) {
 			const newSelection = new SvelteSet<string>([item.path]);
+			selectionAnchor = item.path;
 			onSelectionChange?.(newSelection);
 		}
-
-		const selectedItems = items.filter((i) => selectedPaths.has(i.path) || i.path === item.path);
 
 		contextMenu = {
 			x: event.clientX,
 			y: event.clientY,
-			items: selectedItems.length > 0 ? selectedItems : [item]
+			items: selectedItems
 		};
 	}
 
@@ -145,6 +155,7 @@
 		if (target?.closest('[data-file-item="true"]')) return;
 
 		event.preventDefault();
+		selectionAnchor = null;
 		onSelectionChange?.(new SvelteSet<string>());
 		contextMenu = {
 			x: event.clientX,
@@ -162,10 +173,6 @@
 			onContextMenuAction(action, contextMenu.items);
 		}
 		contextMenu = null;
-	}
-
-	function handleThumbnailError(path: string) {
-		thumbnailErrors.add(path);
 	}
 
 	function isSelected(path: string): boolean {
@@ -186,7 +193,7 @@
 	const gridClass = 'grid grid-cols-[repeat(auto-fill,112px)] justify-start gap-3 p-3';
 	const compactGridClass = 'grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-2 p-2';
 	const tileClass =
-		'group flex aspect-[1/1.15] min-w-0 cursor-default flex-col rounded border border-transparent bg-transparent p-2 text-left outline-none transition-colors duration-100 hover:bg-surface-secondary focus:border-border-focus focus:bg-surface-secondary';
+		'group relative flex aspect-[1/1.15] min-w-0 cursor-default flex-col rounded border border-transparent bg-transparent p-2 text-left outline-none transition-colors duration-100 hover:bg-surface-secondary focus:border-border-focus focus:bg-surface-secondary';
 	const selectedClass = 'border-accent/70 bg-selection hover:bg-selection-hover';
 	const thumbnailClass =
 		'flex shrink-0 items-center justify-center overflow-hidden rounded border border-border-primary bg-surface-primary';
@@ -221,8 +228,7 @@
 				{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
 				{@const sizeDescription = item.isDir ? '' : formatFileSize(item.size)}
 				{@const modifiedDescription = formatFileDate(item.modTime)}
-				{@const showThumbnail =
-					!item.isDir && getPreviewType(item.name) === 'image' && !thumbnailErrors.has(item.path)}
+				{@const showThumbnail = supportsThumbnailFile(item)}
 				{@const detailText = item.isDir ? 'Folder' : sizeDescription}
 				<div
 					class="file-grid-item {tileClass} {isSelected(item.path) ? selectedClass : ''} {isCut(
@@ -237,19 +243,28 @@
 					onclick={(e) => handleItemClick(item, e)}
 					onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
 					onpointerleave={() => onFolderHover?.(null)}
-					ondblclick={() => handleOpen(item)}
+					ondblclick={(event) => handleDoubleClick(item, event)}
 					onkeydown={(e) => handleKeyDown(item, e)}
 					oncontextmenu={(e) => handleContextMenu(item, e)}
 					data-file-item="true"
 				>
+					<input
+						type="checkbox"
+						checked={isSelected(item.path)}
+						aria-label={`Select ${item.name}`}
+						class="absolute top-2 left-2 z-[1] h-4 w-4 cursor-pointer accent-accent"
+						onclick={(event) => event.stopPropagation()}
+						ondblclick={(event) => event.stopPropagation()}
+						onchange={(event) => handleSelectionCheckbox(item, event.currentTarget.checked)}
+					/>
 					<div class="{thumbnailClass} {compactMode ? 'h-11' : 'h-16'}">
 						{#if showThumbnail}
-							<img
-								src={getThumbnailUrl(item.path, compactMode ? 192 : 224, compactMode ? 96 : 144)}
+							<FileThumbnail
+								file={item}
+								width={compactMode ? 192 : 224}
+								height={compactMode ? 96 : 144}
 								alt=""
-								loading="lazy"
-								class="h-full w-full object-cover"
-								onerror={() => handleThumbnailError(item.path)}
+								class="h-full"
 							/>
 						{:else}
 							<span

@@ -9,7 +9,8 @@
 		FolderUp,
 		RefreshCw,
 		Settings,
-		Upload
+		Upload,
+		PanelRight
 	} from 'lucide-svelte';
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
 	import SearchBar from '#lib/components/SearchBar.svelte';
@@ -35,6 +36,8 @@
 		onSearchInput?: (query: string) => void;
 		onSearchClear?: () => void;
 		includeHiddenSuggestions?: boolean;
+		detailsOpen?: boolean;
+		onToggleDetails?: () => void;
 	}
 
 	let {
@@ -56,7 +59,9 @@
 		searchLoading = false,
 		onSearchInput,
 		onSearchClear,
-		includeHiddenSuggestions = false
+		includeHiddenSuggestions = false,
+		detailsOpen = false,
+		onToggleDetails
 	}: Props = $props();
 
 	const navBtnClass =
@@ -126,6 +131,20 @@
 		<button type="button" class={navBtnClass} onclick={onSettings} title="Settings">
 			<Settings size={16} />
 		</button>
+		{#if onToggleDetails}
+			<button
+				type="button"
+				class="inline-flex h-7 items-center gap-1.5 rounded px-2 text-xs transition-colors hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent {detailsOpen
+					? 'bg-selection text-text-primary'
+					: 'text-text-secondary'}"
+				aria-label="Details"
+				aria-pressed={detailsOpen}
+				onclick={onToggleDetails}
+				title="Selection details"
+			>
+				<PanelRight size={16} /><span class="hidden xl:inline">Details</span>
+			</button>
+		{/if}
 	</div>
 </div>
 

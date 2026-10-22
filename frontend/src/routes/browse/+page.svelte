@@ -1,11 +1,10 @@
 <script lang="ts">
 	/** The browse route owns shared navigation chrome; each visible pane owns its file state. */
-	import { goto } from '$app/navigation';
+	import { goto, afterNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { tick, untrack } from 'svelte';
 	import Sidebar from '#lib/components/Sidebar.svelte';
-	import Toolbar from '#lib/components/Toolbar.svelte';
 	import BrowseTabs from '#lib/components/desktop/BrowseTabs.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import Toast from '#lib/components/ui/Toast.svelte';
@@ -14,17 +13,19 @@
 	import { parseBrowseLaunchState } from '#lib/browse/pane.svelte.js';
 	import type { BrowsePaneRuntime } from '#lib/browse/pane.svelte.js';
 	import { useBrowseTabs } from '#lib/browse/tabs.svelte.js';
-	import type { BrowseLocationSnapshot } from '#lib/browse/location.svelte.js';
+	import { parseBrowseLocation, type BrowseLocationSnapshot } from '#lib/browse/location.svelte.js';
 	import { getBrowseShortcut } from '#lib/browse/paneShortcuts.js';
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
 
 	const browsePane = import('#lib/components/desktop/BrowsePane.svelte');
+	const toolbar = import('#lib/components/Toolbar.svelte');
 	const launchState = parseBrowseLaunchState(page.url);
 	let pendingSelectPath = $state(launchState.selectPath);
 	let paneRuntimes = $state.raw<Record<string, BrowsePaneRuntime>>({});
 	let uploadErrorDismissed = $state(false);
 	let launchTabId = $state('');
+	let detailsOpen = $state(false);
 
 	const tabs = useBrowseTabs({
 		initialLocation: launchState.location,
@@ -39,6 +40,19 @@
 	const activeLocation = $derived(activePane?.location);
 	const activeRuntime = $derived(activePane ? (paneRuntimes[activePane.id] ?? null) : null);
 	const settings = $derived(settingsStore.current);
+
+	function closeDetails(): void {
+		detailsOpen = false;
+		void tick().then(() =>
+			document.querySelector<HTMLButtonElement>('button[aria-label="Details"]')?.focus()
+		);
+	}
+
+	afterNavigate(({ type }) => {
+		if (type === 'popstate') {
+			untrack(() => activeLocation?.restore(parseBrowseLocation(page.url)));
+		}
+	});
 
 	const onFolderHover = createHoverIntent((path) => {
 		if (path) activeRuntime?.data.prefetchDirectory(path);
@@ -61,9 +75,10 @@
 		url.searchParams.set('view', snapshot.viewMode);
 		if (selectPath) url.searchParams.set('select', selectPath);
 		else url.searchParams.delete('select');
+		if (url.href === page.url.href) return;
 
 		void goto(`${resolve('browse')}${url.search}${url.hash}`, {
-			replace: true,
+			replace: page.url.searchParams.get('path') === snapshot.path,
 			reset: false,
 			state: page.state
 		});
@@ -200,49 +215,69 @@
 	/>
 
 	<div class="flex min-w-0 flex-1 flex-col">
-		<Toolbar
-			pathSegments={activeLocation?.segments ?? []}
-			canGoBack={activeLocation?.canGoBack ?? false}
-			canGoForward={activeLocation?.canGoForward ?? false}
-			canGoUp={activeLocation?.canGoUp ?? false}
-			onBack={() => activeLocation?.back()}
-			onForward={() => activeLocation?.forward()}
-			onUp={() => activeLocation?.up()}
-			onNavigate={(path) => activeLocation?.navigate(path)}
-			onRefresh={() => activeRuntime?.data.reload()}
-			onSettings={() => goto(resolve('settings'))}
-			onUpload={() => activeRuntime?.uploads.openPicker()}
-			onUploadFolder={() => activeRuntime?.uploads.openFolderPicker()}
-			uploadDisabled={activeRuntime?.data.uploadDisabled ?? true}
-			showSearch={activeLocation !== undefined && activeLocation.path !== ''}
-			searchValue={activeLocation?.searchQuery ?? ''}
-			searchLoading={activeRuntime?.data.isSearching ?? false}
-			onSearchInput={(query) => activeLocation?.search(query)}
-			onSearchClear={() => activeLocation?.clearSearch()}
-			includeHiddenSuggestions={settings.showHiddenFiles}
-		/>
+		{#await toolbar then { default: Toolbar }}
+			<Toolbar
+				pathSegments={activeLocation?.segments ?? []}
+				canGoBack={activeLocation?.canGoBack ?? false}
+				canGoForward={activeLocation?.canGoForward ?? false}
+				canGoUp={activeLocation?.canGoUp ?? false}
+				onBack={() => activeLocation?.back()}
+				onForward={() => activeLocation?.forward()}
+				onUp={() => activeLocation?.up()}
+				onNavigate={(path) => activeLocation?.navigate(path)}
+				onRefresh={() => activeRuntime?.data.reload()}
+				onSettings={() => goto(resolve('settings'))}
+				onUpload={() => activeRuntime?.uploads.openPicker()}
+				onUploadFolder={() => activeRuntime?.uploads.openFolderPicker()}
+				uploadDisabled={activeRuntime?.data.uploadDisabled ?? true}
+				showSearch={activeLocation !== undefined && activeLocation.path !== ''}
+				searchValue={activeLocation?.searchQuery ?? ''}
+				searchLoading={activeRuntime?.data.isSearching ?? false}
+				onSearchInput={(query) => activeLocation?.search(query)}
+				onSearchClear={() => activeLocation?.clearSearch()}
+				includeHiddenSuggestions={settings.showHiddenFiles}
+				{detailsOpen}
+				onToggleDetails={() => (detailsOpen = !detailsOpen)}
+			/>
+		{:catch}
+			<LoadError label="file toolbar" />
+		{/await}
 
 		<BrowseTabs controller={tabs} onTabChange={focusActivePane} />
 
-		<div class="flex min-h-0 flex-1 divide-x divide-border-secondary">
-			{#await browsePane then { default: BrowsePane }}
-				{#each tabs.visiblePanes as pane (pane.id)}
-					<BrowsePane
-						{pane}
-						focused={pane.id === activePane?.id}
-						initialSelectPath={pendingSelectPath &&
-						tabs.activeTabId === launchTabId &&
-						pane.id === activePane?.id
-							? pendingSelectPath
-							: null}
-						onFocus={() => tabs.focusPane(pane.id)}
-						onRuntimeChange={(runtime) => setPaneRuntime(pane.id, runtime)}
-						onInitialSelectHandled={handleInitialSelectHandled}
-					/>
-				{/each}
-			{:catch}
-				<LoadError label="file browser" />
-			{/await}
+		<div class="relative flex min-h-0 flex-1">
+			<div class="flex min-h-0 min-w-0 flex-1 divide-x divide-border-secondary">
+				{#await browsePane then { default: BrowsePane }}
+					{#each tabs.visiblePanes as pane (pane.id)}
+						<BrowsePane
+							{pane}
+							focused={pane.id === activePane?.id}
+							initialSelectPath={pendingSelectPath &&
+							tabs.activeTabId === launchTabId &&
+							pane.id === activePane?.id
+								? pendingSelectPath
+								: null}
+							onFocus={() => tabs.focusPane(pane.id)}
+							onRuntimeChange={(runtime) => setPaneRuntime(pane.id, runtime)}
+							onInitialSelectHandled={handleInitialSelectHandled}
+							onShowDetails={() => (detailsOpen = true)}
+						/>
+					{/each}
+				{:catch}
+					<LoadError label="file browser" />
+				{/await}
+			</div>
+			{#if detailsOpen}
+				<div
+					class="fixed inset-y-0 right-0 z-[60] w-[min(20rem,100%)] shadow-xl lg:static lg:z-auto lg:w-72 lg:shrink-0 lg:shadow-none"
+				>
+					{#await import('#lib/components/FileDetailsPanel.svelte') then { default: FileDetailsPanel }}
+						<FileDetailsPanel runtime={activeRuntime} onClose={closeDetails} />
+					{:catch}
+						<LoadError label="selection details" onClose={closeDetails} />
+					{/await}
+				</div>
+			{/if}
 		</div>
 	</div>
 </div>

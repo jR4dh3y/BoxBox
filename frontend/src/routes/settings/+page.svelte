@@ -7,6 +7,7 @@
 	import { resolve } from '$app/paths';
 	import { authStore } from '#lib/stores/auth.svelte.js';
 	import { settingsStore, type UserSettings } from '#lib/stores/settings.svelte.js';
+	import type { FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
 	import {
 		DEFAULT_ACCENT_COLOR,
 		isValidBackgroundImage,
@@ -117,6 +118,11 @@
 	const viewModeOptions = [
 		{ value: 'list', label: 'List' },
 		{ value: 'grid', label: 'Grid' }
+	];
+
+	const fileOpenBehaviorOptions: Array<{ value: FileOpenBehavior; label: string }> = [
+		{ value: 'single-click', label: 'Single-click' },
+		{ value: 'double-click', label: 'Double-click (recommended)' }
 	];
 
 	const navButtonClass =
@@ -659,16 +665,18 @@
 								</div>
 							{/if}
 
-							{#if matchesSearch('preview on single click', 'preview', 'single click')}
+							{#if matchesSearch('open files and folders', 'open on single click', 'open on double click', 'preview on single click', 'single click', 'double click')}
 								<div class={settingRowClass}>
-									<div>
-										<div class="text-[13px] text-text-primary">Preview on single click</div>
+									<label class="text-[13px] text-text-primary" for="file-open-behavior">
+										Open files and folders on
+									</label>
+									<div class="w-52 shrink-0">
+										<Select
+											id="file-open-behavior"
+											options={fileOpenBehaviorOptions}
+											bind:value={settings.fileOpenBehavior}
+										/>
 									</div>
-									<Toggle
-										bind:checked={settings.previewOnSingleClick}
-										label="Preview on single click"
-										showLabel={false}
-									/>
 								</div>
 							{/if}
 						</div>

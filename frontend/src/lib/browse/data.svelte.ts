@@ -22,15 +22,16 @@ import type { BrowseLocation } from './location.svelte';
  * What the browser shows for the current location: drives, a folder page or search results.
  * Call during component setup because the queries need the component context.
  */
-export function useBrowseData(location: BrowseLocation) {
+export function useBrowseData(location: BrowseLocation, revealHidden: () => boolean = () => false) {
 	const queryClient = useQueryClient();
 	const settings = $derived(settingsStore.current);
+	const includeHidden = $derived(settings.showHiddenFiles || revealHidden());
 
 	const directoryOptions = $derived<Omit<ListOptions, 'page'>>({
 		pageSize: 50,
 		sortBy: location.sortBy,
 		sortDir: location.sortDir,
-		includeHidden: settings.showHiddenFiles
+		includeHidden
 	});
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
@@ -64,7 +65,7 @@ export function useBrowseData(location: BrowseLocation) {
 
 	const displayItems = $derived.by(() => {
 		const items: FileInfo[] = location.isSearchActive ? searchResults : directoryItems;
-		return settings.showHiddenFiles ? items : items.filter((item) => !item.name.startsWith('.'));
+		return includeHidden ? items : items.filter((item) => !item.name.startsWith('.'));
 	});
 
 	const currentMount = $derived(

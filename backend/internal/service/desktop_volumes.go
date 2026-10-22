@@ -65,9 +65,10 @@ type DesktopVolumesResponse struct {
 }
 
 var (
-	ErrDesktopVolumesUnavailable = errors.New("removable volume support is unavailable")
-	ErrDesktopVolumeNotFound     = errors.New("removable volume not found")
-	ErrDesktopVolumeNotMounted   = errors.New("removable volume is not mounted")
+	ErrDesktopVolumesUnavailable      = errors.New("removable volume support is unavailable")
+	ErrDesktopVolumeNotFound          = errors.New("removable volume not found")
+	ErrDesktopVolumeNotMounted        = errors.New("removable volume is not mounted")
+	ErrDesktopVolumeActionUnconfirmed = errors.New("removable volume action was not confirmed")
 )
 
 // DesktopVolumeCommandError reports a failed GIO operation. Detail comes from
@@ -229,7 +230,7 @@ func (s *desktopVolumesService) perform(ctx context.Context, volumeID string, ac
 			Err:        err,
 		}
 	}
-	return s.waitForAction(ctx, action, volumeID)
+	return s.waitForAction(ctx, action, volumeID, target.name)
 }
 
 // actionArguments returns nil when the requested state already holds.
@@ -283,7 +284,7 @@ func removableFileURI(uri string, action DesktopVolumeAction, name string) (stri
 	return uri, nil
 }
 
-func (s *desktopVolumesService) waitForAction(ctx context.Context, action DesktopVolumeAction, volumeID string) (DesktopVolumesResponse, error) {
+func (s *desktopVolumesService) waitForAction(ctx context.Context, action DesktopVolumeAction, volumeID, volumeName string) (DesktopVolumesResponse, error) {
 	var last DesktopVolumesResponse
 	for attempt := 0; attempt < s.refreshTries; attempt++ {
 		snapshot, err := s.snapshot(ctx)
@@ -301,11 +302,21 @@ func (s *desktopVolumesService) waitForAction(ctx context.Context, action Deskto
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return last, nil
+			return DesktopVolumesResponse{}, &DesktopVolumeCommandError{
+				Action:     action,
+				VolumeName: volumeName,
+				Detail:     "The operation ended before the new volume state could be confirmed.",
+				Err:        fmt.Errorf("%w: %w", ErrDesktopVolumeActionUnconfirmed, ctx.Err()),
+			}
 		case <-timer.C:
 		}
 	}
-	return last, nil
+	return DesktopVolumesResponse{}, &DesktopVolumeCommandError{
+		Action:     action,
+		VolumeName: volumeName,
+		Detail:     "The system did not confirm that the volume changed state.",
+		Err:        ErrDesktopVolumeActionUnconfirmed,
+	}
 }
 
 func actionSettled(volumes map[string]desktopVolumeTarget, action DesktopVolumeAction, volumeID string) bool {

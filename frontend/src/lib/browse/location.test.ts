@@ -15,6 +15,17 @@ const initial: BrowseLocationSnapshot = {
 };
 
 describe('browse location', () => {
+	test('browser navigation restores a pane history entry without adding another one', () => {
+		const location = useBrowseLocation({ initial });
+		location.navigate('media/a');
+		const first = location.snapshot;
+		location.navigate('media/b');
+		location.restore(first);
+		assert.equal(location.path, 'media/a');
+		assert.equal(location.canGoForward, true);
+		location.forward();
+		assert.equal(location.path, 'media/b');
+	});
 	test('parses the URL into a typed pane snapshot', () => {
 		assert.deepEqual(
 			parseBrowseLocation(
