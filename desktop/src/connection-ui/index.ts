@@ -23,6 +23,8 @@ new Electroview({ rpc });
 
 let profiles: Profiles = { kind: "loading" };
 let editor: Editor | undefined;
+/** What the user typed; survives re-renders while a save is in flight or after it fails. */
+let draft = { name: "", url: "" };
 let confirmRemoveId: string | undefined;
 let busy: Busy | undefined;
 let error = "";
@@ -90,6 +92,9 @@ async function loadProfiles(): Promise<void> {
 
 function openEditor(next: Editor | undefined): void {
   editor = next;
+  draft = next?.kind === "update"
+    ? { name: next.profile.name, url: next.profile.url }
+    : { name: "", url: "" };
   confirmRemoveId = undefined;
   error = "";
   render();
@@ -120,7 +125,11 @@ function render(): void {
   app.replaceChildren(shell);
 }
 
-function input(id: string, label: string, value: string): [HTMLLabelElement, HTMLInputElement] {
+function input(
+  id: string,
+  label: string,
+  field: keyof typeof draft,
+): [HTMLLabelElement, HTMLInputElement] {
   const labelNode = element("label", "field-label", label);
   labelNode.htmlFor = id;
   const node = element("input", "text-input");
@@ -128,16 +137,17 @@ function input(id: string, label: string, value: string): [HTMLLabelElement, HTM
   node.required = true;
   node.autocomplete = "off";
   node.spellcheck = false;
-  node.value = value;
+  node.value = draft[field];
+  node.addEventListener("input", () => (draft[field] = node.value));
   return [labelNode, node];
 }
 
 function renderEditor(current: Editor): HTMLElement {
   const profile = current.kind === "update" ? current.profile : undefined;
-  const [nameLabel, name] = input("connection-name", "Name", profile?.name ?? "");
+  const [nameLabel, name] = input("connection-name", "Name", "name");
   name.maxLength = 80;
   name.placeholder = "Home server";
-  const [urlLabel, url] = input("connection-url", "Server URL", profile?.url ?? "");
+  const [urlLabel, url] = input("connection-url", "Server URL", "url");
   url.type = "url";
   url.maxLength = 2048;
   url.placeholder = "https://files.example.com";

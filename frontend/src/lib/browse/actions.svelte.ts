@@ -166,9 +166,17 @@ export function useBrowseActions(
 		const failed: FileInfo[] = [];
 		let lastError: unknown;
 		try {
-			const trash = permanent
-				? null
-				: await Promise.all([import('#lib/api/desktopTrash.js'), import('./undo.svelte')]);
+			let trash:
+				[typeof import('#lib/api/desktopTrash.js'), typeof import('./undo.svelte')] | null = null;
+			if (!permanent) {
+				try {
+					trash = await Promise.all([import('#lib/api/desktopTrash.js'), import('./undo.svelte')]);
+				} catch {
+					// A failed chunk stays failed until the page reloads.
+					toastStore.error('Trash could not load. Reload BoxBox and try again.');
+					return false;
+				}
+			}
 			const trashed: string[] = [];
 			for (const item of items) {
 				try {
