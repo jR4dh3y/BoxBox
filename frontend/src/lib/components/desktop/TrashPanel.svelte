@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { File, Folder, RefreshCw, RotateCcw, Trash2 } from 'lucide-svelte';
+	import { File, Folder, RefreshCw } from 'lucide-svelte';
 	import { Button, Modal, Spinner } from '#lib/components/ui/index.js';
 	import { DesktopTrashController } from '#lib/api/desktopTrashController.svelte.js';
 	import type { DesktopTrashItem } from '#lib/api/desktopTrash.js';
+	import { fullFileDate, parentFolder } from '#lib/browse/details.js';
 
 	interface Props {
 		onClose: () => void;
@@ -26,13 +27,6 @@
 
 	function close(): void {
 		if (!busy) onClose();
-	}
-
-	function formatDate(value: string): string {
-		return new Intl.DateTimeFormat(undefined, {
-			dateStyle: 'medium',
-			timeStyle: 'short'
-		}).format(new Date(value));
 	}
 
 	function select(item: DesktopTrashItem): void {
@@ -82,81 +76,62 @@
 			</div>
 		{:else if controller.loadState.kind === 'failed'}
 			<div class="flex flex-1 flex-col items-center justify-center gap-3 py-10 text-center">
-				<p class="m-0 text-sm text-text-secondary">{controller.loadState.message}</p>
+				<p class="m-0 text-[13px] text-danger">{controller.loadState.message}</p>
 				<Button variant="secondary" size="sm" onclick={() => controller.load()}>Try again</Button>
 			</div>
 		{:else if items.length === 0}
-			<div class="flex flex-1 flex-col items-center justify-center gap-2 py-10 text-center">
-				<Trash2 size={24} class="text-text-muted" />
-				<p class="m-0 text-sm font-medium text-text-primary">Trash is empty</p>
-				<p class="m-0 max-w-sm text-sm text-text-secondary">
-					Items moved to Trash will stay here until you restore or delete them permanently.
-				</p>
-			</div>
+			<p class="m-0 py-10 text-center text-[13px] text-text-secondary">Trash is empty</p>
 		{:else}
 			{#if controller.refreshError}
-				<p
-					class="m-0 rounded border border-border-primary bg-surface-secondary px-3 py-2 text-sm text-text-secondary"
-					role="status"
-				>
+				<p class="m-0 text-[13px] text-danger" role="status">
 					Refresh failed: {controller.refreshError}
 				</p>
 			{/if}
 			{#if controller.actionState.kind === 'failed'}
-				<p
-					class="m-0 rounded border border-border-primary bg-surface-secondary px-3 py-2 text-sm text-text-secondary"
-					role="alert"
-				>
-					{controller.actionState.message}
-				</p>
+				<p class="m-0 text-[13px] text-danger" role="alert">{controller.actionState.message}</p>
 			{/if}
-			<ul
-				class="m-0 max-h-[55vh] list-none overflow-y-auto rounded border border-border-primary p-0"
-				aria-label="Trash items"
-			>
-				{#each items as item (item.id)}
-					<li class="border-b border-border-secondary last:border-b-0">
-						<button
-							type="button"
-							class="flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-surface-secondary focus-visible:outline-2 focus-visible:outline-accent {controller.selectedId ===
-							item.id
-								? 'bg-surface-secondary'
-								: ''}"
-							aria-pressed={controller.selectedId === item.id}
-							disabled={busy}
-							onclick={() => select(item)}
-						>
-							<span class="mt-0.5 shrink-0 text-text-secondary">
-								{#if item.isDir}<Folder size={18} />{:else}<File size={18} />{/if}
-							</span>
-							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm font-medium text-text-primary" title={item.name}
-									>{item.name}</span
-								>
-								<span
-									class="mt-1 block truncate text-xs text-text-secondary"
-									title={item.originalPath || 'Original location unavailable'}
-								>
-									{item.originalPath || 'Original location unavailable'}
-								</span>
-								<span class="mt-1 block text-xs text-text-muted"
-									>Deleted {formatDate(item.deletedAt)}</span
-								>
-							</span>
-							{#if item.canRestore}
-								<RotateCcw size={15} class="mt-1 shrink-0 text-text-muted" aria-hidden="true" />
-							{/if}
-						</button>
-					</li>
-				{/each}
-			</ul>
+			<div class="max-h-[55vh] overflow-y-auto rounded border border-border-secondary">
+				<table class="w-full table-fixed border-collapse text-[13px]" aria-label="Trash items">
+					<thead>
+						<tr class="text-left text-text-secondary">
+							<th class="sticky top-0 h-8 w-[40%] bg-surface-secondary px-3 font-medium">Name</th>
+							<th class="sticky top-0 h-8 bg-surface-secondary px-3 font-medium">From</th>
+							<th class="sticky top-0 h-8 w-44 bg-surface-secondary px-3 font-medium">Deleted</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each items as item (item.id)}
+							{@const from = parentFolder(item.originalPath)}
+							<tr
+								class="h-8 cursor-default border-t border-border-secondary hover:bg-surface-secondary {controller.selectedId ===
+								item.id
+									? 'bg-selection hover:bg-selection-hover'
+									: ''}"
+								aria-selected={controller.selectedId === item.id}
+								tabindex={busy ? -1 : 0}
+								onclick={() => !busy && select(item)}
+								onkeydown={(event) => event.key === 'Enter' && !busy && select(item)}
+							>
+								<td class="truncate px-3" title={item.name}>
+									<span class="inline-flex min-w-0 items-center gap-2 align-middle">
+										{#if item.isDir}<Folder size={14} class="shrink-0 text-folder" />{:else}<File
+												size={14}
+												class="shrink-0 text-text-secondary"
+											/>{/if}
+										<span class="truncate text-text-primary">{item.name}</span>
+									</span>
+								</td>
+								<td class="truncate px-3 text-text-secondary" title={from}>{from || '—'}</td>
+								<td class="truncate px-3 text-text-secondary">{fullFileDate(item.deletedAt)}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		{/if}
 
 		{#if confirmingDelete && selectedItem}
-			<p
-				class="m-0 rounded border border-border-primary bg-surface-secondary px-3 py-2 text-sm text-text-primary"
-				role="alert"
-			>
+			<p class="m-0 text-[13px] text-danger" role="alert">
 				Permanently delete “{selectedItem.name}”? This cannot be undone.
 			</p>
 		{/if}
@@ -168,7 +143,6 @@
 				>Cancel</Button
 			>
 			<Button variant="danger" disabled={busy} onclick={deleteSelected}>
-				<Trash2 size={15} />
 				{busy ? 'Deleting…' : 'Delete permanently'}
 			</Button>
 		{:else}
@@ -176,15 +150,13 @@
 				variant="secondary"
 				disabled={!selectedItem || busy}
 				onclick={() => (confirmingDelete = true)}
-			>
-				<Trash2 size={15} />Delete permanently
+				>Delete permanently
 			</Button>
 			<Button
 				variant="primary"
 				disabled={!selectedItem?.canRestore || busy}
 				onclick={restoreSelected}
 			>
-				<RotateCcw size={15} />
 				{busy ? 'Working…' : 'Restore'}
 			</Button>
 		{/if}

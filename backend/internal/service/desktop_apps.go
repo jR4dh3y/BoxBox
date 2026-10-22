@@ -41,6 +41,7 @@ type DesktopAppsResult struct {
 
 // DesktopApps exposes the local desktop actions supported by the private app server.
 type DesktopApps interface {
+	Open(ctx context.Context, path string) error
 	ListApps(ctx context.Context, path string) (DesktopAppsResult, error)
 	OpenWith(ctx context.Context, path, appID string) error
 	OpenTerminal(ctx context.Context, path string) error
@@ -73,6 +74,18 @@ func NewDesktopAppsService(fsys filesystem.FS, mountPoints []model.MountPoint, c
 	}
 }
 
+// Open hands an existing file or folder to the user's default application.
+func (s *desktopAppsService) Open(ctx context.Context, path string) error {
+	resolved, err := s.resolveExistingPath(path)
+	if err != nil {
+		return err
+	}
+	if output, err := s.commands.Run(ctx, "xdg-open", resolved); err != nil {
+		return launchFailed(output, err)
+	}
+	return nil
+}
+
 func (s *desktopAppsService) ListApps(ctx context.Context, path string) (DesktopAppsResult, error) {
 	resolved, err := s.resolveFile(path)
 	if err != nil {
@@ -101,13 +114,8 @@ func (s *desktopAppsService) OpenWith(ctx context.Context, path, appID string) e
 		if app.application.ID != appID {
 			continue
 		}
-		output, err := s.commands.Run(ctx, "gio", "launch", app.path, resolved)
-		if err != nil {
-			detail := strings.TrimSpace(string(output))
-			if detail == "" {
-				detail = err.Error()
-			}
-			return fmt.Errorf("%w: %s", ErrDesktopLaunchFailed, detail)
+		if output, err := s.commands.Run(ctx, "gio", "launch", app.path, resolved); err != nil {
+			return launchFailed(output, err)
 		}
 		return nil
 	}
@@ -136,6 +144,14 @@ func (s *desktopAppsService) OpenTerminal(ctx context.Context, path string) erro
 		return fmt.Errorf("%w: %v", ErrDesktopTerminalLaunchFailed, err)
 	}
 	return nil
+}
+
+func launchFailed(output []byte, err error) error {
+	detail := strings.TrimSpace(string(output))
+	if detail == "" {
+		detail = err.Error()
+	}
+	return fmt.Errorf("%w: %s", ErrDesktopLaunchFailed, detail)
 }
 
 func (s *desktopAppsService) resolveFile(path string) (string, error) {

@@ -16,6 +16,11 @@
 	let editing = $state(false);
 	let pathBar = $state<HTMLDivElement>();
 
+	/** Open the location editor; it focuses and selects the path itself. */
+	export function edit(): void {
+		editing = true;
+	}
+
 	function closeEditor(): void {
 		editing = false;
 		void tick().then(() => pathBar?.focus());

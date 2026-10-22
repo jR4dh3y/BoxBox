@@ -1,6 +1,30 @@
+export type FileShortcut =
+	| 'select-all'
+	| 'clear-selection'
+	| 'search'
+	| 'details'
+	| 'open'
+	| 'new-folder'
+	| 'copy'
+	| 'cut'
+	| 'paste'
+	| 'rename'
+	| 'delete'
+	| 'delete-permanently';
+
+/** Text fields keep their own keys; selection checkboxes do not. */
+export function isTextEntryTarget(target: EventTarget | null): boolean {
+	if (!(target instanceof HTMLElement)) return false;
+	if (target instanceof HTMLInputElement && target.type === 'checkbox') return false;
+	return (
+		target.isContentEditable ||
+		target.closest('input, textarea, select, [contenteditable="true"]') !== null
+	);
+}
+
 export function getFileShortcut(
 	event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>
-) {
+): FileShortcut | null {
 	const key = event.key.toLowerCase();
 	const command = event.ctrlKey || event.metaKey;
 	if (command && !event.altKey) {

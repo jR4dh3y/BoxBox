@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'node:test';
+import { afterEach, beforeEach, test } from 'node:test';
 import {
 	clearDesktopCutClipboard,
 	getDesktopClipboard,
@@ -18,15 +18,31 @@ function installFetchMock(implementation: FetchImplementation): void {
 	globalThis.fetch = Object.assign(implementation, { preconnect: realFetch.preconnect });
 }
 
+const realWindow = globalThis.window;
+const realLocalStorage = globalThis.localStorage;
+
+beforeEach(() => {
+	const storage = new Map<string, string>();
+	Object.assign(globalThis, {
+		window: Object.assign(new EventTarget(), { location: { origin: 'http://desktop.test' } }),
+		localStorage: {
+			getItem: (key: string) => storage.get(key) ?? null,
+			setItem: (key: string, value: string) => storage.set(key, value),
+			removeItem: (key: string) => storage.delete(key)
+		}
+	});
+});
+
 afterEach(() => {
 	requests.length = 0;
 	globalThis.fetch = realFetch;
+	Object.assign(globalThis, { window: realWindow, localStorage: realLocalStorage });
 });
 
 test('desktop clipboard API parses typed file items and null selections', async () => {
 	installFetchMock(async (input, init) => {
 		requests.push({
-			url: String(input),
+			url: new URL(String(input)).pathname,
 			method: init?.method ?? 'GET',
 			body: typeof init?.body === 'string' ? init.body : undefined
 		});
@@ -48,11 +64,11 @@ test('desktop clipboard API parses typed file items and null selections', async 
 test('desktop clipboard writes file paths and guards cut clearing by operation', async () => {
 	installFetchMock(async (input, init) => {
 		requests.push({
-			url: String(input),
+			url: new URL(String(input)).pathname,
 			method: init?.method ?? 'GET',
 			body: typeof init?.body === 'string' ? init.body : undefined
 		});
-		return new Response(null, { status: 204 });
+		return Response.json({ ok: true });
 	});
 	await setDesktopClipboard(['home/report.txt'], 'cut');
 	await clearDesktopCutClipboard(['home/report.txt']);

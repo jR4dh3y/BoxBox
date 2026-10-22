@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -18,7 +19,7 @@ type openWithRequest struct {
 	AppID string `json:"appId"`
 }
 
-type openTerminalRequest struct {
+type desktopPathRequest struct {
 	Path string `json:"path"`
 }
 
@@ -31,9 +32,9 @@ func NewDesktopAppsHandler(apps service.DesktopApps) *DesktopAppsHandler {
 	return &DesktopAppsHandler{apps: apps}
 }
 
-// RegisterRoutes mounts /apps, /open-with, and /terminal relative to the supplied router.
-// Mount it below /api/v1/desktop, for example with router.Route("/api/v1/desktop", h.RegisterRoutes).
+// RegisterRoutes mounts /open, /apps, /open-with, and /terminal below /api/v1/desktop.
 func (h *DesktopAppsHandler) RegisterRoutes(r chi.Router) {
+	r.Post("/open", h.Open)
 	r.Get("/apps", h.ListApps)
 	r.Post("/open-with", h.OpenWith)
 	r.Post("/terminal", h.OpenTerminal)
@@ -70,8 +71,16 @@ func (h *DesktopAppsHandler) OpenWith(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, desktopActionResponse{OK: true}, http.StatusOK)
 }
 
+func (h *DesktopAppsHandler) Open(w http.ResponseWriter, r *http.Request) {
+	h.runPathAction(w, r, h.apps.Open)
+}
+
 func (h *DesktopAppsHandler) OpenTerminal(w http.ResponseWriter, r *http.Request) {
-	var request openTerminalRequest
+	h.runPathAction(w, r, h.apps.OpenTerminal)
+}
+
+func (h *DesktopAppsHandler) runPathAction(w http.ResponseWriter, r *http.Request, action func(context.Context, string) error) {
+	var request desktopPathRequest
 	if err := decodeJSONBody(w, r, &request); err != nil {
 		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
@@ -80,7 +89,7 @@ func (h *DesktopAppsHandler) OpenTerminal(w http.ResponseWriter, r *http.Request
 		writeError(w, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
-	if err := h.apps.OpenTerminal(r.Context(), request.Path); err != nil {
+	if err := action(r.Context(), request.Path); err != nil {
 		writeDesktopAppsError(w, err)
 		return
 	}

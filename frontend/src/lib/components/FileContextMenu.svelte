@@ -2,13 +2,14 @@
 	import ContextMenu from '#lib/components/ui/ContextMenu.svelte';
 	import {
 		getFileContextMenuItems,
+		type FileContextAction,
 		type FileContextMenuOptions
 	} from '#lib/utils/fileContextMenu.js';
 
 	type Props = FileContextMenuOptions & {
 		x: number;
 		y: number;
-		onSelect: (action: string) => void;
+		onSelect: (action: FileContextAction) => void;
 		onClose: () => void;
 	};
 

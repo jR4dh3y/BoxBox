@@ -9,14 +9,12 @@
 		width = 224,
 		height = 144,
 		alt = undefined,
-		fit = 'contain',
 		class: className = ''
 	}: {
 		file: FileInfo;
 		width?: number;
 		height?: number;
 		alt?: string;
-		fit?: 'contain' | 'cover';
 		class?: string;
 	} = $props();
 
@@ -64,8 +62,7 @@
 			loading="lazy"
 			decoding="async"
 			class={[
-				'absolute inset-0 h-full w-full',
-				fit === 'contain' ? 'object-contain' : 'object-cover',
+				'absolute inset-0 h-full w-full object-contain',
 				loadedKey === sourceKey ? 'opacity-100' : 'opacity-0'
 			]}
 			onload={handleLoad}

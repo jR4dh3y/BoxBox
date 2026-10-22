@@ -260,3 +260,32 @@ func xdgApplications(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(os.Getenv("XDG_DATA_HOME"), "applications")
 }
+
+func TestDesktopOpenConfinesPaths(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "hello.txt")
+	if err := os.WriteFile(file, []byte("hello"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeDesktopCommandRunner{}
+	apps := NewDesktopAppsService(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}}, runner)
+	if err := apps.Open(context.Background(), "home/hello.txt"); err != nil {
+		t.Fatal(err)
+	}
+	want := []desktopCommandCall{{name: "xdg-open", args: []string{file}}}
+	if !reflect.DeepEqual(runner.runs, want) {
+		t.Fatalf("runs = %#v, want %#v", runner.runs, want)
+	}
+	for _, path := range []string{"home/../secret", "home/escape", "other/hello.txt", "home/missing", ""} {
+		runner.runs = nil
+		if err := apps.Open(context.Background(), path); err == nil {
+			t.Fatalf("accepted %q", path)
+		}
+		if len(runner.runs) != 0 {
+			t.Fatalf("launched opener for %q", path)
+		}
+	}
+}

@@ -1,9 +1,4 @@
 <script lang="ts">
-	/**
-	 * FileGrid component - icon/thumbnail grid for browsing folders
-	 */
-
-	import { moveFileFocus } from '#lib/browse/fileShortcuts.js';
 	import type { FileInfo } from '#lib/api/files.js';
 	import FileThumbnail from '#lib/components/FileThumbnail.svelte';
 	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
@@ -15,14 +10,8 @@
 	import { FolderOpen } from 'lucide-svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
-	import {
-		applyFileSelection,
-		fileSelectionGestureFromModifiers,
-		getSelectedContextMenuItems,
-		shouldOpenOnClick,
-		shouldOpenOnDoubleClick,
-		type FileSelectionGesture
-	} from '#lib/browse/fileInteractions.js';
+	import { useFileCollection, fileDisplayName } from '#lib/browse/fileCollection.svelte.js';
+	import type { FileContextAction } from '#lib/utils/fileContextMenu.js';
 	import type { FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
 
 	let {
@@ -57,153 +46,21 @@
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
-		onContextMenuAction?: (action: string, items: FileInfo[]) => void;
+		onContextMenuAction?: (action: FileContextAction, items: FileInfo[]) => void;
 	} = $props();
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
-	let selectionAnchor: string | null = null;
-
-	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
-
-	function updateSelection(itemPath: string, gesture: FileSelectionGesture): void {
-		const result = applyFileSelection(
-			items.map((item) => item.path),
+	const collection = useFileCollection(
+		() => ({
+			items,
 			selectedPaths,
-			selectionAnchor,
-			itemPath,
-			gesture
-		);
-		selectionAnchor = result.anchorPath;
-		onSelectionChange?.(new SvelteSet(result.paths));
-	}
-
-	function handleItemClick(item: FileInfo, event: MouseEvent) {
-		updateSelection(item.path, fileSelectionGestureFromModifiers(event));
-		if (shouldOpenOnClick(fileOpenBehavior, event)) onItemClick?.(item);
-	}
-
-	function handleDoubleClick(item: FileInfo, event: MouseEvent) {
-		if (shouldOpenOnDoubleClick(fileOpenBehavior, event)) onItemClick?.(item);
-	}
-
-	function handleSelectionCheckbox(item: FileInfo, selected: boolean): void {
-		updateSelection(item.path, { type: 'set', selected });
-	}
-
-	function handleKeyDown(item: FileInfo, event: KeyboardEvent) {
-		if (
-			event.target instanceof HTMLInputElement &&
-			(event.target.type !== 'checkbox' || event.key === ' ' || event.key === 'Enter')
-		)
-			return;
-		if ((event.key === 'a' || event.key === 'A') && (event.ctrlKey || event.metaKey)) {
-			event.preventDefault();
-			selectionAnchor = item.path;
-			onSelectionChange?.(new SvelteSet(items.map((visibleItem) => visibleItem.path)));
-			return;
-		}
-
-		const nextPath = moveFileFocus(event, 'grid');
-		if (nextPath) {
-			if (!event.ctrlKey && !event.metaKey) {
-				selectionAnchor ??= item.path;
-				updateSelection(nextPath, event.shiftKey ? { type: 'range' } : { type: 'replace' });
-			}
-			return;
-		}
-		if (event.altKey) return;
-
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			onItemClick?.(item);
-			return;
-		}
-
-		if (event.key === ' ') {
-			event.preventDefault();
-			updateSelection(item.path, fileSelectionGestureFromModifiers(event));
-			return;
-		}
-
-		// Match the shortcuts advertised in the context menu (F2, Del, Ctrl/Cmd+C/X/V)
-		const targetItems = selectedPaths.has(item.path)
-			? items.filter((selectedItem) => selectedPaths.has(selectedItem.path))
-			: [item];
-
-		if (event.key === 'Delete') {
-			event.preventDefault();
-			onContextMenuAction?.(event.shiftKey ? 'delete-permanently' : 'delete', targetItems);
-		} else if (event.key === 'F2') {
-			event.preventDefault();
-			onContextMenuAction?.('rename', targetItems);
-		} else if ((event.key === 'c' || event.key === 'C') && (event.ctrlKey || event.metaKey)) {
-			event.preventDefault();
-			onContextMenuAction?.('copy', targetItems);
-		} else if ((event.key === 'x' || event.key === 'X') && (event.ctrlKey || event.metaKey)) {
-			event.preventDefault();
-			onContextMenuAction?.('cut', targetItems);
-		} else if ((event.key === 'v' || event.key === 'V') && (event.ctrlKey || event.metaKey)) {
-			event.preventDefault();
-			onContextMenuAction?.('paste', targetItems);
-		}
-	}
-
-	function handleContextMenu(item: FileInfo, event: MouseEvent) {
-		event.preventDefault();
-
-		const selectedItems = getSelectedContextMenuItems(items, selectedPaths, item);
-		if (!selectedPaths.has(item.path)) {
-			const newSelection = new SvelteSet<string>([item.path]);
-			selectionAnchor = item.path;
-			onSelectionChange?.(newSelection);
-		}
-
-		contextMenu = {
-			x: event.clientX,
-			y: event.clientY,
-			items: selectedItems
-		};
-	}
-
-	function handleBackgroundContextMenu(event: MouseEvent) {
-		const target = event.target instanceof HTMLElement ? event.target : null;
-		if (target?.closest('[data-file-item="true"]')) return;
-
-		event.preventDefault();
-		selectionAnchor = null;
-		onSelectionChange?.(new SvelteSet<string>());
-		contextMenu = {
-			x: event.clientX,
-			y: event.clientY,
-			items: []
-		};
-	}
-
-	function handleContextMenuClose() {
-		contextMenu = null;
-	}
-
-	function handleContextMenuSelect(action: string) {
-		if (contextMenu && onContextMenuAction) {
-			onContextMenuAction(action, contextMenu.items);
-		}
-		contextMenu = null;
-	}
-
-	function isSelected(path: string): boolean {
-		return selectedPaths.has(path);
-	}
-
-	function isCut(path: string): boolean {
-		return cutPaths.has(path);
-	}
-
-	function getDisplayName(item: FileInfo): string {
-		if (showFileExtensions || item.isDir) return item.name;
-
-		const dotIndex = item.name.lastIndexOf('.');
-		return dotIndex > 0 ? item.name.slice(0, dotIndex) : item.name;
-	}
+			fileOpenBehavior,
+			onItemClick,
+			onSelectionChange,
+			onContextMenuAction
+		}),
+		'grid'
+	);
 
 	const gridClass = 'grid grid-cols-[repeat(auto-fill,112px)] justify-start gap-3 p-3';
 	const compactGridClass = 'grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-2 p-2';
@@ -217,7 +74,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="relative h-full w-full overflow-auto bg-surface-primary"
-	oncontextmenu={handleBackgroundContextMenu}
+	oncontextmenu={(event) => collection.backgroundContextMenu(event, '[data-file-item="true"]')}
 >
 	{#if showSpinner.value}
 		<div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-primary/80">
@@ -239,39 +96,37 @@
 		>
 			{#each items as item (item.path)}
 				{@const IconComponent = getFileIcon(item.name, item.isDir)}
-				{@const displayName = getDisplayName(item)}
+				{@const displayName = fileDisplayName(item, showFileExtensions)}
 				{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
 				{@const sizeDescription = item.isDir ? '' : formatFileSize(item.size)}
 				{@const modifiedDescription = formatFileDate(item.modTime)}
 				{@const showThumbnail = supportsThumbnailFile(item)}
 				{@const detailText = item.isDir ? 'Folder' : sizeDescription}
 				<div
-					class="file-grid-item {tileClass} {isSelected(item.path) ? selectedClass : ''} {isCut(
-						item.path
-					)
-						? 'opacity-50'
-						: ''}"
+					class="file-grid-item {tileClass} {selectedPaths.has(item.path)
+						? selectedClass
+						: ''} {cutPaths.has(item.path) ? 'opacity-50' : ''}"
 					role="gridcell"
 					tabindex="0"
-					aria-selected={isSelected(item.path)}
+					aria-selected={selectedPaths.has(item.path)}
 					title={`${item.name}\n${typeDescription}${sizeDescription ? ` - ${sizeDescription}` : ''}\nModified ${modifiedDescription}`}
-					onclick={(e) => handleItemClick(item, e)}
+					onclick={(event) => collection.click(item, event)}
 					onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
 					onpointerleave={() => onFolderHover?.(null)}
-					ondblclick={(event) => handleDoubleClick(item, event)}
-					onkeydown={(e) => handleKeyDown(item, e)}
-					oncontextmenu={(e) => handleContextMenu(item, e)}
+					ondblclick={(event) => collection.doubleClick(item, event)}
+					onkeydown={(event) => collection.keydown(item, event)}
+					oncontextmenu={(event) => collection.itemContextMenu(item, event)}
 					data-file-item="true"
 					data-file-path={item.path}
 				>
 					<input
 						type="checkbox"
-						checked={isSelected(item.path)}
+						checked={selectedPaths.has(item.path)}
 						aria-label={`Select ${item.name}`}
 						class="absolute top-2 left-2 z-[1] h-4 w-4 cursor-pointer accent-accent"
 						onclick={(event) => event.stopPropagation()}
 						ondblclick={(event) => event.stopPropagation()}
-						onchange={(event) => handleSelectionCheckbox(item, event.currentTarget.checked)}
+						onchange={(event) => collection.check(item, event.currentTarget.checked)}
 					/>
 					<div class="{thumbnailClass} {compactMode ? 'h-11' : 'h-16'}">
 						{#if showThumbnail}
@@ -310,7 +165,8 @@
 	{/if}
 </div>
 
-{#if contextMenu}
+{#if collection.contextMenu}
+	{@const contextMenu = collection.contextMenu}
 	{#await import('#lib/components/FileContextMenu.svelte') then { default: FileContextMenu }}
 		<FileContextMenu
 			items={contextMenu.items}
@@ -319,11 +175,11 @@
 			{canCreate}
 			x={contextMenu.x}
 			y={contextMenu.y}
-			onSelect={handleContextMenuSelect}
-			onClose={handleContextMenuClose}
+			onSelect={collection.selectMenuAction}
+			onClose={collection.closeMenu}
 		/>
 	{:catch}
-		<LoadError label="file menu" onClose={handleContextMenuClose} />
+		<LoadError label="file menu" onClose={collection.closeMenu} />
 	{/await}
 {/if}
 

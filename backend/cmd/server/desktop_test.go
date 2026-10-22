@@ -105,10 +105,11 @@ func TestDesktopOpenLaunchesResolvedFile(t *testing.T) {
 	t.Setenv("DESKTOP_OPEN_CAPTURE", capture)
 	cfg := &model.ServerConfig{MountPoints: []model.MountPoint{{Name: "home", Path: dir}}}
 	routes := desktopRoutes(http.NotFoundHandler(), cfg)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/desktop/open?path=home/hello%20world.txt", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/desktop/open", strings.NewReader(`{"path":"home/hello world.txt"}`))
+	req.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	routes.ServeHTTP(response, req)
-	if response.Code != http.StatusNoContent {
+	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d", response.Code)
 	}
 	opened, err := os.ReadFile(capture)

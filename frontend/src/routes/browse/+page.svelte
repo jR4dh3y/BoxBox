@@ -15,6 +15,8 @@
 	import { useBrowseTabs } from '#lib/browse/tabs.svelte.js';
 	import { parseBrowseLocation, type BrowseLocationSnapshot } from '#lib/browse/location.svelte.js';
 	import { getBrowseShortcut } from '#lib/browse/paneShortcuts.js';
+	import { isTextEntryTarget } from '#lib/browse/fileShortcuts.js';
+	import type ToolbarComponent from '#lib/components/Toolbar.svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
 
@@ -27,6 +29,7 @@
 	let launchTabId = $state('');
 	let detailsOpen = $state(false);
 	let shortcutsOpen = $state(false);
+	let toolbarRef = $state<ReturnType<typeof ToolbarComponent>>();
 
 	const tabs = useBrowseTabs({
 		initialLocation: launchState.location,
@@ -44,9 +47,7 @@
 
 	function closeDetails(): void {
 		detailsOpen = false;
-		void tick().then(() =>
-			document.querySelector<HTMLButtonElement>('button[aria-label="Details"]')?.focus()
-		);
+		void tick().then(() => toolbarRef?.focusDetailsToggle());
 	}
 
 	afterNavigate(({ type }) => {
@@ -109,30 +110,6 @@
 		void tick().then(() => document.getElementById(`browse-pane-${paneId}`)?.focus());
 	}
 
-	function isEditableTarget(target: EventTarget | null): boolean {
-		return (
-			target instanceof HTMLElement &&
-			(target.isContentEditable ||
-				target.closest('input, textarea, select, [contenteditable="true"]') !== null)
-		);
-	}
-
-	function focusLocation(): void {
-		const input = document.querySelector<HTMLInputElement>('input[aria-label="Location"]');
-		if (input) {
-			input.focus();
-			input.select();
-			return;
-		}
-		const pathBar = document.querySelector<HTMLElement>('[aria-label="Edit location"]');
-		pathBar?.click();
-		void tick().then(() => {
-			const editor = document.querySelector<HTMLInputElement>('input[aria-label="Location"]');
-			editor?.focus();
-			editor?.select();
-		});
-	}
-
 	function handleKeydown(event: KeyboardEvent): void {
 		if (event.defaultPrevented || shortcutsOpen) return;
 		if (event.key === 'F1' && !activeRuntime?.hasOpenDialog) {
@@ -151,7 +128,7 @@
 			metaKey: event.metaKey,
 			shiftKey: event.shiftKey,
 			altKey: event.altKey,
-			editable: isEditableTarget(event.target)
+			editable: isTextEntryTarget(event.target)
 		});
 		if (!shortcut) return;
 		event.preventDefault();
@@ -191,13 +168,10 @@
 				activeRuntime?.data.reload();
 				break;
 			case 'toggle-hidden':
-				settingsStore.set({
-					...settingsStore.current,
-					showHiddenFiles: !settingsStore.current.showHiddenFiles
-				});
+				settingsStore.toggleHiddenFiles();
 				break;
 			case 'focus-location':
-				focusLocation();
+				toolbarRef?.focusLocation();
 				break;
 		}
 	}
@@ -220,6 +194,7 @@
 	<div class="flex min-w-0 flex-1 flex-col">
 		{#await toolbar then { default: Toolbar }}
 			<Toolbar
+				bind:this={toolbarRef}
 				pathSegments={activeLocation?.segments ?? []}
 				canGoBack={activeLocation?.canGoBack ?? false}
 				canGoForward={activeLocation?.canGoForward ?? false}
@@ -265,6 +240,7 @@
 							onRuntimeChange={(runtime) => setPaneRuntime(pane.id, runtime)}
 							onInitialSelectHandled={handleInitialSelectHandled}
 							onShowDetails={() => (detailsOpen = true)}
+							onFocusSearch={() => toolbarRef?.focusSearch()}
 						/>
 					{/each}
 				{:catch}

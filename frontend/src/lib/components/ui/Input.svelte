@@ -8,6 +8,7 @@
 		id?: string;
 		name?: string;
 		autocomplete?: AutoFill;
+		'aria-label'?: string;
 		oninput?: (e: Event) => void;
 		onkeydown?: (e: KeyboardEvent) => void;
 	}
@@ -21,6 +22,7 @@
 		id,
 		name,
 		autocomplete,
+		'aria-label': ariaLabel,
 		oninput,
 		onkeydown
 	}: Props = $props();
@@ -35,6 +37,7 @@
 	{id}
 	{name}
 	{autocomplete}
+	aria-label={ariaLabel}
 	{oninput}
 	{onkeydown}
 	class="w-full rounded border border-border-primary bg-surface-secondary px-3 py-2 text-sm text-text-primary transition-colors duration-150 placeholder:text-text-muted focus:border-border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"

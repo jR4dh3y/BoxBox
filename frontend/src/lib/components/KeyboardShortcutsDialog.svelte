@@ -35,32 +35,39 @@
 				['F3', 'Toggle split pane'],
 				['F1', 'Show keyboard shortcuts']
 			]
-		}
+		},
+		...(isLocalDesktop()
+			? [
+					{
+						title: 'Desktop',
+						shortcuts: [
+							['Ctrl/Cmd + Z', 'Undo the last rename or move to Trash'],
+							['Ctrl + Shift + O', 'Saved connections']
+						]
+					}
+				]
+			: [])
 	];
 </script>
 
-<Modal open={true} title="Keyboard shortcuts" size="lg" {onclose}>
-	<p class="mb-4 text-sm text-text-secondary">
-		File shortcuts act on the active pane. Typing fields keep their normal editing keys. Your
-		browser or desktop may reserve some shortcuts.
-	</p>
-	<div class="grid gap-6 sm:grid-cols-2">
+<Modal open title="Keyboard shortcuts" size="lg" {onclose}>
+	<div class="grid gap-6 text-xs sm:grid-cols-2">
 		{#each groups as group (group.title)}
-			<section>
-				<h3 class="mb-2 text-sm font-medium text-text-primary">{group.title}</h3>
-				<dl class="space-y-3">
+			<table class="w-full border-collapse self-start">
+				<caption class="pb-1.5 text-left text-[13px] font-medium text-text-primary"
+					>{group.title}</caption
+				>
+				<tbody>
 					{#each group.shortcuts as [keys, description] (keys)}
-						<div>
-							<dt class="text-xs font-medium text-text-primary"><kbd>{keys}</kbd></dt>
-							<dd class="mt-0.5 text-xs text-text-secondary">{description}</dd>
-						</div>
+						<tr class="border-t border-border-secondary">
+							<th scope="row" class="py-1.5 pr-3 text-left font-normal whitespace-nowrap"
+								><kbd class="font-sans text-text-primary">{keys}</kbd></th
+							>
+							<td class="py-1.5 text-text-secondary">{description}</td>
+						</tr>
 					{/each}
-				</dl>
-			</section>
+				</tbody>
+			</table>
 		{/each}
 	</div>
-	{#if isLocalDesktop()}<p class="mt-5 text-xs text-text-secondary">
-			Ctrl/Cmd + Z undoes the last rename or move to Trash. Ctrl + Shift + O opens saved
-			connections.
-		</p>{/if}
 </Modal>

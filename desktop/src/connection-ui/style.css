@@ -90,13 +90,6 @@ button:disabled {
   letter-spacing: -0.025em;
 }
 
-.subtitle {
-  max-width: 65ch;
-  margin: 7px 0 0;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-
 .header-actions,
 .form-actions,
 .connection-actions {
@@ -333,20 +326,11 @@ button:disabled {
   padding: 28px 4px 8px;
 }
 
-.empty-state h3 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.empty-state p,
+.empty-state,
 .loading-row {
+  margin: 0;
   color: var(--text-secondary);
   line-height: 1.5;
-}
-
-.empty-state p {
-  margin: 7px 0 16px;
 }
 
 @media (max-width: 680px) {

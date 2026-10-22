@@ -10,6 +10,7 @@ import {
 	type FileInfo
 } from '#lib/api/files.js';
 import { createDeleteJob } from '#lib/api/jobs.js';
+import type { FileContextAction } from '#lib/utils/fileContextMenu.js';
 import { useBrowsePaste } from './paste.svelte';
 import {
 	beginBrowseClipboardPublication,
@@ -148,7 +149,6 @@ export function useBrowseActions(
 			toastStore.success(`${file.name} renamed to ${newName}`);
 			data.refetchDirectory();
 		} catch (error) {
-			console.error('Rename failed:', error);
 			toastStore.error(errorMessage(error, 'Rename failed'));
 		} finally {
 			operation = null;
@@ -163,14 +163,15 @@ export function useBrowseActions(
 		const failed: FileInfo[] = [];
 		let lastError: unknown;
 		try {
+			const trash = permanent
+				? null
+				: await Promise.all([import('#lib/api/desktopTrash.js'), import('./undo.svelte')]);
 			const trashed: string[] = [];
 			for (const item of items) {
 				try {
-					if (!permanent) {
-						const { trashDesktopFile } = await import('#lib/api/desktopTrash.js');
-						const { desktopUndo } = await import('./undo.svelte');
-						const result = await trashDesktopFile(item.path);
-						trashed.push(result.item.id);
+					if (trash) {
+						const [{ trashDesktopFile }, { desktopUndo }] = trash;
+						trashed.push((await trashDesktopFile(item.path)).id);
 						desktopUndo.rememberTrash([...trashed]);
 					} else if (item.isDir) {
 						jobsStore.upsertJob(await createDeleteJob(item.path));
@@ -222,6 +223,27 @@ export function useBrowseActions(
 		const completed = await deleteItems(dialog.items, dialog.mode === 'permanent');
 		if (completed && deleteDialog.open && deleteDialog.items === dialog.items) {
 			deleteDialog = { open: false, items: [] };
+		}
+	}
+
+	async function setClipboard(operation: 'copy' | 'cut', items: FileInfo[]) {
+		clipboardStore[operation](items);
+		const selectionId = beginBrowseClipboardPublication();
+		if (!isLocalDesktop()) return;
+		try {
+			await publishBrowseClipboardInOrder(async () => {
+				const { setDesktopClipboard } = await import('#lib/api/desktopClipboard.js');
+				await setDesktopClipboard(
+					items.map((item) => item.path),
+					operation
+				);
+			});
+			finishBrowseClipboardPublication(selectionId, 'published');
+		} catch (error) {
+			finishBrowseClipboardPublication(selectionId, 'failed');
+			toastStore.error(
+				errorMessage(error, 'Native clipboard unavailable; BoxBox can still paste within the app')
+			);
 		}
 	}
 
@@ -309,7 +331,7 @@ export function useBrowseActions(
 			data.refresh();
 		},
 
-		async handleContextMenuAction(action: string, items: FileInfo[]) {
+		async handleContextMenuAction(action: FileContextAction, items: FileInfo[]) {
 			const [only] = items.length === 1 ? items : [];
 			switch (action) {
 				case 'open-with':
@@ -331,50 +353,10 @@ export function useBrowseActions(
 				case 'new-folder':
 					openCreate('directory');
 					break;
-				case 'copy': {
-					clipboardStore.copy(items);
-					const selectionId = beginBrowseClipboardPublication();
-					if (isLocalDesktop()) {
-						try {
-							await publishBrowseClipboardInOrder(async () => {
-								const { writeBrowseClipboard } = await import('./desktopClipboard');
-								await writeBrowseClipboard(items, 'copy');
-							});
-							finishBrowseClipboardPublication(selectionId, 'published');
-						} catch (error) {
-							finishBrowseClipboardPublication(selectionId, 'failed');
-							toastStore.error(
-								errorMessage(
-									error,
-									'Native clipboard unavailable; copying within BoxBox still works'
-								)
-							);
-						}
-					}
+				case 'copy':
+				case 'cut':
+					await setClipboard(action, items);
 					break;
-				}
-				case 'cut': {
-					clipboardStore.cut(items);
-					const selectionId = beginBrowseClipboardPublication();
-					if (isLocalDesktop()) {
-						try {
-							await publishBrowseClipboardInOrder(async () => {
-								const { writeBrowseClipboard } = await import('./desktopClipboard');
-								await writeBrowseClipboard(items, 'cut');
-							});
-							finishBrowseClipboardPublication(selectionId, 'published');
-						} catch (error) {
-							finishBrowseClipboardPublication(selectionId, 'failed');
-							toastStore.error(
-								errorMessage(
-									error,
-									'Native clipboard unavailable; moving within BoxBox still works'
-								)
-							);
-						}
-					}
-					break;
-				}
 				case 'paste':
 					await paste.paste();
 					break;

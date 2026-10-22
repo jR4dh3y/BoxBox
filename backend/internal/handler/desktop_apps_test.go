@@ -24,6 +24,11 @@ type desktopAppsTestService struct {
 	terminalError error
 }
 
+func (s *desktopAppsTestService) Open(_ context.Context, path string) error {
+	s.openPath = path
+	return nil
+}
+
 func (s *desktopAppsTestService) ListApps(_ context.Context, path string) (service.DesktopAppsResult, error) {
 	s.listPath = path
 	return s.listResult, s.listError

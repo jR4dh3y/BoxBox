@@ -1,7 +1,4 @@
 <script lang="ts">
-	/**
-	 * Toolbar component - navigation buttons, path bar, search, and actions
-	 */
 	import {
 		ChevronLeft,
 		ChevronRight,
@@ -66,6 +63,22 @@
 		onShortcuts
 	}: Props = $props();
 
+	let pathBar = $state<ReturnType<typeof EditablePathBar>>();
+	let searchBar = $state<ReturnType<typeof SearchBar>>();
+	let detailsToggle = $state<HTMLButtonElement>();
+
+	export function focusLocation(): void {
+		pathBar?.edit();
+	}
+
+	export function focusSearch(): void {
+		searchBar?.focus();
+	}
+
+	export function focusDetailsToggle(): void {
+		detailsToggle?.focus();
+	}
+
 	const navBtnClass =
 		'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed';
 </script>
@@ -92,11 +105,12 @@
 		</button>
 	</div>
 
-	<EditablePathBar {pathSegments} {onNavigate} {includeHiddenSuggestions} />
+	<EditablePathBar bind:this={pathBar} {pathSegments} {onNavigate} {includeHiddenSuggestions} />
 
 	{#if showSearch}
 		<div class="w-40 min-w-24 shrink lg:w-64">
 			<SearchBar
+				bind:this={searchBar}
 				value={searchValue}
 				onInput={onSearchInput}
 				onClear={onSearchClear}
@@ -144,6 +158,7 @@
 		{/if}
 		{#if onToggleDetails}
 			<button
+				bind:this={detailsToggle}
 				type="button"
 				class="inline-flex h-7 items-center gap-1.5 rounded px-2 text-xs transition-colors hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent {detailsOpen
 					? 'bg-selection text-text-primary'

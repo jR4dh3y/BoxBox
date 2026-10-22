@@ -39,9 +39,6 @@
 					}}
 				>
 					<span class="truncate">{title}</span>
-					{#if tab.panes.length > 1}
-						<span class="text-[10px] text-text-muted">2 panes</span>
-					{/if}
 				</button>
 				<button
 					type="button"

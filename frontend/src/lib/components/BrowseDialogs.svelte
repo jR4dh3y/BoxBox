@@ -58,21 +58,15 @@
 	onclose={onCloseCreate}
 	busy={operation === 'creating'}
 >
-	<div class="flex flex-col gap-4">
-		<p class="text-sm text-text-secondary">
-			Enter a name for the new {createDialog.type === 'file' ? 'file' : 'folder'}:
-		</p>
-		<Input
-			value={createDialog.name}
-			disabled={operation === 'creating'}
-			oninput={(event) => onCreateNameChange(inputValue(event))}
-			placeholder={createDialog.type === 'file' ? 'untitled.txt' : 'New Folder'}
-			onkeydown={(event) => event.key === 'Enter' && onCreateConfirm()}
-		/>
-	</div>
+	<Input
+		aria-label="Name"
+		value={createDialog.name}
+		disabled={operation === 'creating'}
+		oninput={(event) => onCreateNameChange(inputValue(event))}
+		placeholder={createDialog.type === 'file' ? 'untitled.txt' : 'New Folder'}
+		onkeydown={(event) => event.key === 'Enter' && onCreateConfirm()}
+	/>
 	{#snippet footer()}
-		<Button variant="secondary" onclick={onCloseCreate} disabled={operation !== null}>Cancel</Button
-		>
 		<Button variant="primary" onclick={onCreateConfirm} disabled={operation !== null}>
 			{operation === 'creating'
 				? 'Creating...'
@@ -87,19 +81,15 @@
 	onclose={onCloseRename}
 	busy={operation === 'renaming'}
 >
-	<div class="flex flex-col gap-4">
-		<p class="text-sm text-text-secondary">Enter a new name:</p>
-		<Input
-			value={renameDialog.newName}
-			disabled={operation === 'renaming'}
-			oninput={(event) => onRenameNameChange(inputValue(event))}
-			placeholder="New name"
-			onkeydown={(event) => event.key === 'Enter' && onRenameConfirm()}
-		/>
-	</div>
+	<Input
+		aria-label="New name"
+		value={renameDialog.newName}
+		disabled={operation === 'renaming'}
+		oninput={(event) => onRenameNameChange(inputValue(event))}
+		placeholder="New name"
+		onkeydown={(event) => event.key === 'Enter' && onRenameConfirm()}
+	/>
 	{#snippet footer()}
-		<Button variant="secondary" onclick={onCloseRename} disabled={operation !== null}>Cancel</Button
-		>
 		<Button variant="primary" onclick={onRenameConfirm} disabled={operation !== null}
 			>{operation === 'renaming' ? 'Renaming...' : 'Rename'}</Button
 		>
@@ -129,8 +119,6 @@
 		{/if}
 	</div>
 	{#snippet footer()}
-		<Button variant="secondary" onclick={onCloseDelete} disabled={operation !== null}>Cancel</Button
-		>
 		<Button variant="danger" onclick={onDeleteConfirm} disabled={operation !== null}
 			>{operation === 'deleting'
 				? 'Working...'

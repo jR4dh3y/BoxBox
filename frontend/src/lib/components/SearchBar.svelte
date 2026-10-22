@@ -30,6 +30,12 @@
 	}: Props = $props();
 
 	let inputValue = $state('');
+	let input = $state<HTMLInputElement>();
+
+	export function focus(): void {
+		input?.focus();
+		input?.select();
+	}
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
 	$effect(() => {
@@ -49,8 +55,8 @@
 	}
 
 	function handleInput(event: Event): void {
-		const target = event.target as HTMLInputElement;
-		inputValue = target.value;
+		if (!(event.currentTarget instanceof HTMLInputElement)) return;
+		inputValue = event.currentTarget.value;
 		if (debounceTimer) clearTimeout(debounceTimer);
 		debounceTimer = setTimeout(() => onInput?.(inputValue), debounceMs);
 	}
@@ -80,6 +86,7 @@
 		</div>
 
 		<input
+			bind:this={input}
 			type="search"
 			{placeholder}
 			value={inputValue}

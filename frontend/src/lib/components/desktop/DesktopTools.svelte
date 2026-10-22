@@ -16,12 +16,6 @@
 		void client.invalidateQueries({ queryKey: fileQueryKeys.roots() });
 		void client.invalidateQueries({ queryKey: fileQueryKeys.directories() });
 	}
-	function toggleHidden() {
-		settingsStore.set({
-			...settingsStore.current,
-			showHiddenFiles: !settingsStore.current.showHiddenFiles
-		});
-	}
 	async function terminal() {
 		try {
 			await openDesktopTerminal(path);
@@ -74,7 +68,7 @@
 	<button
 		type="button"
 		class={buttonClass}
-		onclick={toggleHidden}
+		onclick={() => settingsStore.toggleHiddenFiles()}
 		aria-pressed={settingsStore.current.showHiddenFiles}
 	>
 		{#if settingsStore.current.showHiddenFiles}<EyeOff size={14} />{:else}<Eye
