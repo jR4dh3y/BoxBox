@@ -55,6 +55,12 @@
 	const activeRuntime = $derived(activePane ? (paneRuntimes[activePane.id] ?? null) : null);
 	const settings = $derived(settingsStore.current);
 
+	function openInNewTab(path: string): void {
+		if (!activeLocation) return;
+		tabs.newTab({ ...activeLocation.snapshot, path, searchQuery: '' });
+		focusActivePane();
+	}
+
 	function closeDetails(): void {
 		detailsOpen = false;
 		void tick().then(() => toolbarRef?.focusDetailsToggle());

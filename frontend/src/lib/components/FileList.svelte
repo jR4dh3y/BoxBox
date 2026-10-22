@@ -359,6 +359,8 @@
 	const compactTdClass =
 		'h-[28px] px-3 py-0.5 align-middle border-b border-border-secondary text-text-primary';
 	const clippedCellClass = 'block overflow-hidden text-ellipsis whitespace-nowrap';
+	const selectionRevealClass =
+		'flex items-center justify-center group-hover/row:invisible group-has-[input:focus-visible]/row:invisible';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -482,15 +484,7 @@
 					>
 						<td id={`file-list-cell-${itemIndex}`} class={compactMode ? compactTdClass : tdClass}>
 							<div class="flex min-w-0 items-center gap-2">
-								<input
-									type="checkbox"
-									checked={selectedPaths.has(item.path)}
-									aria-label={`Select ${item.name}`}
-									class="h-4 w-4 shrink-0 cursor-pointer accent-accent"
-									onclick={(event) => event.stopPropagation()}
-									ondblclick={(event) => event.stopPropagation()}
-									onchange={(event) => collection.check(item, event.currentTarget.checked)}
-								/>
+								<!-- The checkbox takes the icon's place while the row is pointed at or focused. -->
 								<span
 									class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
 										? 'text-folder'

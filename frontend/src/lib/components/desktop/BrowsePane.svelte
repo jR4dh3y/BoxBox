@@ -24,23 +24,28 @@
 	interface Props {
 		pane: BrowsePaneState;
 		focused: boolean;
+		/** Marks the focused pane only when another pane sits beside it. */
+		outlined: boolean;
 		initialSelectPath?: string | null;
 		onFocus: () => void;
 		onRuntimeChange: (runtime: BrowsePaneRuntime | null) => void;
 		onInitialSelectHandled: (path: string) => void;
 		onShowDetails: () => void;
 		onFocusSearch: () => void;
+		onOpenInNewTab: (path: string) => void;
 	}
 
 	let {
 		pane,
 		focused,
+		outlined,
 		initialSelectPath = null,
 		onFocus,
 		onRuntimeChange,
 		onInitialSelectHandled,
 		onShowDetails,
-		onFocusSearch
+		onFocusSearch,
+		onOpenInNewTab
 	}: Props = $props();
 
 	// The keyed pane model is stable for this component's lifetime.
@@ -119,6 +124,10 @@
 	}
 
 	function contextAction(action: FileContextAction, items: FileInfo[]): void {
+		if (action === 'open-in-new-tab') {
+			if (items[0]?.isDir) onOpenInNewTab(items[0].path);
+			return;
+		}
 		if (action === 'properties') {
 			selection.set(new SvelteSet(items.map((item) => item.path)));
 			onShowDetails();
@@ -177,7 +186,7 @@
 
 <section
 	id="browse-pane-{pane.id}"
-	class="flex min-h-0 min-w-0 flex-1 flex-col outline-none {focused
+	class="flex min-h-0 min-w-0 flex-1 flex-col outline-none {outlined
 		? 'ring-1 ring-accent/40 ring-inset'
 		: ''}"
 	tabindex="-1"

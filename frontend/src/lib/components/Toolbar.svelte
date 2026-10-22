@@ -31,6 +31,8 @@
 		detailsOpen?: boolean;
 		onToggleDetails?: () => void;
 		onShortcuts?: () => void;
+		splitOpen?: boolean;
+		onToggleSplit?: () => void;
 	}
 
 	let {
@@ -54,7 +56,9 @@
 		includeHiddenSuggestions = false,
 		detailsOpen = false,
 		onToggleDetails,
-		onShortcuts
+		onShortcuts,
+		splitOpen = false,
+		onToggleSplit
 	}: Props = $props();
 
 	let addMenu = $state<{ x: number; y: number } | null>(null);
@@ -137,22 +141,32 @@
 				class={navBtnClass}
 				onclick={onShortcuts}
 				title="Keyboard shortcuts (F1)"
-				aria-label="Keyboard shortcuts"><span aria-hidden="true">?</span></button
+				aria-label="Keyboard shortcuts"><Keyboard size={16} /></button
 			>
+		{/if}
+		{#if onToggleSplit}
+			<button
+				type="button"
+				class={navBtnClass}
+				aria-label="Split view"
+				aria-pressed={splitOpen}
+				onclick={onToggleSplit}
+				title="Split view (F3)"
+			>
+				<Columns2 size={16} />
+			</button>
 		{/if}
 		{#if onToggleDetails}
 			<button
 				bind:this={detailsToggle}
 				type="button"
-				class="inline-flex h-7 items-center gap-1.5 rounded px-2 text-xs transition-colors hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent {detailsOpen
-					? 'bg-selection text-text-primary'
-					: 'text-text-secondary'}"
+				class={navBtnClass}
 				aria-label="Details"
 				aria-pressed={detailsOpen}
 				onclick={onToggleDetails}
-				title="Selection details"
+				title="Selection details (Alt+Enter)"
 			>
-				<PanelRight size={16} /><span class="hidden xl:inline">Details</span>
+				<PanelRight size={16} />
 			</button>
 		{/if}
 	</div>

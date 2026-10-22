@@ -9,12 +9,15 @@
 		width = 224,
 		height = 144,
 		alt = undefined,
+		fit = 'contain',
 		class: className = ''
 	}: {
 		file: FileInfo;
 		width?: number;
 		height?: number;
 		alt?: string;
+		/** `cover` crops to fill, for small square slots. */
+		fit?: 'contain' | 'cover';
 		class?: string;
 	} = $props();
 
@@ -62,7 +65,8 @@
 			loading="lazy"
 			decoding="async"
 			class={[
-				'absolute inset-0 h-full w-full object-contain',
+				'absolute inset-0 h-full w-full',
+				fit === 'cover' ? 'object-cover' : 'object-contain',
 				loadedKey === sourceKey ? 'opacity-100' : 'opacity-0'
 			]}
 			onload={handleLoad}
