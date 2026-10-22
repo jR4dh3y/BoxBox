@@ -11,6 +11,15 @@ export type InstanceRequest =
   | { readonly kind: "local"; readonly target: LaunchTarget }
   | { readonly kind: "remote"; readonly url: string };
 
+/** What a launch asks the running app to do. A remote URL wins over a local target. */
+export function launchRequest(
+  target: LaunchTarget | undefined,
+  remote: string | undefined,
+): InstanceRequest {
+  if (remote) return { kind: "remote", url: remoteURL(remote) };
+  return target ? { kind: "local", target } : { kind: "activate" };
+}
+
 export interface InstanceOwner {
   setRequestHandler(
     handler: (request: InstanceRequest) => void | Promise<void>,

@@ -3,8 +3,8 @@
 	import { RefreshCw } from 'lucide-svelte';
 	import { Button, Modal, Spinner } from '#lib/components/ui/index.js';
 	import { CONFIG } from '#lib/config.js';
-	import { DesktopVolumesController } from '#lib/api/desktopVolumesController.svelte.js';
 	import type { DesktopVolume, DesktopVolumeAction } from '#lib/api/desktopVolumes.js';
+	import { VolumesController } from '#lib/desktop/volumes.svelte.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { formatFileSize } from '#lib/utils/format.js';
 
@@ -16,11 +16,13 @@
 
 	let { onClose, onChanged, onNavigate }: Props = $props();
 
-	const controller = new DesktopVolumesController();
+	const controller = new VolumesController();
+	const { snapshot, action } = controller;
 	const showSpinner = createDelayedFlag(
-		() => controller.loadState.kind === 'loading',
+		() => snapshot.state.kind === 'loading',
 		CONFIG.ui.spinnerDelayMs
 	);
+	const volumes = $derived(snapshot.value?.volumes ?? []);
 
 	onMount(() => {
 		const request = new AbortController();
@@ -28,17 +30,8 @@
 		return () => request.abort();
 	});
 
-	const response = $derived(
-		controller.loadState.kind === 'ready' ? controller.loadState.response : null
-	);
-	const volumes = $derived(response?.volumes ?? []);
-	const running = $derived(
-		controller.actionState.kind === 'running' ? controller.actionState : null
-	);
-	const busy = $derived(controller.refreshing || running !== null);
-
-	function activate(volume: DesktopVolume, action: DesktopVolumeAction): void {
-		void controller.act(volume, action).then((changed) => {
+	function activate(volume: DesktopVolume, kind: DesktopVolumeAction): void {
+		void controller.act(volume, kind).then((changed) => {
 			if (changed) onChanged();
 		});
 	}
@@ -49,8 +42,8 @@
 		onClose();
 	}
 
-	function label(volume: DesktopVolume, action: DesktopVolumeAction, text: string): string {
-		return running?.volumeId === volume.id && running.action === action ? `${text}…` : text;
+	function label(volume: DesktopVolume, kind: DesktopVolumeAction, text: string): string {
+		return action.isRunning(volume.id, kind) ? `${text}…` : text;
 	}
 
 	function space(volume: DesktopVolume): string {
@@ -61,35 +54,35 @@
 
 <Modal open title="Removable drives" size="lg" onclose={onClose}>
 	{#snippet headerActions()}
-		<button
-			type="button"
-			class="rounded p-1 text-text-secondary transition-colors hover:text-text-primary disabled:opacity-40"
+		<Button
+			variant="ghost"
+			size="icon"
 			title="Refresh removable drives"
-			aria-label="Refresh removable drives"
-			disabled={busy}
+			disabled={controller.busy}
 			onclick={() => void controller.load()}
 		>
-			<RefreshCw size={16} class={controller.refreshing ? 'animate-spin' : ''} />
-		</button>
+			<RefreshCw size={16} class={snapshot.refreshing ? 'animate-spin' : ''} />
+			<span class="sr-only">Refresh removable drives</span>
+		</Button>
 	{/snippet}
 
-	<div class="flex flex-col gap-3 text-[13px]" aria-busy={busy}>
-		{#if controller.loadState.kind === 'loading'}
+	<div class="flex flex-col gap-3 text-[13px]" aria-busy={controller.busy}>
+		{#if snapshot.state.kind === 'loading'}
 			{#if showSpinner.value}
 				<div class="flex items-center gap-2 py-6 text-text-secondary" role="status">
 					<Spinner size="sm" />Looking for removable drives…
 				</div>
 			{/if}
-		{:else if controller.loadState.kind === 'failed'}
+		{:else if snapshot.state.kind === 'failed'}
 			<p class="m-0 flex items-center justify-between gap-3 text-danger" role="alert">
-				{controller.loadState.message}
+				{snapshot.state.message}
 				<Button variant="secondary" size="sm" onclick={() => void controller.load()}
 					>Try again</Button
 				>
 			</p>
-		{:else if response && !response.available}
+		{:else if snapshot.value && !snapshot.value.available}
 			<p class="m-0 text-text-secondary">
-				{response.reason ?? 'The GIO volume monitor or UDisks is not running.'}
+				{snapshot.value.reason ?? 'The GIO volume monitor or UDisks is not running.'}
 			</p>
 		{:else if volumes.length === 0}
 			<p class="m-0 py-6 text-center text-text-secondary">No removable drives connected</p>
@@ -125,7 +118,7 @@
 												<Button
 													variant="secondary"
 													size="sm"
-													disabled={busy}
+													disabled={controller.busy}
 													onclick={() => open(volume)}>Open</Button
 												>
 											{/if}
@@ -133,7 +126,7 @@
 												<Button
 													variant="secondary"
 													size="sm"
-													disabled={busy}
+													disabled={controller.busy}
 													onclick={() => activate(volume, 'unmount')}
 													>{label(volume, 'unmount', 'Unmount')}</Button
 												>
@@ -142,7 +135,7 @@
 												<Button
 													variant="secondary"
 													size="sm"
-													disabled={busy}
+													disabled={controller.busy}
 													onclick={() => activate(volume, 'eject')}
 													>{label(volume, 'eject', 'Eject')}</Button
 												>
@@ -151,7 +144,7 @@
 											<Button
 												variant="primary"
 												size="sm"
-												disabled={busy}
+												disabled={controller.busy}
 												onclick={() => activate(volume, 'mount')}
 												>{label(volume, 'mount', 'Mount')}</Button
 											>
@@ -165,13 +158,10 @@
 			</div>
 		{/if}
 
-		{#if controller.notice}
-			<p
-				class="m-0 {controller.notice.kind === 'error' ? 'text-danger' : 'text-success'}"
-				role={controller.notice.kind === 'error' ? 'alert' : 'status'}
-			>
-				{controller.notice.message}
-			</p>
+		{#if controller.error}
+			<p class="m-0 text-danger" role="alert">{controller.error}</p>
+		{:else if controller.success}
+			<p class="m-0 text-success" role="status">{controller.success}</p>
 		{/if}
 	</div>
 </Modal>
