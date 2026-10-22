@@ -8,6 +8,7 @@ import { browserViolations, median, type BrowserMetrics } from './gates';
 import { baseArgument, repo, results, run, withBaseline } from './common';
 import { createDirectoryFixture, startServer } from './server';
 import { verifyNavigation } from './navigation';
+import { verifyPasteLoadRace } from './paste-load-race';
 import { verifyLazyLoadErrors } from './lazy-load-errors';
 
 const profiles = [
@@ -217,6 +218,15 @@ async function benchmark(base?: string, sha?: string) {
 		await loggedOut(browser, head.url);
 		await verifyLazyLoadErrors(browser, head.url, head.credentials);
 		await verifyNavigation(browser, head.url, head.credentials, fixture.mount);
+		const writable = await startServer(
+			join(repo, 'dist/boxbox'),
+			fixture.root,
+			fixture.mount,
+			'paste-race',
+			false
+		);
+		servers.push(writable);
+		await verifyPasteLoadRace(browser, writable.url, writable.credentials, fixture.mount);
 	} finally {
 		writeFileSync(
 			join(results, 'browser.json'),

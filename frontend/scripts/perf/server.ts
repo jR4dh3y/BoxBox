@@ -29,7 +29,13 @@ export function createDirectoryFixture() {
 	return { root, mount, dispose: () => rmSync(root, { recursive: true, force: true }) };
 }
 
-export async function startServer(binary: string, root: string, mount: string, label: string) {
+export async function startServer(
+	binary: string,
+	root: string,
+	mount: string,
+	label: string,
+	readOnly = true
+) {
 	const port = await availablePort();
 	const config = join(root, `${label}.yaml`);
 	writeFileSync(
@@ -42,7 +48,7 @@ export async function startServer(binary: string, root: string, mount: string, l
 			'mount_points:',
 			'  - name: "perf"',
 			`    path: ${JSON.stringify(mount)}`,
-			'    read_only: true'
+			`    read_only: ${readOnly}`
 		].join('\n'),
 		{ mode: 0o600 }
 	);

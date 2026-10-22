@@ -8,9 +8,9 @@
 	import type { SortField, SortDir } from '#lib/types/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
 	import { getFileTypeDescription, getFileIcon, getPreviewType } from '#lib/utils/fileTypes.js';
-	import { getFileContextMenuItems } from '#lib/utils/fileContextMenu.js';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { Spinner, ContextMenu } from '#lib/components/ui/index.js';
+	import Spinner from '#lib/components/ui/Spinner.svelte';
+	import LoadError from '#lib/components/LoadError.svelte';
 	import { FolderOpen } from 'lucide-svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
@@ -398,18 +398,20 @@
 
 <!-- Context Menu -->
 {#if contextMenu}
-	<ContextMenu
-		items={getFileContextMenuItems({
-			items: contextMenu.items,
-			canPaste,
-			favoritePaths,
-			canCreate
-		})}
-		x={contextMenu.x}
-		y={contextMenu.y}
-		onSelect={handleContextMenuSelect}
-		onClose={handleContextMenuClose}
-	/>
+	{#await import('#lib/components/FileContextMenu.svelte') then { default: FileContextMenu }}
+		<FileContextMenu
+			items={contextMenu.items}
+			{canPaste}
+			{favoritePaths}
+			{canCreate}
+			x={contextMenu.x}
+			y={contextMenu.y}
+			onSelect={handleContextMenuSelect}
+			onClose={handleContextMenuClose}
+		/>
+	{:catch}
+		<LoadError label="file menu" onClose={handleContextMenuClose} />
+	{/await}
 {/if}
 
 <style>
