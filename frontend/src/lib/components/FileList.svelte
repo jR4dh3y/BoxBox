@@ -83,6 +83,8 @@
 	const thSortedClass = 'text-accent';
 	const tdClass = 'h-8 px-3 py-1.5 align-middle border-b border-border-secondary text-text-primary';
 	const clippedCellClass = 'block overflow-hidden text-ellipsis whitespace-nowrap';
+	const selectionRevealClass =
+		'flex items-center justify-center group-hover/row:invisible group-has-[input:focus-visible]/row:invisible';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -186,11 +188,11 @@
 					{@const modifiedDescription = formatFileDate(item.modTime)}
 					{@const hasThumbnail = supportsThumbnailFile(item)}
 					<tr
-						class="file-list-row cursor-default transition-colors duration-50 hover:bg-surface-secondary focus:bg-selection focus:outline-none {selectedPaths.has(
+						class="file-list-row group/row cursor-default transition-colors duration-50 focus:bg-selection focus:outline-none {selectedPaths.has(
 							item.path
 						)
 							? 'bg-selection hover:bg-selection-hover'
-							: ''} {cutPaths.has(item.path) ? 'opacity-50' : ''}"
+							: 'hover:bg-surface-secondary'} {cutPaths.has(item.path) ? 'opacity-50' : ''}"
 						onclick={(event) => collection.click(item, event)}
 						onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
 						onpointerleave={() => onFolderHover?.(null)}
@@ -204,25 +206,30 @@
 					>
 						<td class={tdClass}>
 							<div class="flex min-w-0 items-center gap-2">
-								<input
-									type="checkbox"
-									checked={selectedPaths.has(item.path)}
-									aria-label={`Select ${item.name}`}
-									class="h-4 w-4 shrink-0 cursor-pointer accent-accent"
-									onclick={(event) => event.stopPropagation()}
-									ondblclick={(event) => event.stopPropagation()}
-									onchange={(event) => collection.check(item, event.currentTarget.checked)}
-								/>
+								<!-- The checkbox takes the icon's place while the row is pointed at or focused. -->
 								<span
-									class="flex h-7 w-12 shrink-0 items-center justify-center overflow-hidden rounded {item.isDir
+									class="relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
 										? 'text-folder'
 										: 'text-text-secondary'}"
 								>
-									{#if hasThumbnail}
-										<FileThumbnail file={item} width={224} height={96} />
-									{:else}
-										<IconComponent size={16} />
-									{/if}
+									<span class="{selectionRevealClass} pointer-coarse:invisible">
+										{#if hasThumbnail}
+											<span class="block h-5 w-5 overflow-hidden rounded-sm">
+												<FileThumbnail file={item} alt="" fit="cover" class="h-full" />
+											</span>
+										{:else}
+											<IconComponent size={16} />
+										{/if}
+									</span>
+									<input
+										type="checkbox"
+										checked={selectedPaths.has(item.path)}
+										aria-label={`Select ${item.name}`}
+										class="peer absolute inset-0.5 m-0 cursor-pointer accent-accent opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+										onclick={(event) => event.stopPropagation()}
+										ondblclick={(event) => event.stopPropagation()}
+										onchange={(event) => collection.check(item, event.currentTarget.checked)}
+									/>
 								</span>
 								<span
 									class="{clippedCellClass} min-w-0 flex-1 {item.isDir ? 'text-folder' : ''}"

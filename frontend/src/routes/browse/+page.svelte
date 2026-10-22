@@ -5,7 +5,6 @@
 	import { page } from '$app/state';
 	import { tick, untrack } from 'svelte';
 	import Sidebar from '#lib/components/Sidebar.svelte';
-	import BrowseTabs from '#lib/components/desktop/BrowseTabs.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import Toast from '#lib/components/ui/Toast.svelte';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
@@ -19,6 +18,7 @@
 	import type ToolbarComponent from '#lib/components/Toolbar.svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
 
 	const browsePane = import('#lib/components/desktop/BrowsePane.svelte');
 	const toolbar = import('#lib/components/Toolbar.svelte');
@@ -44,6 +44,12 @@
 	const activeLocation = $derived(activePane?.location);
 	const activeRuntime = $derived(activePane ? (paneRuntimes[activePane.id] ?? null) : null);
 	const settings = $derived(settingsStore.current);
+
+	function openInNewTab(path: string): void {
+		if (!activeLocation) return;
+		tabs.newTab({ ...activeLocation.snapshot, path, searchQuery: '' });
+		focusActivePane();
+	}
 
 	function closeDetails(): void {
 		detailsOpen = false;
@@ -217,12 +223,23 @@
 				{detailsOpen}
 				onToggleDetails={() => (detailsOpen = !detailsOpen)}
 				onShortcuts={() => (shortcutsOpen = true)}
+				splitOpen={tabs.hasSplit}
+				onToggleSplit={() => {
+					tabs.toggleSplit();
+					focusActivePane();
+				}}
 			/>
 		{:catch}
 			<LoadError label="file toolbar" />
 		{/await}
 
-		<BrowseTabs controller={tabs} onTabChange={focusActivePane} />
+		{#if tabs.tabs.length > 1}
+			{#await import('#lib/components/desktop/BrowseTabs.svelte') then { default: BrowseTabs }}
+				<BrowseTabs controller={tabs} onTabChange={focusActivePane} />
+			{:catch}
+				<LoadError label="tabs" />
+			{/await}
+		{/if}
 
 		<div class="relative flex min-h-0 flex-1">
 			<div class="flex min-h-0 min-w-0 flex-1 divide-x divide-border-secondary">
@@ -231,6 +248,7 @@
 						<BrowsePane
 							{pane}
 							focused={pane.id === activePane?.id}
+							outlined={tabs.hasSplit && pane.id === activePane?.id}
 							initialSelectPath={pendingSelectPath &&
 							tabs.activeTabId === launchTabId &&
 							pane.id === activePane?.id
@@ -241,6 +259,7 @@
 							onInitialSelectHandled={handleInitialSelectHandled}
 							onShowDetails={() => (detailsOpen = true)}
 							onFocusSearch={() => toolbarRef?.focusSearch()}
+							onOpenInNewTab={openInNewTab}
 						/>
 					{/each}
 				{:catch}
@@ -273,6 +292,12 @@
 {/if}
 
 <Toast />
+
+{#if isLocalDesktop()}
+	{#await import('#lib/components/desktop/DesktopPanels.svelte') then { default: DesktopPanels }}
+		<DesktopPanels onNavigate={(path) => activeLocation?.navigate(path)} />
+	{/await}
+{/if}
 
 {#if shortcutsOpen}
 	{#await import('#lib/components/KeyboardShortcutsDialog.svelte') then { default: KeyboardShortcutsDialog }}

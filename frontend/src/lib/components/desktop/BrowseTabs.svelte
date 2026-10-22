@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Plus, X } from 'lucide-svelte';
 	import type { BrowseTabState, BrowseTabsController } from '#lib/browse/tabs.svelte.js';
 
 	interface Props {
@@ -18,7 +19,7 @@
 </script>
 
 <nav
-	class="flex h-9 shrink-0 items-center gap-2 border-b border-border-secondary bg-surface-primary px-2"
+	class="flex h-8 shrink-0 items-center gap-1 border-b border-border-secondary bg-surface-primary px-2"
 	aria-label="Browse tabs"
 >
 	<div class="flex min-w-0 items-center gap-1 overflow-hidden">
@@ -42,16 +43,17 @@
 				</button>
 				<button
 					type="button"
-					class="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-sm text-text-muted hover:bg-surface-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+					class="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-muted opacity-0 group-hover:opacity-100 hover:bg-surface-tertiary hover:text-text-primary focus-visible:opacity-100 {active
+						? 'opacity-100'
+						: ''}"
 					aria-label={`Close ${title} tab`}
-					title="Close tab"
-					disabled={controller.tabs.length === 1}
+					title="Close tab (Ctrl+W)"
 					onclick={() => {
 						controller.closeTab(tab.id);
 						onTabChange?.();
 					}}
 				>
-					×
+					<X size={12} />
 				</button>
 			</div>
 		{/each}
@@ -59,7 +61,7 @@
 
 	<button
 		type="button"
-		class="flex h-7 w-7 shrink-0 items-center justify-center rounded text-base text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
+		class="flex h-7 w-7 shrink-0 items-center justify-center rounded text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
 		aria-label="New tab"
 		title="New tab (Ctrl+T)"
 		onclick={() => {
@@ -67,21 +69,6 @@
 			onTabChange?.();
 		}}
 	>
-		+
+		<Plus size={14} />
 	</button>
-
-	<div class="ml-auto shrink-0">
-		<button
-			type="button"
-			class="h-7 rounded px-2 text-xs text-text-secondary hover:bg-surface-secondary hover:text-text-primary aria-pressed:bg-surface-elevated aria-pressed:text-text-primary"
-			aria-pressed={controller.hasSplit}
-			title="Toggle split pane (F3)"
-			onclick={() => {
-				controller.toggleSplit();
-				onTabChange?.();
-			}}
-		>
-			{controller.hasSplit ? 'Unsplit' : 'Split'}
-		</button>
-	</div>
 </nav>

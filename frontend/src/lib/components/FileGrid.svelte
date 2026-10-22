@@ -65,8 +65,9 @@
 	const gridClass = 'grid grid-cols-[repeat(auto-fill,112px)] justify-start gap-3 p-3';
 	const compactGridClass = 'grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-2 p-2';
 	const tileClass =
-		'group relative flex aspect-[1/1.15] min-w-0 cursor-default flex-col rounded border border-transparent bg-transparent p-2 text-left outline-none transition-colors duration-100 hover:bg-surface-secondary focus:border-border-focus focus:bg-surface-secondary';
+		'group relative flex aspect-[1/1.15] min-w-0 cursor-default flex-col rounded border border-transparent bg-transparent p-2 text-left outline-none transition-colors duration-100 focus:border-border-focus';
 	const selectedClass = 'border-accent/70 bg-selection hover:bg-selection-hover';
+	const unselectedClass = 'hover:bg-surface-secondary focus:bg-surface-secondary';
 	const thumbnailClass =
 		'flex shrink-0 items-center justify-center overflow-hidden rounded border border-border-primary bg-surface-primary';
 </script>
@@ -101,11 +102,11 @@
 				{@const sizeDescription = item.isDir ? '' : formatFileSize(item.size)}
 				{@const modifiedDescription = formatFileDate(item.modTime)}
 				{@const showThumbnail = supportsThumbnailFile(item)}
-				{@const detailText = item.isDir ? 'Folder' : sizeDescription}
+				{@const detailText = item.isDir ? '' : sizeDescription}
 				<div
-					class="file-grid-item {tileClass} {selectedPaths.has(item.path)
+					class="file-grid-item group/tile {tileClass} {selectedPaths.has(item.path)
 						? selectedClass
-						: ''} {cutPaths.has(item.path) ? 'opacity-50' : ''}"
+						: unselectedClass} {cutPaths.has(item.path) ? 'opacity-50' : ''}"
 					role="gridcell"
 					tabindex="0"
 					aria-selected={selectedPaths.has(item.path)}
@@ -123,7 +124,11 @@
 						type="checkbox"
 						checked={selectedPaths.has(item.path)}
 						aria-label={`Select ${item.name}`}
-						class="absolute top-2 left-2 z-[1] h-4 w-4 cursor-pointer accent-accent"
+						class="absolute top-2 left-2 z-[1] h-4 w-4 cursor-pointer accent-accent {selectedPaths.has(
+							item.path
+						)
+							? ''
+							: 'opacity-0 group-hover/tile:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100'}"
 						onclick={(event) => event.stopPropagation()}
 						ondblclick={(event) => event.stopPropagation()}
 						onchange={(event) => collection.check(item, event.currentTarget.checked)}

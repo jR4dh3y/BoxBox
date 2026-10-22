@@ -15,10 +15,12 @@ import {
 	PinOff,
 	Share2,
 	AppWindow,
+	PanelTop,
 	Terminal
 } from 'lucide-svelte';
 
 export type FileContextAction =
+	| 'open-in-new-tab'
 	| 'new-file'
 	| 'new-folder'
 	| 'copy'
@@ -86,17 +88,13 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): FileCo
 		return menu;
 	}
 
-	if (desktop) {
-		menu.push(
-			{ id: 'open-with', label: 'Open With…', icon: AppWindow, disabled: !singleFile },
-			{
-				id: 'open-terminal',
-				label: 'Open Terminal Here',
-				icon: Terminal,
-				disabled: !singleFolder
-			},
-			'separator'
-		);
+	// Only actions that apply to this selection; a greyed-out entry never becomes usable here.
+	if (singleFolder) {
+		menu.push({ id: 'open-in-new-tab', label: 'Open in New Tab', icon: PanelTop });
+		if (desktop) menu.push({ id: 'open-terminal', label: 'Open Terminal Here', icon: Terminal });
+		menu.push('separator');
+	} else if (desktop && singleFile) {
+		menu.push({ id: 'open-with', label: 'Open With…', icon: AppWindow }, 'separator');
 	}
 	menu.push(
 		{ id: 'copy', label: 'Copy', icon: Copy, shortcut: 'Ctrl+C' },

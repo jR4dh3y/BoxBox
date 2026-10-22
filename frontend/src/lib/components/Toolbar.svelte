@@ -7,11 +7,12 @@
 		RefreshCw,
 		Settings,
 		Upload,
-		PanelRight
+		PanelRight,
+		Columns2,
+		Keyboard
 	} from 'lucide-svelte';
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
 	import SearchBar from '#lib/components/SearchBar.svelte';
-	import { isLocalDesktop } from '#lib/api/desktop.js';
 
 	interface Props {
 		pathSegments?: string[];
@@ -36,6 +37,8 @@
 		detailsOpen?: boolean;
 		onToggleDetails?: () => void;
 		onShortcuts?: () => void;
+		splitOpen?: boolean;
+		onToggleSplit?: () => void;
 	}
 
 	let {
@@ -60,7 +63,9 @@
 		includeHiddenSuggestions = false,
 		detailsOpen = false,
 		onToggleDetails,
-		onShortcuts
+		onShortcuts,
+		splitOpen = false,
+		onToggleSplit
 	}: Props = $props();
 
 	let pathBar = $state<ReturnType<typeof EditablePathBar>>();
@@ -80,7 +85,7 @@
 	}
 
 	const navBtnClass =
-		'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed';
+		'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed aria-pressed:bg-selection aria-pressed:text-text-primary';
 </script>
 
 <div
@@ -153,29 +158,33 @@
 				class={navBtnClass}
 				onclick={onShortcuts}
 				title="Keyboard shortcuts (F1)"
-				aria-label="Keyboard shortcuts"><span aria-hidden="true">?</span></button
+				aria-label="Keyboard shortcuts"><Keyboard size={16} /></button
 			>
+		{/if}
+		{#if onToggleSplit}
+			<button
+				type="button"
+				class={navBtnClass}
+				aria-label="Split view"
+				aria-pressed={splitOpen}
+				onclick={onToggleSplit}
+				title="Split view (F3)"
+			>
+				<Columns2 size={16} />
+			</button>
 		{/if}
 		{#if onToggleDetails}
 			<button
 				bind:this={detailsToggle}
 				type="button"
-				class="inline-flex h-7 items-center gap-1.5 rounded px-2 text-xs transition-colors hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent {detailsOpen
-					? 'bg-selection text-text-primary'
-					: 'text-text-secondary'}"
+				class={navBtnClass}
 				aria-label="Details"
 				aria-pressed={detailsOpen}
 				onclick={onToggleDetails}
-				title="Selection details"
+				title="Selection details (Alt+Enter)"
 			>
-				<PanelRight size={16} /><span class="hidden xl:inline">Details</span>
+				<PanelRight size={16} />
 			</button>
 		{/if}
 	</div>
 </div>
-
-{#if isLocalDesktop()}
-	{#await import('#lib/components/desktop/DesktopTools.svelte') then { default: DesktopTools }}
-		<DesktopTools path={pathSegments.join('/')} {onNavigate} />
-	{/await}
-{/if}

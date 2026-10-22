@@ -18,6 +18,7 @@
 	} from 'lucide-svelte';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import type { MountPoint } from '#lib/api/files.js';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
 
 	interface Props {
 		currentPath?: string;
@@ -48,11 +49,15 @@
 		roots
 			.filter((root) => root.kind === 'place')
 			.map((root) => ({
-				name: root.name,
+				// Places are the well-known home folders, so they read as titles.
+				name: root.name.charAt(0).toUpperCase() + root.name.slice(1),
 				path: root.name,
 				icon: PLACE_ICONS[root.name.toLowerCase()] ?? Folder
 			}))
 	);
+
+	// Desktop-only entries stay out of the web bundle's startup path.
+	const desktopLinks = isLocalDesktop() ? import('./desktop/SidebarDesktopLinks.svelte') : null;
 
 	function isActive(path: string): boolean {
 		if (path === '' && currentPath === '') return true;
@@ -112,7 +117,7 @@
 		{/if}
 	</div>
 
-	{#if places.length > 0}
+	{#if places.length > 0 || desktopLinks}
 		<!-- Places Section -->
 		<div class="border-b border-border-secondary">
 			<button
@@ -142,6 +147,11 @@
 							>
 						</button>
 					{/each}
+					{#if desktopLinks}
+						{#await desktopLinks then { default: SidebarDesktopLinks }}
+							<SidebarDesktopLinks itemClass={navItemClass} activeClass={navItemActiveClass} />
+						{/await}
+					{/if}
 				</div>
 			{/if}
 		</div>
