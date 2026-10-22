@@ -334,10 +334,10 @@ export function useBrowseActions(
 				case 'new-folder':
 					openCreate('directory');
 					break;
-				case 'copy':
+				case 'copy': {
 					clipboardStore.copy(items);
+					const selectionId = beginBrowseClipboardPublication();
 					if (isLocalDesktop()) {
-						const selectionId = beginBrowseClipboardPublication();
 						try {
 							await publishBrowseClipboardInOrder(async () => {
 								const { writeBrowseClipboard } = await import('./desktopClipboard');
@@ -355,10 +355,11 @@ export function useBrowseActions(
 						}
 					}
 					break;
-				case 'cut':
+				}
+				case 'cut': {
 					clipboardStore.cut(items);
+					const selectionId = beginBrowseClipboardPublication();
 					if (isLocalDesktop()) {
-						const selectionId = beginBrowseClipboardPublication();
 						try {
 							await publishBrowseClipboardInOrder(async () => {
 								const { writeBrowseClipboard } = await import('./desktopClipboard');
@@ -376,6 +377,7 @@ export function useBrowseActions(
 						}
 					}
 					break;
+				}
 				case 'paste':
 					await paste.paste();
 					break;
