@@ -6,20 +6,22 @@
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import { desktopInputPath } from '#lib/browse/desktopPath.js';
 
-	interface PathSuggestion {
-		path: string;
-	}
-
-	interface PathDisplayPart {
-		text: string;
-		selected: boolean;
-		caret?: boolean;
-	}
-
-	interface Props {
+	let {
+		pathSegments = [],
+		onNavigate,
+		includeHiddenSuggestions = false
+	}: {
 		pathSegments?: string[];
 		onNavigate?: (path: string) => void;
 		includeHiddenSuggestions?: boolean;
+	} = $props();
+
+	let editing = $state(false);
+	let pathBar = $state<HTMLDivElement>();
+
+	function closeEditor(): void {
+		editing = false;
+		void tick().then(() => pathBar?.focus());
 	}
 
 	let { pathSegments = [], onNavigate, includeHiddenSuggestions = false }: Props = $props();
@@ -441,90 +443,52 @@
 	}
 </script>
 
-<div
-	class="relative flex min-w-0 flex-1 cursor-text items-center gap-1.5 rounded border border-border-primary bg-surface-secondary px-2 py-1 focus-within:border-border-focus"
-	role="button"
-	tabindex="0"
-	aria-label="Edit location"
-	onclick={handlePathBarClick}
-	onkeydown={handlePathBarKeydown}
->
-	<button
-		type="button"
-		class="flex h-4.5 w-4.5 shrink-0 cursor-pointer items-center justify-center border-none bg-transparent text-text-secondary hover:text-text-primary"
-		onclick={(event) => {
-			event.stopPropagation();
-			handleRootClick();
-		}}
-		title="Go to root"
-	>
-		<Home size={14} />
-	</button>
-	<div class="relative flex min-w-0 flex-1 items-center">
-		{#if isEditingPath}
-			<form class="relative h-5 w-full" onsubmit={handlePathSubmit}>
-				<div
-					class="pointer-events-none absolute inset-0 flex min-w-0 items-center overflow-hidden text-[13px] whitespace-nowrap"
-					aria-hidden="true"
-				>
-					{#if pathDraft.length === 0}
-						<span class="text-text-muted">Type a location</span>
-					{:else}
-						<div class="flex min-w-0 items-center overflow-hidden">
-							{#each draftDisplayParts as part, index (`path-part-${index}-${part.text}-${part.selected}-${part.caret}`)}
-								{#if part.caret}
-									<span class="inline-block h-3.5 w-px shrink-0 animate-pulse bg-accent"></span>
-								{:else}
-									<span
-										class="min-w-0 truncate rounded-sm {part.selected
-											? 'bg-accent px-0.5 text-white'
-											: 'text-text-primary'}"
-									>
-										{part.text}
-									</span>
-								{/if}
-							{/each}
-							{#if completionDisplayText}
-								<span class="min-w-0 truncate text-text-muted">{completionDisplayText}</span>
-							{/if}
-						</div>
-					{/if}
-				</div>
+<svelte:window
+	onkeydown={(event) => {
+		if (editing && event.key === 'Escape') {
+			event.preventDefault();
+			closeEditor();
+		}
+	}}
+/>
 
-				<!-- Keep a real input for keyboard editing while rendering the path as custom breadcrumbs. -->
-				<input
-					bind:this={pathInputEl}
-					type="text"
-					value={pathDraft}
-					oninput={handlePathInput}
-					onkeydown={handlePathKeydown}
-					onkeyup={syncPathSelection}
-					onclick={syncPathSelection}
-					onselect={syncPathSelection}
-					onpointerup={syncPathSelection}
-					onfocus={handlePathInputFocus}
-					onblur={handlePathInputBlur}
-					class="absolute inset-0 z-10 h-full w-full cursor-text border-none bg-transparent p-0 text-[13px] text-transparent caret-transparent outline-none selection:bg-transparent"
-					placeholder="Type a location"
-					autocomplete="off"
-					autocapitalize="off"
-					spellcheck="false"
-					aria-label="Location"
-					role="combobox"
-					aria-autocomplete="list"
-					aria-expanded={showSuggestionPopup}
-					aria-controls={showSuggestionPopup ? suggestionListId : undefined}
-					aria-activedescendant={activeSuggestionOptionId}
-				/>
-			</form>
-		{:else if pathSegments.length === 0}
+{#if editing}
+	{#await import('./PathEditor.svelte')}
+		<div class="flex min-w-0 flex-1 items-center px-2 py-1 text-sm text-text-muted" role="status">
+			Opening location editor…
+		</div>
+	{:then { default: PathEditor }}
+		<PathEditor {pathSegments} {onNavigate} {includeHiddenSuggestions} onClose={closeEditor} />
+	{:catch}
+		<LoadError label="location editor" onClose={closeEditor} />
+	{/await}
+{:else}
+	<div
+		bind:this={pathBar}
+		class="relative flex min-w-0 flex-1 cursor-text items-center gap-1.5 rounded border border-border-primary bg-surface-secondary px-2 py-1 focus-within:border-border-focus"
+		role="button"
+		tabindex="0"
+		aria-label="Edit location"
+		onclick={activate}
+		onkeydown={activate}
+	>
+		<button
+			type="button"
+			class="flex h-4.5 w-4.5 shrink-0 cursor-pointer items-center justify-center border-none bg-transparent text-text-secondary hover:text-text-primary"
+			onclick={(event) => {
+				event.stopPropagation();
+				onNavigate?.('');
+			}}
+			title="Go to root"
+		>
+			<Home size={14} />
+		</button>
+		{#if pathSegments.length === 0}
 			<span class="text-[13px] whitespace-nowrap text-text-primary">This Server</span>
 		{:else}
 			<div class="flex flex-1 items-center gap-1 overflow-hidden">
 				{#each pathSegments as segment, index (index)}
-					{#if index > 0}
-						<span class="text-xs text-text-muted">/</span>
-					{/if}
+					{#if index > 0}<span class="text-xs text-text-muted">/</span>{/if}
 					{#if index === pathSegments.length - 1}
 						<span class="text-[13px] whitespace-nowrap text-text-primary">{segment}</span>
 					{:else}
@@ -533,52 +497,12 @@
 							class="cursor-pointer border-none bg-transparent p-0 text-[13px] text-text-secondary hover:text-white hover:underline"
 							onclick={(event) => {
 								event.stopPropagation();
-								handleSegmentClick(index);
-							}}
+								onNavigate?.(pathSegments.slice(0, index + 1).join('/'));
+							}}>{segment}</button
 						>
-							{segment}
-						</button>
 					{/if}
 				{/each}
 			</div>
 		{/if}
-
-		{#if showSuggestionPopup}
-			<div
-				id={suggestionListId}
-				bind:this={suggestionListEl}
-				role="listbox"
-				aria-label="Location suggestions"
-				class="absolute top-full right-0 left-0 z-[200] mt-1 max-h-64 overflow-auto rounded border border-border-primary bg-[#202020] py-1 shadow-2xl ring-1 ring-black/40"
-			>
-				{#if isLoadingSuggestions && suggestions.length === 0}
-					<div class="flex items-center gap-2 px-3 py-2 text-xs text-text-secondary">
-						<Loader2 size={14} class="animate-spin" />
-						<span>Finding folders...</span>
-					</div>
-				{/if}
-
-				{#each suggestions as suggestion, index (suggestion.path)}
-					<button
-						type="button"
-						id={`${suggestionListId}-${index}`}
-						data-suggestion-index={index}
-						role="option"
-						aria-selected={index === activeSuggestionIndex}
-						class="flex w-full items-center gap-2 border-none px-3 py-1.5 text-left text-[13px] {index ===
-						activeSuggestionIndex
-							? 'bg-accent-muted text-white'
-							: 'bg-transparent text-text-primary hover:bg-[#2b2b2b]'}"
-						onpointerdown={(event) => handleSuggestionPointerDown(event, suggestion)}
-						onmouseenter={() => {
-							activeSuggestionIndex = index;
-						}}
-					>
-						<Folder size={14} class="shrink-0 text-folder" />
-						<span class="min-w-0 flex-1 truncate">{suggestion.path}</span>
-					</button>
-				{/each}
-			</div>
-		{/if}
 	</div>
-</div>
+{/if}

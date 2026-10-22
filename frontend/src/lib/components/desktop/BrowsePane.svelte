@@ -12,9 +12,8 @@
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
 	import FileList from '#lib/components/FileList.svelte';
 	import StatusBar from '#lib/components/StatusBar.svelte';
-	import DriveCard from '#lib/components/DriveCard.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
-	import { Spinner } from '#lib/components/ui/index.js';
+	import Spinner from '#lib/components/ui/Spinner.svelte';
 
 	interface Props {
 		pane: BrowsePaneState;
@@ -209,11 +208,15 @@
 				{:else if data.drives.length === 0}
 					<div class="py-5 text-sm text-text-secondary">No configured storage found</div>
 				{:else}
-					<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-						{#each data.drives as drive (drive.name)}
-							<DriveCard {drive} onClick={() => location.navigate(drive.name)} {onFolderHover} />
-						{/each}
-					</div>
+					{#await import('#lib/components/DriveCard.svelte') then { default: DriveCard }}
+						<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+							{#each data.drives as drive (drive.name)}
+								<DriveCard {drive} onClick={() => location.navigate(drive.name)} {onFolderHover} />
+							{/each}
+						</div>
+					{:catch}
+						<LoadError label="drives" inline />
+					{/await}
 				{/if}
 			</div>
 		{:else if location.viewMode === 'grid'}

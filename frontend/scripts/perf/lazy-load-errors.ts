@@ -8,7 +8,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function chunkPath(source: string): string {
+export function chunkPath(source: string): string {
 	const manifest: unknown = JSON.parse(
 		readFileSync(join(repo, 'frontend/.svelte-kit/output/client/.vite/manifest.json'), 'utf8')
 	);
@@ -49,6 +49,31 @@ const cases: LoadCase[] = [
 		path: '/browse?path=perf',
 		enter: (page) => openSection(page, 'Shared links'),
 		ready: (page) => page.getByText('No shared links.', { exact: true }).waitFor()
+	},
+	{
+		label: 'location editor',
+		source: 'src/lib/components/PathEditor.svelte',
+		path: '/browse?path=perf',
+		activate: async (page) => {
+			await page.getByText('File-00000.txt', { exact: true }).waitFor();
+			await page.keyboard.press('Control+l');
+		},
+		ready: (page) => page.getByRole('combobox', { name: 'Location', exact: true }).waitFor()
+	},
+	{
+		label: 'file menu',
+		source: 'src/lib/components/FileContextMenu.svelte',
+		path: '/browse?path=perf',
+		activate: async (page) => {
+			await page.getByText('File-00000.txt', { exact: true }).click({ button: 'right' });
+		},
+		ready: (page) => page.getByRole('menu').waitFor()
+	},
+	{
+		label: 'drives',
+		source: 'src/lib/components/DriveCard.svelte',
+		path: '/browse',
+		ready: (page) => page.locator('button span[title="perf"]').waitFor()
 	}
 ];
 
@@ -101,6 +126,6 @@ export async function verifyLazyLoadErrors(
 		}
 	}
 	console.log(
-		'PASS: failed grid, wallpaper and shared-link chunks show errors and recover on reload'
+		'PASS: failed grid, wallpaper, shared-link, location editor, file menu and drive chunks recover on reload'
 	);
 }

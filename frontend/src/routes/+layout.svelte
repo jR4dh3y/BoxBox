@@ -7,7 +7,8 @@
 	import { page } from '$app/state';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import { CONFIG } from '#lib/config.js';
-	import { Spinner, Button } from '#lib/components/ui/index.js';
+	import Spinner from '#lib/components/ui/Spinner.svelte';
+	import Button from '#lib/components/ui/Button.svelte';
 	import { AlertTriangle, X } from 'lucide-svelte';
 	import { AuthRefreshEvent } from '#lib/api/client.js';
 	import { jobsStore } from '#lib/stores/jobs.svelte.js';

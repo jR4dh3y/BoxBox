@@ -9,6 +9,7 @@ import { baseArgument, repo, results, run, withBaseline } from './common';
 import { createDirectoryFixture, startServer } from './server';
 import { verifySelectionRefresh } from './selection-refresh';
 import { verifyNavigation } from './navigation';
+import { verifyPasteLoadRace } from './paste-load-race';
 import { verifyLazyLoadErrors } from './lazy-load-errors';
 
 const profiles = [

@@ -48,7 +48,7 @@ export async function startServer(
 			'mount_points:',
 			'  - name: "perf"',
 			`    path: ${JSON.stringify(mount)}`,
-			'    read_only: true'
+			`    read_only: ${readOnly}`
 		].join('\n'),
 		{ mode: 0o600 }
 	);
