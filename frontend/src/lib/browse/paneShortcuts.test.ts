@@ -42,7 +42,7 @@ describe('browse keyboard shortcuts', () => {
 			null
 		);
 		assert.equal(getBrowseShortcut(input({ key: 'z', ctrlKey: true })), null);
-		assert.equal(getBrowseShortcut(input({ key: 'v', ctrlKey: true })), 'paste');
+		assert.equal(getBrowseShortcut(input({ key: 'v', ctrlKey: true })), null);
 		assert.equal(getBrowseShortcut(input({ key: 'v', metaKey: true, editable: true })), null);
 	});
 });

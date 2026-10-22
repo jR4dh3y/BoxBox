@@ -30,6 +30,7 @@
 		includeHiddenSuggestions?: boolean;
 		detailsOpen?: boolean;
 		onToggleDetails?: () => void;
+		onShortcuts?: () => void;
 	}
 
 	let {
@@ -52,7 +53,8 @@
 		onSearchClear,
 		includeHiddenSuggestions = false,
 		detailsOpen = false,
-		onToggleDetails
+		onToggleDetails,
+		onShortcuts
 	}: Props = $props();
 
 	let addMenu = $state<{ x: number; y: number } | null>(null);
@@ -128,6 +130,15 @@
 		<button type="button" class={navBtnClass} onclick={onSettings} title="Settings">
 			<Settings size={16} />
 		</button>
+		{#if onShortcuts}
+			<button
+				type="button"
+				class={navBtnClass}
+				onclick={onShortcuts}
+				title="Keyboard shortcuts (F1)"
+				aria-label="Keyboard shortcuts"><span aria-hidden="true">?</span></button
+			>
+		{/if}
 		{#if onToggleDetails}
 			<button
 				type="button"

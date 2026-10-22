@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getFileShortcut } from '#lib/browse/fileShortcuts.js';
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
@@ -118,7 +119,57 @@
 		}
 		void actions.handleContextMenuAction(action, items);
 	}
+	function handleFileKeydown(event: KeyboardEvent): void {
+		if (
+			!focused ||
+			event.defaultPrevented ||
+			hasOpenDialog ||
+			actions.previewFile ||
+			document.querySelector('[role="menu"], dialog[open]')
+		)
+			return;
+		if (
+			event.target instanceof HTMLElement &&
+			event.target.closest(
+				'input, textarea, select, [contenteditable="true"], dialog, [role="dialog"], [role="menu"]'
+			)
+		)
+			return;
+		const shortcut = getFileShortcut(event);
+		if (!shortcut) return;
+		event.preventDefault();
+		const items = data.displayItems.filter((item) => selection.paths.has(item.path));
+		switch (shortcut) {
+			case 'select-all':
+				selection.set(new SvelteSet(data.displayItems.map((item) => item.path)));
+				break;
+			case 'clear-selection':
+				selection.clear();
+				break;
+			case 'search':
+				document.querySelector<HTMLInputElement>('input[aria-label="Search"]')?.focus();
+				break;
+			case 'details':
+				onShowDetails();
+				break;
+			case 'open':
+				if (items.length === 1 && items[0]) actions.openFile(items[0]);
+				break;
+			case 'new-folder':
+				if (data.canCreate) contextAction(shortcut, []);
+				break;
+			default:
+				if (
+					data.isReadOnly &&
+					['cut', 'rename', 'delete', 'delete-permanently', 'paste'].includes(shortcut)
+				)
+					return;
+				if (shortcut === 'paste' || items.length > 0) contextAction(shortcut, items);
+		}
+	}
 </script>
+
+<svelte:window onkeydown={handleFileKeydown} />
 
 <section
 	id="browse-pane-{pane.id}"

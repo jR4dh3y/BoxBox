@@ -34,6 +34,16 @@ These interactions use the shared frontend in local desktop mode through a brows
 
 ![Two selected files with the count in the delete heading](delete-selection.png)
 
+## Keyboard shortcuts
+
+F1 and the toolbar's ? button open the in-app reference. Live production-browser checks passed Shift-arrow range selection in list and grid, Ctrl+Home focus movement without changing selection, and vertical movement across a responsive three-column grid. Alt+Enter opened Details; Ctrl+F focused Search; Ctrl+Shift+N opened New Folder from toolbar focus. Delete did not activate file deletion while Help or the folder-name input was open. Escape closed dialogs and cleared selection outside them. In split view, Ctrl+A selected eight loaded items in the active right pane while the left pane retained its one-item selection.
+
+The authenticated browser workflow now covers keyboard selection, Details, Help, modal isolation, search focus and selection from toolbar focus. It waits for folder URL navigation and the visible Saved state before asserting history or preference persistence. These waits cover the existing asynchronous operations instead of navigating away while they are pending.
+
+![In-app keyboard shortcut reference](keyboard-shortcuts.png)
+
+Lazy-chunk recovery timed out in the combined browser run; the standalone recovery run passed for grid, wallpaper and shared links. The final CEF package built and its native launch smoke passed. Physical keyboard delivery through CEF and host-reserved combinations were not exercised by that smoke; the interaction checks above used Chromium against the embedded production UI. No backend behavior changed in this follow-up.
+
 ## Automated checks
 
 | Command | Result |
@@ -43,9 +53,9 @@ These interactions use the shared frontend in local desktop mode through a brows
 | `bun run test:desktop` | 45 passed, 0 failed |
 | `bun run --cwd frontend check` | 0 errors, 0 warnings |
 | `bun run --cwd frontend lint` | Passed |
-| `bun run --cwd frontend test` | 162 passed, 0 failed |
+| `bun run --cwd frontend test` | 164 passed, 0 failed |
 | `bun run --cwd frontend build` | Passed |
-| `bun run --cwd frontend perf:budget` | 290272 bytes against the lowered 290816-byte ceiling |
+| `bun run --cwd frontend perf:budget` | 290760 bytes against the lowered 290816-byte ceiling |
 | `bun run --cwd website build` | Passed |
 | `bun run build:desktop` | Stable Linux CEF package built |
 | `go vet ./...` in `backend/` | Passed |
@@ -67,7 +77,7 @@ bun run --cwd desktop scripts/native-smoke.ts
 
 ## Limits
 
-- The browser performance gate fails. The published starting head already exceeded its 9-script / 287,744-decoded-byte limits at 19 scripts / 317,752 bytes. The final build measured 24 scripts / 328,009 bytes. Experimental chunk changes made this worse or created import loops and were reverted. The limits were not raised. The static bundle gate is a separate measurement and does not make the browser journey pass.
+- The browser performance gate fails. The published starting head already exceeded its 9-script / 287,744-decoded-byte limits at 19 scripts / 317,752 bytes. Commit `0a3ba4d` measured 24 scripts / 328,009 bytes; the keyboard-shortcut follow-up has not rerun that journey benchmark. Experimental chunk changes made this worse or created import loops and were reverted. The limits were not raised. The static bundle gate is a separate measurement and does not make the browser journey pass.
 - CI's website runner used Node 22.23.3, below Astro's supported minimum. The workflow now selects Node 24 explicitly. The local website build passed; the updated hosted job is pending.
 
 - Docker image build was not run because the Docker daemon is unavailable.
