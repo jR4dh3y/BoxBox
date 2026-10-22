@@ -56,6 +56,12 @@ export async function verifyNavigation(
 		}
 
 		await page.getByText('Child', { exact: true }).click();
+		assert.equal(new URL(page.url()).searchParams.get('path'), 'perf/Navigation');
+		await page.getByText('Child', { exact: true }).dblclick();
+		await page.getByText('Nested.txt', { exact: true }).waitFor();
+		await page.goBack();
+		await page.getByText('Parent.txt', { exact: true }).waitFor();
+		await page.goForward();
 		await page.getByText('Nested.txt', { exact: true }).waitFor();
 		await page.getByTitle('Back', { exact: true }).click();
 		await page.getByText('Parent.txt', { exact: true }).waitFor();

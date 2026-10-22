@@ -44,6 +44,10 @@ This opens the remote BoxBox server's login page in a sandboxed CEF window witho
 
 ## Daily file operations
 
+- List and grid views support checkboxes, Ctrl/Cmd selection, Shift ranges, and Ctrl/Cmd+A. Double-click opens files and folders by default; Settings can switch to single-click. Modifier clicks always select.
+- Details shows the active pane's selection, image preview, location, size, modified time, permissions, and available actions. Multiple selections show combined file bytes, excluding folder contents.
+- JPEG, PNG, GIF and WebP thumbnails load lazily, keep the full image visible, and fall back to file icons. Generation accepts sources up to 64 MiB and 32 megapixels, runs at most two renders, and caches up to 128 previews or 16 MiB. Video and PDF thumbnails are not generated.
+- Create, rename and delete dialogs show progress and prevent duplicate submissions. Delete counts appear in the heading; failures retain the remaining items for retry.
 - Tabs keep independent folders, history, sorting and selection; F3 opens a second pane. Only the active tab keeps its directory queries and live watches mounted.
 - The address bar accepts absolute Linux paths and `~/` paths. Local directory changes made by other programs invalidate the visible view automatically; disconnected watchers periodically revalidate until they reconnect.
 - Delete moves local items into the freedesktop Trash. Trash lists deleted items and supports restore and confirmed permanent deletion. Shift+Delete is always confirmed. Restore and transfer publication never overwrite an existing destination.

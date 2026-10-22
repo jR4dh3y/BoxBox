@@ -30,6 +30,7 @@ type desktopTrashEntry struct {
 	location    desktopTrashLocation
 	storageName string
 	infoName    string
+	stat        unix.Stat_t
 }
 
 func newDesktopTrashService(fsys filesystem.FS, mountPoints []model.MountPoint, cfg desktopTrashConfig) *desktopTrashService {
@@ -67,11 +68,12 @@ func (s *desktopTrashService) Trash(ctx context.Context, virtualPath string) (De
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	_, sourcePath, sourceName, sourceParentFD, isDir, err := s.resolveTrashSource(virtualPath)
+	_, sourcePath, sourceName, sourceParentFD, sourceStat, err := s.resolveTrashSource(virtualPath)
 	if err != nil {
 		return DesktopTrashItem{}, err
 	}
 	defer unix.Close(sourceParentFD)
+	isDir := sourceStat.Mode&unix.S_IFMT == unix.S_IFDIR
 
 	dataHome, err := s.dataHome(true)
 	if err != nil {
@@ -150,9 +152,16 @@ func (s *desktopTrashService) Trash(ctx context.Context, virtualPath string) (De
 			}
 			return DesktopTrashItem{}, fmt.Errorf("move into trash: %w", moveErr)
 		}
+		var storedStat unix.Stat_t
+		if err := unix.Fstatat(dirs.filesFD, storageName, &storedStat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return DesktopTrashItem{}, fmt.Errorf("%w: could not identify moved item", ErrTrashUnavailable)
+		}
+		if storedStat.Dev != sourceStat.Dev || storedStat.Ino != sourceStat.Ino {
+			return DesktopTrashItem{}, fmt.Errorf("%w: moved item changed during trash operation", ErrTrashUnavailable)
+		}
 
 		item := DesktopTrashItem{
-			ID:           trashItemID(location, storageName),
+			ID:           trashItemID(location, storageName, storedStat),
 			Name:         filepath.Base(sourcePath),
 			OriginalPath: sourcePath,
 			DeletedAt:    deletedAt,
@@ -191,6 +200,9 @@ func (s *desktopTrashService) Restore(ctx context.Context, id string) error {
 		return ErrTrashItemNotFound
 	}
 	defer dirs.close()
+	if !trashEntryMatchesAt(dirs.filesFD, entry) {
+		return ErrTrashItemNotFound
+	}
 
 	rootFD, err := openAbsoluteDir(mountRoot, false)
 	if err != nil {
@@ -213,6 +225,9 @@ func (s *desktopTrashService) Restore(ctx context.Context, id string) error {
 	}
 	if destinationExists(destination) {
 		return ErrTrashConflict
+	}
+	if !trashEntryMatchesAt(dirs.filesFD, entry) {
+		return ErrTrashItemNotFound
 	}
 
 	if err := unix.Renameat2(dirs.filesFD, entry.storageName, destinationParentFD, filepath.Base(relative), unix.RENAME_NOREPLACE); err != nil {
@@ -244,8 +259,11 @@ func (s *desktopTrashService) Delete(ctx context.Context, id string) error {
 		return ErrTrashItemNotFound
 	}
 	defer dirs.close()
-	if err := removeTreeAt(dirs.filesFD, entry.storageName); err != nil {
-		if errors.Is(err, unix.ENOENT) {
+	if !trashEntryMatchesAt(dirs.filesFD, entry) {
+		return ErrTrashItemNotFound
+	}
+	if err := removeTreeAt(dirs.filesFD, entry.storageName, &entry.stat); err != nil {
+		if errors.Is(err, unix.ENOENT) || errors.Is(err, ErrTrashItemNotFound) {
 			return ErrTrashItemNotFound
 		}
 		return fmt.Errorf("delete trash item: %w", err)
@@ -254,18 +272,18 @@ func (s *desktopTrashService) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *desktopTrashService) resolveTrashSource(virtualPath string) (*model.MountPoint, string, string, int, bool, error) {
+func (s *desktopTrashService) resolveTrashSource(virtualPath string) (*model.MountPoint, string, string, int, unix.Stat_t, error) {
 	mount, resolved, err := s.mounts.resolve(virtualPath, writeExisting)
 	if err != nil {
-		return nil, "", "", -1, false, err
+		return nil, "", "", -1, unix.Stat_t{}, err
 	}
 	relative, err := virtualRelativePath(mount.Name, virtualPath)
 	if err != nil || relative == "." {
-		return nil, "", "", -1, false, ErrInvalidOperation
+		return nil, "", "", -1, unix.Stat_t{}, ErrInvalidOperation
 	}
 	root, err := s.fs.EvalSymlinks(mount.Path)
 	if err != nil {
-		return nil, "", "", -1, false, err
+		return nil, "", "", -1, unix.Stat_t{}, err
 	}
 	parentRelative := filepath.Dir(relative)
 	parentPath := root
@@ -273,35 +291,35 @@ func (s *desktopTrashService) resolveTrashSource(virtualPath string) (*model.Mou
 		parentVirtual := virtualPathFor(mount.Name, parentRelative)
 		parentMount, resolvedParent, resolveErr := s.mounts.resolve(parentVirtual, readExisting)
 		if resolveErr != nil {
-			return nil, "", "", -1, false, resolveErr
+			return nil, "", "", -1, unix.Stat_t{}, resolveErr
 		}
 		if parentMount.Name != mount.Name || !pathWithinRoot(root, resolvedParent) {
-			return nil, "", "", -1, false, ErrPermissionDenied
+			return nil, "", "", -1, unix.Stat_t{}, ErrPermissionDenied
 		}
 		parentPath = resolvedParent
 	}
 	name := filepath.Base(relative)
 	path := filepath.Join(parentPath, name)
 	if !pathWithinRoot(root, path) || path == root {
-		return nil, "", "", -1, false, ErrInvalidOperation
+		return nil, "", "", -1, unix.Stat_t{}, ErrInvalidOperation
 	}
 	resolvedPath, err := s.fs.EvalSymlinks(path)
 	if err != nil || resolvedPath != resolved {
-		return nil, "", "", -1, false, ErrPermissionDenied
+		return nil, "", "", -1, unix.Stat_t{}, ErrPermissionDenied
 	}
 	parentFD, err := openAbsoluteDir(parentPath, false)
 	if err != nil {
-		return nil, "", "", -1, false, ErrPathNotFound
+		return nil, "", "", -1, unix.Stat_t{}, ErrPathNotFound
 	}
 	var stat unix.Stat_t
 	if err := unix.Fstatat(parentFD, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		_ = unix.Close(parentFD)
 		if errors.Is(err, unix.ENOENT) {
-			return nil, "", "", -1, false, ErrPathNotFound
+			return nil, "", "", -1, unix.Stat_t{}, ErrPathNotFound
 		}
-		return nil, "", "", -1, false, err
+		return nil, "", "", -1, unix.Stat_t{}, err
 	}
-	return mount, path, name, parentFD, stat.Mode&unix.S_IFMT == unix.S_IFDIR, nil
+	return mount, path, name, parentFD, stat, nil
 }
 
 func virtualRelativePath(mountName, requested string) (string, error) {
@@ -406,8 +424,9 @@ func (s *desktopTrashService) scan(ctx context.Context) ([]desktopTrashEntry, er
 				location:    location,
 				storageName: file.Name(),
 				infoName:    file.Name() + ".trashinfo",
+				stat:        stat,
 				item: DesktopTrashItem{
-					ID:        trashItemID(location, file.Name()),
+					ID:        trashItemID(location, file.Name(), stat),
 					Name:      file.Name(),
 					DeletedAt: time.Unix(stat.Mtim.Sec, stat.Mtim.Nsec).Local(),
 					IsDir:     stat.Mode&unix.S_IFMT == unix.S_IFDIR,

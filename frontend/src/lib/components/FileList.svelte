@@ -120,7 +120,37 @@
 			onSelectionChange?.(newSelection);
 		}
 
-		if (item.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+	function handleDoubleClick(item: FileInfo, event: MouseEvent) {
+		if (shouldOpenOnDoubleClick(fileOpenBehavior, event)) onItemClick?.(item);
+	}
+
+	function updateSelection(itemPath: string, gesture: FileSelectionGesture): void {
+		const result = applyFileSelection(
+			items.map((item) => item.path),
+			selectedPaths,
+			selectionAnchor,
+			itemPath,
+			gesture
+		);
+		selectionAnchor = result.anchorPath;
+		onSelectionChange?.(new SvelteSet(result.paths));
+	}
+
+	function handleSelectionCheckbox(item: FileInfo, selected: boolean): void {
+		updateSelection(item.path, { type: 'set', selected });
+	}
+
+	function handleKeyDown(item: FileInfo, event: KeyboardEvent) {
+		if ((event.key === 'a' || event.key === 'A') && (event.ctrlKey || event.metaKey)) {
+			event.preventDefault();
+			selectionAnchor = item.path;
+			onSelectionChange?.(new SvelteSet(items.map((visibleItem) => visibleItem.path)));
+			return;
+		}
+		if (event.target instanceof HTMLInputElement) return;
+
+		if (event.key === 'Enter') {
+			event.preventDefault();
 			onItemClick?.(item);
 			return;
 		}
@@ -269,19 +299,17 @@
 		focusTable();
 		event.preventDefault();
 
-		// If right-clicked item is not selected, select only that item
+		const selectedItems = getSelectedContextMenuItems(items, selectedPaths, item);
 		if (!selectedPaths.has(item.path)) {
 			const newSelection = new SvelteSet<string>([item.path]);
+			selectionAnchor = item.path;
 			onSelectionChange?.(newSelection);
 		}
-
-		// Get all selected items for context menu
-		const selectedItems = items.filter((i) => selectedPaths.has(i.path) || i.path === item.path);
 
 		contextMenu = {
 			x: event.clientX,
 			y: event.clientY,
-			items: selectedItems.length > 0 ? selectedItems : [item]
+			items: selectedItems
 		};
 	}
 
@@ -290,6 +318,7 @@
 		if (target?.closest('[data-file-row="true"], [data-file-header="true"]')) return;
 
 		event.preventDefault();
+		selectionAnchor = null;
 		onSelectionChange?.(new SvelteSet<string>());
 		contextMenu = {
 			x: event.clientX,
@@ -371,10 +400,10 @@
 		onkeydown={handleGridKeyDown}
 	>
 		<colgroup>
-			<col />
-			<col class="w-[170px]" />
-			<col class="w-[112px]" />
-			<col class="w-[168px]" />
+			<col class="file-name-column" />
+			<col class="file-type-column" />
+			<col class="file-size-column" />
+			<col class="file-modified-column" />
 		</colgroup>
 		<thead>
 			<tr aria-rowindex="1" style="height: {LIST_HEADER_HEIGHT}px">
@@ -434,6 +463,7 @@
 						? 'text-text-primary'
 						: 'text-text-secondary'}
 					{@const modifiedDescription = formatFileDate(item.modTime)}
+					{@const hasThumbnail = !item.isDir && getPreviewType(item.name) === 'image'}
 					<tr
 						style={`height: ${compactMode ? 28 : 32}px`}
 						class="cursor-default transition-colors duration-50 {isSelected(item.path)
@@ -456,6 +486,15 @@
 					>
 						<td id={`file-list-cell-${itemIndex}`} class={compactMode ? compactTdClass : tdClass}>
 							<div class="flex min-w-0 items-center gap-2">
+								<input
+									type="checkbox"
+									checked={isSelected(item.path)}
+									aria-label={`Select ${item.name}`}
+									class="h-4 w-4 shrink-0 cursor-pointer accent-accent"
+									onclick={(event) => event.stopPropagation()}
+									ondblclick={(event) => event.stopPropagation()}
+									onchange={(event) => handleSelectionCheckbox(item, event.currentTarget.checked)}
+								/>
 								<span
 									class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
 										? 'text-folder'

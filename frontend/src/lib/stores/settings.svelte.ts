@@ -34,7 +34,7 @@ export interface UserSettings {
 	backgroundImageName: string | null;
 	backgroundImageMode: BackgroundImageMode;
 	frostedGlass: boolean;
-	previewOnSingleClick: boolean;
+	fileOpenBehavior: FileOpenBehavior;
 	compactMode: boolean;
 	/** Rows show a checkbox on hover, so several items can be picked without modifier keys. */
 	selectionCheckboxes: boolean;
@@ -60,7 +60,7 @@ const defaultSettings: UserSettings = {
 	backgroundImageName: null,
 	backgroundImageMode: DEFAULT_BACKGROUND_IMAGE_MODE,
 	frostedGlass: false,
-	previewOnSingleClick: false,
+	fileOpenBehavior: 'double-click',
 	compactMode: false,
 	selectionCheckboxes: true,
 	driveNameOverrides: {},

@@ -115,10 +115,24 @@ func (s *desktopTrashService) findEntry(ctx context.Context, id string) (desktop
 	return desktopTrashEntry{}, ErrTrashItemNotFound
 }
 
-func trashItemID(location desktopTrashLocation, storageName string) string {
-	key := location.path() + "\x00" + storageName
+func trashItemID(location desktopTrashLocation, storageName string, stat unix.Stat_t) string {
+	key := fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%d\x00%d", location.path(), storageName, stat.Dev, stat.Ino, stat.Ctim.Sec, stat.Ctim.Nsec)
 	hash := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(hash[:])
+}
+
+func sameTrashEntryIdentity(left, right unix.Stat_t) bool {
+	return left.Dev == right.Dev && left.Ino == right.Ino &&
+		left.Ctim.Sec == right.Ctim.Sec && left.Ctim.Nsec == right.Ctim.Nsec
+}
+
+func trashEntryMatchesAt(filesFD int, entry desktopTrashEntry) bool {
+	var stat unix.Stat_t
+	if err := unix.Fstatat(filesFD, entry.storageName, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return false
+	}
+	return sameTrashEntryIdentity(stat, entry.stat) &&
+		trashItemID(entry.location, entry.storageName, stat) == entry.item.ID
 }
 
 func (location desktopTrashLocation) path() string {

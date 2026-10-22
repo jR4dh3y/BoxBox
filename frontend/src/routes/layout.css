@@ -83,6 +83,7 @@ html {
 
 html,
 body {
+	color-scheme: dark;
 	min-height: 100%;
 	background: var(--color-surface-primary);
 }

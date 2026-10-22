@@ -39,13 +39,27 @@ export function createBrowsePaneState(
 	onLocationChange?: (snapshot: BrowseLocationSnapshot) => void
 ) {
 	const selection = useBrowseSelection();
+	let revealHiddenFiles = $state(false);
 	const location = useBrowseLocation({
 		initial: initialLocation,
-		onLocationChange: () => selection.clear(),
+		onLocationChange: () => {
+			selection.clear();
+			revealHiddenFiles = false;
+		},
 		onChange: onLocationChange
 	});
 
-	return { id, location, selection };
+	return {
+		id,
+		location,
+		selection,
+		get revealHiddenFiles() {
+			return revealHiddenFiles;
+		},
+		showHiddenFiles() {
+			revealHiddenFiles = true;
+		}
+	};
 }
 
 export type BrowsePaneState = ReturnType<typeof createBrowsePaneState>;

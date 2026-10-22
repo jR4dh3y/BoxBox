@@ -4,7 +4,8 @@
 	 */
 
 	import type { FileInfo } from '#lib/api/files.js';
-	import { getThumbnailUrl } from '#lib/api/files.js';
+	import FileThumbnail from '#lib/components/FileThumbnail.svelte';
+	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
 	import { getFileTypeDescription, getFileIcon, getPreviewType } from '#lib/utils/fileTypes.js';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -88,7 +89,18 @@
 	});
 
 	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
-	let thumbnailErrors = new SvelteSet<string>();
+
+	function updateSelection(itemPath: string, gesture: FileSelectionGesture): void {
+		const result = applyFileSelection(
+			items.map((item) => item.path),
+			selectedPaths,
+			selectionAnchor,
+			itemPath,
+			gesture
+		);
+		selectionAnchor = result.anchorPath;
+		onSelectionChange?.(new SvelteSet(result.paths));
+	}
 
 	function handleItemClick(item: FileInfo, event: MouseEvent) {
 		activeItemPath = item.path;
@@ -104,7 +116,25 @@
 			onSelectionChange?.(newSelection);
 		}
 
-		if (item.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+	function handleDoubleClick(item: FileInfo, event: MouseEvent) {
+		if (shouldOpenOnDoubleClick(fileOpenBehavior, event)) onItemClick?.(item);
+	}
+
+	function handleSelectionCheckbox(item: FileInfo, selected: boolean): void {
+		updateSelection(item.path, { type: 'set', selected });
+	}
+
+	function handleKeyDown(item: FileInfo, event: KeyboardEvent) {
+		if ((event.key === 'a' || event.key === 'A') && (event.ctrlKey || event.metaKey)) {
+			event.preventDefault();
+			selectionAnchor = item.path;
+			onSelectionChange?.(new SvelteSet(items.map((visibleItem) => visibleItem.path)));
+			return;
+		}
+		if (event.target instanceof HTMLInputElement) return;
+
+		if (event.key === 'Enter') {
+			event.preventDefault();
 			onItemClick?.(item);
 			return;
 		}
@@ -262,17 +292,17 @@
 		gridElement?.focus({ preventScroll: true });
 		event.preventDefault();
 
+		const selectedItems = getSelectedContextMenuItems(items, selectedPaths, item);
 		if (!selectedPaths.has(item.path)) {
 			const newSelection = new SvelteSet<string>([item.path]);
+			selectionAnchor = item.path;
 			onSelectionChange?.(newSelection);
 		}
-
-		const selectedItems = items.filter((i) => selectedPaths.has(i.path) || i.path === item.path);
 
 		contextMenu = {
 			x: event.clientX,
 			y: event.clientY,
-			items: selectedItems.length > 0 ? selectedItems : [item]
+			items: selectedItems
 		};
 	}
 
@@ -281,6 +311,7 @@
 		if (target?.closest('[data-file-item="true"]')) return;
 
 		event.preventDefault();
+		selectionAnchor = null;
 		onSelectionChange?.(new SvelteSet<string>());
 		contextMenu = {
 			x: event.clientX,
@@ -301,10 +332,6 @@
 		}
 		contextMenu = null;
 		gridElement?.focus({ preventScroll: true });
-	}
-
-	function handleThumbnailError(path: string) {
-		thumbnailErrors.add(path);
 	}
 
 	function isSelected(path: string): boolean {

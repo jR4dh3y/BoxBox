@@ -37,6 +37,7 @@
 	// Uploads keep running without their panel, so closing the error only hides the message.
 	let uploadErrorDismissed = $state(false);
 	let launchTabId = $state('');
+	let detailsOpen = $state(false);
 
 	const tabs = useBrowseTabs({
 		initialLocation: launchState.location,
@@ -51,6 +52,19 @@
 	const activeLocation = $derived(activePane?.location);
 	const activeRuntime = $derived(activePane ? (paneRuntimes[activePane.id] ?? null) : null);
 	const settings = $derived(settingsStore.current);
+
+	function closeDetails(): void {
+		detailsOpen = false;
+		void tick().then(() =>
+			document.querySelector<HTMLButtonElement>('button[aria-label="Details"]')?.focus()
+		);
+	}
+
+	afterNavigate(({ type }) => {
+		if (type === 'popstate') {
+			untrack(() => activeLocation?.restore(parseBrowseLocation(page.url)));
+		}
+	});
 
 	const onFolderHover = createHoverIntent((path) => {
 		if (path) activeRuntime?.data.prefetchDirectory(path);
@@ -73,9 +87,10 @@
 		url.searchParams.set('view', snapshot.viewMode);
 		if (selectPath) url.searchParams.set('select', selectPath);
 		else url.searchParams.delete('select');
+		if (url.href === page.url.href) return;
 
 		void goto(`${resolve('browse')}${url.search}${url.hash}`, {
-			replace: true,
+			replace: page.url.searchParams.get('path') === snapshot.path,
 			reset: false,
 			state: page.state
 		});

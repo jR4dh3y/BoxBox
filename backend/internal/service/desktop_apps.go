@@ -49,6 +49,7 @@ type DesktopApps interface {
 // DesktopCommandRunner keeps OS process execution replaceable at the process boundary.
 type DesktopCommandRunner interface {
 	Output(ctx context.Context, name string, args ...string) ([]byte, error)
+	Run(ctx context.Context, name string, args ...string) ([]byte, error)
 	Start(name string, args []string, workingDirectory string) error
 	LookPath(name string) (string, error)
 }
@@ -100,8 +101,13 @@ func (s *desktopAppsService) OpenWith(ctx context.Context, path, appID string) e
 		if app.application.ID != appID {
 			continue
 		}
-		if err := s.commands.Start("gio", []string{"launch", app.path, resolved}, ""); err != nil {
-			return fmt.Errorf("%w: %v", ErrDesktopLaunchFailed, err)
+		output, err := s.commands.Run(ctx, "gio", "launch", app.path, resolved)
+		if err != nil {
+			detail := strings.TrimSpace(string(output))
+			if detail == "" {
+				detail = err.Error()
+			}
+			return fmt.Errorf("%w: %s", ErrDesktopLaunchFailed, detail)
 		}
 		return nil
 	}
@@ -539,6 +545,10 @@ type osDesktopCommandRunner struct{}
 
 func (osDesktopCommandRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).Output()
+}
+
+func (osDesktopCommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
 func (osDesktopCommandRunner) Start(name string, args []string, workingDirectory string) error {

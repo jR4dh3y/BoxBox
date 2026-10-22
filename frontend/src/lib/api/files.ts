@@ -216,10 +216,11 @@ export async function search(
 /**
  * Get a small cached image suitable for file-grid thumbnails.
  */
-export function getThumbnailUrl(path: string, width = 224, height = 144): string {
+export function getThumbnailUrl(path: string, width = 224, height = 144, version?: string): string {
 	const token = tokenStorage.getAccessToken();
 	const encodedPath = encodeRoutePath(path);
 	const params = new URLSearchParams({ width: String(width), height: String(height) });
+	if (version !== undefined) params.set('v', version);
 	if (token) params.set('token', token);
 	return `/api/v1/stream/thumbnail/${encodedPath}?${params.toString()}`;
 }

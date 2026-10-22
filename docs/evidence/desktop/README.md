@@ -20,6 +20,20 @@ The browser fixture below shows two tabs and split panes. Clicking Split created
 
 ![Two tabs and split panes in the desktop-mode browser fixture](split-panes.png)
 
+## Shared browser polish
+
+The production UI was exercised against an isolated temporary filesystem. List and grid checkboxes, a three-item Shift range, and Ctrl+A selected the expected files. Single-click selected a folder under the default double-click preference; double-click opened it. Switching the setting to single-click, saving, and reloading retained that preference and opened the folder with one click.
+
+Details showed single-file metadata, a complete JPEG preview, combined file bytes for multiple selections, and no write actions on a read-only mount. JPEG and WebP thumbnails loaded; a deliberately invalid PNG fell back to its icon. The list fit beside Details without horizontal overflow. At a 390-pixel viewport, Details fit in a 320-pixel overlay with an accessible close button and no page overflow. The delete dialog showed the count only in its heading. Shift+Tab stayed inside it, Escape dismissed it, and focus returned to its initiating button. No fixture files were deleted by this dialog check.
+
+The real authenticated web browser test passed login, default double-click activation, browser Back/Forward and toolbar history, search focus, sort, grid, preference persistence, settings, public shares, reload, and logout. Browser Back returned from the child folder to its parent. A launch URL selecting `.hidden.txt` revealed and selected that file with global hidden-file display disabled.
+
+These interactions use the shared frontend in local desktop mode through a browser. The packaged native smoke below separately verifies CEF launch and navigation. Video/PDF thumbnails and real removable-drive actions remain outside this verification.
+
+![Selected image and Details panel in the production UI](details.png)
+
+![Two selected files with the count in the delete heading](delete-selection.png)
+
 ## Automated checks
 
 | Command | Result |
@@ -29,14 +43,14 @@ The browser fixture below shows two tabs and split panes. Clicking Split created
 | `bun run test:desktop` | 45 passed, 0 failed |
 | `bun run --cwd frontend check` | 0 errors, 0 warnings |
 | `bun run --cwd frontend lint` | Passed |
-| `bun run --cwd frontend test` | 145 passed, 0 failed |
+| `bun run --cwd frontend test` | 162 passed, 0 failed |
 | `bun run --cwd frontend build` | Passed |
-| `bun run --cwd frontend perf:budget` | 301308 bytes against 302080 bytes allowed |
+| `bun run --cwd frontend perf:budget` | 290272 bytes against the lowered 290816-byte ceiling |
 | `bun run --cwd website build` | Passed |
 | `bun run build:desktop` | Stable Linux CEF package built |
 | `go vet ./...` in `backend/` | Passed |
 | `go test ./...` in `backend/` | Passed after the clipboard fix |
-| `go test -race ./internal/service ./internal/handler ./cmd/server` in `backend/` | Passed; focused clipboard race tests rerun after the clipboard fix |
+| `go test -race ./...` in `backend/` | Passed, focused race checks repeated after the final Trash identity change |
 | `git diff --check` | Passed |
 
 ## Reproduce the native and API checks
@@ -52,6 +66,9 @@ bun run --cwd desktop scripts/native-smoke.ts
 ```
 
 ## Limits
+
+- The browser performance gate fails. The published starting head already exceeded its 9-script / 287,744-decoded-byte limits at 19 scripts / 317,752 bytes. The final build measured 24 scripts / 328,009 bytes. Experimental chunk changes made this worse or created import loops and were reverted. The limits were not raised. The static bundle gate is a separate measurement and does not make the browser journey pass.
+- CI's website runner used Node 22.23.3, below Astro's supported minimum. The workflow now selects Node 24 explicitly. The local website build passed; the updated hosted job is pending.
 
 - Docker image build was not run because the Docker daemon is unavailable.
 - Real removable-device mount/unmount/eject, remote-server login, and macOS/Windows integration were not tested.

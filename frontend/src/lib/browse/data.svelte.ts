@@ -27,6 +27,7 @@ import type { BrowseLocation } from './location.svelte';
 export function useBrowseData(location: BrowseLocation, selection: BrowseSelection) {
 	const queryClient = useQueryClient();
 	const settings = $derived(settingsStore.current);
+	const includeHidden = $derived(settings.showHiddenFiles || revealHidden());
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
 		queryKey: fileQueryKeys.roots(),
