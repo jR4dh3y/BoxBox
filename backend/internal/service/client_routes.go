@@ -39,11 +39,11 @@ func ClientRouteAllowed(method, route string) bool {
 	p := strings.Split(strings.TrimPrefix(route, "/"), "/")
 	switch p[0] {
 	case "files":
-		if len(p) == 1 || len(p) == 2 && p[1] == "stats" {
+		if len(p) == 1 {
 			return method == http.MethodGet
 		}
-		if p[1] == "list" {
-			return len(p) > 2 && method == http.MethodGet
+		if len(p) == 2 && p[1] == "stats" && method == http.MethodGet {
+			return true
 		}
 		return method == "GET" || method == "POST" || method == "PUT" || method == "PATCH" || method == "DELETE"
 	case "stream":
@@ -54,10 +54,10 @@ func ClientRouteAllowed(method, route string) bool {
 		case "download", "archive", "preview", "thumbnail":
 			return method == "GET"
 		case "upload":
-			if p[2] == "status" {
-				return method == "GET"
+			if method == http.MethodGet {
+				return len(p) > 3 && p[2] == "status"
 			}
-			return method == "POST"
+			return method == http.MethodPost
 		}
 	case "search":
 		return len(p) == 1 && method == "GET"

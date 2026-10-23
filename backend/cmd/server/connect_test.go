@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,18 +19,23 @@ import (
 
 func connectRouterFixture(t *testing.T, dev bool) http.Handler {
 	t.Helper()
-	hash, err := bcrypt.GenerateFromPassword([]byte("pairing-password"), bcrypt.MinCost)
-	if err != nil {
-		t.Fatal(err)
-	}
 	mount := t.TempDir()
 	if err := os.WriteFile(filepath.Join(mount, "example.txt"), []byte("paired file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return connectRouterWithMounts(t, dev, []model.MountPoint{{Name: "test", Path: mount, ReadOnly: true}})
+}
+
+func connectRouterWithMounts(t *testing.T, dev bool, mountPoints []model.MountPoint) http.Handler {
+	t.Helper()
+	hash, err := bcrypt.GenerateFromPassword([]byte("pairing-password"), bcrypt.MinCost)
+	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := &model.ServerConfig{
 		Host: "127.0.0.1", DataDir: t.TempDir(), JWTSecret: "connect-api-test-secret",
 		Users:       map[string]string{"alice": string(hash), "bob": string(hash)},
-		MountPoints: []model.MountPoint{{Name: "test", Path: mount, ReadOnly: true}},
+		MountPoints: mountPoints,
 		MaxUploadMB: 10, ChunkSizeMB: 5,
 	}
 	server, _, _, _, _, err := initializeServer(cfg, dev, false)
@@ -35,6 +43,50 @@ func connectRouterFixture(t *testing.T, dev bool) http.Handler {
 		t.Fatal(err)
 	}
 	return server.Handler
+}
+
+func TestPairedClientOperationsOnReservedMountNames(t *testing.T) {
+	listRoot, statusRoot := t.TempDir(), t.TempDir()
+	router := connectRouterWithMounts(t, false, []model.MountPoint{
+		{Name: "list", Path: listRoot},
+		{Name: "status", Path: statusRoot},
+	})
+	account := connectLogin(t, router, "alice")
+	code := connectEnable(t, router, account)
+	redeemed := connectRedeem(t, router, code, "Desktop", http.StatusOK)
+	var client service.ConnectRedemption
+	if err := json.Unmarshal(redeemed.Body.Bytes(), &client); err != nil || client.Credential == "" {
+		t.Fatal("missing paired credential")
+	}
+
+	connectRequest(t, router, "POST", "/files/list", client.Credential, `{"type":"file","name":"created.txt","content":"before"}`, http.StatusCreated)
+	connectRequest(t, router, "PATCH", "/files/list/created.txt", client.Credential, `{"content":"after"}`, http.StatusOK)
+	connectRequest(t, router, "PUT", "/files/list/created.txt", client.Credential, `{"newPath":"list/renamed.txt"}`, http.StatusOK)
+	if content, err := os.ReadFile(filepath.Join(listRoot, "renamed.txt")); err != nil || string(content) != "after" {
+		t.Fatal("paired file edit or rename did not reach the list mount")
+	}
+	connectRequest(t, router, "DELETE", "/files/list/renamed.txt", client.Credential, "", http.StatusOK)
+
+	content := []byte("paired upload")
+	checksum := sha256.Sum256(content)
+	req := httptest.NewRequest(http.MethodPost, "http://boxbox.test/api/v1/stream/upload/status/uploaded.txt", bytes.NewReader(content))
+	req.Header.Set("Authorization", "Bearer "+client.Credential)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-Upload-ID", "reserved-status")
+	req.Header.Set("X-Chunk-Index", "0")
+	req.Header.Set("X-Total-Chunks", "1")
+	req.Header.Set("X-Chunk-Size", "13")
+	req.Header.Set("X-Total-Size", "13")
+	req.Header.Set("X-Checksum", hex.EncodeToString(checksum[:]))
+	req.Header.Set("X-Create-Only", "true")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("paired upload status %d, want %d", rec.Code, http.StatusCreated)
+	}
+	if uploaded, err := os.ReadFile(filepath.Join(statusRoot, "uploaded.txt")); err != nil || !bytes.Equal(uploaded, content) {
+		t.Fatal("paired one-chunk upload did not reach the status mount")
+	}
 }
 
 func connectRequest(t *testing.T, router http.Handler, method, path, token, body string, want int) *httptest.ResponseRecorder {
