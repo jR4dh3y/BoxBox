@@ -67,6 +67,9 @@ type FS interface {
 	// Mkdir creates one new directory and fails when it already exists.
 	Mkdir(path string, perm os.FileMode) error
 
+	// Mkdir creates one new directory and fails when it already exists.
+	Mkdir(path string, perm os.FileMode) error
+
 	// Chmod changes the mode bits of the named file or directory.
 	Chmod(name string, mode os.FileMode) error
 

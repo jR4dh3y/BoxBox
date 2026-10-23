@@ -194,6 +194,14 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 		}
 	}
 
+	var connectService *service.ConnectService
+	if !devMode {
+		connectService, err = service.NewConnectService(fs, authService, service.ConnectServiceConfig{DataDir: cfg.DataDir, Users: cfg.Users})
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+	}
+
 	fileService := service.NewFileService(fs, service.FileServiceConfig{
 		MountPoints: mountPoints,
 	})
@@ -320,6 +328,18 @@ func createRouter(
 			connectHandler := handler.NewConnectHandler(connectService)
 			r.Route("/connect", func(r chi.Router) {
 				connectHandler.RegisterPublicRoutes(r, middleware.RateLimit(0.5, cfg.TrustedProxies...))
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.JWTAuth(authService, connectService))
+					r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
+					connectHandler.RegisterRoutes(r)
+				})
+			})
+		}
+
+		if connectService != nil {
+			connectHandler := handler.NewConnectHandler(connectService)
+			r.Route("/connect", func(r chi.Router) {
+				connectHandler.RegisterPublicRoutes(r)
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.JWTAuth(authService, connectService))
 					r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
