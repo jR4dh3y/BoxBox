@@ -1,6 +1,6 @@
 import { getJob, type Job } from '#lib/api/jobs.js';
 import { SvelteSet } from 'svelte/reactivity';
-import { isLocalDesktop } from '#lib/api/desktop.js';
+import { isNativePath } from '#lib/api/desktop.js';
 import {
 	clearDesktopCutClipboard,
 	getDesktopClipboard,
@@ -15,7 +15,13 @@ import {
 } from './clipboardPublication';
 import { jobsStore } from '#lib/stores/jobs.svelte.js';
 import { toastStore } from '#lib/stores/toast.svelte.js';
-import type { TransferPlan, TransferQueue, TransferConflictDecision } from './transfers';
+import type {
+	TransferPlan,
+	TransferQueue,
+	TransferConflictDecision,
+	TransferOperation,
+	TransferSource
+} from './transfers';
 import type { BrowseData } from './data.svelte';
 import type { BrowseLocation } from './location.svelte';
 
@@ -87,8 +93,8 @@ function inAppPasteSource(): PasteSource {
 }
 
 /** Native contents win unless an in-app copy or cut started while they were being read. */
-async function readPasteSource(): Promise<PasteSource> {
-	if (!isLocalDesktop() || !shouldReadNativeBrowseClipboard()) return inAppPasteSource();
+async function readPasteSource(destination: string): Promise<PasteSource> {
+	if (!isNativePath(destination) || !shouldReadNativeBrowseClipboard()) return inAppPasteSource();
 	const started = getBrowseClipboardPublication();
 	const unchanged = () => {
 		const current = getBrowseClipboardPublication();
@@ -132,7 +138,12 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 				toastStore.success(
 					`${result.jobs.length} transfer${result.jobs.length === 1 ? '' : 's'} queued`
 				);
-				if (plan.operation === 'move' && result.skipped.length === 0)
+				// Only a pasted cut has a clipboard to clear once the moves finish.
+				if (
+					plan.operation === 'move' &&
+					result.skipped.length === 0 &&
+					(clipboard !== null || selectionId !== null)
+				)
 					void finishCut(
 						result.jobs,
 						clipboard,
@@ -147,6 +158,21 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 			state = { kind: 'idle' };
 		}
 	}
+	async function planAndSubmit(
+		operation: TransferOperation,
+		items: TransferSource[],
+		destination: string,
+		clipboard: DesktopClipboardContents | null,
+		selectionId: number | null
+	) {
+		const { planTransfers } = await import('./transfers');
+		const plan = await planTransfers(operation, items, destination);
+		if (plan.entries.some((entry) => entry.kind === 'conflict')) {
+			state = { kind: 'conflict', plan, clipboard, selectionId };
+			return;
+		}
+		await submit(plan, [], clipboard, selectionId);
+	}
 	return {
 		get plan() {
 			return state.kind === 'conflict' ? state.plan : null;
@@ -159,22 +185,37 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 			const destination = location.path;
 			state = { kind: 'planning' };
 			try {
-				const { clipboard, selectionId, items, operation } = await readPasteSource();
+				const { clipboard, selectionId, items, operation } = await readPasteSource(destination);
 				if (!items.length || !operation) {
 					toastStore.info('The clipboard has no files to paste');
 					state = { kind: 'idle' };
 					return;
 				}
-				const { planTransfers } = await import('./transfers');
-				const plan = await planTransfers(operation === 'cut' ? 'move' : 'copy', items, destination);
-				if (plan.entries.some((entry) => entry.kind === 'conflict')) {
-					state = { kind: 'conflict', plan, clipboard, selectionId };
-					return;
-				}
-				await submit(plan, [], clipboard, selectionId);
+				await planAndSubmit(
+					operation === 'cut' ? 'move' : 'copy',
+					items,
+					destination,
+					clipboard,
+					selectionId
+				);
 			} catch (error) {
 				state = { kind: 'idle' };
 				toastStore.error(error instanceof Error ? error.message : 'Paste failed');
+			}
+		},
+		/** Copies or moves dropped items; conflicts ask the same question as paste. */
+		async transfer(operation: TransferOperation, items: TransferSource[], destination: string) {
+			if (state.kind !== 'idle' || items.length === 0) return;
+			state = { kind: 'planning' };
+			try {
+				await planAndSubmit(operation, items, destination, null, null);
+			} catch (error) {
+				state = { kind: 'idle' };
+				toastStore.error(
+					error instanceof Error
+						? error.message
+						: `${operation === 'move' ? 'Move' : 'Copy'} failed`
+				);
 			}
 		},
 		apply(decisions: TransferConflictDecision[]) {

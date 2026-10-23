@@ -49,13 +49,15 @@ This opens the remote BoxBox server's login page in a sandboxed CEF window witho
 - JPEG, PNG, GIF and WebP thumbnails load lazily, keep the full image visible, and fall back to file icons. Generation accepts sources up to 64 MiB and 32 megapixels, runs at most two renders, and caches up to 128 previews or 16 MiB. Video and PDF thumbnails are not generated.
 - Create, rename and delete dialogs show progress and prevent duplicate submissions. Delete counts appear in the heading; failures retain the remaining items for retry.
 - Tabs keep independent folders, history, sorting and selection; F3 opens a second pane. Only the active tab keeps its directory queries and live watches mounted.
-- The address bar accepts absolute Linux paths and `~/` paths. Local directory changes made by other programs invalidate the visible view automatically; disconnected watchers periodically revalidate until they reconnect.
-- Delete moves local items into the freedesktop Trash. Trash lists deleted items and supports restore and confirmed permanent deletion. Shift+Delete is always confirmed. Restore and transfer publication never overwrite an existing destination.
+- Drag items within one source onto a folder, the other pane, or a sidebar location to move them; hold Ctrl to copy. Cross-source drops default to copy; cross-source moves are rejected. Files dragged in from other apps use local paths. Drops use the same conflict checks and background jobs as paste.
+- Local folders use native actions and refresh through directory watches (F5 also reloads). Remote folders offer server previews, upload, download, share links and confirmed permanent deletion; they refresh on focus and periodically. Native actions are gated by each pane's path.
+- For local locations, the address bar accepts absolute Linux paths and `~/` paths. Local directory changes made by other programs invalidate the visible view automatically; disconnected watchers periodically revalidate until they reconnect.
+- Delete moves local items into the freedesktop Trash. Trash, Removable drives and Servers open as pages in the pane, with back and forward history like folders. Trash lists deleted items and supports restore and confirmed permanent deletion. Shift+Delete is always confirmed. Restore and transfer publication never overwrite an existing destination.
 - Undo reverses the last rename or move to Trash. It does not undo permanent deletion or completed transfers.
-- Copy/cut/paste uses the desktop file clipboard, including GNOME copied-files and URI-list formats. A cut clipboard is cleared only after all submitted move jobs are confirmed successful and the clipboard still matches that selection.
+- Local copy/cut/paste uses the desktop file clipboard, including GNOME copied-files and URI-list formats. A cut clipboard is cleared only after all submitted move jobs are confirmed successful and the clipboard still matches that selection.
 - Paste checks the destination, then asks whether to skip a conflict or keep both with a new name. Transfers remain background jobs with their existing progress and cancellation controls. No replace option is offered.
 - Open With lists installed applications associated with the file's MIME type and launches the chosen application through GIO. Terminal opens the current folder using an installed terminal.
-- Drives lists actual removable-volume state and exposes mount, unmount and eject through the user's GIO services and permissions. An unavailable service or busy volume is reported by the UI.
+- Removable drives lists actual removable-volume state and exposes mount, unmount and eject through the user's GIO services and permissions. An unavailable service or busy volume is reported by the UI.
 - Valid names containing `..` work. The desktop removes the server's 10,000-entry directory cap while retaining paginated rendering; self-hosted instances keep the default cap.
 
 ## Keyboard shortcuts
@@ -80,7 +82,7 @@ Press F1 or click the toolbar's ? button for the in-app reference. Shortcuts act
 | Ctrl/Cmd + Tab / Ctrl/Cmd + Shift + Tab | Next / previous tab |
 | F3 | Toggle split pane |
 | Ctrl/Cmd + Z | Undo the last local rename or move to Trash |
-| Ctrl + Shift + O | Open saved connections |
+| Ctrl/Cmd + Shift + O | Open Servers |
 
 The shared web browser supports these file and navigation shortcuts too. Web deletion uses the server's delete flow. Browsers and host window managers can reserve some combinations before the app receives them.
 
@@ -96,12 +98,12 @@ bun run install:desktop --set-default
 
 The installer installs the runtime bundle into the user's XDG data directory and installs a desktop entry and icon. It replaces only an install marked as managed by BoxBox. It never changes default handlers unless `--set-default` is supplied. Opening a folder or file URL from another application selects its local directory; `--select /path/to/file` reveals a file without opening it.
 
-## Saved connections
+## Saved servers
 
-Use Connections in the desktop toolbar or Ctrl+Shift+O to manage named remote BoxBox server profiles. Profiles persist in app-scoped user data, and each remote window is sandboxed without the local API bridge. The manager can reopen local files; closing one window does not close the others. URLs cannot contain embedded usernames or passwords. Avoid putting secrets in URL query strings.
+Open Servers in the sidebar, or press Ctrl+Shift+O in the local window, to pair a named HTTPS BoxBox server using a single-use code from its Settings → Connect page. Browse its mounts alongside local files in Locations, including independent tabs and split panes. Saved credentials remain in the private Go backend; Servers supports rename, re-pair, retry and removal. Cross-source copies stream through that backend with checksum verification and no overwrite; cancellation retains sources and may leave completed files in a partial destination. See [Remote desktop integration](../docs/remote-desktop.md) for setup, security, API details, limitations and dependent release ordering.
 
 ## Remaining desktop gaps
 
-Outbound native file drag is not available in the current Electrobun SDK. Archive creation/extraction, bulk rename, permission editing, remote download-and-open, full network-protocol mounting, and complete Nautilus/Dolphin parity are not implemented. Default desktop associations and removable-device actions depend on the host desktop services. Only Linux is verified.
+Dragging files out to other apps is not available in the current Electrobun SDK. Archive creation/extraction, bulk rename, permission editing, remote download-and-open, full network-protocol mounting, and complete Nautilus/Dolphin parity are not implemented. Default desktop associations and removable-device actions depend on the host desktop services. Only Linux is verified.
 
 BoxBox rejects clipboard publication of paths containing `%`, and rejects native clipboard imports whose literal percent escapes would resolve to a different file. This prevents a selection named `report%20.txt` from selecting a sibling named `report .txt`; full support for literal percent escapes requires changing the shared virtual-path contract.

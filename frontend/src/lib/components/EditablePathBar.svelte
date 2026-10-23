@@ -8,14 +8,44 @@
 
 	let {
 		pathSegments = [],
+		roots = [],
+		pageTitle = null,
 		onNavigate,
 		includeHiddenSuggestions = false
 	}: {
 		pathSegments?: string[];
+		roots?: MountPoint[];
+		/** Shown instead of the path while the pane shows a page rather than a folder. */
+		pageTitle?: string | null;
 		onNavigate?: (path: string) => void;
 		includeHiddenSuggestions?: boolean;
 	} = $props();
 
+	const breadcrumbs = $derived.by(() => {
+		const path = pathSegments.join('/');
+		const root = roots.find((root) => path === root.name || path.startsWith(`${root.name}/`));
+		if (root) {
+			const label = root.serverName
+				? `${root.serverName} · ${root.label ?? root.name}`
+				: (root.label ?? root.name);
+			const suffix = path.slice(root.name.length).split('/').filter(Boolean);
+			return [
+				{ label, path: root.name },
+				...suffix.map((label, index) => ({
+					label,
+					path: `${root.name}/${suffix.slice(0, index + 1).join('/')}`
+				}))
+			];
+		}
+		return pathSegments[0] === '@remote'
+			? pathSegments
+					.slice(2)
+					.map((label, index) => ({ label, path: pathSegments.slice(0, index + 3).join('/') }))
+			: pathSegments.map((label, index) => ({
+					label,
+					path: pathSegments.slice(0, index + 1).join('/')
+				}));
+	});
 	let editing = $state(false);
 	let pathBar = $state<HTMLDivElement>();
 
@@ -491,22 +521,24 @@
 		>
 			<Home size={14} />
 		</button>
-		{#if pathSegments.length === 0}
-			<span class="text-[13px] whitespace-nowrap text-text-primary">This Server</span>
+		{#if pageTitle}
+			<span class="text-[13px] whitespace-nowrap text-text-primary">{pageTitle}</span>
+		{:else if pathSegments.length === 0}
+			<span class="text-[13px] whitespace-nowrap text-text-primary">{rootLabel()}</span>
 		{:else}
 			<div class="flex flex-1 items-center gap-1 overflow-hidden">
-				{#each pathSegments as segment, index (index)}
+				{#each breadcrumbs as segment, index (segment.path)}
 					{#if index > 0}<span class="text-xs text-text-muted">/</span>{/if}
-					{#if index === pathSegments.length - 1}
-						<span class="text-[13px] whitespace-nowrap text-text-primary">{segment}</span>
+					{#if index === breadcrumbs.length - 1}
+						<span class="text-[13px] whitespace-nowrap text-text-primary">{segment.label}</span>
 					{:else}
 						<button
 							type="button"
 							class="cursor-pointer border-none bg-transparent p-0 text-[13px] text-text-secondary hover:text-white hover:underline"
 							onclick={(event) => {
 								event.stopPropagation();
-								onNavigate?.(pathSegments.slice(0, index + 1).join('/'));
-							}}>{segment}</button
+								onNavigate?.(segment.path);
+							}}>{segment.label}</button
 						>
 					{/if}
 				{/each}

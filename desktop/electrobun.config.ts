@@ -11,13 +11,8 @@ export default {
   build: {
     mainProcess: "bun",
     bun: { entrypoint: "src/index.ts" },
-    views: {
-      "connection-manager": { entrypoint: "src/connection-ui/index.ts" },
-    },
     copy: {
       "resources/boxbox-server": "boxbox-server",
-      "src/connection-ui/index.html": "views/connection-manager/index.html",
-      "src/connection-ui/style.css": "views/connection-manager/style.css",
     },
     linux: { bundleCEF: true, defaultRenderer: "cef" },
     mac: { bundleCEF: true, defaultRenderer: "cef" },

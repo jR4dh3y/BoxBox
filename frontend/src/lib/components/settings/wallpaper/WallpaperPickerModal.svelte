@@ -11,6 +11,7 @@
 		Upload,
 		Image as ImageIcon
 	} from 'lucide-svelte';
+	import { onMount } from 'svelte';
 	import { Button, Modal, ProgressBar, Select } from '#lib/components/ui/index.js';
 	import { visibleByName } from '#lib/browse/sortFiles.js';
 	import { listDirectory, listRoots, type FileInfo, type MountPoint } from '#lib/api/files.js';
@@ -92,6 +93,12 @@
 		previewImageUrl ? `url(${JSON.stringify(previewImageUrl)})` : undefined
 	);
 	const previewBackgroundStyle = $derived(getWallpaperBackgroundStyle(previewMode));
+
+	// The desktop app's folders and "this device" are the same disk, so it skips the choice.
+	const desktop = isLocalDesktop();
+	onMount(() => {
+		if (desktop) void chooseWallpaperSource('server');
+	});
 
 	async function chooseWallpaperSource(source: WallpaperSource) {
 		wallpaperSource = source;
@@ -230,7 +237,7 @@
 		localWallpaperProgress = 0;
 		localWallpaperProgressLabel = '';
 
-		if (origin === 'server') {
+		if (origin === 'server' || desktop) {
 			wallpaperSource = 'server';
 		} else {
 			wallpaperSource = null;
@@ -263,7 +270,7 @@
 				<ChevronLeft size={14} />
 				{previewOrigin === 'server' ? 'Back to folder' : 'Back'}
 			</Button>
-		{:else if wallpaperSource === 'server'}
+		{:else if wallpaperSource === 'server' && !desktop}
 			<Button variant="ghost" size="sm" onclick={() => (wallpaperSource = null)}>
 				<ChevronLeft size={14} />
 				Sources
@@ -414,7 +421,7 @@
 					class="cursor-pointer border-none bg-transparent p-0 text-text-primary hover:text-accent"
 					onclick={openServerWallpaperRoot}
 				>
-					Server
+					{rootLabel()}
 				</button>
 				{#each serverWallpaperCrumbs as crumb, index (`${crumb}-${index}`)}
 					<span class="mx-1 text-text-muted">/</span>

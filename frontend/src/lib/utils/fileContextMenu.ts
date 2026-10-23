@@ -1,6 +1,6 @@
 import type { ContextMenuItem } from '#lib/components/ui/ContextMenu.svelte';
 import type { FileInfo } from '#lib/api/files.js';
-import { isLocalDesktop } from '#lib/api/desktop.js';
+import { isNativePath } from '#lib/api/desktop.js';
 import {
 	Copy,
 	Scissors,
@@ -46,6 +46,7 @@ export interface FileContextMenuOptions {
 	favoritePaths?: Set<string>;
 	/** Whether new files/folders can be created in the current location */
 	canCreate?: boolean;
+	path?: string;
 	/** Whether creation actions should be included in this menu */
 	includeCreateActions?: boolean;
 }
@@ -61,7 +62,7 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): FileCo
 		canCreate = false,
 		includeCreateActions = true
 	} = options;
-	const desktop = isLocalDesktop();
+	const desktop = isNativePath(items[0]?.path ?? options.path ?? '');
 	const hasMultiple = items.length > 1;
 	const singleFile = items.length === 1 && !items[0].isDir;
 	const singleFolder = !hasMultiple && items[0]?.isDir ? items[0] : null;
@@ -98,7 +99,7 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): FileCo
 	}
 	menu.push(
 		{ id: 'copy', label: 'Copy', icon: Copy, shortcut: 'Ctrl+C' },
-		{ id: 'cut', label: 'Cut', icon: Scissors, shortcut: 'Ctrl+X' },
+		{ id: 'cut', label: 'Cut', icon: Scissors, shortcut: 'Ctrl+X', disabled: !canCreate },
 		paste
 	);
 	if (singleFolder) {
@@ -111,32 +112,48 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): FileCo
 	}
 	menu.push(
 		'separator',
-		{ id: 'rename', label: 'Rename', icon: Pencil, shortcut: 'F2', disabled: hasMultiple },
-		{ id: 'delete', label: desktop ? 'Move to Trash' : 'Delete', icon: Trash2, shortcut: 'Del' }
+		{
+			id: 'rename',
+			label: 'Rename',
+			icon: Pencil,
+			shortcut: 'F2',
+			disabled: hasMultiple || !canCreate
+		},
+		{
+			id: 'delete',
+			label: desktop ? 'Move to Trash' : 'Delete',
+			icon: Trash2,
+			shortcut: 'Del',
+			disabled: !canCreate
+		}
 	);
 	if (desktop) {
 		menu.push({
 			id: 'delete-permanently',
 			label: 'Delete Permanently…',
 			icon: Trash2,
-			shortcut: 'Shift+Del'
+			shortcut: 'Shift+Del',
+			disabled: !canCreate
 		});
 	}
-	menu.push(
-		'separator',
-		{
-			id: 'download',
-			label: singleFolder ? 'Download as ZIP' : 'Download',
-			icon: Download,
-			disabled: items.some((item) => item.isDir) && !singleFolder
-		},
-		{
-			id: 'share',
-			label: singleFile ? 'Share file…' : 'Share folder…',
-			icon: Share2,
-			disabled: items.length !== 1
-		},
-		{ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple }
-	);
+	menu.push('separator');
+	// Desktop files are already on this computer, and a share link would point at a private local port.
+	if (!desktop) {
+		menu.push(
+			{
+				id: 'download',
+				label: singleFolder ? 'Download as ZIP' : 'Download',
+				icon: Download,
+				disabled: items.some((item) => item.isDir) && !singleFolder
+			},
+			{
+				id: 'share',
+				label: singleFile ? 'Share file…' : 'Share folder…',
+				icon: Share2,
+				disabled: items.length !== 1
+			}
+		);
+	}
+	menu.push({ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple });
 	return menu;
 }

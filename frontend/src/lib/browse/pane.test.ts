@@ -20,6 +20,7 @@ describe('browse launch state', () => {
 			),
 			{
 				location: {
+					page: 'files',
 					path: 'media/movies',
 					searchQuery: '',
 					sortBy: 'name',

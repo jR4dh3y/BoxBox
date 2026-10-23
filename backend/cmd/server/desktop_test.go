@@ -120,3 +120,49 @@ func TestDesktopOpenLaunchesResolvedFile(t *testing.T) {
 		t.Fatalf("opened %q, want %q", opened, file)
 	}
 }
+
+func TestDesktopRemoteRoutesFailClosedAndKeepNativeRoutes(t *testing.T) {
+	data := t.TempDir()
+	// A corrupt store must not turn private API requests into a successful SPA response.
+	if err := os.MkdirAll(filepath.Join(data, "desktop"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "desktop", "servers.json"), []byte("corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &model.ServerConfig{DataDir: data, MountPoints: []model.MountPoint{{Name: "test", Path: t.TempDir()}}}
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte("SPA"))
+	})
+	address := "127.0.0.1:12345"
+	token := strings.Repeat("b", 64)
+	router := desktopHandler(desktopRoutes(fallback, cfg), address, token)
+	for _, path := range []string{"/api/v1/desktop/servers", "/api/v1/desktop/servers/id/api/v1/files", "/api/v1/desktop/transfers", "/api/v1/desktop/transfers/id"} {
+		for _, cookie := range []bool{false, true} {
+			r := httptest.NewRequest("GET", "http://"+address+path, nil)
+			if cookie {
+				r.AddCookie(&http.Cookie{Name: desktopCookie, Value: token})
+			}
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+			want := 401
+			if cookie {
+				want = 503
+			}
+			if w.Code != want {
+				t.Fatalf("%s: %d want%d", path, w.Code, want)
+			}
+			if cookie && !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
+				t.Fatal("API failure fell through to SPA")
+			}
+		}
+	}
+	r := httptest.NewRequest("GET", "http://"+address+"/api/v1/desktop/trash", nil)
+	r.AddCookie(&http.Cookie{Name: desktopCookie, Value: token})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+	if w.Code == 503 || strings.Contains(w.Body.String(), "SPA") {
+		t.Fatalf("native route lost: %d", w.Code)
+	}
+}

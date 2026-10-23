@@ -1,5 +1,5 @@
 import { SvelteSet } from 'svelte/reactivity';
-import { isLocalDesktop, openDesktopFile } from '#lib/api/desktop.js';
+import { isNativePath, openDesktopFile } from '#lib/api/desktop.js';
 import {
 	createDirectory,
 	createFile,
@@ -138,7 +138,7 @@ export function useBrowseActions(
 		operation = 'renaming';
 		try {
 			await rename(oldPath, newPath);
-			if (isLocalDesktop()) {
+			if (isNativePath(oldPath)) {
 				const { desktopUndo } = await import('./undo.svelte');
 				desktopUndo.rememberRename(oldPath, newPath);
 			}
@@ -159,7 +159,10 @@ export function useBrowseActions(
 	}
 
 	/** Files go at once; folders become background jobs. */
-	async function deleteItems(items: FileInfo[], permanent = !isLocalDesktop()): Promise<boolean> {
+	async function deleteItems(
+		items: FileInfo[],
+		permanent = !isNativePath(location.path)
+	): Promise<boolean> {
 		if (operation !== null || items.length === 0) return false;
 		operation = 'deleting';
 		const completed: FileInfo[] = [];
@@ -240,7 +243,10 @@ export function useBrowseActions(
 	async function setClipboard(operation: 'copy' | 'cut', items: FileInfo[]) {
 		clipboardStore[operation](items);
 		const selectionId = beginBrowseClipboardPublication();
-		if (!isLocalDesktop()) return;
+		if (!items.every((item) => isNativePath(item.path))) {
+			finishBrowseClipboardPublication(selectionId, 'failed');
+			return;
+		}
 		try {
 			await publishBrowseClipboardInOrder(async () => {
 				const { setDesktopClipboard } = await import('#lib/api/desktopClipboard.js');
@@ -288,7 +294,7 @@ export function useBrowseActions(
 			return cutPaths;
 		},
 		get canPaste() {
-			return isLocalDesktop() || clipboardStore.hasItems;
+			return isNativePath(location.path) || clipboardStore.hasItems;
 		},
 		get operation() {
 			return operation;
@@ -319,7 +325,7 @@ export function useBrowseActions(
 				location.navigate(file.path);
 				return;
 			}
-			if (isLocalDesktop()) {
+			if (isNativePath(file.path)) {
 				void openDesktopFile(file.path).catch((error: unknown) => {
 					toastStore.error(errorMessage(error, 'Open failed'));
 				});
@@ -346,10 +352,10 @@ export function useBrowseActions(
 			const [only] = items.length === 1 ? items : [];
 			switch (action) {
 				case 'open-with':
-					if (isLocalDesktop() && only && !only.isDir) openWithFile = only;
+					if (isNativePath(location.path) && only && !only.isDir) openWithFile = only;
 					break;
 				case 'open-terminal':
-					if (isLocalDesktop()) {
+					if (isNativePath(location.path)) {
 						try {
 							const { openDesktopTerminal } = await import('#lib/api/desktopApps.js');
 							await openDesktopTerminal(only?.isDir ? only.path : location.path);
@@ -388,7 +394,11 @@ export function useBrowseActions(
 					break;
 				case 'delete':
 					if (settingsStore.current.confirmDelete) {
-						deleteDialog = { open: true, items, mode: isLocalDesktop() ? 'trash' : 'permanent' };
+						deleteDialog = {
+							open: true,
+							items,
+							mode: isNativePath(location.path) ? 'trash' : 'permanent'
+						};
 					} else {
 						await deleteItems(items);
 					}

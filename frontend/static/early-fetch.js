@@ -9,6 +9,8 @@
 	const { pathname, searchParams } = new URL(location.href);
 	const path = (searchParams.get('path') ?? '').replace(/^\/+|\/+$/g, '');
 	if (pathname !== '/browse' || !path) return;
+	// Qualified locations are parsed and routed by the app's authoritative remote-path parser.
+	if (path === '@remote' || path.startsWith('@remote/')) return;
 
 	const url = new URL(
 		`/api/v1/files/list/${path.split('/').map(encodeURIComponent).join('/')}`,

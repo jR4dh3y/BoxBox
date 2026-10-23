@@ -1,3 +1,4 @@
+import { isRemotePath } from './remotePaths';
 import { api } from './client';
 import { array, boolean, nonEmptyString, ok, record, string } from './parse';
 
@@ -34,6 +35,7 @@ export async function listDesktopTrash(signal?: AbortSignal): Promise<DesktopTra
 
 /** Move a virtual BoxBox path into the desktop trash. */
 export async function trashDesktopFile(path: string): Promise<DesktopTrashItem> {
+	if (isRemotePath(path)) throw new Error('Remote files must be deleted on their server');
 	const value = record(await api.post<unknown>('/desktop/trash', { path }), 'trash response');
 	return parseDesktopTrashItem(value.item);
 }

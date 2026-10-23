@@ -7,6 +7,7 @@ import {
 } from './location.svelte';
 
 const initial: BrowseLocationSnapshot = {
+	page: 'files',
 	path: 'media',
 	searchQuery: '',
 	sortBy: 'name',
@@ -34,6 +35,7 @@ describe('browse location', () => {
 				)
 			),
 			{
+				page: 'files',
 				path: 'media/movies',
 				searchQuery: ' cats ',
 				sortBy: 'size',
@@ -72,4 +74,16 @@ describe('browse location', () => {
 		assert.equal(location.path, 'media/photos');
 		assert.equal(location.canGoForward, false);
 	});
+});
+
+test('remote mount parent is Locations and invalid namespace fragments cannot enter history', () => {
+	const mount = '@remote/12345678-1234-4234-8234-123456789abc/media';
+	const location = useBrowseLocation({ initial });
+	location.navigate(`${mount}/folder`);
+	location.up();
+	assert.equal(location.path, mount);
+	location.up();
+	assert.equal(location.path, '');
+	location.navigate('@remote/12345678-1234-4234-8234-123456789abc');
+	assert.equal(location.path, '');
 });

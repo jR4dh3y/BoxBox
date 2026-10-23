@@ -360,7 +360,7 @@
 		'h-[28px] px-3 py-0.5 align-middle border-b border-border-secondary text-text-primary';
 	const clippedCellClass = 'block overflow-hidden text-ellipsis whitespace-nowrap';
 	const selectionRevealClass =
-		'flex items-center justify-center group-hover/row:invisible group-has-[input:focus-visible]/row:invisible';
+		'flex items-center justify-center group-hover/icon:invisible group-has-[input:focus-visible]/icon:invisible';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -484,7 +484,7 @@
 					>
 						<td id={`file-list-cell-${itemIndex}`} class={compactMode ? compactTdClass : tdClass}>
 							<div class="flex min-w-0 items-center gap-2">
-								<!-- The checkbox takes the icon's place while the row is pointed at or focused. -->
+								<!-- Selected items keep their checkbox visible after the pointer leaves. -->
 								<span
 									class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
 										? 'text-folder'
@@ -556,6 +556,7 @@
 	{#await import('./FileContextMenu.svelte') then { default: FileContextMenu }}
 		<FileContextMenu
 			items={contextMenu.items}
+			{path}
 			{canPaste}
 			{favoritePaths}
 			{canCreate}

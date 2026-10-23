@@ -8,6 +8,7 @@ import {
 import type { BrowseActions } from './actions.svelte';
 import type { BrowseData } from './data.svelte';
 import type { useBrowseUploads } from './uploads.svelte';
+import type { FileDropHandler } from './fileDrag';
 
 export interface BrowseLaunchState {
 	location: BrowseLocationSnapshot;
@@ -69,5 +70,6 @@ export interface BrowsePaneRuntime {
 	data: BrowseData;
 	actions: BrowseActions;
 	uploads: ReturnType<typeof useBrowseUploads>;
+	drop: FileDropHandler;
 	hasOpenDialog: boolean;
 }

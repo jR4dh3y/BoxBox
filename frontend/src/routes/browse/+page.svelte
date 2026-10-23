@@ -53,11 +53,12 @@
 	const activePane = $derived(tabs.activePane);
 	const activeLocation = $derived(activePane?.location);
 	const activeRuntime = $derived(activePane ? (paneRuntimes[activePane.id] ?? null) : null);
+	const sidebarDrop = createDropZone(() => activeRuntime?.drop);
 	const settings = $derived(settingsStore.current);
 
 	function openInNewTab(path: string): void {
 		if (!activeLocation) return;
-		tabs.newTab({ ...activeLocation.snapshot, path, searchQuery: '' });
+		tabs.newTab({ ...activeLocation.snapshot, page: 'files', path, searchQuery: '' });
 		focusActivePane();
 	}
 
@@ -84,6 +85,8 @@
 
 	function syncBrowseUrl(snapshot: BrowseLocationSnapshot, selectPath: string | null): void {
 		const url = new URL(page.url.href);
+		if (snapshot.page !== 'files') url.searchParams.set('page', snapshot.page);
+		else url.searchParams.delete('page');
 		if (snapshot.path) url.searchParams.set('path', snapshot.path);
 		else url.searchParams.delete('path');
 		if (snapshot.searchQuery) url.searchParams.set('q', snapshot.searchQuery);
@@ -96,7 +99,9 @@
 		if (url.href === page.url.href) return;
 
 		void goto(`${resolve('browse')}${url.search}${url.hash}`, {
-			replace: page.url.searchParams.get('path') === snapshot.path,
+			replace:
+				(page.url.searchParams.get('path') ?? '') === snapshot.path &&
+				(page.url.searchParams.get('page') ?? 'files') === snapshot.page,
 			reset: false,
 			state: page.state
 		});
@@ -126,6 +131,13 @@
 		void tick().then(() => document.getElementById(`browse-pane-${paneId}`)?.focus());
 	}
 
+	/** A file dropped outside a drop target would replace the app with the file. */
+	function refuseStrayFileDrop(event: DragEvent): void {
+		if (event.defaultPrevented || fileDragKind(event.dataTransfer) === null) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+	}
+
 	function handleKeydown(event: KeyboardEvent): void {
 		if (event.defaultPrevented || shortcutsOpen) return;
 		if (event.key === 'F1' && !activeRuntime?.hasOpenDialog) {
@@ -146,7 +158,7 @@
 			altKey: event.altKey,
 			editable: isTextEntryTarget(event.target)
 		});
-		if (!shortcut) return;
+		if (!shortcut || (shortcut === 'open-servers' && !desktop)) return;
 		event.preventDefault();
 		if (activeRuntime?.hasOpenDialog) return;
 
@@ -189,11 +201,18 @@
 			case 'focus-location':
 				toolbarRef?.focusLocation();
 				break;
+			case 'open-servers':
+				if (desktop) activeLocation?.openPage('servers');
+				break;
 		}
 	}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window
+	onkeydown={handleKeydown}
+	ondragover={refuseStrayFileDrop}
+	ondrop={refuseStrayFileDrop}
+/>
 
 <svelte:head>
 	<title>BoxBox</title>
@@ -203,6 +222,9 @@
 	<!-- Sidebar -->
 	<Sidebar
 		currentPath={activeLocation?.path ?? ''}
+		currentPage={activeLocation?.page ?? 'files'}
+		onOpenPage={(page) => activeLocation?.openPage(page)}
+		dropTarget={sidebarDrop}
 		roots={activeRuntime?.data.roots ?? []}
 		onNavigate={(path) => activeLocation?.navigate(path)}
 		{onFolderHover}

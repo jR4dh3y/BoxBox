@@ -7,6 +7,7 @@
 		Download,
 		FileText,
 		Folder,
+		Computer,
 		HardDrive,
 		Image,
 		Monitor,
@@ -19,9 +20,16 @@
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import type { MountPoint } from '#lib/api/files.js';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import type { BrowsePage } from '#lib/browse/location.svelte.js';
+	import { rootLabel } from '#lib/browse/rootLabel.js';
+	import type { FileDropTarget } from '#lib/browse/fileDrag.js';
 
 	interface Props {
 		currentPath?: string;
+		currentPage?: BrowsePage;
+		onOpenPage?: (page: BrowsePage) => void;
+		/** Drives, places and favorites accept dropped files when set. */
+		dropTarget?: FileDropTarget;
 		roots?: MountPoint[];
 		onNavigate?: (path: string) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
@@ -50,10 +58,16 @@
 	};
 
 	const drives = $derived([
-		{ name: 'This Server', path: '', icon: Server },
+		{ name: rootLabel(), path: '', icon: desktop ? Computer : Server },
 		...roots
 			.filter((root) => root.kind !== 'place')
-			.map((root) => ({ name: root.name, path: root.name, icon: HardDrive }))
+			.map((root) => ({
+				name: root.serverName
+					? `${root.serverName} · ${root.label ?? root.name}`
+					: (root.label ?? root.name),
+				path: root.name,
+				icon: HardDrive
+			}))
 	]);
 	const places = $derived(
 		roots
@@ -67,12 +81,20 @@
 	);
 
 	// Desktop-only entries stay out of the web bundle's startup path.
-	const desktopLinks = isLocalDesktop() ? import('./desktop/SidebarDesktopLinks.svelte') : null;
+	const desktopLinks = desktop ? import('./desktop/SidebarDesktopLinks.svelte') : null;
 
 	function isActive(path: string): boolean {
 		if (path === '') return currentPath === '';
 		// "media" owns "media/movies" but not "media2".
 		return currentPath === path || currentPath.startsWith(`${path}/`);
+	}
+
+	function dragOver(path: string, event: DragEvent): void {
+		if (path) dropTarget?.over(event, path);
+	}
+
+	function dropOn(path: string, event: DragEvent): void {
+		if (path) dropTarget?.drop(event, path);
 	}
 
 	function handleNavigate(path: string) {
@@ -92,6 +114,7 @@
 	const navItemClass =
 		'w-full flex items-center gap-2.5 py-1.5 px-3 pl-5 bg-transparent border-none text-text-primary text-[13px] cursor-pointer text-left transition-colors duration-100 hover:bg-surface-secondary';
 	const navItemActiveClass = 'bg-selection text-white hover:bg-selection-hover';
+	const dropTargetClass = 'outline outline-1 -outline-offset-1 outline-accent bg-accent/15';
 
 	function handleUnpin(path: string, event: MouseEvent) {
 		event.stopPropagation();
@@ -129,8 +152,14 @@
 				{#each drives as drive (drive.path)}
 					<button
 						type="button"
-						class="{navItemClass} {isActive(drive.path) ? navItemActiveClass : ''}"
+						class="{navItemClass} {isActive(drive.path) ? navItemActiveClass : ''} {drive.path &&
+						dropTarget?.overPath === drive.path
+							? dropTargetClass
+							: ''}"
 						onclick={() => handleNavigate(drive.path)}
+						ondragover={(event) => dragOver(drive.path, event)}
+						ondragleave={(event) => dropTarget?.leave(event)}
+						ondrop={(event) => dropOn(drive.path, event)}
 						onpointerenter={() => drive.path && onFolderHover?.(drive.path)}
 						onpointerleave={() => onFolderHover?.(null)}
 					>
@@ -138,6 +167,17 @@
 						<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{drive.name}</span>
 					</button>
 				{/each}
+				{#if desktopLinks && onOpenPage}
+					{#await desktopLinks then { default: SidebarDesktopLinks }}
+						<SidebarDesktopLinks
+							pages={['drives', 'servers']}
+							{currentPage}
+							{onOpenPage}
+							itemClass={navItemClass}
+							activeClass={navItemActiveClass}
+						/>
+					{/await}
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -161,8 +201,13 @@
 					{#each places as place (place.path)}
 						<button
 							type="button"
-							class="{navItemClass} {isActive(place.path) ? navItemActiveClass : ''}"
+							class="{navItemClass} {isActive(place.path)
+								? navItemActiveClass
+								: ''} {dropTarget?.overPath === place.path ? dropTargetClass : ''}"
 							onclick={() => handleNavigate(place.path)}
+							ondragover={(event) => dragOver(place.path, event)}
+							ondragleave={(event) => dropTarget?.leave(event)}
+							ondrop={(event) => dropOn(place.path, event)}
 							onpointerenter={() => onFolderHover?.(place.path)}
 							onpointerleave={() => onFolderHover?.(null)}
 						>
@@ -172,9 +217,15 @@
 							>
 						</button>
 					{/each}
-					{#if desktopLinks}
+					{#if desktopLinks && onOpenPage}
 						{#await desktopLinks then { default: SidebarDesktopLinks }}
-							<SidebarDesktopLinks itemClass={navItemClass} activeClass={navItemActiveClass} />
+							<SidebarDesktopLinks
+								pages={['trash']}
+								{currentPage}
+								{onOpenPage}
+								itemClass={navItemClass}
+								activeClass={navItemActiveClass}
+							/>
 						{/await}
 					{/if}
 				</div>
@@ -204,8 +255,13 @@
 						<div class="group relative">
 							<button
 								type="button"
-								class="{navItemClass} pr-9 {isActive(fav.path) ? navItemActiveClass : ''}"
+								class="{navItemClass} pr-9 {isActive(fav.path)
+									? navItemActiveClass
+									: ''} {dropTarget?.overPath === fav.path ? dropTargetClass : ''}"
 								onclick={() => handleNavigate(fav.path)}
+								ondragover={(event) => dragOver(fav.path, event)}
+								ondragleave={(event) => dropTarget?.leave(event)}
+								ondrop={(event) => dropOn(fav.path, event)}
 								onpointerenter={() => onFolderHover?.(fav.path)}
 								onpointerleave={() => onFolderHover?.(null)}
 							>

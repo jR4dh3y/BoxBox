@@ -14,7 +14,8 @@ import { CONFIG } from '#lib/config.js';
 import { fileQueryKeys } from '#lib/stores/files.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { canPreview } from '#lib/utils/fileTypes.js';
-import { isLocalDesktop } from '#lib/api/desktop.js';
+import { isNativePath } from '#lib/api/desktop.js';
+import { isRemotePath } from '#lib/api/remotePaths.js';
 import { watchDesktopDirectory } from './desktopWatch';
 import { directoryQueryOptions } from './directoryQuery';
 import { sortFiles } from './sortFiles';
@@ -31,13 +32,16 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
 		queryKey: fileQueryKeys.roots(),
-		queryFn: () => listRoots()
+		queryFn: () => listRoots(),
+		staleTime: 0,
+		refetchOnWindowFocus: 'always',
+		refetchInterval: 15_000
 	}));
 
 	const driveStatsQuery = createQuery<DriveStatsResponse>(() => ({
 		queryKey: [...fileQueryKeys.roots(), 'stats'],
 		queryFn: () => getDriveStats(),
-		enabled: location.path === ''
+		enabled: location.page === 'files' && location.path === ''
 	}));
 
 	const directoryQuery = createQuery(() => ({
@@ -47,10 +51,15 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 	const searchQueryResult = createQuery<SearchResponse>(() => ({
 		queryKey: fileQueryKeys.search(location.path, location.trimmedSearchQuery),
 		queryFn: ({ signal }) => search(location.path, location.trimmedSearchQuery, signal),
-		enabled: location.path !== '' && location.isSearchActive
+		enabled: location.path !== '' && location.isSearchActive,
+		refetchOnWindowFocus: 'always',
+		refetchInterval: isRemotePath(location.path) ? 15_000 : false
 	}));
 
-	const isAtRoot = $derived(location.path === '');
+	const isAtRoot = $derived(location.page === 'files' && location.path === '');
+	const inFolder = $derived(location.page === 'files' && location.path !== '');
+	// Pages load their own data; reloading one remounts it.
+	let pageRevision = $state(0);
 	const roots = $derived(rootsQuery.data?.roots ?? []);
 	const drives = $derived(driveStatsQuery.data?.drives ?? []);
 	const directoryItems = $derived(directoryQuery.data?.items ?? []);
@@ -144,10 +153,15 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 			return isReadOnly;
 		},
 		get canCreate() {
-			return !isAtRoot && !isReadOnly;
+			return inFolder && !isReadOnly;
 		},
 		get uploadDisabled() {
-			return isAtRoot || isReadOnly;
+			return !inFolder || isReadOnly;
+		},
+		/** Whether items can be created in a folder, which need not be the open one. */
+		isWritable(path: string) {
+			const mount = mountOf(path);
+			return mount !== null && !mount.readOnly;
 		},
 
 		/** Warms a folder the user is about to open. Skips folders loaded moments ago. */
@@ -171,7 +185,15 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directories() });
 			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.searches() });
 		},
-		/** The toolbar refresh button. */
+		/** Mounts and drive space change when Trash is restored or a drive is mounted. */
+		refreshMounts() {
+			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.roots() });
+			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directories() });
+		},
+		get pageRevision() {
+			return pageRevision;
+		},
+		/** The toolbar refresh button and F5. */
 		reload() {
 			if (isAtRoot) {
 				void rootsQuery.refetch();

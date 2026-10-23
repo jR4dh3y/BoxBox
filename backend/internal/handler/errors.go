@@ -54,6 +54,16 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrWallpaperNotFound, "Wallpaper not found", model.ErrCodeNotFound, http.StatusNotFound},
 	{service.ErrInvalidWallpaper, "Wallpaper must be a JPEG, PNG, GIF, or WebP image up to 20 MB with a valid display mode", model.ErrCodeValidationError, http.StatusBadRequest},
 
+	// Desktop server and gateway errors
+	{service.ErrDesktopServerNotFound, "Saved server not found", model.ErrCodeNotFound, http.StatusNotFound},
+	{service.ErrDesktopServerInput, "Invalid saved server input", model.ErrCodeValidationError, http.StatusBadRequest},
+	{service.ErrDesktopServerStorage, "Saved server storage unavailable", model.ErrCodeInternalError, http.StatusServiceUnavailable},
+	{service.ErrRemoteUnavailable, "Remote server unavailable", "REMOTE_UNAVAILABLE", http.StatusBadGateway},
+	{service.ErrRemoteAuthRequired, "Remote server requires pairing", "REMOTE_AUTH_REQUIRED", http.StatusBadGateway},
+	{service.ErrRemotePairing, "Remote pairing code invalid or unavailable", "PAIRING_UNAVAILABLE", http.StatusBadRequest},
+	{service.ErrRemoteRoute, "Remote route is not allowed", model.ErrCodeAccessDenied, http.StatusForbidden},
+	{service.ErrCrossSourceMove, "Cross-source moves are unsupported; use copy", "CROSS_SOURCE_MOVE_UNSUPPORTED", http.StatusBadRequest},
+
 	// Auth service errors
 	{service.ErrPairingUnavailable, "Pairing code invalid or unavailable", "PAIRING_UNAVAILABLE", http.StatusNotFound},
 	{service.ErrConnectRateLimited, "Too many pairing requests", "RATE_LIMITED", http.StatusTooManyRequests},

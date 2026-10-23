@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Plus, X } from 'lucide-svelte';
 	import type { BrowseTabState, BrowseTabsController } from '#lib/browse/tabs.svelte.js';
+	import { locationTitle } from '#lib/browse/locationTitle.js';
 
 	interface Props {
 		controller: BrowseTabsController;
@@ -13,8 +14,10 @@
 		'flex h-7 min-w-0 max-w-52 items-center gap-2 rounded px-2 text-left text-xs transition-colors';
 
 	function tabTitle(tab: BrowseTabState): string {
-		const path = tab.panes[0]?.location.path ?? '';
-		return path ? (path.split('/').at(-1) ?? path) : 'This Server';
+		const location = tab.panes[0]?.location;
+		if (!location) return '';
+		if (location.page !== 'files' || !location.path) return locationTitle(location);
+		return location.path.split('/').at(-1) ?? location.path;
 	}
 </script>
 
@@ -33,7 +36,7 @@
 						? 'text-text-primary'
 						: 'text-text-secondary hover:bg-surface-secondary hover:text-text-primary'}"
 					aria-current={active ? 'page' : undefined}
-					title={tab.panes[0]?.location.path || 'This Server'}
+					title={tab.panes[0]?.location.path || title}
 					onclick={() => {
 						controller.activateTab(tab.id);
 						onTabChange?.();

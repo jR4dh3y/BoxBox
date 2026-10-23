@@ -1,7 +1,7 @@
 import type { useBrowsePaste as createBrowsePaste } from './pasteRuntime.svelte';
 import type { BrowseData } from './data.svelte';
 import type { BrowseLocation } from './location.svelte';
-import type { TransferConflictDecision } from './transfers';
+import type { TransferConflictDecision, TransferOperation, TransferSource } from './transfers';
 import { getBrowseClipboardPublication } from './clipboardPublication';
 import { toastStore } from '#lib/stores/toast.svelte.js';
 
@@ -39,6 +39,21 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 				await controller.paste();
 			} catch (error) {
 				toastStore.error(error instanceof Error ? error.message : 'Unable to load paste');
+			} finally {
+				loading = false;
+			}
+		},
+		async transfer(operation: TransferOperation, items: TransferSource[], destination: string) {
+			if (loading) return;
+			loading = true;
+			try {
+				if (!controller) {
+					const module = await import('./pasteRuntime.svelte');
+					controller = module.useBrowsePaste(location, data);
+				}
+				await controller.transfer(operation, items, destination);
+			} catch (error) {
+				toastStore.error(error instanceof Error ? error.message : 'Unable to load transfers');
 			} finally {
 				loading = false;
 			}

@@ -178,6 +178,13 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("initialize auth service: %w", err)
 	}
+	var connectService *service.ConnectService
+	if !devMode {
+		connectService, err = service.NewConnectService(fs, authService, service.ConnectServiceConfig{DataDir: cfg.DataDir, Users: cfg.Users})
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+	}
 
 	var connectService *service.ConnectService
 	if !devMode {
@@ -297,6 +304,17 @@ func createRouter(
 			r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
 			authHandler.RegisterRoutes(r)
 		})
+		if connectService != nil {
+			connectHandler := handler.NewConnectHandler(connectService)
+			r.Route("/connect", func(r chi.Router) {
+				connectHandler.RegisterPublicRoutes(r)
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.JWTAuth(authService, connectService))
+					r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
+					connectHandler.RegisterRoutes(r)
+				})
+			})
+		}
 
 		if connectService != nil {
 			connectHandler := handler.NewConnectHandler(connectService)

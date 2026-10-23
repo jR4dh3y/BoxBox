@@ -536,6 +536,7 @@
 	{#await import('./FileContextMenu.svelte') then { default: FileContextMenu }}
 		<FileContextMenu
 			items={contextMenu.items}
+			{path}
 			{canPaste}
 			{favoritePaths}
 			{canCreate}

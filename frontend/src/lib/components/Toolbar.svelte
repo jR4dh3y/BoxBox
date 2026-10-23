@@ -10,6 +10,8 @@
 
 	interface Props {
 		pathSegments?: string[];
+		roots?: MountPoint[];
+		pageTitle?: string | null;
 		canGoBack?: boolean;
 		canGoForward?: boolean;
 		onBack?: () => void;
@@ -37,6 +39,8 @@
 
 	let {
 		pathSegments = [],
+		roots = [],
+		pageTitle = null,
 		canGoBack = false,
 		canGoForward = false,
 		onBack,
@@ -100,7 +104,14 @@
 		</button>
 	</div>
 
-	<EditablePathBar bind:this={pathBar} {pathSegments} {onNavigate} {includeHiddenSuggestions} />
+	<EditablePathBar
+		bind:this={pathBar}
+		{pathSegments}
+		{roots}
+		{pageTitle}
+		{onNavigate}
+		{includeHiddenSuggestions}
+	/>
 
 	{#if showSearch}
 		<div class="w-48 min-w-28 shrink md:w-64 lg:w-96">

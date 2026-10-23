@@ -2,6 +2,8 @@
 	/**
 	 * ShareLinksSettings - every active share link, with copy and revoke.
 	 */
+	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { isRemotePath } from '#lib/api/remotePaths.js';
 	import { onMount } from 'svelte';
 	import { Button, Spinner } from '#lib/components/ui/index.js';
 	import ShareLinkList from '#lib/components/ShareLinkList.svelte';
@@ -19,7 +21,9 @@
 		loading = true;
 		error = null;
 		try {
-			shares = (await listShares()).shares;
+			shares = (await listShares()).shares.filter(
+				(share) => !isLocalDesktop() || isRemotePath(share.id)
+			);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Unable to load share links.';
 		} finally {

@@ -1,5 +1,6 @@
 import { api } from './client';
 import { ok } from './parse';
+import { isRemotePath } from './remotePaths';
 
 export function isLocalDesktop(): boolean {
 	return (
@@ -8,13 +9,13 @@ export function isLocalDesktop(): boolean {
 	);
 }
 
-/** Open a file or folder in the OS default application. */
-export async function openDesktopFile(path: string): Promise<void> {
-	ok(await api.post<unknown>('/desktop/open', { path }), 'open response');
+/** Native capabilities belong to the location, even inside a desktop window. */
+export function isNativePath(path: string): boolean {
+	return isLocalDesktop() && !isRemotePath(path);
 }
 
-export function openConnectionManager(): void {
-	if ('__electrobunSendToHost' in window && typeof window.__electrobunSendToHost === 'function') {
-		window.__electrobunSendToHost({ type: 'boxbox:connections' });
-	}
+/** Open a file or folder in the OS default application. */
+export async function openDesktopFile(path: string): Promise<void> {
+	if (!isNativePath(path)) throw new Error('Native apps can only open files on this computer');
+	ok(await api.post<unknown>('/desktop/open', { path }), 'open response');
 }
