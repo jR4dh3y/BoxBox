@@ -74,7 +74,7 @@ export function createEarlyStart(win: () => Pick<Window, 'boxboxEarly'>) {
 			return isAccessTokenResponse(tokens) ? tokens : null;
 		},
 
-		/** The first page of `url`, if it is what the shell asked for and still fresh enough to show. */
+		/** The listing at `url`, if it is what the shell asked for and still fresh enough to show. */
 		async takeDirectory(url: string): Promise<FileList | null> {
 			claim();
 			const early = list;

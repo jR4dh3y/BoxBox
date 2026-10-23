@@ -6,9 +6,7 @@ import {
 	isJobActive,
 	type Job
 } from '#lib/api/jobs.js';
-import { listDirectory, type FileList, type ListOptions } from '#lib/api/files.js';
-
-const DIRECTORY_PAGE_SIZE = 1000;
+import { listDirectory, type FileList } from '#lib/api/files.js';
 
 export type TransferOperation = 'copy' | 'move';
 export type TransferConflictResolution = 'skip' | 'keep-both';
@@ -59,11 +57,7 @@ export interface ResolvedTransferPlan {
 	skipped: TransferSource[];
 }
 
-export type DirectoryLister = (
-	path: string,
-	options?: ListOptions,
-	signal?: AbortSignal
-) => Promise<FileList>;
+export type DirectoryLister = (path: string, signal?: AbortSignal) => Promise<FileList>;
 
 export interface PlanTransfersOptions {
 	listDirectory?: DirectoryLister;
@@ -110,56 +104,8 @@ async function listAllDestinationItems(
 	lister: DirectoryLister,
 	signal?: AbortSignal
 ): Promise<string[]> {
-	const names: string[] = [];
-	const paths = new Set<string>();
-	let expectedTotal: number | undefined;
-	let page = 1;
-
-	while (expectedTotal === undefined || names.length < expectedTotal) {
-		const result = await lister(
-			destinationDirectory,
-			{
-				page,
-				pageSize: DIRECTORY_PAGE_SIZE,
-				includeHidden: true,
-				sortBy: 'name',
-				sortDir: 'asc'
-			},
-			signal
-		);
-
-		if (expectedTotal === undefined) expectedTotal = result.totalCount;
-		if (result.totalCount !== expectedTotal) {
-			throw new TransferPlanningError(
-				'Destination contents changed while checking for conflicts. Refresh and try again.'
-			);
-		}
-
-		for (const item of result.items) {
-			if (paths.has(item.path)) {
-				throw new TransferPlanningError(
-					'Destination contents changed while checking for conflicts. Refresh and try again.'
-				);
-			}
-			paths.add(item.path);
-			names.push(item.name);
-		}
-
-		if (names.length >= expectedTotal) break;
-		if (result.items.length === 0) {
-			throw new TransferPlanningError(
-				'Could not check every destination item. Refresh and try again.'
-			);
-		}
-		page++;
-	}
-
-	if (names.length !== expectedTotal) {
-		throw new TransferPlanningError(
-			'Destination contents changed while checking for conflicts. Refresh and try again.'
-		);
-	}
-	return names;
+	const result = await lister(destinationDirectory, signal);
+	return result.items.map((item) => item.name);
 }
 
 /** Lists the complete destination once and assigns safe, unique keep-both names. */

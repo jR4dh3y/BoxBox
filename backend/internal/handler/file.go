@@ -3,7 +3,6 @@ package handler
 import (
 	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/middleware"
@@ -36,14 +35,14 @@ func (h *FileHandler) RegisterRoutes(r chi.Router) {
 	r.Delete("/*", h.Delete)
 }
 
-// ListPath returns a directory page without the polymorphic file-info lookup.
+// ListPath returns a whole directory without the polymorphic file-info lookup.
 func (h *FileHandler) ListPath(w http.ResponseWriter, r *http.Request) {
 	path := chi.URLParam(r, "*")
 	if path == "" {
 		writeError(w, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
-	list, err := h.fileService.List(r.Context(), path, h.parseListOptions(r))
+	list, err := h.fileService.List(r.Context(), path)
 	if err != nil {
 		HandleServiceError(w, err)
 		return
@@ -120,9 +119,6 @@ func (h *FileHandler) GetPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse query parameters for listing options
-	opts := h.parseListOptions(r)
-
 	// Check if this is a directory or file
 	info, err := h.fileService.GetInfo(r.Context(), path)
 	if err != nil {
@@ -132,7 +128,7 @@ func (h *FileHandler) GetPath(w http.ResponseWriter, r *http.Request) {
 
 	if info.IsDir {
 		// Return directory listing
-		list, err := h.fileService.List(r.Context(), path, opts)
+		list, err := h.fileService.List(r.Context(), path)
 		if err != nil {
 			HandleServiceError(w, err)
 			return
@@ -321,48 +317,4 @@ func (h *FileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]string{"message": "Deleted successfully"}, http.StatusOK)
-}
-
-// parseListOptions extracts listing options from query parameters
-func (h *FileHandler) parseListOptions(r *http.Request) model.ListOptions {
-	opts := model.DefaultListOptions()
-
-	if page := r.URL.Query().Get("page"); page != "" {
-		if p, err := strconv.Atoi(page); err == nil && p > 0 {
-			opts.Page = p
-		}
-	}
-
-	if pageSize := r.URL.Query().Get("pageSize"); pageSize != "" {
-		if ps, err := strconv.Atoi(pageSize); err == nil && ps > 0 && ps <= 1000 {
-			opts.PageSize = ps
-		}
-	}
-
-	if includeHidden := r.URL.Query().Get("includeHidden"); includeHidden != "" {
-		if value, err := strconv.ParseBool(includeHidden); err == nil {
-			opts.IncludeHidden = value
-		}
-	}
-
-	if sortBy := r.URL.Query().Get("sortBy"); sortBy != "" {
-		// Validate sort field
-		validSortFields := map[string]bool{"name": true, "size": true, "modTime": true, "type": true}
-		if validSortFields[sortBy] {
-			opts.SortBy = sortBy
-		}
-	}
-
-	if sortDir := r.URL.Query().Get("sortDir"); sortDir != "" {
-		// Validate sort direction
-		if sortDir == "asc" || sortDir == "desc" {
-			opts.SortDir = sortDir
-		}
-	}
-
-	if filter := r.URL.Query().Get("filter"); filter != "" {
-		opts.Filter = filter
-	}
-
-	return opts
 }

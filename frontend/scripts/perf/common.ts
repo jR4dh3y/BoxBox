@@ -21,6 +21,24 @@ export function run(args: string[], cwd = repo, log?: string): string {
 	return output;
 }
 
+// Budgets whose measured work no longer exists, mapped to the budget that replaced them. Folder
+// listing stopped paging: per-page, per-sort costs became one whole-folder cost. Delete an entry
+// once no supported base revision still has its key.
+const retiredBudgets: Readonly<Record<string, string>> = {
+	'list/name': 'list',
+	'list/type': 'list',
+	'list/size': 'list',
+	'list/modTime': 'list',
+	'ListDirectory/name.bytes': 'ListDirectory.bytes',
+	'ListDirectory/type.bytes': 'ListDirectory.bytes',
+	'ListDirectory/size.bytes': 'ListDirectory.bytes',
+	'ListDirectory/modTime.bytes': 'ListDirectory.bytes',
+	'ListDirectory/name.allocations': 'ListDirectory.allocations',
+	'ListDirectory/type.allocations': 'ListDirectory.allocations',
+	'ListDirectory/size.allocations': 'ListDirectory.allocations',
+	'ListDirectory/modTime.allocations': 'ListDirectory.allocations'
+};
+
 export async function withBaseline<T>(
 	ref: string,
 	action: (base: string, sha: string) => Promise<T>
@@ -42,7 +60,8 @@ export async function withBaseline<T>(
 			if (!(await oldFile.exists())) continue; // First introduction of a ratchet.
 			const violations = checkRatchets(
 				await oldFile.json(),
-				await Bun.file(join(repo, path)).json()
+				await Bun.file(join(repo, path)).json(),
+				retiredBudgets
 			);
 			if (violations.length)
 				throw new Error(`${path}: budgets may only decrease: ${violations.join('; ')}`);

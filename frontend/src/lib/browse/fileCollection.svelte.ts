@@ -10,7 +10,7 @@ import {
 	shouldOpenOnDoubleClick,
 	type FileSelectionGesture
 } from './fileInteractions';
-import { moveFileFocus } from './fileShortcuts';
+import { fileNavigationIndex } from './fileShortcuts';
 
 export interface FileCollectionProps {
 	items: FileInfo[];
@@ -21,11 +21,26 @@ export interface FileCollectionProps {
 	onContextMenuAction?: (action: FileContextAction, items: FileInfo[]) => void;
 }
 
+/** The parts of a key press that item navigation reads. */
+export type FileKeyInput = Pick<
+	KeyboardEvent,
+	'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'target' | 'preventDefault'
+>;
+
+/** How the view lays items out: arrow keys move by `columns`, and `focus` brings an index into view. */
+export interface FileCollectionView {
+	readonly columns: number;
+	/** Where navigation resumes once the focused item has scrolled out. */
+	readonly focusedPath: string | null;
+	focus(index: number): Promise<void>;
+}
+
 /**
  * Pointer and keyboard selection shared by the list and grid views.
  * File actions (copy, delete, rename…) are pane shortcuts, not item shortcuts.
+ * Navigation works on positions in `items`, so it reaches items the view has not rendered.
  */
-export function useFileCollection(props: () => FileCollectionProps, layout: 'list' | 'grid') {
+export function useFileCollection(props: () => FileCollectionProps, view: FileCollectionView) {
 	let anchor: string | null = null;
 	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
 
@@ -47,6 +62,41 @@ export function useFileCollection(props: () => FileCollectionProps, layout: 'lis
 		contextMenu = { x: event.clientX, y: event.clientY, items };
 	}
 
+	function keydown(item: FileInfo, event: FileKeyInput): void {
+		if (
+			event.target instanceof HTMLInputElement &&
+			(event.target.type !== 'checkbox' || event.key === ' ' || event.key === 'Enter')
+		)
+			return;
+
+		const { items } = props();
+		const nextIndex = event.altKey
+			? null
+			: fileNavigationIndex(
+					event.key,
+					items.findIndex((candidate) => candidate.path === item.path),
+					items.length,
+					view.columns
+				);
+		if (nextIndex !== null) {
+			event.preventDefault();
+			void view.focus(nextIndex);
+			if (!event.ctrlKey && !event.metaKey) {
+				anchor ??= item.path;
+				select(items[nextIndex].path, event.shiftKey ? { type: 'range' } : { type: 'replace' });
+			}
+			return;
+		}
+		if (event.altKey) return;
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			props().onItemClick?.(item);
+		} else if (event.key === ' ') {
+			event.preventDefault();
+			select(item.path, fileSelectionGestureFromModifiers(event));
+		}
+	}
+
 	return {
 		get contextMenu() {
 			return contextMenu;
@@ -61,30 +111,19 @@ export function useFileCollection(props: () => FileCollectionProps, layout: 'lis
 		check(item: FileInfo, selected: boolean): void {
 			select(item.path, { type: 'set', selected });
 		},
-		keydown(item: FileInfo, event: KeyboardEvent): void {
-			if (
-				event.target instanceof HTMLInputElement &&
-				(event.target.type !== 'checkbox' || event.key === ' ' || event.key === 'Enter')
-			)
-				return;
-
-			const nextPath = moveFileFocus(event, layout);
-			if (nextPath) {
-				if (!event.ctrlKey && !event.metaKey) {
-					anchor ??= item.path;
-					select(nextPath, event.shiftKey ? { type: 'range' } : { type: 'replace' });
-				}
-				return;
-			}
-			if (event.altKey) return;
-			if (event.key === 'Enter') {
+		/** Keys pressed on the scroller itself, after the focused item scrolled out of view. */
+		scrollerKeydown(event: FileKeyInput & Pick<KeyboardEvent, 'currentTarget'>): void {
+			if (event.target !== event.currentTarget) return;
+			const { items } = props();
+			const item = items.find((candidate) => candidate.path === view.focusedPath);
+			if (item) keydown(item, event);
+			// The item is gone, so there is no position to move from: start at the first.
+			else if (fileNavigationIndex(event.key, 0, items.length) !== null) {
 				event.preventDefault();
-				props().onItemClick?.(item);
-			} else if (event.key === ' ') {
-				event.preventDefault();
-				select(item.path, fileSelectionGestureFromModifiers(event));
+				void view.focus(0);
 			}
 		},
+		keydown,
 		itemContextMenu(item: FileInfo, event: MouseEvent): void {
 			const { items, selectedPaths, onSelectionChange } = props();
 			if (!selectedPaths.has(item.path)) {

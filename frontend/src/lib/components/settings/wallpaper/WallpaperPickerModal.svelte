@@ -11,6 +11,7 @@
 	} from 'lucide-svelte';
 	import { Button, Modal, ProgressBar, Select } from '#lib/components/ui/index.js';
 	import { listDirectory, listRoots, type FileInfo, type MountPoint } from '#lib/api/files.js';
+	import { sortFiles } from '#lib/browse/sortFiles.js';
 	import { resolveBackgroundImage, toServerBackgroundImage } from '#lib/utils/appearance.js';
 	import { formatFileSize } from '#lib/utils/format.js';
 	import {
@@ -116,14 +117,12 @@
 		serverWallpaperError = null;
 
 		try {
-			const response = await listDirectory(path, {
-				page: 1,
-				pageSize: 200,
-				sortBy: 'name',
-				sortDir: 'asc',
-				includeHidden: showHiddenFiles
-			});
-			serverWallpaperItems = response.items;
+			const response = await listDirectory(path);
+			const visible = showHiddenFiles
+				? response.items
+				: response.items.filter((item) => !item.name.startsWith('.'));
+			// The picker renders every tile, so it keeps the first 200 like the old single page did.
+			serverWallpaperItems = sortFiles(visible, 'name', 'asc').slice(0, 200);
 		} catch (error) {
 			serverWallpaperError = error instanceof Error ? error.message : 'Unable to open this folder.';
 			serverWallpaperItems = [];

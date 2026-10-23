@@ -1,5 +1,5 @@
-// Starts the first folder listing while the app's JavaScript downloads, so the page of files is already
-// on its way when the app asks for it. src/lib/api/earlyStart.ts takes over what this starts.
+// Starts the folder listing while the app's JavaScript downloads, so it is already on its way when
+// the app asks for it. src/lib/api/earlyStart.ts takes over what this starts.
 // The request must match listDirectory in src/lib/api/files.ts; earlyStart.test.ts checks that.
 (() => {
 	// `null` means the app started first and took over. Start nothing then: a second token refresh
@@ -10,29 +10,10 @@
 	const path = (searchParams.get('path') ?? '').replace(/^\/+|\/+$/g, '');
 	if (pathname !== '/browse' || !path) return;
 
-	let settings = {};
-	try {
-		settings = JSON.parse(localStorage.getItem('boxbox_settings')) ?? {};
-	} catch {
-		// Unreadable settings: use the defaults, as the app does.
-	}
-	const sort = searchParams.get('sort');
-	const dir = searchParams.get('dir');
 	const url = new URL(
 		`/api/v1/files/list/${path.split('/').map(encodeURIComponent).join('/')}`,
 		location.origin
 	);
-	url.searchParams.append('page', 1);
-	url.searchParams.append('pageSize', 50);
-	url.searchParams.append(
-		'sortBy',
-		['name', 'size', 'modTime', 'type'].includes(sort) ? sort : (settings.defaultSortBy ?? 'name')
-	);
-	url.searchParams.append(
-		'sortDir',
-		dir === 'asc' || dir === 'desc' ? dir : (settings.defaultSortDir ?? 'asc')
-	);
-	url.searchParams.append('includeHidden', settings.showHiddenFiles ?? false);
 
 	const list = (token) =>
 		fetch(url, {

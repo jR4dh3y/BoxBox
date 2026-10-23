@@ -17,15 +17,3 @@ func TestContainsFoldMatchesToLowerContains(t *testing.T) {
 		}
 	}
 }
-
-func TestCompareFoldMatchesToLowerCompare(t *testing.T) {
-	names := []string{"", "a", "A", "b", "B", "ab", "Ab", "aB", "a.txt", "a-b", "Zed", "zed.md", "10.txt", "9.txt", "éclair", "Éclair", "eclair", "Éclair2", "aé", "aÉ", "İ", "i"}
-	for _, a := range names {
-		for _, b := range names {
-			want := strings.Compare(strings.ToLower(a), strings.ToLower(b))
-			if got := compareFold(a, b); got != want {
-				t.Errorf("compareFold(%q, %q) = %d, want %d", a, b, got, want)
-			}
-		}
-	}
-}

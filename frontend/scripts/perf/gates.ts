@@ -1,5 +1,7 @@
 export type BrowserMetrics = {
 	listingRequests: number;
+	/** File rows in the DOM once the 10,000-entry folder is open; virtualization bounds it. */
+	renderedRows: number;
 	refreshRequests: number;
 	scriptRequests: number;
 	scriptBytes: number;
@@ -29,12 +31,25 @@ function numericLimits(value: unknown): Map<string, number> {
 	);
 }
 
-export function checkRatchets(base: unknown, head: unknown): string[] {
+/**
+ * Budgets may only tighten. A key may disappear only when `retired` names the key that now
+ * measures the same work, and that key exists in the new budget.
+ */
+export function checkRatchets(
+	base: unknown,
+	head: unknown,
+	retired: Readonly<Record<string, string>> = {}
+): string[] {
 	const oldLimits = numericLimits(base);
 	const newLimits = numericLimits(head);
 	return [...oldLimits].flatMap(([key, limit]) => {
 		const next = newLimits.get(key);
-		return next === undefined || next > limit ? [`${key}: ${limit} → ${next ?? 'deleted'}`] : [];
+		if (next === undefined) {
+			const successor = Object.entries(retired).find(([name]) => name === key)?.[1];
+			if (successor !== undefined && newLimits.has(successor)) return [];
+			return [`${key}: ${limit} → deleted`];
+		}
+		return next > limit ? [`${key}: ${limit} → ${next}`] : [];
 	});
 }
 

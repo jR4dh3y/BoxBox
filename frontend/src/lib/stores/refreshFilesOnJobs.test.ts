@@ -23,7 +23,7 @@ function job(state: JobState): Job {
 	};
 }
 
-const listKey = fileQueryKeys.list('media', { pageSize: 50, sortBy: 'name', sortDir: 'asc' });
+const listKey = fileQueryKeys.directory('media');
 const statsKey = [...fileQueryKeys.roots(), 'stats'];
 
 const realFetch = globalThis.fetch;

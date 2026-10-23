@@ -58,7 +58,7 @@ async function measure(
 		await page.addInitScript(() => {
 			const observer = new MutationObserver(() => {
 				const files = document.querySelectorAll('[data-file-row="true"], [data-file-item="true"]');
-				if (files.length !== 50 || !files[0].textContent?.includes('File-00000')) return;
+				if (files.length === 0 || !files[0].textContent?.includes('File-00000')) return;
 				observer.disconnect();
 				requestAnimationFrame(() =>
 					requestAnimationFrame(() => performance.mark('boxbox:files-visible'))
@@ -77,12 +77,10 @@ async function measure(
 			// Allow startup revalidation to finish before counting requests; the
 			// rendered marker, not network-idle, supplies the timing measurement.
 			await page.waitForLoadState('networkidle');
-			assert.equal(
-				await page.locator('[data-file-row="true"], [data-file-item="true"]').count(),
-				50,
-				'only the first page is rendered'
-			);
-			assert.equal(await page.getByText('File-00049.txt', { exact: true }).isVisible(), true);
+			const renderedRows = await page
+				.locator('[data-file-row="true"], [data-file-item="true"]')
+				.count();
+			assert.equal(await page.getByText('File-00000.txt', { exact: true }).isVisible(), true);
 			const timing = await page.evaluate(() => {
 				const scripts = performance
 					.getEntriesByType('resource')
@@ -107,6 +105,7 @@ async function measure(
 				profile: profile.name,
 				cache,
 				...timing,
+				renderedRows,
 				listingRequests: requests.filter(
 					(request) => request.path.startsWith('/api/v1/files/list/') && request.method === 'GET'
 				).length,
@@ -131,6 +130,18 @@ async function measure(
 					'each navigation restores its session exactly once'
 				);
 				assert.deepEqual(errors, [], 'no runtime errors during browsing');
+				// The whole folder is loaded, so the keyboard reaches its last file with no request.
+				await page.getByText('File-00000.txt', { exact: true }).click();
+				await page.keyboard.press('End');
+				await page.getByText('File-09999.txt', { exact: true }).waitFor();
+				assert.equal(
+					await page.evaluate(() => document.activeElement?.getAttribute('data-file-path')),
+					'perf/File-09999.txt'
+				);
+				assert.ok(
+					(await page.locator('[data-file-row="true"]').count()) <= budget.renderedRows,
+					'scrolling to the end keeps the rendered rows bounded'
+				);
 			}
 		}
 	} catch (error) {

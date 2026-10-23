@@ -4,6 +4,7 @@
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
 	import { getFileTypeDescription, getFileIcon } from '#lib/utils/fileTypes.js';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { untrack } from 'svelte';
 	import Spinner from '#lib/components/ui/Spinner.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import { FolderOpen } from 'lucide-svelte';
@@ -14,6 +15,7 @@
 	import type { FileContextAction } from '#lib/utils/fileContextMenu.js';
 	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
 	import type { FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
+	import { createVirtualScroll } from '#lib/browse/virtualScroll.svelte.js';
 
 	let {
 		items = [],
@@ -29,6 +31,7 @@
 		canCreate = false,
 		showFileExtensions = true,
 		fileOpenBehavior = 'double-click',
+		revealPath = null,
 		onItemClick,
 		onFolderHover,
 		onSortChange,
@@ -48,6 +51,8 @@
 		canCreate?: boolean;
 		showFileExtensions?: boolean;
 		fileOpenBehavior?: FileOpenBehavior;
+		/** Scrolled into view once it appears in `items`. */
+		revealPath?: string | null;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -57,6 +62,26 @@
 	} = $props();
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
+	let headerHeight = $state(0);
+	const virtual = createVirtualScroll(() => ({
+		count: items.length,
+		rowGap: 0,
+		offsetTop: headerHeight,
+		stickyTop: headerHeight,
+		estimatedItemHeight: 33
+	}));
+	const visibleItems = $derived(items.slice(virtual.range.start, virtual.range.end));
+
+	// Bring an item the pane selected for the user into view once, when it is in the list.
+	let revealedPath: string | null = null;
+	$effect(() => {
+		const path = revealPath;
+		if (!path || path === revealedPath || !virtual.ready) return;
+		const index = items.findIndex((item) => item.path === path);
+		if (index < 0) return;
+		revealedPath = path;
+		untrack(() => virtual.reveal(index));
+	});
 	const collection = useFileCollection(
 		() => ({
 			items,
@@ -66,7 +91,7 @@
 			onSelectionChange,
 			onContextMenuAction
 		}),
-		'list'
+		virtual
 	);
 
 	function handleSort(field: SortField) {
@@ -89,9 +114,12 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="file-list-container relative h-full w-full overflow-auto bg-surface-primary {compactMode
+	class="file-list-container relative h-full w-full overflow-auto bg-surface-primary outline-none {compactMode
 		? 'compact'
 		: ''}"
+	tabindex="-1"
+	{@attach virtual.scroller}
+	onkeydown={collection.scrollerKeydown}
 	oncontextmenu={(event) =>
 		collection.backgroundContextMenu(event, '[data-file-row="true"], [data-file-header="true"]')}
 >
@@ -106,6 +134,7 @@
 		role="grid"
 		aria-busy={isLoading}
 		aria-multiselectable="true"
+		aria-rowcount={items.length + 1}
 	>
 		<colgroup>
 			<col class="file-name-column" />
@@ -113,8 +142,8 @@
 			<col class="file-size-column" />
 			<col class="file-modified-column" />
 		</colgroup>
-		<thead>
-			<tr>
+		<thead bind:offsetHeight={headerHeight}>
+			<tr aria-rowindex={1}>
 				<th
 					class="{thClass} {sortBy === 'name' ? thSortedClass : ''}"
 					onclick={() => handleSort('name')}
@@ -180,7 +209,11 @@
 					</td>
 				</tr>
 			{:else}
-				{#each items as item (item.path)}
+				<tr aria-hidden="true" style:height="{virtual.range.before}px"
+					><td colspan="4" class="p-0"></td></tr
+				>
+				{#each visibleItems as item, offset (item.path)}
+					{@const index = virtual.range.start + offset}
 					{@const IconComponent = getFileIcon(item.name, item.isDir)}
 					{@const displayName = fileDisplayName(item, showFileExtensions)}
 					{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
@@ -201,8 +234,11 @@
 						oncontextmenu={(event) => collection.itemContextMenu(item, event)}
 						tabindex="0"
 						aria-selected={selectedPaths.has(item.path)}
+						aria-rowindex={index + 2}
 						data-file-row="true"
 						data-file-path={item.path}
+						data-file-index={index}
+						{@attach virtual.item}
 					>
 						<td class={tdClass}>
 							<div class="flex min-w-0 items-center gap-2">
@@ -251,6 +287,9 @@
 						</td>
 					</tr>
 				{/each}
+				<tr aria-hidden="true" style:height="{virtual.range.after}px"
+					><td colspan="4" class="p-0"></td></tr
+				>
 			{/if}
 		</tbody>
 	</table>
@@ -302,10 +341,5 @@
 		.file-type-column {
 			display: none;
 		}
-	}
-
-	.file-list-row {
-		content-visibility: auto;
-		contain-intrinsic-size: 32px;
 	}
 </style>

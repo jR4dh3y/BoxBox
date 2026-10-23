@@ -8,9 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
-	"time"
 	"uuid"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
@@ -47,8 +44,8 @@ type WriteFile interface {
 
 // DirectoryReader contains read-only directory operations.
 type DirectoryReader interface {
-	// List returns a paginated list of files in a directory
-	List(ctx context.Context, path string, opts model.ListOptions) (*model.FileList, error)
+	// List returns every entry of a directory
+	List(ctx context.Context, path string) (*model.FileList, error)
 	// GetInfo returns metadata for a file or directory
 	GetInfo(ctx context.Context, path string) (*model.FileInfo, error)
 	// ListMountPoints returns all configured mount points
@@ -171,29 +168,14 @@ func (s *fileService) ResolveForWrite(path string) (*model.MountPoint, string, e
 	return s.mounts.resolve(path, writeMaybeMissing)
 }
 
-// List returns a paginated list of files in a directory
-func (s *fileService) List(ctx context.Context, path string, opts model.ListOptions) (*model.FileList, error) {
-	// Apply defaults
-	if opts.Page < 1 {
-		opts.Page = 1
-	}
-	if opts.PageSize < 1 {
-		opts.PageSize = 50
-	}
-	if opts.SortBy == "" {
-		opts.SortBy = "name"
-	}
-	if opts.SortDir == "" {
-		opts.SortDir = "asc"
-	}
-
-	// Resolve the path to filesystem path
+// List returns every entry of a directory, hidden ones included, in directory order.
+// The client sorts and filters, so one read serves every view of the folder.
+func (s *fileService) List(ctx context.Context, path string) (*model.FileList, error) {
 	_, fsPath, err := s.mounts.resolve(path, readExisting)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if path exists and is a directory
 	info, err := s.fs.Stat(fsPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -205,8 +187,6 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 		return nil, ErrNotDirectory
 	}
 
-	// Read directory entries. Afero's entries already carry metadata; keep a
-	// local metadata cache so non-name sorts never stat the same entry repeatedly.
 	entries, truncated, err := s.fs.ReadDirLimit(fsPath, s.directoryEntryLimit)
 	if err != nil {
 		return nil, err
@@ -215,38 +195,8 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 		return nil, ErrDirectoryTooLarge
 	}
 
-	// Apply filter
-	var filtered []fs.DirEntry
-	filterLower := strings.ToLower(opts.Filter)
+	items := make([]model.FileInfo, 0, len(entries))
 	for _, entry := range entries {
-		if !opts.IncludeHidden && strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-
-		if opts.Filter == "" || containsFold(entry.Name(), filterLower) {
-			filtered = append(filtered, entry)
-		}
-	}
-
-	totalCount := len(filtered)
-
-	// Sort entries
-	s.sortEntries(filtered, opts.SortBy, opts.SortDir)
-
-	// Paginate
-	start := (opts.Page - 1) * opts.PageSize
-	end := start + opts.PageSize
-	if start > len(filtered) {
-		start = len(filtered)
-	}
-	if end > len(filtered) {
-		end = len(filtered)
-	}
-	page := filtered[start:end]
-
-	// Convert to FileInfo
-	items := make([]model.FileInfo, 0, len(page))
-	for _, entry := range page {
 		entryInfo, err := entry.Info()
 		if err != nil {
 			continue
@@ -254,13 +204,7 @@ func (s *fileService) List(ctx context.Context, path string, opts model.ListOpti
 		items = append(items, fileutil.ToFileInfo(entry.Name(), filepath.Join(path, entry.Name()), entryInfo))
 	}
 
-	return &model.FileList{
-		Path:       path,
-		Items:      items,
-		TotalCount: totalCount,
-		Page:       opts.Page,
-		PageSize:   opts.PageSize,
-	}, nil
+	return &model.FileList{Path: path, Items: items}, nil
 }
 
 // GetInfo returns metadata for a file or directory
@@ -488,81 +432,4 @@ func (s *fileService) WriteFile(ctx context.Context, path string, content []byte
 // GetFilesystem returns the underlying filesystem for advanced operations
 func (s *fileService) GetFilesystem() filesystem.FS {
 	return s.fs
-}
-
-// entrySortKey holds what the comparator needs, computed once per entry instead of once per comparison.
-type entrySortKey struct {
-	entry   fs.DirEntry
-	hidden  bool
-	isDir   bool
-	size    int64
-	modTime time.Time
-}
-
-// sortEntries sorts directory entries in place: visible before hidden, then by the requested field.
-func (s *fileService) sortEntries(entries []fs.DirEntry, sortBy, sortDir string) {
-	needsInfo := sortBy == "size" || sortBy == "modTime"
-	keys := make([]entrySortKey, len(entries))
-	for i, entry := range entries {
-		name := entry.Name()
-		key := entrySortKey{
-			entry:  entry,
-			hidden: strings.HasPrefix(name, "."),
-			isDir:  entry.IsDir(),
-		}
-		if needsInfo {
-			if info, err := entry.Info(); err == nil {
-				key.size = info.Size()
-				key.modTime = info.ModTime()
-			}
-		}
-		keys[i] = key
-	}
-
-	slices.SortFunc(keys, func(a, b entrySortKey) int {
-		if a.hidden != b.hidden {
-			if a.hidden {
-				return 1
-			}
-			return -1
-		}
-
-		comparison := 0
-		switch sortBy {
-		case "size":
-			comparison = compareInt64(a.size, b.size)
-		case "modTime":
-			comparison = a.modTime.Compare(b.modTime)
-		case "type":
-			// Directories first in both directions
-			if a.isDir != b.isDir {
-				if a.isDir {
-					return -1
-				}
-				return 1
-			}
-		}
-		if comparison == 0 {
-			comparison = compareFold(a.entry.Name(), b.entry.Name())
-		}
-		if sortDir == "desc" {
-			return -comparison
-		}
-		return comparison
-	})
-
-	for i, key := range keys {
-		entries[i] = key.entry
-	}
-}
-
-func compareInt64(left, right int64) int {
-	switch {
-	case left < right:
-		return -1
-	case left > right:
-		return 1
-	default:
-		return 0
-	}
 }

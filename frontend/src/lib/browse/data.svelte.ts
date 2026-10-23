@@ -1,11 +1,10 @@
-import { createInfiniteQuery, createQuery, useQueryClient } from '@tanstack/svelte-query';
+import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 import {
 	getDriveStats,
 	listRoots,
 	search,
 	type DriveStatsResponse,
 	type FileInfo,
-	type ListOptions,
 	type RootsResponse,
 	type SearchResponse
 } from '#lib/api/files.js';
@@ -14,25 +13,19 @@ import { fileQueryKeys } from '#lib/stores/files.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { canPreview } from '#lib/utils/fileTypes.js';
 import { isLocalDesktop } from '#lib/api/desktop.js';
-import { watchDesktopDirectory } from './desktopWatch';
+import { coalesceRefresh, watchDesktopDirectory } from './desktopWatch';
 import { directoryQueryOptions } from './directoryQuery';
+import { sortFiles } from './sortFiles';
 import type { BrowseLocation } from './location.svelte';
 
 /**
- * What the browser shows for the current location: drives, a folder page or search results.
+ * What the browser shows for the current location: drives, a folder or search results.
  * Call during component setup because the queries need the component context.
  */
 export function useBrowseData(location: BrowseLocation, revealHidden: () => boolean = () => false) {
 	const queryClient = useQueryClient();
 	const settings = $derived(settingsStore.current);
 	const includeHidden = $derived(settings.showHiddenFiles || revealHidden());
-
-	const directoryOptions = $derived<Omit<ListOptions, 'page'>>({
-		pageSize: 50,
-		sortBy: location.sortBy,
-		sortDir: location.sortDir,
-		includeHidden
-	});
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
 		queryKey: fileQueryKeys.roots(),
@@ -45,8 +38,8 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 		enabled: location.path === ''
 	}));
 
-	const directoryQuery = createInfiniteQuery(() => ({
-		...directoryQueryOptions(location.path, directoryOptions),
+	const directoryQuery = createQuery(() => ({
+		...directoryQueryOptions(location.path),
 		enabled: location.path !== ''
 	}));
 
@@ -59,13 +52,13 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 	const isAtRoot = $derived(location.path === '');
 	const roots = $derived(rootsQuery.data?.roots ?? []);
 	const drives = $derived(driveStatsQuery.data?.drives ?? []);
-	const directoryPages = $derived(directoryQuery.data?.pages ?? []);
-	const directoryItems = $derived(directoryPages.flatMap((directoryPage) => directoryPage.items));
+	const directoryItems = $derived(directoryQuery.data?.items ?? []);
 	const searchResults = $derived(searchQueryResult.data?.results ?? []);
 
 	const displayItems = $derived.by(() => {
 		const items: FileInfo[] = location.isSearchActive ? searchResults : directoryItems;
-		return includeHidden ? items : items.filter((item) => !item.name.startsWith('.'));
+		const visible = includeHidden ? items : items.filter((item) => !item.name.startsWith('.'));
+		return sortFiles(visible, location.sortBy, location.sortDir);
 	});
 
 	const currentMount = $derived(
@@ -76,16 +69,23 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 			: null
 	);
 	const isReadOnly = $derived(currentMount?.readOnly ?? false);
-	const hasMoreItems = $derived(
-		!location.isSearchActive && !isAtRoot && directoryQuery.hasNextPage
-	);
 	$effect(() => {
 		const path = location.path;
 		if (!isLocalDesktop() || !path) return;
-		return watchDesktopDirectory(path, () => {
-			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directory(path) });
-			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.searches() });
-		});
+		// A refetch is the whole folder; let each one finish instead of cancelling it on every change.
+		const refresh = coalesceRefresh(() =>
+			Promise.all([
+				queryClient.invalidateQueries(
+					{ queryKey: fileQueryKeys.directory(path) },
+					{ cancelRefetch: false }
+				),
+				queryClient.invalidateQueries(
+					{ queryKey: fileQueryKeys.searches() },
+					{ cancelRefetch: false }
+				)
+			])
+		);
+		return watchDesktopDirectory(path, refresh);
 	});
 
 	return {
@@ -109,20 +109,15 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 				? searchQueryResult.isFetching
 				: directoryQuery.isLoading && directoryItems.length === 0;
 		},
-		get isLoadingMore() {
-			return !location.isSearchActive && directoryQuery.isFetchingNextPage;
+		/** True while the folder is being fetched, including a cached one the server has not confirmed. */
+		get isFetchingDirectory() {
+			return !location.isSearchActive && directoryQuery.isFetching;
 		},
 		get displayItems() {
 			return displayItems;
 		},
 		get previewableFiles() {
 			return displayItems.filter((item) => !item.isDir && canPreview(item.name));
-		},
-		get hasMoreItems() {
-			return hasMoreItems;
-		},
-		get statusTotalCount() {
-			return isAtRoot || location.isSearchActive ? undefined : (directoryPages[0]?.totalCount ?? 0);
 		},
 		get emptyListMessage() {
 			return location.isSearchActive
@@ -142,10 +137,10 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 			return isAtRoot || isReadOnly;
 		},
 
-		/** Warms the first page of a folder the user is about to open. Skips folders loaded moments ago. */
+		/** Warms a folder the user is about to open. Skips folders loaded moments ago. */
 		prefetchDirectory(path: string) {
-			void queryClient.prefetchInfiniteQuery({
-				...directoryQueryOptions(path, directoryOptions),
+			void queryClient.prefetchQuery({
+				...directoryQueryOptions(path),
 				staleTime: CONFIG.query.prefetchStaleTimeMs
 			});
 		},
@@ -170,10 +165,6 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 		},
 		refetchDirectory() {
 			void directoryQuery.refetch();
-		},
-		loadMore() {
-			if (!hasMoreItems || directoryQuery.isFetchingNextPage) return;
-			void directoryQuery.fetchNextPage();
 		}
 	};
 }

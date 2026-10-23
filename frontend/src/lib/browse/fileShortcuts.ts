@@ -67,7 +67,7 @@ export function fileNavigationIndex(
 	count: number,
 	columns = 1
 ): number | null {
-	if (count === 0) return null;
+	if (count === 0 || index < 0) return null;
 	switch (key) {
 		case 'ArrowDown':
 			return Math.min(count - 1, index + columns);
@@ -84,27 +84,4 @@ export function fileNavigationIndex(
 		default:
 			return null;
 	}
-}
-
-/** Move within the rendered page; grid columns follow the actual responsive layout. */
-export function moveFileFocus(event: KeyboardEvent, layout: 'list' | 'grid'): string | null {
-	if (event.altKey || !(event.currentTarget instanceof HTMLElement)) return null;
-	const current = event.currentTarget;
-	const grid = current.closest('[role="grid"]');
-	if (!grid) return null;
-	const items = Array.from(grid.querySelectorAll<HTMLElement>('[data-file-path]'));
-	const index = items.indexOf(current);
-	if (index < 0) return null;
-	const firstTop = items[0]?.getBoundingClientRect().top;
-	const columns =
-		layout === 'list'
-			? 1
-			: Math.max(1, items.filter((item) => item.getBoundingClientRect().top === firstTop).length);
-	const nextIndex = fileNavigationIndex(event.key, index, items.length, columns);
-	if (nextIndex === null) return null;
-	event.preventDefault();
-	const next = items[nextIndex];
-	next?.focus();
-	next?.scrollIntoView({ block: 'nearest' });
-	return next?.getAttribute('data-file-path') ?? null;
 }

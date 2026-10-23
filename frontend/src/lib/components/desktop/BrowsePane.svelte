@@ -86,6 +86,7 @@
 		return () => onFolderHover(null);
 	});
 
+	let revealPath = $state<string | null>(null);
 	$effect(() => {
 		const target = initialSelectPath;
 		if (!target) return;
@@ -103,16 +104,13 @@
 		const match = data.displayItems.find((item) => item.path === target);
 		if (match) {
 			selection.set(new SvelteSet([match.path]));
+			revealPath = match.path;
 			untrack(() => onInitialSelectHandled(target));
 			return;
 		}
 
-		if (data.isFileListLoading || data.isLoadingMore) return;
-		if (data.hasMoreItems) {
-			untrack(() => data.loadMore());
-			return;
-		}
-
+		// A cached listing may predate the target; wait for the server before giving up.
+		if (data.isFileListLoading || data.isFetchingDirectory) return;
 		untrack(() => onInitialSelectHandled(target));
 	});
 
@@ -247,6 +245,7 @@
 					canCreate={data.canCreate}
 					showFileExtensions={settings.showFileExtensions}
 					fileOpenBehavior={settings.fileOpenBehavior}
+					{revealPath}
 					onItemClick={actions.openFile}
 					{onFolderHover}
 					onSelectionChange={selection.set}
@@ -270,6 +269,7 @@
 				canCreate={data.canCreate}
 				showFileExtensions={settings.showFileExtensions}
 				fileOpenBehavior={settings.fileOpenBehavior}
+				{revealPath}
 				onItemClick={actions.openFile}
 				{onFolderHover}
 				onSortChange={location.setSort}
@@ -283,10 +283,6 @@
 		itemCount={data.itemCount}
 		selectedCount={selection.count}
 		viewMode={location.viewMode}
-		totalCount={data.statusTotalCount}
-		hasMore={data.hasMoreItems}
-		isLoadingMore={data.isLoadingMore}
-		onLoadMore={data.loadMore}
 		onViewModeChange={location.setViewMode}
 	/>
 </section>

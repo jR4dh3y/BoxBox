@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-
-	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 )
 
 const benchDirectoryEntries = 5000
@@ -26,19 +24,19 @@ func setupBenchDirectory(tb testing.TB, entries int) FileService {
 	return svc
 }
 
+// One folder open: the client receives every entry and sorts locally.
 func BenchmarkListDirectory(b *testing.B) {
 	svc := setupBenchDirectory(b, benchDirectoryEntries)
 	ctx := context.Background()
-	for _, sortBy := range []string{"name", "type", "size", "modTime"} {
-		b.Run(sortBy, func(b *testing.B) {
-			opts := model.ListOptions{Page: 1, PageSize: 50, SortBy: sortBy, SortDir: "asc"}
-			b.ReportAllocs()
-			for b.Loop() {
-				if _, err := svc.List(ctx, "media/bench", opts); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
+	// The first open initializes the MIME table once per process; keep it out of the measurement.
+	if _, err := listWholeFolder(ctx, svc, "media/bench"); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := listWholeFolder(ctx, svc, "media/bench"); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -48,17 +46,14 @@ func TestListDirectoryAllocationCeiling(t *testing.T) {
 	const entries = 1000
 	svc := setupBenchDirectory(t, entries)
 	ctx := context.Background()
-	for _, sortBy := range []string{"name", "type", "size", "modTime"} {
-		ceiling := allocationCeiling(t, "list/"+sortBy)
-		opts := model.ListOptions{Page: 1, PageSize: 50, SortBy: sortBy, SortDir: "asc"}
-		allocs := testing.AllocsPerRun(5, func() {
-			if _, err := svc.List(ctx, "media/bench", opts); err != nil {
-				t.Fatal(err)
-			}
-		})
-		t.Logf("sort=%s allocs=%.0f ceiling=%.0f", sortBy, allocs, ceiling)
-		if allocs > ceiling {
-			t.Errorf("sort=%s: %.0f allocs per List of %d entries exceeds ceiling %.0f", sortBy, allocs, entries, ceiling)
+	ceiling := allocationCeiling(t, "list")
+	allocs := testing.AllocsPerRun(5, func() {
+		if _, err := listWholeFolder(ctx, svc, "media/bench"); err != nil {
+			t.Fatal(err)
 		}
+	})
+	t.Logf("allocs=%.0f ceiling=%.0f", allocs, ceiling)
+	if allocs > ceiling {
+		t.Errorf("%.0f allocs per List of %d entries exceeds ceiling %.0f", allocs, entries, ceiling)
 	}
 }
