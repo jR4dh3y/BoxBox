@@ -97,6 +97,19 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 		});
 	});
 
+	$effect(() => {
+		// Cached data and failed refreshes cannot establish that a selected file vanished.
+		if (
+			location.isSearchActive ||
+			directoryQuery.isFetching ||
+			!directoryQuery.isSuccess ||
+			!directoryQuery.isFetchedAfterMount
+		)
+			return;
+		void directoryQuery.dataUpdatedAt;
+		selection.retain(directoryItems);
+	});
+
 	const currentMount = $derived(
 		location.path
 			? roots.find(
