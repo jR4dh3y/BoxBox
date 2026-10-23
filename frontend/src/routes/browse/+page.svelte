@@ -6,7 +6,7 @@
 	import { tick, untrack } from 'svelte';
 	import Sidebar from '#lib/components/Sidebar.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
-	import Toast from '#lib/components/ui/Toast.svelte';
+	import Notifications from '#lib/components/Notifications.svelte';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { uploadStore } from '#lib/stores/upload.svelte.js';
 	import { parseBrowseLaunchState } from '#lib/browse/pane.svelte.js';
@@ -326,11 +326,13 @@
 	{/await}
 {/if}
 
-<Toast />
+<Notifications />
 
 {#if desktop}
 	{#await import('#lib/components/desktop/DesktopUndoShortcut.svelte') then { default: DesktopUndoShortcut }}
 		<DesktopUndoShortcut />
+	{:catch}
+		<LoadError label="desktop undo shortcut" />
 	{/await}
 {/if}
 

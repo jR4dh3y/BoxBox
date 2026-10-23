@@ -22,7 +22,6 @@ export { login, refresh, logout, type LoginRequest, type LoginResponse } from '.
 // Files API
 export {
 	listRoots,
-	getPath,
 	listDirectory,
 	getFileInfo,
 	createDirectory,
@@ -36,7 +35,6 @@ export {
 	type FileList,
 	type MountPoint,
 	type RootsResponse,
-	type ListOptions,
 	type SearchResponse
 } from './files';
 

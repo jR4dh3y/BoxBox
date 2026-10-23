@@ -12,7 +12,8 @@
 		Trash2,
 		Upload
 	} from 'lucide-svelte';
-	import { Button, ProgressBar, Spinner, Toast } from '#lib/components/ui/index.js';
+	import { Button, ProgressBar, Spinner } from '#lib/components/ui/index.js';
+	import Notifications from '#lib/components/Notifications.svelte';
 	import {
 		ApiRequestError,
 		getShareInfo,
@@ -590,4 +591,4 @@
 	{/if}
 </div>
 
-<Toast />
+<Notifications />

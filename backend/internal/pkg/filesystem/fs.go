@@ -23,6 +23,9 @@ type FS interface {
 	// ReadDirLimit reads at most limit entries and reports whether more exist.
 	ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, error)
 
+	// ReadDirFileInfoLimit reads metadata for a bounded directory listing.
+	ReadDirFileInfoLimit(name string, limit int) ([]fs.FileInfo, bool, error)
+
 	// EvalSymlinks returns the path after evaluating symbolic links.
 	EvalSymlinks(path string) (string, error)
 
@@ -173,6 +176,53 @@ func (a *AferoFS) ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, err
 		entries[index] = &dirEntry{info: info}
 	}
 	return entries, truncated, nil
+}
+
+func (a *AferoFS) ReadDirFileInfoLimit(name string, limit int) ([]fs.FileInfo, bool, error) {
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		entries, truncated, err := a.ReadDirLimit(name, limit)
+		if err != nil {
+			return nil, false, err
+		}
+		if truncated {
+			return nil, true, nil
+		}
+
+		infos := make([]fs.FileInfo, 0, len(entries))
+		for _, entry := range entries {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			infos = append(infos, info)
+		}
+		return infos, false, nil
+	}
+
+	if err := validateFilesystemPath(name); err != nil {
+		return nil, false, err
+	}
+	name = filepath.Clean("/" + name)
+
+	directory, err := a.fs.Open(name)
+	if err != nil {
+		return nil, false, err
+	}
+	defer directory.Close()
+
+	count := -1
+	if limit > 0 {
+		count = limit + 1
+	}
+	infos, err := directory.Readdir(count)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, false, err
+	}
+	truncated := limit > 0 && len(infos) > limit
+	if truncated {
+		return nil, true, nil
+	}
+	return infos, false, nil
 }
 
 func (a *AferoFS) EvalSymlinks(path string) (string, error) {

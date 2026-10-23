@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"uuid"
 
@@ -41,7 +40,7 @@ func (s *DesktopTransfers) remote(ctx context.Context, ref transferPath, method,
 }
 func decodeTransferResponse(response *http.Response, target interface{}) error {
 	defer response.Body.Close()
-	// Listings are paginated and bounded; never accept unbounded upstream JSON.
+	// Bound upstream JSON independently of the number of directory entries.
 	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(target); err != nil {
 		return ErrRemoteUnavailable
 	}
@@ -123,45 +122,38 @@ func (s *DesktopTransfers) copyTree(ctx context.Context, source, dest transferPa
 	if err != nil {
 		return err
 	}
-	for page := 1; ; page++ {
-		var list model.FileList
-		if source.server == "" {
-			result, listErr := s.files.List(ctx, source.path, model.ListOptions{Page: page, PageSize: 100, IncludeHidden: true, SortBy: "name", SortDir: "asc"})
-			if listErr != nil {
-				return listErr
-			}
-			list = *result
-		} else {
-			response, requestErr := s.remote(ctx, source, "GET", "/files/list/"+source.path, url.Values{"page": {strconv.Itoa(page)}, "pageSize": {"100"}, "includeHidden": {"true"}, "sortBy": {"name"}, "sortDir": {"asc"}}, nil, nil)
-			if requestErr != nil {
-				return requestErr
-			}
-			if err := decodeTransferResponse(response, &list); err != nil {
-				return err
-			}
+	var list model.FileList
+	if source.server == "" {
+		result, listErr := s.files.List(ctx, source.path)
+		if listErr != nil {
+			return listErr
 		}
-		if len(list.Items) > 100 || list.TotalCount < 0 || list.TotalCount > 10000 {
-			return ErrDirectoryTooLarge
+		list = *result
+	} else {
+		response, requestErr := s.remote(ctx, source, "GET", "/files/list/"+source.path, nil, nil, nil)
+		if requestErr != nil {
+			return requestErr
 		}
-		for _, child := range list.Items {
-			if !validTransferChild(child.Name) {
-				return ErrRemoteUnavailable
-			}
-			nextSource := source
-			nextSource.path += "/" + child.Name
-			nextDest := dest
-			nextDest.path += "/" + child.Name
-			if err := s.copyTree(ctx, nextSource, nextDest, depth+1, remaining); err != nil {
-				return err
-			}
-		}
-		if page*100 >= list.TotalCount {
-			return nil
-		}
-		if len(list.Items) == 0 {
-			return ErrRemoteUnavailable
+		if err := decodeTransferResponse(response, &list); err != nil {
+			return err
 		}
 	}
+	if len(list.Items) > *remaining {
+		return ErrDirectoryTooLarge
+	}
+	for _, child := range list.Items {
+		if !validTransferChild(child.Name) {
+			return ErrRemoteUnavailable
+		}
+		nextSource := source
+		nextSource.path += "/" + child.Name
+		nextDest := dest
+		nextDest.path += "/" + child.Name
+		if err := s.copyTree(ctx, nextSource, nextDest, depth+1, remaining); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (s *DesktopTransfers) open(ctx context.Context, source transferPath) (io.ReadCloser, error) {
 	if source.server == "" {

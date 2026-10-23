@@ -1,11 +1,11 @@
-import { createInfiniteQuery, createQuery, useQueryClient } from '@tanstack/svelte-query';
+import type { BrowseSelection } from './selection.svelte';
+import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 import {
 	getDriveStats,
 	listRoots,
 	search,
 	type DriveStatsResponse,
 	type FileInfo,
-	type ListOptions,
 	type RootsResponse,
 	type SearchResponse
 } from '#lib/api/files.js';
@@ -15,25 +15,23 @@ import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { canPreview } from '#lib/utils/fileTypes.js';
 import { isNativePath } from '#lib/api/desktop.js';
 import { isRemotePath } from '#lib/api/remotePaths.js';
-import { watchDesktopDirectory } from './desktopWatch';
+import { toastStore } from '#lib/stores/toast.svelte.js';
 import { directoryQueryOptions } from './directoryQuery';
+import { sortFiles } from './sortFiles';
 import type { BrowseLocation } from './location.svelte';
 
 /**
- * What the browser shows for the current location: drives, a folder page or search results.
+ * What the browser shows for the current location: drives, a folder or search results.
  * Call during component setup because the queries need the component context.
  */
-export function useBrowseData(location: BrowseLocation, revealHidden: () => boolean = () => false) {
+export function useBrowseData(
+	location: BrowseLocation,
+	selection: BrowseSelection,
+	revealHidden: () => boolean = () => false
+) {
 	const queryClient = useQueryClient();
 	const settings = $derived(settingsStore.current);
 	const includeHidden = $derived(settings.showHiddenFiles || revealHidden());
-
-	const directoryOptions = $derived<Omit<ListOptions, 'page'>>({
-		pageSize: 50,
-		sortBy: location.sortBy,
-		sortDir: location.sortDir,
-		includeHidden
-	});
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
 		queryKey: fileQueryKeys.roots(),
@@ -49,9 +47,9 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 		enabled: location.page === 'files' && location.path === ''
 	}));
 
-	const directoryQuery = createInfiniteQuery(() => ({
-		...directoryQueryOptions(location.path, directoryOptions),
-		enabled: location.path !== '',
+	const directoryQuery = createQuery(() => ({
+		...directoryQueryOptions(location.path),
+		enabled: location.page === 'files' && location.path !== '',
 		refetchOnWindowFocus: 'always',
 		refetchInterval: isRemotePath(location.path) ? 15_000 : false
 	}));
@@ -70,13 +68,34 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 	let pageRevision = $state(0);
 	const roots = $derived(rootsQuery.data?.roots ?? []);
 	const drives = $derived(driveStatsQuery.data?.drives ?? []);
-	const directoryPages = $derived(directoryQuery.data?.pages ?? []);
-	const directoryItems = $derived(directoryPages.flatMap((directoryPage) => directoryPage.items));
+	const directoryItems = $derived(directoryQuery.data?.items ?? []);
 	const searchResults = $derived(searchQueryResult.data?.results ?? []);
 
 	const displayItems = $derived.by(() => {
 		const items: FileInfo[] = location.isSearchActive ? searchResults : directoryItems;
-		return includeHidden ? items : items.filter((item) => !item.name.startsWith('.'));
+		const visible = includeHidden ? items : items.filter((item) => !item.name.startsWith('.'));
+		return location.isSearchActive
+			? visible
+			: sortFiles(visible, location.sortBy, location.sortDir);
+	});
+
+	$effect(() => {
+		// Cached data and failed refreshes cannot establish that a selected file vanished.
+		if (
+			location.isSearchActive ||
+			directoryQuery.isFetching ||
+			!directoryQuery.isSuccess ||
+			!directoryQuery.isFetchedAfterMount
+		)
+			return;
+		void directoryQuery.dataUpdatedAt;
+		selection.retain(directoryItems);
+	});
+
+	const fileListError = $derived.by(() => {
+		if (isAtRoot) return rootsQuery.error?.message ?? driveStatsQuery.error?.message ?? null;
+		if (location.isSearchActive) return searchQueryResult.error?.message ?? null;
+		return directoryQuery.error?.message ?? null;
 	});
 
 	function mountOf(path: string) {
@@ -84,16 +103,22 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 		return roots.find((root) => path === root.name || path.startsWith(`${root.name}/`)) ?? null;
 	}
 	const isReadOnly = $derived(mountOf(location.path)?.readOnly ?? true);
-	const hasMoreItems = $derived(
-		!location.isSearchActive && !isAtRoot && directoryQuery.hasNextPage
-	);
 	$effect(() => {
 		const path = location.path;
 		if (!isNativePath(path) || !path) return;
-		return watchDesktopDirectory(path, () => {
-			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directory(path) });
-			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.searches() });
-		});
+		let active = true;
+		let stop: (() => void) | undefined;
+		void import('./desktopWatch')
+			.then(({ subscribeDesktopDirectory }) => {
+				if (active) stop = subscribeDesktopDirectory(path, queryClient);
+			})
+			.catch(() => {
+				if (active) toastStore.error('Folder watching could not load. Reload to retry.');
+			});
+		return () => {
+			active = false;
+			stop?.();
+		};
 	});
 
 	return {
@@ -117,24 +142,18 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 				? searchQueryResult.isFetching
 				: directoryQuery.isLoading && directoryItems.length === 0;
 		},
-		get error() {
-			const error = location.isSearchActive ? searchQueryResult.error : directoryQuery.error;
-			return error instanceof Error ? error.message : null;
+		/** True while the folder is being fetched, including a cached one the server has not confirmed. */
+		get isFetchingDirectory() {
+			return !location.isSearchActive && directoryQuery.isFetching;
 		},
-		get isLoadingMore() {
-			return !location.isSearchActive && directoryQuery.isFetchingNextPage;
+		get fileListError() {
+			return fileListError;
 		},
 		get displayItems() {
 			return displayItems;
 		},
 		get previewableFiles() {
 			return displayItems.filter((item) => !item.isDir && canPreview(item.name));
-		},
-		get hasMoreItems() {
-			return hasMoreItems;
-		},
-		get statusTotalCount() {
-			return isAtRoot || location.isSearchActive ? undefined : (directoryPages[0]?.totalCount ?? 0);
 		},
 		get emptyListMessage() {
 			return location.isSearchActive
@@ -159,10 +178,10 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 			return mount !== null && !mount.readOnly;
 		},
 
-		/** Warms the first page of a folder the user is about to open. Skips folders loaded moments ago. */
+		/** Warms a folder the user is about to open. Skips folders loaded moments ago. */
 		prefetchDirectory(path: string) {
-			void queryClient.prefetchInfiniteQuery({
-				...directoryQueryOptions(path, directoryOptions),
+			void queryClient.prefetchQuery({
+				...directoryQueryOptions(path),
 				staleTime: CONFIG.query.prefetchStaleTimeMs
 			});
 		},
@@ -194,14 +213,11 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 			else if (isAtRoot) {
 				void rootsQuery.refetch();
 				void driveStatsQuery.refetch();
-			} else void directoryQuery.refetch();
+			} else if (location.isSearchActive) void searchQueryResult.refetch();
+			else void directoryQuery.refetch();
 		},
 		refetchDirectory() {
 			void directoryQuery.refetch();
-		},
-		loadMore() {
-			if (!hasMoreItems || directoryQuery.isFetchingNextPage) return;
-			void directoryQuery.fetchNextPage();
 		}
 	};
 }

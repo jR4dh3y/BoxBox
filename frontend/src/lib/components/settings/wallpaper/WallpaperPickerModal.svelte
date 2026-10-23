@@ -13,6 +13,7 @@
 	import { Button, Modal, ProgressBar, Select } from '#lib/components/ui/index.js';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import { rootLabel } from '#lib/browse/rootLabel.js';
+	import { visibleByName } from '#lib/browse/sortFiles.js';
 	import { listDirectory, listRoots, type FileInfo, type MountPoint } from '#lib/api/files.js';
 	import { resolveBackgroundImage, toServerBackgroundImage } from '#lib/utils/appearance.js';
 	import { formatFileSize } from '#lib/utils/format.js';
@@ -45,6 +46,7 @@
 
 	const LOCAL_WALLPAPER_MAX_BYTES = 20 * 1024 * 1024;
 	const PREVIEW_ROWS = [0, 1, 2, 3, 4, 5];
+	const SERVER_WALLPAPER_ITEMS_LIMIT = 200;
 
 	let {
 		open = true,
@@ -125,14 +127,11 @@
 		serverWallpaperError = null;
 
 		try {
-			const response = await listDirectory(path, {
-				page: 1,
-				pageSize: 200,
-				sortBy: 'name',
-				sortDir: 'asc',
-				includeHidden: showHiddenFiles
-			});
-			serverWallpaperItems = response.items;
+			const response = await listDirectory(path);
+			serverWallpaperItems = visibleByName(response.items, showHiddenFiles).slice(
+				0,
+				SERVER_WALLPAPER_ITEMS_LIMIT
+			);
 		} catch (error) {
 			serverWallpaperError = error instanceof Error ? error.message : 'Unable to open this folder.';
 			serverWallpaperItems = [];

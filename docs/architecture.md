@@ -47,13 +47,19 @@ backend/
 File listing:
 
 ```text
-GET /api/v1/files/home/projects
+GET /api/v1/files/list/home/projects
   -> JWT middleware
   -> mount point guard
-  -> FileHandler.GetPath
-  -> FileService.List or FileService.GetInfo
+  -> FileHandler.ListPath
+  -> FileService.List
   -> filesystem abstraction
 ```
+
+Directory responses contain every entry, unsorted, up to the 10,000-entry safety
+limit. The browser keeps one query result per folder, sorts and filters it locally
+(`sortFiles.ts`), and renders only a visible window of list rows or grid tiles. Refresh replaces the collection;
+it never combines pages from different filesystem states. Scroll anchors use file
+paths and survive folder navigation and view changes.
 
 Chunked upload:
 

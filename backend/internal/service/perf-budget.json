@@ -1,17 +1,8 @@
 {
-  "list/name": 2300,
-  "list/type": 2300,
-  "list/size": 2300,
-  "list/modTime": 2300,
+  "list": 2048,
   "search": 4300,
-  "ListDirectory/name.bytes": 995328,
-  "ListDirectory/type.bytes": 983040,
-  "ListDirectory/size.bytes": 983040,
-  "ListDirectory/modTime.bytes": 983040,
+  "ListDirectory.bytes": 966656,
   "SearchWalk.bytes": 835584,
-  "ListDirectory/name.allocations": 10752,
-  "ListDirectory/type.allocations": 10368,
-  "ListDirectory/size.allocations": 10368,
-  "ListDirectory/modTime.allocations": 10368,
+  "ListDirectory.allocations": 10080,
   "SearchWalk.allocations": 21248
 }

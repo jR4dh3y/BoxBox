@@ -2,8 +2,20 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { benchmarkRegressions, checkRatchets, browserViolations } from './gates';
 
-const metrics = { listingRequests: 1, refreshRequests: 1, scriptRequests: 8, scriptBytes: 300_000 };
-const limits = { listingRequests: 1, refreshRequests: 1, scriptRequests: 8, scriptBytes: 330_752 };
+const metrics = {
+	listingRequests: 1,
+	renderedRows: 30,
+	refreshRequests: 1,
+	scriptRequests: 8,
+	scriptBytes: 300_000
+};
+const limits = {
+	listingRequests: 1,
+	renderedRows: 32,
+	refreshRequests: 1,
+	scriptRequests: 8,
+	scriptBytes: 330_752
+};
 
 test('browser gate rejects duplicate listings and additional scripts', () => {
 	assert.deepEqual(browserViolations(metrics, limits), []);
@@ -19,6 +31,10 @@ test('browser gate rejects duplicate listings and additional scripts', () => {
 		browserViolations({ ...metrics, scriptRequests: 9 }, limits).join(),
 		/scriptRequests/
 	);
+	assert.match(
+		browserViolations({ ...metrics, renderedRows: 10_000 }, limits).join(),
+		/renderedRows/
+	);
 });
 
 test('ratchets allow tighter budgets, but not increases or deleted limits', () => {
@@ -26,6 +42,14 @@ test('ratchets allow tighter budgets, but not increases or deleted limits', () =
 	assert.match(checkRatchets({ bytes: 100 }, { bytes: 101 }).join(), /bytes/);
 	assert.match(checkRatchets({ requests: 2 }, {}).join(), /requests/);
 	assert.throws(() => checkRatchets({ bytes: 100 }, { bytes: 'unlimited' }), /finite/);
+});
+
+test('a retired budget may go only to a successor that is no looser', () => {
+	const retired = { 'list/name': 'list' };
+	assert.deepEqual(checkRatchets({ 'list/name': 2300 }, { list: 2048 }, retired), []);
+	assert.match(checkRatchets({ 'list/name': 2300 }, { list: 2400 }, retired).join(), /list\/name/);
+	assert.match(checkRatchets({ 'list/name': 2300 }, {}, retired).join(), /list\/name/);
+	assert.match(checkRatchets({ 'list/type': 2300 }, { list: 2048 }, retired).join(), /list\/type/);
 });
 
 function benchmarks(allocations: number, bytes: number, ns: number) {

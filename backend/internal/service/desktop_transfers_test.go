@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -132,6 +133,10 @@ func TestDesktopTransfersTLSCopiesAndNoOverwrite(t *testing.T) {
 	f.save(t, "source/large.bin", data)
 	f.save(t, "source/empty", nil)
 	f.save(t, "source/.hidden", []byte("hidden"))
+	// Whole-folder responses must copy entries beyond the former transfer page size.
+	for i := range 101 {
+		f.save(t, fmt.Sprintf("source/entry-%03d", i), nil)
+	}
 	job, err := s.Create(context.Background(), model.JobParams{Type: model.JobTypeCopy, SourcePath: remote + "/source", DestPath: "files/copied"})
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +146,7 @@ func TestDesktopTransfersTLSCopiesAndNoOverwrite(t *testing.T) {
 	if err != nil || !bytes.Equal(copied, data) {
 		t.Fatal("large TLS->local copy differs")
 	}
-	for _, name := range []string{"empty", ".hidden"} {
+	for _, name := range []string{"empty", ".hidden", "entry-100"} {
 		if _, err := os.Stat(filepath.Join(local, "copied", name)); err != nil {
 			t.Fatal(err)
 		}
@@ -154,6 +159,9 @@ func TestDesktopTransfersTLSCopiesAndNoOverwrite(t *testing.T) {
 	copied, err = os.ReadFile(filepath.Join(f.root, "back/large.bin"))
 	if err != nil || !bytes.Equal(copied, data) {
 		t.Fatal("local->TLS copy differs")
+	}
+	if _, err := os.Stat(filepath.Join(f.root, "back/entry-100")); err != nil {
+		t.Fatal(err)
 	}
 	job, err = s.Create(context.Background(), model.JobParams{Type: model.JobTypeCopy, SourcePath: "files/copied/empty", DestPath: remote + "/back/large.bin"})
 	if err != nil {

@@ -2,6 +2,7 @@
 	import { Folder, Home, Loader2 } from 'lucide-svelte';
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { listDirectory, listRoots } from '#lib/api/files.js';
+	import { suggestedDirectories } from '#lib/browse/pathSuggestions.js';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import { parseRemotePath } from '#lib/api/remotePaths.js';
 	import { toastStore } from '#lib/stores/toast.svelte.js';
@@ -31,7 +32,6 @@
 		onClose
 	}: Props = $props();
 
-	const suggestionPageSize = 1000;
 	const suggestionListId = 'toolbar-path-suggestions';
 
 	let isEditingPath = $state(false);
@@ -226,28 +226,8 @@
 		parentPath: string,
 		prefix: string
 	): Promise<PathSuggestion[]> {
-		let page = 1;
-		let loadedCount = 0;
-		let totalCount = Number.POSITIVE_INFINITY;
-		const directories: Array<{ name: string }> = [];
-
-		while (loadedCount < totalCount) {
-			const response = await listDirectory(parentPath, {
-				page,
-				pageSize: suggestionPageSize,
-				sortBy: 'name',
-				sortDir: 'asc',
-				includeHidden: includeHiddenSuggestions || prefix.startsWith('.'),
-				filter: prefix || undefined
-			});
-
-			directories.push(...response.items.filter((item) => item.isDir));
-			loadedCount += response.items.length;
-			totalCount = response.totalCount;
-
-			if (response.items.length === 0) break;
-			page += 1;
-		}
+		const response = await listDirectory(parentPath);
+		const directories = suggestedDirectories(response.items, prefix, includeHiddenSuggestions);
 
 		return filterSuggestions(directories, parentPath, prefix);
 	}

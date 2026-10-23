@@ -23,6 +23,7 @@
 	import type { BrowsePage } from '#lib/browse/location.svelte.js';
 	import { rootLabel } from '#lib/browse/rootLabel.js';
 	import type { FileDropTarget } from '#lib/browse/fileDrag.js';
+	import LoadError from '#lib/components/LoadError.svelte';
 
 	interface Props {
 		currentPath?: string;
@@ -162,6 +163,8 @@
 							itemClass={navItemClass}
 							activeClass={navItemActiveClass}
 						/>
+					{:catch}
+						<LoadError label="desktop locations" inline />
 					{/await}
 				{/if}
 			</div>
@@ -212,6 +215,8 @@
 								itemClass={navItemClass}
 								activeClass={navItemActiveClass}
 							/>
+						{:catch}
+							<LoadError label="desktop places" inline />
 						{/await}
 					{/if}
 				</div>

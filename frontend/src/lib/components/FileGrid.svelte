@@ -5,6 +5,7 @@
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
 	import { getFileTypeDescription, getFileIcon } from '#lib/utils/fileTypes.js';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { untrack } from 'svelte';
 	import Spinner from '#lib/components/ui/Spinner.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import { FolderOpen } from 'lucide-svelte';
@@ -14,6 +15,7 @@
 	import type { FileContextAction } from '#lib/utils/fileContextMenu.js';
 	import type { FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
 	import { endFileDrag, type FileDropTarget } from '#lib/browse/fileDrag.js';
+	import { createVirtualScroll } from '#lib/browse/virtualScroll.svelte.js';
 
 	let {
 		items = [],
@@ -29,6 +31,7 @@
 		showFileExtensions = true,
 		fileOpenBehavior = 'double-click',
 		dropTarget,
+		revealPath = null,
 		onItemClick,
 		onFolderHover,
 		onSelectionChange,
@@ -48,6 +51,8 @@
 		fileOpenBehavior?: FileOpenBehavior;
 		/** Folders accept dropped files when set. */
 		dropTarget?: FileDropTarget;
+		/** Scrolled into view once it appears in `items`. */
+		revealPath?: string | null;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -56,6 +61,30 @@
 	} = $props();
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
+	// Pixel sizes of the tiles; the column count is computed from them, not left to CSS auto-fill.
+	const cell = $derived(
+		compactMode ? { width: 96, gap: 8, padding: 8 } : { width: 112, gap: 12, padding: 12 }
+	);
+	const virtual = createVirtualScroll(() => ({
+		count: items.length,
+		cell,
+		rowGap: cell.gap,
+		offsetTop: cell.padding,
+		stickyTop: 0,
+		estimatedItemHeight: Math.round(cell.width * 1.15)
+	}));
+	const visibleItems = $derived(items.slice(virtual.range.start, virtual.range.end));
+
+	// Bring an item the pane selected for the user into view once, when it is in the list.
+	let revealedPath: string | null = null;
+	$effect(() => {
+		const path = revealPath;
+		if (!path || path === revealedPath || !virtual.ready) return;
+		const index = items.findIndex((item) => item.path === path);
+		if (index < 0) return;
+		revealedPath = path;
+		untrack(() => virtual.reveal(index));
+	});
 	const collection = useFileCollection(
 		() => ({
 			items,
@@ -66,11 +95,9 @@
 			onSelectionChange,
 			onContextMenuAction
 		}),
-		'grid'
+		virtual
 	);
 
-	const gridClass = 'grid grid-cols-[repeat(auto-fill,112px)] justify-start gap-3 p-3';
-	const compactGridClass = 'grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-2 p-2';
 	const tileClass =
 		'group relative flex aspect-[1/1.15] min-w-0 cursor-default flex-col rounded border border-transparent bg-transparent p-2 text-left outline-none transition-colors duration-100 focus:border-border-focus';
 	const selectedClass = 'border-accent/70 bg-selection hover:bg-selection-hover';
@@ -81,7 +108,10 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="relative h-full w-full overflow-auto bg-surface-primary"
+	class="relative h-full w-full overflow-auto bg-surface-primary outline-none"
+	tabindex="-1"
+	{@attach virtual.scroller}
+	onkeydown={collection.scrollerKeydown}
 	oncontextmenu={(event) => collection.backgroundContextMenu(event, '[data-file-item="true"]')}
 >
 	{#if showSpinner.value}
@@ -97,12 +127,19 @@
 		</div>
 	{:else}
 		<div
-			class={compactMode ? compactGridClass : gridClass}
+			class="grid justify-start"
+			style:grid-template-columns="repeat({virtual.columns}, {cell.width}px)"
+			style:gap="{cell.gap}px"
+			style:padding="{cell.padding + virtual.range.before}px {cell.padding}px {cell.padding +
+				virtual.range.after}px"
 			role="grid"
 			aria-busy={isLoading}
 			aria-multiselectable="true"
+			aria-rowcount={Math.ceil(items.length / virtual.columns)}
+			aria-colcount={virtual.columns}
 		>
-			{#each items as item (item.path)}
+			{#each visibleItems as item, offset (item.path)}
+				{@const index = virtual.range.start + offset}
 				{@const IconComponent = getFileIcon(item.name, item.isDir)}
 				{@const displayName = fileDisplayName(item, showFileExtensions)}
 				{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
@@ -134,6 +171,8 @@
 					oncontextmenu={(event) => collection.itemContextMenu(item, event)}
 					data-file-item="true"
 					data-file-path={item.path}
+					data-file-index={index}
+					{@attach virtual.item}
 				>
 					<input
 						type="checkbox"
@@ -212,10 +251,5 @@
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		word-break: break-word;
-	}
-
-	.file-grid-item {
-		content-visibility: auto;
-		contain-intrinsic-size: 112px 129px;
 	}
 </style>

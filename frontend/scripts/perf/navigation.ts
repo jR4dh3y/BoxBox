@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { results } from './common';
 import type { Browser } from 'playwright';
 
 export async function verifyNavigation(
@@ -9,7 +10,7 @@ export async function verifyNavigation(
 	credentials: { username: string; password: string },
 	mount: string
 ) {
-	// Add navigation fixtures after timing samples so they cannot change the measured first page.
+	// Add navigation fixtures after timing samples so they cannot change the measured folder.
 	mkdirSync(join(mount, 'Navigation', 'Child'), { recursive: true });
 	writeFileSync(join(mount, 'Navigation', 'Parent.txt'), 'parent\n');
 	writeFileSync(join(mount, 'Navigation', 'Child', 'Nested.txt'), 'nested\n');
@@ -37,6 +38,19 @@ export async function verifyNavigation(
 
 		await page.goto(`${url}/browse?path=perf/Navigation`);
 		await page.getByText('Parent.txt', { exact: true }).waitFor();
+		const childRow = page
+			.locator('[data-file-row="true"]')
+			.filter({ has: page.getByText('Child', { exact: true }) });
+		for (const action of ['Pin to Favorites', 'Unpin from Favorites']) {
+			await childRow.click({ button: 'right' });
+			await page.getByRole('menuitem', { name: action, exact: true }).click();
+			await page
+				.getByRole('alert')
+				.filter({ hasText: /Child (pinned|unpinned) to favorites|Child unpinned from favorites/ })
+				.waitFor();
+			await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+		}
+
 		await page.getByText('Parent.txt', { exact: true }).click();
 		await page.keyboard.press('Home');
 		await page.keyboard.press('Shift+End');
@@ -145,6 +159,24 @@ export async function verifyNavigation(
 		console.log(
 			'PASS: login, folder history, search focus, sort, grid, settings, public share, reload and logout'
 		);
+	} catch (error) {
+		const page = context.pages()[0];
+		if (page) {
+			await page.screenshot({ path: join(results, 'navigation-failure.png') });
+			writeFileSync(
+				join(results, 'navigation-failure.json'),
+				JSON.stringify(
+					{
+						url: page.url(),
+						body: await page.locator('body').innerText(),
+						active: await page.evaluate(() => document.activeElement?.outerHTML)
+					},
+					null,
+					2
+				)
+			);
+		}
+		throw error;
 	} finally {
 		await context.close();
 	}

@@ -21,8 +21,8 @@ function file(name: string, path: string): FileInfo {
 	};
 }
 
-function fileList(items: FileInfo[], totalCount = items.length, page = 1): FileList {
-	return { path: 'destination', items, totalCount, page, pageSize: 1000 };
+function fileList(items: FileInfo[]): FileList {
+	return { path: 'destination', items };
 }
 
 function source(name: string, path = `source/${name}`): TransferSource {
@@ -85,35 +85,29 @@ test('planning rejects an empty source name before listing the destination', asy
 	assert.equal(listed, false);
 });
 
-test('planner reads hidden entries and every page, rejecting a changing destination', async () => {
-	const requests: Array<{ page: number; includeHidden: boolean | undefined }> = [];
-	const plan = await planTransfers('copy', [source('file-1001')], 'destination', {
-		listDirectory: async (_path, options) => {
-			const page = options?.page ?? 1;
-			requests.push({ page, includeHidden: options?.includeHidden });
-			return page === 1
-				? fileList(
-						Array.from({ length: 1000 }, (_, index) =>
-							file(`file-${index}`, `destination/${index}`)
-						),
-						1001
-					)
-				: fileList([file('.hidden', 'destination/.hidden')], 1001, 2);
+test('planner sees hidden entries and conflicts past the old page size in one listing', async () => {
+	let requests = 0;
+	const plan = await planTransfers(
+		'copy',
+		[source('.hidden'), source('file-1500')],
+		'destination',
+		{
+			listDirectory: async () => {
+				requests++;
+				return fileList([
+					...Array.from({ length: 2000 }, (_, index) =>
+						file(`file-${index}`, `destination/file-${index}`)
+					),
+					file('.hidden', 'destination/.hidden')
+				]);
+			}
 		}
-	});
+	);
 
-	assert.equal(plan.entries.length, 1);
-	assert.deepEqual(requests, [
-		{ page: 1, includeHidden: true },
-		{ page: 2, includeHidden: true }
-	]);
-
-	await assert.rejects(
-		planTransfers('copy', [source('next.txt')], 'destination', {
-			listDirectory: async (_path, options) =>
-				options?.page === 1 ? fileList([file('first', 'destination/first')], 2) : fileList([], 3, 2)
-		}),
-		/Destination contents changed/
+	assert.equal(requests, 1);
+	assert.deepEqual(
+		plan.entries.map((entry) => entry.kind),
+		['conflict', 'conflict']
 	);
 });
 

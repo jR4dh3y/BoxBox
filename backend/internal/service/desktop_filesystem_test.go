@@ -30,18 +30,12 @@ func TestFileServiceHandlesLegalDotSequenceNamesOnDisk(t *testing.T) {
 		Path: root,
 	}}})
 	ctx := context.Background()
-	listing, err := files.List(ctx, "home", model.ListOptions{
-		Page:          1,
-		PageSize:      len(wantContents),
-		SortBy:        "name",
-		SortDir:       "asc",
-		IncludeHidden: true,
-	})
+	listing, err := files.List(ctx, "home")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if listing.TotalCount != len(wantContents) || len(listing.Items) != len(wantContents) {
-		t.Fatalf("listing = total %d, items %d; want %d", listing.TotalCount, len(listing.Items), len(wantContents))
+	if len(listing.Items) != len(wantContents) {
+		t.Fatalf("listing has %d items, want %d", len(listing.Items), len(wantContents))
 	}
 	listedNames := make(map[string]bool, len(listing.Items))
 	for _, item := range listing.Items {
@@ -95,24 +89,16 @@ func TestDesktopFileServiceListsDirectoriesBeyondServerLimit(t *testing.T) {
 		MountPoints:         mounts,
 		DirectoryEntryLimit: -1,
 	})
-	page, err := desktopFiles.List(ctx, "home", model.ListOptions{
-		Page:     2,
-		PageSize: 25,
-		SortBy:   "name",
-		SortDir:  "asc",
-	})
+	listing, err := desktopFiles.List(ctx, "home")
 	if err != nil {
 		t.Fatalf("desktop List: %v", err)
 	}
-	if page.TotalCount != directoryEntryCount || len(page.Items) != 25 {
-		t.Fatalf("desktop page = total %d, items %d; want total %d, items 25", page.TotalCount, len(page.Items), directoryEntryCount)
-	}
-	if page.Items[0].Name != "entry-00025.txt" {
-		t.Fatalf("second page starts at %q, want entry-00025.txt", page.Items[0].Name)
+	if len(listing.Items) != directoryEntryCount {
+		t.Fatalf("desktop listing has %d items, want %d", len(listing.Items), directoryEntryCount)
 	}
 
 	remoteFiles := NewFileService(filesystem.NewOsFS(), FileServiceConfig{MountPoints: mounts})
-	if _, err := remoteFiles.List(ctx, "home", model.ListOptions{Page: 1, PageSize: 25}); !errors.Is(err, ErrDirectoryTooLarge) {
+	if _, err := remoteFiles.List(ctx, "home"); !errors.Is(err, ErrDirectoryTooLarge) {
 		t.Fatalf("default server List error = %v, want %v", err, ErrDirectoryTooLarge)
 	}
 }

@@ -54,7 +54,7 @@
 	// The keyed pane model is stable for this component's lifetime.
 	const paneState = untrack(() => pane);
 	const { location, selection } = paneState;
-	const data = useBrowseData(location, () => paneState.revealHiddenFiles);
+	const data = useBrowseData(location, selection, () => paneState.revealHiddenFiles);
 	const actions = useBrowseActions(location, data, selection);
 	const uploads = useBrowseUploads(location, data);
 	const dropHandler = useFileDrop(data, actions, uploads);
@@ -92,6 +92,7 @@
 		return () => onFolderHover(null);
 	});
 
+	let revealPath = $state<string | null>(null);
 	$effect(() => {
 		const target = initialSelectPath;
 		if (!target) return;
@@ -109,16 +110,13 @@
 		const match = data.displayItems.find((item) => item.path === target);
 		if (match) {
 			selection.set(new SvelteSet([match.path]));
+			revealPath = match.path;
 			untrack(() => onInitialSelectHandled(target));
 			return;
 		}
 
-		if (data.isFileListLoading || data.isLoadingMore) return;
-		if (data.hasMoreItems) {
-			untrack(() => data.loadMore());
-			return;
-		}
-
+		// A cached listing may predate the target; wait for the server before giving up.
+		if (data.isFileListLoading || data.isFetchingDirectory) return;
 		untrack(() => onInitialSelectHandled(target));
 	});
 
@@ -201,6 +199,15 @@
 	onpointerdown={onFocus}
 	onfocusin={onFocus}
 >
+	{#if data.fileListError}
+		<div
+			role="alert"
+			class="flex items-center justify-between gap-3 border-b border-border-primary px-4 py-2 text-sm text-text-secondary"
+		>
+			<span>{data.fileListError}</span>
+			<button type="button" class="cursor-pointer text-accent" onclick={data.reload}>Retry</button>
+		</div>
+	{/if}
 	<div
 		class="relative min-h-0 flex-1 overflow-auto"
 		ondragover={(event) => drop.over(event, location.path)}
@@ -265,12 +272,6 @@
 					{/await}
 				{/if}
 			</div>
-		{:else if data.error}
-			<div class="p-4 text-sm text-danger" role="alert">
-				{data.error}<button type="button" class="ml-3 underline" onclick={data.reload}
-					>Try again</button
-				>
-			</div>
 		{:else if location.viewMode === 'grid'}
 			{#await import('#lib/components/FileGrid.svelte') then { default: FileGrid }}
 				<FileGrid
@@ -287,6 +288,7 @@
 					showFileExtensions={settings.showFileExtensions}
 					fileOpenBehavior={settings.fileOpenBehavior}
 					dropTarget={drop}
+					{revealPath}
 					onItemClick={actions.openFile}
 					{onFolderHover}
 					onSelectionChange={selection.set}
@@ -312,6 +314,7 @@
 				showFileExtensions={settings.showFileExtensions}
 				fileOpenBehavior={settings.fileOpenBehavior}
 				dropTarget={drop}
+				{revealPath}
 				onItemClick={actions.openFile}
 				{onFolderHover}
 				onSortChange={location.setSort}
@@ -326,10 +329,6 @@
 			itemCount={data.itemCount}
 			selectedCount={selection.count}
 			viewMode={location.viewMode}
-			totalCount={data.statusTotalCount}
-			hasMore={data.hasMoreItems}
-			isLoadingMore={data.isLoadingMore}
-			onLoadMore={data.loadMore}
 			onViewModeChange={location.setViewMode}
 		/>
 	{/if}

@@ -11,7 +11,7 @@ import { tokenStorage } from '#lib/utils/storage.js';
 const script = readFileSync(new URL('../../../static/early-fetch.js', import.meta.url), 'utf8');
 const origin = 'http://localhost';
 const tokens = { accessToken: 'early-token', expiresAt: '2030-01-01T00:00:00Z' };
-const listing: FileList = { path: 'files/C', items: [], totalCount: 0, page: 1, pageSize: 50 };
+const listing: FileList = { path: 'files/C', items: [] };
 
 type Win = Pick<Window, 'boxboxEarly'>;
 interface Call {
@@ -22,7 +22,6 @@ interface Call {
 
 interface Page {
 	href?: string;
-	settings?: string | null;
 	isDevelopment?: boolean;
 	refresh?: () => Response | Promise<Response>;
 	list?: () => Response | Promise<Response>;
@@ -34,7 +33,6 @@ function runShell(page: Page, win: Win = {}) {
 	runInNewContext(script, {
 		window: win,
 		location: new URL(page.href ?? `${origin}/browse?path=files/C`),
-		localStorage: { getItem: () => page.settings ?? null },
 		document: {
 			querySelector: () => (page.isDevelopment ? { getAttribute: () => 'true' } : null)
 		},
@@ -78,58 +76,25 @@ afterEach(() => {
 });
 
 describe('the shell script asks for the listing the app would ask for', () => {
-	// Each case gives the page state and the options the app derives from it; both sides must agree.
+	// Sort, direction and hidden files are applied by the app, so only the path shapes the request.
 	const cases = [
+		{ name: 'a plain path', search: '?path=files/C', path: 'files/C' },
 		{
-			name: 'defaults',
-			search: '?path=files/C',
-			path: 'files/C',
-			options: { sortBy: 'name', sortDir: 'asc', includeHidden: false }
-		},
-		{
-			name: 'sort and direction from the address',
+			name: 'sort and direction in the address do not change the request',
 			search: '?path=files/C&sort=size&dir=desc',
-			path: 'files/C',
-			options: { sortBy: 'size', sortDir: 'desc', includeHidden: false }
-		},
-		{
-			name: 'unknown sort and direction fall back to the saved defaults',
-			search: '?path=files&sort=bogus&dir=sideways',
-			settings: JSON.stringify({ defaultSortBy: 'modTime', defaultSortDir: 'desc' }),
-			path: 'files',
-			options: { sortBy: 'modTime', sortDir: 'desc', includeHidden: false }
-		},
-		{
-			name: 'show hidden files',
-			search: '?path=files/C',
-			settings: JSON.stringify({ showHiddenFiles: true }),
-			path: 'files/C',
-			options: { sortBy: 'name', sortDir: 'asc', includeHidden: true }
+			path: 'files/C'
 		},
 		{
 			name: 'spaces, accents and surrounding slashes in the path',
 			search: '?path=%2Ffiles%2FMy%20Photos%2F%C3%A9t%C3%A9%2F',
-			path: 'files/My Photos/été',
-			options: { sortBy: 'name', sortDir: 'asc', includeHidden: false }
-		},
-		{
-			name: 'unreadable saved settings',
-			search: '?path=files/C',
-			settings: '{not json',
-			path: 'files/C',
-			options: { sortBy: 'name', sortDir: 'asc', includeHidden: false }
+			path: 'files/My Photos/été'
 		}
 	] as const;
 
-	for (const { name, search, path, options, ...rest } of cases) {
+	for (const { name, search, path } of cases) {
 		test(name, () => {
-			const { win } = runShell({
-				href: `${origin}/browse${search}`,
-				settings: 'settings' in rest ? rest.settings : null,
-				isDevelopment: true
-			});
-			const expected = directoryUrl(path, { ...options, page: 1, pageSize: 50 });
-			assert.equal(win.boxboxEarly?.list.url, expected);
+			const { win } = runShell({ href: `${origin}/browse${search}`, isDevelopment: true });
+			assert.equal(win.boxboxEarly?.list.url, directoryUrl(path));
 		});
 	}
 });
@@ -142,11 +107,7 @@ describe('the shell script', () => {
 			calls.map((call) => [call.method, call.url.replace(origin, ''), call.authorization]),
 			[
 				['POST', '/api/v1/auth/refresh', undefined],
-				[
-					'GET',
-					'/api/v1/files/list/files/C?page=1&pageSize=50&sortBy=name&sortDir=asc&includeHidden=false',
-					'Bearer early-token'
-				]
+				['GET', '/api/v1/files/list/files/C', 'Bearer early-token']
 			]
 		);
 	});
@@ -207,15 +168,7 @@ describe('the app takes over what the shell started', () => {
 		const early = createEarlyStart(() => win);
 
 		const session = await early.takeSession();
-		const first = await early.takeDirectory(
-			directoryUrl('files/C', {
-				page: 1,
-				pageSize: 50,
-				sortBy: 'name',
-				sortDir: 'asc',
-				includeHidden: false
-			})
-		);
+		const first = await early.takeDirectory(directoryUrl('files/C'));
 
 		assert.deepEqual(session, tokens);
 		assert.deepEqual(first, listing);
@@ -247,13 +200,7 @@ describe('the app takes over what the shell started', () => {
 	test('a listing for a different request is dropped, not used', async () => {
 		const { win } = runShell({});
 		const early = createEarlyStart(() => win);
-		const other = directoryUrl('files/D', {
-			page: 1,
-			pageSize: 50,
-			sortBy: 'name',
-			sortDir: 'asc',
-			includeHidden: false
-		});
+		const other = directoryUrl('files/D');
 		assert.equal(await early.takeDirectory(other), null);
 		assert.equal(await early.takeDirectory(win.boxboxEarly?.list.url ?? ''), null);
 	});

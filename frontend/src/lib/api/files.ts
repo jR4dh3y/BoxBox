@@ -15,6 +15,7 @@ import {
 	sourceEndpoint,
 	type PathReference
 } from './remotePaths';
+import { parseDirectory } from './directory';
 import { tokenStorage } from '#lib/utils/storage.js';
 
 /**
@@ -30,15 +31,10 @@ export interface FileInfo {
 	mimeType?: string;
 }
 
-/**
- * Paginated file list response
- */
+/** Every entry of one directory, hidden ones included, in no particular order. */
 export interface FileList {
 	path: string;
 	items: FileInfo[];
-	totalCount: number;
-	page: number;
-	pageSize: number;
 }
 
 /**
@@ -85,18 +81,6 @@ export interface DriveStats {
  */
 export interface DriveStatsResponse {
 	drives: DriveStats[];
-}
-
-/**
- * Options for listing directory contents
- */
-export interface ListOptions {
-	page?: number;
-	pageSize?: number;
-	sortBy?: 'name' | 'size' | 'modTime' | 'type';
-	sortDir?: 'asc' | 'desc';
-	filter?: string;
-	includeHidden?: boolean;
 }
 
 /**
@@ -149,17 +133,6 @@ function parseFile(value: unknown, source: PathReference): FileInfo {
 		modTime: string(file.modTime, 'modified time'),
 		permissions: string(file.permissions, 'permissions'),
 		mimeType: optionalString(file.mimeType, 'MIME type')
-	};
-}
-
-function parseList(value: unknown, source: PathReference): FileList {
-	const list = record(value, 'file list');
-	return {
-		path: qualifyPath(source, string(list.path, 'list path')),
-		items: array(list.items, 'files').map((file) => parseFile(file, source)),
-		totalCount: number(list.totalCount, 'total count'),
-		page: number(list.page, 'page'),
-		pageSize: number(list.pageSize, 'page size')
 	};
 }
 
@@ -244,61 +217,24 @@ export async function getDriveStats(): Promise<DriveStatsResponse> {
 	return { drives: [...local, ...remote] };
 }
 
-/**
- * List directory contents or get file info
- * GET /api/v1/files/*path
- */
-export async function getPath(
-	path: string,
-	options?: ListOptions,
-	signal?: AbortSignal
-): Promise<FileList | FileInfo> {
-	const params: Record<string, string | number | boolean | undefined> = {};
+function listEndpoint(path: string): string {
+	return pathEndpoint(path, '/files/list');
+}
 
-	if (options) {
-		if (options.page !== undefined) params.page = options.page;
-		if (options.pageSize !== undefined) params.pageSize = options.pageSize;
-		if (options.sortBy) params.sortBy = options.sortBy;
-		if (options.sortDir) params.sortDir = options.sortDir;
-		if (options.filter) params.filter = options.filter;
-		if (options.includeHidden !== undefined) params.includeHidden = options.includeHidden;
-	}
-
+/** Every entry of a directory in one response. The client sorts and filters. */
+export async function listDirectory(path: string, signal?: AbortSignal): Promise<FileList> {
+	const listing = parseDirectory(await api.get<unknown>(listEndpoint(path), undefined, signal));
 	const source = parseRemotePath(path);
-	const value = await api.get<unknown>(pathEndpoint(path, '/files'), params, signal);
-	return 'items' in record(value, 'file response')
-		? parseList(value, source)
-		: parseFile(value, source);
-}
-
-function listRequest(path: string, options?: ListOptions) {
-	const params: Record<string, string | number | boolean | undefined> = {};
-	if (options?.page !== undefined) params.page = options.page;
-	if (options?.pageSize !== undefined) params.pageSize = options.pageSize;
-	if (options?.sortBy) params.sortBy = options.sortBy;
-	if (options?.sortDir) params.sortDir = options.sortDir;
-	if (options?.filter) params.filter = options.filter;
-	if (options?.includeHidden !== undefined) params.includeHidden = options.includeHidden;
-	return { endpoint: pathEndpoint(path, '/files/list'), params };
-}
-
-/**
- * List directory contents with pagination
- * Returns FileList for directories
- */
-export async function listDirectory(
-	path: string,
-	options?: ListOptions,
-	signal?: AbortSignal
-): Promise<FileList> {
-	const { endpoint, params } = listRequest(path, options);
-	return parseList(await api.get<unknown>(endpoint, params, signal), parseRemotePath(path));
+	if (source.kind === 'local') return listing;
+	return {
+		path: qualifyPath(source, listing.path),
+		items: listing.items.map((item) => ({ ...item, path: qualifyPath(source, item.path) }))
+	};
 }
 
 /** The URL `listDirectory` requests. static/early-fetch.js must start the same one. */
-export function directoryUrl(path: string, options?: ListOptions): string {
-	const { endpoint, params } = listRequest(path, options);
-	return buildUrl(endpoint, params);
+export function directoryUrl(path: string): string {
+	return buildUrl(listEndpoint(path));
 }
 
 /**
@@ -306,9 +242,7 @@ export function directoryUrl(path: string, options?: ListOptions): string {
  * Returns FileInfo
  */
 export async function getFileInfo(path: string): Promise<FileInfo> {
-	const result = await getPath(path);
-	if ('items' in result) throw new Error('Expected file metadata');
-	return result;
+	return parseFile(await api.get<unknown>(pathEndpoint(path, '/files')), parseRemotePath(path));
 }
 
 /**
