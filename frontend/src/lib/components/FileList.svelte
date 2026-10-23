@@ -481,6 +481,8 @@
 						aria-selected={isSelected(item.path)}
 						data-file-row="true"
 						data-file-path={item.path}
+						data-file-index={index}
+						{@attach virtual.item}
 					>
 						<td id={`file-list-cell-${itemIndex}`} class={compactMode ? compactTdClass : tdClass}>
 							<div class="flex min-w-0 items-center gap-2">

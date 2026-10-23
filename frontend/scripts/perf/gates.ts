@@ -1,5 +1,7 @@
 export type BrowserMetrics = {
 	listingRequests: number;
+	/** File rows in the DOM once the 10,000-entry folder is open; virtualization bounds it. */
+	renderedRows: number;
 	refreshRequests: number;
 	scriptRequests: number;
 	scriptBytes: number;

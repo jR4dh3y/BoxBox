@@ -15,6 +15,7 @@
 	import { Button, Modal, ProgressBar, Select } from '#lib/components/ui/index.js';
 	import { visibleByName } from '#lib/browse/sortFiles.js';
 	import { listDirectory, listRoots, type FileInfo, type MountPoint } from '#lib/api/files.js';
+	import { sortFiles } from '#lib/browse/sortFiles.js';
 	import { resolveBackgroundImage, toServerBackgroundImage } from '#lib/utils/appearance.js';
 	import { formatFileSize } from '#lib/utils/format.js';
 	import {

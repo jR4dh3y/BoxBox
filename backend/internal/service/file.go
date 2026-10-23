@@ -183,7 +183,6 @@ func (s *fileService) List(ctx context.Context, path string) (*model.FileList, e
 		return nil, err
 	}
 
-	// Check if path exists and is a directory
 	info, err := s.fs.Stat(fsPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

@@ -142,6 +142,25 @@ func TestDirectoryListingEnforcesEntryLimit(t *testing.T) {
 	if _, err := svc.List(context.Background(), "media/large"); !errors.Is(err, ErrDirectoryTooLarge) {
 		t.Fatalf("List error = %v, want ErrDirectoryTooLarge", err)
 	}
+	if counting.reads != 1 {
+		t.Fatalf("opening a folder read it %d times, want 1", counting.reads)
+	}
+}
+
+// readCountingFS counts directory reads so a test can pin how often a folder open touches the disk.
+type readCountingFS struct {
+	filesystem.FS
+	reads int
+}
+
+func (c *readCountingFS) ReadDir(name string) ([]iofs.DirEntry, error) {
+	c.reads++
+	return c.FS.ReadDir(name)
+}
+
+func (c *readCountingFS) ReadDirLimit(name string, limit int) ([]iofs.DirEntry, bool, error) {
+	c.reads++
+	return c.FS.ReadDirLimit(name, limit)
 }
 
 func TestCreateFileCreatesEmptyFileWithoutOverwriting(t *testing.T) {
