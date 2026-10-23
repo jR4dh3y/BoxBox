@@ -1,0 +1,10 @@
+--- FAIL: TestSettingsWallpaperImage (0.00s)
+    --- FAIL: TestSettingsWallpaperImage/unauthenticated (0.00s)
+        settings_wallpaper_test.go:42: status = 404, want 401: 404 page not found
+    --- FAIL: TestSettingsWallpaperImage/alice (0.00s)
+        settings_wallpaper_test.go:42: status = 404, want 200: 404 page not found
+    --- FAIL: TestSettingsWallpaperImage/bob (0.00s)
+        settings_wallpaper_test.go:42: status = 404, want 200: 404 page not found
+FAIL
+FAIL	github.com/jR4dh3y/BoxBox/backend/internal/handler	0.004s
+FAIL

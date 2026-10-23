@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net/http"
@@ -26,6 +27,7 @@ func (h *SettingsHandler) RegisterRoutes(r chi.Router) {
 	r.Put("/drive-names", h.SetDriveName)
 	r.Delete("/drive-names/{mountPoint}", h.DeleteDriveName)
 	r.Get("/wallpaper", h.GetWallpaper)
+	r.Get("/wallpaper/image", h.GetWallpaperImage)
 	r.Put("/wallpaper", h.SetWallpaper)
 	r.Patch("/wallpaper", h.SetWallpaperDisplay)
 	r.Delete("/wallpaper", h.DeleteWallpaper)
@@ -110,7 +112,28 @@ func (h *SettingsHandler) GetWallpaper(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, meta, http.StatusOK)
 }
 
-// SetWallpaper stores the caller's wallpaper so their share pages can show it.
+// GetWallpaperImage serves only the authenticated caller's wallpaper.
+// GET /api/v1/settings/wallpaper/image
+func (h *SettingsHandler) GetWallpaperImage(w http.ResponseWriter, r *http.Request) {
+	username := authcontext.Username(r.Context())
+	if username == "" {
+		writeError(w, "Authentication required", model.ErrCodeUnauthorized, http.StatusUnauthorized)
+		return
+	}
+
+	image, meta, err := h.settingsService.OpenWallpaper(username)
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", meta.ContentType)
+	w.Header().Set("Content-Security-Policy", streamSandboxCSP)
+	w.Header().Set("Cache-Control", "private, no-store")
+	http.ServeContent(w, r, "", meta.UpdatedAt, bytes.NewReader(image))
+}
+
+// SetWallpaper stores the caller's wallpaper for their workspace and share pages.
 // PUT /api/v1/settings/wallpaper?mode=cover&frostedGlass=true&source=ref with the raw image as the body.
 func (h *SettingsHandler) SetWallpaper(w http.ResponseWriter, r *http.Request) {
 	username := authcontext.Username(r.Context())

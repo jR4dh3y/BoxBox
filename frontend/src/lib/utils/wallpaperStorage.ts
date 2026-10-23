@@ -39,8 +39,13 @@ export async function saveLocalWallpaperDataUrl(dataUrl: string): Promise<string
 		throw new Error('Only image data URLs can be saved as local wallpapers.');
 	}
 
-	const id = createLocalWallpaperId();
-	const blob = dataUrlToBlob(dataUrl);
+	return saveLocalWallpaperBlob(dataUrlToBlob(dataUrl));
+}
+
+export async function saveLocalWallpaperBlob(
+	blob: Blob,
+	id = createLocalWallpaperId()
+): Promise<string> {
 	const database = await openWallpaperDatabase();
 
 	try {
