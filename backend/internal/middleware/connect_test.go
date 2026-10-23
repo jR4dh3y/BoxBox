@@ -36,6 +36,8 @@ func TestConnectMiddlewareAccessBoundary(t *testing.T) {
 		{"jobs", "GET", "/api/v1/jobs/123", 204},
 		{"job cancellation", "DELETE", "/api/v1/jobs/123", 204},
 		{"stream", "GET", "/api/v1/stream/preview/test", 204},
+		{"upload status lookup", "GET", "/api/v1/stream/upload/status/", 204},
+		{"upload to status mount", "POST", "/api/v1/stream/upload/status/file.bin", 204},
 		{"shares", "POST", "/api/v1/shares/", 204},
 		{"upload configuration", "GET", "/api/v1/system/upload", 204},
 		{"self revoke", "DELETE", "/api/v1/connect/client", 204},
