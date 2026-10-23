@@ -59,6 +59,8 @@ type FS interface {
 
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
+
+	// Mkdir creates one new directory and fails when it already exists.
 	Mkdir(path string, perm os.FileMode) error
 
 	// Chmod changes the mode bits of the named file or directory.

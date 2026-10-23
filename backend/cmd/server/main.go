@@ -323,11 +323,7 @@ func createRouter(
 				r.Use(middleware.RejectClientCredentials)
 				r.Use(middleware.DevelopmentAuth)
 			} else {
-				if connectService != nil {
-					r.Use(middleware.JWTAuth(authService, connectService))
-				} else {
-					r.Use(middleware.JWTAuth(authService))
-				}
+				r.Use(middleware.JWTAuth(authService, connectService))
 			}
 
 			// File operations with mount point guard

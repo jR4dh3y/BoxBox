@@ -104,7 +104,7 @@ func clientRequestAllowed(r *http.Request) bool {
 	if !strings.HasPrefix(requestPath, "/api/v1/") {
 		return false
 	}
-	return service.DesktopGatewayAllowed(r.Method, strings.TrimPrefix(requestPath, "/api/v1"))
+	return service.ClientRouteAllowed(r.Method, strings.TrimPrefix(requestPath, "/api/v1"))
 }
 
 // RejectClientCredentials also guards routes outside JWTAuth, including dev WS.

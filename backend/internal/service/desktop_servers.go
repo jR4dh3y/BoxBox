@@ -95,7 +95,7 @@ func desktopServerURL(raw string) (*url.URL, error) {
 		return nil, ErrDesktopServerInput
 	}
 	u.Path = strings.TrimRight(u.Path, "/")
-	if u.Path != "" && !safeGatewayPath(u.Path) {
+	if u.Path != "" && !safeClientRoutePath(u.Path) {
 		return nil, ErrDesktopServerInput
 	}
 	return u, nil
