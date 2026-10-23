@@ -55,7 +55,7 @@ func ClientRouteAllowed(method, route string) bool {
 			return method == "GET"
 		case "upload":
 			if method == http.MethodGet {
-				return len(p) > 3 && p[2] == "status"
+				return p[2] == "status"
 			}
 			return method == http.MethodPost
 		}
