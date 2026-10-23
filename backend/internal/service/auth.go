@@ -140,6 +140,17 @@ func NewAuthService(fsys filesystem.FS, cfg AuthServiceConfig) (AuthService, err
 
 // Login authenticates a user and persists a new session before returning tokens.
 func (s *authService) Login(ctx context.Context, username, password string) (*TokenPair, error) {
+	if err := s.VerifyPassword(ctx, username, password); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.loginLocked(username)
+}
+
+// VerifyPassword rechecks an account without issuing a session, sharing login lockout.
+func (s *authService) VerifyPassword(ctx context.Context, username, password string) error {
 	storedHash, exists := s.users[username]
 	configured := exists && strings.TrimSpace(username) != ""
 	hash := []byte(storedHash)
@@ -149,7 +160,7 @@ func (s *authService) Login(ctx context.Context, username, password string) (*To
 
 	passwordMatches := bcrypt.CompareHashAndPassword(hash, []byte(password)) == nil
 	if !configured {
-		return nil, ErrInvalidCredentials
+		return ErrInvalidCredentials
 	}
 
 	s.mu.Lock()
@@ -157,7 +168,7 @@ func (s *authService) Login(ctx context.Context, username, password string) (*To
 
 	failure := s.loginFailures[username]
 	if time.Now().Before(failure.lockedUntil) {
-		return nil, ErrInvalidCredentials
+		return ErrInvalidCredentials
 	}
 	if !passwordMatches {
 		failure.count++
@@ -170,10 +181,13 @@ func (s *authService) Login(ctx context.Context, username, password string) (*To
 			failure.lockedUntil = time.Now().Add(delay)
 		}
 		s.loginFailures[username] = failure
-		return nil, ErrInvalidCredentials
+		return ErrInvalidCredentials
 	}
 	delete(s.loginFailures, username)
+	return nil
+}
 
+func (s *authService) loginLocked(username string) (*TokenPair, error) {
 	sessionID := uuid.New().String()
 	for {
 		if _, exists := s.sessions[sessionID]; !exists {
