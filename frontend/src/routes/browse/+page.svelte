@@ -10,7 +10,7 @@
 	import StatusBar from '#lib/components/StatusBar.svelte';
 	import DriveCard from '#lib/components/DriveCard.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
-	import Toast from '#lib/components/ui/Toast.svelte';
+	import Notifications from '#lib/components/Notifications.svelte';
 	import { Spinner } from '#lib/components/ui/index.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { uploadStore } from '#lib/stores/upload.svelte.js';
@@ -281,4 +281,4 @@
 {/if}
 
 <!-- Toast notifications -->
-<Toast />
+<Notifications />
