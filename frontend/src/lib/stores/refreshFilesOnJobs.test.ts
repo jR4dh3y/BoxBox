@@ -131,7 +131,7 @@ describe('delayed job creation during a reconnect reload', () => {
 					fetch: realFetch
 				});
 				const queryClient = new QueryClient();
-				queryClient.setQueryData(listKey, { pages: [], pageParams: [] });
+				queryClient.setQueryData(listKey, { path: 'media', items: [] });
 				queryClient.setQueryData(statsKey, { drives: [] });
 				refreshFilesWhenJobsFinish(queryClient);
 				const invalidate = jobsStore.onFinished;
@@ -363,7 +363,7 @@ describe('jobsStore.loadJobs', () => {
 describe('refreshFilesWhenJobsFinish', () => {
 	test('marks cached listings and drive stats stale when a job ends, not before', () => {
 		const queryClient = new QueryClient();
-		queryClient.setQueryData(listKey, { pages: [], pageParams: [] });
+		queryClient.setQueryData(listKey, { path: 'media', items: [] });
 		queryClient.setQueryData(statsKey, { drives: [] });
 		refreshFilesWhenJobsFinish(queryClient);
 		jobsStore.upsertJob(job('running'));

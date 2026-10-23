@@ -51,7 +51,7 @@
 	// The keyed pane model is stable for this component's lifetime.
 	const paneState = untrack(() => pane);
 	const { location, selection } = paneState;
-	const data = useBrowseData(location, () => paneState.revealHiddenFiles);
+	const data = useBrowseData(location, selection, () => paneState.revealHiddenFiles);
 	const actions = useBrowseActions(location, data, selection);
 	const uploads = useBrowseUploads(location, data);
 	const settings = $derived(settingsStore.current);
@@ -192,6 +192,15 @@
 	onpointerdown={onFocus}
 	onfocusin={onFocus}
 >
+	{#if data.fileListError}
+		<div
+			role="alert"
+			class="flex items-center justify-between gap-3 border-b border-border-primary px-4 py-2 text-sm text-text-secondary"
+		>
+			<span>{data.fileListError}</span>
+			<button type="button" class="cursor-pointer text-accent" onclick={data.reload}>Retry</button>
+		</div>
+	{/if}
 	<div
 		class="relative min-h-0 flex-1 overflow-auto"
 		ondragover={uploads.handleDragOver}

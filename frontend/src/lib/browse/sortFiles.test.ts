@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { FileInfo } from '#lib/api/files.js';
 import { sortFiles } from './sortFiles';
+import { suggestedDirectories } from './pathSuggestions';
 
 function entry(
 	name: string,
@@ -77,4 +78,10 @@ test('sorting returns a copy and leaves the cached listing untouched', () => {
 	const before = names(folder);
 	sortFiles(folder, 'size', 'desc');
 	assert.deepEqual(names(folder), before);
+});
+
+test('path suggestions offer folders by name, and hidden ones only when asked', () => {
+	assert.deepEqual(names(suggestedDirectories(folder, '', false)), ['apps', 'Zed']);
+	assert.deepEqual(names(suggestedDirectories(folder, '.', false)), ['apps', 'Zed', '.config']);
+	assert.deepEqual(names(suggestedDirectories(folder, '', true)), ['apps', 'Zed', '.config']);
 });

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"mime"
 	"testing"
 )
 
@@ -15,7 +16,7 @@ func setupBenchDirectory(tb testing.TB, entries int) FileService {
 	if err := fs.MkdirAll(dir, 0755); err != nil {
 		tb.Fatal(err)
 	}
-	for i := 0; i < entries; i++ {
+	for i := range entries {
 		name := fmt.Sprintf("%s/File-%05d.TXT", dir, (i*7919)%entries)
 		if err := fs.WriteFile(name, []byte("x"), 0644); err != nil {
 			tb.Fatal(err)
@@ -28,14 +29,16 @@ func setupBenchDirectory(tb testing.TB, entries int) FileService {
 func BenchmarkListDirectory(b *testing.B) {
 	svc := setupBenchDirectory(b, benchDirectoryEntries)
 	ctx := context.Background()
-	// The first open initializes the MIME table once per process; keep it out of the measurement.
-	if _, err := listWholeFolder(ctx, svc, "media/bench"); err != nil {
-		b.Fatal(err)
-	}
+	// MIME tables initialize once per process, not once per directory listing.
+	mime.TypeByExtension(".TXT")
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := listWholeFolder(ctx, svc, "media/bench"); err != nil {
+		count, err := listWholeFolder(ctx, svc, "media/bench")
+		if err != nil {
 			b.Fatal(err)
+		}
+		if count != benchDirectoryEntries {
+			b.Fatalf("got %d items, want %d", count, benchDirectoryEntries)
 		}
 	}
 }
@@ -48,8 +51,12 @@ func TestListDirectoryAllocationCeiling(t *testing.T) {
 	ctx := context.Background()
 	ceiling := allocationCeiling(t, "list")
 	allocs := testing.AllocsPerRun(5, func() {
-		if _, err := listWholeFolder(ctx, svc, "media/bench"); err != nil {
+		count, err := listWholeFolder(ctx, svc, "media/bench")
+		if err != nil {
 			t.Fatal(err)
+		}
+		if count != entries {
+			t.Fatalf("got %d items, want %d", count, entries)
 		}
 	})
 	t.Logf("allocs=%.0f ceiling=%.0f", allocs, ceiling)

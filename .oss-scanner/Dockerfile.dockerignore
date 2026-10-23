@@ -1,0 +1,20 @@
+# Retain source, tests, and documentation for offline security analysis.
+.env
+.env.*
+!.env.example
+**/node_modules
+frontend/.svelte-kit
+frontend/build
+backend/server
+backend/*.exe
+backend/*.test
+backend/coverage.*
+website/dist
+website/.astro
+website/.vercel
+desktop/build
+desktop/artifacts
+desktop/resources
+tmp
+temp
+*.log

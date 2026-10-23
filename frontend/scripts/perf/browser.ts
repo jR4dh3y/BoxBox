@@ -7,9 +7,15 @@ import bundleBudget from '../../perf-budget.json';
 import { browserViolations, median, type BrowserMetrics } from './gates';
 import { baseArgument, repo, results, run, withBaseline } from './common';
 import { createDirectoryFixture, startServer } from './server';
+import { verifyGridWindow } from './grid-window';
+import { verifyDesktopWatch } from './desktop-watch';
+import { verifySelectionRefresh } from './selection-refresh';
 import { verifyNavigation } from './navigation';
 import { verifyPasteLoadRace } from './paste-load-race';
 import { verifyLazyLoadErrors } from './lazy-load-errors';
+
+// The 32-row startup ceiling is defined for this desktop viewport.
+const viewport = { width: 1440, height: 900 };
 
 const profiles = [
 	{ name: 'local', latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
@@ -39,7 +45,7 @@ async function measure(
 	profile: (typeof profiles)[number]
 ) {
 	const { url, credentials } = server;
-	const context = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
+	const context = await browser.newContext({ viewport });
 	const page = await context.newPage();
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
@@ -226,9 +232,12 @@ async function benchmark(base?: string, sha?: string) {
 					await measure(browser, variant.server, variant.name, profile);
 			}
 		}
+		await verifyGridWindow(browser, head.url, head.credentials);
+		await verifyDesktopWatch(browser, join(repo, 'dist/boxbox'));
 		await loggedOut(browser, head.url);
 		await verifyLazyLoadErrors(browser, head.url, head.credentials);
 		await verifyNavigation(browser, head.url, head.credentials, fixture.mount);
+		await verifySelectionRefresh(browser, head.url, head.credentials, fixture.mount);
 		const writable = await startServer(
 			join(repo, 'dist/boxbox'),
 			fixture.root,

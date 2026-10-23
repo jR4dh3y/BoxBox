@@ -1,3 +1,4 @@
+import { parseDirectory } from './directory';
 import { CONFIG } from '#lib/config.js';
 import { ApiRequestError, parseResponse, type AccessTokenResponse } from './client';
 import type { FileList } from './files';
@@ -84,7 +85,7 @@ export function createEarlyStart(win: () => Pick<Window, 'boxboxEarly'>) {
 			const response = await early.response;
 			if (!response) return null;
 			try {
-				return await parseResponse<FileList>(response);
+				return parseDirectory(await parseResponse<unknown>(response));
 			} catch {
 				return null;
 			}

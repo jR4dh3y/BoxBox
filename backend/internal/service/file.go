@@ -168,14 +168,20 @@ func (s *fileService) ResolveForWrite(path string) (*model.MountPoint, string, e
 	return s.mounts.resolve(path, writeMaybeMissing)
 }
 
-// List returns every entry of a directory, hidden ones included, in directory order.
-// The client sorts and filters, so one read serves every view of the folder.
+// List returns every entry of a directory, hidden ones included, in directory order, subject to
+// the server entry limit. The client sorts and filters, so one read serves every view of the folder.
 func (s *fileService) List(ctx context.Context, path string) (*model.FileList, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// Resolve the path to filesystem path
 	_, fsPath, err := s.mounts.resolve(path, readExisting)
 	if err != nil {
 		return nil, err
 	}
 
+	// Check if path exists and is a directory
 	info, err := s.fs.Stat(fsPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -186,25 +192,46 @@ func (s *fileService) List(ctx context.Context, path string) (*model.FileList, e
 	if !info.IsDir() {
 		return nil, ErrNotDirectory
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
-	entries, truncated, err := s.fs.ReadDirLimit(fsPath, s.directoryEntryLimit)
+	entries, truncated, err := s.fs.ReadDirFileInfoLimit(fsPath, s.directoryEntryLimit)
 	if err != nil {
 		return nil, err
 	}
 	if truncated {
 		return nil, ErrDirectoryTooLarge
 	}
-
-	items := make([]model.FileInfo, 0, len(entries))
-	for _, entry := range entries {
-		entryInfo, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		items = append(items, fileutil.ToFileInfo(entry.Name(), filepath.Join(path, entry.Name()), entryInfo))
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
-	return &model.FileList{Path: path, Items: items}, nil
+	items := make([]model.FileInfo, 0, len(entries))
+	modeStrings := make(map[fs.FileMode]string)
+	parentPath := filepath.Clean(path)
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		mode := entry.Mode()
+		permissions, ok := modeStrings[mode]
+		if !ok {
+			permissions = mode.String()
+			modeStrings[mode] = permissions
+		}
+		items = append(items, fileutil.ToFileInfoWithPermissions(
+			entry.Name(),
+			joinListingPath(parentPath, entry.Name()),
+			entry,
+			permissions,
+		))
+	}
+
+	return &model.FileList{
+		Path:  path,
+		Items: items,
+	}, nil
 }
 
 // GetInfo returns metadata for a file or directory
@@ -432,4 +459,14 @@ func (s *fileService) WriteFile(ctx context.Context, path string, content []byte
 // GetFilesystem returns the underlying filesystem for advanced operations
 func (s *fileService) GetFilesystem() filesystem.FS {
 	return s.fs
+}
+
+func joinListingPath(parent, name string) string {
+	if parent == "." {
+		return name
+	}
+	if parent[len(parent)-1] == filepath.Separator {
+		return parent + name
+	}
+	return parent + string(filepath.Separator) + name
 }

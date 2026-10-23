@@ -22,8 +22,8 @@ export function run(args: string[], cwd = repo, log?: string): string {
 }
 
 // Budgets whose measured work no longer exists, mapped to the budget that replaced them. Folder
-// listing stopped paging: per-page, per-sort costs became one whole-folder cost. Delete an entry
-// once no supported base revision still has its key.
+// listing no longer sorts on the server: per-sort costs became one whole-folder cost. Delete an
+// entry once no supported base revision still has its key.
 const retiredBudgets: Readonly<Record<string, string>> = {
 	'list/name': 'list',
 	'list/type': 'list',

@@ -1,8 +1,9 @@
 <script lang="ts">
 	import type { SystemDrive } from '#lib/api/system.js';
-	import { HardDrive, Database, Pencil, X } from 'lucide-svelte';
+	import { HardDrive, Database } from 'lucide-svelte';
 	import { formatFileSize } from '#lib/utils/format.js';
-	import { Badge, ProgressBar, ContextMenu, InlineRename } from '#lib/components/ui/index.js';
+	import { Badge, ProgressBar, InlineRename } from '#lib/components/ui/index.js';
+	import LoadError from '#lib/components/LoadError.svelte';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 
 	interface Props {
@@ -159,15 +160,16 @@
 	</div>
 
 	{#if contextMenuOpen && !renaming}
-		<ContextMenu
-			x={contextMenuPosition.x}
-			y={contextMenuPosition.y}
-			items={[
-				{ id: 'rename', label: 'Rename', icon: Pencil },
-				...(hasCustomName ? [{ id: 'reset', label: 'Reset Name', icon: X }] : [])
-			]}
-			onSelect={handleMenuSelect}
-			onClose={handleMenuClose}
-		/>
+		{#await import('./DriveContextMenu.svelte') then { default: DriveContextMenu }}
+			<DriveContextMenu
+				x={contextMenuPosition.x}
+				y={contextMenuPosition.y}
+				{hasCustomName}
+				onSelect={handleMenuSelect}
+				onClose={handleMenuClose}
+			/>
+		{:catch}
+			<LoadError label="drive context menu" onClose={handleMenuClose} />
+		{/await}
 	{/if}
 </div>

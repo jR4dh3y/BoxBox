@@ -167,3 +167,57 @@ func TestMkdirAllWithinConfinesBothFilesystems(t *testing.T) {
 		})
 	}
 }
+
+func TestReadDirFileInfoLimitReportsTruncation(t *testing.T) {
+	fsys := NewMemMapFS()
+	if err := fsys.MkdirAll("/data", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		if err := fsys.WriteFile("/data/"+name, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, truncated, err := fsys.ReadDirFileInfoLimit("/data", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !truncated || len(entries) != 0 {
+		t.Fatalf("limited read returned %d entries, truncated=%v; want no entries and true", len(entries), truncated)
+	}
+
+	entries, truncated, err = fsys.ReadDirFileInfoLimit("/data", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if truncated || len(entries) != 3 {
+		t.Fatalf("exact-limit read returned %d entries, truncated=%v; want 3 and false", len(entries), truncated)
+	}
+}
+
+func TestReadDirFileInfoLimitCountsRawOSEntries(t *testing.T) {
+	fsys := NewOsFS()
+	dir := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, truncated, err := fsys.ReadDirFileInfoLimit(dir, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !truncated || len(entries) != 0 {
+		t.Fatalf("limited OS read returned %d entries, truncated=%v; want no entries and true", len(entries), truncated)
+	}
+
+	entries, truncated, err = fsys.ReadDirFileInfoLimit(dir, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if truncated || len(entries) != 3 {
+		t.Fatalf("exact-limit OS read returned %d entries, truncated=%v; want 3 and false", len(entries), truncated)
+	}
+}

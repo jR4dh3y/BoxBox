@@ -15,9 +15,6 @@ export interface VirtualScrollOptions {
 	estimatedItemHeight: number;
 }
 
-// Rows rendered beyond each edge, so a fast wheel flick does not show blank space.
-const OVERSCAN_ROWS = 6;
-
 /**
  * Renders only the rows in view. Items share one height, measured from whichever item is
  * rendered, so the full collection costs one array and two spacers, not one element per item.
@@ -41,7 +38,9 @@ export function createVirtualScroll(options: () => VirtualScrollOptions) {
 		const { offsetTop, stickyTop } = options();
 		return { scrollTop: scrollTop - offsetTop + stickyTop, height: viewportHeight - stickyTop };
 	});
-	const range = $derived(visibleRange(layout, viewport, OVERSCAN_ROWS));
+	const range = $derived(
+		visibleRange(layout, viewport, Math.max(1, Math.ceil(5 / layout.columns)))
+	);
 
 	function readViewport(node: HTMLElement): void {
 		scrollTop = node.scrollTop;

@@ -1,3 +1,4 @@
+import type { BrowseSelection } from './selection.svelte';
 import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 import {
 	getDriveStats,
@@ -13,7 +14,7 @@ import { fileQueryKeys } from '#lib/stores/files.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { canPreview } from '#lib/utils/fileTypes.js';
 import { isLocalDesktop } from '#lib/api/desktop.js';
-import { coalesceRefresh, watchDesktopDirectory } from './desktopWatch';
+import { toastStore } from '#lib/stores/toast.svelte.js';
 import { directoryQueryOptions } from './directoryQuery';
 import { sortFiles } from './sortFiles';
 import type { BrowseLocation } from './location.svelte';
@@ -22,7 +23,11 @@ import type { BrowseLocation } from './location.svelte';
  * What the browser shows for the current location: drives, a folder or search results.
  * Call during component setup because the queries need the component context.
  */
-export function useBrowseData(location: BrowseLocation, revealHidden: () => boolean = () => false) {
+export function useBrowseData(
+	location: BrowseLocation,
+	selection: BrowseSelection,
+	revealHidden: () => boolean = () => false
+) {
 	const queryClient = useQueryClient();
 	const settings = $derived(settingsStore.current);
 	const includeHidden = $derived(settings.showHiddenFiles || revealHidden());
@@ -58,7 +63,28 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 	const displayItems = $derived.by(() => {
 		const items: FileInfo[] = location.isSearchActive ? searchResults : directoryItems;
 		const visible = includeHidden ? items : items.filter((item) => !item.name.startsWith('.'));
-		return sortFiles(visible, location.sortBy, location.sortDir);
+		return location.isSearchActive
+			? visible
+			: sortFiles(visible, location.sortBy, location.sortDir);
+	});
+
+	$effect(() => {
+		// Cached data and failed refreshes cannot establish that a selected file vanished.
+		if (
+			location.isSearchActive ||
+			directoryQuery.isFetching ||
+			!directoryQuery.isSuccess ||
+			!directoryQuery.isFetchedAfterMount
+		)
+			return;
+		void directoryQuery.dataUpdatedAt;
+		selection.retain(directoryItems);
+	});
+
+	const fileListError = $derived.by(() => {
+		if (isAtRoot) return rootsQuery.error?.message ?? driveStatsQuery.error?.message ?? null;
+		if (location.isSearchActive) return searchQueryResult.error?.message ?? null;
+		return directoryQuery.error?.message ?? null;
 	});
 
 	const currentMount = $derived(
@@ -72,20 +98,19 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 	$effect(() => {
 		const path = location.path;
 		if (!isLocalDesktop() || !path) return;
-		// A refetch is the whole folder; let each one finish instead of cancelling it on every change.
-		const refresh = coalesceRefresh(() =>
-			Promise.all([
-				queryClient.invalidateQueries(
-					{ queryKey: fileQueryKeys.directory(path) },
-					{ cancelRefetch: false }
-				),
-				queryClient.invalidateQueries(
-					{ queryKey: fileQueryKeys.searches() },
-					{ cancelRefetch: false }
-				)
-			])
-		);
-		return watchDesktopDirectory(path, refresh);
+		let active = true;
+		let stop: (() => void) | undefined;
+		void import('./desktopWatch')
+			.then(({ subscribeDesktopDirectory }) => {
+				if (active) stop = subscribeDesktopDirectory(path, queryClient);
+			})
+			.catch(() => {
+				if (active) toastStore.error('Folder watching could not load. Reload to retry.');
+			});
+		return () => {
+			active = false;
+			stop?.();
+		};
 	});
 
 	return {
@@ -112,6 +137,9 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 		/** True while the folder is being fetched, including a cached one the server has not confirmed. */
 		get isFetchingDirectory() {
 			return !location.isSearchActive && directoryQuery.isFetching;
+		},
+		get fileListError() {
+			return fileListError;
 		},
 		get displayItems() {
 			return displayItems;
@@ -160,7 +188,10 @@ export function useBrowseData(location: BrowseLocation, revealHidden: () => bool
 		},
 		/** The toolbar refresh button. */
 		reload() {
-			if (isAtRoot) void driveStatsQuery.refetch();
+			if (isAtRoot) {
+				void rootsQuery.refetch();
+				void driveStatsQuery.refetch();
+			} else if (location.isSearchActive) void searchQueryResult.refetch();
 			else void directoryQuery.refetch();
 		},
 		refetchDirectory() {

@@ -43,13 +43,10 @@ export function checkRatchets(
 	const oldLimits = numericLimits(base);
 	const newLimits = numericLimits(head);
 	return [...oldLimits].flatMap(([key, limit]) => {
-		const next = newLimits.get(key);
-		if (next === undefined) {
-			const successor = Object.entries(retired).find(([name]) => name === key)?.[1];
-			if (successor !== undefined && newLimits.has(successor)) return [];
-			return [`${key}: ${limit} → deleted`];
-		}
-		return next > limit ? [`${key}: ${limit} → ${next}`] : [];
+		const successor = Object.entries(retired).find(([name]) => name === key)?.[1];
+		const name = newLimits.has(key) || successor === undefined ? key : successor;
+		const next = newLimits.get(name);
+		return next === undefined || next > limit ? [`${key}: ${limit} → ${next ?? 'deleted'}`] : [];
 	});
 }
 

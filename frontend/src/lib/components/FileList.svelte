@@ -10,7 +10,6 @@
 	import { FolderOpen } from 'lucide-svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
-	import FileThumbnail from '#lib/components/FileThumbnail.svelte';
 	import { useFileCollection, fileDisplayName } from '#lib/browse/fileCollection.svelte.js';
 	import type { FileContextAction } from '#lib/utils/fileContextMenu.js';
 	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
@@ -251,7 +250,11 @@
 									<span class="{selectionRevealClass} pointer-coarse:invisible">
 										{#if hasThumbnail}
 											<span class="block h-5 w-5 overflow-hidden rounded-sm">
-												<FileThumbnail file={item} alt="" fit="cover" class="h-full" />
+												{#await import('#lib/components/FileThumbnail.svelte') then { default: FileThumbnail }}
+													<FileThumbnail file={item} alt="" fit="cover" class="h-full" />
+												{:catch}
+													<IconComponent size={16} />
+												{/await}
 											</span>
 										{:else}
 											<IconComponent size={16} />

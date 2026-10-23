@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	iofs "io/fs"
+	"io/fs"
 	"slices"
 	"testing"
 
@@ -32,6 +32,17 @@ func setupTestFileService() (FileService, *filesystem.AferoFS) {
 
 	svc := NewFileService(fs, FileServiceConfig{MountPoints: mounts})
 	return svc, fs
+}
+
+type truncatedDirectoryListingFS struct {
+	filesystem.FS
+}
+
+func (f truncatedDirectoryListingFS) ReadDirFileInfoLimit(_ string, limit int) ([]fs.FileInfo, bool, error) {
+	if limit != 10_000 {
+		return nil, false, fmt.Errorf("unexpected directory limit %d", limit)
+	}
+	return nil, true, nil
 }
 
 func TestDirectoryListingReturnsHiddenAndVisibleEntries(t *testing.T) {
@@ -68,7 +79,7 @@ func TestListReadsTheDirectoryOnce(t *testing.T) {
 	if err := memory.MkdirAll("/data/media/big", 0755); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		if err := memory.WriteFile(fmt.Sprintf("/data/media/big/file%03d.txt", i), nil, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -94,14 +105,43 @@ type readCountingFS struct {
 	reads int
 }
 
-func (c *readCountingFS) ReadDir(name string) ([]iofs.DirEntry, error) {
+func (c *readCountingFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	c.reads++
 	return c.FS.ReadDir(name)
 }
 
-func (c *readCountingFS) ReadDirLimit(name string, limit int) ([]iofs.DirEntry, bool, error) {
+func (c *readCountingFS) ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, error) {
 	c.reads++
 	return c.FS.ReadDirLimit(name, limit)
+}
+
+func (c *readCountingFS) ReadDirFileInfoLimit(name string, limit int) ([]fs.FileInfo, bool, error) {
+	c.reads++
+	return c.FS.ReadDirFileInfoLimit(name, limit)
+}
+
+func TestDirectoryListingHonorsCanceledContext(t *testing.T) {
+	svc, _ := setupTestFileService()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := svc.List(ctx, "media/canceled"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("List error = %v, want context.Canceled", err)
+	}
+}
+
+func TestDirectoryListingEnforcesEntryLimit(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	if err := fsys.MkdirAll("/data/media/large", 0755); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewFileService(truncatedDirectoryListingFS{FS: fsys}, FileServiceConfig{
+		MountPoints: []model.MountPoint{{Name: "media", Path: "/data/media"}},
+	})
+
+	if _, err := svc.List(context.Background(), "media/large"); !errors.Is(err, ErrDirectoryTooLarge) {
+		t.Fatalf("List error = %v, want ErrDirectoryTooLarge", err)
+	}
 }
 
 func TestCreateFileCreatesEmptyFileWithoutOverwriting(t *testing.T) {
@@ -191,13 +231,16 @@ func TestProperty_DirectoryListingMetadataCompleteness(t *testing.T) {
 
 			// Create files with unique names
 			createdFiles := make(map[string]bool)
-			for i := 0; i < numFiles && i < len(fileNames); i++ {
+			for i := range min(numFiles, len(fileNames)) {
 				name := fileNames[i]
 				if name == "" || createdFiles[name] {
 					continue
 				}
 				createdFiles[name] = true
 				fs.WriteFile(testDir+"/"+name, []byte("content"), 0644)
+			}
+			if err := fs.WriteFile(testDir+"/known.pdf", []byte("pdf"), 0644); err != nil {
+				return false
 			}
 
 			// Also create a subdirectory
@@ -209,15 +252,21 @@ func TestProperty_DirectoryListingMetadataCompleteness(t *testing.T) {
 				return false
 			}
 
-			// Verify each item has complete metadata
+			foundPDF := false
 			for _, item := range list.Items {
-				// Name must be non-empty
 				if item.Name == "" {
 					return false
 				}
-
-				// Path must be non-empty and contain the name
-				if item.Path == "" {
+				if item.Path != "media/testdir/"+item.Name {
+					return false
+				}
+				if item.Name == "known.pdf" {
+					if item.IsDir || item.MimeType != "application/pdf" {
+						return false
+					}
+					foundPDF = true
+				}
+				if item.IsDir && item.MimeType != "" {
 					return false
 				}
 
@@ -237,7 +286,7 @@ func TestProperty_DirectoryListingMetadataCompleteness(t *testing.T) {
 				}
 			}
 
-			return true
+			return foundPDF
 		},
 		gen.SliceOfN(25, fileNameGen),
 		numFilesGen,
@@ -286,42 +335,71 @@ func TestProperty_DirectoryListingMetadataCompleteness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// **Feature: boxbox, Property 2: Listing Completeness**
-//
-// Property: For any directory with N entries, one listing SHALL return each entry exactly once.
-
-func TestProperty_ListingReturnsEveryEntryOnce(t *testing.T) {
+func TestProperty_DirectoryListingCompletenessAndRefresh(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
 	parameters.MaxSize = 50
 
 	properties := gopter.NewProperties(parameters)
+	numFilesGen := gen.IntRange(0, 100)
 
-	properties.Property("listing covers all entries without duplicates", prop.ForAll(
+	properties.Property("a single listing returns every file in name order", prop.ForAll(
 		func(numFiles int) bool {
 			svc, fs := setupTestFileService()
-			ctx := context.Background()
-
-			testDir := "/data/media/nodupes"
-			fs.MkdirAll(testDir, 0755)
-			for i := 0; i < numFiles; i++ {
-				fs.WriteFile(fmt.Sprintf("%s/file%03d.txt", testDir, i), []byte("content"), 0644)
-			}
-
-			list, err := svc.List(ctx, "media/nodupes")
-			if err != nil {
+			testDir := "/data/media/complete"
+			if err := fs.MkdirAll(testDir, 0755); err != nil {
 				return false
 			}
-			seen := make(map[string]bool, len(list.Items))
-			for _, item := range list.Items {
-				if seen[item.Path] {
+			for i := range numFiles {
+				name := fmt.Sprintf("file%03d.txt", i)
+				if err := fs.WriteFile(testDir+"/"+name, []byte("content"), 0644); err != nil {
 					return false
 				}
-				seen[item.Path] = true
 			}
-			return len(seen) == numFiles
+
+			list, err := svc.List(context.Background(), "media/complete")
+			if err != nil || len(list.Items) != numFiles {
+				return false
+			}
+			for i, item := range list.Items {
+				if item.Name != fmt.Sprintf("file%03d.txt", i) {
+					return false
+				}
+			}
+			return true
 		},
-		gen.IntRange(0, 200),
+		numFilesGen,
+	))
+
+	properties.Property("a refreshed listing includes newly added items", prop.ForAll(
+		func(numFiles int) bool {
+			svc, fs := setupTestFileService()
+			testDir := "/data/media/refresh"
+			if err := fs.MkdirAll(testDir, 0755); err != nil {
+				return false
+			}
+			for i := range numFiles {
+				name := fmt.Sprintf("file%03d.txt", i)
+				if err := fs.WriteFile(testDir+"/"+name, []byte("content"), 0644); err != nil {
+					return false
+				}
+			}
+
+			ctx := context.Background()
+			before, err := svc.List(ctx, "media/refresh")
+			if err != nil || len(before.Items) != numFiles {
+				return false
+			}
+			if err := fs.WriteFile(testDir+"/zz-refresh.txt", []byte("content"), 0644); err != nil {
+				return false
+			}
+			after, err := svc.List(ctx, "media/refresh")
+			return err == nil &&
+				len(before.Items) == numFiles &&
+				len(after.Items) == numFiles+1 &&
+				after.Items[len(after.Items)-1].Name == "zz-refresh.txt"
+		},
+		numFilesGen,
 	))
 
 	properties.TestingRun(t)
@@ -352,7 +430,7 @@ func TestProperty_NonExistentPathReturnsError(t *testing.T) {
 
 			// Build a random path that doesn't exist
 			path := "media"
-			for i := 0; i < numSegments && i < len(segments); i++ {
+			for i := range min(numSegments, len(segments)) {
 				if segments[i] != "" {
 					path += "/" + segments[i]
 				}
@@ -376,7 +454,7 @@ func TestProperty_NonExistentPathReturnsError(t *testing.T) {
 
 			// Build a random path that doesn't exist
 			path := "media"
-			for i := 0; i < numSegments && i < len(segments); i++ {
+			for i := range min(numSegments, len(segments)) {
 				if segments[i] != "" {
 					path += "/" + segments[i]
 				}
@@ -520,7 +598,7 @@ func TestProperty_FileRenameCorrectness(t *testing.T) {
 			fs.MkdirAll(oldDir, 0755)
 
 			fileContents := make(map[string][]byte)
-			for i := 0; i < numFiles; i++ {
+			for i := range numFiles {
 				fileName := fmt.Sprintf("file%d.txt", i)
 				content := []byte(fmt.Sprintf("content %d", i))
 				fs.WriteFile(oldDir+"/"+fileName, content, 0644)
@@ -777,7 +855,7 @@ func TestProperty_FileDeletionCorrectness(t *testing.T) {
 			fs.MkdirAll(dirPath, 0755)
 
 			filePaths := make([]string, numFiles)
-			for i := 0; i < numFiles; i++ {
+			for i := range numFiles {
 				filePath := fmt.Sprintf("%s/file%d.txt", dirPath, i)
 				fs.WriteFile(filePath, []byte("content"), 0644)
 				filePaths[i] = filePath

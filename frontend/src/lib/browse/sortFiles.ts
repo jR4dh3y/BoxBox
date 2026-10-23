@@ -41,3 +41,9 @@ export function sortFiles(
 	});
 	return keys.map((key) => key.item);
 }
+
+/** Name-ordered entries, without hidden ones unless `includeHidden`, for pickers and suggestions. */
+export function visibleByName(items: readonly FileInfo[], includeHidden: boolean): FileInfo[] {
+	const visible = includeHidden ? items : items.filter((item) => !item.name.startsWith('.'));
+	return sortFiles(visible, 'name', 'asc');
+}
