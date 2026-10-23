@@ -1,0 +1,95 @@
+{
+  "baseURL": "http://127.0.0.1:5183",
+  "browser": "156.0.8078.4",
+  "sha256": "cffec9a529ff30775f49781487feb81eae639fe56805e8e1eddad458d1570742",
+  "checks": [
+    "Alice saved a local PNG through Settings; PUT returned 200 and the workspace rendered contain + frosted glass.",
+    "Alice logged in with empty localStorage and IndexedDB; downloaded PNG SHA-256 matched the upload and wallpaper + display settings rendered.",
+    "Reload restored the session, revalidated metadata and reused IndexedDB bytes without another image download.",
+    "Logout removed the rendered wallpaper.",
+    "Bob used Alice’s browser after logout; his wallpaper returned 404 and his workspace stayed plain.",
+    "Alice returned to the shared browser and recovered her wallpaper and display settings.",
+    "No uncaught browser page errors."
+  ],
+  "requests": [
+    {
+      "client": "device-one",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 404
+    },
+    {
+      "client": "device-one",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 404
+    },
+    {
+      "client": "device-one",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 404
+    },
+    {
+      "client": "device-one",
+      "method": "PUT",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 200
+    },
+    {
+      "client": "device-one",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 200
+    },
+    {
+      "client": "device-one",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper/image",
+      "status": 200
+    },
+    {
+      "client": "fresh-browser",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 200
+    },
+    {
+      "client": "fresh-browser",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper/image",
+      "status": 200
+    },
+    {
+      "client": "fresh-browser",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 200
+    },
+    {
+      "client": "fresh-browser",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 200
+    },
+    {
+      "client": "fresh-browser",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 404
+    },
+    {
+      "client": "fresh-browser",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 404
+    },
+    {
+      "client": "fresh-browser",
+      "method": "GET",
+      "path": "/api/v1/settings/wallpaper",
+      "status": 200
+    }
+  ],
+  "pageErrors": []
+}

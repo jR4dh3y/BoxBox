@@ -2,22 +2,18 @@
  * User preferences, kept in localStorage; drive names are also stored on the server
  */
 
-import { settingsStorage } from '#lib/utils/storage.js';
+import { settingsStorage, storage } from '#lib/utils/storage.js';
+import { currentUsername } from '#lib/utils/sessionUser.js';
 import {
 	getDriveNames,
 	setDriveName as apiSetDriveName,
 	deleteDriveName as apiDeleteDriveName
 } from '#lib/api/drive-names.js';
-import { normalizeBackgroundImage } from '#lib/utils/appearance.js';
 import {
 	DEFAULT_BACKGROUND_IMAGE_MODE,
 	normalizeBackgroundImageMode,
 	type BackgroundImageMode
 } from '#lib/utils/wallpaper.js';
-import {
-	isInlineWallpaperDataUrl,
-	saveLocalWallpaperDataUrl
-} from '#lib/utils/wallpaperStorage.js';
 
 export interface UserSettings {
 	showHiddenFiles: boolean;
@@ -58,17 +54,23 @@ const defaultSettings: UserSettings = {
 	favoriteFolders: []
 };
 
-function loadSettings(): UserSettings {
-	const stored = settingsStorage.get<UserSettings>();
-	const settings = stored ? { ...defaultSettings, ...stored } : defaultSettings;
+function loadSettings(username: string): UserSettings {
+	// Only migrate legacy preferences when the previous sync recorded their owner.
+	let stored = settingsStorage.get<Partial<UserSettings>>(username);
+	if (!stored) {
+		try {
+			if (storage.getString('boxbox_wallpaper_owner') === username) {
+				stored = settingsStorage.get<Partial<UserSettings>>();
+			}
+		} catch {
+			// Browsers can disable localStorage even when the session is valid.
+		}
+	}
+	const settings = { ...defaultSettings, ...stored };
 	return {
 		...settings,
 		backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode)
 	};
-}
-
-function saveSettings(settings: UserSettings): void {
-	settingsStorage.set(settings);
 }
 
 async function loadDriveNames(): Promise<Record<string, string>> {
@@ -84,50 +86,37 @@ async function loadDriveNames(): Promise<Record<string, string>> {
 	}
 }
 
-async function migrateInlineBackgroundImage(settings: UserSettings): Promise<UserSettings> {
-	const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
-	if (!backgroundImage || !isInlineWallpaperDataUrl(backgroundImage)) {
-		return settings;
-	}
-
-	try {
-		const migratedBackgroundImage = await saveLocalWallpaperDataUrl(backgroundImage);
-		return {
-			...settings,
-			backgroundImage: migratedBackgroundImage
-		};
-	} catch {
-		return settings;
-	}
-}
-
 class SettingsStore {
-	current = $state.raw<UserSettings>(loadSettings());
+	current = $state.raw<UserSettings>({ ...defaultSettings });
+	private username: string | null = null;
+	private session = 0;
 
 	/** Call after sign-in: the drive names come from an authenticated endpoint. */
 	async initialize(): Promise<void> {
-		const migrated = await migrateInlineBackgroundImage(this.current);
-		if (migrated !== this.current) {
-			try {
-				saveSettings(migrated);
-			} catch {
-				// Keep the in-memory migrated reference even if the browser refuses persistence.
-			}
-			this.current = migrated;
-		}
+		const session = ++this.session;
+		const username = currentUsername() ?? 'dev';
+		this.username = username;
+		this.current = loadSettings(username);
 
 		const driveNameOverrides = await loadDriveNames();
+		if (session !== this.session) return;
 		this.current = { ...this.current, driveNameOverrides };
 		try {
-			saveSettings(this.current);
+			settingsStorage.set(this.current, username);
 		} catch {
 			// Initialization should not fail auth because local preference persistence is full.
 		}
 	}
 
 	set(settings: UserSettings): void {
-		saveSettings(settings);
+		if (this.username !== null) settingsStorage.set(settings, this.username);
 		this.current = settings;
+	}
+
+	clearSession(): void {
+		this.session++;
+		this.username = null;
+		this.current = { ...defaultSettings };
 	}
 
 	reset(): void {
