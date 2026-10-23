@@ -15,6 +15,7 @@
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License">
+  <a href="https://www.greptile.com/?utm_source=oss_badge&amp;utm_medium=readme&amp;utm_campaign=greptile_for_open_source"><img src="https://www.greptile.com/badge.svg" alt="Greptile: The War on Bugs"></a>
 </p>
 
 <p align="center">
@@ -36,9 +37,21 @@ The repository is a Bun workspace: `frontend/` contains the shared Svelte UI, `d
   <sub>Watch BoxBox in 40 seconds. Music: <a href="https://www.youtube.com/watch?v=LL9VJAljSQs">“the kill 2” by Lex Amarni &amp; 2muchmotion</a>.</sub>
 </p>
 
-## Security update
+## Community mentions
 
-BoxBox `v0.3.1` fixes GHSA-jj9r-xc63-6c4p. Upgrade to `v0.3.1` and sign in again after the update. See the [security release notes](docs/release.md#v031-security-release) for registry storage and rollback guidance.
+- [MadeWithSvelte](https://x.com/MadeWithSvelte/status/2079891741117669698) featured BoxBox as a self-hosted file manager built with Svelte.
+- [Golang News](https://x.com/golangch/status/2063543496431280460) shared BoxBox with the Go community.
+
+## Features
+
+- Browse multiple configured mount points from one web UI, with drives and folder shortcuts (places) listed separately.
+- Upload large files and whole folders with chunked, resumable uploads that keep nested paths intact.
+- Preview images, audio, video, PDF, and documents, and edit text and code in the built-in Monaco editor.
+- Share files and folders with expiring, revocable links. Access levels are View only, Upload only, Upload + delete, and Full access. Recipients see your wallpaper.
+- Download folders as ZIP archives from the browser or a public share page.
+- Copy, move, and delete files through background jobs with live WebSocket progress.
+- Search directories by file or folder name.
+- Configure read-only mounts, users, rate limits, and allowed origins.
 
 ## Quick Start
 
@@ -62,18 +75,10 @@ docker compose up -d
 
 Generate the bcrypt value requested by `.env`, then open `http://localhost:8080` and sign in as `admin` with the plaintext password you hashed. For reverse proxy examples, local source builds, and update workflows, see [docs/docker.md](docs/docker.md).
 
-## Features
-
-- Browse multiple configured mount points from one web UI, with drives and folder shortcuts (places) listed separately.
-- Upload large files and whole folders with chunked, resumable uploads that keep nested paths intact.
-- Preview images, audio, video, PDF, and documents, and edit text and code in the built-in Monaco editor.
-- Share files and folders with expiring, revocable links. Access levels are View only, Upload only, Upload + delete, and Full access. Recipients see your wallpaper.
-- Download folders as ZIP archives from the browser or a public share page.
-- Copy, move, and delete files through background jobs with live WebSocket progress.
-- Search directories by file or folder name.
-- Configure read-only mounts, users, rate limits, and allowed origins.
-
 ## Screenshots
+
+<details>
+<summary>View screenshots</summary>
 
 <table>
   <tr>
@@ -89,13 +94,7 @@ Generate the bcrypt value requested by `.env`, then open `http://localhost:8080`
   </tr>
 </table>
 
-## What's New in v0.3.0
-
-- **File and folder sharing.** Token links with View only, Upload only, Upload + delete, or Full access, optional expiry, revocation, and ZIP download.
-- **Folder uploads.** Pick or drop whole folders. Nested paths are kept.
-- **Drives and places.** Top-level mounts are drives; nested mounts show up under Places. Set `kind` to override.
-- **Owner wallpaper on share pages.** Your wallpaper is stored on the server and shown to recipients.
-- **Port 8080 by default.** The container listens on `8080` instead of `80`. See the [upgrade notes](https://boxbox.radhey.dev/docs/release/) before updating.
+</details>
 
 ## Repository Layout
 
