@@ -18,6 +18,10 @@ describe('browse keyboard shortcuts', () => {
 	test('maps tab, split, and navigation shortcuts', () => {
 		assert.equal(getBrowseShortcut(input({ key: 't', ctrlKey: true })), 'new-tab');
 		assert.equal(getBrowseShortcut(input({ key: 'w', metaKey: true })), 'close-tab');
+		assert.equal(
+			getBrowseShortcut(input({ key: 'O', ctrlKey: true, shiftKey: true })),
+			'open-servers'
+		);
 		assert.equal(getBrowseShortcut(input({ key: 'Tab', ctrlKey: true })), 'next-tab');
 		assert.equal(
 			getBrowseShortcut(input({ key: 'Tab', ctrlKey: true, shiftKey: true })),

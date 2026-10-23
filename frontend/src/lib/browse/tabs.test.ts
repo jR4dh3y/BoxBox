@@ -4,6 +4,7 @@ import { useBrowseTabs } from './tabs.svelte';
 import type { BrowseLocationSnapshot } from './location.svelte';
 
 const initial: BrowseLocationSnapshot = {
+	page: 'files',
 	path: 'media',
 	searchQuery: '',
 	sortBy: 'name',

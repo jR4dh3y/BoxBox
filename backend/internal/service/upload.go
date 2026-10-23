@@ -32,6 +32,7 @@ type UploadChunk struct {
 	ChunkSize   int64
 	TotalSize   int64
 	Checksum    string
+	CreateOnly  bool
 }
 
 func (chunk UploadChunk) ExpectedSize() int64 {
@@ -66,6 +67,7 @@ type UploadService interface {
 	StopCleanup()
 	AcceptChunk(context.Context, string, UploadChunk, io.Reader) (*UploadResult, error)
 	Status(string) (*UploadStatus, error)
+	Discard(string)
 }
 
 type uploadSession struct {
@@ -76,11 +78,13 @@ type uploadSession struct {
 	totalSize      int64
 	receivedChunks map[int]bool
 	expectedHash   string
+	createOnly     bool
 	tempDir        string
 	createdAt      time.Time
 	lastActivity   time.Time
 	activeRequests int
 	terminal       bool
+	discarded      bool
 	terminalPath   string
 	terminalErr    error
 	processMu      sync.Mutex
@@ -148,6 +152,16 @@ func (s *uploadService) AcceptChunk(
 	chunk UploadChunk,
 	body io.Reader,
 ) (*UploadResult, error) {
+	if chunk.ChunkSize < 1 || chunk.TotalSize < 0 || chunk.TotalChunks < 1 || chunk.ChunkIndex < 0 || chunk.ChunkIndex >= chunk.TotalChunks {
+		return nil, ErrChunkSizeMismatch
+	}
+	expectedChunks := int64(1)
+	if chunk.TotalSize > 0 {
+		expectedChunks = 1 + (chunk.TotalSize-1)/chunk.ChunkSize
+	}
+	if int64(chunk.TotalChunks) != expectedChunks {
+		return nil, ErrChunkSizeMismatch
+	}
 	_, destination, err := s.files.ResolveForWrite(path)
 	if err != nil {
 		return nil, err
@@ -209,6 +223,26 @@ func (s *uploadService) AcceptChunk(
 	return session.result(chunk.ChunkIndex, path), nil
 }
 
+// Discard prevents future publication and removes temporary chunks after active readers exit.
+func (s *uploadService) Discard(id string) {
+	s.mu.Lock()
+	session := s.sessions[id]
+	var temporary string
+	if session != nil {
+		session.mu.Lock()
+		session.discarded = true
+		if session.activeRequests == 0 {
+			delete(s.sessions, id)
+			temporary = session.tempDir
+		}
+		session.mu.Unlock()
+	}
+	s.mu.Unlock()
+	if temporary != "" {
+		_ = os.RemoveAll(temporary)
+	}
+}
+
 func (s *uploadService) Status(id string) (*UploadStatus, error) {
 	s.mu.RLock()
 	session := s.sessions[id]
@@ -224,7 +258,7 @@ func (s *uploadService) getOrCreate(path string, chunk UploadChunk) (*uploadSess
 	defer s.mu.Unlock()
 	if existing := s.sessions[chunk.UploadID]; existing != nil {
 		if existing.path != path || existing.totalChunks != chunk.TotalChunks ||
-			existing.chunkSize != chunk.ChunkSize || existing.totalSize != chunk.TotalSize {
+			existing.chunkSize != chunk.ChunkSize || existing.totalSize != chunk.TotalSize || existing.createOnly != chunk.CreateOnly {
 			return nil, ErrUploadConflict
 		}
 		existing.acquire()
@@ -248,6 +282,7 @@ func (s *uploadService) getOrCreate(path string, chunk UploadChunk) (*uploadSess
 		totalChunks:    chunk.TotalChunks,
 		chunkSize:      chunk.ChunkSize,
 		totalSize:      chunk.TotalSize,
+		createOnly:     chunk.CreateOnly,
 		receivedChunks: make(map[int]bool),
 		tempDir:        tempDir,
 		createdAt:      now,
@@ -264,6 +299,14 @@ func (s *uploadService) assemble(
 	destination string,
 	expectedChecksum string,
 ) error {
+	// Chunk receipt may span minutes; the original resolved parent can change.
+	_, currentDestination, err := s.files.ResolveForWrite(session.path)
+	if err != nil {
+		return err
+	}
+	if currentDestination != destination {
+		return ErrPermissionDenied
+	}
 	fsys := s.files.GetFilesystem()
 	if err := fsys.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
@@ -311,7 +354,30 @@ func (s *uploadService) assemble(
 	if closeErr != nil {
 		return closeErr
 	}
-	if err := fsys.Rename(temporary, destination); err != nil {
+	// Revalidate confinement at publication after assembling potentially many chunks.
+	_, confined, err := s.files.ResolveForWrite(session.path)
+	if err != nil {
+		return err
+	}
+	if confined != destination {
+		return ErrPermissionDenied
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	publish := fsys.Rename
+	if session.createOnly {
+		publish = fsys.RenameNoReplace
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.discarded {
+		return context.Canceled
+	}
+	if err := publish(temporary, destination); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return ErrPathExists
+		}
 		return err
 	}
 	complete = true
@@ -341,7 +407,7 @@ func (s *uploadService) releaseSession(session *uploadSession) {
 	session.mu.Lock()
 	session.activeRequests--
 	session.lastActivity = time.Now()
-	if session.terminal && session.activeRequests == 0 && s.sessions[session.id] == session {
+	if (session.terminal || session.discarded) && session.activeRequests == 0 && s.sessions[session.id] == session {
 		tempDir = session.tempDir
 		delete(s.sessions, session.id)
 	}
@@ -370,6 +436,9 @@ func (s *uploadSession) finish(path string, err error) {
 func (s *uploadSession) terminalResult(chunkIndex int) (*UploadResult, error, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if s.discarded {
+		return nil, context.Canceled, true
+	}
 	if !s.terminal {
 		return nil, nil, false
 	}
@@ -454,4 +523,19 @@ func (s *uploadSession) status() *UploadStatus {
 		CreatedAt:      s.createdAt,
 		LastActivity:   s.lastActivity,
 	}
+}
+
+// CreateUploadDirectory atomically claims a new directory for a copy operation.
+func CreateUploadDirectory(files FileStreamer, path string) error {
+	_, destination, err := files.ResolveForWrite(path)
+	if err != nil {
+		return err
+	}
+	if err := files.GetFilesystem().Mkdir(destination, 0755); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return ErrPathExists
+		}
+		return err
+	}
+	return nil
 }

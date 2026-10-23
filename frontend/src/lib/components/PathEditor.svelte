@@ -3,6 +3,8 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { listDirectory, listRoots } from '#lib/api/files.js';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { parseRemotePath } from '#lib/api/remotePaths.js';
+	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import { desktopInputPath } from '#lib/browse/desktopPath.js';
 
 	interface PathSuggestion {
@@ -329,6 +331,12 @@
 
 	function commitPath(value: string = pathDraft): void {
 		const nextPath = normalizeNavigablePath(value);
+		try {
+			parseRemotePath(nextPath);
+		} catch {
+			toastStore.error('Choose a remote mount or folder from Locations');
+			return;
+		}
 		cancelPathEdit();
 
 		if (nextPath !== currentPath) {

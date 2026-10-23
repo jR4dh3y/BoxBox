@@ -12,6 +12,9 @@
 	import { useBrowseActions } from '#lib/browse/actions.svelte.js';
 	import { useBrowseData } from '#lib/browse/data.svelte.js';
 	import { useBrowseUploads } from '#lib/browse/uploads.svelte.js';
+	import { useFileDrop } from '#lib/browse/fileDrop.js';
+	import { createDropZone } from '#lib/browse/dropZone.svelte.js';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import type { BrowsePaneState, BrowsePaneRuntime } from '#lib/browse/pane.svelte.js';
 	import type { FileInfo } from '#lib/api/files.js';
 	import { CONFIG } from '#lib/config.js';
@@ -54,6 +57,8 @@
 	const data = useBrowseData(location, () => paneState.revealHiddenFiles);
 	const actions = useBrowseActions(location, data, selection);
 	const uploads = useBrowseUploads(location, data);
+	const dropHandler = useFileDrop(data, actions, uploads);
+	const drop = createDropZone(() => dropHandler);
 	const settings = $derived(settingsStore.current);
 
 	const hasOpenDialog = $derived(
@@ -67,6 +72,7 @@
 		data,
 		actions,
 		uploads,
+		drop: dropHandler,
 		get hasOpenDialog() {
 			return hasOpenDialog || actions.paste.plan !== null;
 		}
@@ -145,7 +151,8 @@
 	]);
 
 	function handleFileKeydown(event: KeyboardEvent): void {
-		if (!focused || event.defaultPrevented || runtime.hasOpenDialog || actions.previewFile) return;
+		if (!focused || location.page !== 'files') return;
+		if (event.defaultPrevented || runtime.hasOpenDialog || actions.previewFile) return;
 		if (document.querySelector('[role="menu"], dialog[open]')) return;
 		if (
 			isTextEntryTarget(event.target) ||
@@ -196,23 +203,48 @@
 >
 	<div
 		class="relative min-h-0 flex-1 overflow-auto"
-		ondragover={uploads.handleDragOver}
-		ondragleave={uploads.handleDragLeave}
-		ondrop={uploads.handleDrop}
+		ondragover={(event) => drop.over(event, location.path)}
+		ondragleave={drop.leave}
+		ondrop={(event) => drop.drop(event, location.path)}
 		role="region"
 		aria-label="File browser content"
 	>
-		{#if uploads.isDragOver && !data.isAtRoot}
+		{#if location.path && drop.overPath === location.path}
 			<div
-				class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-accent bg-accent/10"
+				class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-accent bg-accent/10"
 			>
-				<div class="rounded-lg bg-surface-primary/90 px-6 py-4 shadow-lg backdrop-blur-sm">
-					<span class="text-lg font-medium text-accent">Drop files to upload here</span>
-				</div>
+				{#if !isLocalDesktop()}
+					<span
+						class="rounded bg-surface-primary/90 px-4 py-2 text-[13px] font-medium text-accent shadow-lg"
+						>Drop files to upload here</span
+					>
+				{/if}
 			</div>
 		{/if}
 
-		{#if data.isAtRoot}
+		{#if location.page !== 'files'}
+			{#key data.pageRevision}
+				{#if location.page === 'trash'}
+					{#await import('./TrashPage.svelte') then { default: TrashPage }}
+						<TrashPage onChanged={data.refreshMounts} />
+					{:catch}
+						<LoadError label="Trash" inline />
+					{/await}
+				{:else if location.page === 'drives'}
+					{#await import('./DrivesPage.svelte') then { default: DrivesPage }}
+						<DrivesPage onChanged={data.refreshMounts} onNavigate={location.navigate} />
+					{:catch}
+						<LoadError label="removable drives" inline />
+					{/await}
+				{:else}
+					{#await import('./ServersPage.svelte') then { default: ServersPage }}
+						<ServersPage onChanged={data.refreshMounts} onNavigate={location.navigate} />
+					{:catch}
+						<LoadError label="servers" inline />
+					{/await}
+				{/if}
+			{/key}
+		{:else if data.isAtRoot}
 			<div class="p-6">
 				{#if data.isLoadingDrives}
 					<div class="flex items-center gap-2 py-5 text-sm text-text-secondary">
@@ -233,10 +265,17 @@
 					{/await}
 				{/if}
 			</div>
+		{:else if data.error}
+			<div class="p-4 text-sm text-danger" role="alert">
+				{data.error}<button type="button" class="ml-3 underline" onclick={data.reload}
+					>Try again</button
+				>
+			</div>
 		{:else if location.viewMode === 'grid'}
 			{#await import('#lib/components/FileGrid.svelte') then { default: FileGrid }}
 				<FileGrid
 					items={data.displayItems}
+					path={location.path}
 					emptyMessage={data.emptyListMessage}
 					selectedPaths={selection.paths}
 					isLoading={data.isFileListLoading}
@@ -247,6 +286,7 @@
 					canCreate={data.canCreate}
 					showFileExtensions={settings.showFileExtensions}
 					fileOpenBehavior={settings.fileOpenBehavior}
+					dropTarget={drop}
 					onItemClick={actions.openFile}
 					{onFolderHover}
 					onSelectionChange={selection.set}
@@ -258,6 +298,7 @@
 		{:else}
 			<FileList
 				items={data.displayItems}
+				path={location.path}
 				sortBy={location.sortBy}
 				sortDir={location.sortDir}
 				emptyMessage={data.emptyListMessage}
@@ -270,6 +311,7 @@
 				canCreate={data.canCreate}
 				showFileExtensions={settings.showFileExtensions}
 				fileOpenBehavior={settings.fileOpenBehavior}
+				dropTarget={drop}
 				onItemClick={actions.openFile}
 				{onFolderHover}
 				onSortChange={location.setSort}
@@ -279,16 +321,18 @@
 		{/if}
 	</div>
 
-	<StatusBar
-		itemCount={data.itemCount}
-		selectedCount={selection.count}
-		viewMode={location.viewMode}
-		totalCount={data.statusTotalCount}
-		hasMore={data.hasMoreItems}
-		isLoadingMore={data.isLoadingMore}
-		onLoadMore={data.loadMore}
-		onViewModeChange={location.setViewMode}
-	/>
+	{#if location.page === 'files'}
+		<StatusBar
+			itemCount={data.itemCount}
+			selectedCount={selection.count}
+			viewMode={location.viewMode}
+			totalCount={data.statusTotalCount}
+			hasMore={data.hasMoreItems}
+			isLoadingMore={data.isLoadingMore}
+			onLoadMore={data.loadMore}
+			onViewModeChange={location.setViewMode}
+		/>
+	{/if}
 </section>
 
 {#if actions.previewFile}

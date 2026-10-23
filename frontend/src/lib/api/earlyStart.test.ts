@@ -374,3 +374,11 @@ describe('restoreSession', () => {
 		assert.equal(requests.length, 1);
 	});
 });
+
+test('the shell never sends remote references to local mounts', () => {
+	for (const path of ['@remote', '@remote/12345678-1234-4234-8234-123456789abc/media']) {
+		const { calls, win } = runShell({ href: `${origin}/browse?path=${encodeURIComponent(path)}` });
+		assert.deepEqual(calls, []);
+		assert.equal(win.boxboxEarly, undefined);
+	}
+});

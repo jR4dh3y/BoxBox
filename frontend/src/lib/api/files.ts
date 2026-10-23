@@ -3,6 +3,18 @@
  */
 
 import { api, buildUrl } from './client';
+import { array, boolean, record, string, optionalString } from './parse';
+import {
+	collectRemote,
+	number,
+	parseRemotePath,
+	pathEndpoint,
+	qualifyPath,
+	remoteSource,
+	sameSource,
+	sourceEndpoint,
+	type PathReference
+} from './remotePaths';
 import { tokenStorage } from '#lib/utils/storage.js';
 
 /**
@@ -33,6 +45,8 @@ export interface FileList {
  * Mount point information
  */
 export interface MountPoint {
+	label?: string;
+	serverName?: string;
 	name: string;
 	path: string;
 	readOnly: boolean;
@@ -52,6 +66,8 @@ export interface RootsResponse {
  * Drive statistics
  */
 export interface DriveStats {
+	label?: string;
+	serverName?: string;
 	name: string;
 	path: string;
 	device?: string; // The underlying device (e.g., /dev/sda1)
@@ -123,8 +139,71 @@ interface MessageResponse {
 	message: string;
 }
 
-function encodeRoutePath(path: string): string {
-	return path.split('/').map(encodeURIComponent).join('/');
+function parseFile(value: unknown, source: PathReference): FileInfo {
+	const file = record(value, 'file');
+	return {
+		name: string(file.name, 'file name'),
+		path: qualifyPath(source, string(file.path, 'file path')),
+		size: number(file.size, 'file size'),
+		isDir: boolean(file.isDir, 'directory flag'),
+		modTime: string(file.modTime, 'modified time'),
+		permissions: string(file.permissions, 'permissions'),
+		mimeType: optionalString(file.mimeType, 'MIME type')
+	};
+}
+
+function parseList(value: unknown, source: PathReference): FileList {
+	const list = record(value, 'file list');
+	return {
+		path: qualifyPath(source, string(list.path, 'list path')),
+		items: array(list.items, 'files').map((file) => parseFile(file, source)),
+		totalCount: number(list.totalCount, 'total count'),
+		page: number(list.page, 'page'),
+		pageSize: number(list.pageSize, 'page size')
+	};
+}
+
+function parseRoots(value: unknown, source: PathReference, serverName?: string): MountPoint[] {
+	return array(record(value, 'roots response').roots, 'roots').map((value) => {
+		const root = record(value, 'root');
+		const name = string(root.name, 'root name');
+		const kind = root.kind === '' ? undefined : root.kind;
+		if (kind !== undefined && kind !== 'drive' && kind !== 'place')
+			throw new Error('Invalid root kind');
+		return {
+			name: qualifyPath(source, name),
+			path: source.kind === 'remote' ? qualifyPath(source, name) : string(root.path, 'root path'),
+			readOnly: boolean(root.readOnly, 'read-only flag'),
+			...(root.autoDiscover === undefined
+				? {}
+				: { autoDiscover: boolean(root.autoDiscover, 'auto-discover flag') }),
+			...(kind === undefined ? {} : { kind }),
+			...(serverName === undefined ? {} : { label: name, serverName })
+		};
+	});
+}
+
+function parseStats(value: unknown, source: PathReference, serverName?: string): DriveStats[] {
+	return array(record(value, 'stats response').drives, 'drives').map((value) => {
+		const drive = record(value, 'drive');
+		const name = string(drive.name, 'drive name');
+		return {
+			name: qualifyPath(source, name),
+			path: source.kind === 'remote' ? qualifyPath(source, name) : string(drive.path, 'drive path'),
+			totalBytes: number(drive.totalBytes, 'total bytes'),
+			freeBytes: number(drive.freeBytes, 'free bytes'),
+			usedBytes: number(drive.usedBytes, 'used bytes'),
+			usedPct: number(drive.usedPct, 'used percentage'),
+			readOnly: boolean(drive.readOnly, 'read-only flag'),
+			...(source.kind === 'remote'
+				? { label: name, serverName }
+				: {
+						device: optionalString(drive.device, 'device'),
+						fsType: optionalString(drive.fsType, 'filesystem'),
+						mountPoint: optionalString(drive.mountPoint, 'mount point')
+					})
+		};
+	});
 }
 
 /**
@@ -132,7 +211,17 @@ function encodeRoutePath(path: string): string {
  * GET /api/v1/files
  */
 export async function listRoots(): Promise<RootsResponse> {
-	return api.get<RootsResponse>('/files');
+	const [local, remote] = await Promise.all([
+		api.get<unknown>('/files').then((value) => parseRoots(value, { kind: 'local', path: '' })),
+		collectRemote(async (server) =>
+			parseRoots(
+				await api.get<unknown>(sourceEndpoint(remoteSource(server), '/files')),
+				remoteSource(server),
+				server.name
+			)
+		)
+	]);
+	return { roots: [...local, ...remote] };
 }
 
 /**
@@ -140,7 +229,19 @@ export async function listRoots(): Promise<RootsResponse> {
  * GET /api/v1/files/stats
  */
 export async function getDriveStats(): Promise<DriveStatsResponse> {
-	return api.get<DriveStatsResponse>('/files/stats');
+	const [local, remote] = await Promise.all([
+		api
+			.get<unknown>('/files/stats')
+			.then((value) => parseStats(value, { kind: 'local', path: '' })),
+		collectRemote(async (server) =>
+			parseStats(
+				await api.get<unknown>(sourceEndpoint(remoteSource(server), '/files/stats')),
+				remoteSource(server),
+				server.name
+			)
+		)
+	]);
+	return { drives: [...local, ...remote] };
 }
 
 /**
@@ -163,7 +264,11 @@ export async function getPath(
 		if (options.includeHidden !== undefined) params.includeHidden = options.includeHidden;
 	}
 
-	return api.get<FileList | FileInfo>(`/files/${encodeRoutePath(path)}`, params, signal);
+	const source = parseRemotePath(path);
+	const value = await api.get<unknown>(pathEndpoint(path, '/files'), params, signal);
+	return 'items' in record(value, 'file response')
+		? parseList(value, source)
+		: parseFile(value, source);
 }
 
 function listRequest(path: string, options?: ListOptions) {
@@ -174,7 +279,7 @@ function listRequest(path: string, options?: ListOptions) {
 	if (options?.sortDir) params.sortDir = options.sortDir;
 	if (options?.filter) params.filter = options.filter;
 	if (options?.includeHidden !== undefined) params.includeHidden = options.includeHidden;
-	return { endpoint: `/files/list/${encodeRoutePath(path)}`, params };
+	return { endpoint: pathEndpoint(path, '/files/list'), params };
 }
 
 /**
@@ -187,7 +292,7 @@ export async function listDirectory(
 	signal?: AbortSignal
 ): Promise<FileList> {
 	const { endpoint, params } = listRequest(path, options);
-	return api.get<FileList>(endpoint, params, signal);
+	return parseList(await api.get<unknown>(endpoint, params, signal), parseRemotePath(path));
 }
 
 /** The URL `listDirectory` requests. static/early-fetch.js must start the same one. */
@@ -201,7 +306,9 @@ export function directoryUrl(path: string, options?: ListOptions): string {
  * Returns FileInfo
  */
 export async function getFileInfo(path: string): Promise<FileInfo> {
-	return getPath(path) as Promise<FileInfo>;
+	const result = await getPath(path);
+	if ('items' in result) throw new Error('Expected file metadata');
+	return result;
 }
 
 /**
@@ -210,7 +317,10 @@ export async function getFileInfo(path: string): Promise<FileInfo> {
  */
 export async function createDirectory(basePath: string, name: string): Promise<FileInfo> {
 	const body: CreateItemRequest = { name, type: 'directory' };
-	return api.post<FileInfo>(`/files/${encodeRoutePath(basePath)}`, body);
+	return parseFile(
+		await api.post<unknown>(pathEndpoint(basePath, '/files'), body),
+		parseRemotePath(basePath)
+	);
 }
 
 /**
@@ -223,7 +333,10 @@ export async function createFile(
 	content: string = ''
 ): Promise<FileInfo> {
 	const body: CreateItemRequest = { name, type: 'file', content };
-	return api.post<FileInfo>(`/files/${encodeRoutePath(basePath)}`, body);
+	return parseFile(
+		await api.post<unknown>(pathEndpoint(basePath, '/files'), body),
+		parseRemotePath(basePath)
+	);
 }
 
 /**
@@ -231,8 +344,11 @@ export async function createFile(
  * PUT /api/v1/files/*path
  */
 export async function rename(oldPath: string, newPath: string): Promise<FileInfo> {
-	const body: RenameRequest = { newPath };
-	return api.put<FileInfo>(`/files/${encodeRoutePath(oldPath)}`, body);
+	const source = parseRemotePath(oldPath);
+	const destination = parseRemotePath(newPath);
+	if (!sameSource(source, destination)) throw new Error('Rename requires the same source');
+	const body: RenameRequest = { newPath: destination.path };
+	return parseFile(await api.put<unknown>(pathEndpoint(oldPath, '/files'), body), source);
 }
 
 /**
@@ -241,7 +357,10 @@ export async function rename(oldPath: string, newPath: string): Promise<FileInfo
  */
 export async function saveFileContent(path: string, content: string): Promise<FileInfo> {
 	const body: SaveFileRequest = { content };
-	return api.patch<FileInfo>(`/files/${encodeRoutePath(path)}`, body);
+	return parseFile(
+		await api.patch<unknown>(pathEndpoint(path, '/files'), body),
+		parseRemotePath(path)
+	);
 }
 
 /**
@@ -251,7 +370,11 @@ export async function saveFileContent(path: string, content: string): Promise<Fi
  */
 export async function deleteFile(path: string, confirm: boolean = false): Promise<MessageResponse> {
 	const params = confirm ? { confirm: 'true' } : undefined;
-	return api.delete<MessageResponse>(`/files/${encodeRoutePath(path)}`, params);
+	const response = record(
+		await api.delete<unknown>(pathEndpoint(path, '/files'), params),
+		'delete response'
+	);
+	return { message: string(response.message, 'message') };
 }
 
 /**
@@ -263,7 +386,21 @@ export async function search(
 	query: string,
 	signal?: AbortSignal
 ): Promise<SearchResponse> {
-	return api.get<SearchResponse>('/search', { path, q: query }, signal);
+	const source = parseRemotePath(path);
+	const response = record(
+		await api.get<unknown>(
+			sourceEndpoint(source, '/search'),
+			{ path: source.path, q: query },
+			signal
+		),
+		'search response'
+	);
+	return {
+		path: qualifyPath(source, string(response.path, 'search path')),
+		query: string(response.query, 'query'),
+		results: array(response.results, 'search results').map((file) => parseFile(file, source)),
+		count: number(response.count, 'count')
+	};
 }
 
 /**
@@ -271,11 +408,11 @@ export async function search(
  */
 export function getThumbnailUrl(path: string, width = 224, height = 144, version?: string): string {
 	const token = tokenStorage.getAccessToken();
-	const encodedPath = encodeRoutePath(path);
+	const source = parseRemotePath(path);
 	const params = new URLSearchParams({ width: String(width), height: String(height) });
 	if (version !== undefined) params.set('v', version);
-	if (token) params.set('token', token);
-	return `/api/v1/stream/thumbnail/${encodedPath}?${params.toString()}`;
+	if (token && source.kind === 'local') params.set('token', token);
+	return `/api/v1${pathEndpoint(path, '/stream/thumbnail')}?${params.toString()}`;
 }
 
 /**
@@ -284,9 +421,11 @@ export function getThumbnailUrl(path: string, width = 224, height = 144, version
  */
 export function getPreviewUrl(path: string): string {
 	const token = tokenStorage.getAccessToken();
-	const encodedPath = encodeRoutePath(path);
-	const baseUrl = `/api/v1/stream/preview/${encodedPath}`;
-	return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+	const source = parseRemotePath(path);
+	const baseUrl = `/api/v1${pathEndpoint(path, '/stream/preview')}`;
+	return token && source.kind === 'local'
+		? `${baseUrl}?token=${encodeURIComponent(token)}`
+		: baseUrl;
 }
 
 /**
@@ -294,17 +433,21 @@ export function getPreviewUrl(path: string): string {
  */
 export function getDownloadUrl(path: string): string {
 	const token = tokenStorage.getAccessToken();
-	const encodedPath = encodeRoutePath(path);
-	const baseUrl = `/api/v1/stream/download/${encodedPath}`;
-	return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+	const source = parseRemotePath(path);
+	const baseUrl = `/api/v1${pathEndpoint(path, '/stream/download')}`;
+	return token && source.kind === 'local'
+		? `${baseUrl}?token=${encodeURIComponent(token)}`
+		: baseUrl;
 }
 
 /** Get the download URL for a folder ZIP archive. */
 export function getDirectoryArchiveUrl(path: string): string {
 	const token = tokenStorage.getAccessToken();
-	const encodedPath = encodeRoutePath(path);
-	const baseUrl = `/api/v1/stream/archive/${encodedPath}`;
-	return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+	const source = parseRemotePath(path);
+	const baseUrl = `/api/v1${pathEndpoint(path, '/stream/archive')}`;
+	return token && source.kind === 'local'
+		? `${baseUrl}?token=${encodeURIComponent(token)}`
+		: baseUrl;
 }
 
 /**

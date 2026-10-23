@@ -178,6 +178,13 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("initialize auth service: %w", err)
 	}
+	var connectService *service.ConnectService
+	if !devMode {
+		connectService, err = service.NewConnectService(fs, authService, service.ConnectServiceConfig{DataDir: cfg.DataDir, Users: cfg.Users})
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+	}
 
 	fileConfig := service.FileServiceConfig{MountPoints: mountPoints}
 	if desktopMode {
@@ -224,7 +231,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 	shareHandler := handler.NewShareHandler(shareService, settingsService, cfg.MaxUploadMB)
 
 	// Create router
-	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints, desktopMode)
+	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints, desktopMode, connectService)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -260,6 +267,7 @@ func createRouter(
 	shareHandler *handler.ShareHandler,
 	mountPoints []model.MountPoint,
 	desktopMode bool,
+	connectService *service.ConnectService,
 ) chi.Router {
 	r := chi.NewRouter()
 
@@ -287,9 +295,21 @@ func createRouter(
 		// Public routes (no auth required)
 		// Auth routes are rate-limited to prevent brute force attacks
 		r.Route("/auth", func(r chi.Router) {
+			r.Use(middleware.RejectClientCredentials)
 			r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
 			authHandler.RegisterRoutes(r)
 		})
+		if connectService != nil {
+			connectHandler := handler.NewConnectHandler(connectService)
+			r.Route("/connect", func(r chi.Router) {
+				connectHandler.RegisterPublicRoutes(r)
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.JWTAuth(authService, connectService))
+					r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
+					connectHandler.RegisterRoutes(r)
+				})
+			})
+		}
 
 		// Public share-link routes (the share token is the only credential)
 		r.Route("/share", func(r chi.Router) {
@@ -300,9 +320,14 @@ func createRouter(
 		// Protected routes (auth required)
 		r.Group(func(r chi.Router) {
 			if devMode {
+				r.Use(middleware.RejectClientCredentials)
 				r.Use(middleware.DevelopmentAuth)
 			} else {
-				r.Use(middleware.JWTAuth(authService))
+				if connectService != nil {
+					r.Use(middleware.JWTAuth(authService, connectService))
+				} else {
+					r.Use(middleware.JWTAuth(authService))
+				}
 			}
 
 			// File operations with mount point guard
@@ -344,7 +369,7 @@ func createRouter(
 		})
 
 		// WebSocket endpoint (auth handled in handler)
-		r.Get("/ws", wsHandler.ServeWS)
+		r.With(middleware.RejectClientCredentials).Get("/ws", wsHandler.ServeWS)
 	})
 
 	// Static file handler for SPA frontend (catch-all)

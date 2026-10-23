@@ -14,9 +14,11 @@
 	import type { FileContextAction } from '#lib/utils/fileContextMenu.js';
 	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
 	import type { FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
+	import { endFileDrag, type FileDropTarget } from '#lib/browse/fileDrag.js';
 
 	let {
 		items = [],
+		path = '',
 		sortBy = 'name',
 		sortDir = 'asc',
 		emptyMessage = 'This folder is empty',
@@ -29,6 +31,7 @@
 		canCreate = false,
 		showFileExtensions = true,
 		fileOpenBehavior = 'double-click',
+		dropTarget,
 		onItemClick,
 		onFolderHover,
 		onSortChange,
@@ -36,6 +39,7 @@
 		onContextMenuAction
 	}: {
 		items?: FileInfo[];
+		path?: string;
 		sortBy?: SortField;
 		sortDir?: SortDir;
 		emptyMessage?: string;
@@ -48,6 +52,8 @@
 		canCreate?: boolean;
 		showFileExtensions?: boolean;
 		fileOpenBehavior?: FileOpenBehavior;
+		/** Folders accept dropped files when set. */
+		dropTarget?: FileDropTarget;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -62,6 +68,7 @@
 			items,
 			selectedPaths,
 			fileOpenBehavior,
+			dropTarget,
 			onItemClick,
 			onSelectionChange,
 			onContextMenuAction
@@ -82,9 +89,10 @@
 		'text-left px-3 py-2 bg-surface-secondary border-b border-border-primary font-medium text-text-secondary whitespace-nowrap select-none sticky top-0 z-[5] cursor-pointer transition-colors duration-100 hover:bg-surface-tertiary hover:text-text-primary focus:outline focus:outline-1 focus:outline-accent focus:-outline-offset-1';
 	const thSortedClass = 'text-accent';
 	const tdClass = 'h-8 px-3 py-1.5 align-middle border-b border-border-secondary text-text-primary';
+	const dropTargetClass = 'outline outline-1 -outline-offset-1 outline-accent bg-accent/15';
 	const clippedCellClass = 'block overflow-hidden text-ellipsis whitespace-nowrap';
 	const selectionRevealClass =
-		'flex items-center justify-center group-hover/row:invisible group-has-[input:focus-visible]/row:invisible';
+		'flex items-center justify-center group-hover/icon:invisible group-has-[input:focus-visible]/icon:invisible';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -192,7 +200,15 @@
 							item.path
 						)
 							? 'bg-selection hover:bg-selection-hover'
-							: 'hover:bg-surface-secondary'} {cutPaths.has(item.path) ? 'opacity-50' : ''}"
+							: 'hover:bg-surface-secondary'} {cutPaths.has(item.path)
+							? 'opacity-50'
+							: ''} {collection.isDropTarget(item) ? dropTargetClass : ''}"
+						draggable="true"
+						ondragstart={(event) => collection.dragStart(item, event)}
+						ondragend={endFileDrag}
+						ondragover={(event) => collection.dragOver(item, event)}
+						ondragleave={(event) => collection.dragLeave(item, event)}
+						ondrop={(event) => collection.drop(item, event)}
 						onclick={(event) => collection.click(item, event)}
 						onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
 						onpointerleave={() => onFolderHover?.(null)}
@@ -206,13 +222,19 @@
 					>
 						<td class={tdClass}>
 							<div class="flex min-w-0 items-center gap-2">
-								<!-- The checkbox takes the icon's place while the row is pointed at or focused. -->
+								<!-- Selected items keep their checkbox visible after the pointer leaves. -->
 								<span
-									class="relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
+									class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
 										? 'text-folder'
 										: 'text-text-secondary'}"
 								>
-									<span class="{selectionRevealClass} pointer-coarse:invisible">
+									<span
+										class="{selectionRevealClass} pointer-coarse:invisible {selectedPaths.has(
+											item.path
+										)
+											? 'invisible'
+											: ''}"
+									>
 										{#if hasThumbnail}
 											<span class="block h-5 w-5 overflow-hidden rounded-sm">
 												<FileThumbnail file={item} alt="" fit="cover" class="h-full" />
@@ -225,7 +247,11 @@
 										type="checkbox"
 										checked={selectedPaths.has(item.path)}
 										aria-label={`Select ${item.name}`}
-										class="peer absolute inset-0.5 m-0 cursor-pointer accent-accent opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+										class="peer absolute inset-0.5 m-0 cursor-pointer accent-accent group-hover/icon:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 {selectedPaths.has(
+											item.path
+										)
+											? 'opacity-100'
+											: 'opacity-0'}"
 										onclick={(event) => event.stopPropagation()}
 										ondblclick={(event) => event.stopPropagation()}
 										onchange={(event) => collection.check(item, event.currentTarget.checked)}
@@ -261,6 +287,7 @@
 	{#await import('#lib/components/FileContextMenu.svelte') then { default: FileContextMenu }}
 		<FileContextMenu
 			items={contextMenu.items}
+			{path}
 			{canPaste}
 			{favoritePaths}
 			{canCreate}

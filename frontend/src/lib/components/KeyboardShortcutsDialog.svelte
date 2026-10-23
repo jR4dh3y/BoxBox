@@ -42,7 +42,8 @@
 						title: 'Desktop',
 						shortcuts: [
 							['Ctrl/Cmd + Z', 'Undo the last rename or move to Trash'],
-							['Ctrl + Shift + O', 'Saved connections']
+							['Drag · Ctrl + Drag', 'Move · Copy to a folder or pane'],
+							['Ctrl/Cmd + Shift + O', 'Servers']
 						]
 					}
 				]

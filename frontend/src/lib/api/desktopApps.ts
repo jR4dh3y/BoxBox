@@ -1,3 +1,4 @@
+import { isRemotePath } from './remotePaths';
 import { api } from './client';
 import { array, boolean, ok, optionalString, record, string } from './parse';
 
@@ -27,6 +28,7 @@ export async function listDesktopApps(
 	path: string,
 	signal?: AbortSignal
 ): Promise<DesktopAppsResponse> {
+	if (isRemotePath(path)) throw new Error('Native applications require a file on this computer');
 	const value = record(
 		await api.get<unknown>('/desktop/apps', { path }, signal),
 		'application list'
@@ -38,9 +40,11 @@ export async function listDesktopApps(
 }
 
 export async function openDesktopWithApp(path: string, appId: string): Promise<void> {
+	if (isRemotePath(path)) throw new Error('Native applications require a file on this computer');
 	ok(await api.post<unknown>('/desktop/open-with', { path, appId }), 'open-with response');
 }
 
 export async function openDesktopTerminal(path: string): Promise<void> {
+	if (isRemotePath(path)) throw new Error('Native applications require a file on this computer');
 	ok(await api.post<unknown>('/desktop/terminal', { path }), 'terminal response');
 }

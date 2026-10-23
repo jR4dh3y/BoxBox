@@ -1,3 +1,4 @@
+import { parseRemotePath, sameSource } from '#lib/api/remotePaths.js';
 import {
 	cancelJob,
 	createCopyJob,
@@ -169,6 +170,15 @@ export async function planTransfers(
 	destinationDirectory: string,
 	options: PlanTransfersOptions = {}
 ): Promise<TransferPlan> {
+	if (
+		operation === 'move' &&
+		sources.some(
+			(source) => !sameSource(parseRemotePath(source.path), parseRemotePath(destinationDirectory))
+		)
+	)
+		throw new TransferPlanningError(
+			'Moving between servers is unavailable. Copy the items instead.'
+		);
 	for (const source of sources) validateSource(source);
 	if (sources.length === 0) return { operation, destinationDirectory, entries: [] };
 

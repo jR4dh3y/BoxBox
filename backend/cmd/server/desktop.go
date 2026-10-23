@@ -22,6 +22,7 @@ func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {
 	clipboard := handler.NewDesktopClipboardHandler(service.NewDesktopClipboard(filesystem.NewOsFS(), cfg.MountPoints))
 	trash := handler.NewDesktopTrashHandler(service.NewDesktopTrashService(filesystem.NewOsFS(), cfg.MountPoints))
 	volumes := handler.NewDesktopVolumesHandler(service.NewDesktopVolumesService(cfg.MountPoints))
+	servers, serverErr := service.NewDesktopServers(filesystem.NewOsFS(), cfg.DataDir, nil)
 	router := chi.NewRouter()
 	router.Route("/api/v1/desktop", func(r chi.Router) {
 		r.Get("/watch", watch)
@@ -29,6 +30,15 @@ func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {
 		clipboard.RegisterRoutes(r)
 		volumes.RegisterRoutes(r)
 		trash.RegisterRoutes(r)
+		if serverErr == nil {
+			handler.NewDesktopServersHandler(servers).RegisterRoutes(r)
+			handler.NewDesktopTransfersHandler(service.NewDesktopTransfers(filesystem.NewOsFS(), cfg.MountPoints, servers, cfg.DataDir+"/desktop/transfers")).RegisterRoutes(r)
+		} else {
+			r.HandleFunc("/servers", handler.DesktopGatewayUnavailable)
+			r.HandleFunc("/servers/*", handler.DesktopGatewayUnavailable)
+			r.HandleFunc("/transfers", handler.DesktopGatewayUnavailable)
+			r.HandleFunc("/transfers/*", handler.DesktopGatewayUnavailable)
+		}
 	})
 	router.NotFound(next.ServeHTTP)
 	return router

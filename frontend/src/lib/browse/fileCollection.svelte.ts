@@ -11,11 +11,13 @@ import {
 	type FileSelectionGesture
 } from './fileInteractions';
 import { moveFileFocus } from './fileShortcuts';
+import { isDragged, startFileDrag, type FileDropTarget } from './fileDrag';
 
 export interface FileCollectionProps {
 	items: FileInfo[];
 	selectedPaths: ReadonlySet<string>;
 	fileOpenBehavior: FileOpenBehavior;
+	dropTarget?: FileDropTarget;
 	onItemClick?: (item: FileInfo) => void;
 	onSelectionChange?: (paths: Set<string>) => void;
 	onContextMenuAction?: (action: FileContextAction, items: FileInfo[]) => void;
@@ -84,6 +86,38 @@ export function useFileCollection(props: () => FileCollectionProps, layout: 'lis
 				event.preventDefault();
 				select(item.path, fileSelectionGestureFromModifiers(event));
 			}
+		},
+		/** Drags the selection when the item is part of it, otherwise only the item. */
+		dragStart(item: FileInfo, event: DragEvent): void {
+			if (!event.dataTransfer) return;
+			const { items, selectedPaths, onSelectionChange } = props();
+			if (!selectedPaths.has(item.path)) {
+				anchor = item.path;
+				onSelectionChange?.(new SvelteSet([item.path]));
+			}
+			startFileDrag(event.dataTransfer, getSelectedContextMenuItems(items, selectedPaths, item));
+		},
+		isDropTarget(item: FileInfo): boolean {
+			return item.isDir && props().dropTarget?.overPath === item.path;
+		},
+		/**
+		 * A dragged item refuses its own drop; any other folder that refuses lets the drag
+		 * reach the pane, which is the open folder.
+		 */
+		dragOver(item: FileInfo, event: DragEvent): void {
+			const target = props().dropTarget;
+			if (!target) return;
+			if (isDragged(item.path)) target.refuse(event);
+			else if (item.isDir && target.over(event, item.path)) event.stopPropagation();
+		},
+		dragLeave(item: FileInfo, event: DragEvent): void {
+			if (item.isDir) props().dropTarget?.leave(event);
+		},
+		drop(item: FileInfo, event: DragEvent): void {
+			const target = props().dropTarget;
+			if (!target) return;
+			if (isDragged(item.path)) target.refuse(event);
+			else if (item.isDir) target.drop(event, item.path);
 		},
 		itemContextMenu(item: FileInfo, event: MouseEvent): void {
 			const { items, selectedPaths, onSelectionChange } = props();

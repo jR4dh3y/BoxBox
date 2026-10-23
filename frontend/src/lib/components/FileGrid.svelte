@@ -13,9 +13,11 @@
 	import { useFileCollection, fileDisplayName } from '#lib/browse/fileCollection.svelte.js';
 	import type { FileContextAction } from '#lib/utils/fileContextMenu.js';
 	import type { FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
+	import { endFileDrag, type FileDropTarget } from '#lib/browse/fileDrag.js';
 
 	let {
 		items = [],
+		path = '',
 		emptyMessage = 'This folder is empty',
 		selectedPaths = new SvelteSet<string>(),
 		isLoading = false,
@@ -26,12 +28,14 @@
 		canCreate = false,
 		showFileExtensions = true,
 		fileOpenBehavior = 'double-click',
+		dropTarget,
 		onItemClick,
 		onFolderHover,
 		onSelectionChange,
 		onContextMenuAction
 	}: {
 		items?: FileInfo[];
+		path?: string;
 		emptyMessage?: string;
 		selectedPaths?: Set<string>;
 		isLoading?: boolean;
@@ -42,6 +46,8 @@
 		canCreate?: boolean;
 		showFileExtensions?: boolean;
 		fileOpenBehavior?: FileOpenBehavior;
+		/** Folders accept dropped files when set. */
+		dropTarget?: FileDropTarget;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -55,6 +61,7 @@
 			items,
 			selectedPaths,
 			fileOpenBehavior,
+			dropTarget,
 			onItemClick,
 			onSelectionChange,
 			onContextMenuAction
@@ -106,7 +113,15 @@
 				<div
 					class="file-grid-item group/tile {tileClass} {selectedPaths.has(item.path)
 						? selectedClass
-						: unselectedClass} {cutPaths.has(item.path) ? 'opacity-50' : ''}"
+						: unselectedClass} {cutPaths.has(item.path)
+						? 'opacity-50'
+						: ''} {collection.isDropTarget(item) ? 'border-accent bg-accent/15' : ''}"
+					draggable="true"
+					ondragstart={(event) => collection.dragStart(item, event)}
+					ondragend={endFileDrag}
+					ondragover={(event) => collection.dragOver(item, event)}
+					ondragleave={(event) => collection.dragLeave(item, event)}
+					ondrop={(event) => collection.drop(item, event)}
 					role="gridcell"
 					tabindex="0"
 					aria-selected={selectedPaths.has(item.path)}
@@ -154,7 +169,7 @@
 					</div>
 
 					<div class="mt-1.5 min-w-0 overflow-hidden">
-						<div class="file-grid-name text-center text-[13px] leading-4 text-text-primary">
+						<div class="file-grid-name h-8 text-center text-[13px] leading-4 text-text-primary">
 							<span class={item.isDir ? 'text-folder' : ''}>{displayName}</span>
 						</div>
 						<div
@@ -175,6 +190,7 @@
 	{#await import('#lib/components/FileContextMenu.svelte') then { default: FileContextMenu }}
 		<FileContextMenu
 			items={contextMenu.items}
+			{path}
 			{canPaste}
 			{favoritePaths}
 			{canCreate}

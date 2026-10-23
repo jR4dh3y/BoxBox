@@ -11,6 +11,8 @@
 	import Button from '#lib/components/ui/Button.svelte';
 	import { AlertTriangle, X } from 'lucide-svelte';
 	import { AuthRefreshEvent } from '#lib/api/client.js';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { isRemotePath } from '#lib/api/remotePaths.js';
 	import { jobsStore } from '#lib/stores/jobs.svelte.js';
 	import { refreshFilesWhenJobsFinish } from '#lib/stores/refreshFilesOnJobs.js';
 	import { websocketStore } from '#lib/stores/websocket.svelte.js';
@@ -127,7 +129,19 @@
 	$effect(() => {
 		if (!initialized || !authStore.isAuthenticated) return;
 
-		websocketStore.syncJobSubscriptions(jobsStore.active.map((job) => job.id));
+		websocketStore.syncJobSubscriptions(
+			jobsStore.active
+				.filter((job) => !job.id.startsWith('transfer-') && !isRemotePath(job.id))
+				.map((job) => job.id)
+		);
+	});
+
+	$effect(() => {
+		if (!initialized || !authStore.isAuthenticated || !isLocalDesktop()) return;
+		const timer = setInterval(() => {
+			void jobsStore.loadJobs();
+		}, 2000);
+		return () => clearInterval(timer);
 	});
 
 	$effect(() => {

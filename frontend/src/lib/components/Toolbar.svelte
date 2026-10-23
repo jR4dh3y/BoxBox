@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { MountPoint } from '#lib/api/files.js';
 	import {
 		ChevronLeft,
 		ChevronRight,
@@ -16,6 +17,8 @@
 
 	interface Props {
 		pathSegments?: string[];
+		roots?: MountPoint[];
+		pageTitle?: string | null;
 		canGoBack?: boolean;
 		canGoForward?: boolean;
 		canGoUp?: boolean;
@@ -43,6 +46,8 @@
 
 	let {
 		pathSegments = [],
+		roots = [],
+		pageTitle = null,
 		canGoBack = false,
 		canGoForward = false,
 		canGoUp = false,
@@ -110,7 +115,14 @@
 		</button>
 	</div>
 
-	<EditablePathBar bind:this={pathBar} {pathSegments} {onNavigate} {includeHiddenSuggestions} />
+	<EditablePathBar
+		bind:this={pathBar}
+		{pathSegments}
+		{roots}
+		{pageTitle}
+		{onNavigate}
+		{includeHiddenSuggestions}
+	/>
 
 	{#if showSearch}
 		<div class="w-40 min-w-24 shrink lg:w-64">
@@ -128,27 +140,33 @@
 
 	<!-- Action buttons -->
 	<div class="flex gap-1">
-		<button
-			type="button"
-			class={navBtnClass}
-			disabled={uploadDisabled}
-			onclick={onUpload}
-			title="Upload files"
-		>
-			<Upload size={16} />
-		</button>
-		<button
-			type="button"
-			class={navBtnClass}
-			disabled={uploadDisabled}
-			onclick={onUploadFolder}
-			title="Upload folder"
-		>
-			<FolderUp size={16} />
-		</button>
-		<button type="button" class={navBtnClass} onclick={onRefresh} title="Refresh">
-			<RefreshCw size={16} />
-		</button>
+		{#if onUpload}
+			<button
+				type="button"
+				class={navBtnClass}
+				disabled={uploadDisabled}
+				onclick={onUpload}
+				title="Upload files"
+			>
+				<Upload size={16} />
+			</button>
+		{/if}
+		{#if onUploadFolder}
+			<button
+				type="button"
+				class={navBtnClass}
+				disabled={uploadDisabled}
+				onclick={onUploadFolder}
+				title="Upload folder"
+			>
+				<FolderUp size={16} />
+			</button>
+		{/if}
+		{#if onRefresh}
+			<button type="button" class={navBtnClass} onclick={onRefresh} title="Refresh">
+				<RefreshCw size={16} />
+			</button>
+		{/if}
 		<button type="button" class={navBtnClass} onclick={onSettings} title="Settings">
 			<Settings size={16} />
 		</button>

@@ -13,11 +13,12 @@
 		onClose: () => void;
 	};
 
-	let { items, canPaste, favoritePaths, canCreate, x, y, onSelect, onClose }: Props = $props();
+	let { path, items, canPaste, favoritePaths, canCreate, x, y, onSelect, onClose }: Props =
+		$props();
 </script>
 
 <ContextMenu
-	items={getFileContextMenuItems({ items, canPaste, favoritePaths, canCreate })}
+	items={getFileContextMenuItems({ path, items, canPaste, favoritePaths, canCreate })}
 	{x}
 	{y}
 	{onSelect}

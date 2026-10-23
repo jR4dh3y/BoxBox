@@ -18,8 +18,13 @@
 	import type ToolbarComponent from '#lib/components/Toolbar.svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
-	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { isLocalDesktop, isNativePath } from '#lib/api/desktop.js';
+	import { locationTitle } from '#lib/browse/locationTitle.js';
+	import { createDropZone } from '#lib/browse/dropZone.svelte.js';
+	import { fileDragKind } from '#lib/browse/fileDrag.js';
 
+	// Local folders refresh themselves and are already on this computer, so there is nothing to upload.
+	const desktop = isLocalDesktop();
 	const browsePane = import('#lib/components/desktop/BrowsePane.svelte');
 	const toolbar = import('#lib/components/Toolbar.svelte');
 	const launchState = parseBrowseLaunchState(page.url);
@@ -43,11 +48,12 @@
 	const activePane = $derived(tabs.activePane);
 	const activeLocation = $derived(activePane?.location);
 	const activeRuntime = $derived(activePane ? (paneRuntimes[activePane.id] ?? null) : null);
+	const sidebarDrop = createDropZone(() => activeRuntime?.drop);
 	const settings = $derived(settingsStore.current);
 
 	function openInNewTab(path: string): void {
 		if (!activeLocation) return;
-		tabs.newTab({ ...activeLocation.snapshot, path, searchQuery: '' });
+		tabs.newTab({ ...activeLocation.snapshot, page: 'files', path, searchQuery: '' });
 		focusActivePane();
 	}
 
@@ -74,6 +80,8 @@
 
 	function syncBrowseUrl(snapshot: BrowseLocationSnapshot, selectPath: string | null): void {
 		const url = new URL(page.url.href);
+		if (snapshot.page !== 'files') url.searchParams.set('page', snapshot.page);
+		else url.searchParams.delete('page');
 		if (snapshot.path) url.searchParams.set('path', snapshot.path);
 		else url.searchParams.delete('path');
 		if (snapshot.searchQuery) url.searchParams.set('q', snapshot.searchQuery);
@@ -86,7 +94,9 @@
 		if (url.href === page.url.href) return;
 
 		void goto(`${resolve('browse')}${url.search}${url.hash}`, {
-			replace: page.url.searchParams.get('path') === snapshot.path,
+			replace:
+				(page.url.searchParams.get('path') ?? '') === snapshot.path &&
+				(page.url.searchParams.get('page') ?? 'files') === snapshot.page,
 			reset: false,
 			state: page.state
 		});
@@ -116,6 +126,13 @@
 		void tick().then(() => document.getElementById(`browse-pane-${paneId}`)?.focus());
 	}
 
+	/** A file dropped outside a drop target would replace the app with the file. */
+	function refuseStrayFileDrop(event: DragEvent): void {
+		if (event.defaultPrevented || fileDragKind(event.dataTransfer) === null) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+	}
+
 	function handleKeydown(event: KeyboardEvent): void {
 		if (event.defaultPrevented || shortcutsOpen) return;
 		if (event.key === 'F1' && !activeRuntime?.hasOpenDialog) {
@@ -136,7 +153,7 @@
 			altKey: event.altKey,
 			editable: isTextEntryTarget(event.target)
 		});
-		if (!shortcut) return;
+		if (!shortcut || (shortcut === 'open-servers' && !desktop)) return;
 		event.preventDefault();
 		if (activeRuntime?.hasOpenDialog) return;
 
@@ -179,11 +196,18 @@
 			case 'focus-location':
 				toolbarRef?.focusLocation();
 				break;
+			case 'open-servers':
+				if (desktop) activeLocation?.openPage('servers');
+				break;
 		}
 	}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window
+	onkeydown={handleKeydown}
+	ondragover={refuseStrayFileDrop}
+	ondrop={refuseStrayFileDrop}
+/>
 
 <svelte:head>
 	<title>BoxBox</title>
@@ -192,6 +216,9 @@
 <div id="browse-workspace" class="flex h-screen w-full overflow-hidden bg-surface-primary">
 	<Sidebar
 		currentPath={activeLocation?.path ?? ''}
+		currentPage={activeLocation?.page ?? 'files'}
+		onOpenPage={(page) => activeLocation?.openPage(page)}
+		dropTarget={sidebarDrop}
 		roots={activeRuntime?.data.roots ?? []}
 		onNavigate={(path) => activeLocation?.navigate(path)}
 		{onFolderHover}
@@ -202,6 +229,10 @@
 			<Toolbar
 				bind:this={toolbarRef}
 				pathSegments={activeLocation?.segments ?? []}
+				roots={activeRuntime?.data.roots ?? []}
+				pageTitle={activeLocation && activeLocation.page !== 'files'
+					? locationTitle(activeLocation)
+					: null}
 				canGoBack={activeLocation?.canGoBack ?? false}
 				canGoForward={activeLocation?.canGoForward ?? false}
 				canGoUp={activeLocation?.canGoUp ?? false}
@@ -211,8 +242,12 @@
 				onNavigate={(path) => activeLocation?.navigate(path)}
 				onRefresh={() => activeRuntime?.data.reload()}
 				onSettings={() => goto(resolve('settings'))}
-				onUpload={() => activeRuntime?.uploads.openPicker()}
-				onUploadFolder={() => activeRuntime?.uploads.openFolderPicker()}
+				onUpload={isNativePath(activeLocation?.path ?? '')
+					? undefined
+					: () => activeRuntime?.uploads.openPicker()}
+				onUploadFolder={isNativePath(activeLocation?.path ?? '')
+					? undefined
+					: () => activeRuntime?.uploads.openFolderPicker()}
 				uploadDisabled={activeRuntime?.data.uploadDisabled ?? true}
 				showSearch={activeLocation !== undefined && activeLocation.path !== ''}
 				searchValue={activeLocation?.searchQuery ?? ''}
@@ -293,9 +328,9 @@
 
 <Toast />
 
-{#if isLocalDesktop()}
-	{#await import('#lib/components/desktop/DesktopPanels.svelte') then { default: DesktopPanels }}
-		<DesktopPanels onNavigate={(path) => activeLocation?.navigate(path)} />
+{#if desktop}
+	{#await import('#lib/components/desktop/DesktopUndoShortcut.svelte') then { default: DesktopUndoShortcut }}
+		<DesktopUndoShortcut />
 	{/await}
 {/if}
 

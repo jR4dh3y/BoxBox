@@ -20,6 +20,7 @@
 	import { Button, ProgressButton, Select, Toggle } from '#lib/components/ui/index.js';
 	import { normalizeBackgroundImageMode } from '#lib/utils/wallpaper.js';
 	import { publishShareWallpaper } from '#lib/utils/wallpaperSync.js';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import {
 		deleteLocalWallpaper,
 		isInlineWallpaperDataUrl,
@@ -43,9 +44,12 @@
 	} from 'lucide-svelte';
 
 	type SettingsSectionId =
-		'display' | 'personalization' | 'behavior' | 'defaults' | 'sharing' | 'account';
+		'display' | 'personalization' | 'behavior' | 'defaults' | 'sharing' | 'connect' | 'account';
 	type SettingsCategory = 'all' | SettingsSectionId;
 	type ApplyProgressVariant = 'default' | 'success' | 'danger';
+
+	// Desktop account controls are local; shared links belong to paired servers.
+	const desktop = isLocalDesktop();
 
 	let settings = $state<UserSettings>($state.snapshot(settingsStore.current));
 	let activeCategory = $state<SettingsCategory>('all');
@@ -73,7 +77,17 @@
 		return isApplyingSettings ? 'Saving' : 'Save';
 	});
 
-	const navItems: Array<{ id: SettingsCategory; label: string; icon: typeof Eye }> = [
+	type NavItem = { id: SettingsCategory; label: string; icon: typeof Eye };
+	const sharingNavItems: NavItem[] = desktop
+		? [{ id: 'sharing', label: 'Remote Shared Links', icon: Share2 }]
+		: [
+				{ id: 'sharing', label: 'Shared Links', icon: Share2 },
+				{ id: 'connect', label: 'Connect', icon: Layout }
+			];
+	const accountNavItem: NavItem = desktop
+		? { id: 'account', label: 'Reset', icon: RotateCcw }
+		: { id: 'account', label: 'Account', icon: User };
+	const navItems: NavItem[] = [
 		{ id: 'all', label: 'Show All', icon: Settings },
 		{ id: 'display', label: 'File Display', icon: Eye },
 		{
@@ -91,16 +105,8 @@
 			label: 'Default View',
 			icon: Layout
 		},
-		{
-			id: 'sharing',
-			label: 'Shared Links',
-			icon: Share2
-		},
-		{
-			id: 'account',
-			label: 'Account',
-			icon: User
-		}
+		...sharingNavItems,
+		accountNavItem
 	];
 
 	const sortByOptions = [
@@ -212,12 +218,14 @@
 			settingsStore.set(nextSettings);
 			settings = { ...nextSettings };
 
-			await setApplyProgress(70, 'Updating wallpaper on your share pages...');
 			let shareWallpaperError: string | null = null;
-			try {
-				await publishShareWallpaper();
-			} catch (error) {
-				shareWallpaperError = error instanceof Error ? error.message : String(error);
+			if (!desktop) {
+				await setApplyProgress(70, 'Updating wallpaper on your share pages...');
+				try {
+					await publishShareWallpaper();
+				} catch (error) {
+					shareWallpaperError = error instanceof Error ? error.message : String(error);
+				}
 			}
 
 			await setApplyProgress(85, 'Refreshing workspace...');
@@ -292,6 +300,7 @@
 		settingsStore.reset();
 		settings = $state.snapshot(settingsStore.current);
 		cleanupLocalWallpaper(previousBackgroundImage, null);
+		if (desktop) return;
 		publishShareWallpaper().catch((error) => {
 			applyProgressVariant = 'danger';
 			applyProgress = 100;
@@ -393,12 +402,18 @@
 		categoryAllows('sharing') &&
 			matchesSearch('sharing', 'share links', 'active links', 'revoke links')
 	);
+	const showConnectSection = $derived(
+		!desktop &&
+			categoryAllows('connect') &&
+			matchesSearch('connect', 'pair', 'devices', 'remote', 'otp', 'security')
+	);
 	const hasSearchResults = $derived(
 		showDisplaySection ||
 			showPersonalizationSection ||
 			showBehaviorSection ||
 			showDefaultsSection ||
 			showSharingSection ||
+			showConnectSection ||
 			showAccountSection
 	);
 </script>
@@ -749,30 +764,45 @@
 					</section>
 				{/if}
 
+				{#if showConnectSection}
+					<section id="connect" class={panelClass}>
+						<div class={panelHeaderClass}><h2 class="m-0 text-sm font-medium">Connect</h2></div>
+						{#await import('#lib/components/settings/ConnectSettings.svelte') then { default: ConnectSettings }}
+							<ConnectSettings />
+						{:catch}
+							<LoadError label="connect settings" inline />
+						{/await}
+					</section>
+				{/if}
+
 				{#if showAccountSection}
 					<section id="account" class={panelClass}>
 						<div class={panelHeaderClass}>
 							<div>
 								<h2 class="m-0 flex items-center gap-2 text-sm font-medium">
-									<User size={16} class="text-accent" />
-									Account
+									<accountNavItem.icon size={16} class="text-accent" />
+									{accountNavItem.label}
 								</h2>
 							</div>
 						</div>
 
 						<div class="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center">
 							<div>
-								<div class="text-[13px] text-text-primary">Signed in session</div>
+								<div class="text-[13px] text-text-primary">
+									{desktop ? 'Restore the default settings' : 'Signed in session'}
+								</div>
 							</div>
 							<div class="flex flex-wrap gap-2">
 								<Button variant="secondary" size="sm" onclick={handleReset}>
 									<RotateCcw size={14} />
 									Reset Defaults
 								</Button>
-								<Button variant="danger" size="sm" onclick={handleLogout}>
-									<LogOut size={14} />
-									Logout
-								</Button>
+								{#if !desktop}
+									<Button variant="danger" size="sm" onclick={handleLogout}>
+										<LogOut size={14} />
+										Logout
+									</Button>
+								{/if}
 							</div>
 						</div>
 					</section>

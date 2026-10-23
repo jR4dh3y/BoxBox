@@ -1,3 +1,4 @@
+import { isRemotePath } from './remotePaths';
 import { api } from './client';
 import { array, boolean, ok, record, string } from './parse';
 
@@ -36,6 +37,7 @@ function parseDesktopClipboard(value: unknown): DesktopClipboardContents | null 
 }
 
 async function post(operation: DesktopClipboardOperation | 'clear-cut', paths: readonly string[]) {
+	if (paths.some(isRemotePath)) throw new Error('Native clipboard requires files on this computer');
 	if (paths.length === 0) throw new Error('Select at least one file');
 	ok(
 		await api.post<unknown>('/desktop/clipboard', { operation, paths: [...paths] }),

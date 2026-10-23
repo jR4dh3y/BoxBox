@@ -20,7 +20,14 @@ beforeEach(() => {
 		window: { location: { origin: 'http://localhost' } },
 		fetch: async () => {
 			listRequests++;
-			const items = names.map((name) => ({ name, path: `media/${name}`, isDir: false }));
+			const items = names.map((name) => ({
+				name,
+				path: `media/${name}`,
+				isDir: false,
+				size: 1,
+				modTime: '',
+				permissions: ''
+			}));
 			return Response.json({
 				path: 'media',
 				items,

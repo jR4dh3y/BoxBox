@@ -1,8 +1,6 @@
 import type { BrowserWindow } from "electrobun/main";
 import { join } from "node:path";
-import { ConnectionsStore } from "./connections";
-import { isConnectionsHostMessage, localBootstrapURL } from "./connections-host";
-import type { ConnectionsRPC } from "./connections-rpc";
+import { localBootstrapURL } from "./connections-host";
 import type { InstanceOwner, InstanceRequest } from "./instance";
 import type { LaunchTarget } from "./launch";
 import { LocalServer } from "./server";
@@ -10,27 +8,23 @@ import { remoteURL } from "./target";
 
 type Electrobun = typeof import("electrobun/main");
 
-const CONNECTIONS_SHORTCUT = "CommandOrControl+Shift+O";
 const BROWSER_FRAME = { width: 1280, height: 800 };
 
 /** Owns the windows and the local server. Closing the last window quits. */
 export class DesktopApp {
   readonly #sdk: Electrobun;
   readonly #instance: InstanceOwner | undefined;
-  readonly #connections: ConnectionsStore;
   readonly #server: LocalServer;
   readonly #windows = new Set<number>();
   /** One window per remote URL, whether a saved profile or a launch opened it. */
   readonly #remoteWindows = new Map<string, number>();
   #localWindowId: number | undefined;
-  #managerWindowId: number | undefined;
   #primaryWindowId: number | undefined;
   #quitting = false;
 
   constructor(sdk: Electrobun, instance: InstanceOwner | undefined) {
     this.#sdk = sdk;
     this.#instance = instance;
-    this.#connections = new ConnectionsStore(sdk.Utils.paths.userData);
     this.#server = new LocalServer(
       join(sdk.PATHS.RESOURCES_FOLDER, "app", "boxbox-server"),
       sdk.Utils.paths.userData,
@@ -51,13 +45,6 @@ export class DesktopApp {
     if (!build.availableRenderers.includes("cef")) {
       throw new Error("BoxBox Desktop requires a CEF build");
     }
-    const registered = this.#sdk.GlobalShortcut.register(CONNECTIONS_SHORTCUT, () =>
-      this.#openManager(),
-    );
-    if (!registered) {
-      console.warn(`Could not register ${CONNECTIONS_SHORTCUT}; use Connections in BoxBox.`);
-    }
-
     const primary =
       request.kind === "remote"
         ? this.#openRemote(request.url, "BoxBox — Remote")
@@ -69,7 +56,6 @@ export class DesktopApp {
   async quit(code = 0): Promise<void> {
     if (this.#quitting) return;
     this.#quitting = true;
-    this.#sdk.GlobalShortcut.unregisterAll();
     await this.#server.stop().catch((error) => {
       console.error("Could not stop the local BoxBox server:", error);
     });
@@ -136,13 +122,7 @@ export class DesktopApp {
       frame: BROWSER_FRAME,
     });
     this.#localWindowId = window.id;
-    const messageEvent = `host-message-${window.webview.id}`;
-    const onHostMessage = (event: unknown) => {
-      if (isConnectionsHostMessage(event)) this.#openManager();
-    };
-    this.#sdk.default.events.on(messageEvent, onHostMessage);
     this.#track(window, () => {
-      this.#sdk.default.events.off(messageEvent, onHostMessage);
       if (this.#localWindowId === window.id) this.#localWindowId = undefined;
     });
     return window;
@@ -172,43 +152,4 @@ export class DesktopApp {
     return window;
   }
 
-  #openManager(): void {
-    if (this.#quitting) return;
-    const existing = this.#window(this.#managerWindowId);
-    if (existing) {
-      existing.show();
-      return;
-    }
-
-    const rpc = this.#sdk.BrowserView.defineRPC<ConnectionsRPC>({
-      handlers: {
-        requests: {
-          listConnections: () => this.#connections.list(),
-          saveConnection: (command) => this.#connections.save(command),
-          removeConnection: (params) => this.#connections.remove(params),
-          connectProfile: async (params) => {
-            const profile = await this.#connections.get(params);
-            this.#openRemote(profile.url, `BoxBox — ${profile.name}`);
-          },
-          showLocalFiles: async () => {
-            await this.#openLocal();
-          },
-        },
-      },
-    });
-    const window = new this.#sdk.BrowserWindow({
-      title: "BoxBox Connections",
-      url: "views://connection-manager/index.html",
-      renderer: "cef",
-      sandbox: false,
-      allowedProtocols: { views: true, appData: false },
-      navigationRules: JSON.stringify(["views://connection-manager/*"]),
-      rpc,
-      frame: { width: 820, height: 650 },
-    });
-    this.#managerWindowId = window.id;
-    this.#track(window, () => {
-      if (this.#managerWindowId === window.id) this.#managerWindowId = undefined;
-    });
-  }
 }

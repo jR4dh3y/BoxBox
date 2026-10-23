@@ -1,7 +1,13 @@
+import { parseRemotePath } from '#lib/api/remotePaths.js';
+import { isLocalDesktop } from '#lib/api/desktop.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import type { SortDir, SortField, ViewMode } from '#lib/types/files.js';
 
+/** A pane shows a folder or one of the desktop app's own pages. */
+export type BrowsePage = 'files' | 'trash' | 'drives' | 'servers';
+
 export interface BrowseLocationSnapshot {
+	page: BrowsePage;
 	path: string;
 	searchQuery: string;
 	sortBy: SortField;
@@ -25,15 +31,29 @@ function parseSortField(value: string | null): SortField {
 }
 
 function normalizePath(path: string): string {
-	return path.replace(/^\/+|\/+$/g, '');
+	const normalized = path.replace(/^\/+|\/+$/g, '');
+	try {
+		parseRemotePath(normalized);
+	} catch {
+		return '';
+	}
+	return normalized;
 }
 
 function normalizeSnapshot(snapshot: BrowseLocationSnapshot): BrowseLocationSnapshot {
+	if (snapshot.page !== 'files') return { ...snapshot, path: '', searchQuery: '' };
 	return { ...snapshot, path: normalizePath(snapshot.path) };
+}
+
+/** Pages exist only in the desktop app; the web app always shows files. */
+function parsePage(value: string | null): BrowsePage {
+	if (!isLocalDesktop()) return 'files';
+	return value === 'trash' || value === 'drives' || value === 'servers' ? value : 'files';
 }
 
 export function parseBrowseLocation(url: BrowseUrl): BrowseLocationSnapshot {
 	return normalizeSnapshot({
+		page: parsePage(url.searchParams.get('page')),
 		path: url.searchParams.get('path') ?? '',
 		searchQuery: url.searchParams.get('q') ?? '',
 		sortBy: parseSortField(url.searchParams.get('sort')),
@@ -54,6 +74,7 @@ export function parseBrowseLocation(url: BrowseUrl): BrowseLocationSnapshot {
 
 function sameSnapshot(left: BrowseLocationSnapshot, right: BrowseLocationSnapshot): boolean {
 	return (
+		left.page === right.page &&
 		left.path === right.path &&
 		left.searchQuery === right.searchQuery &&
 		left.sortBy === right.sortBy &&
@@ -66,6 +87,7 @@ function sameSnapshot(left: BrowseLocationSnapshot, right: BrowseLocationSnapsho
 export function useBrowseLocation(options: BrowseLocationOptions = {}) {
 	const initial = normalizeSnapshot(
 		options.initial ?? {
+			page: 'files',
 			path: '',
 			searchQuery: '',
 			sortBy: settingsStore.current.defaultSortBy,
@@ -83,10 +105,10 @@ export function useBrowseLocation(options: BrowseLocationOptions = {}) {
 	const isSearchActive = $derived(trimmedSearchQuery.length >= 2);
 	const canGoBack = $derived(historyIndex > 0);
 	const canGoForward = $derived(historyIndex < history.length - 1);
-	const canGoUp = $derived(segments.length > 0);
+	const canGoUp = $derived(snapshot.page === 'files' && segments.length > 0);
 
 	function changed(previous: BrowseLocationSnapshot, next: BrowseLocationSnapshot): void {
-		if (previous.path !== next.path) options.onLocationChange?.();
+		if (previous.page !== next.page || previous.path !== next.path) options.onLocationChange?.();
 		options.onChange?.(next);
 	}
 
@@ -108,7 +130,7 @@ export function useBrowseLocation(options: BrowseLocationOptions = {}) {
 	}
 
 	function navigate(newPath: string): void {
-		push({ ...snapshot, path: newPath, searchQuery: '' });
+		push({ ...snapshot, page: 'files', path: newPath, searchQuery: '' });
 	}
 
 	function moveHistory(nextIndex: number): void {
@@ -121,6 +143,9 @@ export function useBrowseLocation(options: BrowseLocationOptions = {}) {
 	return {
 		get snapshot() {
 			return snapshot;
+		},
+		get page() {
+			return snapshot.page;
 		},
 		get path() {
 			return path;
@@ -156,6 +181,9 @@ export function useBrowseLocation(options: BrowseLocationOptions = {}) {
 			return canGoUp;
 		},
 		navigate,
+		openPage(page: BrowsePage) {
+			push({ ...snapshot, page, path: '', searchQuery: '' });
+		},
 		restore(snapshot: BrowseLocationSnapshot) {
 			const normalized = normalizeSnapshot(snapshot);
 			const index = history.findIndex((entry) => sameSnapshot(entry, normalized));
@@ -169,7 +197,14 @@ export function useBrowseLocation(options: BrowseLocationOptions = {}) {
 			if (canGoForward) moveHistory(historyIndex + 1);
 		},
 		up() {
-			if (canGoUp) navigate(segments.slice(0, -1).join('/'));
+			if (canGoUp) {
+				const source = parseRemotePath(path);
+				navigate(
+					source.kind === 'remote' && !source.path.includes('/')
+						? ''
+						: segments.slice(0, -1).join('/')
+				);
+			}
 		},
 		search(query: string) {
 			replaceCurrent({ ...snapshot, searchQuery: query.trim() });

@@ -8,7 +8,8 @@
 	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import FileThumbnail from './FileThumbnail.svelte';
 	import type { BrowsePaneRuntime } from '#lib/browse/pane.svelte.js';
-	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { isNativePath } from '#lib/api/desktop.js';
+	import { rootLabel } from '#lib/browse/rootLabel.js';
 	import type { FileContextAction } from '#lib/utils/fileContextMenu.js';
 
 	let { runtime, onClose }: { runtime: BrowsePaneRuntime | null; onClose: () => void } = $props();
@@ -31,6 +32,7 @@
 		runtime?.pane.selection.clear();
 	}
 
+	const desktop = $derived(isNativePath(path));
 	const summary = $derived(summarizeSelection(files));
 	const single = $derived(files.length === 1 ? files[0] : null);
 	const control =
@@ -82,7 +84,7 @@
 							type="button"
 							class="min-w-0 flex-1 text-left break-all text-text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-accent"
 							onclick={() => onNavigate(parentFolder(single.path))}
-							>{parentFolder(single.path) || 'This server'}</button
+							>{parentFolder(single.path) || rootLabel()}</button
 						><button
 							type="button"
 							class="shrink-0 rounded p-1 text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
@@ -104,10 +106,11 @@
 						<dt class="text-text-secondary">Permissions</dt>
 						<dd class="mt-1 font-mono text-text-primary">{single.permissions}</dd>
 					</div>{/if}
-				<div>
-					<dt class="text-text-secondary">Access</dt>
-					<dd class="mt-1 text-text-primary">{readOnly ? 'Read only' : 'Writable mount'}</dd>
-				</div>
+				<!-- Desktop mounts are all writable; Permissions already says what the OS allows. -->
+				{#if !desktop}<div>
+						<dt class="text-text-secondary">Access</dt>
+						<dd class="mt-1 text-text-primary">{readOnly ? 'Read only' : 'Writable mount'}</dd>
+					</div>{/if}
 			</dl>
 		{:else if files.length > 1}
 			<h3 class="text-sm font-medium text-text-primary">{summary.count} items selected</h3>
@@ -130,13 +133,13 @@
 			</ul>
 			<button type="button" class="{control} mt-4 w-full" onclick={onClear}>Clear selection</button>
 		{:else}
-			<p class="text-xs break-all text-text-primary">{path || 'This server'}</p>
+			<p class="text-xs break-all text-text-primary">{path || rootLabel()}</p>
 			<p class="mt-1 text-xs text-text-secondary">{itemCount} items</p>
 		{/if}
 		{#if files.length}
 			<div class="mt-6 grid grid-cols-2 gap-2 border-t border-border-secondary pt-4">
 				<button type="button" class={control} onclick={() => onAction('copy', files)}>Copy</button>
-				{#if summary.files === files.length}<button
+				{#if summary.files === files.length && !desktop}<button
 						type="button"
 						class={control}
 						onclick={() => onAction('download', files)}>Download</button
@@ -150,8 +153,7 @@
 					<button
 						type="button"
 						class="{control} text-danger"
-						onclick={() => onAction('delete', files)}
-						>{isLocalDesktop() ? 'Trash' : 'Delete'}</button
+						onclick={() => onAction('delete', files)}>{desktop ? 'Trash' : 'Delete'}</button
 					>
 				{/if}
 			</div>

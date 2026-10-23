@@ -9,7 +9,8 @@ export type BrowseShortcutAction =
 	| 'up'
 	| 'refresh'
 	| 'toggle-hidden'
-	| 'focus-location';
+	| 'focus-location'
+	| 'open-servers';
 
 export interface BrowseShortcutInput {
 	key: string;
@@ -30,6 +31,7 @@ export function getBrowseShortcut(input: BrowseShortcutInput): BrowseShortcutAct
 		if (key === 'w' && !input.shiftKey) return 'close-tab';
 		if (key === 'tab') return input.shiftKey ? 'previous-tab' : 'next-tab';
 		if (key === 'l') return 'focus-location';
+		if (key === 'o' && input.shiftKey) return 'open-servers';
 		if (key === 'h' && !input.shiftKey && !input.editable) return 'toggle-hidden';
 	}
 
