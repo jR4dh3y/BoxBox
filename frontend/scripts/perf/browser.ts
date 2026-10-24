@@ -7,8 +7,17 @@ import bundleBudget from '../../perf-budget.json';
 import { browserViolations, median, type BrowserMetrics } from './gates';
 import { baseArgument, repo, results, run, withBaseline } from './common';
 import { createDirectoryFixture, startServer } from './server';
+import { verifyFolderNavigation } from './folder-navigation';
+import { verifyDesktopPreferences } from './desktop-preferences';
+import { verifyGridWindow } from './grid-window';
+import { verifyDesktopWatch } from './desktop-watch';
+import { verifySelectionRefresh } from './selection-refresh';
 import { verifyNavigation } from './navigation';
+import { verifyPasteLoadRace } from './paste-load-race';
 import { verifyLazyLoadErrors } from './lazy-load-errors';
+
+// The 32-row startup ceiling is defined for this desktop viewport.
+const viewport = { width: 1440, height: 900 };
 
 const profiles = [
 	{ name: 'local', latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
@@ -38,7 +47,7 @@ async function measure(
 	profile: (typeof profiles)[number]
 ) {
 	const { url, credentials } = server;
-	const context = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
+	const context = await browser.newContext({ viewport });
 	const page = await context.newPage();
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
@@ -57,7 +66,7 @@ async function measure(
 		await page.addInitScript(() => {
 			const observer = new MutationObserver(() => {
 				const files = document.querySelectorAll('[data-file-row="true"], [data-file-item="true"]');
-				if (!files[0]?.textContent?.includes('File-00000')) return;
+				if (files.length === 0 || !files[0].textContent?.includes('File-00000')) return;
 				observer.disconnect();
 				requestAnimationFrame(() =>
 					requestAnimationFrame(() => performance.mark('boxbox:files-visible'))
@@ -76,13 +85,10 @@ async function measure(
 			// Allow startup revalidation to finish before counting requests; the
 			// rendered marker, not network-idle, supplies the timing measurement.
 			await page.waitForLoadState('networkidle');
-			const renderedFiles = await page
+			const renderedRows = await page
 				.locator('[data-file-row="true"], [data-file-item="true"]')
 				.count();
-			assert.ok(renderedFiles <= 150, 'a large folder must keep rendered file elements bounded');
 			assert.equal(await page.getByText('File-00000.txt', { exact: true }).isVisible(), true);
-			if (variant === 'head')
-				assert.equal(await page.getByText('10000 items', { exact: true }).isVisible(), true);
 			const timing = await page.evaluate(() => {
 				const scripts = performance
 					.getEntriesByType('resource')
@@ -107,6 +113,7 @@ async function measure(
 				profile: profile.name,
 				cache,
 				...timing,
+				renderedRows,
 				listingRequests: requests.filter(
 					(request) => request.path.startsWith('/api/v1/files/list/') && request.method === 'GET'
 				).length,
@@ -123,7 +130,7 @@ async function measure(
 				assert.equal(
 					sample.listingRequests,
 					1,
-					'the complete folder must come from one real listing request'
+					'first page must come from the real listing endpoint'
 				);
 				assert.equal(
 					sample.refreshRequests,
@@ -131,6 +138,18 @@ async function measure(
 					'each navigation restores its session exactly once'
 				);
 				assert.deepEqual(errors, [], 'no runtime errors during browsing');
+				// The whole folder is loaded, so the keyboard reaches its last file with no request.
+				await page.getByText('File-00000.txt', { exact: true }).click();
+				await page.keyboard.press('End');
+				await page.getByText('File-09999.txt', { exact: true }).waitFor();
+				assert.equal(
+					await page.evaluate(() => document.activeElement?.getAttribute('data-file-path')),
+					'perf/File-09999.txt'
+				);
+				assert.ok(
+					(await page.locator('[data-file-row="true"]').count()) <= budget.renderedRows,
+					'scrolling to the end keeps the rendered rows bounded'
+				);
 			}
 		}
 	} catch (error) {
@@ -215,9 +234,23 @@ async function benchmark(base?: string, sha?: string) {
 					await measure(browser, variant.server, variant.name, profile);
 			}
 		}
+		await verifyGridWindow(browser, head.url, head.credentials);
+		await verifyDesktopWatch(browser, join(repo, 'dist/boxbox'));
+		await verifyDesktopPreferences(browser, join(repo, 'dist/boxbox'));
+		await verifyFolderNavigation(browser, head.url, head.credentials, fixture.mount);
 		await loggedOut(browser, head.url);
 		await verifyLazyLoadErrors(browser, head.url, head.credentials);
 		await verifyNavigation(browser, head.url, head.credentials, fixture.mount);
+		await verifySelectionRefresh(browser, head.url, head.credentials, fixture.mount);
+		const writable = await startServer(
+			join(repo, 'dist/boxbox'),
+			fixture.root,
+			fixture.mount,
+			'paste-race',
+			false
+		);
+		servers.push(writable);
+		await verifyPasteLoadRace(browser, writable.url, writable.credentials, fixture.mount);
 	} finally {
 		writeFileSync(
 			join(results, 'browser.json'),

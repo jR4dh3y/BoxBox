@@ -1,7 +1,5 @@
 <script lang="ts">
-	/**
-	 * Toolbar component - navigation buttons, path bar, search, and actions
-	 */
+	import type { MountPoint } from '#lib/api/files.js';
 	import {
 		ChevronLeft,
 		ChevronRight,
@@ -9,13 +7,18 @@
 		FolderUp,
 		RefreshCw,
 		Settings,
-		Upload
+		Upload,
+		PanelRight,
+		Columns2,
+		Keyboard
 	} from 'lucide-svelte';
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
 	import SearchBar from '#lib/components/SearchBar.svelte';
 
 	interface Props {
 		pathSegments?: string[];
+		roots?: MountPoint[];
+		pageTitle?: string | null;
 		canGoBack?: boolean;
 		canGoForward?: boolean;
 		canGoUp?: boolean;
@@ -34,10 +37,17 @@
 		onSearchInput?: (query: string) => void;
 		onSearchClear?: () => void;
 		includeHiddenSuggestions?: boolean;
+		detailsOpen?: boolean;
+		onToggleDetails?: () => void;
+		onShortcuts?: () => void;
+		splitOpen?: boolean;
+		onToggleSplit?: () => void;
 	}
 
 	let {
 		pathSegments = [],
+		roots = [],
+		pageTitle = null,
 		canGoBack = false,
 		canGoForward = false,
 		canGoUp = false,
@@ -55,11 +65,32 @@
 		searchLoading = false,
 		onSearchInput,
 		onSearchClear,
-		includeHiddenSuggestions = false
+		includeHiddenSuggestions = false,
+		detailsOpen = false,
+		onToggleDetails,
+		onShortcuts,
+		splitOpen = false,
+		onToggleSplit
 	}: Props = $props();
 
+	let pathBar = $state<ReturnType<typeof EditablePathBar>>();
+	let searchBar = $state<ReturnType<typeof SearchBar>>();
+	let detailsToggle = $state<HTMLButtonElement>();
+
+	export function focusLocation(): void {
+		pathBar?.edit();
+	}
+
+	export function focusSearch(): void {
+		searchBar?.focus();
+	}
+
+	export function focusDetailsToggle(): void {
+		detailsToggle?.focus();
+	}
+
 	const navBtnClass =
-		'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed';
+		'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed aria-pressed:bg-selection aria-pressed:text-text-primary';
 </script>
 
 <div
@@ -84,11 +115,19 @@
 		</button>
 	</div>
 
-	<EditablePathBar {pathSegments} {onNavigate} {includeHiddenSuggestions} />
+	<EditablePathBar
+		bind:this={pathBar}
+		{pathSegments}
+		{roots}
+		{pageTitle}
+		{onNavigate}
+		{includeHiddenSuggestions}
+	/>
 
 	{#if showSearch}
-		<div class="w-64 shrink-0 lg:w-96">
+		<div class="w-40 min-w-24 shrink lg:w-64">
 			<SearchBar
+				bind:this={searchBar}
 				value={searchValue}
 				onInput={onSearchInput}
 				onClear={onSearchClear}
@@ -101,29 +140,69 @@
 
 	<!-- Action buttons -->
 	<div class="flex gap-1">
-		<button
-			type="button"
-			class={navBtnClass}
-			disabled={uploadDisabled}
-			onclick={onUpload}
-			title="Upload files"
-		>
-			<Upload size={16} />
-		</button>
-		<button
-			type="button"
-			class={navBtnClass}
-			disabled={uploadDisabled}
-			onclick={onUploadFolder}
-			title="Upload folder"
-		>
-			<FolderUp size={16} />
-		</button>
-		<button type="button" class={navBtnClass} onclick={onRefresh} title="Refresh">
-			<RefreshCw size={16} />
-		</button>
+		{#if onUpload}
+			<button
+				type="button"
+				class={navBtnClass}
+				disabled={uploadDisabled}
+				onclick={onUpload}
+				title="Upload files"
+			>
+				<Upload size={16} />
+			</button>
+		{/if}
+		{#if onUploadFolder}
+			<button
+				type="button"
+				class={navBtnClass}
+				disabled={uploadDisabled}
+				onclick={onUploadFolder}
+				title="Upload folder"
+			>
+				<FolderUp size={16} />
+			</button>
+		{/if}
+		{#if onRefresh}
+			<button type="button" class={navBtnClass} onclick={onRefresh} title="Refresh">
+				<RefreshCw size={16} />
+			</button>
+		{/if}
 		<button type="button" class={navBtnClass} onclick={onSettings} title="Settings">
 			<Settings size={16} />
 		</button>
+		{#if onShortcuts}
+			<button
+				type="button"
+				class={navBtnClass}
+				onclick={onShortcuts}
+				title="Keyboard shortcuts (F1)"
+				aria-label="Keyboard shortcuts"><Keyboard size={16} /></button
+			>
+		{/if}
+		{#if onToggleSplit}
+			<button
+				type="button"
+				class={navBtnClass}
+				aria-label="Split view"
+				aria-pressed={splitOpen}
+				onclick={onToggleSplit}
+				title="Split view (F3)"
+			>
+				<Columns2 size={16} />
+			</button>
+		{/if}
+		{#if onToggleDetails}
+			<button
+				bind:this={detailsToggle}
+				type="button"
+				class={navBtnClass}
+				aria-label="Details"
+				aria-pressed={detailsOpen}
+				onclick={onToggleDetails}
+				title="Selection details (Alt+Enter)"
+			>
+				<PanelRight size={16} />
+			</button>
+		{/if}
 	</div>
 </div>

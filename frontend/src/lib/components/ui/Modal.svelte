@@ -10,6 +10,7 @@
 		headerActions?: Snippet;
 		footer?: Snippet;
 		onclose?: () => void;
+		busy?: boolean;
 	}
 
 	let {
@@ -19,40 +20,67 @@
 		children,
 		headerActions,
 		footer,
-		onclose
+		onclose,
+		busy = false
 	}: Props = $props();
 
 	const widthClass = $derived(size === 'lg' ? 'max-w-3xl' : 'max-w-md');
+	const titleId = $props.id();
 
 	function handleBackdropClick(e: MouseEvent) {
-		if (e.target === e.currentTarget) {
+		if (!busy && e.target === e.currentTarget) {
 			onclose?.();
 		}
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
-			onclose?.();
+			e.preventDefault();
+			e.stopPropagation();
+			if (!busy) onclose?.();
+		}
+		if (e.key === 'Tab' && dialogEl) {
+			const controls = Array.from(
+				dialogEl.querySelectorAll<HTMLElement>(
+					'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]'
+				)
+			).filter((element) => element.getClientRects().length > 0);
+			const first = controls[0];
+			const last = controls.at(-1);
+			if (first && last && e.shiftKey && document.activeElement === first) {
+				e.preventDefault();
+				last.focus();
+			} else if (first && last && !e.shiftKey && document.activeElement === last) {
+				e.preventDefault();
+				first.focus();
+			}
 		}
 	}
 
-	let dialogEl = $state<HTMLDivElement | undefined>();
+	let dialogEl = $state<HTMLDialogElement | undefined>();
 
 	$effect(() => {
-		if (open) {
-			// Focus into the dialog so Escape/typing reach it immediately
-			// (otherwise a keyboard opener like F2 leaves focus on the page behind).
-			(dialogEl?.querySelector<HTMLElement>('input') ?? dialogEl)?.focus();
+		if (open && dialogEl && !dialogEl.open) {
+			const dialog = dialogEl;
+			const opener = document.activeElement;
+			dialog.showModal();
+			dialog.querySelector<HTMLElement>('input:not(:disabled)')?.focus();
+			return () => {
+				dialog.close();
+				if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+			};
 		}
 	});
 </script>
 
 {#if open}
-	<div
+	<dialog
 		bind:this={dialogEl}
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-		role="dialog"
+		class="fixed inset-0 z-50 m-0 flex h-dvh max-h-none w-screen max-w-none items-center justify-center border-0 bg-transparent p-0 text-text-primary backdrop:bg-black/50"
 		aria-modal="true"
+		aria-labelledby={title ? titleId : undefined}
+		aria-label={title ? undefined : 'Dialog'}
+		aria-busy={busy}
 		tabindex="-1"
 		onclick={handleBackdropClick}
 		onkeydown={handleKeydown}
@@ -64,13 +92,16 @@
 				<div
 					class="flex items-center justify-between gap-3 border-b border-border-secondary px-4 py-3"
 				>
-					<h2 class="min-w-0 truncate text-lg font-medium text-text-primary" {title}>{title}</h2>
+					<h2 id={titleId} class="min-w-0 truncate text-lg font-medium text-text-primary" {title}>
+						{title}
+					</h2>
 					<div class="flex shrink-0 items-center gap-2">
 						{@render headerActions?.()}
 						<button
 							type="button"
 							class="rounded p-1 text-text-secondary transition-colors hover:text-text-primary"
 							onclick={onclose}
+							disabled={busy}
 							aria-label="Close"
 						>
 							<X size={18} />
@@ -87,5 +118,5 @@
 				</div>
 			{/if}
 		</div>
-	</div>
+	</dialog>
 {/if}

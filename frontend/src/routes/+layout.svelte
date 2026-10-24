@@ -7,9 +7,12 @@
 	import { page } from '$app/state';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import { CONFIG } from '#lib/config.js';
-	import { Spinner, Button } from '#lib/components/ui/index.js';
+	import Spinner from '#lib/components/ui/Spinner.svelte';
+	import Button from '#lib/components/ui/Button.svelte';
 	import { AlertTriangle, X } from 'lucide-svelte';
 	import { AuthRefreshEvent } from '#lib/api/client.js';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { isRemotePath } from '#lib/api/remotePaths.js';
 	import { jobsStore } from '#lib/stores/jobs.svelte.js';
 	import { refreshFilesWhenJobsFinish } from '#lib/stores/refreshFilesOnJobs.js';
 	import { websocketStore } from '#lib/stores/websocket.svelte.js';
@@ -24,7 +27,6 @@
 		getWallpaperBackgroundStyle,
 		normalizeBackgroundImageMode
 	} from '#lib/utils/wallpaper.js';
-	import { syncShareWallpaperOnLogin } from '#lib/utils/wallpaperSync.js';
 
 	let { children } = $props();
 	let initialized = $state(false);
@@ -126,7 +128,19 @@
 	$effect(() => {
 		if (!initialized || !authStore.isAuthenticated) return;
 
-		websocketStore.syncJobSubscriptions(jobsStore.active.map((job) => job.id));
+		websocketStore.syncJobSubscriptions(
+			jobsStore.active
+				.filter((job) => !job.id.startsWith('transfer-') && !isRemotePath(job.id))
+				.map((job) => job.id)
+		);
+	});
+
+	$effect(() => {
+		if (!initialized || !authStore.isAuthenticated || !isLocalDesktop()) return;
+		const timer = setInterval(() => {
+			void jobsStore.loadJobs();
+		}, 2000);
+		return () => clearInterval(timer);
 	});
 
 	$effect(() => {
@@ -153,7 +167,22 @@
 	});
 
 	$effect(() => {
-		if (initialized && authStore.isAuthenticated && !isSharePage) syncShareWallpaperOnLogin();
+		if (
+			!initialized ||
+			!authStore.isAuthenticated ||
+			isSharePage ||
+			!settingsStore.current.backgroundImage
+		)
+			return;
+		let active = true;
+		void import('#lib/utils/wallpaperSync.js')
+			.then(({ syncShareWallpaperOnLogin }) => {
+				if (active) void syncShareWallpaperOnLogin();
+			})
+			.catch((error) => console.warn('Unable to load wallpaper synchronization', error));
+		return () => {
+			active = false;
+		};
 	});
 
 	function handleAuthRefresh(event: Event): void {

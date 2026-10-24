@@ -1,275 +1,321 @@
 <script lang="ts">
-	/**
-	 * Browse page - the file browser. The logic lives in `#lib/browse`; this page wires it to the UI.
-	 */
-	import { goto } from '$app/navigation';
+	/** The browse route owns shared navigation chrome; each visible pane owns its file state. */
+	import { goto, afterNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { tick, untrack } from 'svelte';
 	import Sidebar from '#lib/components/Sidebar.svelte';
-	import Toolbar from '#lib/components/Toolbar.svelte';
-	import FileList from '#lib/components/FileList.svelte';
-	import StatusBar from '#lib/components/StatusBar.svelte';
-	import DriveCard from '#lib/components/DriveCard.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
-	import Toast from '#lib/components/ui/Toast.svelte';
-	import { Spinner } from '#lib/components/ui/index.js';
+	import Notifications from '#lib/components/Notifications.svelte';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { uploadStore } from '#lib/stores/upload.svelte.js';
-	import { useBrowseActions } from '#lib/browse/actions.svelte.js';
-	import { useBrowseData } from '#lib/browse/data.svelte.js';
-	import { useBrowseLocation } from '#lib/browse/location.svelte.js';
-	import { useBrowseSelection } from '#lib/browse/selection.svelte.js';
-	import { useBrowseUploads } from '#lib/browse/uploads.svelte.js';
+	import { parseBrowseLaunchState } from '#lib/browse/pane.svelte.js';
+	import type { BrowsePaneRuntime } from '#lib/browse/pane.svelte.js';
+	import { useBrowseTabs } from '#lib/browse/tabs.svelte.js';
+	import { parseBrowseLocation, type BrowseLocationSnapshot } from '#lib/browse/location.svelte.js';
+	import { getBrowseShortcut } from '#lib/browse/paneShortcuts.js';
+	import { isTextEntryTarget } from '#lib/browse/fileShortcuts.js';
+	import type ToolbarComponent from '#lib/components/Toolbar.svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
+	import { isLocalDesktop, isNativePath } from '#lib/api/desktop.js';
+	import { locationTitle } from '#lib/browse/locationTitle.js';
+	import { createDropZone } from '#lib/browse/dropZone.svelte.js';
+	import { fileDragKind } from '#lib/browse/fileDrag.js';
 
-	const selection = useBrowseSelection();
-	const location = useBrowseLocation({ onLocationChange: () => selection.clear() });
-	const data = useBrowseData(location);
-	const actions = useBrowseActions(location, data, selection);
-	const uploads = useBrowseUploads(location, data);
-	const settings = $derived(settingsStore.current);
-	// Uploads keep running without their panel, so closing the error only hides the message.
+	// Local folders refresh themselves and are already on this computer, so there is nothing to upload.
+	const desktop = isLocalDesktop();
+	const browsePane = import('#lib/components/desktop/BrowsePane.svelte');
+	const toolbar = import('#lib/components/Toolbar.svelte');
+	const launchState = parseBrowseLaunchState(page.url);
+	let pendingSelectPath = $state(launchState.selectPath);
+	let paneRuntimes = $state.raw<Record<string, BrowsePaneRuntime>>({});
 	let uploadErrorDismissed = $state(false);
+	let launchTabId = $state('');
+	let detailsOpen = $state(false);
+	let shortcutsOpen = $state(false);
+	let toolbarRef = $state<ReturnType<typeof ToolbarComponent>>();
 
-	function closeDialogs() {
-		actions.closeCreate();
-		actions.closeRename();
-		actions.closeDelete();
-		actions.closeProperties();
+	const tabs = useBrowseTabs({
+		initialLocation: launchState.location,
+		onActiveLocationChange(snapshot) {
+			if (pendingSelectPath && tabs.activeTabId !== launchTabId) pendingSelectPath = null;
+			syncBrowseUrl(snapshot, pendingSelectPath);
+		}
+	});
+	launchTabId = tabs.activeTabId;
+
+	const activePane = $derived(tabs.activePane);
+	const activeLocation = $derived(activePane?.location);
+	const activeRuntime = $derived(activePane ? (paneRuntimes[activePane.id] ?? null) : null);
+	const sidebarDrop = createDropZone(() => activeRuntime?.drop);
+	const settings = $derived(settingsStore.current);
+
+	function openInNewTab(path: string): void {
+		if (!activeLocation) return;
+		tabs.newTab({ ...activeLocation.snapshot, page: 'files', path, searchQuery: '' });
+		focusActivePane();
 	}
-	// Overlays load on first use, so they stay out of the browse page's first download.
-	const hasOpenDialog = $derived(
-		actions.createDialog.open ||
-			actions.renameDialog.open ||
-			actions.deleteDialog.open ||
-			actions.propertiesDialog.open
-	);
-	const onFolderHover = createHoverIntent(
-		data.prefetchDirectory,
-		CONFIG.query.prefetchHoverDelayMs
-	);
-	// A removed row never fires pointerleave, so drop a pending prefetch on navigation and teardown.
+
+	function closeDetails(): void {
+		detailsOpen = false;
+		void tick().then(() => toolbarRef?.focusDetailsToggle());
+	}
+
+	afterNavigate(({ type }) => {
+		if (type === 'popstate') {
+			untrack(() => activeLocation?.restore(parseBrowseLocation(page.url)));
+		}
+	});
+
+	const onFolderHover = createHoverIntent((path) => {
+		if (path) activeRuntime?.data.prefetchDirectory(path);
+	}, CONFIG.query.prefetchHoverDelayMs);
+
 	$effect(() => {
-		void location.path;
+		void activePane?.id;
+		void activeLocation?.path;
 		return () => onFolderHover(null);
 	});
+
+	function syncBrowseUrl(snapshot: BrowseLocationSnapshot, selectPath: string | null): void {
+		const url = new URL(page.url.href);
+		if (snapshot.page !== 'files') url.searchParams.set('page', snapshot.page);
+		else url.searchParams.delete('page');
+		if (snapshot.path) url.searchParams.set('path', snapshot.path);
+		else url.searchParams.delete('path');
+		if (snapshot.searchQuery) url.searchParams.set('q', snapshot.searchQuery);
+		else url.searchParams.delete('q');
+		url.searchParams.set('sort', snapshot.sortBy);
+		url.searchParams.set('dir', snapshot.sortDir);
+		url.searchParams.set('view', snapshot.viewMode);
+		if (selectPath) url.searchParams.set('select', selectPath);
+		else url.searchParams.delete('select');
+		if (url.href === page.url.href) return;
+
+		void goto(`${resolve('browse')}${url.search}${url.hash}`, {
+			replace:
+				(page.url.searchParams.get('path') ?? '') === snapshot.path &&
+				(page.url.searchParams.get('page') ?? 'files') === snapshot.page,
+			reset: false,
+			state: page.state
+		});
+	}
+
+	function setPaneRuntime(paneId: string, runtime: BrowsePaneRuntime | null): void {
+		if (runtime) {
+			paneRuntimes = { ...paneRuntimes, [paneId]: runtime };
+			return;
+		}
+
+		if (!(paneId in paneRuntimes)) return;
+		const next = { ...paneRuntimes };
+		delete next[paneId];
+		paneRuntimes = next;
+	}
+
+	function handleInitialSelectHandled(path: string): void {
+		if (untrack(() => pendingSelectPath) !== path) return;
+		pendingSelectPath = null;
+		if (activePane) syncBrowseUrl(activePane.location.snapshot, null);
+	}
+
+	function focusActivePane(): void {
+		const paneId = tabs.activePane?.id;
+		if (!paneId) return;
+		void tick().then(() => document.getElementById(`browse-pane-${paneId}`)?.focus());
+	}
+
+	/** A file dropped outside a drop target would replace the app with the file. */
+	function refuseStrayFileDrop(event: DragEvent): void {
+		if (event.defaultPrevented || fileDragKind(event.dataTransfer) === null) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+	}
+
+	function handleKeydown(event: KeyboardEvent): void {
+		if (event.defaultPrevented || shortcutsOpen) return;
+		if (event.key === 'F1' && !activeRuntime?.hasOpenDialog) {
+			event.preventDefault();
+			shortcutsOpen = true;
+			return;
+		}
+		const workspace = document.getElementById('browse-workspace');
+		const insideWorkspace =
+			event.target instanceof Node && workspace?.contains(event.target) === true;
+		if (!insideWorkspace && event.target !== document.body && !activeRuntime?.hasOpenDialog) return;
+
+		const shortcut = getBrowseShortcut({
+			key: event.key,
+			ctrlKey: event.ctrlKey,
+			metaKey: event.metaKey,
+			shiftKey: event.shiftKey,
+			altKey: event.altKey,
+			editable: isTextEntryTarget(event.target)
+		});
+		if (!shortcut || (shortcut === 'open-servers' && !desktop)) return;
+		event.preventDefault();
+		if (activeRuntime?.hasOpenDialog) return;
+
+		switch (shortcut) {
+			case 'new-tab':
+				tabs.newTab();
+				focusActivePane();
+				break;
+			case 'close-tab':
+				tabs.closeTab();
+				focusActivePane();
+				break;
+			case 'next-tab':
+				tabs.cycleTab(1);
+				focusActivePane();
+				break;
+			case 'previous-tab':
+				tabs.cycleTab(-1);
+				focusActivePane();
+				break;
+			case 'toggle-split':
+				tabs.toggleSplit();
+				focusActivePane();
+				break;
+			case 'back':
+				activeLocation?.back();
+				break;
+			case 'forward':
+				activeLocation?.forward();
+				break;
+			case 'up':
+				activeLocation?.up();
+				break;
+			case 'refresh':
+				activeRuntime?.data.reload();
+				break;
+			case 'toggle-hidden':
+				settingsStore.toggleHiddenFiles();
+				break;
+			case 'focus-location':
+				toolbarRef?.focusLocation();
+				break;
+			case 'open-servers':
+				if (desktop) activeLocation?.openPage('servers');
+				break;
+		}
+	}
 </script>
+
+<svelte:window
+	onkeydown={handleKeydown}
+	ondragover={refuseStrayFileDrop}
+	ondrop={refuseStrayFileDrop}
+/>
 
 <svelte:head>
 	<title>BoxBox</title>
 </svelte:head>
 
-<div class="flex h-screen w-full overflow-hidden bg-surface-primary">
-	<!-- Sidebar -->
+<div id="browse-workspace" class="flex h-screen w-full overflow-hidden bg-surface-primary">
 	<Sidebar
-		currentPath={location.path}
-		roots={data.roots}
-		onNavigate={location.navigate}
+		currentPath={activeLocation?.path ?? ''}
+		currentPage={activeLocation?.page ?? 'files'}
+		onOpenPage={(page) => activeLocation?.openPage(page)}
+		dropTarget={sidebarDrop}
+		roots={activeRuntime?.data.roots ?? []}
+		onNavigate={(path) => activeLocation?.navigate(path)}
 		{onFolderHover}
 	/>
 
-	<!-- Main content area -->
-	<div class="flex min-h-0 min-w-0 flex-1 flex-col">
-		<!-- Toolbar with navigation and path bar -->
-		<Toolbar
-			pathSegments={location.segments}
-			canGoBack={location.canGoBack}
-			canGoForward={location.canGoForward}
-			canGoUp={location.canGoUp}
-			onBack={location.back}
-			onForward={location.forward}
-			onUp={location.up}
-			onNavigate={location.navigate}
-			onRefresh={data.reload}
-			onSettings={() => goto(resolve('settings'))}
-			onUpload={uploads.openPicker}
-			onUploadFolder={uploads.openFolderPicker}
-			uploadDisabled={data.uploadDisabled}
-			showSearch={!data.isAtRoot}
-			searchValue={location.searchQuery}
-			searchLoading={data.isSearching}
-			onSearchInput={location.search}
-			onSearchClear={location.clearSearch}
-			includeHiddenSuggestions={settings.showHiddenFiles}
-		/>
+	<div class="flex min-w-0 flex-1 flex-col">
+		{#await toolbar then { default: Toolbar }}
+			<Toolbar
+				bind:this={toolbarRef}
+				pathSegments={activeLocation?.segments ?? []}
+				roots={activeRuntime?.data.roots ?? []}
+				pageTitle={activeLocation && activeLocation.page !== 'files'
+					? locationTitle(activeLocation)
+					: null}
+				canGoBack={activeLocation?.canGoBack ?? false}
+				canGoForward={activeLocation?.canGoForward ?? false}
+				canGoUp={activeLocation?.canGoUp ?? false}
+				onBack={() => activeLocation?.back()}
+				onForward={() => activeLocation?.forward()}
+				onUp={() => activeLocation?.up()}
+				onNavigate={(path) => activeLocation?.navigate(path)}
+				onRefresh={() => activeRuntime?.data.reload()}
+				onSettings={() => goto(resolve('settings'))}
+				onUpload={isNativePath(activeLocation?.path ?? '')
+					? undefined
+					: () => activeRuntime?.uploads.openPicker()}
+				onUploadFolder={isNativePath(activeLocation?.path ?? '')
+					? undefined
+					: () => activeRuntime?.uploads.openFolderPicker()}
+				uploadDisabled={activeRuntime?.data.uploadDisabled ?? true}
+				showSearch={activeLocation !== undefined && activeLocation.path !== ''}
+				searchValue={activeLocation?.searchQuery ?? ''}
+				searchLoading={activeRuntime?.data.isSearching ?? false}
+				onSearchInput={(query) => activeLocation?.search(query)}
+				onSearchClear={() => activeLocation?.clearSearch()}
+				includeHiddenSuggestions={settings.showHiddenFiles}
+				{detailsOpen}
+				onToggleDetails={() => (detailsOpen = !detailsOpen)}
+				onShortcuts={() => (shortcutsOpen = true)}
+				splitOpen={tabs.hasSplit}
+				onToggleSplit={() => {
+					tabs.toggleSplit();
+					focusActivePane();
+				}}
+			/>
+		{:catch}
+			<LoadError label="file toolbar" />
+		{/await}
 
-		<!-- File list or Drive cards -->
-		<div
-			class="relative min-h-0 flex-1 overflow-hidden"
-			ondragover={uploads.handleDragOver}
-			ondragleave={uploads.handleDragLeave}
-			ondrop={uploads.handleDrop}
-			role="region"
-			aria-label="File browser content"
-		>
-			<!-- Drag-drop overlay -->
-			{#if uploads.isDragOver && !data.isAtRoot}
-				<div
-					class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-accent bg-accent/10"
-				>
-					<div class="rounded-lg bg-surface-primary/90 px-6 py-4 shadow-lg backdrop-blur-sm">
-						<span class="text-lg font-medium text-accent">Drop files to upload here</span>
-					</div>
-				</div>
-			{/if}
+		{#if tabs.tabs.length > 1}
+			{#await import('#lib/components/desktop/BrowseTabs.svelte') then { default: BrowseTabs }}
+				<BrowseTabs controller={tabs} onTabChange={focusActivePane} />
+			{:catch}
+				<LoadError label="tabs" />
+			{/await}
+		{/if}
 
-			{#if data.isAtRoot}
-				<!-- This Server view - show drive cards -->
-				<div class="h-full overflow-auto p-6">
-					{#if data.isLoadingDrives}
-						<div class="flex items-center gap-2 py-5 text-sm text-text-secondary">
-							<Spinner size="sm" />
-							<span>Loading drives...</span>
-						</div>
-					{:else if data.drives.length === 0}
-						<div class="py-5 text-sm text-text-secondary">No configured storage found</div>
-					{:else}
-						<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-							{#each data.drives as drive (drive.name)}
-								<DriveCard {drive} onClick={() => location.navigate(drive.name)} {onFolderHover} />
-							{/each}
-						</div>
-					{/if}
-				</div>
-			{:else if data.fileListError && data.displayItems.length === 0}
-				<div role="alert" class="flex h-full items-center justify-center gap-3 p-6 text-sm">
-					<span>{data.fileListError}</span>
-					<button
-						type="button"
-						class="rounded border border-border-primary px-3 py-1 hover:bg-surface-secondary"
-						onclick={data.reload}
-					>
-						Retry
-					</button>
-				</div>
-			{:else if location.viewMode === 'grid'}
-				{#await import('#lib/components/FileGrid.svelte') then { default: FileGrid }}
-					<FileGrid
-						viewKey={location.viewKey}
-						items={data.displayItems}
-						emptyMessage={data.emptyListMessage}
-						selectedPaths={selection.paths}
-						isLoading={data.isFileListLoading}
-						compactMode={settings.compactMode}
-						cutPaths={actions.cutPaths}
-						favoritePaths={actions.favoritePaths}
-						canPaste={actions.canPaste}
-						canCreate={data.canCreate}
-						showFileExtensions={settings.showFileExtensions}
-						previewOnSingleClick={settings.previewOnSingleClick}
-						onItemClick={actions.openFile}
-						{onFolderHover}
-						onSelectionChange={selection.set}
-						onContextMenuAction={actions.handleContextMenuAction}
-					/>
+		<div class="relative flex min-h-0 flex-1">
+			<div class="flex min-h-0 min-w-0 flex-1 divide-x divide-border-secondary">
+				{#await browsePane then { default: BrowsePane }}
+					{#each tabs.visiblePanes as pane (pane.id)}
+						<BrowsePane
+							{pane}
+							focused={pane.id === activePane?.id}
+							outlined={tabs.hasSplit && pane.id === activePane?.id}
+							initialSelectPath={pendingSelectPath &&
+							tabs.activeTabId === launchTabId &&
+							pane.id === activePane?.id
+								? pendingSelectPath
+								: null}
+							onFocus={() => tabs.focusPane(pane.id)}
+							onRuntimeChange={(runtime) => setPaneRuntime(pane.id, runtime)}
+							onInitialSelectHandled={handleInitialSelectHandled}
+							onShowDetails={() => (detailsOpen = true)}
+							onFocusSearch={() => toolbarRef?.focusSearch()}
+							onOpenInNewTab={openInNewTab}
+						/>
+					{/each}
 				{:catch}
-					<LoadError label="grid view" inline />
+					<LoadError label="file browser" />
 				{/await}
-			{:else}
-				<FileList
-					viewKey={location.viewKey}
-					items={data.displayItems}
-					sortBy={location.sortBy}
-					sortDir={location.sortDir}
-					emptyMessage={data.emptyListMessage}
-					selectedPaths={selection.paths}
-					isLoading={data.isFileListLoading}
-					compactMode={settings.compactMode}
-					cutPaths={actions.cutPaths}
-					favoritePaths={actions.favoritePaths}
-					canPaste={actions.canPaste}
-					canCreate={data.canCreate}
-					showFileExtensions={settings.showFileExtensions}
-					previewOnSingleClick={settings.previewOnSingleClick}
-					onItemClick={actions.openFile}
-					{onFolderHover}
-					onSortChange={location.setSort}
-					onSelectionChange={selection.set}
-					onContextMenuAction={actions.handleContextMenuAction}
-				/>
-			{/if}
-			{#if data.fileListError && data.displayItems.length > 0}
+			</div>
+			{#if detailsOpen}
 				<div
-					role="alert"
-					class="absolute top-3 right-3 z-20 flex items-center gap-3 rounded border border-border-primary bg-surface-primary p-3 text-sm"
+					class="fixed inset-y-0 right-0 z-[60] w-[min(20rem,100%)] shadow-xl lg:static lg:z-auto lg:w-72 lg:shrink-0 lg:shadow-none"
 				>
-					<span>{data.fileListError}</span>
-					<button type="button" class="underline" onclick={data.reload}>Retry</button>
+					{#await import('#lib/components/FileDetailsPanel.svelte') then { default: FileDetailsPanel }}
+						<FileDetailsPanel runtime={activeRuntime} onClose={closeDetails} />
+					{:catch}
+						<LoadError label="selection details" onClose={closeDetails} />
+					{/await}
 				</div>
 			{/if}
 		</div>
-
-		<!-- Status bar -->
-		<StatusBar
-			itemCount={data.itemCount}
-			selectedCount={selection.count}
-			viewMode={location.viewMode}
-			onViewModeChange={location.setViewMode}
-		/>
 	</div>
 </div>
 
-{#if actions.previewFile}
-	{#await import('#lib/components/FilePreview.svelte') then { default: FilePreview }}
-		<FilePreview
-			file={actions.previewFile}
-			allFiles={data.previewableFiles}
-			onNavigate={actions.showPreview}
-			onFileSaved={actions.fileSaved}
-			onClose={actions.closePreview}
-		/>
-	{:catch}
-		<LoadError label="preview" onClose={actions.closePreview} />
-	{/await}
-{/if}
-
-{#if hasOpenDialog}
-	{#await import('#lib/components/BrowseDialogs.svelte') then { default: BrowseDialogs }}
-		<BrowseDialogs
-			createDialog={actions.createDialog}
-			renameDialog={actions.renameDialog}
-			deleteDialog={actions.deleteDialog}
-			propertiesDialog={actions.propertiesDialog}
-			onCreateNameChange={actions.setCreateName}
-			onRenameNameChange={actions.setRenameName}
-			onCreateConfirm={() => void actions.confirmCreate()}
-			onRenameConfirm={() => void actions.confirmRename()}
-			onDeleteConfirm={() => void actions.confirmDelete()}
-			onCloseCreate={actions.closeCreate}
-			onCloseRename={actions.closeRename}
-			onCloseDelete={actions.closeDelete}
-			onCloseProperties={actions.closeProperties}
-		/>
-	{:catch}
-		<LoadError label="dialog" onClose={closeDialogs} />
-	{/await}
-{/if}
-
-{#if actions.shareItem}
-	{#await import('#lib/components/ShareModal.svelte') then { default: ShareModal }}
-		<ShareModal open item={actions.shareItem} onclose={actions.closeShare} />
-	{:catch}
-		<LoadError label="share window" onClose={actions.closeShare} />
-	{/await}
-{/if}
-
-<!-- Hidden file input for upload button -->
-<input
-	bind:this={uploads.fileInput}
-	type="file"
-	multiple
-	class="hidden"
-	onchange={uploads.handleInputChange}
-/>
-<input
-	bind:this={uploads.folderInput}
-	type="file"
-	webkitdirectory
-	class="hidden"
-	onchange={uploads.handleInputChange}
-/>
-
-<!-- Upload Panel (floating bottom-right) -->
 {#if uploadStore.uploads.length > 0}
 	{#await import('#lib/components/UploadPanel.svelte') then { default: UploadPanel }}
 		<UploadPanel />
@@ -280,5 +326,20 @@
 	{/await}
 {/if}
 
-<!-- Toast notifications -->
-<Toast />
+<Notifications />
+
+{#if desktop}
+	{#await import('#lib/components/desktop/DesktopUndoShortcut.svelte') then { default: DesktopUndoShortcut }}
+		<DesktopUndoShortcut />
+	{:catch}
+		<LoadError label="desktop undo shortcut" />
+	{/await}
+{/if}
+
+{#if shortcutsOpen}
+	{#await import('#lib/components/KeyboardShortcutsDialog.svelte') then { default: KeyboardShortcutsDialog }}
+		<KeyboardShortcutsDialog onclose={() => (shortcutsOpen = false)} />
+	{:catch}
+		<LoadError label="keyboard shortcuts" onClose={() => (shortcutsOpen = false)} />
+	{/await}
+{/if}

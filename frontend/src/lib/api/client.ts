@@ -260,7 +260,8 @@ export async function parseResponse<T>(response: Response): Promise<T> {
 /**
  * Main API request function with automatic token injection and refresh
  */
-export async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+export function apiRequest<T>(endpoint: string, options?: RequestOptions): Promise<T>;
+export async function apiRequest(endpoint: string, options: RequestOptions = {}): Promise<unknown> {
 	const { method = 'GET', body, headers = {}, skipAuth = false, params, signal } = options;
 
 	const url = buildUrl(endpoint, params);
@@ -310,7 +311,8 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
 		}
 	}
 
-	return parseResponse<T>(response);
+	if (response.status === 204) return;
+	return parseResponse<unknown>(response);
 }
 
 /**

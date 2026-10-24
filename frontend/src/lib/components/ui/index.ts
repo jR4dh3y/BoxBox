@@ -13,5 +13,4 @@ export { default as Modal } from './Modal.svelte';
 export { default as Spinner } from './Spinner.svelte';
 export { default as Badge } from './Badge.svelte';
 export { default as ProgressBar } from './ProgressBar.svelte';
-export { default as Toast } from './Toast.svelte';
 export { default as InlineRename } from './InlineRename.svelte';

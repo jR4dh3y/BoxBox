@@ -8,7 +8,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function chunkPath(source: string): string {
+export function chunkPath(source: string): string {
 	const manifest: unknown = JSON.parse(
 		readFileSync(join(repo, 'frontend/.svelte-kit/output/client/.vite/manifest.json'), 'utf8')
 	);
@@ -22,6 +22,7 @@ type LoadCase = {
 	label: string;
 	source: string;
 	path: string;
+	activate?: (page: Page) => Promise<void>;
 	ready: (page: Page) => Promise<void>;
 };
 
@@ -43,6 +44,31 @@ const cases: LoadCase[] = [
 		source: 'src/lib/components/settings/ShareLinksSettings.svelte',
 		path: '/settings',
 		ready: (page) => page.getByText('No shared links.', { exact: true }).waitFor()
+	},
+	{
+		label: 'location editor',
+		source: 'src/lib/components/PathEditor.svelte',
+		path: '/browse?path=perf',
+		activate: async (page) => {
+			await page.getByText('File-00000.txt', { exact: true }).waitFor();
+			await page.keyboard.press('Control+l');
+		},
+		ready: (page) => page.getByRole('combobox', { name: 'Location', exact: true }).waitFor()
+	},
+	{
+		label: 'file menu',
+		source: 'src/lib/components/FileContextMenu.svelte',
+		path: '/browse?path=perf',
+		activate: async (page) => {
+			await page.getByText('File-00000.txt', { exact: true }).click({ button: 'right' });
+		},
+		ready: (page) => page.getByRole('menu').waitFor()
+	},
+	{
+		label: 'drives',
+		source: 'src/lib/components/DriveCard.svelte',
+		path: '/browse',
+		ready: (page) => page.locator('button span[title="perf"]').waitFor()
 	}
 ];
 
@@ -66,6 +92,10 @@ export async function verifyLazyLoadErrors(
 			const errors: string[] = [];
 			page.on('pageerror', (error) => errors.push(error.message));
 			await page.goto(`${url}${test.path}`);
+			if (test.activate) {
+				assert.equal(blockedRequests, 0, `${test.label}: do not load before interaction`);
+				await test.activate(page);
+			}
 			const alert = page
 				.getByRole('alert')
 				.filter({ hasText: `Could not load the ${test.label}.` });
@@ -73,6 +103,7 @@ export async function verifyLazyLoadErrors(
 			assert.ok(blockedRequests > 0, `${test.label}: the component request must be blocked`);
 			await context.unroute(blockedPath);
 			await alert.getByRole('button', { name: 'Reload', exact: true }).click();
+			await test.activate?.(page);
 			await test.ready(page);
 			assert.equal(page.url(), `${url}${test.path}`, 'reload preserves the current location');
 			assert.equal(await alert.count(), 0, 'successful recovery removes the error');
@@ -82,6 +113,6 @@ export async function verifyLazyLoadErrors(
 		}
 	}
 	console.log(
-		'PASS: failed grid, wallpaper and shared-link chunks show errors and recover on reload'
+		'PASS: failed grid, wallpaper, shared-link, location editor, file menu and drive chunks recover on reload'
 	);
 }

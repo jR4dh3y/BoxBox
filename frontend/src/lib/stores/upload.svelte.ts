@@ -5,7 +5,7 @@
 
 import type { UploadProgress, UploadOptions } from '#lib/utils/upload.js';
 import { generateUploadId, getChunkCount } from '#lib/utils/uploadIds.js';
-import { getUploadConfig } from '#lib/api/system.js';
+import { uploadChunkSize } from '#lib/utils/uploadConfig.js';
 import { CONFIG } from '#lib/config.js';
 import type { UploadEntry } from '#lib/utils/uploadEntries.js';
 
@@ -40,11 +40,6 @@ class UploadStore {
 	private controllers = new Map<string, AbortController>();
 	private activeWorkers = 0;
 	private refreshPending = false;
-
-	/** Server-configured chunk size, loaded before the first upload starts. */
-	private chunkSize = CONFIG.upload.defaultChunkSize;
-	private chunkSizeLoaded = false;
-	private chunkSizeRequest: Promise<void> | null = null;
 
 	/** Callback for when upload completes */
 	onComplete?: (fileName: string, success: boolean, error?: string) => void;
@@ -97,7 +92,7 @@ class UploadStore {
 				uploadedSize: 0,
 				percentage: 0,
 				currentChunk: 0,
-				totalChunks: getChunkCount(file.size, this.chunkSize),
+				totalChunks: getChunkCount(file.size, CONFIG.upload.defaultChunkSize),
 				status: 'pending'
 			};
 
@@ -127,36 +122,18 @@ class UploadStore {
 		}
 	}
 
-	/**
-	 * Workers that start together share one request, so they all use the same chunk size.
-	 * It keeps the default when the server cannot be reached and asks again on the next upload.
-	 */
-	private loadChunkSize(): Promise<void> {
-		if (this.chunkSizeLoaded) return Promise.resolve();
-		this.chunkSizeRequest ??= getUploadConfig()
-			.then((config) => {
-				this.chunkSize = config.chunkSizeBytes;
-				this.chunkSizeLoaded = true;
-			})
-			.catch(() => {})
-			.finally(() => {
-				this.chunkSizeRequest = null;
-			});
-		return this.chunkSizeRequest;
-	}
-
 	private async processItem(item: QueueItem): Promise<void> {
 		const controller = new AbortController();
 		this.controllers.set(item.uploadId, controller);
 
 		try {
-			await this.loadChunkSize();
+			const chunkSize = await uploadChunkSize(item.destPath);
 			// Cancelled while waiting: leave the cancelled state as it is.
 			if (controller.signal.aborted) return;
 
 			const options: UploadOptions = {
 				uploadId: item.uploadId,
-				chunkSize: this.chunkSize,
+				chunkSize,
 				signal: controller.signal,
 				onProgress: (progress) => {
 					this.updateProgress(item.uploadId, progress);
@@ -168,7 +145,7 @@ class UploadStore {
 			const result = await resumeUpload(item.file, item.destPath, item.uploadId, options);
 
 			if (result.success) {
-				const totalChunks = getChunkCount(item.file.size, this.chunkSize);
+				const totalChunks = getChunkCount(item.file.size, chunkSize);
 				this.updateProgress(item.uploadId, {
 					uploadId: item.uploadId,
 					fileName: item.displayName,
@@ -212,7 +189,7 @@ class UploadStore {
 			uploadedSize: 0,
 			percentage: 0,
 			currentChunk: 0,
-			totalChunks: getChunkCount(item.file.size, this.chunkSize),
+			totalChunks: getChunkCount(item.file.size, CONFIG.upload.defaultChunkSize),
 			status: 'error',
 			error
 		});

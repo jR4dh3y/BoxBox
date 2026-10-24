@@ -1,5 +1,7 @@
 export type BrowserMetrics = {
 	listingRequests: number;
+	/** File rows in the DOM once the 10,000-entry folder is open; virtualization bounds it. */
+	renderedRows: number;
 	refreshRequests: number;
 	scriptRequests: number;
 	scriptBytes: number;
@@ -31,7 +33,7 @@ function numericLimits(value: unknown): Map<string, number> {
 
 /**
  * Budgets may only tighten. A key may disappear only when `retired` names the key that now
- * measures the same work, and that successor is no looser than the limit it replaces.
+ * measures the same work, and that key exists in the new budget.
  */
 export function checkRatchets(
 	base: unknown,

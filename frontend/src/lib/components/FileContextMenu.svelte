@@ -2,24 +2,25 @@
 	import ContextMenu from '#lib/components/ui/ContextMenu.svelte';
 	import {
 		getFileContextMenuItems,
+		type FileContextAction,
 		type FileContextMenuOptions
 	} from '#lib/utils/fileContextMenu.js';
 
-	interface Props extends Pick<
-		FileContextMenuOptions,
-		'items' | 'canPaste' | 'favoritePaths' | 'canCreate'
-	> {
+	type Props = FileContextMenuOptions & {
 		x: number;
 		y: number;
-		onSelect: (action: string) => void;
+		onSelect: (action: FileContextAction) => void;
 		onClose: () => void;
-	}
+	};
 
-	let { items, canPaste, favoritePaths, canCreate, x, y, onSelect, onClose }: Props = $props();
-
-	const menuItems = $derived(
-		getFileContextMenuItems({ items, canPaste, favoritePaths, canCreate })
-	);
+	let { path, items, canPaste, favoritePaths, canCreate, x, y, onSelect, onClose }: Props =
+		$props();
 </script>
 
-<ContextMenu items={menuItems} {x} {y} {onSelect} {onClose} />
+<ContextMenu
+	items={getFileContextMenuItems({ path, items, canPaste, favoritePaths, canCreate })}
+	{x}
+	{y}
+	{onSelect}
+	{onClose}
+/>

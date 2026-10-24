@@ -4,8 +4,16 @@ import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+const initialModules = new Set<string>();
+
 export default defineConfig({
 	plugins: [
+		{
+			name: 'startup-module-tags',
+			buildStart() {
+				initialModules.clear();
+			}
+		},
 		tailwindcss(),
 		sveltekit({
 			preprocess: vitePreprocess(),
@@ -42,15 +50,40 @@ export default defineConfig({
 	build: {
 		rolldownOptions: {
 			output: {
-				// Group initial dependencies to limit request queues; editors stay lazy.
-				// Kit's bootstrap must keep its dynamic runtime import so it can set the payload first.
 				codeSplitting: {
 					groups: [
+						// Tag first, then group only dependencies used by the browse shell.
 						{
-							name: 'app',
-							test: /node_modules[\\/](?!@sveltejs[\\/]kit[\\/])|[\\/]src[\\/]lib[\\/]/,
+							name(id) {
+								initialModules.add(id);
+								return null;
+							},
 							tags: ['$initial']
-						}
+						},
+						{
+							name(id, ctx) {
+								// Keep Kit's payload bootstrap separate from the client it starts.
+								if (id.endsWith('/runtime/client/entry.js')) return null;
+								if (id.endsWith('/runtime/client/client-entry.js')) return 'app';
+								if (!initialModules.has(id) || !/node_modules[\\/]|[\\/]src[\\/]lib[\\/]/.test(id))
+									return null;
+								const visited = new Set<string>();
+								const pending = [id];
+								while (pending.length) {
+									const next = pending.pop();
+									if (!next || visited.has(next)) continue;
+									visited.add(next);
+									if (
+										/src\/routes\/(?:\+layout|browse\/\+page)\.svelte$/.test(next) ||
+										/(?:desktop\/BrowsePane|components\/Toolbar)\.svelte$/.test(next)
+									)
+										return 'app';
+									pending.push(...(ctx.getModuleInfo(next)?.importers ?? []));
+								}
+								return null;
+							}
+						},
+						{ name: 'browse', test: /(?:desktop\/BrowsePane|components\/Toolbar)\.svelte$/ }
 					]
 				}
 			}

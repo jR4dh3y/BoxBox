@@ -9,7 +9,10 @@
 		Image as ImageIcon,
 		Upload
 	} from 'lucide-svelte';
+	import { onMount } from 'svelte';
 	import { Button, Modal, ProgressBar, Select } from '#lib/components/ui/index.js';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { rootLabel } from '#lib/browse/rootLabel.js';
 	import { visibleByName } from '#lib/browse/sortFiles.js';
 	import { listDirectory, listRoots, type FileInfo, type MountPoint } from '#lib/api/files.js';
 	import { resolveBackgroundImage, toServerBackgroundImage } from '#lib/utils/appearance.js';
@@ -86,6 +89,12 @@
 		previewImageUrl ? `url(${JSON.stringify(previewImageUrl)})` : undefined
 	);
 	const previewBackgroundStyle = $derived(getWallpaperBackgroundStyle(previewMode));
+
+	// The desktop app's folders and "this device" are the same disk, so it skips the choice.
+	const desktop = isLocalDesktop();
+	onMount(() => {
+		if (desktop) void chooseWallpaperSource('server');
+	});
 
 	async function chooseWallpaperSource(source: WallpaperSource) {
 		wallpaperSource = source;
@@ -207,7 +216,7 @@
 		localWallpaperProgress = 0;
 		localWallpaperProgressLabel = '';
 
-		if (origin === 'server') {
+		if (origin === 'server' || desktop) {
 			wallpaperSource = 'server';
 		} else {
 			wallpaperSource = null;
@@ -239,7 +248,7 @@
 				<ChevronLeft size={14} />
 				{previewOrigin === 'server' ? 'Back to folder' : 'Back'}
 			</Button>
-		{:else if wallpaperSource === 'server'}
+		{:else if wallpaperSource === 'server' && !desktop}
 			<Button variant="ghost" size="sm" onclick={() => (wallpaperSource = null)}>
 				<ChevronLeft size={14} />
 				Sources
@@ -330,7 +339,7 @@
 				>
 					<span class="rounded bg-accent/15 p-2 text-accent"><HardDrive size={22} /></span>
 					<span>
-						<span class="block text-sm font-medium text-text-primary">This Server</span>
+						<span class="block text-sm font-medium text-text-primary">{rootLabel()}</span>
 						<span class="block text-xs text-text-muted">Browse mounted folders</span>
 					</span>
 				</button>
@@ -385,7 +394,7 @@
 					class="cursor-pointer border-none bg-transparent p-0 text-text-primary hover:text-accent"
 					onclick={openServerWallpaperRoot}
 				>
-					Server
+					{rootLabel()}
 				</button>
 				{#each serverWallpaperCrumbs as crumb, index (`${crumb}-${index}`)}
 					<span class="mx-1 text-text-muted">/</span>

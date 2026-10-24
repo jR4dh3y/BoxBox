@@ -1,96 +1,152 @@
-import { afterNavigate, goto } from '$app/navigation';
-import { resolve } from '$app/paths';
-import { page } from '$app/state';
+import { parseRemotePath } from '#lib/api/remotePaths.js';
+import { isLocalDesktop } from '#lib/api/desktop.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import type { SortDir, SortField, ViewMode } from '#lib/types/files.js';
+
+/** A pane shows a folder or one of the desktop app's own pages. */
+export type BrowsePage = 'files' | 'trash' | 'drives' | 'servers';
+
+export interface BrowseLocationSnapshot {
+	page: BrowsePage;
+	path: string;
+	searchQuery: string;
+	sortBy: SortField;
+	sortDir: SortDir;
+	viewMode: ViewMode;
+}
+
+interface BrowseLocationOptions {
+	initial?: BrowseLocationSnapshot;
+	onLocationChange?: () => void;
+	onChange?: (snapshot: BrowseLocationSnapshot) => void;
+}
+
+export interface BrowseUrl {
+	searchParams: { get(name: string): string | null };
+}
 
 function parseSortField(value: string | null): SortField {
 	if (value === 'name' || value === 'size' || value === 'modTime' || value === 'type') return value;
 	return settingsStore.current.defaultSortBy;
 }
 
-/**
- * Where the user is in the file browser. The URL holds it: `path`, `q`, `sort`, `dir` and `view`.
- * Call during component setup. `onLocationChange` runs when the folder changes, by link or by back/forward.
- */
-export function useBrowseLocation(options: { onLocationChange: () => void }) {
-	let historyMaxIndex = $state(page.state.browseHistoryIndex ?? 0);
+function normalizePath(path: string): string {
+	const normalized = path.replace(/^\/+|\/+$/g, '');
+	try {
+		parseRemotePath(normalized);
+	} catch {
+		return '';
+	}
+	return normalized;
+}
 
-	const path = $derived(page.url.searchParams.get('path')?.replace(/^\/+|\/+$/g, '') ?? '');
-	const segments = $derived(path ? path.split('/') : []);
-	const searchQuery = $derived(page.url.searchParams.get('q') ?? '');
-	const trimmedSearchQuery = $derived(searchQuery.trim());
-	const isSearchActive = $derived(trimmedSearchQuery.length >= 2);
-	const sortBy = $derived<SortField>(parseSortField(page.url.searchParams.get('sort')));
-	const sortDir = $derived<SortDir>(
-		page.url.searchParams.get('dir') === 'desc'
-			? 'desc'
-			: page.url.searchParams.get('dir') === 'asc'
-				? 'asc'
-				: settingsStore.current.defaultSortDir
-	);
-	const viewMode = $derived<ViewMode>(
-		page.url.searchParams.get('view') === 'grid'
-			? 'grid'
-			: page.url.searchParams.get('view') === 'list'
-				? 'list'
-				: settingsStore.current.defaultViewMode
-	);
-	const viewKey = $derived(
-		JSON.stringify([
-			path,
-			isSearchActive ? trimmedSearchQuery : '',
-			sortBy,
-			sortDir,
-			viewMode,
-			settingsStore.current.showHiddenFiles
-		])
-	);
-	const historyIndex = $derived(page.state.browseHistoryIndex ?? 0);
-	const canGoBack = $derived(historyIndex > 0);
-	const canGoForward = $derived(historyIndex < historyMaxIndex);
-	const canGoUp = $derived(segments.length > 0);
+function normalizeSnapshot(snapshot: BrowseLocationSnapshot): BrowseLocationSnapshot {
+	if (snapshot.page !== 'files') return { ...snapshot, path: '', searchQuery: '' };
+	return { ...snapshot, path: normalizePath(snapshot.path) };
+}
 
-	afterNavigate((navigation) => {
-		if (navigation.type === 'popstate') options.onLocationChange();
+/** Pages exist only in the desktop app; the web app always shows files. */
+function parsePage(value: string | null): BrowsePage {
+	if (!isLocalDesktop()) return 'files';
+	return value === 'trash' || value === 'drives' || value === 'servers' ? value : 'files';
+}
+
+export function parseBrowseLocation(url: BrowseUrl): BrowseLocationSnapshot {
+	return normalizeSnapshot({
+		page: parsePage(url.searchParams.get('page')),
+		path: url.searchParams.get('path') ?? '',
+		searchQuery: url.searchParams.get('q') ?? '',
+		sortBy: parseSortField(url.searchParams.get('sort')),
+		sortDir:
+			url.searchParams.get('dir') === 'desc'
+				? 'desc'
+				: url.searchParams.get('dir') === 'asc'
+					? 'asc'
+					: settingsStore.current.defaultSortDir,
+		viewMode:
+			url.searchParams.get('view') === 'grid'
+				? 'grid'
+				: url.searchParams.get('view') === 'list'
+					? 'list'
+					: settingsStore.current.defaultViewMode
 	});
+}
 
-	/** Search, sort and view changes replace the history entry. A new folder adds one. */
-	function updateParams(
-		updates: Record<string, string | null>,
-		{ replaceState = false }: { replaceState?: boolean } = {}
-	) {
-		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Only the navigation target string escapes this handler.
-		const url = new URL(page.url.href);
-		for (const [key, value] of Object.entries(updates)) {
-			if (value) url.searchParams.set(key, value);
-			else url.searchParams.delete(key);
+function sameSnapshot(left: BrowseLocationSnapshot, right: BrowseLocationSnapshot): boolean {
+	return (
+		left.page === right.page &&
+		left.path === right.path &&
+		left.searchQuery === right.searchQuery &&
+		left.sortBy === right.sortBy &&
+		left.sortDir === right.sortDir &&
+		left.viewMode === right.viewMode
+	);
+}
+
+/** A pane's location and folder history. Search and view changes replace the current entry. */
+export function useBrowseLocation(options: BrowseLocationOptions = {}) {
+	const initial = normalizeSnapshot(
+		options.initial ?? {
+			page: 'files',
+			path: '',
+			searchQuery: '',
+			sortBy: settingsStore.current.defaultSortBy,
+			sortDir: settingsStore.current.defaultSortDir,
+			viewMode: settingsStore.current.defaultViewMode
 		}
-		const target = `${resolve('browse')}${url.search}${url.hash}`;
+	);
+	let history = $state.raw<BrowseLocationSnapshot[]>([initial]);
+	let historyIndex = $state(0);
 
-		if (replaceState) {
-			void goto(target, {
-				replace: true,
-				reset: false,
-				state: page.state
-			});
-			return;
-		}
+	const snapshot = $derived(history[historyIndex] ?? initial);
+	const path = $derived(snapshot.path);
+	const segments = $derived(path ? path.split('/') : []);
+	const trimmedSearchQuery = $derived(snapshot.searchQuery.trim());
+	const isSearchActive = $derived(trimmedSearchQuery.length >= 2);
+	const canGoBack = $derived(historyIndex > 0);
+	const canGoForward = $derived(historyIndex < history.length - 1);
+	const canGoUp = $derived(snapshot.page === 'files' && segments.length > 0);
 
-		const nextIndex = historyIndex + 1;
-		historyMaxIndex = nextIndex;
-		void goto(target, {
-			reset: false,
-			state: { ...page.state, browseHistoryIndex: nextIndex }
-		});
+	function changed(previous: BrowseLocationSnapshot, next: BrowseLocationSnapshot): void {
+		if (previous.page !== next.page || previous.path !== next.path) options.onLocationChange?.();
+		options.onChange?.(next);
 	}
 
-	function navigate(newPath: string) {
-		options.onLocationChange();
-		updateParams({ path: newPath || null, q: null });
+	function replaceCurrent(next: BrowseLocationSnapshot): void {
+		const previous = snapshot;
+		const normalized = normalizeSnapshot(next);
+		if (sameSnapshot(previous, normalized)) return;
+		history = history.map((entry, index) => (index === historyIndex ? normalized : entry));
+		changed(previous, normalized);
+	}
+
+	function push(next: BrowseLocationSnapshot): void {
+		const previous = snapshot;
+		const normalized = normalizeSnapshot(next);
+		if (sameSnapshot(previous, normalized)) return;
+		history = [...history.slice(0, historyIndex + 1), normalized];
+		historyIndex = history.length - 1;
+		changed(previous, normalized);
+	}
+
+	function navigate(newPath: string): void {
+		push({ ...snapshot, page: 'files', path: newPath, searchQuery: '' });
+	}
+
+	function moveHistory(nextIndex: number): void {
+		const previous = snapshot;
+		historyIndex = nextIndex;
+		const next = snapshot;
+		changed(previous, next);
 	}
 
 	return {
+		get snapshot() {
+			return snapshot;
+		},
+		get page() {
+			return snapshot.page;
+		},
 		get path() {
 			return path;
 		},
@@ -98,7 +154,7 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 			return segments;
 		},
 		get searchQuery() {
-			return searchQuery;
+			return snapshot.searchQuery;
 		},
 		get trimmedSearchQuery() {
 			return trimmedSearchQuery;
@@ -107,16 +163,13 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 			return isSearchActive;
 		},
 		get sortBy() {
-			return sortBy;
+			return snapshot.sortBy;
 		},
 		get sortDir() {
-			return sortDir;
+			return snapshot.sortDir;
 		},
 		get viewMode() {
-			return viewMode;
-		},
-		get viewKey() {
-			return viewKey;
+			return snapshot.viewMode;
 		},
 		get canGoBack() {
 			return canGoBack;
@@ -128,16 +181,43 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 			return canGoUp;
 		},
 		navigate,
-		back: () => history.back(),
-		forward: () => history.forward(),
-		up() {
-			if (canGoUp) navigate(segments.slice(0, -1).join('/'));
+		openPage(page: BrowsePage) {
+			push({ ...snapshot, page, path: '', searchQuery: '' });
 		},
-		search: (query: string) => updateParams({ q: query.trim() || null }, { replaceState: true }),
-		clearSearch: () => updateParams({ q: null }, { replaceState: true }),
-		setSort: (field: SortField, dir: SortDir) =>
-			updateParams({ sort: field, dir }, { replaceState: true }),
-		setViewMode: (mode: ViewMode) => updateParams({ view: mode }, { replaceState: true })
+		restore(snapshot: BrowseLocationSnapshot) {
+			const normalized = normalizeSnapshot(snapshot);
+			const index = history.findIndex((entry) => sameSnapshot(entry, normalized));
+			if (index >= 0) moveHistory(index);
+			else replaceCurrent(normalized);
+		},
+		back() {
+			if (canGoBack) moveHistory(historyIndex - 1);
+		},
+		forward() {
+			if (canGoForward) moveHistory(historyIndex + 1);
+		},
+		up() {
+			if (canGoUp) {
+				const source = parseRemotePath(path);
+				navigate(
+					source.kind === 'remote' && !source.path.includes('/')
+						? ''
+						: segments.slice(0, -1).join('/')
+				);
+			}
+		},
+		search(query: string) {
+			replaceCurrent({ ...snapshot, searchQuery: query.trim() });
+		},
+		clearSearch() {
+			replaceCurrent({ ...snapshot, searchQuery: '' });
+		},
+		setSort(sortBy: SortField, sortDir: SortDir) {
+			replaceCurrent({ ...snapshot, sortBy, sortDir });
+		},
+		setViewMode(viewMode: ViewMode) {
+			replaceCurrent({ ...snapshot, viewMode });
+		}
 	};
 }
 

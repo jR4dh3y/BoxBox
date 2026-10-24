@@ -1,5 +1,5 @@
-// Starts the folder listing while the app's JavaScript downloads, so it is already on its way when the
-// app asks for it. src/lib/api/earlyStart.ts takes over what this starts.
+// Starts the folder listing while the app's JavaScript downloads, so it is already on its way when
+// the app asks for it. src/lib/api/earlyStart.ts takes over what this starts.
 // The request must match listDirectory in src/lib/api/files.ts; earlyStart.test.ts checks that.
 (() => {
 	// `null` means the app started first and took over. Start nothing then: a second token refresh
@@ -9,6 +9,8 @@
 	const { pathname, searchParams } = new URL(location.href);
 	const path = (searchParams.get('path') ?? '').replace(/^\/+|\/+$/g, '');
 	if (pathname !== '/browse' || !path) return;
+	// Qualified locations are parsed and routed by the app's authoritative remote-path parser.
+	if (path === '@remote' || path.startsWith('@remote/')) return;
 
 	const url = new URL(
 		`/api/v1/files/list/${path.split('/').map(encodeURIComponent).join('/')}`,

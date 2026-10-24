@@ -25,7 +25,12 @@
 
 	// Subscribe to the store reactively so UI updates when drive names change
 	const customName = $derived(settingsStore.current.driveNameOverrides[drive.name]);
-	const displayName = $derived(customName || drive.name);
+	const displayName = $derived(
+		customName ||
+			(drive.serverName
+				? `${drive.serverName} · ${drive.label ?? drive.name}`
+				: (drive.label ?? drive.name))
+	);
 
 	const progressVariant = $derived.by(() => {
 		if (drive.usedPct >= 90) return 'danger' as const;

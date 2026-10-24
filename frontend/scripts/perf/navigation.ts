@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { results } from './common';
 import type { Browser } from 'playwright';
 
 export async function verifyNavigation(
@@ -37,13 +38,59 @@ export async function verifyNavigation(
 
 		await page.goto(`${url}/browse?path=perf/Navigation`);
 		await page.getByText('Parent.txt', { exact: true }).waitFor();
+		const childRow = page
+			.locator('[data-file-row="true"]')
+			.filter({ has: page.getByText('Child', { exact: true }) });
+		for (const action of ['Pin to Favorites', 'Unpin from Favorites']) {
+			await childRow.click({ button: 'right' });
+			await page.getByRole('menuitem', { name: action, exact: true }).click();
+			await page
+				.getByRole('alert')
+				.filter({ hasText: /Child (pinned|unpinned) to favorites|Child unpinned from favorites/ })
+				.waitFor();
+			await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+		}
+
+		await page.getByText('Parent.txt', { exact: true }).click();
+		await page.keyboard.press('Home');
+		await page.keyboard.press('Shift+End');
+		assert.equal(await page.locator('[data-file-row="true"][aria-selected="true"]').count(), 2);
+		await page.keyboard.press('Control+Home');
+		assert.equal(await page.locator('[data-file-row="true"][aria-selected="true"]').count(), 2);
+		await page.keyboard.press('Alt+Enter');
+		await page.getByRole('complementary', { name: 'Selection details' }).waitFor();
+		await page.getByRole('button', { name: 'Close details', exact: true }).click();
+		await page.keyboard.press('F1');
+		await page.getByRole('dialog', { name: 'Keyboard shortcuts' }).waitFor();
+		await page.keyboard.press('Delete');
+		assert.equal(await page.getByRole('dialog').count(), 1);
+		await page.keyboard.press('Escape');
+		await page.keyboard.press('Control+f');
+		assert.equal(
+			await page
+				.getByRole('searchbox', { name: 'Search' })
+				.evaluate((input) => input === document.activeElement),
+			true
+		);
+		await page.getByTitle('Refresh', { exact: true }).focus();
+		await page.keyboard.press('Escape');
+		assert.equal(await page.locator('[data-file-row="true"][aria-selected="true"]').count(), 0);
+		await page.keyboard.press('Control+a');
+		assert.equal(await page.locator('[data-file-row="true"][aria-selected="true"]').count(), 2);
 		await page.getByText('Child', { exact: true }).click();
+		assert.equal(new URL(page.url()).searchParams.get('path'), 'perf/Navigation');
+		await page.getByText('Child', { exact: true }).dblclick();
+		await page.getByText('Nested.txt', { exact: true }).waitFor();
+		await page.goBack();
+		await page.getByText('Parent.txt', { exact: true }).waitFor();
+		await page.goForward();
 		await page.getByText('Nested.txt', { exact: true }).waitFor();
 		await page.getByTitle('Back', { exact: true }).click();
 		await page.getByText('Parent.txt', { exact: true }).waitFor();
 		await page.getByTitle('Forward', { exact: true }).click();
 		await page.getByText('Nested.txt', { exact: true }).waitFor();
 		await page.getByTitle('Up', { exact: true }).click();
+		await page.waitForURL((location) => location.searchParams.get('path') === 'perf/Navigation');
 		await page.getByText('Parent.txt', { exact: true }).waitFor();
 
 		const historyLength = await page.evaluate(() => history.length);
@@ -72,6 +119,15 @@ export async function verifyNavigation(
 		await page.getByText('No shared links.', { exact: true }).waitFor();
 		await page.reload();
 		await page.getByRole('button', { name: 'Choose Wallpaper', exact: true }).waitFor();
+		await page.locator('#file-open-behavior').selectOption('single-click');
+		await page.getByRole('button', { name: 'Save', exact: true }).click();
+		await page.getByRole('button', { name: 'Saved', exact: true }).waitFor();
+		await page.goto(`${url}/settings`);
+		assert.equal(await page.locator('#file-open-behavior').inputValue(), 'single-click');
+		await page.goto(`${url}/browse?path=perf/Navigation`);
+		await page.getByText('Child', { exact: true }).click();
+		await page.getByText('Nested.txt', { exact: true }).waitFor();
+		await page.goto(`${url}/settings`);
 
 		const created = await context.request.post(`${url}/api/v1/shares`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
@@ -103,6 +159,24 @@ export async function verifyNavigation(
 		console.log(
 			'PASS: login, folder history, search focus, sort, grid, settings, public share, reload and logout'
 		);
+	} catch (error) {
+		const page = context.pages()[0];
+		if (page) {
+			await page.screenshot({ path: join(results, 'navigation-failure.png') });
+			writeFileSync(
+				join(results, 'navigation-failure.json'),
+				JSON.stringify(
+					{
+						url: page.url(),
+						body: await page.locator('body').innerText(),
+						active: await page.evaluate(() => document.activeElement?.outerHTML)
+					},
+					null,
+					2
+				)
+			);
+		}
+		throw error;
 	} finally {
 		await context.close();
 	}

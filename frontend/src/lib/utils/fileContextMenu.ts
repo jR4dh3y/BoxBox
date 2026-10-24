@@ -1,10 +1,6 @@
-/**
- * File Context Menu Configuration
- * Centralized definition of context menu items for file operations
- */
-
 import type { ContextMenuItem } from '#lib/components/ui/ContextMenu.svelte';
 import type { FileInfo } from '#lib/api/files.js';
+import { isNativePath } from '#lib/api/desktop.js';
 import {
 	Copy,
 	Scissors,
@@ -17,10 +13,14 @@ import {
 	Info,
 	Pin,
 	PinOff,
-	Share2
+	Share2,
+	AppWindow,
+	PanelTop,
+	Terminal
 } from 'lucide-svelte';
 
 export type FileContextAction =
+	| 'open-in-new-tab'
 	| 'new-file'
 	| 'new-folder'
 	| 'copy'
@@ -32,7 +32,10 @@ export type FileContextAction =
 	| 'delete'
 	| 'download'
 	| 'share'
-	| 'properties';
+	| 'properties'
+	| 'open-with'
+	| 'open-terminal'
+	| 'delete-permanently';
 
 export interface FileContextMenuOptions {
 	/** Selected items for the context menu */
@@ -43,15 +46,15 @@ export interface FileContextMenuOptions {
 	favoritePaths?: Set<string>;
 	/** Whether new files/folders can be created in the current location */
 	canCreate?: boolean;
+	path?: string;
 	/** Whether creation actions should be included in this menu */
 	includeCreateActions?: boolean;
 }
 
-/**
- * Get context menu items for file operations
- * Configures disabled states based on selection
- */
-export function getFileContextMenuItems(options: FileContextMenuOptions): ContextMenuItem[] {
+type FileContextMenuItem = ContextMenuItem<FileContextAction>;
+
+/** Menu entries for the clicked items, or for the folder background when `items` is empty. */
+export function getFileContextMenuItems(options: FileContextMenuOptions): FileContextMenuItem[] {
 	const {
 		items,
 		canPaste,
@@ -59,58 +62,98 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 		canCreate = false,
 		includeCreateActions = true
 	} = options;
-	const hasSelection = items.length > 0;
+	const desktop = isNativePath(items[0]?.path ?? options.path ?? '');
 	const hasMultiple = items.length > 1;
-	const hasFolder = items.some((i) => i.isDir);
 	const singleFile = items.length === 1 && !items[0].isDir;
-	const singleItem = items.length === 1;
 	const singleFolder = !hasMultiple && items[0]?.isDir ? items[0] : null;
-	const isFavorite = singleFolder ? favoritePaths.has(singleFolder.path) : false;
-	const createItems: ContextMenuItem[] = includeCreateActions
-		? [
-				{ id: 'new-file', label: 'New File', icon: FilePlus, disabled: !canCreate },
-				{ id: 'new-folder', label: 'New Folder', icon: FolderPlus, disabled: !canCreate },
-				{ id: 'separator-create', label: '', separator: true }
-			]
-		: [];
+	const paste: FileContextMenuItem = {
+		id: 'paste',
+		label: 'Paste',
+		icon: ClipboardPaste,
+		shortcut: 'Ctrl+V',
+		disabled: !canPaste
+	};
+	const menu: FileContextMenuItem[] = [];
 
-	if (!hasSelection) {
-		return [
-			...createItems,
-			{ id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl+V', disabled: !canPaste }
-		];
+	if (includeCreateActions) {
+		menu.push(
+			{ id: 'new-file', label: 'New File', icon: FilePlus, disabled: !canCreate },
+			{ id: 'new-folder', label: 'New Folder', icon: FolderPlus, disabled: !canCreate },
+			'separator'
+		);
 	}
 
-	return [
-		...createItems,
+	if (items.length === 0) {
+		if (desktop) menu.push({ id: 'open-terminal', label: 'Open Terminal Here', icon: Terminal });
+		menu.push(paste);
+		return menu;
+	}
+
+	// Only actions that apply to this selection; a greyed-out entry never becomes usable here.
+	if (singleFolder) {
+		menu.push({ id: 'open-in-new-tab', label: 'Open in New Tab', icon: PanelTop });
+		if (desktop) menu.push({ id: 'open-terminal', label: 'Open Terminal Here', icon: Terminal });
+		menu.push('separator');
+	} else if (desktop && singleFile) {
+		menu.push({ id: 'open-with', label: 'Open With…', icon: AppWindow }, 'separator');
+	}
+	menu.push(
 		{ id: 'copy', label: 'Copy', icon: Copy, shortcut: 'Ctrl+C' },
-		{ id: 'cut', label: 'Cut', icon: Scissors, shortcut: 'Ctrl+X' },
-		{ id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl+V', disabled: !canPaste },
-		...(singleFolder
-			? [
-					{
-						id: isFavorite ? 'unpin' : 'pin',
-						label: isFavorite ? 'Unpin from Favorites' : 'Pin to Favorites',
-						icon: isFavorite ? PinOff : Pin
-					}
-				]
-			: []),
-		{ id: 'separator-1', label: '', separator: true },
-		{ id: 'rename', label: 'Rename', icon: Pencil, shortcut: 'F2', disabled: hasMultiple },
-		{ id: 'delete', label: 'Delete', icon: Trash2, shortcut: 'Del' },
-		{ id: 'separator-2', label: '', separator: true },
+		{ id: 'cut', label: 'Cut', icon: Scissors, shortcut: 'Ctrl+X', disabled: !canCreate },
+		paste
+	);
+	if (singleFolder) {
+		const pinned = favoritePaths.has(singleFolder.path);
+		menu.push(
+			pinned
+				? { id: 'unpin', label: 'Unpin from Favorites', icon: PinOff }
+				: { id: 'pin', label: 'Pin to Favorites', icon: Pin }
+		);
+	}
+	menu.push(
+		'separator',
 		{
-			id: 'download',
-			label: singleFolder ? 'Download as ZIP' : 'Download',
-			icon: Download,
-			disabled: hasFolder && !singleFolder
+			id: 'rename',
+			label: 'Rename',
+			icon: Pencil,
+			shortcut: 'F2',
+			disabled: hasMultiple || !canCreate
 		},
 		{
-			id: 'share',
-			label: singleFile ? 'Share file…' : 'Share folder…',
-			icon: Share2,
-			disabled: !singleItem
-		},
-		{ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple }
-	];
+			id: 'delete',
+			label: desktop ? 'Move to Trash' : 'Delete',
+			icon: Trash2,
+			shortcut: 'Del',
+			disabled: !canCreate
+		}
+	);
+	if (desktop) {
+		menu.push({
+			id: 'delete-permanently',
+			label: 'Delete Permanently…',
+			icon: Trash2,
+			shortcut: 'Shift+Del',
+			disabled: !canCreate
+		});
+	}
+	menu.push('separator');
+	// Desktop files are already on this computer, and a share link would point at a private local port.
+	if (!desktop) {
+		menu.push(
+			{
+				id: 'download',
+				label: singleFolder ? 'Download as ZIP' : 'Download',
+				icon: Download,
+				disabled: items.some((item) => item.isDir) && !singleFolder
+			},
+			{
+				id: 'share',
+				label: singleFile ? 'Share file…' : 'Share folder…',
+				icon: Share2,
+				disabled: items.length !== 1
+			}
+		);
+	}
+	menu.push({ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple });
+	return menu;
 }

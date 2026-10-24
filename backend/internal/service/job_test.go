@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -164,11 +165,11 @@ func (s *synchronizedFS) OpenFile(name string, flag int, perm os.FileMode) (afer
 	return file, nil
 }
 
-func (s *synchronizedFS) Rename(oldpath, newpath string) error {
+func (s *synchronizedFS) RenameNoReplace(oldpath, newpath string) error {
 	if s.failRename {
-		return errors.New("cross-device link")
+		return syscall.EXDEV
 	}
-	return s.FS.Rename(oldpath, newpath)
+	return s.FS.RenameNoReplace(oldpath, newpath)
 }
 
 type hookedFile struct {
