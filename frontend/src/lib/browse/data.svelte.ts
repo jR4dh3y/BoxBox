@@ -1,3 +1,4 @@
+import { untrack } from 'svelte';
 import type { BrowseSelection } from './selection.svelte';
 import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 import {
@@ -5,6 +6,8 @@ import {
 	listRoots,
 	search,
 	type DriveStatsResponse,
+	type MountPoint,
+	type DriveStats,
 	type FileInfo,
 	type RootsResponse,
 	type SearchResponse
@@ -66,8 +69,10 @@ export function useBrowseData(
 	const inFolder = $derived(location.page === 'files' && location.path !== '');
 	// Pages load their own data; reloading one remounts it.
 	let pageRevision = $state(0);
-	const roots = $derived(rootsQuery.data?.roots ?? []);
-	const drives = $derived(driveStatsQuery.data?.drives ?? []);
+	let remoteRoots = $state.raw<MountPoint[]>([]);
+	let remoteStats = $state.raw<DriveStats[]>([]);
+	const roots = $derived([...(rootsQuery.data?.roots ?? []), ...remoteRoots]);
+	const drives = $derived([...(driveStatsQuery.data?.drives ?? []), ...remoteStats]);
 	const directoryItems = $derived(directoryQuery.data?.items ?? []);
 	const searchResults = $derived(searchQueryResult.data?.results ?? []);
 
@@ -79,17 +84,28 @@ export function useBrowseData(
 			: sortFiles(visible, location.sortBy, location.sortDir);
 	});
 
+	let confirmed: { path: string; timestamp: number; items: readonly FileInfo[] } | undefined;
 	$effect(() => {
 		// Cached data and failed refreshes cannot establish that a selected file vanished.
 		if (
-			location.isSearchActive ||
 			directoryQuery.isFetching ||
 			!directoryQuery.isSuccess ||
 			!directoryQuery.isFetchedAfterMount
 		)
 			return;
-		void directoryQuery.dataUpdatedAt;
-		selection.retain(directoryItems);
+		const timestamp = directoryQuery.dataUpdatedAt;
+		const items = directoryItems;
+		const path = directoryQuery.data.path;
+		untrack(() => {
+			if (
+				confirmed?.path === path &&
+				confirmed.timestamp === timestamp &&
+				confirmed.items === items
+			)
+				return;
+			confirmed = { path, timestamp, items };
+			if (!location.isSearchActive) selection.retain(items, path);
+		});
 	});
 
 	const fileListError = $derived.by(() => {
@@ -122,6 +138,10 @@ export function useBrowseData(
 	});
 
 	return {
+		setRemoteCatalog(catalog: { roots: MountPoint[]; drives: DriveStats[] }) {
+			remoteRoots = catalog.roots;
+			remoteStats = catalog.drives;
+		},
 		get roots() {
 			return roots;
 		},
@@ -211,7 +231,7 @@ export function useBrowseData(
 		reload() {
 			if (location.page !== 'files') pageRevision += 1;
 			else if (isAtRoot) {
-				void rootsQuery.refetch();
+				void queryClient.invalidateQueries({ queryKey: fileQueryKeys.roots() });
 				void driveStatsQuery.refetch();
 			} else if (location.isSearchActive) void searchQueryResult.refetch();
 			else void directoryQuery.refetch();

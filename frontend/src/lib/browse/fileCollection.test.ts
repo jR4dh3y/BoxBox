@@ -42,6 +42,7 @@ function setup(columns: number) {
 	let selected = new Set<string>();
 	const view: FileCollectionView & { focusedPath: string | null } = {
 		columns,
+		pageSize: columns * 10,
 		focusedPath: null,
 		focus: async (index) => {
 			focused.push(index);

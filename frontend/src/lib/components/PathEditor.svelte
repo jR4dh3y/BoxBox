@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Folder, Home, Loader2 } from 'lucide-svelte';
 	import { onDestroy, onMount, tick } from 'svelte';
-	import { listDirectory, listRoots } from '#lib/api/files.js';
+	import { listDirectory, type MountPoint } from '#lib/api/files.js';
 	import { suggestedDirectories } from '#lib/browse/pathSuggestions.js';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import { parseRemotePath } from '#lib/api/remotePaths.js';
@@ -20,6 +20,7 @@
 
 	interface Props {
 		pathSegments?: string[];
+		roots?: MountPoint[];
 		onNavigate?: (path: string) => void;
 		includeHiddenSuggestions?: boolean;
 		onClose: () => void;
@@ -27,6 +28,7 @@
 
 	let {
 		pathSegments = [],
+		roots = [],
 		onNavigate,
 		includeHiddenSuggestions = false,
 		onClose
@@ -217,9 +219,8 @@
 			}));
 	}
 
-	async function fetchRootSuggestions(prefix: string): Promise<PathSuggestion[]> {
-		const response = await listRoots();
-		return filterSuggestions(response.roots, '', prefix);
+	function rootSuggestions(prefix: string): PathSuggestion[] {
+		return filterSuggestions(roots, '', prefix);
 	}
 
 	async function fetchChildSuggestions(
@@ -241,7 +242,7 @@
 		try {
 			const nextSuggestions = parentPath
 				? await fetchChildSuggestions(parentPath, prefix)
-				: await fetchRootSuggestions(prefix);
+				: await rootSuggestions(prefix);
 
 			if (requestId !== suggestionRequestId) return;
 

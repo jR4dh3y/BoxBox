@@ -166,3 +166,39 @@ func TestDesktopRemoteRoutesFailClosedAndKeepNativeRoutes(t *testing.T) {
 		t.Fatalf("native route lost: %d", w.Code)
 	}
 }
+
+func TestDesktopPreferencesGateAndNewOrigin(t *testing.T) {
+	cfg := &model.ServerConfig{DataDir: t.TempDir()}
+	token := strings.Repeat("p", 64)
+	for index, address := range []string{"127.0.0.1:12345", "127.0.0.1:23456"} {
+		router := desktopHandler(desktopRoutes(http.NotFoundHandler(), cfg), address, token)
+		request := func(method, body, origin string, cookie bool) *httptest.ResponseRecorder {
+			req := httptest.NewRequest(method, "http://"+address+"/api/v1/desktop/preferences", strings.NewReader(body))
+			if origin != "" {
+				req.Header.Set("Origin", origin)
+			}
+			if cookie {
+				req.AddCookie(&http.Cookie{Name: desktopCookie, Value: token})
+			}
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			return rec
+		}
+		if rec := request("GET", "", "", false); rec.Code != 401 {
+			t.Fatalf("unguarded preferences: %d", rec.Code)
+		}
+		if rec := request("PUT", `{}`, "https://other.example", true); rec.Code != 403 {
+			t.Fatalf("cross-origin preferences: %d", rec.Code)
+		}
+		if index == 0 {
+			if rec := request("PUT", `{"compactMode":true,"favoriteFolders":[{"name":"Saved","path":"home/Saved"}]}`, "http://"+address, true); rec.Code != 204 {
+				t.Fatalf("save preferences: %d %s", rec.Code, rec.Body.String())
+			}
+		} else {
+			rec := request("GET", "", "http://"+address, true)
+			if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"compactMode":true`) || !strings.Contains(rec.Body.String(), "home/Saved") {
+				t.Fatalf("preferences lost at new origin: %d %s", rec.Code, rec.Body.String())
+			}
+		}
+	}
+}

@@ -4,7 +4,7 @@
 	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
 	import { getFileTypeDescription, getFileIcon } from '#lib/utils/fileTypes.js';
-	import { SvelteSet } from 'svelte/reactivity';
+	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
 	import { untrack } from 'svelte';
 	import Spinner from '#lib/components/ui/Spinner.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
@@ -20,6 +20,8 @@
 	let {
 		items = [],
 		path = '',
+		viewKey,
+		scrollPositions = new SvelteMap<string, number>(),
 		emptyMessage = 'This folder is empty',
 		selectedPaths = new SvelteSet<string>(),
 		isLoading = false,
@@ -39,6 +41,8 @@
 	}: {
 		items?: FileInfo[];
 		path?: string;
+		viewKey?: string;
+		scrollPositions?: Map<string, number>;
 		emptyMessage?: string;
 		selectedPaths?: Set<string>;
 		isLoading?: boolean;
@@ -67,6 +71,8 @@
 	);
 	const virtual = createVirtualScroll(() => ({
 		count: items.length,
+		viewKey: JSON.stringify(['FileGrid', viewKey ?? path]),
+		positions: scrollPositions,
 		cell,
 		rowGap: cell.gap,
 		offsetTop: cell.padding,

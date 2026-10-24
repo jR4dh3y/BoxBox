@@ -353,20 +353,26 @@ describe('transport facade at HTTP boundary', () => {
 		);
 	});
 
-	test('aggregates roots and stats, dedupes catalog, isolates offline servers and hides real remote paths', async () => {
+	test('local catalogs do not probe remote hosts; explicit remote catalogs qualify paths', async () => {
 		const before = catalogCalls;
 		const [roots, stats] = await Promise.all([listRoots(), getDriveStats()]);
-		assert.equal(catalogCalls - before, 1);
-		assert.equal(roots.roots.length, 2);
+		assert.equal(catalogCalls, before);
+		assert.equal(roots.roots.length, 1);
 		assert.equal(roots.roots[0].path, '/private/real/path');
-		assert.equal(roots.roots[1].name, ref('media'));
-		assert.equal(roots.roots[1].path, ref('media'));
-		assert.equal(roots.roots[1].serverName, 'Home');
-		assert.equal(stats.drives[1].path, ref('media'));
-		assert.equal(stats.drives[1].device, undefined);
-		assert.equal(stats.drives[1].mountPoint, undefined);
-		await listRemoteServers();
-		assert.equal(catalogCalls - before, 2, 'subsequent loads revalidate the catalog');
+		assert.equal(stats.drives.length, 1);
+		const servers = await listRemoteServers();
+		const server = servers.find((server) => server.id === ID);
+		assert.ok(server);
+		const [remoteRoots, remoteStats] = await Promise.all([
+			listRoots(server),
+			getDriveStats(server)
+		]);
+		assert.equal(remoteRoots.roots[0].name, ref('media'));
+		assert.equal(remoteRoots.roots[0].path, ref('media'));
+		assert.equal(remoteRoots.roots[0].serverName, 'Home');
+		assert.equal(remoteStats.drives[0].path, ref('media'));
+		assert.equal(remoteStats.drives[0].device, undefined);
+		assert.equal(remoteStats.drives[0].mountPoint, undefined);
 	});
 
 	test('qualifies listing/stat/search/create results and strips only source prefixes from requests', async () => {

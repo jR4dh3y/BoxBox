@@ -331,3 +331,21 @@ func TestDesktopServerPersistenceFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestDesktopGatewayThumbnailVersion(t *testing.T) {
+	servers, server, _ := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/box/api/v1/stream/thumbnail/media/photo.png" || r.URL.Query().Get("v") != "mtime-size" {
+			t.Errorf("thumbnail request lost path or version: %s", r.URL)
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Write([]byte("thumbnail"))
+	})
+	response, err := servers.Forward(context.Background(), server.ID, http.MethodGet, "/stream/thumbnail/media/photo.png", url.Values{"v": {"mtime-size"}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("thumbnail status: %d", response.StatusCode)
+	}
+}

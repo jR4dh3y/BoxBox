@@ -3,7 +3,7 @@
 	import type { SortField, SortDir } from '#lib/types/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
 	import { getFileTypeDescription, getFileIcon } from '#lib/utils/fileTypes.js';
-	import { SvelteSet } from 'svelte/reactivity';
+	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
 	import { untrack } from 'svelte';
 	import Spinner from '#lib/components/ui/Spinner.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
@@ -20,6 +20,8 @@
 	let {
 		items = [],
 		path = '',
+		viewKey,
+		scrollPositions = new SvelteMap<string, number>(),
 		sortBy = 'name',
 		sortDir = 'asc',
 		emptyMessage = 'This folder is empty',
@@ -42,6 +44,8 @@
 	}: {
 		items?: FileInfo[];
 		path?: string;
+		viewKey?: string;
+		scrollPositions?: Map<string, number>;
 		sortBy?: SortField;
 		sortDir?: SortDir;
 		emptyMessage?: string;
@@ -70,6 +74,8 @@
 	let headerHeight = $state(0);
 	const virtual = createVirtualScroll(() => ({
 		count: items.length,
+		viewKey: JSON.stringify(['FileList', viewKey ?? path]),
+		positions: scrollPositions,
 		rowGap: 0,
 		offsetTop: headerHeight,
 		stickyTop: headerHeight,

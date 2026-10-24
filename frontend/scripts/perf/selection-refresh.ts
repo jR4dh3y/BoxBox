@@ -43,6 +43,51 @@ export async function verifySelectionRefresh(
 		await page.getByText('1 of 1 selected', { exact: true }).waitFor();
 		assert.equal(await page.getByText('gone.txt', { exact: true }).count(), 0);
 		assert.equal(await page.locator('[data-file-row="true"][aria-selected="true"]').count(), 1);
+		writeFileSync(join(folder, 'search-only.txt'), 'fixture\n');
+		const search = page.getByRole('searchbox', { name: 'Search', exact: true });
+		await search.fill('search-only');
+		await page.getByText('search-only.txt', { exact: true }).click();
+		await search.fill('');
+		await page.getByText('kept.txt', { exact: true }).waitFor();
+		assert.equal(
+			await page.getByText('1 of 1 selected', { exact: true }).count(),
+			1,
+			'leaving search does not prune against an older directory response'
+		);
+		await page.getByTitle('Refresh', { exact: true }).click();
+		await page.getByText('search-only.txt', { exact: true }).waitFor();
+		assert.equal(await page.locator('[data-file-row="true"][aria-selected="true"]').count(), 1);
+		mkdirSync(join(folder, 'Child'), { recursive: true });
+		writeFileSync(join(folder, 'Child', 'nested-search.txt'), 'fixture\n');
+		await search.fill('nested-search');
+		await page.getByText('nested-search.txt', { exact: true }).click();
+		await search.fill('');
+		await page.getByText('kept.txt', { exact: true }).waitFor();
+		const refreshed = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === '/api/v1/files/list/perf/Selection'
+		);
+		await page.getByTitle('Refresh', { exact: true }).click();
+		await refreshed;
+		await page.getByText('Child', { exact: true }).waitFor();
+		await search.fill('nested-search');
+		await page.getByText('nested-search.txt', { exact: true }).waitFor();
+		assert.equal(
+			await page.locator('[data-file-row="true"][aria-selected="true"]').count(),
+			1,
+			'refreshing the parent cannot prune a selected recursive search result'
+		);
+		writeFileSync(join(folder, 'canonical.txt'), 'fixture\n');
+		await page.goto(`${url}/browse?${new URLSearchParams({ path: 'perf/./Selection' })}`);
+		await page.getByText('canonical.txt', { exact: true }).click();
+		unlinkSync(join(folder, 'canonical.txt'));
+		await page.getByTitle('Refresh', { exact: true }).click();
+		await page.getByText('canonical.txt', { exact: true }).waitFor({ state: 'detached' });
+		assert.equal(
+			await page.locator('[data-file-row="true"][aria-selected="true"]').count(),
+			0,
+			'confirmed canonical paths prune deleted selections for aliased folder URLs'
+		);
+
 		assert.deepEqual(errors, []);
 		console.log(
 			'PASS: failed refresh preserves selection; confirmed refresh prunes deleted files and keeps existing selection'

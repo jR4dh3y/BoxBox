@@ -20,12 +20,13 @@ import {
 	isLocalWallpaperReference
 } from '#lib/utils/wallpaperStorage.js';
 
+import { beginShareWallpaperLoginSync, shareWallpaperSignal } from './wallpaperSession';
+export { resetShareWallpaperLoginSync } from './wallpaperSession';
+
 // Browser settings are not per account, so remember whose wallpaper this is.
 const OWNER_KEY = 'boxbox_wallpaper_owner';
 
 let queue: Promise<void> = Promise.resolve();
-let loginSyncStarted = false;
-let sessionController = new AbortController();
 
 function enqueue(task: () => Promise<void>): Promise<void> {
 	const run = queue.then(task);
@@ -39,9 +40,8 @@ function enqueue(task: () => Promise<void>): Promise<void> {
  * says nothing about the user's choice elsewhere.
  */
 export function syncShareWallpaperOnLogin(): Promise<void> {
-	if (loginSyncStarted) return Promise.resolve();
-	loginSyncStarted = true;
-	const { signal } = sessionController;
+	const signal = beginShareWallpaperLoginSync();
+	if (!signal) return Promise.resolve();
 	return enqueue(async () => {
 		signal.throwIfAborted();
 		const user = currentUsername();
@@ -56,16 +56,9 @@ export function syncShareWallpaperOnLogin(): Promise<void> {
 	});
 }
 
-/** Allow the next authenticated session to sync, including after expiry. */
-export function resetShareWallpaperLoginSync(): void {
-	sessionController.abort();
-	sessionController = new AbortController();
-	loginSyncStarted = false;
-}
-
 /** After saving settings: make the server copy match exactly, including removal. */
 export function publishShareWallpaper(): Promise<void> {
-	const { signal } = sessionController;
+	const signal = shareWallpaperSignal();
 	return enqueue(async () => {
 		signal.throwIfAborted();
 		const user = currentUsername();

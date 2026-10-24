@@ -5,7 +5,6 @@
 import { api, buildUrl } from './client';
 import { array, boolean, record, string, optionalString } from './parse';
 import {
-	collectRemote,
 	number,
 	parseRemotePath,
 	pathEndpoint,
@@ -13,6 +12,7 @@ import {
 	remoteSource,
 	sameSource,
 	sourceEndpoint,
+	type RemoteServer,
 	type PathReference
 } from './remotePaths';
 import { parseDirectory } from './directory';
@@ -183,38 +183,17 @@ function parseStats(value: unknown, source: PathReference, serverName?: string):
  * List all configured mount points (roots)
  * GET /api/v1/files
  */
-export async function listRoots(): Promise<RootsResponse> {
-	const [local, remote] = await Promise.all([
-		api.get<unknown>('/files').then((value) => parseRoots(value, { kind: 'local', path: '' })),
-		collectRemote(async (server) =>
-			parseRoots(
-				await api.get<unknown>(sourceEndpoint(remoteSource(server), '/files')),
-				remoteSource(server),
-				server.name
-			)
-		)
-	]);
-	return { roots: [...local, ...remote] };
+export async function listRoots(server?: RemoteServer): Promise<RootsResponse> {
+	const source: PathReference = server ? remoteSource(server) : { kind: 'local', path: '' };
+	const value = await api.get<unknown>(sourceEndpoint(source, '/files'));
+	return { roots: parseRoots(value, source, server?.name) };
 }
 
-/**
- * Get drive statistics for all mount points
- * GET /api/v1/files/stats
- */
-export async function getDriveStats(): Promise<DriveStatsResponse> {
-	const [local, remote] = await Promise.all([
-		api
-			.get<unknown>('/files/stats')
-			.then((value) => parseStats(value, { kind: 'local', path: '' })),
-		collectRemote(async (server) =>
-			parseStats(
-				await api.get<unknown>(sourceEndpoint(remoteSource(server), '/files/stats')),
-				remoteSource(server),
-				server.name
-			)
-		)
-	]);
-	return { drives: [...local, ...remote] };
+/** Statistics for one host. Remote hosts never hold up the local catalog. */
+export async function getDriveStats(server?: RemoteServer): Promise<DriveStatsResponse> {
+	const source: PathReference = server ? remoteSource(server) : { kind: 'local', path: '' };
+	const value = await api.get<unknown>(sourceEndpoint(source, '/files/stats'));
+	return { drives: parseStats(value, source, server?.name) };
 }
 
 function listEndpoint(path: string): string {

@@ -1,7 +1,9 @@
 /**
- * User preferences, kept in localStorage; drive names are also stored on the server
+ * User preferences use browser storage on the web and private backend storage on desktop.
  */
 
+import { isLocalDesktop } from '#lib/api/desktop.js';
+import { toastStore } from './toast.svelte';
 import { settingsStorage } from '#lib/utils/storage.js';
 import {
 	getDriveNames,
@@ -17,7 +19,10 @@ import {
 import { normalizeFileOpenBehavior, type FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
 import {
 	isInlineWallpaperDataUrl,
-	saveLocalWallpaperDataUrl
+	saveLocalWallpaperDataUrl,
+	isLocalWallpaperReference,
+	getLocalWallpaperBlob,
+	dataUrlToBlob
 } from '#lib/utils/wallpaperStorage.js';
 
 export interface UserSettings {
@@ -81,7 +86,11 @@ function loadSettings(): UserSettings {
 }
 
 function saveSettings(settings: UserSettings): void {
-	settingsStorage.set(settings);
+	try {
+		settingsStorage.set(settings);
+	} catch (error) {
+		if (!isLocalDesktop()) throw error;
+	}
 }
 
 async function loadDriveNames(): Promise<Record<string, string>> {
@@ -99,6 +108,18 @@ async function loadDriveNames(): Promise<Record<string, string>> {
 
 async function migrateInlineBackgroundImage(settings: UserSettings): Promise<UserSettings> {
 	const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
+	if (
+		backgroundImage &&
+		isLocalDesktop() &&
+		(isInlineWallpaperDataUrl(backgroundImage) || isLocalWallpaperReference(backgroundImage))
+	) {
+		const image = isInlineWallpaperDataUrl(backgroundImage)
+			? dataUrlToBlob(backgroundImage)
+			: await getLocalWallpaperBlob(backgroundImage);
+		if (!image) throw new Error('The saved desktop wallpaper could not be read.');
+		const { saveDesktopWallpaper } = await import('#lib/api/desktopPreferences.js');
+		return { ...settings, backgroundImage: await saveDesktopWallpaper(image) };
+	}
 	if (!backgroundImage || !isInlineWallpaperDataUrl(backgroundImage)) {
 		return settings;
 	}
@@ -115,11 +136,27 @@ async function migrateInlineBackgroundImage(settings: UserSettings): Promise<Use
 }
 
 class SettingsStore {
+	private desktopLoaded = false;
+	private saving: Promise<void> = Promise.resolve();
 	current = $state.raw<UserSettings>(loadSettings());
 
 	/** Call after sign-in: the drive names come from an authenticated endpoint. */
 	async initialize(): Promise<void> {
-		const migrated = await migrateInlineBackgroundImage(this.current);
+		if (isLocalDesktop() && !this.desktopLoaded) {
+			try {
+				const { loadDesktopPreferences } = await import('#lib/api/desktopPreferences.js');
+				this.current = (await loadDesktopPreferences(defaultSettings)) ?? this.current;
+				this.desktopLoaded = true;
+			} catch {
+				toastStore.error(
+					'Desktop preferences could not load. Reload to retry. Changes will not survive restart.'
+				);
+			}
+		}
+		const migrated = await migrateInlineBackgroundImage(this.current).catch(() => {
+			toastStore.error('The saved wallpaper could not be restored. Choose it again in Settings.');
+			return this.current;
+		});
 		if (migrated !== this.current) {
 			try {
 				saveSettings(migrated);
@@ -136,11 +173,30 @@ class SettingsStore {
 		} catch {
 			// Initialization should not fail auth because local preference persistence is full.
 		}
+		if (this.desktopLoaded) {
+			this.set(this.current);
+			await this.flush().catch(() => {});
+		}
+	}
+
+	flush(): Promise<void> {
+		return this.saving;
 	}
 
 	set(settings: UserSettings): void {
 		saveSettings(settings);
 		this.current = settings;
+		if (isLocalDesktop() && this.desktopLoaded) {
+			this.saving = this.saving
+				.catch(() => {})
+				.then(async () => {
+					const { saveDesktopPreferences } = await import('#lib/api/desktopPreferences.js');
+					await saveDesktopPreferences(settings);
+				});
+			void this.saving.catch(() => {
+				toastStore.error('Desktop preferences could not be saved.');
+			});
+		}
 	}
 
 	reset(): void {

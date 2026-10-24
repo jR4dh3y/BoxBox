@@ -65,7 +65,8 @@ export function fileNavigationIndex(
 	key: string,
 	index: number,
 	count: number,
-	columns = 1
+	columns = 1,
+	pageSize = 10
 ): number | null {
 	if (count === 0 || index < 0) return null;
 	switch (key) {
@@ -77,6 +78,10 @@ export function fileNavigationIndex(
 			return Math.min(count - 1, index + 1);
 		case 'ArrowLeft':
 			return Math.max(0, index - 1);
+		case 'PageDown':
+			return Math.min(count - 1, index + pageSize);
+		case 'PageUp':
+			return Math.max(0, index - pageSize);
 		case 'Home':
 			return 0;
 		case 'End':

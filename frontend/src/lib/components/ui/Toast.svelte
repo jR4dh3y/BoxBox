@@ -43,6 +43,7 @@
 				]}"
 				in:fly={{ x: 100, duration: 200 }}
 				out:fade={{ duration: 150 }}
+				{@attach () => toastStore.startLifetime(toast.id)}
 				role="alert"
 			>
 				<!-- Icon -->
