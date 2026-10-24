@@ -10,8 +10,38 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    name: Detect affected code
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      backend: ${{ steps.scope.outputs.backend }}
+      frontend: ${{ steps.scope.outputs.frontend }}
+      website: ${{ steps.scope.outputs.website }}
+      desktop: ${{ steps.scope.outputs.desktop }}
+      docker: ${{ steps.scope.outputs.docker }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Test CI dependency selection
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+      - name: Select affected jobs
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 .github/scripts/ci_scope.py
+
   backend:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.backend == 'true') }}
     name: Backend Go tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -60,6 +90,8 @@ jobs:
           retention-days: 14
 
   frontend:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.frontend == 'true') }}
     name: Frontend check and build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -134,6 +166,8 @@ jobs:
           retention-days: 14
 
   website:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.website == 'true') }}
     name: Website build
     runs-on: ubuntu-latest
 
@@ -153,6 +187,8 @@ jobs:
         run: bun run build
 
   docker:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.docker == 'true') }}
     name: Docker build validation
     runs-on: ubuntu-latest
 
