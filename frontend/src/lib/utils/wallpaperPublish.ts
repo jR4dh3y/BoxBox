@@ -42,7 +42,11 @@ export async function retryPendingWallpaper(signal: AbortSignal): Promise<boolea
 	return true;
 }
 
-export async function publishWallpaper(signal: AbortSignal, imageChanged: boolean): Promise<void> {
+export async function publishWallpaper(
+	signal: AbortSignal,
+	imageChanged: boolean,
+	displayChanged = false
+): Promise<void> {
 	signal.throwIfAborted();
 	const user = currentUsername();
 	if (!user) return;
@@ -59,7 +63,7 @@ export async function publishWallpaper(signal: AbortSignal, imageChanged: boolea
 		}
 	}
 	if (backgroundImage) {
-		await reconcile(backgroundImage, signal, imageChanged);
+		await reconcile(backgroundImage, signal, imageChanged, displayChanged);
 	} else if (imageChanged && (await getWallpaper(signal))) {
 		signal.throwIfAborted();
 		await deleteWallpaper(signal);
@@ -67,11 +71,20 @@ export async function publishWallpaper(signal: AbortSignal, imageChanged: boolea
 	signal.throwIfAborted();
 	if (settingsStore.wallpaperRevision === revision && imageChanged) {
 		pendingImages.delete(user);
-		storage.remove(pendingKey(user));
+		try {
+			storage.remove(pendingKey(user));
+		} catch {
+			// Publication succeeded even when browser persistence is unavailable.
+		}
 	}
 }
 
-async function reconcile(backgroundImage: string, signal: AbortSignal, imageChanged: boolean) {
+async function reconcile(
+	backgroundImage: string,
+	signal: AbortSignal,
+	imageChanged: boolean,
+	displayChanged: boolean
+) {
 	const display = {
 		mode: normalizeBackgroundImageMode(settingsStore.current.backgroundImageMode),
 		frostedGlass: settingsStore.current.frostedGlass
@@ -93,10 +106,13 @@ async function reconcile(backgroundImage: string, signal: AbortSignal, imageChan
 			? hash === stored.sha256
 			: stored.source === backgroundImage ||
 				backgroundImage === toLocalWallpaperReference(stored.sha256));
-	if (!sameImage) {
-		if (!imageChanged) return;
+	if (!sameImage && imageChanged) {
 		await uploadWallpaper(image, display, backgroundImage, signal);
-	} else if (stored.mode !== display.mode || stored.frostedGlass !== display.frostedGlass) {
+	} else if (
+		stored &&
+		(sameImage || displayChanged) &&
+		(stored.mode !== display.mode || stored.frostedGlass !== display.frostedGlass)
+	) {
 		await updateWallpaperDisplay(display, signal);
 	}
 }

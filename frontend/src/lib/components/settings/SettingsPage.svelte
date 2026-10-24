@@ -191,7 +191,8 @@
 		try {
 			await setApplyProgress(15, 'Validating settings...');
 
-			const previousBackgroundImage = settingsStore.current.backgroundImage;
+			const previous = settingsStore.current;
+			const previousBackgroundImage = previous.backgroundImage;
 			let backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
 			if (backgroundImage && isInlineWallpaperDataUrl(backgroundImage)) {
 				await setApplyProgress(35, 'Saving wallpaper locally...');
@@ -213,7 +214,11 @@
 			await setApplyProgress(70, 'Updating wallpaper on your share pages...');
 			let shareWallpaperError: string | null = null;
 			try {
-				await publishShareWallpaper(previousBackgroundImage !== backgroundImage);
+				await publishShareWallpaper(
+					previousBackgroundImage !== backgroundImage,
+					previous.backgroundImageMode !== nextSettings.backgroundImageMode ||
+						previous.frostedGlass !== nextSettings.frostedGlass
+				);
 			} catch (error) {
 				shareWallpaperError = error instanceof Error ? error.message : String(error);
 			}

@@ -64,12 +64,12 @@ export function resetShareWallpaperLoginSync(): void {
 }
 
 /** Change image bytes only for an explicit edit or a pending publication. */
-export function publishShareWallpaper(imageChanged = false): Promise<void> {
+export function publishShareWallpaper(imageChanged = false, displayChanged = false): Promise<void> {
 	const { signal } = sessionController;
 	return enqueue(async () => {
 		signal.throwIfAborted();
 		const { publishWallpaper } = await import('./wallpaperPublish.js');
 		signal.throwIfAborted();
-		await publishWallpaper(signal, imageChanged);
+		await publishWallpaper(signal, imageChanged, displayChanged);
 	});
 }

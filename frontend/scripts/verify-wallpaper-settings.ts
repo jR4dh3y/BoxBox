@@ -30,7 +30,8 @@ try {
 		'storage-full',
 		'new-image',
 		'stale-cache',
-		'pending-upload'
+		'pending-upload',
+		'blocked-cleanup'
 	]) {
 		const context = await browser.newContext();
 		try {
@@ -127,7 +128,11 @@ try {
 			await page.goto(`${server.url}/settings`);
 			await pending;
 			try {
-				if (scenario === 'new-image' || scenario === 'pending-upload') {
+				if (
+					scenario === 'new-image' ||
+					scenario === 'pending-upload' ||
+					scenario === 'blocked-cleanup'
+				) {
 					await page.getByRole('button', { name: 'Choose Wallpaper', exact: true }).click();
 					await page.locator('input[type="file"]').setInputFiles({
 						name: 'chosen.svg',
@@ -155,6 +160,12 @@ try {
 							.getAttribute('aria-checked'),
 						'false'
 					);
+					if (scenario === 'blocked-cleanup')
+						await page.evaluate(() => {
+							Storage.prototype.removeItem = () => {
+								throw new DOMException('Storage blocked', 'SecurityError');
+							};
+						});
 					await page.getByRole('button', { name: 'Save', exact: true }).click();
 					if (scenario === 'pending-upload') {
 						await page.getByRole('button', { name: 'Failed', exact: true }).waitFor();
@@ -223,7 +234,11 @@ try {
 					headers
 				});
 				assert.equal(stored.status(), scenario === 'reset' ? 404 : 200);
-				if (scenario === 'new-image' || scenario === 'pending-upload') {
+				if (
+					scenario === 'new-image' ||
+					scenario === 'pending-upload' ||
+					scenario === 'blocked-cleanup'
+				) {
 					const metadata: unknown = await stored.json();
 					assert.ok(
 						typeof metadata === 'object' &&
@@ -235,11 +250,25 @@ try {
 					assert.equal(metadata.frostedGlass, false);
 				}
 				if (scenario === 'stale-cache') {
+					// Failed replacement keeps the last usable image visible until a retry succeeds.
+					await page.locator('.app-shell[data-has-background="true"]').waitFor();
+					assert.match(
+						await page
+							.locator('.app-personal-background')
+							.evaluate((element) => getComputedStyle(element).backgroundImage),
+						/^url\("?blob:/
+					);
 					const remoteImage = await context.request.get(
 						`${server.url}/api/v1/settings/wallpaper/image`,
 						{ headers }
 					);
 					assert.deepEqual(await remoteImage.body(), chosenImage);
+					await page.unroute('**/api/v1/settings/wallpaper/image');
+					const retried = page.waitForResponse('**/api/v1/settings/wallpaper/image');
+					await page.reload();
+					assert.equal((await retried).status(), 200);
+					await page.locator('.app-shell[data-has-background="true"]').waitFor();
+					assert.deepEqual(mutations, []);
 				}
 				assert.deepEqual(errors, []);
 				console.log(`PASS ${scenario}: settings UI → real API → stored wallpaper`);

@@ -555,3 +555,29 @@ test('a failed local upload survives login with no remote image and retries with
 		assert.equal(await getLocalWallpaperBlob(reference), null);
 	});
 });
+
+test('successful wallpaper upload and deletion survive blocked pending-key cleanup', async () => {
+	await withSession(async ({ login, stored, requests }) => {
+		await login('cleanup-owner');
+		await syncShareWallpaperOnLogin();
+		const reference = await saveLocalWallpaperBlob(
+			new Blob(['cleanup-image'], { type: 'image/png' })
+		);
+		settingsStore.set({ ...settingsStore.current, backgroundImage: reference });
+		const original = localStorage.removeItem;
+		localStorage.removeItem = () => {
+			throw new DOMException('Storage blocked', 'SecurityError');
+		};
+		try {
+			await publishShareWallpaper(true);
+			assert.equal(stored.get('cleanup-owner')?.source, reference);
+			settingsStore.set({ ...settingsStore.current, backgroundImage: null });
+			await publishShareWallpaper(true);
+			assert.equal(stored.has('cleanup-owner'), false);
+			assert.ok(requests.includes('PUT /api/v1/settings/wallpaper'));
+			assert.ok(requests.includes('DELETE /api/v1/settings/wallpaper'));
+		} finally {
+			localStorage.removeItem = original;
+		}
+	});
+});
