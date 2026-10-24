@@ -171,7 +171,7 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 		return nil, ErrInvalidJobParams
 	}
 
-	sourceMount, sourceFsPath, err := s.resolveJobPath(params.SourcePath, readExisting)
+	sourceMount, sourceFsPath, err := s.resolveJobPath(params.SourcePath, jobSourceAccess(params.Type))
 	if err != nil {
 		return nil, err
 	}
@@ -190,12 +190,6 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 		}
 		destFsPath = resolvedDestPath
 		destRoot = destMount.Path
-	}
-
-	if params.Type == model.JobTypeMove || params.Type == model.JobTypeDelete {
-		if sourceMount.ReadOnly {
-			return nil, ErrPermissionDenied
-		}
 	}
 
 	// Create job
@@ -233,6 +227,15 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 	}
 
 	return s.snapshotJob(job), nil
+}
+
+// jobSourceAccess makes a move or delete act on a symlink itself, while a copy
+// copies what the link points to.
+func jobSourceAccess(jobType model.JobType) pathAccess {
+	if jobType == model.JobTypeCopy {
+		return readExisting
+	}
+	return writeEntry
 }
 
 func (s *jobService) resolveJobPath(path string, access pathAccess) (*model.MountPoint, string, error) {
@@ -386,6 +389,12 @@ func (s *jobService) revalidateJobPaths(job *model.Job) error {
 	if err != nil {
 		return err
 	}
+	if jobSourceAccess(job.Type) == writeEntry {
+		source, err = resolveEntryWithinMount(s.fs, sourceMount, job.ResolvedSourcePath)
+		if err != nil {
+			return err
+		}
+	}
 	job.ResolvedSourcePath = source
 
 	if job.ResolvedDestPath != "" {
@@ -484,7 +493,7 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 	sourcePath := jobSourcePath(job)
 	destPath := jobDestPath(job)
-	manifest, totalFiles, err := s.collectManifest(ctx, sourcePath)
+	manifest, totalFiles, err := s.collectManifest(ctx, sourcePath, false)
 	if err != nil {
 		return err
 	}
@@ -570,7 +579,7 @@ func (s *jobService) executeMove(ctx context.Context, job *model.Job) error {
 // executeDelete deletes a file or directory
 func (s *jobService) executeDelete(ctx context.Context, job *model.Job) error {
 	sourcePath := jobSourcePath(job)
-	info, err := s.fs.Stat(sourcePath)
+	info, err := s.fs.Lstat(sourcePath)
 	if err != nil {
 		return err
 	}
@@ -591,7 +600,8 @@ func (s *jobService) executeDelete(ctx context.Context, job *model.Job) error {
 // reverse order so child paths are deleted before their parents.
 func (s *jobService) deleteDir(ctx context.Context, job *model.Job) error {
 	sourcePath := jobSourcePath(job)
-	manifest, totalFiles, err := s.collectManifest(ctx, sourcePath)
+	// Symlinks below the folder are removed as entries, never followed.
+	manifest, totalFiles, err := s.collectManifest(ctx, sourcePath, true)
 	if err != nil {
 		return err
 	}
@@ -615,10 +625,11 @@ func (s *jobService) deleteDir(ctx context.Context, job *model.Job) error {
 	return s.fs.Remove(sourcePath)
 }
 
-func (s *jobService) collectManifest(ctx context.Context, root string) ([]WalkEntry, int, error) {
+func (s *jobService) collectManifest(ctx context.Context, root string, includeSymlinks bool) ([]WalkEntry, int, error) {
 	manifest := make([]WalkEntry, 0, 128)
 	fileCount := 0
-	err := s.walker.Walk(ctx, root, WalkOptions{IncludeHidden: true, LoadMetadata: true}, func(entry WalkEntry) error {
+	options := WalkOptions{IncludeHidden: true, LoadMetadata: true, IncludeSymlinks: includeSymlinks}
+	err := s.walker.Walk(ctx, root, options, func(entry WalkEntry) error {
 		manifest = append(manifest, entry)
 		if !entry.Metadata.IsDir() {
 			fileCount++

@@ -25,6 +25,8 @@ type WalkOptions struct {
 	SkipUnreadable bool
 	MaxEntries     int
 	LoadMetadata   bool
+	// IncludeSymlinks visits symlinks as entries without following them.
+	IncludeSymlinks bool
 }
 
 // Walker provides one cancellation-aware traversal policy for services.
@@ -95,7 +97,7 @@ func (w *filesystemWalker) Walk(
 			if !opts.IncludeHidden && strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
-			if entry.Type()&fs.ModeSymlink != 0 {
+			if entry.Type()&fs.ModeSymlink != 0 && !opts.IncludeSymlinks {
 				continue
 			}
 			if opts.MaxEntries > 0 && visited >= opts.MaxEntries {

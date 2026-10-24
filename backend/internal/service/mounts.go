@@ -20,7 +20,17 @@ const (
 	writeExisting
 	// writeMaybeMissing accepts a path that does not exist yet, on a writable mount.
 	writeMaybeMissing
+	// readEntry needs a path that exists and returns the entry itself: a final
+	// symlink is not followed. Its target must still stay inside the mount.
+	readEntry
+	// writeEntry is readEntry on a writable mount, so a rename, move or delete
+	// changes a symlink instead of its target.
+	writeEntry
 )
+
+func (a pathAccess) writes() bool {
+	return a != readExisting && a != readEntry
+}
 
 // mounts is the one place that turns a virtual path such as "media/a.mkv"
 // into a real path that stays inside its mount, symlinks included.
@@ -48,12 +58,18 @@ func (m *mounts) resolve(path string, access pathAccess) (*model.MountPoint, str
 		}
 		return nil, "", err
 	}
-	if access != readExisting && mount.ReadOnly {
+	if access.writes() && mount.ReadOnly {
 		return nil, "", ErrPermissionDenied
 	}
-	if access == writeMaybeMissing {
+	switch access {
+	case writeMaybeMissing:
 		fsPath, err = resolveWritablePathWithinMount(m.fs, mount, fsPath)
-	} else {
+	case readEntry, writeEntry:
+		// The target must still exist inside the mount, as when it is followed.
+		if _, err = resolveExistingPathWithinMount(m.fs, mount, fsPath); err == nil {
+			fsPath, err = resolveEntryWithinMount(m.fs, mount, fsPath)
+		}
+	default:
 		fsPath, err = resolveExistingPathWithinMount(m.fs, mount, fsPath)
 	}
 	if err != nil {

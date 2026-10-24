@@ -46,6 +46,8 @@ type DirectoryReader interface {
 	List(ctx context.Context, path string) (*model.FileList, error)
 	// GetInfo returns metadata for a file or directory
 	GetInfo(ctx context.Context, path string) (*model.FileInfo, error)
+	// EntryInfo is GetInfo without following a final symlink
+	EntryInfo(ctx context.Context, path string) (*model.FileInfo, error)
 	// ListMountPoints returns all configured mount points
 	ListMountPoints() []model.MountPoint
 	// GetDriveStats returns disk usage statistics for all mount points
@@ -245,6 +247,24 @@ func (s *fileService) GetInfo(ctx context.Context, path string) (*model.FileInfo
 	return &fileInfo, nil
 }
 
+// EntryInfo describes the entry itself, so a symlink to a folder is not a folder.
+func (s *fileService) EntryInfo(ctx context.Context, path string) (*model.FileInfo, error) {
+	_, fsPath, err := s.mounts.resolve(path, readEntry)
+	if err != nil {
+		return nil, err
+	}
+	info, err := s.fs.Lstat(fsPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, ErrPathNotFound
+		}
+		return nil, err
+	}
+
+	fileInfo := fileutil.ToFileInfo(info.Name(), path, info)
+	return &fileInfo, nil
+}
+
 // CreateDir creates a new directory
 func (s *fileService) CreateDir(ctx context.Context, path string) error {
 	// Resolve the path to filesystem path
@@ -268,8 +288,8 @@ func (s *fileService) CreateDir(ctx context.Context, path string) error {
 
 // Rename renames/moves a file or directory
 func (s *fileService) Rename(ctx context.Context, oldPath, newPath string) error {
-	// Resolve old path
-	_, oldFsPath, err := s.mounts.resolve(oldPath, writeExisting)
+	// Resolve old path; a symlink is renamed itself, not its target
+	_, oldFsPath, err := s.mounts.resolve(oldPath, writeEntry)
 	if err != nil {
 		return err
 	}
@@ -304,8 +324,8 @@ func (s *fileService) Rename(ctx context.Context, oldPath, newPath string) error
 
 // Delete removes a file or directory
 func (s *fileService) Delete(ctx context.Context, path string) error {
-	// Resolve the path to filesystem path
-	_, fsPath, err := s.mounts.resolve(path, writeMaybeMissing)
+	// Resolve the path to filesystem path; a symlink is removed itself, not its target
+	_, fsPath, err := s.mounts.resolve(path, writeEntry)
 	if err != nil {
 		return err
 	}

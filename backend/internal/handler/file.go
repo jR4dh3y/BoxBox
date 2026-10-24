@@ -297,8 +297,8 @@ func (h *FileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	// Check if confirmation is required (query param)
 	confirm := r.URL.Query().Get("confirm")
 	if confirm != "true" {
-		// Check if path exists and get info
-		info, err := h.fileService.GetInfo(r.Context(), path)
+		// Check if path exists and get info; deleting a symlink removes only the link
+		info, err := h.fileService.EntryInfo(r.Context(), path)
 		if err != nil {
 			HandleServiceError(w, err)
 			return

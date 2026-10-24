@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -189,5 +191,41 @@ func TestSaveFileContentViaAPI(t *testing.T) {
 	}
 	if string(content) != "after" {
 		t.Fatalf("expected overwritten content, got %q", string(content))
+	}
+}
+
+func TestDeleteSymlinkToFolderNeedsNoConfirmationAndKeepsTarget(t *testing.T) {
+	home := t.TempDir()
+	photos := filepath.Join(home, "photos")
+	if err := os.MkdirAll(photos, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(photos, "a.jpg"), []byte("jpeg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(photos, filepath.Join(home, "shortcut")); err != nil {
+		t.Fatal(err)
+	}
+	fileSvc := service.NewFileService(filesystem.NewOsFS(), service.FileServiceConfig{
+		MountPoints: []model.MountPoint{{Name: "home", Path: home}},
+	})
+	router := createFileTestRouter(NewFileHandler(fileSvc))
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/v1/files/home/photos", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unconfirmed folder delete: status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/v1/files/home/shortcut", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("symlink delete: status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Lstat(filepath.Join(home, "shortcut")); !os.IsNotExist(err) {
+		t.Fatalf("symlink still exists: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(photos, "a.jpg")); err != nil {
+		t.Fatalf("symlink target was deleted: %v", err)
 	}
 }
