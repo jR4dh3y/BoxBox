@@ -3,6 +3,7 @@
  */
 
 import { api, buildUrl } from './client';
+import { parseDirectory } from './directory';
 import { tokenStorage } from '#lib/utils/storage.js';
 
 /**
@@ -134,7 +135,7 @@ function listEndpoint(path: string): string {
 
 /** Every entry of a directory in one response. The client sorts and filters. */
 export async function listDirectory(path: string, signal?: AbortSignal): Promise<FileList> {
-	return api.get<FileList>(listEndpoint(path), undefined, signal);
+	return parseDirectory(await api.get<unknown>(listEndpoint(path), undefined, signal));
 }
 
 /** The URL `listDirectory` requests. static/early-fetch.js must start the same one. */

@@ -7,6 +7,7 @@ import bundleBudget from '../../perf-budget.json';
 import { browserViolations, median, type BrowserMetrics } from './gates';
 import { baseArgument, repo, results, run, withBaseline } from './common';
 import { createDirectoryFixture, startServer } from './server';
+import { verifySelectionRefresh } from './selection-refresh';
 import { verifyNavigation } from './navigation';
 import { verifyLazyLoadErrors } from './lazy-load-errors';
 
@@ -218,6 +219,7 @@ async function benchmark(base?: string, sha?: string) {
 		await loggedOut(browser, head.url);
 		await verifyLazyLoadErrors(browser, head.url, head.credentials);
 		await verifyNavigation(browser, head.url, head.credentials, fixture.mount);
+		await verifySelectionRefresh(browser, head.url, head.credentials, fixture.mount);
 	} finally {
 		writeFileSync(
 			join(results, 'browser.json'),
