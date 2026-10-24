@@ -2,9 +2,11 @@
 package middleware
 
 import (
+	"math"
 	"net"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +90,7 @@ func (rl *RateLimiter) cleanupIfDue() {
 // Requests that exceed the rate limit receive a 429 Too Many Requests response.
 func RateLimit(rps float64, trustedProxyValues ...string) func(http.Handler) http.Handler {
 	limiter := NewRateLimiter(rps)
+	retryAfter := strconv.Itoa(max(1, int(math.Ceil(1/limiter.rps))))
 	trustedProxies := parseTrustedProxies(trustedProxyValues)
 
 	return func(next http.Handler) http.Handler {
@@ -96,7 +99,7 @@ func RateLimit(rps float64, trustedProxyValues ...string) func(http.Handler) htt
 
 			if !limiter.Allow(ip) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("Retry-After", "1")
+				w.Header().Set("Retry-After", retryAfter)
 				w.WriteHeader(http.StatusTooManyRequests)
 				w.Write([]byte(`{"error":"Too many requests","code":"rate_limit_exceeded"}`))
 				return
