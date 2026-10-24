@@ -15,6 +15,7 @@ import { verifySelectionRefresh } from './selection-refresh';
 import { verifyNavigation } from './navigation';
 import { verifyPasteLoadRace } from './paste-load-race';
 import { verifyLazyLoadErrors } from './lazy-load-errors';
+import { verifyPathSuggestions } from './path-suggestions';
 
 // The 32-row startup ceiling is defined for this desktop viewport.
 const viewport = { width: 1440, height: 900 };
@@ -221,6 +222,7 @@ async function benchmark(base?: string, sha?: string) {
 			: undefined;
 		if (previous) servers.push(previous);
 		browser = await chromium.launch({ headless: true });
+		await verifyPathSuggestions(browser, join(repo, 'dist/boxbox'));
 		for (let repeat = 0; repeat < 5; repeat++) {
 			for (const profile of profiles) {
 				const variants = previous
