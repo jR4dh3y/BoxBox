@@ -53,8 +53,14 @@ type TokenPair struct {
 	RefreshExpiresAt time.Time `json:"-"`
 }
 
+// PasswordVerifier checks an account without creating or rotating a session.
+type PasswordVerifier interface {
+	VerifyPassword(ctx context.Context, username, password string) error
+}
+
 // AuthService defines the authentication service interface
 type AuthService interface {
+	PasswordVerifier
 	Login(ctx context.Context, username, password string) (*TokenPair, error)
 	Refresh(ctx context.Context, refreshToken string) (*TokenPair, error)
 	ValidateToken(tokenString string) (*Claims, error)

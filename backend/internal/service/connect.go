@@ -84,10 +84,6 @@ type pairingWindow struct {
 	attempts  int
 }
 
-type passwordVerifier interface {
-	VerifyPassword(context.Context, string, string) error
-}
-
 // ConnectService owns one process-local pairing window and durable client digests.
 // As with auth sessions, only one server process may own its storage directory.
 type ConnectService struct {
@@ -95,7 +91,7 @@ type ConnectService struct {
 	fs          filesystem.FS
 	path        string
 	users       map[string]string
-	passwords   passwordVerifier
+	passwords   PasswordVerifier
 	clients     map[string]connectRecord
 	window      *pairingWindow
 	redemptions *rate.Limiter
@@ -103,11 +99,7 @@ type ConnectService struct {
 	now         func() time.Time
 }
 
-func NewConnectService(fsys filesystem.FS, auth AuthService, cfg ConnectServiceConfig) (*ConnectService, error) {
-	passwords, ok := auth.(passwordVerifier)
-	if !ok {
-		return nil, errors.New("auth service does not support password re-entry")
-	}
+func NewConnectService(fsys filesystem.FS, passwords PasswordVerifier, cfg ConnectServiceConfig) (*ConnectService, error) {
 	if cfg.DataDir == "" {
 		cfg.DataDir = config.DefaultDataDir
 	}

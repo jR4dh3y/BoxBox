@@ -13,7 +13,7 @@ All routes below are relative to `/api/v1`. Account operations require an accoun
 3. The device calls `POST /connect/redeem` with `{ "code": "<one-time code>", "clientName": "<device name>" }`. This endpoint needs no account token. The response contains `clientId`, `credential`, `expiresAt` and `username`.
 4. The device stores the credential privately and sends it only in an `Authorization: Bearer <credential>` header. Credentials expire after 30 days. Do not put them in URLs, browser storage or logs.
 
-`GET /connect/pairing` reports whether this account's window is open, with its expiry; it never returns the code. `DELETE /connect/pairing` closes that account's window. Pairing codes have eight unambiguous characters and display as `XXXX-XXXX`; redemption also accepts lowercase and the form without the hyphen. A global ten-attempt budget and a rate limiter of one request per second with a burst of five protect redemption. Opening another window does not reset the rate bucket.
+`GET /connect/pairing` reports whether this account's window is open, with its expiry; it never returns the code. `DELETE /connect/pairing` closes that account's window. Pairing codes have eight unambiguous characters and display as `XXXX-XXXX`; redemption also accepts lowercase and the form without the hyphen. A global ten-attempt budget and a rate limiter of one request per second with a burst of five protect redemption. Opening another window does not reset the rate bucket. Redemption also has a per-IP limit of one request every two seconds, with one initial request, so repeated requests from one address do not consume the shared bucket. Trusted-proxy configuration controls client-IP resolution, and rate-limit responses remain non-cacheable.
 
 ## List and revoke
 

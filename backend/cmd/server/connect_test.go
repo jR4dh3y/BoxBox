@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -89,11 +90,14 @@ func TestPairedClientOperationsOnReservedMountNames(t *testing.T) {
 	}
 }
 
-func connectRequest(t *testing.T, router http.Handler, method, path, token, body string, want int) *httptest.ResponseRecorder {
+func connectRequest(t *testing.T, router http.Handler, method, path, token, body string, want int, peer ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, "http://boxbox.test/api/v1"+path, strings.NewReader(body))
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if len(peer) > 0 {
+		req.RemoteAddr = peer[0]
 	}
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -135,7 +139,7 @@ func connectEnable(t *testing.T, router http.Handler, token string) service.Pair
 	return code
 }
 
-func connectRedeem(t *testing.T, router http.Handler, code service.PairingCode, name string, want int) *httptest.ResponseRecorder {
+func connectRedeem(t *testing.T, router http.Handler, code service.PairingCode, name string, want int, peer ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(struct {
 		Code string `json:"code"`
@@ -144,7 +148,7 @@ func connectRedeem(t *testing.T, router http.Handler, code service.PairingCode, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return connectRequest(t, router, "POST", "/connect/redeem", "", string(body), want)
+	return connectRequest(t, router, "POST", "/connect/redeem", "", string(body), want, peer...)
 }
 
 func TestConnectProductionRouterPairingAndRestrictions(t *testing.T) {
@@ -176,13 +180,13 @@ func TestConnectProductionRouterPairingAndRestrictions(t *testing.T) {
 		t.Fatal("other account's window disclosed")
 	}
 	connectRequest(t, router, "POST", "/connect/redeem", "", `{"code":"wrong","clientName":"Laptop"}`, 404)
-	connectRedeem(t, router, code, "", 400)
-	rec = connectRedeem(t, router, code, "Laptop", 200)
+	connectRedeem(t, router, code, "", 400, "192.0.2.2:1234")
+	rec = connectRedeem(t, router, code, "Laptop", 200, "192.0.2.3:1234")
 	var client service.ConnectRedemption
 	if err := json.Unmarshal(rec.Body.Bytes(), &client); err != nil || client.Username != "alice" || client.ClientID == "" || client.Credential == "" {
 		t.Fatal("invalid redemption response")
 	}
-	connectRedeem(t, router, code, "Replay", 404)
+	connectRedeem(t, router, code, "Replay", 404, "192.0.2.4:1234")
 	connectRequest(t, router, "GET", "/files/test", client.Credential, "", 200)
 	connectRequest(t, router, "DELETE", "/files/test/example.txt", client.Credential, "", 403)
 	connectRequest(t, router, "GET", "/system/upload", client.Credential, "", 200)
@@ -215,7 +219,7 @@ func TestConnectProductionRouterPairingAndRestrictions(t *testing.T) {
 	connectRequest(t, router, "DELETE", "/connect/client", client.Credential, "", 204)
 	connectRequest(t, router, "GET", "/files/test", client.Credential, "", 401)
 	code = connectEnable(t, router, alice)
-	rec = connectRedeem(t, router, code, "Replacement", 200)
+	rec = connectRedeem(t, router, code, "Replacement", 200, "192.0.2.5:1234")
 	if err := json.Unmarshal(rec.Body.Bytes(), &client); err != nil {
 		t.Fatal("decode replacement client")
 	}
@@ -227,10 +231,10 @@ func TestConnectProductionRouterPairingAndRestrictions(t *testing.T) {
 
 func TestConnectProductionRouterRedemptionRateLimit(t *testing.T) {
 	router := connectRouterFixture(t, false)
-	for range 5 {
-		connectRequest(t, router, "POST", "/connect/redeem", "", `{"code":"wrong","clientName":"Laptop"}`, 404)
+	for index := range 5 {
+		connectRequest(t, router, "POST", "/connect/redeem", "", `{"code":"wrong","clientName":"Laptop"}`, 404, fmt.Sprintf("192.0.2.%d:1234", index+1))
 	}
-	connectRequest(t, router, "POST", "/connect/redeem", "", `{"code":"wrong","clientName":"Laptop"}`, 429)
+	connectRequest(t, router, "POST", "/connect/redeem", "", `{"code":"wrong","clientName":"Laptop"}`, 429, "192.0.2.6:1234")
 }
 
 func TestConnectDevelopmentIdentityCannotPair(t *testing.T) {
@@ -247,4 +251,19 @@ func TestConnectDevelopmentModeRejectsPairedCredentials(t *testing.T) {
 	for _, target := range []string{"/settings/", "/files/test", "/system/upload", "/ws"} {
 		connectRequest(t, router, "GET", target, service.ClientCredentialPrefix+"unsupported", "", http.StatusForbidden)
 	}
+}
+
+func TestConnectRedemptionPerIPLimitPreservesOtherClients(t *testing.T) {
+	router := connectRouterFixture(t, false)
+	account := connectLogin(t, router, "alice")
+	code := connectEnable(t, router, account)
+	connectRequest(t, router, "POST", "/connect/redeem", "", `{"code":"wrong","clientName":"Laptop"}`, 404)
+	for range 8 {
+		rec := connectRequest(t, router, "POST", "/connect/redeem", "", `{"code":"wrong","clientName":"Laptop"}`, 429)
+		if rec.Header().Get("Retry-After") != "2" {
+			t.Fatal("per-IP rejection did not advertise its refill interval")
+		}
+	}
+	connectRedeem(t, router, code, "Other device", 200, "192.0.2.2:1234")
+	connectRequest(t, router, "GET", "/connect/clients", account, "", 200)
 }

@@ -16,10 +16,10 @@ func NewConnectHandler(connect *service.ConnectService) *ConnectHandler {
 	return &ConnectHandler{connect: connect}
 }
 
-func (h *ConnectHandler) RegisterPublicRoutes(r chi.Router) {
+func (h *ConnectHandler) RegisterPublicRoutes(r chi.Router, redemptionLimit func(http.Handler) http.Handler) {
 	// Apply before authentication so failures cannot be cached either.
 	r.Use(connectNoStore)
-	r.Post("/redeem", h.Redeem)
+	r.With(redemptionLimit).Post("/redeem", h.Redeem)
 }
 
 func (h *ConnectHandler) RegisterRoutes(r chi.Router) {
