@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { IDBFactory } from 'fake-indexeddb';
+import { normalizeBackgroundImageMode } from './wallpaper';
 import { STORAGE_KEYS } from '#lib/config.js';
 import { ApiRequestError, clearTokens } from '#lib/api/client.js';
 import { downloadWallpaper } from '#lib/api/wallpaperImage.js';
@@ -8,7 +9,11 @@ import { getWallpaper, type StoredWallpaper } from '#lib/api/wallpaper.js';
 import { authStore } from '#lib/stores/auth.svelte.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { refreshWallpaperDraft } from './wallpaperDraft';
-import { getLocalWallpaperBlob, toLocalWallpaperReference } from './wallpaperStorage';
+import {
+	getLocalWallpaperBlob,
+	saveLocalWallpaperBlob,
+	toLocalWallpaperReference
+} from './wallpaperStorage';
 import {
 	publishShareWallpaper,
 	resetShareWallpaperLoginSync,
@@ -49,6 +54,7 @@ function createSession() {
 			void username;
 		},
 		imageStatus: 200,
+		uploadStatus: 200,
 		invalidMetadata: false
 	};
 	const server = Bun.serve({
@@ -94,6 +100,22 @@ function createSession() {
 				return metadata
 					? Response.json(metadata)
 					: Response.json({ error: 'Not found', code: 'NOT_FOUND' }, { status: 404 });
+			}
+			if (request.method === 'PUT') {
+				if (state.uploadStatus !== 200)
+					return Response.json(
+						{ error: 'Unavailable', code: 'INTERNAL_ERROR' },
+						{ status: state.uploadStatus }
+					);
+				const image = await request.blob();
+				images.set(username, image);
+				const params = new URL(request.url).searchParams;
+				stored.set(username, {
+					mode: normalizeBackgroundImageMode(params.get('mode')),
+					frostedGlass: params.get('frostedGlass') === 'true',
+					source: params.get('source') ?? '',
+					sha256: new Bun.CryptoHasher('sha256').update(await image.arrayBuffer()).digest('hex')
+				});
 			}
 			if (request.method === 'DELETE') stored.delete(username);
 			return Response.json({ message: 'OK' });
@@ -247,7 +269,7 @@ test('a save during login restoration wins and is published after the login requ
 				...settingsStore.current,
 				backgroundImage: 'data:image/png;base64,aGVsbG8='
 			});
-			const publish = publishShareWallpaper();
+			const publish = publishShareWallpaper(true);
 			release.resolve();
 			await pending;
 			await publish;
@@ -384,6 +406,24 @@ test('an open settings draft adopts restored wallpaper without losing unrelated 
 	});
 });
 
+test('a newly chosen wallpaper keeps its default fit and blur after late restoration', async () => {
+	await withSession(async ({ login, setWallpaper }) => {
+		setWallpaper('alice');
+		await login('alice');
+		const initial = settingsStore.current;
+		assert.equal(initial.backgroundImageMode, 'cover');
+		assert.equal(initial.frostedGlass, false);
+		const draft = { ...initial, backgroundImage: 'data:image/png;base64,aGVsbG8=' };
+		await syncShareWallpaperOnLogin();
+		assert.equal(settingsStore.current.backgroundImageMode, 'contain');
+		assert.equal(settingsStore.current.frostedGlass, true);
+		const refreshed = refreshWallpaperDraft(draft, initial, settingsStore.current);
+		assert.equal(refreshed.backgroundImage, draft.backgroundImage);
+		assert.equal(refreshed.backgroundImageMode, 'cover');
+		assert.equal(refreshed.frostedGlass, false);
+	});
+});
+
 test('Reset to unchanged defaults wins over a pending login restoration and deletes remotely', async () => {
 	await withSession(async ({ login, setWallpaper, state, stored, requests }) => {
 		setWallpaper('alice');
@@ -445,5 +485,73 @@ test('an unrelated save after failed image restoration preserves the remote wall
 			requests.some((request) => request.startsWith('DELETE')),
 			false
 		);
+	});
+});
+
+test('an unrelated save cannot upload stale cached bytes after newer remote image download fails', async () => {
+	await withSession(async ({ login, setWallpaper, state, stored, requests }) => {
+		await login('alice');
+		setWallpaper('alice', 'cached-X');
+		await syncShareWallpaperOnLogin();
+		await authStore.logout();
+		setWallpaper('alice', 'newer-Y');
+		const newer = stored.get('alice');
+		await login('alice');
+		state.imageStatus = 500;
+		await syncShareWallpaperOnLogin();
+		const cached = settingsStore.current.backgroundImage;
+		assert.ok(cached);
+		assert.equal(await (await getLocalWallpaperBlob(cached))?.text(), 'cached-X');
+		settingsStore.set({ ...settingsStore.current, compactMode: true });
+		await publishShareWallpaper(false);
+		assert.deepEqual(stored.get('alice'), newer);
+		assert.equal(
+			requests.some((request) => /^(PUT|DELETE) /.test(request)),
+			false
+		);
+	});
+});
+
+test('a failed local upload survives login with no remote image and retries without crossing accounts', async () => {
+	await withSession(async ({ login, state, stored, requests }) => {
+		await login('pending-owner');
+		await syncShareWallpaperOnLogin();
+		const reference = await saveLocalWallpaperBlob(
+			new Blob(['pending-local'], { type: 'image/png' })
+		);
+		settingsStore.set({
+			...settingsStore.current,
+			backgroundImage: reference,
+			backgroundImageMode: 'tile'
+		});
+		state.uploadStatus = 500;
+		await assert.rejects(publishShareWallpaper(true), ApiRequestError);
+		await authStore.logout();
+		await login('other-owner');
+		await syncShareWallpaperOnLogin();
+		assert.equal(settingsStore.current.backgroundImage, null);
+		assert.equal(stored.has('other-owner'), false);
+		await authStore.logout();
+		await login('pending-owner');
+		await syncShareWallpaperOnLogin();
+		assert.equal(settingsStore.current.backgroundImage, reference);
+		assert.equal(await (await getLocalWallpaperBlob(reference))?.text(), 'pending-local');
+		assert.equal(stored.has('pending-owner'), false);
+		state.uploadStatus = 200;
+		resetShareWallpaperLoginSync();
+		await syncShareWallpaperOnLogin();
+		assert.equal(stored.get('pending-owner')?.source, reference);
+		assert.equal(stored.get('pending-owner')?.mode, 'tile');
+		assert.ok(requests.includes('PUT /api/v1/settings/wallpaper'));
+		await authStore.logout();
+		stored.delete('pending-owner');
+		await login('pending-owner');
+		await syncShareWallpaperOnLogin();
+		assert.equal(
+			settingsStore.current.backgroundImage,
+			null,
+			'a confirmed remote deletion wins after publication succeeds'
+		);
+		assert.equal(await getLocalWallpaperBlob(reference), null);
 	});
 });

@@ -316,12 +316,12 @@
 		searchQuery = '';
 	}
 
-	function handleAccentColorInput(event: Event) {
-		settings.accentColor = (event.currentTarget as HTMLInputElement).value;
+	function handleAccentColorInput(event: Event & { currentTarget: HTMLInputElement }) {
+		settings.accentColor = event.currentTarget.value;
 	}
 
-	function handleAccentTextInput(event: Event) {
-		const value = (event.currentTarget as HTMLInputElement).value.trim();
+	function handleAccentTextInput(event: Event & { currentTarget: HTMLInputElement }) {
+		const value = event.currentTarget.value.trim();
 		settings.accentColor = value === '' ? null : value;
 	}
 

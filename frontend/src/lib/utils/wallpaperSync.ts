@@ -4,7 +4,7 @@
  */
 import { getWallpaper } from '#lib/api/wallpaper.js';
 import { deleteLocalWallpaper } from '#lib/utils/wallpaperStorage.js';
-import { settingsStore } from '#lib/stores/settings.svelte.js';
+import { settingsStore, type UserSettings } from '#lib/stores/settings.svelte.js';
 import { currentUsername } from '#lib/utils/sessionUser.js';
 
 let queue: Promise<void> = Promise.resolve();
@@ -32,21 +32,24 @@ export function syncShareWallpaperOnLogin(): Promise<void> {
 		const initial = settingsStore.current;
 		const stored = await getWallpaper(signal);
 		signal.throwIfAborted();
-		let backgroundImage: string | null = null;
-		if (stored) {
+		let wallpaper: Pick<UserSettings, 'backgroundImage' | 'backgroundImageMode' | 'frostedGlass'> =
+			{
+				backgroundImage: null,
+				backgroundImageMode: 'cover',
+				frostedGlass: false
+			};
+		if (stored || initial.backgroundImage) {
 			const { restoreWallpaper } = await import('./wallpaperRestore.js');
 			signal.throwIfAborted();
-			backgroundImage = await restoreWallpaper(stored, signal);
+			wallpaper = await restoreWallpaper(stored, initial, signal);
 		}
 		signal.throwIfAborted();
 		if (currentUsername() !== user || settingsStore.wallpaperRevision !== revision) return;
 		settingsStore.set({
 			...settingsStore.current,
-			backgroundImage,
-			backgroundImageMode: stored?.mode ?? 'cover',
-			frostedGlass: stored?.frostedGlass ?? false
+			...wallpaper
 		});
-		if (initial.backgroundImage !== backgroundImage)
+		if (initial.backgroundImage !== wallpaper.backgroundImage)
 			await deleteLocalWallpaper(initial.backgroundImage);
 	}).catch((error) => {
 		if (!signal.aborted) console.warn('Unable to restore the wallpaper', error);
@@ -60,13 +63,13 @@ export function resetShareWallpaperLoginSync(): void {
 	loginSyncStarted = false;
 }
 
-/** Delete only after an explicit removal or Reset; unrelated saves preserve remote data. */
-export function publishShareWallpaper(allowDeletion = false): Promise<void> {
+/** Change image bytes only for an explicit edit or a pending publication. */
+export function publishShareWallpaper(imageChanged = false): Promise<void> {
 	const { signal } = sessionController;
 	return enqueue(async () => {
 		signal.throwIfAborted();
 		const { publishWallpaper } = await import('./wallpaperPublish.js');
 		signal.throwIfAborted();
-		await publishWallpaper(signal, allowDeletion);
+		await publishWallpaper(signal, imageChanged);
 	});
 }

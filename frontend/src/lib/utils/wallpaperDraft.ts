@@ -6,12 +6,12 @@ export function refreshWallpaperDraft(
 	previous: UserSettings,
 	current: UserSettings
 ): UserSettings {
+	// A replacement image and its display choices are one explicit edit.
+	if (draft.backgroundImage !== previous.backgroundImage) return draft;
+
 	return {
 		...draft,
-		backgroundImage:
-			draft.backgroundImage === previous.backgroundImage
-				? current.backgroundImage
-				: draft.backgroundImage,
+		backgroundImage: current.backgroundImage,
 		backgroundImageMode:
 			draft.backgroundImageMode === previous.backgroundImageMode
 				? current.backgroundImageMode

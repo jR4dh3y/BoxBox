@@ -4,6 +4,8 @@ import {
 	updateWallpaperDisplay,
 	uploadWallpaper
 } from '#lib/api/wallpaperImage.js';
+import { storage } from '#lib/utils/storage.js';
+import { currentUsername } from '#lib/utils/sessionUser.js';
 import { getWallpaper } from '#lib/api/wallpaper.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { resolveBackgroundImageUrl } from '#lib/utils/appearance.js';
@@ -17,18 +19,59 @@ import {
 	toLocalWallpaperReference
 } from '#lib/utils/wallpaperStorage.js';
 
-export async function publishWallpaper(signal: AbortSignal, allowDeletion: boolean): Promise<void> {
+const pendingImages = new Map<string, string>();
+
+function pendingKey(user: string): string {
+	return `boxbox_wallpaper_pending:${encodeURIComponent(user)}`;
+}
+
+function pendingImage(user: string): string | null {
+	try {
+		return pendingImages.get(user) ?? storage.getString(pendingKey(user));
+	} catch {
+		return pendingImages.get(user) ?? null;
+	}
+}
+
+/** Retry a saved local edit before login can replace it with remote state. */
+export async function retryPendingWallpaper(signal: AbortSignal): Promise<boolean> {
+	const user = currentUsername();
 	const { backgroundImage } = settingsStore.current;
+	if (!user || !backgroundImage || pendingImage(user) !== backgroundImage) return false;
+	await publishWallpaper(signal, true);
+	return true;
+}
+
+export async function publishWallpaper(signal: AbortSignal, imageChanged: boolean): Promise<void> {
+	signal.throwIfAborted();
+	const user = currentUsername();
+	if (!user) return;
+	const { backgroundImage } = settingsStore.current;
+	const revision = settingsStore.wallpaperRevision;
+	const source = backgroundImage ?? '';
+	imageChanged ||= backgroundImage !== null && pendingImage(user) === source;
+	if (imageChanged && backgroundImage) {
+		pendingImages.set(user, source);
+		try {
+			storage.setString(pendingKey(user), source);
+		} catch {
+			// Keep the pending edit in memory when browser persistence is unavailable.
+		}
+	}
 	if (backgroundImage) {
-		await reconcile(backgroundImage, signal);
-	} else if (allowDeletion && (await getWallpaper(signal))) {
+		await reconcile(backgroundImage, signal, imageChanged);
+	} else if (imageChanged && (await getWallpaper(signal))) {
 		signal.throwIfAborted();
 		await deleteWallpaper(signal);
 	}
 	signal.throwIfAborted();
+	if (settingsStore.wallpaperRevision === revision && imageChanged) {
+		pendingImages.delete(user);
+		storage.remove(pendingKey(user));
+	}
 }
 
-async function reconcile(backgroundImage: string, signal: AbortSignal) {
+async function reconcile(backgroundImage: string, signal: AbortSignal, imageChanged: boolean) {
 	const display = {
 		mode: normalizeBackgroundImageMode(settingsStore.current.backgroundImageMode),
 		frostedGlass: settingsStore.current.frostedGlass
@@ -51,6 +94,7 @@ async function reconcile(backgroundImage: string, signal: AbortSignal) {
 			: stored.source === backgroundImage ||
 				backgroundImage === toLocalWallpaperReference(stored.sha256));
 	if (!sameImage) {
+		if (!imageChanged) return;
 		await uploadWallpaper(image, display, backgroundImage, signal);
 	} else if (stored.mode !== display.mode || stored.frostedGlass !== display.frostedGlass) {
 		await updateWallpaperDisplay(display, signal);
