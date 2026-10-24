@@ -76,6 +76,18 @@ export async function verifySelectionRefresh(
 			1,
 			'refreshing the parent cannot prune a selected recursive search result'
 		);
+		writeFileSync(join(folder, 'canonical.txt'), 'fixture\n');
+		await page.goto(`${url}/browse?${new URLSearchParams({ path: 'perf/./Selection' })}`);
+		await page.getByText('canonical.txt', { exact: true }).click();
+		unlinkSync(join(folder, 'canonical.txt'));
+		await page.getByTitle('Refresh', { exact: true }).click();
+		await page.getByText('canonical.txt', { exact: true }).waitFor({ state: 'detached' });
+		assert.equal(
+			await page.locator('[data-file-row="true"][aria-selected="true"]').count(),
+			0,
+			'confirmed canonical paths prune deleted selections for aliased folder URLs'
+		);
+
 		assert.deepEqual(errors, []);
 		console.log(
 			'PASS: failed refresh preserves selection; confirmed refresh prunes deleted files and keeps existing selection'

@@ -63,6 +63,7 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 			: sortFiles(visible, location.sortBy, location.sortDir);
 	});
 
+	let confirmed: { path: string; timestamp: number; items: readonly FileInfo[] } | undefined;
 	$effect(() => {
 		// Cached data and failed refreshes cannot establish that a selected file vanished.
 		if (
@@ -71,10 +72,19 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 			!directoryQuery.isFetchedAfterMount
 		)
 			return;
-		void directoryQuery.dataUpdatedAt;
-		// Leaving search is not a new server confirmation of the directory.
-		if (untrack(() => location.isSearchActive)) return;
-		selection.retain(directoryItems, location.path);
+		const timestamp = directoryQuery.dataUpdatedAt;
+		const items = directoryItems;
+		const path = directoryQuery.data.path;
+		untrack(() => {
+			if (
+				confirmed?.path === path &&
+				confirmed.timestamp === timestamp &&
+				confirmed.items === items
+			)
+				return;
+			confirmed = { path, timestamp, items };
+			if (!location.isSearchActive) selection.retain(items, path);
+		});
 	});
 
 	const currentMount = $derived(
