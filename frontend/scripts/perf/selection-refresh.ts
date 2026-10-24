@@ -43,6 +43,20 @@ export async function verifySelectionRefresh(
 		await page.getByText('1 of 1 selected', { exact: true }).waitFor();
 		assert.equal(await page.getByText('gone.txt', { exact: true }).count(), 0);
 		assert.equal(await page.locator('[data-file-row="true"][aria-selected="true"]').count(), 1);
+		writeFileSync(join(folder, 'search-only.txt'), 'fixture\n');
+		const search = page.getByRole('searchbox', { name: 'Search', exact: true });
+		await search.fill('search-only');
+		await page.getByText('search-only.txt', { exact: true }).click();
+		await search.fill('');
+		await page.getByText('kept.txt', { exact: true }).waitFor();
+		assert.equal(
+			await page.getByText('1 of 1 selected', { exact: true }).count(),
+			1,
+			'leaving search does not prune against an older directory response'
+		);
+		await page.getByTitle('Refresh', { exact: true }).click();
+		await page.getByText('search-only.txt', { exact: true }).waitFor();
+		assert.equal(await page.locator('[data-file-row="true"][aria-selected="true"]').count(), 1);
 		assert.deepEqual(errors, []);
 		console.log(
 			'PASS: failed refresh preserves selection; confirmed refresh prunes deleted files and keeps existing selection'
