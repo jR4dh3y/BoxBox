@@ -1,5 +1,5 @@
 /**
- * User preferences, kept in localStorage; drive names are also stored on the server
+ * User preferences use browser storage on the web and private backend storage on desktop.
  */
 
 import { settingsStorage, storage } from '#lib/utils/storage.js';
@@ -128,6 +128,14 @@ class SettingsStore {
 		} catch {
 			// Initialization should not fail auth because local preference persistence is full.
 		}
+		if (this.desktopLoaded) {
+			this.set(this.current);
+			await this.flush().catch(() => {});
+		}
+	}
+
+	flush(): Promise<void> {
+		return this.saving;
 	}
 
 	set(settings: UserSettings, wallpaperChanged = false): string | undefined {

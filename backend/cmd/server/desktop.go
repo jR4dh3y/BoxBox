@@ -26,6 +26,7 @@ func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {
 	router := chi.NewRouter()
 	router.Route("/api/v1/desktop", func(r chi.Router) {
 		r.Get("/watch", watch)
+		handler.RegisterDesktopPreferences(r, service.NewDesktopPreferences(filesystem.NewOsFS(), cfg.DataDir), service.NewSettingsService(filesystem.NewOsFS(), service.SettingsServiceConfig{DataDir: cfg.DataDir}))
 		apps.RegisterRoutes(r)
 		clipboard.RegisterRoutes(r)
 		volumes.RegisterRoutes(r)

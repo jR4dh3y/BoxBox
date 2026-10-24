@@ -24,7 +24,6 @@
 		getWallpaperBackgroundStyle,
 		normalizeBackgroundImageMode
 	} from '#lib/utils/wallpaper.js';
-	import { syncShareWallpaperOnLogin } from '#lib/utils/wallpaperSync.js';
 
 	let { children } = $props();
 	let initialized = $state(false);
@@ -167,7 +166,22 @@
 	});
 
 	$effect(() => {
-		if (initialized && authStore.isAuthenticated && !isSharePage) syncShareWallpaperOnLogin();
+		if (
+			!initialized ||
+			!authStore.isAuthenticated ||
+			isSharePage ||
+			!settingsStore.current.backgroundImage
+		)
+			return;
+		let active = true;
+		void import('#lib/utils/wallpaperSync.js')
+			.then(({ syncShareWallpaperOnLogin }) => {
+				if (active) void syncShareWallpaperOnLogin();
+			})
+			.catch((error) => console.warn('Unable to load wallpaper synchronization', error));
+		return () => {
+			active = false;
+		};
 	});
 
 	function handleAuthRefresh(event: Event): void {

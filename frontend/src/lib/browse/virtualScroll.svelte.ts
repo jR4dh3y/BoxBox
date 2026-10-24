@@ -1,8 +1,10 @@
-import { tick } from 'svelte';
+import { tick, untrack } from 'svelte';
 import { columnsFor, revealOffset, visibleRange, type VirtualLayout } from './virtualWindow';
 
 export interface VirtualScrollOptions {
 	count: number;
+	viewKey: string;
+	positions: Map<string, number>;
 	/** Cell width, gap and horizontal padding of a grid; a list has one column. */
 	cell?: { width: number; gap: number; padding: number };
 	/** Gap between rows, added to the measured item height. */
@@ -43,6 +45,20 @@ export function createVirtualScroll(options: () => VirtualScrollOptions) {
 	});
 	const range = $derived(visibleRange(layout, viewport, OVERSCAN_ROWS));
 
+	let activeKey: string | undefined;
+	$effect(() => {
+		const { viewKey, count, positions } = options();
+		const node = element;
+		if (!node || count === 0) return;
+		untrack(() => {
+			if (activeKey === viewKey) return;
+			activeKey = viewKey;
+			focused = null;
+			node.scrollTop = positions.get(viewKey) ?? 0;
+			scrollTop = node.scrollTop;
+		});
+	});
+
 	function readViewport(node: HTMLElement): void {
 		scrollTop = node.scrollTop;
 		viewportHeight = node.clientHeight;
@@ -73,11 +89,18 @@ export function createVirtualScroll(options: () => VirtualScrollOptions) {
 		get columns() {
 			return layout.columns;
 		},
+		get pageSize() {
+			return Math.max(1, Math.floor(viewport.height / layout.rowHeight)) * layout.columns;
+		},
 		/** Attach to the scroll container; give it tabindex="-1" so it can hold focus for an item. */
 		scroller(node: HTMLElement) {
 			element = node;
 			readViewport(node);
-			const onScroll = () => (scrollTop = node.scrollTop);
+			const onScroll = () => {
+				scrollTop = node.scrollTop;
+				const { viewKey, count, positions } = options();
+				if (count > 0 && activeKey === viewKey) positions.set(viewKey, scrollTop);
+			};
 			// The scroller taking focus for an unmounted item must not forget that item.
 			const onFocusIn = (event: FocusEvent) => {
 				if (event.target !== node) focused = event.target;

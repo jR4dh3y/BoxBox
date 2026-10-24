@@ -20,6 +20,7 @@
 
 	interface Props {
 		pathSegments?: string[];
+		roots?: MountPoint[];
 		onNavigate?: (path: string) => void;
 		includeHiddenSuggestions?: boolean;
 		onClose: () => void;
@@ -27,6 +28,7 @@
 
 	let {
 		pathSegments = [],
+		roots = [],
 		onNavigate,
 		includeHiddenSuggestions = false,
 		onClose
@@ -217,9 +219,8 @@
 			}));
 	}
 
-	async function fetchRootSuggestions(prefix: string): Promise<PathSuggestion[]> {
-		const response = await listRoots();
-		return filterSuggestions(response.roots, '', prefix);
+	function rootSuggestions(prefix: string): PathSuggestion[] {
+		return filterSuggestions(roots, '', prefix);
 	}
 
 	async function fetchChildSuggestions(
@@ -246,7 +247,7 @@
 		try {
 			const nextSuggestions = parentPath
 				? await fetchChildSuggestions(parentPath, prefix)
-				: await fetchRootSuggestions(prefix);
+				: await rootSuggestions(prefix);
 
 			if (requestId !== suggestionRequestId) return;
 

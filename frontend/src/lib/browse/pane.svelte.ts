@@ -1,3 +1,4 @@
+import { SvelteMap } from 'svelte/reactivity';
 import { useBrowseSelection } from './selection.svelte';
 import {
 	parseBrowseLocation,
@@ -54,6 +55,7 @@ export function createBrowsePaneState(
 		id,
 		location,
 		selection,
+		scrollPositions: new SvelteMap<string, number>(),
 		get revealHiddenFiles() {
 			return revealHiddenFiles;
 		},

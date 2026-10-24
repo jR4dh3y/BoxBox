@@ -274,6 +274,13 @@
 				<FileGrid
 					items={data.displayItems}
 					path={location.path}
+					viewKey={JSON.stringify([
+						location.path,
+						location.trimmedSearchQuery,
+						location.sortBy,
+						location.sortDir
+					])}
+					scrollPositions={paneState.scrollPositions}
 					emptyMessage={data.emptyListMessage}
 					selectedPaths={selection.paths}
 					isLoading={data.isFileListLoading}
@@ -297,6 +304,13 @@
 			<FileList
 				items={data.displayItems}
 				path={location.path}
+				viewKey={JSON.stringify([
+					location.path,
+					location.trimmedSearchQuery,
+					location.sortBy,
+					location.sortDir
+				])}
+				scrollPositions={paneState.scrollPositions}
 				sortBy={location.sortBy}
 				sortDir={location.sortDir}
 				emptyMessage={data.emptyListMessage}
@@ -405,3 +419,11 @@
 	class="hidden"
 	onchange={uploads.handleInputChange}
 />
+
+{#if isLocalDesktop()}
+	{#await import('./RemoteCatalog.svelte') then { default: RemoteCatalog }}
+		<RemoteCatalog atRoot={data.isAtRoot} onchange={data.setRemoteCatalog} />
+	{:catch}
+		<LoadError label="remote locations" inline />
+	{/await}
+{/if}

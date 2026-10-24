@@ -9,8 +9,6 @@ import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { currentUsername } from '#lib/utils/sessionUser.js';
 
 let queue: Promise<void> = Promise.resolve();
-let loginSyncStarted = false;
-let sessionController = new AbortController();
 
 function enqueue(task: () => Promise<void>): Promise<void> {
 	const run = queue.then(task);

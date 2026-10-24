@@ -86,7 +86,7 @@ func gatewayJSON(headers http.Header) bool {
 func gatewayQueryAllowed(query url.Values) bool {
 	for name := range query {
 		switch name {
-		case "page", "pageSize", "includeHidden", "sortBy", "sortDir", "filter", "path", "q", "confirm", "width", "height", "uploadId":
+		case "page", "pageSize", "includeHidden", "sortBy", "sortDir", "filter", "path", "q", "confirm", "width", "height", "uploadId", "v":
 		default:
 			return false
 		}

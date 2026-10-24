@@ -32,6 +32,7 @@ export type FileKeyInput = Pick<
 /** How the view lays items out: arrow keys move by `columns`, and `focus` brings an index into view. */
 export interface FileCollectionView {
 	readonly columns: number;
+	readonly pageSize: number;
 	/** Where navigation resumes once the focused item has scrolled out. */
 	readonly focusedPath: string | null;
 	focus(index: number): Promise<void>;
@@ -78,7 +79,8 @@ export function useFileCollection(props: () => FileCollectionProps, view: FileCo
 					event.key,
 					items.findIndex((candidate) => candidate.path === item.path),
 					items.length,
-					view.columns
+					view.columns,
+					view.pageSize
 				);
 		if (nextIndex !== null) {
 			event.preventDefault();

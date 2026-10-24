@@ -25,7 +25,8 @@
 		deleteLocalWallpaper,
 		isInlineWallpaperDataUrl,
 		isLocalWallpaperReference,
-		saveLocalWallpaperDataUrl
+		saveLocalWallpaperDataUrl,
+		dataUrlToBlob
 	} from '#lib/utils/wallpaperStorage.js';
 	import {
 		ChevronLeft,
@@ -198,7 +199,11 @@
 			let backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
 			if (backgroundImage && isInlineWallpaperDataUrl(backgroundImage)) {
 				await setApplyProgress(35, 'Saving wallpaper locally...');
-				backgroundImage = await saveLocalWallpaperDataUrl(backgroundImage);
+				backgroundImage = desktop
+					? await (
+							await import('#lib/api/desktopPreferences.js')
+						).saveDesktopWallpaper(dataUrlToBlob(backgroundImage))
+					: await saveLocalWallpaperDataUrl(backgroundImage);
 				savedLocalBackgroundImage = backgroundImage;
 			}
 
@@ -216,6 +221,7 @@
 			);
 
 			settingsStore.set(nextSettings);
+			await settingsStore.flush();
 			settings = { ...nextSettings };
 
 			let shareWallpaperError: string | null = null;

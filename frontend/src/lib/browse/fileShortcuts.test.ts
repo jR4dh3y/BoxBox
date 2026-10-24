@@ -28,3 +28,10 @@ test('navigation follows grid columns and clamps at page boundaries', () => {
 	assert.equal(fileNavigationIndex('Enter', 0, 8), null);
 	assert.equal(fileNavigationIndex('Home', 0, 0), null);
 });
+
+test('page navigation moves by the visible page and clamps at both ends', () => {
+	assert.equal(fileNavigationIndex('PageDown', 5, 100, 3, 18), 23);
+	assert.equal(fileNavigationIndex('PageUp', 23, 100, 3, 18), 5);
+	assert.equal(fileNavigationIndex('PageUp', 5, 100, 3, 18), 0);
+	assert.equal(fileNavigationIndex('PageDown', 95, 100, 3, 18), 99);
+});

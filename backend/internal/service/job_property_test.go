@@ -3,6 +3,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -827,56 +828,41 @@ func TestProperty_JobCancellationCleanup(t *testing.T) {
 			if len(content) == 0 {
 				return true
 			}
-
-			svc, fs := setupTestJobService()
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			svc.Start(ctx)
-			defer svc.Stop()
-
-			// Create a larger source file to give time for cancellation
-			largeContent := make([]byte, 10*1024*1024) // 10MB
-			for i := range largeContent {
-				if i < len(content) {
-					largeContent[i] = content[i]
-				} else {
-					largeContent[i] = byte(i % 256)
+			memFS := filesystem.NewMemMapFS()
+			memFS.MkdirAll("/data/media", 0755)
+			memFS.MkdirAll("/data/backup", 0755)
+			memFS.WriteFile("/data/media/source.bin", bytes.Repeat(content, 2048), 0644)
+			var svc JobService
+			var jobID string
+			var once sync.Once
+			cancelled := make(chan struct{})
+			fs := &synchronizedFS{FS: memFS, onWriteFile: func(name string) {
+				if name == "/data/backup/dest.bin" {
+					once.Do(func() { svc.Cancel(context.Background(), jobID); close(cancelled) })
 				}
-			}
-			fs.WriteFile("/data/media/cancel_source.bin", largeContent, 0644)
-
-			job, err := svc.Create(ctx, model.JobParams{
-				Type:       model.JobTypeCopy,
-				SourcePath: "media/cancel_source.bin",
-				DestPath:   "backup/cancel_dest.bin",
-			})
+			}}
+			svc = NewJobService(fs, nil, JobServiceConfig{Workers: 1, MountPoints: []model.MountPoint{
+				{Name: "media", Path: "/data/media"}, {Name: "backup", Path: "/data/backup"},
+			}})
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			job, err := svc.Create(ctx, model.JobParams{Type: model.JobTypeCopy, SourcePath: "media/source.bin", DestPath: "backup/dest.bin"})
 			if err != nil {
 				return false
 			}
-
-			// Wait a bit for job to start, then cancel
-			time.Sleep(10 * time.Millisecond)
-			svc.Cancel(ctx, job.ID)
-
-			// Wait for cancellation to complete
-			time.Sleep(100 * time.Millisecond)
-
-			// Verify destination file is removed (or doesn't exist)
-			exists, _ := fs.Exists("/data/backup/cancel_dest.bin")
-
-			// If job completed before cancellation, destination may exist
-			// If cancelled during copy, destination should be removed
-			j, _ := svc.Get(ctx, job.ID)
-			if j != nil && j.State == model.JobStateCancelled {
-				// Cancelled job should have cleaned up destination
-				return !exists
+			jobID = job.ID
+			svc.Start(ctx)
+			select {
+			case <-cancelled:
+			case <-ctx.Done():
+				svc.Stop()
+				return false
 			}
-
-			// Job completed before cancellation - that's okay
-			return true
-		},
-		contentGen,
+			// Wait for worker cleanup, rather than guessing how long it takes on a CI runner.
+			svc.Stop()
+			exists, err := memFS.Exists("/data/backup/dest.bin")
+			return err == nil && !exists
+		}, contentGen,
 	))
 
 	properties.Property("cancelled copy job preserves source file unchanged", prop.ForAll(

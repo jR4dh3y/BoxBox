@@ -95,6 +95,10 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 
 func writeDesktopAppsError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, service.ErrDesktopPreferencesInput):
+		writeError(w, "Invalid desktop preferences.", model.ErrCodeValidationError, http.StatusBadRequest)
+	case errors.Is(err, service.ErrDesktopPreferences):
+		writeError(w, "Desktop preferences could not be saved or loaded.", model.ErrCodeInternalError, http.StatusInternalServerError)
 	case errors.Is(err, service.ErrDesktopRuntimeUnavailable):
 		writeError(w, "Could not inspect this file type. Make sure GIO is available.", model.ErrCodeInternalError, http.StatusServiceUnavailable)
 	case errors.Is(err, service.ErrDesktopApplicationUnavailable):
