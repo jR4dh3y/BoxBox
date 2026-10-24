@@ -1,7 +1,7 @@
 import { untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 
-/** Paths the user has selected in the current folder */
+/** Paths selected in the current folder or its search results. */
 export function useBrowseSelection() {
 	let paths = $state.raw<Set<string>>(new SvelteSet());
 
@@ -15,13 +15,16 @@ export function useBrowseSelection() {
 		set(next: Set<string>) {
 			paths = next;
 		},
-		/** Reconcile against the complete listing, including hidden files. */
-		retain(items: readonly { path: string }[]) {
+		/** Prune missing children only in the confirmed folder, including hidden files. */
+		retain(items: readonly { path: string }[], folder: string) {
 			untrack(() => {
 				if (paths.size === 0) return;
 				// eslint-disable-next-line svelte/prefer-svelte-reactivity -- This index lives only during reconciliation.
 				const existing = new Set(items.map((item) => item.path));
-				const next = [...paths].filter((path) => existing.has(path));
+				const next = [...paths].filter(
+					(path) =>
+						existing.has(path) || path.slice(0, Math.max(0, path.lastIndexOf('/'))) !== folder
+				);
 				if (next.length !== paths.size) paths = new SvelteSet(next);
 			});
 		},

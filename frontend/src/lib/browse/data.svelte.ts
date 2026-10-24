@@ -74,7 +74,7 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 		void directoryQuery.dataUpdatedAt;
 		// Leaving search is not a new server confirmation of the directory.
 		if (untrack(() => location.isSearchActive)) return;
-		selection.retain(directoryItems);
+		selection.retain(directoryItems, location.path);
 	});
 
 	const currentMount = $derived(

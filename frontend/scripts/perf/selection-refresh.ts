@@ -57,6 +57,25 @@ export async function verifySelectionRefresh(
 		await page.getByTitle('Refresh', { exact: true }).click();
 		await page.getByText('search-only.txt', { exact: true }).waitFor();
 		assert.equal(await page.locator('[data-file-row="true"][aria-selected="true"]').count(), 1);
+		mkdirSync(join(folder, 'Child'), { recursive: true });
+		writeFileSync(join(folder, 'Child', 'nested-search.txt'), 'fixture\n');
+		await search.fill('nested-search');
+		await page.getByText('nested-search.txt', { exact: true }).click();
+		await search.fill('');
+		await page.getByText('kept.txt', { exact: true }).waitFor();
+		const refreshed = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === '/api/v1/files/list/perf/Selection'
+		);
+		await page.getByTitle('Refresh', { exact: true }).click();
+		await refreshed;
+		await page.getByText('Child', { exact: true }).waitFor();
+		await search.fill('nested-search');
+		await page.getByText('nested-search.txt', { exact: true }).waitFor();
+		assert.equal(
+			await page.locator('[data-file-row="true"][aria-selected="true"]').count(),
+			1,
+			'refreshing the parent cannot prune a selected recursive search result'
+		);
 		assert.deepEqual(errors, []);
 		console.log(
 			'PASS: failed refresh preserves selection; confirmed refresh prunes deleted files and keeps existing selection'

@@ -1,4 +1,4 @@
-/** Narrowing helpers for JSON responses. Each throws with the field label on a mismatch. */
+/** Narrowing helpers for JSON responses. isRecord returns false; other helpers throw with the field label on a mismatch. */
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
