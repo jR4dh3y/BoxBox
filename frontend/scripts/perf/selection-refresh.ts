@@ -79,9 +79,11 @@ export async function verifySelectionRefresh(
 		writeFileSync(join(folder, 'canonical.txt'), 'fixture\n');
 		await page.goto(`${url}/browse?${new URLSearchParams({ path: 'perf/./Selection' })}`);
 		await page.getByText('canonical.txt', { exact: true }).click();
+		await page.getByText('1 of 4 selected', { exact: true }).waitFor();
 		unlinkSync(join(folder, 'canonical.txt'));
 		await page.getByTitle('Refresh', { exact: true }).click();
 		await page.getByText('canonical.txt', { exact: true }).waitFor({ state: 'detached' });
+		await page.getByText('3 items', { exact: true }).waitFor();
 		assert.equal(
 			await page.locator('[data-file-row="true"][aria-selected="true"]').count(),
 			0,
