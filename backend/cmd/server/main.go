@@ -315,7 +315,7 @@ func createRouter(
 		if connectService != nil {
 			connectHandler := handler.NewConnectHandler(connectService)
 			r.Route("/connect", func(r chi.Router) {
-				connectHandler.RegisterPublicRoutes(r)
+				connectHandler.RegisterPublicRoutes(r, middleware.RateLimit(0.5, cfg.TrustedProxies...))
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.JWTAuth(authService, connectService))
 					r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
