@@ -11,6 +11,7 @@ import { verifySelectionRefresh } from './selection-refresh';
 import { verifyNavigation } from './navigation';
 import { verifyPasteLoadRace } from './paste-load-race';
 import { verifyLazyLoadErrors } from './lazy-load-errors';
+import { verifyPathSuggestions } from './path-suggestions';
 
 const profiles = [
 	{ name: 'local', latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
@@ -217,6 +218,7 @@ async function benchmark(base?: string, sha?: string) {
 			: undefined;
 		if (previous) servers.push(previous);
 		browser = await chromium.launch({ headless: true });
+		await verifyPathSuggestions(browser, join(repo, 'dist/boxbox'));
 		for (let repeat = 0; repeat < 5; repeat++) {
 			for (const profile of profiles) {
 				const variants = previous

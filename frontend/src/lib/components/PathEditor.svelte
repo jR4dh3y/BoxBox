@@ -20,7 +20,7 @@
 
 	interface Props {
 		pathSegments?: string[];
-		roots?: MountPoint[];
+		roots: MountPoint[];
 		onNavigate?: (path: string) => void;
 		includeHiddenSuggestions?: boolean;
 		onClose: () => void;
@@ -28,7 +28,7 @@
 
 	let {
 		pathSegments = [],
-		roots = [],
+		roots,
 		onNavigate,
 		includeHiddenSuggestions = false,
 		onClose

@@ -496,7 +496,13 @@
 			Opening location editor…
 		</div>
 	{:then { default: PathEditor }}
-		<PathEditor {pathSegments} {onNavigate} {includeHiddenSuggestions} onClose={closeEditor} />
+		<PathEditor
+			{pathSegments}
+			{roots}
+			{onNavigate}
+			{includeHiddenSuggestions}
+			onClose={closeEditor}
+		/>
 	{:catch}
 		<LoadError label="location editor" onClose={closeEditor} />
 	{/await}
