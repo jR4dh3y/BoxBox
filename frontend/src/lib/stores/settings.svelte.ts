@@ -90,6 +90,7 @@ class SettingsStore {
 	current = $state.raw<UserSettings>({ ...defaultSettings });
 	private username: string | null = null;
 	private session = 0;
+	wallpaperRevision = 0;
 
 	/** Call after sign-in: the drive names come from an authenticated endpoint. */
 	async initialize(): Promise<void> {
@@ -109,8 +110,18 @@ class SettingsStore {
 	}
 
 	set(settings: UserSettings): void {
-		if (this.username !== null) settingsStorage.set(settings, this.username);
+		if (
+			settings.backgroundImage !== this.current.backgroundImage ||
+			settings.backgroundImageMode !== this.current.backgroundImageMode ||
+			settings.frostedGlass !== this.current.frostedGlass
+		)
+			this.wallpaperRevision++;
 		this.current = settings;
+		try {
+			if (this.username !== null) settingsStorage.set(settings, this.username);
+		} catch (error) {
+			console.warn('Unable to persist settings', error);
+		}
 	}
 
 	clearSession(): void {
@@ -120,6 +131,7 @@ class SettingsStore {
 	}
 
 	reset(): void {
+		this.wallpaperRevision++;
 		this.set(defaultSettings);
 	}
 

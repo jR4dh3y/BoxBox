@@ -1,10 +1,10 @@
 /** Publishes explicit wallpaper saves without re-uploading matching image bytes. */
 import {
 	deleteWallpaper,
-	getWallpaper,
 	updateWallpaperDisplay,
 	uploadWallpaper
-} from '#lib/api/wallpaper.js';
+} from '#lib/api/wallpaperImage.js';
+import { getWallpaper } from '#lib/api/wallpaper.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { resolveBackgroundImageUrl } from '#lib/utils/appearance.js';
 import { normalizeBackgroundImageMode } from '#lib/utils/wallpaper.js';
@@ -17,11 +17,11 @@ import {
 	toLocalWallpaperReference
 } from '#lib/utils/wallpaperStorage.js';
 
-export async function publishWallpaper(signal: AbortSignal): Promise<void> {
+export async function publishWallpaper(signal: AbortSignal, allowDeletion: boolean): Promise<void> {
 	const { backgroundImage } = settingsStore.current;
 	if (backgroundImage) {
 		await reconcile(backgroundImage, signal);
-	} else if (await getWallpaper(signal)) {
+	} else if (allowDeletion && (await getWallpaper(signal))) {
 		signal.throwIfAborted();
 		await deleteWallpaper(signal);
 	}

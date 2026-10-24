@@ -2,6 +2,8 @@
  * Restores the server wallpaper on login and publishes explicit settings saves.
  * One queue and session cancellation keep work from crossing account changes.
  */
+import { getWallpaper } from '#lib/api/wallpaper.js';
+import { deleteLocalWallpaper } from '#lib/utils/wallpaperStorage.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { currentUsername } from '#lib/utils/sessionUser.js';
 
@@ -22,14 +24,30 @@ export function syncShareWallpaperOnLogin(): Promise<void> {
 	if (loginSyncStarted) return Promise.resolve();
 	loginSyncStarted = true;
 	const { signal } = sessionController;
+	const revision = settingsStore.wallpaperRevision;
 	return enqueue(async () => {
 		signal.throwIfAborted();
 		const user = currentUsername();
 		if (!user) return;
 		const initial = settingsStore.current;
-		const { restoreWallpaper } = await import('./wallpaperRestore.js');
+		const stored = await getWallpaper(signal);
 		signal.throwIfAborted();
-		await restoreWallpaper(user, initial, signal);
+		let backgroundImage: string | null = null;
+		if (stored) {
+			const { restoreWallpaper } = await import('./wallpaperRestore.js');
+			signal.throwIfAborted();
+			backgroundImage = await restoreWallpaper(stored, signal);
+		}
+		signal.throwIfAborted();
+		if (currentUsername() !== user || settingsStore.wallpaperRevision !== revision) return;
+		settingsStore.set({
+			...settingsStore.current,
+			backgroundImage,
+			backgroundImageMode: stored?.mode ?? 'cover',
+			frostedGlass: stored?.frostedGlass ?? false
+		});
+		if (initial.backgroundImage !== backgroundImage)
+			await deleteLocalWallpaper(initial.backgroundImage);
 	}).catch((error) => {
 		if (!signal.aborted) console.warn('Unable to restore the wallpaper', error);
 	});
@@ -42,13 +60,13 @@ export function resetShareWallpaperLoginSync(): void {
 	loginSyncStarted = false;
 }
 
-/** After saving settings: make the server copy match exactly, including removal. */
-export function publishShareWallpaper(): Promise<void> {
+/** Delete only after an explicit removal or Reset; unrelated saves preserve remote data. */
+export function publishShareWallpaper(allowDeletion = false): Promise<void> {
 	const { signal } = sessionController;
 	return enqueue(async () => {
 		signal.throwIfAborted();
 		const { publishWallpaper } = await import('./wallpaperPublish.js');
 		signal.throwIfAborted();
-		await publishWallpaper(signal);
+		await publishWallpaper(signal, allowDeletion);
 	});
 }

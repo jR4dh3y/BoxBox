@@ -3,9 +3,11 @@ import { test } from 'node:test';
 import { IDBFactory } from 'fake-indexeddb';
 import { STORAGE_KEYS } from '#lib/config.js';
 import { ApiRequestError, clearTokens } from '#lib/api/client.js';
-import { downloadWallpaper, getWallpaper, type StoredWallpaper } from '#lib/api/wallpaper.js';
+import { downloadWallpaper } from '#lib/api/wallpaperImage.js';
+import { getWallpaper, type StoredWallpaper } from '#lib/api/wallpaper.js';
 import { authStore } from '#lib/stores/auth.svelte.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
+import { refreshWallpaperDraft } from './wallpaperDraft';
 import { getLocalWallpaperBlob, toLocalWallpaperReference } from './wallpaperStorage';
 import {
 	publishShareWallpaper,
@@ -177,7 +179,7 @@ test('fresh login restores image bytes and display settings; later logins valida
 		await publishShareWallpaper();
 		assert.ok(requests.includes('PATCH /api/v1/settings/wallpaper'));
 		settingsStore.set({ ...settingsStore.current, backgroundImage: null });
-		await publishShareWallpaper();
+		await publishShareWallpaper(true);
 		assert.ok(requests.includes('DELETE /api/v1/settings/wallpaper'));
 	});
 });
@@ -349,5 +351,99 @@ test('invalid metadata and image errors do not clear an existing wallpaper', asy
 		await assert.rejects(downloadWallpaper(), ApiRequestError);
 		await syncShareWallpaperOnLogin();
 		assert.equal(settingsStore.current.backgroundImage, 'data:image/png;base64,aGVsbG8=');
+	});
+});
+
+test('an open settings draft adopts restored wallpaper without losing unrelated edits', async () => {
+	await withSession(async ({ login, setWallpaper, requests }) => {
+		const reference = setWallpaper('alice');
+		await login('alice');
+		const initial = settingsStore.current;
+		const draft = { ...initial, compactMode: true };
+		await syncShareWallpaperOnLogin();
+		const refreshed = refreshWallpaperDraft(draft, initial, settingsStore.current);
+		assert.equal(refreshed.backgroundImage, reference);
+		assert.equal(refreshed.compactMode, true);
+		settingsStore.set(refreshed);
+		await publishShareWallpaper(false);
+		assert.equal(
+			requests.some((request) => request.startsWith('DELETE')),
+			false
+		);
+		const edited = refreshWallpaperDraft(
+			{
+				...initial,
+				backgroundImage: 'data:image/png;base64,aGVsbG8=',
+				backgroundImageMode: 'tile'
+			},
+			initial,
+			settingsStore.current
+		);
+		assert.equal(edited.backgroundImage, 'data:image/png;base64,aGVsbG8=');
+		assert.equal(edited.backgroundImageMode, 'tile');
+	});
+});
+
+test('Reset to unchanged defaults wins over a pending login restoration and deletes remotely', async () => {
+	await withSession(async ({ login, setWallpaper, state, stored, requests }) => {
+		setWallpaper('alice');
+		await login('alice');
+		const started = deferred();
+		const release = deferred();
+		state.beforeMetadata = async () => {
+			started.resolve();
+			await release.promise;
+		};
+		const pending = syncShareWallpaperOnLogin();
+		try {
+			await started.promise;
+			settingsStore.reset();
+			const publish = publishShareWallpaper(true);
+			release.resolve();
+			await pending;
+			await publish;
+			assert.equal(settingsStore.current.backgroundImage, null);
+			assert.equal(stored.has('alice'), false);
+			assert.ok(requests.includes('DELETE /api/v1/settings/wallpaper'));
+		} finally {
+			release.resolve();
+			await pending;
+		}
+	});
+});
+
+test('failed persistence still applies preferences and a restored wallpaper in memory', async () => {
+	await withSession(async ({ login, setWallpaper }) => {
+		const reference = setWallpaper('alice');
+		await login('alice');
+		const original = localStorage.setItem;
+		localStorage.setItem = () => {
+			throw new Error('Storage full');
+		};
+		try {
+			settingsStore.set({ ...settingsStore.current, compactMode: true });
+			assert.equal(settingsStore.current.compactMode, true);
+			await syncShareWallpaperOnLogin();
+			assert.equal(settingsStore.current.backgroundImage, reference);
+			assert.equal(settingsStore.current.compactMode, true);
+		} finally {
+			localStorage.setItem = original;
+		}
+	});
+});
+
+test('an unrelated save after failed image restoration preserves the remote wallpaper', async () => {
+	await withSession(async ({ login, setWallpaper, state, stored, requests }) => {
+		setWallpaper('alice');
+		await login('alice');
+		state.imageStatus = 500;
+		await syncShareWallpaperOnLogin();
+		settingsStore.set({ ...settingsStore.current, compactMode: true });
+		await publishShareWallpaper(false);
+		assert.equal(stored.has('alice'), true);
+		assert.equal(
+			requests.some((request) => request.startsWith('DELETE')),
+			false
+		);
 	});
 });

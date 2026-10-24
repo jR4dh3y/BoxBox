@@ -1,0 +1,36 @@
+PR #188 follow-up validation (2026-10-25)
+
+Reviewed baseline: 23cab47265a9dd8eb3d3d4d2a3b179010cc95f9f.
+Greptile review completed at that SHA with confidence 3/5; four active findings validated.
+
+Fixed: untouched wallpaper draft fields follow login restoration; Reset advances the
+wallpaper revision even at defaults; failed localStorage writes preserve in-memory
+settings; unrelated saves cannot delete an unrestored server wallpaper.
+Metadata is still confirmed on each login. Image transport/cache loading happens only
+when wallpaper metadata exists. The settings screen loads on navigation, with an error
+boundary. Removed the async paint gap between calculating and applying saved settings.
+
+Passed:
+- bun run check: 0 errors, 0 warnings.
+- bun run test: 128 tests, including 12 wallpaper synchronization tests.
+- bun run lint; bun run perf:check.
+- Svelte autofixer: no issues. Its draft-effect suggestions were reviewed: the effect
+  merges external restoration into an editable draft; untrack avoids a feedback loop.
+- bun run perf:browser: 20 samples, existing request/byte gates; logged-out checks,
+  lazy-load failure checks, and navigation/settings/share/reload/logout checks.
+- bun run perf:budget: 301005 raw static JS bytes; no chunk import cycles.
+- bun scripts/verify-wallpaper-settings.ts: real embedded Go server, isolated browser
+  contexts; draft opened before restoration, save while restoration pending, Reset
+  while restoration pending, image failure + unrelated save, and localStorage failure.
+  Each case asserts rendered state, API mutations, stored metadata and no page errors.
+
+Before/after browse startup:
+- Baseline reproduced CI failure: 11 scripts / 287024 decoded bytes.
+- Final: 9 scripts / 282649 decoded bytes in all 20 samples.
+- Baseline first local/cold render: 192 ms (n=1; failed deterministic gate).
+- Final files-visible medians: local cold 172 ms, warm 133 ms; slow cold 1376 ms,
+  warm 913 ms (n=5 each). Timing is advisory; no statistical speed claim.
+- Lowered static ceiling to 301056 bytes and browser ceiling to 283648 bytes.
+
+Limits: no full backend unit suite rerun (backend source unchanged); no desktop,
+mobile, Safari or Firefox run. GitHub CI and Greptile must run on the pushed head.
