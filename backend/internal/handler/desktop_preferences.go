@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 
@@ -11,8 +13,17 @@ import (
 )
 
 func RegisterDesktopPreferences(r chi.Router, preferences *service.DesktopPreferences, settings service.SettingsService) {
-	r.Get("/wallpaper", func(w http.ResponseWriter, r *http.Request) {
-		image, meta, err := settings.OpenWallpaper("dev")
+	serveWallpaper := func(w http.ResponseWriter, r *http.Request) {
+		username := "dev"
+		if id := chi.URLParam(r, "id"); id != "" {
+			decoded, err := hex.DecodeString(id)
+			if err != nil || len(decoded) != sha256.Size {
+				writeError(w, "Invalid wallpaper reference.", model.ErrCodeValidationError, http.StatusBadRequest)
+				return
+			}
+			username = "desktop-" + id
+		}
+		image, meta, err := settings.OpenWallpaper(username)
 		if err != nil {
 			HandleServiceError(w, err)
 			return
@@ -21,14 +32,19 @@ func RegisterDesktopPreferences(r chi.Router, preferences *service.DesktopPrefer
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 		w.Write(image)
-	})
+	}
+	r.Get("/wallpaper", serveWallpaper)
+	r.Get("/wallpaper/{id}", serveWallpaper)
 	r.Put("/wallpaper", func(w http.ResponseWriter, r *http.Request) {
 		image, err := io.ReadAll(http.MaxBytesReader(w, r.Body, config.MaxWallpaperBytes))
 		if err != nil {
 			writeError(w, "Wallpaper exceeds the size limit.", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge)
 			return
 		}
-		meta, err := settings.SetWallpaper("dev", image, model.WallpaperDisplay{Mode: "cover"}, "desktop")
+		// Staging never replaces an image referenced by committed preferences.
+		digest := sha256.Sum256(image)
+		id := hex.EncodeToString(digest[:])
+		meta, err := settings.SetWallpaper("desktop-"+id, image, model.WallpaperDisplay{Mode: "cover"}, "desktop")
 		if err != nil {
 			HandleServiceError(w, err)
 			return

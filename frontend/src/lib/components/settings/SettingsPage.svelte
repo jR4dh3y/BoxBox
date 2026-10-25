@@ -202,7 +202,7 @@
 				backgroundImage = desktop
 					? await (
 							await import('#lib/api/desktopPreferences.js')
-						).saveDesktopWallpaper(dataUrlToBlob(backgroundImage))
+						).saveDesktopWallpaper(dataUrlToBlob(backgroundImage), signal)
 					: await saveLocalWallpaperDataUrl(backgroundImage);
 				savedLocalBackgroundImage = backgroundImage;
 			}

@@ -103,6 +103,7 @@
 				return '';
 			}
 		}
+		if (value.endsWith('/') && !path.endsWith('/')) path += '/';
 		return path
 			.replaceAll('\\', '/')
 			.replace(/^\/+/, '')
@@ -136,7 +137,7 @@
 		selectionMax: number,
 		caretOffset: number
 	): PathDisplayPart[] {
-		const normalized = normalizeInputPath(value);
+		const normalized = value;
 		const parts: PathDisplayPart[] = [];
 
 		for (let offset = 0; offset <= normalized.length; offset += 1) {
@@ -345,7 +346,7 @@
 	}
 
 	function handlePathInput(event: Event & { currentTarget: HTMLInputElement }): void {
-		pathDraft = normalizeInputPath(event.currentTarget.value);
+		pathDraft = event.currentTarget.value;
 		activeSuggestionIndex = 0;
 		suggestionSelectedByKeyboard = false;
 		queueSuggestions();

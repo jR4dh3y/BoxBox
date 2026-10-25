@@ -65,7 +65,13 @@ export async function saveDesktopPreferences(settings: UserSettings): Promise<vo
 	await api.put('/desktop/preferences', settings);
 }
 
-export async function saveDesktopWallpaper(image: Blob): Promise<string> {
-	await apiRequest('/desktop/wallpaper', { method: 'PUT', body: image });
-	return `/api/v1/desktop/wallpaper?v=${Date.now()}`;
+export async function saveDesktopWallpaper(image: Blob, signal: AbortSignal): Promise<string> {
+	const value = await apiRequest<unknown>('/desktop/wallpaper', {
+		method: 'PUT',
+		body: image,
+		signal
+	});
+	const id = string(record(value, 'desktop wallpaper').sha256, 'wallpaper hash');
+	if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Invalid desktop wallpaper reference');
+	return `/api/v1/desktop/wallpaper/${id}`;
 }
