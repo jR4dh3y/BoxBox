@@ -122,7 +122,7 @@ GET /api/v1/files/list/{path}
 
 `{path}` starts with the mount name, for example `home/projects`.
 
-The response holds every entry of the directory, hidden entries included, in no particular order. Clients reconstruct each entry path as `path + "/" + name`, then sort and filter it. A server rejects a directory with more than 10,000 entries with `413`; the desktop app has no limit.
+The response holds every entry of the directory, hidden entries included, in no particular order. Clients reconstruct each entry path as `path + "/" + name`, then sort and filter it. Refresh replaces the listing rather than appending pages. A server rejects a directory with more than 10,000 entries with `413`; the desktop app has no limit.
 
 Response:
 

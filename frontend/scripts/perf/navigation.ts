@@ -46,7 +46,12 @@ export async function verifyNavigation(
 			await page.getByRole('menuitem', { name: action, exact: true }).click();
 			await page
 				.getByRole('alert')
-				.filter({ hasText: /Child (pinned|unpinned) to favorites|Child unpinned from favorites/ })
+				.filter({
+					hasText:
+						action === 'Pin to Favorites'
+							? 'Child pinned to favorites'
+							: 'Child unpinned from favorites'
+				})
 				.waitFor();
 			await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
 		}
