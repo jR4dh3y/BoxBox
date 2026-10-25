@@ -29,6 +29,9 @@ type FS interface {
 	// EvalSymlinks returns the path after evaluating symbolic links.
 	EvalSymlinks(path string) (string, error)
 
+	// Readlink returns the stored target of a symbolic link.
+	Readlink(path string) (string, error)
+
 	// Stat returns a FileInfo describing the named file.
 	Stat(name string) (fs.FileInfo, error)
 
@@ -230,6 +233,17 @@ func (a *AferoFS) EvalSymlinks(path string) (string, error) {
 	}
 	// MemMapFs does not implement symbolic links.
 	return filepath.Clean(path), nil
+}
+
+func (a *AferoFS) Readlink(path string) (string, error) {
+	if err := validateFilesystemPath(path); err != nil {
+		return "", err
+	}
+	path = filepath.Clean("/" + path)
+	if reader, ok := a.fs.(afero.LinkReader); ok {
+		return reader.ReadlinkIfPossible(path)
+	}
+	return "", afero.ErrNoReadlink
 }
 
 // Stat returns a FileInfo describing the named file.

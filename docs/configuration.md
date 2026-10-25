@@ -159,7 +159,9 @@ mount_points:
     read_only: true
 ```
 
-Writes, uploads, renames, moves, and deletes under that mount return `403`.
+Writes, uploads, renames, moves, and deletes under that mount return `403`, including access through another mount that exposes the same files. For overlapping locations, the most specific real mount controls write access; read-only aliases of the same location take precedence. An explicitly writable child of a read-only parent remains writable through its own mount. Deleting or moving a parent directory that contains a read-only mount is denied. These restrictions apply to shared-folder recipients as well as signed-in users.
+
+BoxBox must be able to resolve every read-only mount root. If permissions or another resolution failure hide a root's identity, writes are denied across mounts until the root is accessible or the configuration is corrected; an unresolved root could otherwise be reached through a writable alias. Reads remain available. A malformed root beneath a regular file (`ENOTDIR`) cannot hide a live directory and does not block unrelated writes.
 
 ### Auto-Discovery
 
