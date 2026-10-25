@@ -29,6 +29,10 @@ func newTestAuthService(secret string) *testAuthService {
 	return &testAuthService{jwtSecret: []byte(secret)}
 }
 
+func (s *testAuthService) VerifyPassword(ctx context.Context, username, password string) error {
+	return service.ErrInvalidCredentials
+}
+
 func (s *testAuthService) Login(ctx context.Context, username, password string) (*service.TokenPair, error) {
 	return nil, nil
 }

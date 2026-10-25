@@ -60,6 +60,9 @@ type FS interface {
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
 
+	// Mkdir creates one new directory and fails when it already exists.
+	Mkdir(path string, perm os.FileMode) error
+
 	// Chmod changes the mode bits of the named file or directory.
 	Chmod(name string, mode os.FileMode) error
 
@@ -364,6 +367,13 @@ func (a *AferoFS) MkdirAll(path string, perm os.FileMode) error {
 	}
 	path = filepath.Clean("/" + path)
 	return a.fs.MkdirAll(path, perm)
+}
+
+func (a *AferoFS) Mkdir(path string, perm os.FileMode) error {
+	if err := validateFilesystemPath(path); err != nil {
+		return err
+	}
+	return a.fs.Mkdir(filepath.Clean("/"+path), perm)
 }
 
 // Chmod changes the mode bits of the named file or directory.
