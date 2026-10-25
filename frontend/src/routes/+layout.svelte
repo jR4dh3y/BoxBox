@@ -129,10 +129,7 @@
 
 	$effect(() => {
 		if (!initialized || !authStore.isAuthenticated || !isLocalDesktop()) return;
-		const timer = setInterval(() => {
-			void jobsStore.loadJobs();
-		}, 2000);
-		return () => clearInterval(timer);
+		return jobsStore.connectPolling();
 	});
 
 	$effect(() => {

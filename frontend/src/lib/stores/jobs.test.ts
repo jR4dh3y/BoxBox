@@ -345,3 +345,59 @@ describe('jobsStore.loadJobs', () => {
 		assert.equal(calls, 0);
 	});
 });
+
+describe('desktop polling lifecycle', () => {
+	test('a slow load finishes before another poll; socket completion stays responsive', async () => {
+		let calls = 0;
+		jobsStore.onFinished = () => calls++;
+		jobsStore.upsertJob(job('running'));
+		jobsStore.upsertJob({ ...job('running'), id: 'local-socket-job' });
+		const held = holdJobs({ ...job('running'), progress: 50 });
+		const loading = jobsStore.loadJobs();
+		await held.requested;
+		const disconnect = jobsStore.connectPolling();
+		try {
+			await new Promise((resolve) => setTimeout(resolve, 2200));
+			jobsStore.updateFromWebSocket({
+				jobId: 'local-socket-job',
+				state: 'completed',
+				progress: 100
+			});
+			assert.equal(calls, 1, 'local socket publishes while remote listing is pending');
+			held.respond();
+			await loading;
+			assert.equal(jobsStore.jobs.get('job-1')?.progress, 50);
+			serveJobs({ ...job('completed'), progress: 100 });
+			await new Promise((resolve) => setTimeout(resolve, 2100));
+			assert.equal(jobsStore.jobs.get('job-1')?.state, 'completed');
+			assert.equal(calls, 2);
+			await jobsStore.loadJobs();
+			assert.equal(calls, 2, 'terminal reload does not repeat invalidation');
+		} finally {
+			held.respond();
+			disconnect();
+			await loading;
+		}
+	});
+
+	test('disconnect invalidates a held load and never schedules another poll', async () => {
+		const held = holdJobs(job('running'));
+		const loading = jobsStore.loadJobs();
+		await held.requested;
+		const disconnect = jobsStore.connectPolling();
+		disconnect();
+		held.respond();
+		await loading;
+		let requests = 0;
+		Object.assign(globalThis, {
+			fetch: async () => {
+				requests++;
+				return Response.json({ jobs: [] });
+			}
+		});
+		await new Promise((resolve) => setTimeout(resolve, 2100));
+		assert.equal(requests, 0);
+		assert.equal(jobsStore.jobs.size, 0);
+		assert.equal(jobsStore.isLoading, false);
+	});
+});

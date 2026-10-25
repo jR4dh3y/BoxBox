@@ -2,13 +2,14 @@ import { untrack } from 'svelte';
 import { directoryUrl, listDirectory, listRoots, getDriveStats, search } from '#lib/api/files.js';
 import { earlyStart, type EarlyStartSource } from '#lib/api/earlyStart.js';
 import { isRemotePath } from '#lib/api/remotePaths.js';
+import { isNativePath } from '#lib/api/desktop.js';
 import { CONFIG } from '#lib/config.js';
 
 type Confirmation =
 	{ kind: 'idle' } | { kind: 'pending' } | { kind: 'ready' } | { kind: 'failed'; error: Error };
 
 /** Aborting also cancels retry backoff and offline waits. */
-function waitForRequest(signal: AbortSignal, delay = 0): Promise<void> {
+function waitForRequest(signal: AbortSignal, delay: number, path: string): Promise<void> {
 	return new Promise((resolve) => {
 		let stopOnline = () => {};
 		const finish = () => {
@@ -22,7 +23,7 @@ function waitForRequest(signal: AbortSignal, delay = 0): Promise<void> {
 		};
 		signal.addEventListener('abort', finish, { once: true });
 		const timer = setTimeout(() => {
-			if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+			if (!isNativePath(path) && typeof navigator !== 'undefined' && navigator.onLine === false) {
 				window.addEventListener('online', online);
 				stopOnline = () => window.removeEventListener('online', online);
 			} else finish();
@@ -42,7 +43,10 @@ class ConfirmationRequest<T> {
 	private generation = 0;
 	private request: { controller: AbortController; done: Promise<void> } | undefined;
 
-	constructor(private readonly fetch: (signal: AbortSignal) => Promise<T>) {}
+	constructor(
+		private readonly fetch: (signal: AbortSignal) => Promise<T>,
+		private readonly path = ''
+	) {}
 
 	get value() {
 		return this.state.kind !== 'idle' ? this.snapshot : undefined;
@@ -83,7 +87,7 @@ class ConfirmationRequest<T> {
 				do {
 					generation = this.generation;
 					for (let attempt = 0; ; attempt++) {
-						await waitForRequest(signal, attempt ? 1000 : 0);
+						await waitForRequest(signal, attempt ? 1000 : 0, this.path);
 						if (signal.aborted) return;
 						try {
 							const value = await this.fetch(signal);
@@ -167,7 +171,7 @@ export class BrowseRequests {
 				const early = await this.early.takeDirectory(directoryUrl(path));
 				if (signal.aborted) throw signal.reason;
 				return early ?? listDirectory(path, signal);
-			});
+			}, path);
 			this.folders.set(path, entry);
 		}
 		return entry;
@@ -183,7 +187,10 @@ export class BrowseRequests {
 		const key = JSON.stringify([path, query]);
 		let entry = this.searches.get(key);
 		if (!entry) {
-			entry = { path, request: new ConfirmationRequest((signal) => search(path, query, signal)) };
+			entry = {
+				path,
+				request: new ConfirmationRequest((signal) => search(path, query, signal), path)
+			};
 			this.searches.set(key, entry);
 		}
 		return entry.request;

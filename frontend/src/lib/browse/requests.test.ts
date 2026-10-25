@@ -385,3 +385,65 @@ describe('workspace session and job boundaries', () => {
 		}
 	});
 });
+
+test('offline native desktop confirms local folders, search, catalog and prefetch over HTTP', async () => {
+	const navigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+	const document = Object.getOwnPropertyDescriptor(globalThis, 'document');
+	const events = Object.assign(new EventTarget(), { location: { origin: '' } });
+	const server = Bun.serve({
+		port: 0,
+		fetch(request) {
+			const url = new URL(request.url);
+			requests.push(url.pathname);
+			if (url.pathname.endsWith('/stats')) return Response.json({ drives: [] });
+			if (url.pathname.endsWith('/files')) return Response.json({ roots: [] });
+			if (url.pathname.endsWith('/search'))
+				return Response.json({
+					path: 'media',
+					query: 'a',
+					count: 1,
+					results: listing('a.txt').items
+				});
+			return Response.json(listing('a.txt'));
+		}
+	});
+	events.location.origin = server.url.origin;
+	Object.assign(globalThis, { window: events, fetch: realFetch });
+	Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } });
+	Object.defineProperty(globalThis, 'document', {
+		configurable: true,
+		value: { querySelector: () => ({}) }
+	});
+	const releases = [
+		owner.observe('media'),
+		owner.observeSearch('media', 'a'),
+		owner.observeCatalog(true)
+	];
+	const prefetch = owner.prefetch('media/child');
+	try {
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		assert.equal(requests.length, 5);
+		assert.equal(owner.folder('media').value?.items[0].name, 'a.txt');
+		assert.equal(owner.matches('media', 'a').value?.results[0].name, 'a.txt');
+		assert.deepEqual(owner.catalog().roots.value?.roots, []);
+		assert.deepEqual(owner.catalog().stats.value?.drives, []);
+		assert.equal(owner.folder('media/child').value?.items[0].name, 'a.txt');
+		const remote = '@remote/12345678-1234-1234-1234-123456789012/media';
+		releases.push(owner.observe(remote), owner.observeSearch(remote, 'a'));
+		await settle();
+		assert.equal(requests.length, 5, 'qualified remote work still waits offline');
+		owner.reset();
+		events.dispatchEvent(new Event('online'));
+		await settle();
+		assert.equal(requests.length, 5, 'reset cancels offline remote waits');
+	} finally {
+		owner.reset();
+		for (const release of releases) release();
+		await prefetch;
+		if (navigator) Object.defineProperty(globalThis, 'navigator', navigator);
+		else Reflect.deleteProperty(globalThis, 'navigator');
+		if (document) Object.defineProperty(globalThis, 'document', document);
+		else Reflect.deleteProperty(globalThis, 'document');
+		server.stop(true);
+	}
+});
