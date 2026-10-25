@@ -10,6 +10,8 @@ import { createDirectoryFixture, startServer } from './server';
 import { verifyBrowseOwnership } from './browse-ownership';
 import { verifyFolderNavigation } from './folder-navigation';
 import { verifyDesktopPreferences } from './desktop-preferences';
+import { verifyDesktopWallpaper } from './desktop-wallpaper';
+import { verifyDesktopPathInput } from './desktop-path-input';
 import { verifyGridWindow } from './grid-window';
 import { verifyDesktopWatch } from './desktop-watch';
 import { verifySelectionRefresh } from './selection-refresh';
@@ -239,6 +241,8 @@ async function benchmark(base?: string, sha?: string) {
 		}
 		await verifyGridWindow(browser, head.url, head.credentials);
 		await verifyDesktopWatch(browser, join(repo, 'dist/boxbox'));
+		await verifyDesktopWallpaper(browser, join(repo, 'dist/boxbox'));
+		await verifyDesktopPathInput(browser, join(repo, 'dist/boxbox'));
 		await verifyDesktopPreferences(browser, join(repo, 'dist/boxbox'));
 		await verifyFolderNavigation(browser, head.url, head.credentials, fixture.mount);
 		await verifyBrowseOwnership(browser, head.url, head.credentials, fixture.mount);

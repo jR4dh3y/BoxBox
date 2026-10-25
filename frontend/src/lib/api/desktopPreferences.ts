@@ -66,13 +66,22 @@ export async function saveDesktopPreferences(settings: UserSettings): Promise<vo
 	await api.put('/desktop/preferences', settings);
 }
 
-export async function saveDesktopWallpaper(image: Blob): Promise<string> {
-	await apiRequest('/desktop/wallpaper', { method: 'PUT', body: image });
-	return `/api/v1/desktop/wallpaper?v=${Date.now()}`;
+export async function saveDesktopWallpaper(image: Blob, signal: AbortSignal): Promise<string> {
+	const value = await apiRequest<unknown>('/desktop/wallpaper', {
+		method: 'PUT',
+		body: image,
+		signal
+	});
+	const id = string(record(value, 'desktop wallpaper').sha256, 'wallpaper hash');
+	if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Invalid desktop wallpaper reference');
+	return `/api/v1/desktop/wallpaper/${id}`;
 }
 
 /** Move legacy renderer images into desktop storage before preferences are persisted. */
-export async function migrateDesktopWallpaper(settings: UserSettings): Promise<UserSettings> {
+export async function migrateDesktopWallpaper(
+	settings: UserSettings,
+	signal: AbortSignal
+): Promise<UserSettings> {
 	const { normalizeBackgroundImage } = await import('#lib/utils/appearance.js');
 	const {
 		isInlineWallpaperDataUrl,
@@ -90,7 +99,7 @@ export async function migrateDesktopWallpaper(settings: UserSettings): Promise<U
 		? dataUrlToBlob(backgroundImage)
 		: await getLocalWallpaperBlob(backgroundImage);
 	if (!image) throw new Error('The saved desktop wallpaper could not be read.');
-	return { ...settings, backgroundImage: await saveDesktopWallpaper(image) };
+	return { ...settings, backgroundImage: await saveDesktopWallpaper(image, signal) };
 }
 
 /** Desktop persistence shares the settings session's cancellation lifetime. */
@@ -104,7 +113,7 @@ export class DesktopPreferences {
 		try {
 			const saved = (await loadDesktopPreferences(defaults)) ?? fallback;
 			this.signal.throwIfAborted();
-			const migrated = await migrateDesktopWallpaper(saved);
+			const migrated = await migrateDesktopWallpaper(saved, this.signal);
 			this.signal.throwIfAborted();
 			this.loaded = true;
 			return migrated;
