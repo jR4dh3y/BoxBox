@@ -37,6 +37,24 @@ export async function verifyNavigation(
 
 		await page.goto(`${url}/browse?path=perf/Navigation`);
 		await page.getByText('Parent.txt', { exact: true }).waitFor();
+		const childRow = page
+			.locator('[data-file-row="true"]')
+			.filter({ has: page.getByText('Child', { exact: true }) });
+		for (const action of ['Pin to Favorites', 'Unpin from Favorites']) {
+			await childRow.click({ button: 'right' });
+			await page.getByRole('menuitem', { name: action, exact: true }).click();
+			await page
+				.getByRole('alert')
+				.filter({
+					hasText:
+						action === 'Pin to Favorites'
+							? 'Child pinned to favorites'
+							: 'Child unpinned from favorites'
+				})
+				.waitFor();
+			await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+		}
+
 		await page.getByText('Child', { exact: true }).click();
 		await page.getByText('Nested.txt', { exact: true }).waitFor();
 		await page.getByTitle('Back', { exact: true }).click();

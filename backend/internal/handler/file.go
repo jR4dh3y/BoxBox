@@ -47,7 +47,7 @@ func (h *FileHandler) ListPath(w http.ResponseWriter, r *http.Request) {
 		HandleServiceError(w, err)
 		return
 	}
-	writeJSON(w, list, http.StatusOK)
+	writeJSON(w, directoryListing(list), http.StatusOK)
 }
 
 // MountPointResponse represents a mount point in API responses

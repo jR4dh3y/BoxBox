@@ -3,6 +3,8 @@
  * Provides success, error, info, warning notifications
  */
 
+import { untrack } from 'svelte';
+
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 export interface Toast {
@@ -38,15 +40,19 @@ class ToastStore {
 
 		this.toasts = [...this.toasts, toast];
 
-		// Auto-remove after duration
-		if (duration > 0) {
-			const timeout = setTimeout(() => {
-				this.remove(id);
-			}, duration);
-			this.timeouts.set(id, timeout);
-		}
-
 		return id;
+	}
+
+	/** Start the visible lifetime after the lazy renderer attaches the message. */
+	startLifetime(id: string): void {
+		if (this.timeouts.has(id)) return;
+		const toast = untrack(() => this.toasts.find((toast) => toast.id === id));
+		if (toast && toast.duration > 0) {
+			this.timeouts.set(
+				id,
+				setTimeout(() => this.remove(id), toast.duration)
+			);
+		}
 	}
 
 	/**

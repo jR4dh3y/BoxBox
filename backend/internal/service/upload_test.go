@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
@@ -273,5 +274,107 @@ func TestUploadFinalizationPreservesPinnedSession(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCreateOnlyUploadPinsModeAndCancellationRetainsDestination(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	if err := fsys.MkdirAll("/data/media", 0755); err != nil {
+		t.Fatal(err)
+	}
+	files := NewFileService(fsys, FileServiceConfig{MountPoints: []model.MountPoint{{Name: "media", Path: "/data/media"}}})
+	uploads := NewUploadService(files, t.TempDir())
+	chunk := UploadChunk{UploadID: "create-only-pinned", ChunkIndex: 0, TotalChunks: 2, ChunkSize: 2, TotalSize: 4, CreateOnly: true}
+	if _, err := uploads.AcceptChunk(context.Background(), "media/new.bin", chunk, bytes.NewBufferString("ab")); err != nil {
+		t.Fatal(err)
+	}
+	chunk.ChunkIndex = 1
+	chunk.CreateOnly = false
+	sum := sha256.Sum256([]byte("abcd"))
+	chunk.Checksum = hex.EncodeToString(sum[:])
+	if _, err := uploads.AcceptChunk(context.Background(), "media/new.bin", chunk, bytes.NewBufferString("cd")); !errors.Is(err, ErrUploadConflict) {
+		t.Fatalf("mode change accepted: %v", err)
+	}
+	chunk.CreateOnly = true
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := uploads.AcceptChunk(ctx, "media/new.bin", chunk, bytes.NewBufferString("cd")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation ignored: %v", err)
+	}
+	if _, err := fsys.Stat("/data/media/new.bin"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("cancelled upload published destination")
+	}
+	if _, err := uploads.AcceptChunk(context.Background(), "media/new.bin", chunk, bytes.NewBufferString("cd")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUploadRevalidatesParentBeforeAssembly(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	parent := filepath.Join(root, "folder")
+	if err := os.Mkdir(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	files := NewFileService(filesystem.NewOsFS(), FileServiceConfig{MountPoints: []model.MountPoint{{Name: "media", Path: root}}})
+	uploads := NewUploadService(files, t.TempDir())
+	reader := &blockingReader{data: bytes.NewReader([]byte("content")), started: make(chan struct{}), release: make(chan struct{})}
+	sum := sha256.Sum256([]byte("content"))
+	result := make(chan error, 1)
+	go func() {
+		_, err := uploads.AcceptChunk(context.Background(), "media/folder/file.bin", UploadChunk{UploadID: "parent-swap", ChunkIndex: 0, TotalChunks: 1, ChunkSize: 7, TotalSize: 7, Checksum: hex.EncodeToString(sum[:]), CreateOnly: true}, reader)
+		result <- err
+	}()
+	<-reader.started
+	if err := os.Remove(parent); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, parent); err != nil {
+		t.Fatal(err)
+	}
+	close(reader.release)
+	if err := <-result; err == nil {
+		t.Fatal("changed parent accepted")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("assembly wrote outside mount")
+	}
+}
+
+func TestUploadDiscardCleansTemporaryChunksAndPreventsPublication(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	if err := fsys.MkdirAll("/data/media", 0755); err != nil {
+		t.Fatal(err)
+	}
+	files := NewFileService(fsys, FileServiceConfig{MountPoints: []model.MountPoint{{Name: "media", Path: "/data/media"}}})
+	uploads := NewUploadService(files, t.TempDir()).(*uploadService)
+	chunk := UploadChunk{UploadID: "discard", ChunkIndex: 0, TotalChunks: 2, ChunkSize: 2, TotalSize: 4, CreateOnly: true}
+	if _, err := uploads.AcceptChunk(context.Background(), "media/file.bin", chunk, bytes.NewBufferString("ab")); err != nil {
+		t.Fatal(err)
+	}
+	session := uploads.sessions[chunk.UploadID]
+	reader := &blockingReader{data: bytes.NewReader([]byte("cd")), started: make(chan struct{}), release: make(chan struct{})}
+	sum := sha256.Sum256([]byte("abcd"))
+	chunk.ChunkIndex = 1
+	chunk.Checksum = hex.EncodeToString(sum[:])
+	result := make(chan error, 1)
+	go func() {
+		_, err := uploads.AcceptChunk(context.Background(), "media/file.bin", chunk, reader)
+		result <- err
+	}()
+	<-reader.started
+	uploads.Discard(chunk.UploadID)
+	close(reader.release)
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("discarded upload result: %v", err)
+	}
+	if _, err := fsys.Stat("/data/media/file.bin"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("discard published final file")
+	}
+	if _, err := os.Stat(session.tempDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("discard retained chunks")
+	}
+	if _, err := uploads.Status(chunk.UploadID); !errors.Is(err, ErrUploadNotFound) {
+		t.Fatal("discard retained session")
 	}
 }
