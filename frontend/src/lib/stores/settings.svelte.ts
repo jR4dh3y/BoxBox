@@ -3,6 +3,7 @@
  */
 
 import { settingsStorage, storage } from '#lib/utils/storage.js';
+import { beginWallpaperPublication } from '#lib/utils/wallpaperPublication.js';
 import { currentUsername } from '#lib/utils/sessionUser.js';
 import {
 	getDriveNames,
@@ -116,7 +117,11 @@ class SettingsStore {
 		}
 	}
 
-	set(settings: UserSettings): void {
+	set(settings: UserSettings, wallpaperChanged = false): string | undefined {
+		const publication =
+			wallpaperChanged && this.username !== null
+				? beginWallpaperPublication(this.username, settings.backgroundImage)
+				: undefined;
 		if (
 			settings.backgroundImage !== this.current.backgroundImage ||
 			settings.backgroundImageMode !== this.current.backgroundImageMode ||
@@ -129,6 +134,7 @@ class SettingsStore {
 		} catch (error) {
 			console.warn('Unable to persist settings', error);
 		}
+		return publication;
 	}
 
 	clearSession(): void {
@@ -139,9 +145,9 @@ class SettingsStore {
 		this.current = { ...defaultSettings };
 	}
 
-	reset(): void {
+	reset(): string | undefined {
 		this.wallpaperRevision++;
-		this.set(defaultSettings);
+		return this.set(defaultSettings, true);
 	}
 
 	async setDriveName(originalName: string, customName: string): Promise<void> {

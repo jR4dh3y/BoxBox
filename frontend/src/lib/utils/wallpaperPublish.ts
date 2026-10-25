@@ -4,7 +4,7 @@ import {
 	updateWallpaperDisplay,
 	uploadWallpaper
 } from '#lib/api/wallpaperImage.js';
-import { wallpaperPublication, recordWallpaperPublication } from './wallpaperPublication.js';
+import { wallpaperPublication, completeWallpaperPublication } from './wallpaperPublication.js';
 import { currentUsername } from '#lib/utils/sessionUser.js';
 import { getWallpaper } from '#lib/api/wallpaper.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
@@ -23,38 +23,43 @@ import {
 export async function retryPendingWallpaper(signal: AbortSignal): Promise<boolean> {
 	const user = currentUsername();
 	const { backgroundImage } = settingsStore.current;
-	if (!user || !backgroundImage) return false;
+	if (!user) return false;
 	const publication = wallpaperPublication(user);
 	signal.throwIfAborted();
 	if (publication.kind !== 'pending' || publication.source !== backgroundImage) return false;
-	await publishWallpaper(signal, true);
+	await publishWallpaper(signal, publication.id);
 	return true;
 }
 
 export async function publishWallpaper(
 	signal: AbortSignal,
-	imageChanged: boolean,
+	publicationId?: string,
 	displayChanged = false
 ): Promise<void> {
 	signal.throwIfAborted();
 	const user = currentUsername();
 	if (!user) return;
 	const { backgroundImage } = settingsStore.current;
-	const source = backgroundImage ?? '';
 	const publication = wallpaperPublication(user);
 	signal.throwIfAborted();
-	imageChanged ||= publication.kind === 'pending' && publication.source === source;
-	if (imageChanged && backgroundImage) {
-		recordWallpaperPublication(user, { kind: 'pending', source });
-		signal.throwIfAborted();
-	}
+	if (
+		publicationId !== undefined &&
+		(publication.kind === 'absent' || publication.id !== publicationId)
+	)
+		return;
+	if (
+		publication.kind === 'pending' &&
+		(publication.source !== backgroundImage || publication.id !== publicationId)
+	)
+		return;
+	const imageChanged = publication.kind === 'pending';
 	if (backgroundImage) {
 		await reconcile(backgroundImage, signal, imageChanged, displayChanged);
 	} else if (imageChanged && (await getWallpaper(signal))) {
 		signal.throwIfAborted();
 		await deleteWallpaper(signal);
 	}
-	if (imageChanged) recordWallpaperPublication(user, { kind: 'completed' });
+	if (publication.kind === 'pending') completeWallpaperPublication(user, publication.id);
 	signal.throwIfAborted();
 }
 

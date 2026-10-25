@@ -1,0 +1,139 @@
+PR188 applied-intent and cross-tab publication ownership, 2026-10-25
+
+Baseline PR head: 991a3e99ab9feded60b52afe68cd5d84cfdd32be.
+Fetched current master: 15c51b5256a6cedc581191e7541a14382aa5d9f6.
+Isolated checkout: /home/radhey/.t3/worktrees/BoxBox/t3-ae0d8b3b.
+Local branch: fix/pr188-publication-ownership.
+Only PR188 is owned here. No other checkout edits, desktop work, rebase,
+force push, merge, watcher, review polling, new agents or budget changes.
+
+Baseline failures (real Chromium Settings and the baseline embedded Go server):
+- save-paint: hold the first animation frame after the chosen image preference
+  is persisted, navigate Back to files, release the frame. The account pending
+  key is null: "applied save must leave durable account intent before paint".
+- reset-queue: start login restoration with metadata held, Reset Defaults,
+  navigate Back to files, release restoration and reload. The wallpaper API
+  returns 200 instead of 404: "abandoned queued reset must retry removal".
+- two-tabs: A publishes red, B saves blue with PUT returning 500, A logs out
+  and signs back in. Readback bytes are red rather than blue.
+- overlap: A's green PUT is held, B saves blue with PUT returning 500, A's
+  request completes, then A logs out and signs back in. Readback bytes are
+  green rather than blue. Completion has hidden B's pending operation.
+The final regression script runs each of these against a fresh disposable
+server/browser context; the two-tab cases use two actual pages in one context.
+No authentication values are printed or committed.
+
+State and ownership:
+- WallpaperPublication is absent | pending(id, source:string|null) |
+  completed(id). null is an explicit removal, not an absent operation.
+- SettingsStore.set with explicit image intent, and Reset, record pending intent
+  synchronously in the same call that applies/persists local settings. There
+  is no paint, queue, IndexedDB, network or other await between intent and apply.
+- A 128-bit random operation ID works without secure-context randomUUID.
+  The captured ID travels from local apply through Save/Reset and the queue.
+  Transport may reconcile only that current pending ID and matching source.
+  A queued operation cannot adopt a same-source successor or edit a completed
+  successor's display. Login retries explicitly capture the current ID.
+- Each account has one latest-intent pointer. A transport acknowledgement writes
+  only its operation's durable receipt; it never overwrites the latest pointer.
+  This avoids a cross-tab read/check/write race on completion. The public
+  interface remains read/begin/complete over the single publication union.
+- Every state read checks the durable pointer and, for pending state, its
+  receipt. A different raw pointer replaces memory fallback, including when a
+  new session observes another tab's intent. No storage-event delivery timing
+  or permanent process-wide cache takes precedence over newer durable data.
+- Memory fallback is tied to the last observed durable raw pointer. Failed
+  set/get operations retain local pending/acknowledged state while that pointer
+  is unchanged. Completion is never cleared on logout. Receipt cleanup occurs
+  only after a new pointer was successfully written, and only for the replaced
+  completed operation. Failed cleanup cannot reveal an older pending pointer.
+- Old nonempty pending-source keys and empty completed keys remain readable.
+  Old pending operations acquire their own durable receipt when retried.
+
+Transition proof:
+- Before apply: page/session cancellation after a progress paint or IndexedDB
+  completion prevents preference/intent mutation. The staged local image is
+  deleted by its owning Save. Logout, same-user relogin, B login and unmount
+  retain the previous cancellation boundaries.
+- Apply: pending(id, image) or pending(id, null), local settings, and ownership
+  transfer of staged bytes happen without yielding. Old-image cleanup starts
+  immediately after apply so page navigation cannot strand that cleanup behind
+  the publication queue. It never cleans up the newly applied image.
+- After apply: paint cancellation, page disposal or canceled queued transport
+  leave pending intent and its current image bytes intact. Reload/login retries
+  the owned image or deletion before remote restoration, including a remote 404.
+- Failed transport: pending remains; no acknowledgement is manufactured.
+- Successful transport: receipt(id), then matching in-memory completed(id).
+  A completion for A cannot complete, clear or hide B's pending operation.
+- New durable operation: its unique ID invalidates any old completed fallback,
+  even if its source matches. External receipts are observed from cached pending
+  state. Superseded queued work does not publish the newer operation.
+- Completed + authoritative remote deletion: removal wins; no PUT resurrects
+  the completed image, including when pending-key removal or completion writes
+  are blocked. A failed completion write is not reported as a transport failure.
+
+Surface ledger:
+- Applies: mounted Settings Save, Clear+Save, Reset, local picker and server-file
+  picker; progress/paint, IndexedDB staging, local preferences and image cleanup;
+  publication queue; per-account session cancellation and login restoration;
+  localStorage boundary parsing, failed reads/writes and cleanup; two same-account
+  tabs, overlapping transport, browser reload; real wallpaper GET/PUT/PATCH/DELETE.
+- Applies, unchanged: late draft restoration; unrelated Save safety; explicit fit
+  and blur edits when server-file bytes change at the same path; failed remote
+  image download keeping cached X visible, reload restoring Y without mutation.
+- Backend contracts unchanged: the existing real Go API is rebuilt and exercised.
+- Does not apply: desktop182, desktop-native changes, relay protocol changes,
+  mobile UI or other provider adapters; this patch changes web publication state.
+
+Verification results and limits follow below.
+
+Passed (BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 on every Bun invocation):
+- 147 frontend tests in 18 files, zero failures (baseline 142). Added coverage
+  for canceled queued image/removal, failed read/write fallback, external
+  completion receipts, same-source supersession, and a stale display operation
+  arriving after its successor completed. Existing assertions remain intact;
+  the legacy durable-completion assertion now checks its operation receipt.
+- Frontend check: zero Svelte errors/warnings; full lint; perf:check.
+- Strict standalone TypeScript checks for all four Settings/lifecycle browser
+  scripts, including verify-wallpaper-publication.ts.
+- Svelte autofixer: no issues in SettingsPage or SettingsStore. Existing draft
+  synchronization/untrack suggestions reviewed; no effect was added.
+- perf:browser rebuilt the frontend and embedded Go binary before browser work,
+  passed all 20 performance samples and its navigation, lazy recovery and
+  selection refresh flows. The functional Settings scripts then ran sequentially
+  against that final binary.
+- Static JS: 300904/301056 raw bytes (baseline 299596), gzip 100867 advisory.
+- All 20 startup samples: 282515/283648 decoded bytes (baseline 281206),
+  9 scripts, 1 listing, 1 refresh. No ceilings or assertions raised/weakened.
+- Files-visible medians: local cold 159ms, warm 125ms; slow cold 1369ms,
+  warm 768ms. Baseline prior evidence: 166/131/1372/767ms respectively.
+  These are advisory, not wall-clock gates or a speedup claim.
+- Six new real-server browser scenarios: save-paint, reset-queue, clear-queue,
+  two-tabs, overlap, blocked-completion. Image cases verify both real API bytes
+  and the image colour decoded from the rendered CSS background resource.
+  save-paint also runs without randomUUID. Removal cases assert durable null
+  intent before leaving the page and 404/no rendered image after reload.
+  blocked-completion waits for login restoration and the rendered result,
+  rather than treating a stale SPA network-idle state as restoration completion.
+- All 15 prior real-server scenarios pass: nine Settings cases, five lifecycle
+  cases (logout, B switch, same-user relogin, unmount, completed-reload), and the
+  mounted server-file picker/same-path bytes/display persistence flow. The latter
+  measured Save-click to rendered Saved as 111.4/1396.3/1387.4/1498.0ms across
+  its saves; no performance claim is made for this fixture.
+- Exact scoped diff reviewed; git diff --check.
+
+Limits:
+- Backend source unchanged; Go tests/vet were not rerun. The real embedded Go
+  service was rebuilt and exercised through browser/API integration.
+- Chromium web only. No desktop, Safari, Firefox, mobile, relay, physical
+  multi-device, or permanent browser-storage denial across process restart.
+- No atomic transaction is claimed across localStorage preference/intent writes,
+  IndexedDB and the remote API, nor exactly-once transport. A process crash
+  between independent durable writes remains outside this evidence. When
+  browser writes are denied, fallback lasts only for the current process and
+  cannot communicate an unwritten intent to another tab.
+- Current completed receipts remain durable. Replacing a completed operation
+  cleans up only its old receipt after the new pointer is durable. Failed
+  cleanup or an old in-flight acknowledgement can leave harmless orphan receipts.
+- New-head CI and exact-head Greptile 5/5 are pending for the parent to assess.
+  This implementation child does not merge, watch or poll the PR.

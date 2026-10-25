@@ -2,9 +2,10 @@
  * Restores the server wallpaper on login and publishes explicit settings saves.
  * One queue and session cancellation keep work from crossing account changes.
  */
+import { wallpaperPublication } from './wallpaperPublication.js';
 import { getWallpaper } from '#lib/api/wallpaper.js';
 import { deleteLocalWallpaper } from '#lib/utils/wallpaperStorage.js';
-import { settingsStore, type UserSettings } from '#lib/stores/settings.svelte.js';
+import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { currentUsername } from '#lib/utils/sessionUser.js';
 
 let queue: Promise<void> = Promise.resolve();
@@ -32,13 +33,15 @@ export function syncShareWallpaperOnLogin(): Promise<void> {
 		const initial = settingsStore.current;
 		const stored = await getWallpaper(signal);
 		signal.throwIfAborted();
-		let wallpaper: Pick<UserSettings, 'backgroundImage' | 'backgroundImageMode' | 'frostedGlass'> =
-			{
-				backgroundImage: null,
-				backgroundImageMode: 'cover',
-				frostedGlass: false
-			};
-		if (stored || initial.backgroundImage) {
+		let wallpaper: Pick<
+			typeof initial,
+			'backgroundImage' | 'backgroundImageMode' | 'frostedGlass'
+		> = {
+			backgroundImage: null,
+			backgroundImageMode: 'cover',
+			frostedGlass: false
+		};
+		if (stored || initial.backgroundImage || wallpaperPublication(user).kind === 'pending') {
 			const { restoreWallpaper } = await import('./wallpaperRestore.js');
 			signal.throwIfAborted();
 			wallpaper = await restoreWallpaper(stored, initial, signal);
@@ -65,7 +68,7 @@ export function resetShareWallpaperLoginSync(): void {
 
 /** Change image bytes only for an explicit edit or a pending publication. */
 export function publishShareWallpaper(
-	imageChanged = false,
+	publication?: string,
 	displayChanged = false,
 	operation: AbortSignal = sessionController.signal
 ): Promise<void> {
@@ -74,6 +77,6 @@ export function publishShareWallpaper(
 		signal.throwIfAborted();
 		const { publishWallpaper } = await import('./wallpaperPublish.js');
 		signal.throwIfAborted();
-		await publishWallpaper(signal, imageChanged, displayChanged);
+		await publishWallpaper(signal, publication, displayChanged);
 	});
 }

@@ -8,6 +8,7 @@ import { downloadWallpaper } from '#lib/api/wallpaperImage.js';
 import { getWallpaper, type StoredWallpaper } from '#lib/api/wallpaper.js';
 import { authStore } from '#lib/stores/auth.svelte.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
+import { wallpaperPublication } from './wallpaperPublication';
 import { refreshWallpaperDraft } from './wallpaperDraft';
 import {
 	getLocalWallpaperBlob,
@@ -19,6 +20,11 @@ import {
 	resetShareWallpaperLoginSync,
 	syncShareWallpaperOnLogin
 } from './wallpaperSync';
+
+function publishEditedWallpaper() {
+	const publication = settingsStore.set(settingsStore.current, true);
+	return publishShareWallpaper(publication);
+}
 
 function deferred() {
 	let resolve = () => {};
@@ -201,7 +207,7 @@ test('fresh login restores image bytes and display settings; later logins valida
 		await publishShareWallpaper();
 		assert.ok(requests.includes('PATCH /api/v1/settings/wallpaper'));
 		settingsStore.set({ ...settingsStore.current, backgroundImage: null });
-		await publishShareWallpaper(true);
+		await publishEditedWallpaper();
 		assert.ok(requests.includes('DELETE /api/v1/settings/wallpaper'));
 	});
 });
@@ -269,7 +275,7 @@ test('a save during login restoration wins and is published after the login requ
 				...settingsStore.current,
 				backgroundImage: 'data:image/png;base64,aGVsbG8='
 			});
-			const publish = publishShareWallpaper(true);
+			const publish = publishEditedWallpaper();
 			release.resolve();
 			await pending;
 			await publish;
@@ -387,7 +393,7 @@ test('an open settings draft adopts restored wallpaper without losing unrelated 
 		assert.equal(refreshed.backgroundImage, reference);
 		assert.equal(refreshed.compactMode, true);
 		settingsStore.set(refreshed);
-		await publishShareWallpaper(false);
+		await publishShareWallpaper();
 		assert.equal(
 			requests.some((request) => request.startsWith('DELETE')),
 			false
@@ -438,7 +444,7 @@ test('Reset to unchanged defaults wins over a pending login restoration and dele
 		try {
 			await started.promise;
 			settingsStore.reset();
-			const publish = publishShareWallpaper(true);
+			const publish = publishEditedWallpaper();
 			release.resolve();
 			await pending;
 			await publish;
@@ -479,7 +485,7 @@ test('an unrelated save after failed image restoration preserves the remote wall
 		state.imageStatus = 500;
 		await syncShareWallpaperOnLogin();
 		settingsStore.set({ ...settingsStore.current, compactMode: true });
-		await publishShareWallpaper(false);
+		await publishShareWallpaper();
 		assert.equal(stored.has('alice'), true);
 		assert.equal(
 			requests.some((request) => request.startsWith('DELETE')),
@@ -503,7 +509,7 @@ test('an unrelated save cannot upload stale cached bytes after newer remote imag
 		assert.ok(cached);
 		assert.equal(await (await getLocalWallpaperBlob(cached))?.text(), 'cached-X');
 		settingsStore.set({ ...settingsStore.current, compactMode: true });
-		await publishShareWallpaper(false);
+		await publishShareWallpaper();
 		assert.deepEqual(stored.get('alice'), newer);
 		assert.equal(
 			requests.some((request) => /^(PUT|DELETE) /.test(request)),
@@ -525,7 +531,7 @@ test('a failed local upload survives login with no remote image and retries with
 			backgroundImageMode: 'tile'
 		});
 		state.uploadStatus = 500;
-		await assert.rejects(publishShareWallpaper(true), ApiRequestError);
+		await assert.rejects(publishEditedWallpaper(), ApiRequestError);
 		await authStore.logout();
 		await login('other-owner');
 		await syncShareWallpaperOnLogin();
@@ -569,10 +575,10 @@ test('successful wallpaper upload and deletion survive blocked pending-key clean
 			throw new DOMException('Storage blocked', 'SecurityError');
 		};
 		try {
-			await publishShareWallpaper(true);
+			await publishEditedWallpaper();
 			assert.equal(stored.get('cleanup-owner')?.source, reference);
 			settingsStore.set({ ...settingsStore.current, backgroundImage: null });
-			await publishShareWallpaper(true);
+			await publishEditedWallpaper();
 			assert.equal(stored.has('cleanup-owner'), false);
 			assert.ok(requests.includes('PUT /api/v1/settings/wallpaper'));
 			assert.ok(requests.includes('DELETE /api/v1/settings/wallpaper'));
@@ -595,7 +601,7 @@ test('completed publication overrides a pending marker when cleanup keeps failin
 			original(key);
 		};
 		try {
-			await publishShareWallpaper(true);
+			await publishEditedWallpaper();
 			assert.equal(stored.get('completed-owner')?.source, reference);
 			await authStore.logout();
 			stored.delete('completed-owner');
@@ -643,6 +649,200 @@ test('existing persisted pending sources retry and become durable completed inte
 		await login('persisted-owner');
 		await syncShareWallpaperOnLogin();
 		assert.equal(stored.get('persisted-owner')?.source, reference);
-		assert.equal(values.get(pendingKey), '', 'completion replaces the existing durable source');
+		assert.equal(
+			values.get(`${pendingKey}:${reference}`),
+			'',
+			'completion has a durable operation receipt'
+		);
+		assert.equal(wallpaperPublication('persisted-owner').kind, 'completed');
+	});
+});
+
+test('applied image and removal intent survive cancellation while the publication queue is occupied', async () => {
+	for (const remove of [false, true]) {
+		await withSession(async ({ login, setWallpaper, state, stored }) => {
+			const user = remove ? 'queued-removal' : 'queued-image';
+			setWallpaper(user);
+			await login(user);
+			await syncShareWallpaperOnLogin();
+			const gate = deferred();
+			const started = deferred();
+			let first = true;
+			state.beforeMetadata = async () => {
+				if (!first) return;
+				first = false;
+				started.resolve();
+				await gate.promise;
+			};
+			const restoration = publishShareWallpaper();
+			await started.promise;
+			const source = remove ? null : await saveLocalWallpaperBlob(new Blob(['new-queued-image']));
+			const intent = settingsStore.set({ ...settingsStore.current, backgroundImage: source }, true);
+			const { SettingsOperations } = await import('./settingsOperation');
+			const page = new SettingsOperations();
+			const publication = assert.rejects(publishShareWallpaper(intent, false, page.start()), {
+				name: 'AbortError'
+			});
+			page.dispose();
+			gate.resolve();
+			await restoration;
+			await publication;
+			assert.equal(wallpaperPublication(user).kind, 'pending');
+			await authStore.logout();
+			await login(user);
+			await syncShareWallpaperOnLogin();
+			assert.equal(settingsStore.current.backgroundImage, source);
+			assert.equal(stored.get(user)?.source ?? null, source);
+			assert.equal(wallpaperPublication(user).kind, 'completed');
+		});
+	}
+});
+
+test('failed browser writes retain owned completion but a new durable operation wins', async () => {
+	await withSession(async ({ login, values, stored }) => {
+		const user = 'fallback-owner';
+		await login(user);
+		await syncShareWallpaperOnLogin();
+		const source = await saveLocalWallpaperBlob(new Blob(['fallback-image']));
+		settingsStore.set({ ...settingsStore.current, backgroundImage: source }, true);
+		const intent = wallpaperPublication(user);
+		assert.equal(intent.kind, 'pending');
+		const originalSet = localStorage.setItem;
+		const originalGet = localStorage.getItem;
+		localStorage.setItem = () => {
+			throw new DOMException('Blocked', 'SecurityError');
+		};
+		try {
+			await publishShareWallpaper(intent.kind === 'pending' ? intent.id : undefined);
+			assert.equal(wallpaperPublication(user).kind, 'completed');
+			localStorage.getItem = () => {
+				throw new DOMException('Blocked', 'SecurityError');
+			};
+			assert.equal(wallpaperPublication(user).kind, 'completed');
+			localStorage.getItem = originalGet;
+			await authStore.logout();
+			stored.delete(user);
+			await login(user);
+			await syncShareWallpaperOnLogin();
+			assert.equal(settingsStore.current.backgroundImage, null);
+			assert.equal(stored.has(user), false);
+		} finally {
+			localStorage.setItem = originalSet;
+			localStorage.getItem = originalGet;
+		}
+		// Another page writes a distinct operation after the old local image was cleaned up.
+		const nextSource = await saveLocalWallpaperBlob(new Blob(['new-fallback-image']));
+		settingsStore.set({ ...settingsStore.current, backgroundImage: nextSource });
+		values.set(
+			`boxbox_wallpaper_pending:${user}`,
+			JSON.stringify({ id: 'other-page', source: nextSource })
+		);
+		assert.deepEqual(wallpaperPublication(user), {
+			kind: 'pending',
+			id: 'other-page',
+			source: nextSource
+		});
+		await publishShareWallpaper('other-page');
+		assert.equal(stored.get(user)?.source, nextSource);
+		assert.equal(wallpaperPublication(user).kind, 'completed');
+	});
+});
+
+test('an external acknowledgement completes only its operation even with cached pending intent', async () => {
+	await withSession(async ({ login, values }) => {
+		const user = 'receipt-owner';
+		await login(user);
+		settingsStore.set(settingsStore.current, true);
+		const intent = wallpaperPublication(user);
+		assert.ok(intent.kind === 'pending');
+		values.set(`boxbox_wallpaper_pending:${user}:${intent.id}`, '');
+		assert.equal(wallpaperPublication(user).kind, 'completed');
+		values.set(
+			`boxbox_wallpaper_pending:${user}`,
+			JSON.stringify({ id: 'new-operation', source: null })
+		);
+		assert.deepEqual(wallpaperPublication(user), {
+			kind: 'pending',
+			id: 'new-operation',
+			source: null
+		});
+		const { completeWallpaperPublication } = await import('./wallpaperPublication');
+		completeWallpaperPublication(user, intent.id);
+		assert.deepEqual(wallpaperPublication(user), {
+			kind: 'pending',
+			id: 'new-operation',
+			source: null
+		});
+	});
+});
+
+test('blocked intent and completion writes still apply and publish a new image in memory', async () => {
+	await withSession(async ({ login, stored }) => {
+		const user = 'all-writes-blocked';
+		await login(user);
+		await syncShareWallpaperOnLogin();
+		const source = await saveLocalWallpaperBlob(new Blob(['memory-image']));
+		const original = localStorage.setItem;
+		localStorage.setItem = () => {
+			throw new DOMException('Blocked', 'SecurityError');
+		};
+		try {
+			const intent = settingsStore.set({ ...settingsStore.current, backgroundImage: source }, true);
+			assert.equal(settingsStore.current.backgroundImage, source);
+			assert.equal(wallpaperPublication(user).kind, 'pending');
+			await publishShareWallpaper(intent);
+			assert.equal(stored.get(user)?.source, source);
+			assert.equal(wallpaperPublication(user).kind, 'completed');
+		} finally {
+			localStorage.setItem = original;
+		}
+	});
+});
+
+test('a queued operation cannot adopt a newer same-source intent', async () => {
+	await withSession(async ({ login, setWallpaper, state, stored, requests }) => {
+		const user = 'superseded-queue';
+		setWallpaper(user);
+		await login(user);
+		await syncShareWallpaperOnLogin();
+		const started = deferred();
+		const gate = deferred();
+		let first = true;
+		state.beforeMetadata = async () => {
+			if (!first) return;
+			first = false;
+			started.resolve();
+			await gate.promise;
+		};
+		const occupying = publishShareWallpaper();
+		await started.promise;
+		const source = await saveLocalWallpaperBlob(new Blob(['superseded-image']));
+		const oldIntent = settingsStore.set(
+			{ ...settingsStore.current, backgroundImage: source },
+			true
+		);
+		const queued = publishShareWallpaper(oldIntent);
+		const nextIntent = settingsStore.set(
+			{ ...settingsStore.current, backgroundImageMode: 'tile' },
+			true
+		);
+		gate.resolve();
+		await occupying;
+		await queued;
+		assert.deepEqual(wallpaperPublication(user), { kind: 'pending', id: nextIntent, source });
+		assert.equal(requests.filter((request) => request.startsWith('PUT')).length, 0);
+		await publishShareWallpaper(nextIntent);
+		assert.equal(stored.get(user)?.source, source);
+		assert.equal(stored.get(user)?.mode, 'tile');
+		assert.equal(wallpaperPublication(user).kind, 'completed');
+		// An older page can still hold different display preferences after B completes.
+		settingsStore.set({ ...settingsStore.current, backgroundImageMode: 'contain' });
+		const mutations = requests.filter((request) => /^(PUT|PATCH|DELETE) /.test(request)).length;
+		await publishShareWallpaper(oldIntent, true);
+		assert.equal(stored.get(user)?.mode, 'tile');
+		assert.equal(
+			requests.filter((request) => /^(PUT|PATCH|DELETE) /.test(request)).length,
+			mutations
+		);
 	});
 });

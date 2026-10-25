@@ -216,15 +216,19 @@
 			};
 
 			signal.throwIfAborted();
-			settingsStore.set(nextSettings);
+			const publication = settingsStore.set(
+				nextSettings,
+				previousBackgroundImage !== backgroundImage
+			);
 			savedLocalBackgroundImage = null;
 			settings = { ...nextSettings };
+			cleanupLocalWallpaper(previousBackgroundImage, backgroundImage);
 
 			await setApplyProgress(signal, 70, 'Updating wallpaper on your share pages...');
 			let shareWallpaperError: string | null = null;
 			try {
 				await publishShareWallpaper(
-					previousBackgroundImage !== backgroundImage,
+					publication,
 					previous.backgroundImageMode !== nextSettings.backgroundImageMode ||
 						previous.frostedGlass !== nextSettings.frostedGlass,
 					signal
@@ -234,7 +238,6 @@
 			}
 
 			await setApplyProgress(signal, 85, 'Refreshing workspace...');
-			cleanupLocalWallpaper(previousBackgroundImage, backgroundImage);
 			if (shareWallpaperError) {
 				applyProgressVariant = 'danger';
 				await setApplyProgress(
@@ -307,10 +310,10 @@
 		applyProgressStatus = '';
 		applyProgressVariant = 'default';
 		const previousBackgroundImage = settingsStore.current.backgroundImage;
-		settingsStore.reset();
+		const publication = settingsStore.reset();
 		settings = $state.snapshot(settingsStore.current);
 		cleanupLocalWallpaper(previousBackgroundImage, null);
-		publishShareWallpaper(true, false, signal).catch((error) => {
+		publishShareWallpaper(publication, false, signal).catch((error) => {
 			if (signal.aborted) return;
 			applyProgressVariant = 'danger';
 			applyProgress = 100;
