@@ -70,3 +70,30 @@ BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun run --cwd frontend perf:budget
 ```
 
 Backend commands run from `backend/`: `go vet ./...` and `go test ./...`. CI selector validation runs from the root with `python3 -m unittest discover -s .github/scripts -p 'test_*.py'`.
+
+## Offline loopback and slow job polling review fixes
+
+Review baseline `2362267` had two confirmed failures. Native browsing waited for an `online` event despite reachable loopback HTTP. Repeated job polls superseded every response from an upstream taking longer than two seconds.
+
+`ConfirmationRequest` now carries its source-qualified path. `waitForRequest` uses the existing `isNativePath` capability to let native local requests proceed offline. Web and qualified remote requests keep the existing offline wait, retry, abort, and session-reset behavior. Catalog requests use the local source.
+
+`JobsStore.connectPolling` owns the desktop interval and skips ticks while a load is pending. Explicit reloads retain their version checks and supersession behavior. The disposer clears the interval and resets the store, so late responses cannot restore an unmounted session. Existing local socket updates remain independent of the pending remote list.
+
+The focused baseline run passed 40 tests and failed both new regressions. After the fixes, all 42 focused tests passed. The full suite passed 242 frontend tests and 40 desktop tests. Frontend and desktop types, lint, performance-harness types, production embedded build, and static bundle budget passed. No production backend source changed. The new TLS fixture compiled and passed `go vet`.
+
+The full official browser gate passed 20 samples at 267,671 decoded JS bytes, with 9 scripts, one listing, one session refresh, 29 rendered rows, and no runtime errors. The 268,288-byte ceiling and nine-script limit remain unchanged, leaving 617 bytes of headroom. Static startup accounting passed at 247,670 bytes.
+
+The standalone Chromium regression uses the production Go desktop gateway and a certificate-verified TLS upstream with 3,000 ms job responses. It verifies progress responses, non-overlapping periodic requests, completion-driven directory refresh before directory polling, and no repeated invalidation on the next terminal snapshot. The baseline binary failed the completion-refresh check.
+
+The offline check uses Chromium CDP `Network.overrideNetworkState` to report `navigator.onLine === false` while leaving HTTP transport available. It verifies `/health` still returns successfully, then exercises local startup, folder navigation, search, and the root catalog. The baseline binary stalled. Separate checks confirm that qualified remote and normal web folders continue waiting offline and resume on an online event. This models a disconnected network interface with reachable loopback. It does not claim that Chromium's transport-wide offline mode leaves loopback reachable.
+
+Owner tests cover offline prefetch and catalog requests, qualified remote folder/search waits, abort on reset, shared leases, retry, stale responses, explicit supersession, local socket completion during a held listing, once-only completion notification, and poll disposal. Physical CEF, native OS operations, external deployed servers, and a separate live cross-source transfer were not tested in this round.
+
+Run the standalone regression from the repository root after building, without another rebuild in progress:
+
+```sh
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bash scripts/build-single.sh
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun frontend/scripts/perf/desktop-connectivity.ts
+```
+
+This round's local evidence is in `perf-results/review-fixes/`, including `surface-ledger.md`, `baseline-tests.log`, `baseline-browser.log`, `focused-tests.log`, `connectivity-final.log`, and the full validation logs. Official startup samples are in `perf-results/browser.json`.

@@ -62,6 +62,17 @@ class JobsStore {
 		}
 	}
 
+	/** Desktop polling supplements local socket updates with remote and transfer jobs. */
+	connectPolling(): () => void {
+		const timer = setInterval(() => {
+			if (!this.isLoading) void this.loadJobs();
+		}, 2000);
+		return () => {
+			clearInterval(timer);
+			this.reset();
+		};
+	}
+
 	upsertJob(job: Job): void {
 		const merged = mergeJob(this.jobs.get(job.id), job);
 		this.jobs.set(job.id, merged);
