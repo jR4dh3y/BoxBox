@@ -53,7 +53,8 @@ func (s *ConnectService) loadClients() error {
 		return err
 	}
 	defer file.Close()
-	decoder := json.NewDecoder(io.LimitReader(file, 1<<20))
+	// Configured usernames have no size limit; read every snapshot we can persist.
+	decoder := json.NewDecoder(file)
 	decoder.DisallowUnknownFields()
 	var snapshot connectSnapshot
 	if err := decoder.Decode(&snapshot); err != nil {
