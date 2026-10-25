@@ -44,7 +44,7 @@ export function syncShareWallpaperOnLogin(): Promise<void> {
 		if (stored || initial.backgroundImage || wallpaperPublication(user).kind === 'pending') {
 			const { restoreWallpaper } = await import('./wallpaperRestore.js');
 			signal.throwIfAborted();
-			wallpaper = await restoreWallpaper(stored, initial, signal);
+			wallpaper = await restoreWallpaper(stored, initial, signal, user);
 		}
 		signal.throwIfAborted();
 		if (currentUsername() !== user || settingsStore.wallpaperRevision !== revision) return;

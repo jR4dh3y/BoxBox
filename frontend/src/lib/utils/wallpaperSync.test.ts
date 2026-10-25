@@ -12,6 +12,7 @@ import { beginWallpaperPublication, wallpaperPublication } from './wallpaperPubl
 import { refreshWallpaperDraft } from './wallpaperDraft';
 import {
 	getLocalWallpaperBlob,
+	deleteLocalWallpaper,
 	saveLocalWallpaperBlob,
 	toLocalWallpaperReference
 } from './wallpaperStorage';
@@ -158,7 +159,7 @@ function createSession() {
 				source: 'another-device-reference',
 				sha256
 			});
-			return toLocalWallpaperReference(sha256);
+			return toLocalWallpaperReference(`${sha256}.${encodeURIComponent(username)}`);
 		},
 		async login(username: string) {
 			assert.equal(await authStore.login(username, 'password'), true);
@@ -958,5 +959,95 @@ test('a queued operation cannot adopt a newer same-source intent', async () => {
 			requests.filter((request) => /^(PUT|PATCH|DELETE) /.test(request)).length,
 			mutations
 		);
+	});
+});
+
+test('same-image accounts retain independent cached bytes through cleanup and failed restoration', async () => {
+	await withSession(async ({ setWallpaper, login, state, stored }) => {
+		for (const user of ['cache-owner', 'cache_owner.%:']) setWallpaper(user, 'shared-image');
+		await login('cache-owner');
+		await syncShareWallpaperOnLogin();
+		const alice = settingsStore.current.backgroundImage;
+		await authStore.logout();
+		await login('cache_owner.%:');
+		await syncShareWallpaperOnLogin();
+		const bob = settingsStore.current.backgroundImage;
+		assert.ok(alice && bob);
+		await authStore.logout();
+		await login('cache-owner');
+		await syncShareWallpaperOnLogin();
+		// Login cleanup after a remote deletion uses the same deletion API as Settings.
+		stored.delete('cache-owner');
+		await authStore.logout();
+		await login('cache-owner');
+		await syncShareWallpaperOnLogin();
+		assert.equal(settingsStore.current.backgroundImage, null);
+		assert.equal(await (await getLocalWallpaperBlob(bob))?.text(), 'shared-image');
+		await authStore.logout();
+		await login('cache_owner.%:');
+		state.invalidMetadata = true;
+		await syncShareWallpaperOnLogin();
+		assert.equal(settingsStore.current.backgroundImage, bob);
+		state.invalidMetadata = false;
+		settingsStore.set({ ...settingsStore.current, backgroundImageMode: 'tile' });
+		await publishShareWallpaper(undefined, true);
+		await publishEditedWallpaper();
+		assert.ok(stored.has('cache_owner.%:'));
+	});
+});
+
+test('legacy hash records migrate from local bytes and remain readable for unmigrated accounts', async () => {
+	await withSession(async ({ setWallpaper, login, state, values }) => {
+		const hash = new Bun.CryptoHasher('sha256').update('legacy-image').digest('hex');
+		const legacy = await saveLocalWallpaperBlob(
+			new Blob(['legacy-image'], { type: 'image/png' }),
+			hash
+		);
+		const owned = setWallpaper('legacy-owner', 'legacy-image');
+		setWallpaper('legacy-other', 'legacy-image');
+		for (const user of ['legacy-owner', 'legacy-other'])
+			values.set(
+				`boxbox_settings:${user}`,
+				JSON.stringify({ ...settingsStore.current, backgroundImage: legacy })
+			);
+		state.imageStatus = 500;
+		await login('legacy-owner');
+		await syncShareWallpaperOnLogin();
+		assert.equal(settingsStore.current.backgroundImage, owned);
+		assert.equal(await (await getLocalWallpaperBlob(owned))?.text(), 'legacy-image');
+		await deleteLocalWallpaper(legacy);
+		assert.equal(await (await getLocalWallpaperBlob(legacy))?.text(), 'legacy-image');
+		await deleteLocalWallpaper(owned);
+		assert.equal(await getLocalWallpaperBlob(owned), null);
+		await authStore.logout();
+		await login('legacy-other');
+		state.invalidMetadata = true;
+		await syncShareWallpaperOnLogin();
+		assert.equal(settingsStore.current.backgroundImage, legacy);
+		state.invalidMetadata = false;
+		await publishEditedWallpaper();
+		assert.equal(await (await getLocalWallpaperBlob(legacy))?.text(), 'legacy-image');
+	});
+});
+
+test('scoped and legacy restored references identify matching images without browser hashing', async () => {
+	await withSession(async ({ setWallpaper, login, requests }) => {
+		const reference = setWallpaper('http-owner', 'http-image');
+		await login('http-owner');
+		await syncShareWallpaperOnLogin();
+		const descriptor = Object.getOwnPropertyDescriptor(crypto, 'subtle');
+		try {
+			Object.defineProperty(crypto, 'subtle', { configurable: true, value: undefined });
+			await publishEditedWallpaper();
+			const hash = new Bun.CryptoHasher('sha256').update('http-image').digest('hex');
+			const legacy = await saveLocalWallpaperBlob(new Blob(['http-image']), hash);
+			settingsStore.set({ ...settingsStore.current, backgroundImage: legacy });
+			await publishEditedWallpaper();
+			assert.equal(requests.filter((request) => request.startsWith('PUT')).length, 0);
+			assert.equal(await (await getLocalWallpaperBlob(reference))?.text(), 'http-image');
+		} finally {
+			if (descriptor) Object.defineProperty(crypto, 'subtle', descriptor);
+			else Reflect.deleteProperty(crypto, 'subtle');
+		}
 	});
 });

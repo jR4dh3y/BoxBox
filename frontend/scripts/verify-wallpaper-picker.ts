@@ -6,14 +6,7 @@ import { chromium, type Page } from 'playwright';
 import { startServer } from './perf/server';
 
 const root = mkdtempSync(join(tmpdir(), 'boxbox-picker-'));
-mkdirSync(join(root, 'folder'));
 const image = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>');
-writeFileSync(join(root, 'stale.svg'), image);
-writeFileSync(join(root, 'folder', 'child.svg'), image);
-const server = await startServer(join(import.meta.dir, '../../dist/boxbox'), root, root, 'picker', [
-	'other'
-]);
-const browser = await chromium.launch({ headless: true });
 
 function deferred() {
 	let resolve = () => {};
@@ -55,7 +48,20 @@ async function settle(page: Page) {
 	);
 }
 
+let cleanupServer: Awaited<ReturnType<typeof startServer>> | undefined;
+let cleanupBrowser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
+	mkdirSync(join(root, 'folder'));
+	writeFileSync(join(root, 'stale.svg'), image);
+	writeFileSync(join(root, 'folder', 'child.svg'), image);
+	const server = (cleanupServer = await startServer(
+		join(import.meta.dir, '../../dist/boxbox'),
+		root,
+		root,
+		'picker',
+		['other']
+	));
+	const browser = (cleanupBrowser = await chromium.launch({ headless: true }));
 	for (const scenario of [
 		'overlap',
 		'roots-overlap',
@@ -69,7 +75,9 @@ try {
 		const context = await browser.newContext();
 		const releases: (() => void)[] = [];
 		try {
-			await context.request.post(`${server.url}/api/v1/auth/login`, { data: server.credentials });
+			await context.request.post(`${server.url}/api/v1/auth/login`, {
+				data: server.credentials
+			});
 			const page = await context.newPage();
 			const errors: string[] = [];
 			page.on('pageerror', (error) => errors.push(error.message));
@@ -192,7 +200,13 @@ try {
 		}
 	}
 } finally {
-	await browser.close();
-	await server.stop();
-	rmSync(root, { recursive: true, force: true });
+	try {
+		await cleanupBrowser?.close();
+	} finally {
+		try {
+			await cleanupServer?.stop();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}
 }

@@ -16,7 +16,7 @@ import {
 	getLocalWallpaperBlob,
 	isInlineWallpaperDataUrl,
 	isLocalWallpaperReference,
-	toLocalWallpaperReference
+	getLocalWallpaperId
 } from '#lib/utils/wallpaperStorage.js';
 
 /** Retry a saved local edit before login can replace it with remote state. */
@@ -89,7 +89,7 @@ async function reconcile(
 		(hash !== null
 			? hash === stored.sha256
 			: stored.source === backgroundImage ||
-				backgroundImage === toLocalWallpaperReference(stored.sha256));
+				getLocalWallpaperId(backgroundImage)?.split('.')[0] === stored.sha256);
 	if (!sameImage && imageChanged) {
 		await uploadWallpaper(image, display, backgroundImage, signal);
 	} else if (

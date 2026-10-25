@@ -2,14 +2,12 @@ const DATABASE_NAME = 'boxbox-wallpapers';
 const DATABASE_VERSION = 1;
 const STORE_NAME = 'wallpapers';
 const LOCAL_WALLPAPER_PREFIX = 'boxbox-local-wallpaper:';
-const LOCAL_WALLPAPER_ID_PATTERN = /^[a-z0-9_-]{8,}$/i;
+const LOCAL_WALLPAPER_ID_PATTERN = /^[a-z0-9_-]{8,}(?:\..+)?$/i;
 const INLINE_WALLPAPER_PATTERN = /^data:image\/(avif|gif|jpeg|jpg|png|svg\+xml|webp);base64,/i;
 
 interface StoredLocalWallpaper {
 	id: string;
 	blob: Blob;
-	type: string;
-	createdAt: number;
 }
 
 const localWallpaperUrlCache = new Map<string, string>();
@@ -52,9 +50,7 @@ export async function saveLocalWallpaperBlob(
 		const transaction = database.transaction(STORE_NAME, 'readwrite');
 		transaction.objectStore(STORE_NAME).put({
 			id,
-			blob,
-			type: blob.type,
-			createdAt: Date.now()
+			blob
 		} satisfies StoredLocalWallpaper);
 		await waitForTransaction(transaction);
 	} finally {
@@ -103,7 +99,8 @@ export async function deleteLocalWallpaper(reference: string | null): Promise<vo
 	if (!reference) return;
 
 	const id = getLocalWallpaperId(reference);
-	if (!id) return;
+	// Hash-only records predate account ownership and may still be shared.
+	if (!id || /^[a-f0-9]{64}$/i.test(id)) return;
 
 	revokeCachedLocalWallpaperUrl(id);
 

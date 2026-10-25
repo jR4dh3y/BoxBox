@@ -13,7 +13,8 @@ import {
 export async function restoreWallpaper(
 	stored: StoredWallpaper | null,
 	initial: UserSettings,
-	signal: AbortSignal
+	signal: AbortSignal,
+	username: string
 ): Promise<Pick<UserSettings, 'backgroundImage' | 'backgroundImageMode' | 'frostedGlass'>> {
 	if (await retryPendingWallpaper(signal))
 		return {
@@ -22,15 +23,18 @@ export async function restoreWallpaper(
 			frostedGlass: initial.frostedGlass
 		};
 	if (!stored) return { backgroundImage: null, backgroundImageMode: 'cover', frostedGlass: false };
-	const reference = toLocalWallpaperReference(stored.sha256);
+	const id = `${stored.sha256}.${encodeURIComponent(username)}`;
+	const reference = toLocalWallpaperReference(id);
 	if (!(await getLocalWallpaperBlob(reference))) {
-		const image = await downloadWallpaper(signal);
+		const image =
+			(await getLocalWallpaperBlob(toLocalWallpaperReference(stored.sha256))) ??
+			(await downloadWallpaper(signal));
 		signal.throwIfAborted();
 		const hash = await sha256Hex(image);
 		if (hash !== null && hash !== stored.sha256)
 			throw new Error('Wallpaper changed during download');
 		signal.throwIfAborted();
-		await saveLocalWallpaperBlob(image, stored.sha256);
+		await saveLocalWallpaperBlob(image, id);
 	}
 	return {
 		backgroundImage: reference,

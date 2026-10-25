@@ -6,13 +6,6 @@ import { chromium, type Page } from 'playwright';
 import { startServer } from './perf/server';
 
 const root = mkdtempSync(join(tmpdir(), 'boxbox-publication-'));
-const server = await startServer(
-	join(import.meta.dir, '../../dist/boxbox'),
-	root,
-	root,
-	'publication'
-);
-const browser = await chromium.launch({ headless: true });
 const image = Buffer.from(
 	'<svg xmlns="http://www.w3.org/2000/svg" width="2" height="1"><path fill="red" d="M0 0h2v1H0z"/></svg>'
 );
@@ -26,7 +19,7 @@ async function choose(page: Page, buffer = image) {
 		.setInputFiles({ name: 'chosen.svg', mimeType: 'image/svg+xml', buffer });
 	await page.getByRole('button', { name: 'Use Wallpaper', exact: true }).click();
 }
-async function logoutLogin(page: Page) {
+async function logoutLogin(page: Page, server: Awaited<ReturnType<typeof startServer>>) {
 	await page.getByRole('button', { name: 'Logout', exact: true }).click();
 	await page.waitForURL('**/login**');
 	await page.getByLabel('Username', { exact: true }).fill(server.credentials.username);
@@ -41,7 +34,16 @@ async function logoutLogin(page: Page) {
 	await page.waitForURL('**/browse**');
 	await page.waitForLoadState('networkidle');
 }
+let cleanupServer: Awaited<ReturnType<typeof startServer>> | undefined;
+let cleanupBrowser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
+	const server = (cleanupServer = await startServer(
+		join(import.meta.dir, '../../dist/boxbox'),
+		root,
+		root,
+		'publication'
+	));
+	const browser = (cleanupBrowser = await chromium.launch({ headless: true }));
 	for (const scenario of [
 		'save-paint',
 		'reset-queue',
@@ -181,13 +183,48 @@ try {
 						await page.evaluate(() => localStorage.getItem('boxbox_wallpaper_pending:perf')),
 						successor
 					);
+					if (scenario === 'retry-queue-other') {
+						const wrongImage = await context.request.put(
+							`${server.url}/api/v1/settings/wallpaper?mode=cover&frostedGlass=false`,
+							{ headers, data: nextImage }
+						);
+						assert.equal(wrongImage.status(), 200);
+					}
+					// Delay the real IndexedDB completion beyond networkidle's 500ms window.
+					await context.addInitScript(() => {
+						const descriptor = Object.getOwnPropertyDescriptor(
+							IDBTransaction.prototype,
+							'oncomplete'
+						);
+						if (!descriptor?.set) throw new Error('Missing IndexedDB completion setter');
+						const setter = descriptor.set;
+						Object.defineProperty(IDBTransaction.prototype, 'oncomplete', {
+							...descriptor,
+							set(handler: (event: Event) => void) {
+								if (this.mode === 'readonly') {
+									setter.call(this, (event: Event) => {
+										document.documentElement.dataset.retryDelayed = 'true';
+										setTimeout(() => handler.call(this, event), 1500);
+									});
+								} else setter.call(this, handler);
+							}
+						});
+					});
 					await page.reload();
-					await page.waitForLoadState('networkidle');
-					assert.deepEqual(
-						await (await readRemote('wallpaper/image')).body(),
-						image,
-						'the successor remains retryable'
+					await page.waitForFunction(
+						() => document.documentElement.dataset.retryDelayed === 'true'
 					);
+					const deadline = Date.now() + 10_000;
+					let published = await readRemote('wallpaper/image');
+					while (
+						(published.status() !== 200 || !(await published.body()).equals(image)) &&
+						Date.now() < deadline
+					) {
+						await new Promise((resolve) => setTimeout(resolve, 100));
+						published = await readRemote('wallpaper/image');
+					}
+					assert.equal(published.status(), 200, 'the successor must finish publishing');
+					assert.deepEqual(await published.body(), image, 'the successor remains retryable');
 					assert.deepEqual(errors, []);
 					console.log(
 						`PASS ${scenario}: apply-time capture → newer durable same-source intent → old Save skips → reload retries`
@@ -356,7 +393,7 @@ try {
 						headers
 					});
 					assert.equal(deleted.status(), 200, 'independent client removes the completed image');
-					await logoutLogin(page);
+					await logoutLogin(page, server);
 					await page.locator('.app-shell:not([data-has-background="true"])').waitFor();
 					assert.equal(
 						await page.locator('.app-shell[data-has-background="true"]').count(),
@@ -420,7 +457,7 @@ try {
 						release();
 						await page.getByRole('button', { name: 'Saved', exact: true }).waitFor();
 					}
-					await logoutLogin(page);
+					await logoutLogin(page, server);
 					await page.locator('.app-shell[data-has-background="true"]').waitFor();
 				}
 			}
@@ -463,7 +500,13 @@ try {
 		}
 	}
 } finally {
-	await browser.close();
-	await server.stop();
-	rmSync(root, { recursive: true, force: true });
+	try {
+		await cleanupBrowser?.close();
+	} finally {
+		try {
+			await cleanupServer?.stop();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}
 }
