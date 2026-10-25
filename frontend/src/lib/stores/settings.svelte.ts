@@ -1,29 +1,26 @@
 /**
- * User preferences use browser storage on the web and private backend storage on desktop.
+ * User preferences use account-scoped browser storage on the web and private storage on desktop.
  */
 
 import { isLocalDesktop } from '#lib/api/desktop.js';
-import { toastStore } from './toast.svelte';
-import { settingsStorage } from '#lib/utils/storage.js';
+import type { DesktopPreferences } from '#lib/api/desktopPreferences.js';
+import { normalizeFileOpenBehavior, type FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
+import { settingsStorage, storage } from '#lib/utils/storage.js';
+import {
+	beginWallpaperPublication,
+	wallpaperPublication
+} from '#lib/utils/wallpaperPublication.js';
+import { currentUsername } from '#lib/utils/sessionUser.js';
 import {
 	getDriveNames,
 	setDriveName as apiSetDriveName,
 	deleteDriveName as apiDeleteDriveName
 } from '#lib/api/drive-names.js';
-import { normalizeBackgroundImage } from '#lib/utils/appearance.js';
 import {
 	DEFAULT_BACKGROUND_IMAGE_MODE,
 	normalizeBackgroundImageMode,
 	type BackgroundImageMode
 } from '#lib/utils/wallpaper.js';
-import { normalizeFileOpenBehavior, type FileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
-import {
-	isInlineWallpaperDataUrl,
-	saveLocalWallpaperDataUrl,
-	isLocalWallpaperReference,
-	getLocalWallpaperBlob,
-	dataUrlToBlob
-} from '#lib/utils/wallpaperStorage.js';
 
 export interface UserSettings {
 	showHiddenFiles: boolean;
@@ -68,8 +65,18 @@ interface StoredUserSettings extends Partial<UserSettings> {
 	previewOnSingleClick?: unknown;
 }
 
-function loadSettings(): UserSettings {
-	const stored = settingsStorage.get<StoredUserSettings>();
+function loadSettings(username: string): UserSettings {
+	// Only migrate legacy preferences when the previous sync recorded their owner.
+	let stored = settingsStorage.get<StoredUserSettings>(username);
+	if (!stored) {
+		try {
+			if (isLocalDesktop() || storage.getString('boxbox_wallpaper_owner') === username) {
+				stored = settingsStorage.get<StoredUserSettings>();
+			}
+		} catch {
+			// Browsers can disable localStorage even when the session is valid.
+		}
+	}
 	const { previewOnSingleClick, ...storedSettings } = stored ?? {};
 	const settings = {
 		...defaultSettings,
@@ -85,14 +92,6 @@ function loadSettings(): UserSettings {
 	};
 }
 
-function saveSettings(settings: UserSettings): void {
-	try {
-		settingsStorage.set(settings);
-	} catch (error) {
-		if (!isLocalDesktop()) throw error;
-	}
-}
-
 async function loadDriveNames(): Promise<Record<string, string>> {
 	try {
 		const response = await getDriveNames();
@@ -106,101 +105,92 @@ async function loadDriveNames(): Promise<Record<string, string>> {
 	}
 }
 
-async function migrateInlineBackgroundImage(settings: UserSettings): Promise<UserSettings> {
-	const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
-	if (
-		backgroundImage &&
-		isLocalDesktop() &&
-		(isInlineWallpaperDataUrl(backgroundImage) || isLocalWallpaperReference(backgroundImage))
-	) {
-		const image = isInlineWallpaperDataUrl(backgroundImage)
-			? dataUrlToBlob(backgroundImage)
-			: await getLocalWallpaperBlob(backgroundImage);
-		if (!image) throw new Error('The saved desktop wallpaper could not be read.');
-		const { saveDesktopWallpaper } = await import('#lib/api/desktopPreferences.js');
-		return { ...settings, backgroundImage: await saveDesktopWallpaper(image) };
-	}
-	if (!backgroundImage || !isInlineWallpaperDataUrl(backgroundImage)) {
-		return settings;
-	}
-
-	try {
-		const migratedBackgroundImage = await saveLocalWallpaperDataUrl(backgroundImage);
-		return {
-			...settings,
-			backgroundImage: migratedBackgroundImage
-		};
-	} catch {
-		return settings;
-	}
-}
-
 class SettingsStore {
-	private desktopLoaded = false;
-	private saving: Promise<void> = Promise.resolve();
-	current = $state.raw<UserSettings>(loadSettings());
+	private desktop: DesktopPreferences | null = null;
+	current = $state.raw<UserSettings>({ ...defaultSettings });
+	private username: string | null = null;
+	private session = 0;
+	private sessionController = new AbortController();
+
+	get sessionSignal(): AbortSignal {
+		return this.sessionController.signal;
+	}
+	wallpaperRevision = 0;
 
 	/** Call after sign-in: the drive names come from an authenticated endpoint. */
 	async initialize(): Promise<void> {
-		if (isLocalDesktop() && !this.desktopLoaded) {
-			try {
-				const { loadDesktopPreferences } = await import('#lib/api/desktopPreferences.js');
-				this.current = (await loadDesktopPreferences(defaultSettings)) ?? this.current;
-				this.desktopLoaded = true;
-			} catch {
-				toastStore.error(
-					'Desktop preferences could not load. Reload to retry. Changes will not survive restart.'
-				);
-			}
-		}
-		const migrated = await migrateInlineBackgroundImage(this.current).catch(() => {
-			toastStore.error('The saved wallpaper could not be restored. Choose it again in Settings.');
-			return this.current;
-		});
-		if (migrated !== this.current) {
-			try {
-				saveSettings(migrated);
-			} catch {
-				// Keep the in-memory migrated reference even if the browser refuses persistence.
-			}
-			this.current = migrated;
-		}
+		this.sessionController.abort();
+		this.sessionController = new AbortController();
+		const session = ++this.session;
+		const username = currentUsername() ?? 'dev';
+		this.username = username;
+		this.current = loadSettings(username);
 
+		if (isLocalDesktop()) {
+			const { DesktopPreferences } = await import('#lib/api/desktopPreferences.js');
+			if (session !== this.session) return;
+			this.desktop = new DesktopPreferences(this.sessionSignal);
+			const saved = await this.desktop.load(defaultSettings, this.current);
+			if (session !== this.session) return;
+			this.current = saved;
+		}
 		const driveNameOverrides = await loadDriveNames();
+		if (session !== this.session) return;
 		this.current = { ...this.current, driveNameOverrides };
 		try {
-			saveSettings(this.current);
+			settingsStorage.set(this.current, username);
 		} catch {
 			// Initialization should not fail auth because local preference persistence is full.
 		}
-		if (this.desktopLoaded) {
+		if (this.desktop) {
 			this.set(this.current);
 			await this.flush().catch(() => {});
 		}
 	}
 
 	flush(): Promise<void> {
-		return this.saving;
+		return this.desktop?.flush() ?? Promise.resolve();
 	}
 
-	set(settings: UserSettings): void {
-		saveSettings(settings);
-		this.current = settings;
-		if (isLocalDesktop() && this.desktopLoaded) {
-			this.saving = this.saving
-				.catch(() => {})
-				.then(async () => {
-					const { saveDesktopPreferences } = await import('#lib/api/desktopPreferences.js');
-					await saveDesktopPreferences(settings);
-				});
-			void this.saving.catch(() => {
-				toastStore.error('Desktop preferences could not be saved.');
-			});
+	set(settings: UserSettings, wallpaperChanged = false): string | undefined {
+		let publication: string | undefined;
+		if (!isLocalDesktop() && this.username !== null) {
+			if (wallpaperChanged)
+				publication = beginWallpaperPublication(this.username, settings.backgroundImage);
+			else {
+				const intent = wallpaperPublication(this.username);
+				if (intent.kind === 'pending' && intent.source === settings.backgroundImage)
+					publication = intent.id;
+			}
 		}
+		if (
+			settings.backgroundImage !== this.current.backgroundImage ||
+			settings.backgroundImageMode !== this.current.backgroundImageMode ||
+			settings.frostedGlass !== this.current.frostedGlass
+		)
+			this.wallpaperRevision++;
+		this.current = settings;
+		try {
+			if (this.username !== null) settingsStorage.set(settings, this.username);
+		} catch (error) {
+			console.warn('Unable to persist settings', error);
+		}
+		this.desktop?.save(settings);
+		return publication;
 	}
 
-	reset(): void {
-		this.set(defaultSettings);
+	clearSession(): void {
+		this.sessionController.abort();
+		this.sessionController = new AbortController();
+		this.session++;
+		this.username = null;
+		this.desktop = null;
+		this.current = { ...defaultSettings };
+	}
+
+	reset(): string | undefined {
+		this.wallpaperRevision++;
+		return this.set(defaultSettings, true);
 	}
 
 	async setDriveName(originalName: string, customName: string): Promise<void> {

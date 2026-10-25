@@ -2,7 +2,9 @@
 	/**
 	 * Settings page - workspace-style preferences screen matching the file browser shell.
 	 */
-	import { onDestroy, tick } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
+	import { SettingsOperations } from '#lib/utils/settingsOperation.js';
+	import { refreshWallpaperDraft } from '#lib/utils/wallpaperDraft.js';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { authStore } from '#lib/stores/auth.svelte.js';
@@ -19,7 +21,7 @@
 	import LoadError from '#lib/components/LoadError.svelte';
 	import { Button, ProgressButton, Select, Toggle } from '#lib/components/ui/index.js';
 	import { normalizeBackgroundImageMode } from '#lib/utils/wallpaper.js';
-	import { publishShareWallpaper } from '#lib/utils/wallpaperSync.js';
+	import { publishShareWallpaper } from '#lib/utils/wallpaperPublish.js';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import {
 		deleteLocalWallpaper,
@@ -52,7 +54,16 @@
 	// Desktop account controls are local; shared links belong to paired servers.
 	const desktop = isLocalDesktop();
 
+	const operations = new SettingsOperations();
 	let settings = $state<UserSettings>($state.snapshot(settingsStore.current));
+	let previousSettings = settingsStore.current;
+	$effect(() => {
+		const current = settingsStore.current;
+		untrack(() => {
+			settings = refreshWallpaperDraft(settings, previousSettings, current);
+			previousSettings = current;
+		});
+	});
 	let activeCategory = $state<SettingsCategory>('all');
 	let searchQuery = $state('');
 	let isApplyingSettings = $state(false);
@@ -146,6 +157,7 @@
 		'flex min-h-12 items-center justify-between gap-4 border-b border-border-secondary px-4 py-2 last:border-b-0';
 
 	onDestroy(() => {
+		operations.dispose();
 		clearApplyProgressResetTimer();
 	});
 
@@ -177,34 +189,39 @@
 		});
 	}
 
-	async function setApplyProgress(value: number, status: string) {
+	async function setApplyProgress(signal: AbortSignal, value: number, status: string) {
+		signal.throwIfAborted();
 		applyProgress = value;
 		applyProgressStatus = status;
 		await tick();
 		await waitForPaint();
+		signal.throwIfAborted();
 	}
 
 	async function handleSave() {
 		if (!accentColorIsValid || !backgroundImageIsValid || isApplyingSettings) return;
 
+		const signal = operations.start();
 		clearApplyProgressResetTimer();
 		isApplyingSettings = true;
 		applyProgressVariant = 'default';
 		let savedLocalBackgroundImage: string | null = null;
 
 		try {
-			await setApplyProgress(15, 'Validating settings...');
+			await setApplyProgress(signal, 15, 'Validating settings...');
 
-			const previousBackgroundImage = settingsStore.current.backgroundImage;
+			const previous = settingsStore.current;
+			const previousBackgroundImage = previous.backgroundImage;
 			let backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
 			if (backgroundImage && isInlineWallpaperDataUrl(backgroundImage)) {
-				await setApplyProgress(35, 'Saving wallpaper locally...');
+				await setApplyProgress(signal, 35, 'Saving wallpaper locally...');
 				backgroundImage = desktop
 					? await (
 							await import('#lib/api/desktopPreferences.js')
 						).saveDesktopWallpaper(dataUrlToBlob(backgroundImage))
 					: await saveLocalWallpaperDataUrl(backgroundImage);
 				savedLocalBackgroundImage = backgroundImage;
+				signal.throwIfAborted();
 			}
 
 			const nextSettings = {
@@ -215,41 +232,48 @@
 				frostedGlass: backgroundImage ? settings.frostedGlass : false
 			};
 
-			await setApplyProgress(
-				55,
-				backgroundImage ? 'Applying wallpaper and preferences...' : 'Applying preferences...'
+			signal.throwIfAborted();
+			const publication = settingsStore.set(
+				nextSettings,
+				previousBackgroundImage !== backgroundImage
 			);
-
-			settingsStore.set(nextSettings);
+			savedLocalBackgroundImage = null;
 			await settingsStore.flush();
+			signal.throwIfAborted();
 			settings = { ...nextSettings };
+			cleanupLocalWallpaper(previousBackgroundImage, backgroundImage);
 
+			await setApplyProgress(signal, 70, 'Updating wallpaper on your share pages...');
 			let shareWallpaperError: string | null = null;
-			if (!desktop) {
-				await setApplyProgress(70, 'Updating wallpaper on your share pages...');
-				try {
-					await publishShareWallpaper();
-				} catch (error) {
-					shareWallpaperError = error instanceof Error ? error.message : String(error);
-				}
+			try {
+				if (!desktop)
+					await publishShareWallpaper(
+						publication,
+						previous.backgroundImageMode !== nextSettings.backgroundImageMode ||
+							previous.frostedGlass !== nextSettings.frostedGlass,
+						signal
+					);
+			} catch (error) {
+				shareWallpaperError = error instanceof Error ? error.message : String(error);
 			}
 
-			await setApplyProgress(85, 'Refreshing workspace...');
-			cleanupLocalWallpaper(previousBackgroundImage, backgroundImage);
+			await setApplyProgress(signal, 85, 'Refreshing workspace...');
 			if (shareWallpaperError) {
 				applyProgressVariant = 'danger';
 				await setApplyProgress(
+					signal,
 					100,
 					`Saved, but share pages still show the old wallpaper: ${shareWallpaperError}`
 				);
 				scheduleApplyProgressReset(6000);
 			} else {
 				applyProgressVariant = 'success';
-				await setApplyProgress(100, 'Settings applied');
+				await setApplyProgress(signal, 100, 'Settings applied');
 				scheduleApplyProgressReset(900);
 			}
 		} catch (error) {
 			cleanupLocalWallpaper(savedLocalBackgroundImage, null);
+			if (signal.aborted) return;
 			applyProgressVariant = 'danger';
 			applyProgress = 100;
 			applyProgressStatus = getApplyErrorMessage(error);
@@ -290,6 +314,7 @@
 	}
 
 	function handleCancel() {
+		operations.start();
 		clearApplyProgressResetTimer();
 		applyProgress = 0;
 		applyProgressStatus = '';
@@ -298,16 +323,19 @@
 	}
 
 	function handleReset() {
+		const signal = operations.start();
+		if (signal.aborted) return;
 		clearApplyProgressResetTimer();
 		applyProgress = 0;
 		applyProgressStatus = '';
 		applyProgressVariant = 'default';
 		const previousBackgroundImage = settingsStore.current.backgroundImage;
-		settingsStore.reset();
+		const publication = settingsStore.reset();
 		settings = $state.snapshot(settingsStore.current);
 		cleanupLocalWallpaper(previousBackgroundImage, null);
 		if (desktop) return;
-		publishShareWallpaper().catch((error) => {
+		publishShareWallpaper(publication, false, signal).catch((error) => {
+			if (signal.aborted) return;
 			applyProgressVariant = 'danger';
 			applyProgress = 100;
 			applyProgressStatus = `Reset, but share pages still show the old wallpaper: ${
@@ -333,12 +361,12 @@
 		searchQuery = '';
 	}
 
-	function handleAccentColorInput(event: Event) {
-		settings.accentColor = (event.currentTarget as HTMLInputElement).value;
+	function handleAccentColorInput(event: Event & { currentTarget: HTMLInputElement }) {
+		settings.accentColor = event.currentTarget.value;
 	}
 
-	function handleAccentTextInput(event: Event) {
-		const value = (event.currentTarget as HTMLInputElement).value.trim();
+	function handleAccentTextInput(event: Event & { currentTarget: HTMLInputElement }) {
+		const value = event.currentTarget.value.trim();
 		settings.accentColor = value === '' ? null : value;
 	}
 

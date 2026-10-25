@@ -251,7 +251,7 @@ async function benchmark(base?: string, sha?: string) {
 			fixture.root,
 			fixture.mount,
 			'paste-race',
-			false
+			{ readOnly: false }
 		);
 		servers.push(writable);
 		await verifyPasteLoadRace(browser, writable.url, writable.credentials, fixture.mount);

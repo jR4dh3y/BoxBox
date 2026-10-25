@@ -1,0 +1,36 @@
+$ bun test --conditions browser --test-name-pattern "fresh login restores" src/lib/utils/wallpaperSync.test.ts
+bun test v1.4.4 (38afee6c8)
+
+src/lib/utils/wallpaperSync.test.ts:
+147 | 		const reference = setWallpaper('alice');
+148 | 		await login('alice');
+149 | 		assert.equal(settingsStore.current.backgroundImage, null);
+150 | 		await syncShareWallpaperOnLogin();
+151 | 		await syncShareWallpaperOnLogin();
+152 | 		assert.equal(settingsStore.current.backgroundImage, reference);
+               ^
+AssertionError: Expected values to be strictly equal:
++ actual - expected
+
++ null
+- 'boxbox-local-wallpaper:124962dc269749b652c6e23e063617da6c15a4061ba980fc8f0b1ba77292415c'
+
+ generatedMessage: true,
+     actual: null,
+   expected: "boxbox-local-wallpaper:124962dc269749b652c6e23e063617da6c15a4061ba980fc8f0b1ba77292415c",
+   operator: "strictEqual",
+       diff: "simple",
+       code: "ERR_ASSERTION"
+
+      at frontend/src/lib/utils/wallpaperSync.test.ts:152:10
+      at withSession (frontend/src/lib/utils/wallpaperSync.test.ts:25:9)
+      at frontend/src/lib/utils/wallpaperSync.test.ts:146:8
+      at node:test:1445:26
+      at executeTestNode (node:test:1448:63)
+(fail) fresh login restores image bytes and display settings; later logins validate the cache [13.89ms]
+
+ 0 pass
+ 7 filtered out
+ 1 fail
+Ran 1 test across 1 file. [614.00ms]
+error: script "test" exited with code 1

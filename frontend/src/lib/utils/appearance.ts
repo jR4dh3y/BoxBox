@@ -5,9 +5,8 @@
 import { getPreviewUrl } from '#lib/api/files.js';
 import {
 	isInlineWallpaperDataUrl,
-	isLocalWallpaperReference,
-	resolveLocalWallpaperUrl
-} from '#lib/utils/wallpaperStorage.js';
+	isLocalWallpaperReference
+} from '#lib/utils/wallpaperReference.js';
 
 export const DEFAULT_ACCENT_COLOR = '#4a9eff';
 
@@ -120,6 +119,7 @@ export async function resolveBackgroundImageUrl(
 	if (!normalized) return null;
 
 	if (isLocalWallpaperReference(normalized)) {
+		const { resolveLocalWallpaperUrl } = await import('./wallpaperStorage.js');
 		return resolveLocalWallpaperUrl(normalized);
 	}
 

@@ -1,3 +1,4 @@
+import { toastStore } from '#lib/stores/toast.svelte.js';
 import { api, apiRequest } from './client';
 import { array, boolean, isRecord, record, string } from './parse';
 import type { UserSettings } from '#lib/stores/settings.svelte.js';
@@ -68,4 +69,68 @@ export async function saveDesktopPreferences(settings: UserSettings): Promise<vo
 export async function saveDesktopWallpaper(image: Blob): Promise<string> {
 	await apiRequest('/desktop/wallpaper', { method: 'PUT', body: image });
 	return `/api/v1/desktop/wallpaper?v=${Date.now()}`;
+}
+
+/** Move legacy renderer images into desktop storage before preferences are persisted. */
+export async function migrateDesktopWallpaper(settings: UserSettings): Promise<UserSettings> {
+	const { normalizeBackgroundImage } = await import('#lib/utils/appearance.js');
+	const {
+		isInlineWallpaperDataUrl,
+		isLocalWallpaperReference,
+		dataUrlToBlob,
+		getLocalWallpaperBlob
+	} = await import('#lib/utils/wallpaperStorage.js');
+	const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
+	if (
+		!backgroundImage ||
+		(!isInlineWallpaperDataUrl(backgroundImage) && !isLocalWallpaperReference(backgroundImage))
+	)
+		return settings;
+	const image = isInlineWallpaperDataUrl(backgroundImage)
+		? dataUrlToBlob(backgroundImage)
+		: await getLocalWallpaperBlob(backgroundImage);
+	if (!image) throw new Error('The saved desktop wallpaper could not be read.');
+	return { ...settings, backgroundImage: await saveDesktopWallpaper(image) };
+}
+
+/** Desktop persistence shares the settings session's cancellation lifetime. */
+export class DesktopPreferences {
+	private loaded = false;
+	private saving: Promise<void> = Promise.resolve();
+
+	constructor(private readonly signal: AbortSignal) {}
+
+	async load(defaults: UserSettings, fallback: UserSettings): Promise<UserSettings> {
+		try {
+			const saved = (await loadDesktopPreferences(defaults)) ?? fallback;
+			this.signal.throwIfAborted();
+			const migrated = await migrateDesktopWallpaper(saved);
+			this.signal.throwIfAborted();
+			this.loaded = true;
+			return migrated;
+		} catch {
+			if (!this.signal.aborted)
+				toastStore.error(
+					'Desktop preferences could not load. Reload to retry. Changes will not survive restart.'
+				);
+			return fallback;
+		}
+	}
+
+	save(settings: UserSettings): void {
+		if (!this.loaded) return;
+		this.saving = this.saving
+			.catch(() => {})
+			.then(async () => {
+				this.signal.throwIfAborted();
+				await saveDesktopPreferences(settings);
+			});
+		void this.saving.catch(() => {
+			if (!this.signal.aborted) toastStore.error('Desktop preferences could not be saved.');
+		});
+	}
+
+	flush(): Promise<void> {
+		return this.saving;
+	}
 }

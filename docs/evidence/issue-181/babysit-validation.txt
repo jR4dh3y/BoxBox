@@ -1,0 +1,88 @@
+PR #188 follow-up validation (2026-10-25)
+
+Reviewed baseline: 23cab47265a9dd8eb3d3d4d2a3b179010cc95f9f.
+Greptile review completed at that SHA with confidence 3/5; four active findings validated.
+
+Fixed: untouched wallpaper draft fields follow login restoration; Reset advances the
+wallpaper revision even at defaults; failed localStorage writes preserve in-memory
+settings; unrelated saves cannot delete an unrestored server wallpaper.
+Metadata is still confirmed on each login. Image transport/cache loading happens only
+when wallpaper metadata exists. The settings screen loads on navigation, with an error
+boundary. Removed the async paint gap between calculating and applying saved settings.
+
+Passed:
+- bun run check: 0 errors, 0 warnings.
+- bun run test: 128 tests, including 12 wallpaper synchronization tests.
+- bun run lint; bun run perf:check.
+- Svelte autofixer: no issues. Its draft-effect suggestions were reviewed: the effect
+  merges external restoration into an editable draft; untrack avoids a feedback loop.
+- bun run perf:browser: 20 samples, existing request/byte gates; logged-out checks,
+  lazy-load failure checks, and navigation/settings/share/reload/logout checks.
+- bun run perf:budget: 301005 raw static JS bytes; no chunk import cycles.
+- bun scripts/verify-wallpaper-settings.ts: real embedded Go server, isolated browser
+  contexts; draft opened before restoration, save while restoration pending, Reset
+  while restoration pending, image failure + unrelated save, and localStorage failure.
+  Each case asserts rendered state, API mutations, stored metadata and no page errors.
+
+Before/after browse startup:
+- Baseline reproduced CI failure: 11 scripts / 287024 decoded bytes.
+- Final: 9 scripts / 282649 decoded bytes in all 20 samples.
+- Baseline first local/cold render: 192 ms (n=1; failed deterministic gate).
+- Final files-visible medians: local cold 172 ms, warm 133 ms; slow cold 1376 ms,
+  warm 913 ms (n=5 each). Timing is advisory; no statistical speed claim.
+- Lowered static ceiling to 301056 bytes and browser ceiling to 283648 bytes.
+
+Limits: no full backend unit suite rerun (backend source unchanged); no desktop,
+mobile, Safari or Firefox run. GitHub CI and Greptile must run on the pushed head.
+
+Follow-up review batch (2026-10-25)
+
+Baseline: 2f9a11bd8579b2bba552cf1a4d653afe580a6c5f. Greptile review
+PRR_kwDOQxzOhc8AAAABUCqJyA completed on this exact head at
+2026-10-24T20:45:40Z; Greptile Review completed SUCCESS at 20:45:43Z.
+Greptile alone is the review gate, per the user's correction.
+
+Validated and fixed:
+- r4368462489: a new image's cover/default fit and blur stay together when late
+  login restoration has contain/true. Reproduced in unit and actual Settings UI.
+- r4368467342: accent input handlers use typed currentTarget parameters.
+- r4368467347: non-null cached X cannot overwrite newer server Y on an unrelated
+  save after Y's image download fails. Reproduced against the baseline HTTP fixture.
+- r4368467351: failed image publication records the owning account and source;
+  login retries that edit before accepting remote state. Failed retries keep the
+  local image and IndexedDB bytes. Successful publication clears the marker.
+  Reproduced baseline local-image deletion after a 404 on the next login.
+
+Surface ledger:
+- Entry points apply: Settings picker binds image and fit together; the shared
+  draft helper preserves local-upload and server-file choices equally.
+- Clients apply: shared web Settings code; Chromium UI tested. Desktop uses the
+  embedded frontend but was not launched. Mobile, Safari and Firefox not tested.
+- Providers apply: real Go wallpaper API and IndexedDB; local-upload bytes and
+  cached-image failure exercised. Server-file picker selection was source-traced.
+- Contracts apply: metadata GET, image GET, explicit PUT/DELETE and display PATCH.
+  No backend contract changed. Unrelated saves never upload differing image bytes.
+- Reverse state applies: Reset still removes the remote wallpaper; account changes
+  do not publish another account's pending image; remote deletion wins again once
+  publication has succeeded. Unit and existing browser Reset cases pass.
+- Connection modes apply: delayed restoration, failed image download, failed PUT,
+  fresh contexts and reload recovery tested. No relay-specific code changed.
+- Tests apply: 15 wallpaper tests / 131 total frontend tests; eight real-server
+  browser scenarios, including new-image, stale-cache and pending-upload reloads.
+- Documents apply: this evidence records behavior and limits. No user-facing
+  feature or API shape changed, so no additional user-guide changes are needed.
+
+Validation includes check (zero errors/warnings), lint, perf:check, embedded
+frontend/Go build, static bundle gate and the 20-sample browser budget workflow.
+Svelte autofixer reports no issues; its existing effect suggestions were reviewed:
+this effect merges external restoration into an editable draft and uses untrack
+so it does not track the state it writes.
+
+Limits: no backend unit-suite rerun (backend source unchanged); no desktop, mobile,
+Safari or Firefox run. Persistence denied by the browser can retain pending intent
+only in memory. GitHub CI and Greptile must complete on the new pushed head.
+
+Exact final measurements: 301000 static JS bytes (ceiling 301056); 9 browse
+startup scripts / 282647 decoded bytes in all 20 samples (ceiling 283648).
+Files-visible medians: local cold 197 ms / warm 145 ms, slow cold 1384 ms /
+warm 923 ms, n=5 each. Timing is advisory; no speedup claim. Ceilings unchanged.

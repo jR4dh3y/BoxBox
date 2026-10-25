@@ -284,9 +284,17 @@ func (s *fileService) Rename(ctx context.Context, oldPath, newPath string) error
 		return err
 	}
 
+	if err := s.mounts.requireWritablePath(oldFsPath, true); err != nil {
+		return err
+	}
+
 	// Resolve new path
 	_, newFsPath, err := s.mounts.resolve(newPath, writeMaybeMissing)
 	if err != nil {
+		return err
+	}
+
+	if err := s.mounts.requireWritablePath(newFsPath, true); err != nil {
 		return err
 	}
 
@@ -317,6 +325,10 @@ func (s *fileService) Delete(ctx context.Context, path string) error {
 	// Resolve the path to filesystem path
 	_, fsPath, err := s.mounts.resolve(path, writeMaybeMissing)
 	if err != nil {
+		return err
+	}
+
+	if err := s.mounts.requireWritablePath(fsPath, true); err != nil {
 		return err
 	}
 

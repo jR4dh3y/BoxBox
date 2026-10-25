@@ -1,0 +1,157 @@
+PR188 account-owned wallpaper cache and verification cleanup, 2026-10-25
+
+Baseline: 487a52fee1b501c98b968faa092a5dbd11c04627.
+Isolated checkout: /home/radhey/.t3/worktrees/BoxBox/pr188-cache-ownership.
+Local branch: fix/wallpaper-cache-ownership-188.
+Remote branch: fix/wallpaper-login-sync-181.
+
+Hard constraints:
+- Only PR188. Parent and old source checkouts remain untouched/read-only.
+- No agents, PR polling/watchers, merge, rebase, force push or unrelated changes.
+- Scoped commit, normal push, finding replies/resolution and one Greptile request.
+- No any, compiler-silencing casts, new dependencies or package manifest edits.
+- Preserve every existing assertion, performance ceiling and publication/session guard.
+- Every Bun invocation carries BUN_RUNTIME_TRANSPILER_CACHE_PATH=0.
+- Parent owns the subsequent exact-head Greptile/CI gate and any merge decision.
+
+Source-validated findings and baseline failures:
+- r4370103998: restored records used only the SHA-256. The new focused test
+  failed after account A's login cleanup: B's local blob was undefined instead
+  of shared-image. Real Chromium also failed: A Clear+Save left B's preference
+  intact but its actual IndexedDB blob was null instead of the expected SVG.
+  Logs: /tmp/pr188-ownership-baseline-{unit,browser}.log.
+- r4370093639: launch happened before try/finally. With Chromium deliberately
+  unavailable through PLAYWRIGHT_BROWSERS_PATH, both original picker and
+  publication scripts exited 1 and left one Go child and one temporary root.
+  The proof driver stopped each leaked child and removed its own temporary root.
+- r4370093641: delay real readonly IndexedDB transaction completions by 1500ms
+  on reload. The original networkidle plus one-shot assertion failed with the
+  real Go image API's 404 JSON body instead of the selected SVG.
+  Log: /tmp/pr188-ownership-baseline-retry.log.
+
+Ownership policy and implementation:
+- Newly restored records use SHA-256 + '.' + encodeURIComponent(username).
+  The username is the session owner already captured by the login queue. The
+  hash, source metadata, server protocol and IndexedDB schema version stay put.
+  Separators and Unicode remain injectively encoded; the fixed-length hash
+  precedes the separator. The existing local-reference parser accepts this form.
+- Each account has distinct bytes and object-URL cache entries even when hashes
+  match. Ordinary local uploads retain their existing fresh random IDs.
+- Old hash-only records have unknown ownership. Keep them readable and never
+  delete them through automatic cleanup. A successful restore copies their
+  bytes into the account-owned record before changing preferences, including
+  when downloading is unavailable. Other accounts can keep using the legacy
+  record until their own restore succeeds. This deliberately retains old shared
+  records instead of introducing reference counting or unsafe ownership guesses.
+- Cleanup still deletes owned records and random upload records. Clear, Reset,
+  replacement, aborted staging and authoritative login cleanup share this API.
+- Non-hashing browser comparison accepts both legacy and scoped hash IDs.
+  Secure-origin comparison continues hashing actual bytes. Removed unused
+  duplicated MIME/date fields from new records; Blob already owns MIME type,
+  and no reader uses creation time. Old records remain readable.
+- Picker and publication scripts protect startup and launch with their existing
+  cleanup flow. Nested finally blocks ensure close failure cannot skip server
+  stop, and stop failure cannot skip root removal. No resource framework added.
+- Retry verification polls for both 200 and exact expected image bytes with a
+  10-second deadline. Exact final body equality is retained. The other-tab case
+  starts with a different real image returning 200, so status alone cannot pass.
+
+Surface ledger:
+- Applies: login/refresh restoration; same-image accounts; cached reads and
+  rendering; ordinary local uploads; selected local replacements; display-only
+  Save, explicit publication/retry, Clear+Save, Reset and login cleanup.
+- Applies: legacy hash references, migration without downloading, failed login
+  restoration, session switches, page disposal, same-tab/two-tab pending intent,
+  apply-time ID capture, durable completion receipts and storage-denial fallbacks.
+- Applies: script server startup, browser launch, browser close and test failure
+  cleanup; delayed durable retry; wrong-image 200 followed by correct publication.
+- Preserved and rerun: late restoration/draft fit/blur, stale-cache protection,
+  same-path changed bytes, cached X then remote Y, real picker cancellation,
+  staged IndexedDB cleanup and memory updates when browser storage writes fail.
+- Does not apply: backend changes or new protocols/providers, desktop182/native
+  CEF, physical devices, relay modes or non-Chromium engines. Existing web APIs
+  and the shared renderer storage implementation are exercised.
+
+Static/component verification:
+- PASS: 31 focused synchronization tests and 154 frontend tests in 18 files.
+- PASS: frontend check, zero errors/warnings; full lint; perf:check.
+- PASS: strict standalone TypeScript check of all six functional browser scripts.
+  TypeScript 6 requires --ignoreConfig for this explicit-file invocation.
+- PASS: Svelte autofixer reports no issues in SettingsStore, SettingsPage or
+  picker. Existing draft-effect and bind:this suggestions are outside these fixes.
+- PASS: embedded frontend/Go build, static bundle gate and git diff --check.
+- Static JS: 301007/301056 raw bytes, 100971 gzip advisory. Baseline: 300994 raw.
+  No performance ceiling or success assertion was raised or weakened.
+
+Real browser/service verification:
+- PASS: official perf:browser, all 20 samples plus logged-out startup, navigation,
+  lazy-load recovery and selection-refresh behavior. This command rebuilt the
+  embedded frontend/Go binary used by all subsequent functional scenarios.
+- Every sample: 282619/283648 startup decoded bytes, 9 scripts, 1 listing and
+  1 refresh. Baseline evidence: 282605 decoded bytes and 9 scripts.
+- Files-visible medians: local cold 153ms, warm 121ms; slow cold 1366ms,
+  warm 769ms. These timings are advisory, with no speedup claim.
+- PASS: all 34 existing scenarios, sequentially against that final binary:
+  Settings 9, lifecycle 5, server-file 1, publication 12 and picker 7.
+- PASS: five new real Chromium/IndexedDB cache cases: clear, replace, reset,
+  legacy migration/retention and republish. Both accounts first restore the
+  exact same server image. A's cleanup leaves B's local bytes intact, while
+  A's owned record is removed. B then signs in with restoration unavailable,
+  saves display metadata and retains the original SVG bytes and rendered red
+  pixel. Republish removes B's remote image and injects a matching durable
+  failed intent, then proves Save uploads B's surviving IndexedDB bytes.
+  The other account name contains separators, percent and Unicode characters.
+- The new reset test initially waited for Saved, but Reset does not show that
+  label. It now waits for the actual successful DELETE and cleared rendered
+  state. No product change or weaker deletion/cache assertion was needed.
+- PASS: delayed retry-queue-same starts with remote 404; retry-queue-other starts
+  with a wrong-image 200. Both delay real readonly IDB completion by 1500ms and
+  wait for the expected SVG, retaining the exact final body assertion.
+- PASS: zero page errors in all 39 functional scenarios.
+- PASS: controlled launch failure for picker and publication: exit 1, zero
+  surviving Go processes and zero temporary roots. Missing-binary startup,
+  an actually spawned child exiting before readiness, and a controlled
+  browser.close failure after actual Chromium shutdown produce
+  the same clean result. The baseline leaked one process/root in each script;
+  the proof driver explicitly removed those test-owned leaks.
+
+Reproduction commands and evidence:
+- Install used this revision's separate frontend lockfile with --frozen-lockfile.
+- All commands below carry BUN_RUNTIME_TRANSPILER_CACHE_PATH=0.
+- From frontend: bun run test; bun run check; bun run lint; bun run perf:check;
+  bun run perf:browser; bun run perf:budget.
+- Strict script types: bunx tsc --ignoreConfig --noEmit --strict --target es2023
+  --module preserve --moduleResolution bundler --types bun --lib es2023,dom
+  --skipLibCheck --esModuleInterop --resolveJsonModule
+  scripts/verify-wallpaper-{settings,lifecycle,server-file,publication,picker,cache}.ts
+- After perf:browser, run sequentially from the root:
+  bun frontend/scripts/verify-wallpaper-settings.ts
+  bun frontend/scripts/verify-wallpaper-lifecycle.ts
+  bun frontend/scripts/verify-wallpaper-server-file.ts
+  bun frontend/scripts/verify-wallpaper-publication.ts
+  bun frontend/scripts/verify-wallpaper-picker.ts
+  bun frontend/scripts/verify-wallpaper-cache.ts
+- Final logs: /tmp/pr188-ownership-final-{settings,lifecycle,server-file,
+  publication,picker,cache}.log. Performance: perf-results/browser.json,
+  perf-results/browser-summary.txt, /tmp/pr188-ownership-perf.log.
+- Static logs: /tmp/pr188-ownership-{focused,tests,check,lint,types,browser-types,
+  budget}.log. Svelte: /tmp/pr188-ownership-svelte-{store,page,picker}.log.
+- Cleanup reproduction: /tmp/pr188-cleanup-proof.py and
+  /tmp/pr188-ownership-cleanup.log. It runs exact-HEAD baseline script copies
+  and fixed script copies in this checkout, with an empty
+  PLAYWRIGHT_BROWSERS_PATH, a missing binary path, an exiting /bin/false child,
+  or a Playwright preload
+  that closes the real browser then throws. It inspects actual /proc children
+  and temporary directories, then removes only its own injected artifacts.
+
+Limits:
+- Chromium web and a disposable local Go service only. Native CEF, desktop182,
+  Safari, Firefox, mobile, relay and physical multi-device flows were not tested.
+- Backend source unchanged; backend unit/vet suites were not rerun. The actual
+  embedded Go service was rebuilt and exercised by the browser/API tests.
+- Legacy hash-only records are deliberately retained until the user clears
+  browser data. There is no ownership metadata with which to collect them safely.
+- As before, fully denied persistence cannot guarantee durability across process
+  loss. No exactly-once transport or private-storage security claim is made.
+- Greptile and CI results for the pushed head belong to the parent's next gate;
+  this implementation task does not poll for them or perform a merge.

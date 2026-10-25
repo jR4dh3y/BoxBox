@@ -73,11 +73,11 @@ class AuthStore {
 			await apiLogin(username, password);
 			browseRequests.reset();
 			browseRequests.startSession();
+			void settingsStore.initialize();
 			this.isAuthenticated = true;
 			this.isLoading = false;
 			this.authAlert = null;
 			this.startTokenRefresh();
-			void settingsStore.initialize();
 			return true;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : 'Login failed';
@@ -174,6 +174,7 @@ class AuthStore {
 	private reset(): void {
 		resetShareWallpaperLoginSync();
 		browseRequests.reset();
+		settingsStore.clearSession();
 		this.isAuthenticated = false;
 		this.isDevelopment = false;
 		this.isLoading = false;

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import './layout.css';
+	import { syncShareWallpaperOnLogin } from '#lib/utils/wallpaperSync.js';
 	import { authStore } from '#lib/stores/auth.svelte.js';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -156,22 +157,8 @@
 	});
 
 	$effect(() => {
-		if (
-			!initialized ||
-			!authStore.isAuthenticated ||
-			isSharePage ||
-			!settingsStore.current.backgroundImage
-		)
-			return;
-		let active = true;
-		void import('#lib/utils/wallpaperSync.js')
-			.then(({ syncShareWallpaperOnLogin }) => {
-				if (active) void syncShareWallpaperOnLogin();
-			})
-			.catch((error) => console.warn('Unable to load wallpaper synchronization', error));
-		return () => {
-			active = false;
-		};
+		if (!initialized || !authStore.isAuthenticated || isSharePage || isLocalDesktop()) return;
+		void syncShareWallpaperOnLogin();
 	});
 
 	function handleAuthRefresh(event: Event): void {

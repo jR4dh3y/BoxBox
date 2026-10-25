@@ -1,0 +1,88 @@
+PR188 fresh-browser verification correction, 2026-10-25
+
+Baseline: 69224a323cd16d209781974b3e8248aab94f3160.
+Checkout: /home/radhey/.t3/worktrees/BoxBox/t3-7641a13a.
+Local branch: fix/pr188-owned-cache-verification.
+Remote branch: fix/wallpaper-login-sync-181.
+Finding: https://github.com/jR4dh3y/BoxBox/pull/188#discussion_r4370171531.
+
+Scope and constraints:
+- Verification script, its documented command and this evidence only.
+- No application changes, budgets/assertions weakened, any or silencing casts.
+- No other worktree writes, agents, PR watchers/polling, rebase, force push or merge.
+- PR182 and the dirty parent checkout remain untouched.
+- Every Bun command uses BUN_RUNTIME_TRANSPILER_CACHE_PATH=0.
+- Parent owns subsequent exact-head review/CI gates and any merge decision.
+
+Baseline reproduction:
+- Built this checkout's embedded frontend and Go binary with
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bash scripts/build-single.sh.
+- Ran the documented frontend/scripts/verify-wallpaper-sync.ts against that
+  actual Go server and Chromium 156.0.8078.4, using isolated alice/bob fixture
+  accounts and two new browser contexts. Output was redirected away from the
+  historical screenshots/JSON into perf-results/sync-baseline.
+- FAIL, exit 1: evaluate: Error: Downloaded wallpaper missing from IndexedDB.
+  The image rendered first; the stale bare-digest read then failed before reload
+  and account switching. Log: /tmp/pr188-sync-baseline.log.
+
+Correction and audit:
+- restoreWallpaper writes hash + '.' + encodeURIComponent(username), then saves
+  that local reference in the account's preferences. The verification script now
+  reads boxbox_settings:alice, validates the external JSON and parses its actual
+  backgroundImage with the existing getLocalWallpaperId function.
+- Assert that ID equals the upload digest plus encoded Alice account name, read
+  that exact IndexedDB key, validate record.id and Blob, and retain the original
+  SHA-256 equality against the uploaded PNG. No fallback to another record.
+- The report includes restoredId. Reload/download-count checks and all logout,
+  Bob and returning-Alice assertions are unchanged.
+- Audited all frontend/scripts and documented issue-181 commands with rg for
+  digest, sha256, boxbox-local-wallpaper:, boxbox-wallpapers and IndexedDB reads.
+  Only verify-wallpaper-sync.ts had a stale bare-digest lookup. Cache verification
+  reads persisted references; its bare-hash setup deliberately seeds legacy
+  shared records. Lifecycle counts records, server-file compares server hashes,
+  and publication/settings/picker have no hash-derived IndexedDB lookup.
+  Historical frontend-before.txt records an old expected failure, not a command
+  or a live assertion, and remains unchanged.
+- The README now describes the account-owned check and includes the Bun cache
+  environment setting in its documented command.
+
+Rerun and checks:
+- PASS, exit 0: the entire documented fresh-browser script against the same
+  final application binary, not mocks. Command from frontend:
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 BOXBOX_TEST_URL=<isolated Go URL>
+  BOXBOX_TEST_EVIDENCE=<checkout>/perf-results/sync-final
+  bun scripts/verify-wallpaper-sync.ts
+- PNG SHA-256:
+  cffec9a529ff30775f49781487feb81eae639fe56805e8e1eddad458d1570742
+- Actual preference/IndexedDB ID:
+  cffec9a529ff30775f49781487feb81eae639fe56805e8e1eddad458d1570742.alice
+- PASS: Alice uploads and saves PNG, HTTP 200; contain + frosted glass render.
+- PASS: fresh context restores PNG, private/no-store response, exact cached hash.
+- PASS: reload revalidates metadata and keeps image download count at one.
+- PASS: logout clears rendered wallpaper; Bob receives 404 and stays plain;
+  Alice returns and restores the image and display settings.
+- PASS: zero uncaught page errors. Seven checks in browser-results.json.
+  Log: /tmp/pr188-sync-final.log. JSON and four screenshots are in the checkout's
+  ignored perf-results/sync-final directory.
+- PASS: baseline and final fixture Go processes exited and fixture roots were
+  removed in finally. Browser contexts closed through browser.close.
+- PASS: strict standalone types for all seven wallpaper verification scripts:
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bunx tsc --ignoreConfig --noEmit --strict
+  --target es2023 --module preserve --moduleResolution bundler --types bun
+  --lib es2023,dom --skipLibCheck --esModuleInterop --resolveJsonModule
+  scripts/verify-wallpaper-{sync,settings,lifecycle,server-file,publication,picker,cache}.ts
+- PASS from frontend, with the same Bun environment setting:
+  bunx prettier --check scripts/verify-wallpaper-sync.ts
+  bunx eslint scripts/verify-wallpaper-sync.ts
+  bun run perf:budget
+- Static JS remains 301007/301056 raw bytes, 100971 gzip advisory. No application
+  source or performance-budget file changed. The baseline build is therefore
+  also the final application build; the correction affects only verification.
+- PASS: git diff --check and scoped diff inspection before commit.
+
+Limits:
+- Reran the affected documented sync flow only, not the previous 154 unit tests,
+  39 other browser scenarios, full Go suite or startup/performance samples.
+  Their prior results are historical evidence, not results of this rerun.
+- No Firefox, Safari, native CEF/desktop182, physical devices or Docker test.
+- New-head CI and fresh Greptile review remain the parent's follow-up work.

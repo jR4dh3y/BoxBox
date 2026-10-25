@@ -1,0 +1,53 @@
+PR #188 follow-up, baseline f52e5fb4a17df8d3b7b1af9fc4ab3b8717013ad1
+
+Greptile gate: review 5640007282 completed on this exact baseline at
+2026-10-24T21:00:18Z. Application checks were successful; Greptile's completed
+failure reported finding 4368502547 rather than pending review work.
+
+4368502547 reproduced through the real mounted-file wallpaper picker:
+select wallpaper.svg, save Contain, replace bytes at the same filesystem path,
+change fit/blur and Save. Baseline showed Saved but metadata stayed Contain.
+Before: Save click to rendered Saved 111.9 / 1397.8 / 1498.0 ms (advisory).
+After: 113.6 / 1396.6 / 1399.4 / 1498.7 ms (separate fit and blur saves).
+These timings include the existing Saved-button reset delay on consecutive saves;
+they are observation, not a performance gate or a claimed speed improvement.
+New browser regression verifies unrelated Compact save preserves all metadata,
+explicit default Cover fit and separate blur save persist, saved snapshot bytes
+remain unchanged, and reload restores both display choices.
+
+4368508660 reproduced with localStorage.removeItem throwing SecurityError after
+successful transport: focused suite failed at pending-key cleanup. Guarding
+persistent cleanup makes both upload and deletion complete successfully. Browser
+blocked-cleanup also verifies Saved, correct remote bytes and metadata, no page error.
+
+4368508657: retaining the last usable image after a failed replacement download
+is the existing fallback contract (sync catches failure before applying state;
+unit regression explicitly expects cached X). Clearing it would change behavior
+and discard the active fallback due to a transient error. Browser assertions now
+establish that the blob background remains rendered, remote Y is unchanged,
+and reload retries Y successfully without a PUT or DELETE.
+
+Passed:
+- 132 frontend tests (15 files), including upload/delete with removeItem throwing.
+- Svelte check: 0 errors, 0 warnings.
+- Frontend lint (Prettier and ESLint).
+- Performance script type check, strict TypeScript check of both browser scripts.
+- Embedded frontend + Go binary build.
+- 9 existing/extended real-server Settings scenarios plus mounted-file scenario.
+- Bundle gate: 301007 raw static JS bytes / 301056 ceiling; no budget edits.
+- Browser performance: 20 samples; all deterministic gates passed. Files-visible
+  medians local cold/warm 184/140 ms, slow cold/warm 1382/923 ms (advisory).
+  Logged-out startup, lazy chunk recovery and navigation checks also passed.
+- Svelte autofixer: no issues; existing draft-refresh effect suggestions inspected.
+- git diff --check.
+
+Not rerun: full backend unit/vet suites (no backend source changes), desktop,
+mobile, Safari, Firefox, physical multi-device interaction, or public share-page
+visual rendering. Real server wallpaper metadata and bytes used by share pages
+were verified; reload restoration was verified in Chromium.
+
+Environment caveat: initial Bun transpiler cache reused import.meta.dir metadata
+from the previous worktree, sending initial fixture server logs to its ignored
+perf-results path and causing the first bundle check to target a missing old
+manifest. No source there was edited. Final verification used
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 and this isolated checkout's build/results.

@@ -1,55 +1,44 @@
 const DATABASE_NAME = 'boxbox-wallpapers';
 const DATABASE_VERSION = 1;
 const STORE_NAME = 'wallpapers';
-const LOCAL_WALLPAPER_PREFIX = 'boxbox-local-wallpaper:';
-const LOCAL_WALLPAPER_ID_PATTERN = /^[a-z0-9_-]{8,}$/i;
-const INLINE_WALLPAPER_PATTERN = /^data:image\/(avif|gif|jpeg|jpg|png|svg\+xml|webp);base64,/i;
+import {
+	isInlineWallpaperDataUrl,
+	getLocalWallpaperId,
+	toLocalWallpaperReference
+} from './wallpaperReference.js';
+export {
+	isInlineWallpaperDataUrl,
+	isLocalWallpaperReference,
+	getLocalWallpaperId,
+	toLocalWallpaperReference
+} from './wallpaperReference.js';
 
 interface StoredLocalWallpaper {
 	id: string;
 	blob: Blob;
-	type: string;
-	createdAt: number;
 }
 
 const localWallpaperUrlCache = new Map<string, string>();
-
-export function isInlineWallpaperDataUrl(value: string): boolean {
-	return INLINE_WALLPAPER_PATTERN.test(value.trim());
-}
-
-export function toLocalWallpaperReference(id: string): string {
-	return `${LOCAL_WALLPAPER_PREFIX}${id}`;
-}
-
-export function getLocalWallpaperId(reference: string): string | null {
-	const trimmed = reference.trim();
-	if (!trimmed.startsWith(LOCAL_WALLPAPER_PREFIX)) return null;
-
-	const id = trimmed.slice(LOCAL_WALLPAPER_PREFIX.length);
-	return LOCAL_WALLPAPER_ID_PATTERN.test(id) ? id : null;
-}
-
-export function isLocalWallpaperReference(value: string): boolean {
-	return getLocalWallpaperId(value) !== null;
-}
 
 export async function saveLocalWallpaperDataUrl(dataUrl: string): Promise<string> {
 	if (!isInlineWallpaperDataUrl(dataUrl)) {
 		throw new Error('Only image data URLs can be saved as local wallpapers.');
 	}
 
-	const id = createLocalWallpaperId();
-	const blob = dataUrlToBlob(dataUrl);
+	return saveLocalWallpaperBlob(dataUrlToBlob(dataUrl));
+}
+
+export async function saveLocalWallpaperBlob(
+	blob: Blob,
+	id = createLocalWallpaperId()
+): Promise<string> {
 	const database = await openWallpaperDatabase();
 
 	try {
 		const transaction = database.transaction(STORE_NAME, 'readwrite');
 		transaction.objectStore(STORE_NAME).put({
 			id,
-			blob,
-			type: blob.type,
-			createdAt: Date.now()
+			blob
 		} satisfies StoredLocalWallpaper);
 		await waitForTransaction(transaction);
 	} finally {
@@ -98,7 +87,8 @@ export async function deleteLocalWallpaper(reference: string | null): Promise<vo
 	if (!reference) return;
 
 	const id = getLocalWallpaperId(reference);
-	if (!id) return;
+	// Hash-only records predate account ownership and may still be shared.
+	if (!id || /^[a-f0-9]{64}$/i.test(id)) return;
 
 	revokeCachedLocalWallpaperUrl(id);
 

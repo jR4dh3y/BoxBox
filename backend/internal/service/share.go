@@ -186,8 +186,13 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		// useful standalone "edit" mode for a single file share.
 		permissions = model.SharePermissions{View: true, Download: true}
 	}
-	if (permissions.Upload || permissions.Delete) && mount.ReadOnly {
-		return nil, ErrPermissionDenied
+	if permissions.Upload || permissions.Delete {
+		if mount.ReadOnly {
+			return nil, ErrPermissionDenied
+		}
+		if err := s.mounts.requireWritablePath(fsPath, false); err != nil {
+			return nil, err
+		}
 	}
 	mountRoot, err := s.fs.EvalSymlinks(mount.Path)
 	if err != nil {
@@ -323,12 +328,17 @@ func (s *shareService) Update(username string, id string, settings ShareUpdateSe
 			return nil, ErrShareNotFound
 		}
 		share := s.shareFromRecord(*record)
-		mount, _, err := s.resolveShareTarget(&share)
+		mount, fsPath, err := s.resolveShareTarget(&share)
 		if err != nil {
 			return nil, err
 		}
-		if (permissions.Upload || permissions.Delete) && mount.ReadOnly {
-			return nil, ErrPermissionDenied
+		if permissions.Upload || permissions.Delete {
+			if mount.ReadOnly {
+				return nil, ErrPermissionDenied
+			}
+			if err := s.mounts.requireWritablePath(fsPath, false); err != nil {
+				return nil, err
+			}
 		}
 		maxUploadBytes := share.MaxUploadBytes
 		if settings.MaxUploadBytes != nil {
@@ -568,6 +578,9 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	if mount.ReadOnly {
 		return 0, "", ErrPermissionDenied
 	}
+	if err := s.mounts.requireWritablePath(target, false); err != nil {
+		return 0, "", err
+	}
 	canReplace := share.Permissions.Delete || share.Permissions.LegacyReplace
 	replacementMode := os.FileMode(0o644)
 	exists, existsErr := s.fs.Exists(target)
@@ -651,6 +664,9 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	if err != nil {
 		return 0, "", err
 	}
+	if err := s.mounts.requireWritablePath(finalPath, false); err != nil {
+		return 0, "", err
+	}
 	if finalMount.ReadOnly || finalPath != target {
 		return 0, "", ErrPermissionDenied
 	}
@@ -719,6 +735,9 @@ func (s *shareService) CreateFolderForRecipient(ctx context.Context, token strin
 	if info, err := s.fs.Lstat(target); err == nil && !info.IsDir() {
 		return ErrPathExists
 	}
+	if err := s.mounts.requireWritablePath(target, false); err != nil {
+		return err
+	}
 	return s.fs.MkdirAllWithin(root, filepath.FromSlash(cleanPath), 0o755)
 }
 
@@ -747,6 +766,9 @@ func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string,
 	entryPath := filepath.Join(root, filepath.FromSlash(cleanPath))
 	if mount.ReadOnly || cleanPath == "" || !pathWithinRoot(root, target) || !pathWithinRoot(root, entryPath) {
 		return ErrPermissionDenied
+	}
+	if err := s.mounts.requireWritablePath(target, true); err != nil {
+		return err
 	}
 	components := strings.Split(cleanPath, "/")
 	current := root

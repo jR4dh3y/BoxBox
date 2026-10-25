@@ -262,6 +262,13 @@ export async function parseResponse<T>(response: Response): Promise<T> {
  */
 export function apiRequest<T>(endpoint: string, options?: RequestOptions): Promise<T>;
 export async function apiRequest(endpoint: string, options: RequestOptions = {}): Promise<unknown> {
+	const response = await apiFetch(endpoint, options);
+	if (response.status === 204) return;
+	return parseResponse<unknown>(response);
+}
+
+/** Authenticated transport shared by JSON and binary endpoints. */
+export async function apiFetch(endpoint: string, options: RequestOptions = {}): Promise<Response> {
 	const { method = 'GET', body, headers = {}, skipAuth = false, params, signal } = options;
 
 	const url = buildUrl(endpoint, params);
@@ -311,8 +318,7 @@ export async function apiRequest(endpoint: string, options: RequestOptions = {})
 		}
 	}
 
-	if (response.status === 204) return;
-	return parseResponse<unknown>(response);
+	return response;
 }
 
 /**
