@@ -1,13 +1,9 @@
 <script lang="ts">
-	import { useQueryClient } from '@tanstack/svelte-query';
+	import { browseRequests } from '#lib/browse/requests.svelte.js';
 	import { desktopUndo } from '#lib/browse/undo.svelte.js';
-	import { fileQueryKeys } from '#lib/stores/files.js';
-
-	const client = useQueryClient();
 
 	function changed(): void {
-		void client.invalidateQueries({ queryKey: fileQueryKeys.roots() });
-		void client.invalidateQueries({ queryKey: fileQueryKeys.directories() });
+		void browseRequests.changed();
 	}
 
 	function keydown(event: KeyboardEvent): void {

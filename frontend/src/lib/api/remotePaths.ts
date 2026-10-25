@@ -82,9 +82,8 @@ export function invalidateRemoteServers(): void {
 	pendingServers = undefined;
 }
 
-export function listRemoteServers(): Promise<RemoteServer[]> {
-	if (pendingServers) return pendingServers;
-	const operation = api.get<unknown>('/desktop/servers').then((value) =>
+function loadRemoteServers(signal?: AbortSignal): Promise<RemoteServer[]> {
+	return api.get<unknown>('/desktop/servers', undefined, signal).then((value) =>
 		array(record(value, 'servers response').servers, 'servers').map((item) => {
 			const server = record(item, 'server');
 			const id = nonEmptyString(server.id, 'server ID');
@@ -95,6 +94,11 @@ export function listRemoteServers(): Promise<RemoteServer[]> {
 			return { id, name: string(server.name, 'server name'), url: url.href };
 		})
 	);
+}
+
+export function listRemoteServers(): Promise<RemoteServer[]> {
+	if (pendingServers) return pendingServers;
+	const operation = loadRemoteServers();
 	pendingServers = operation;
 	void operation
 		.finally(() => {
@@ -105,11 +109,12 @@ export function listRemoteServers(): Promise<RemoteServer[]> {
 }
 
 /** Local-only servers do not expose desktop management. */
-export async function availableRemoteServers(): Promise<RemoteServer[]> {
+export async function availableRemoteServers(signal?: AbortSignal): Promise<RemoteServer[]> {
 	if (!isLocalDesktop()) return [];
 	try {
-		return await listRemoteServers();
-	} catch {
+		return await (signal ? loadRemoteServers(signal) : listRemoteServers());
+	} catch (error) {
+		if (signal?.aborted) throw error;
 		return [];
 	}
 }

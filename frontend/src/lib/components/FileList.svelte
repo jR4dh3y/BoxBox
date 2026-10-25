@@ -93,6 +93,13 @@
 	// Context menu state
 	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
 
+	const columns = [
+		{ field: 'name', label: 'Name', className: '' },
+		{ field: 'type', label: 'Type', className: 'file-type-column' },
+		{ field: 'size', label: 'Size', className: 'file-size-column text-right' },
+		{ field: 'modTime', label: 'Modified', className: 'file-modified-column' }
+	] satisfies { field: SortField; label: string; className: string }[];
+
 	function handleSort(field: SortField) {
 		if (sortBy === field) {
 			const newDir = sortDir === 'asc' ? 'desc' : 'asc';

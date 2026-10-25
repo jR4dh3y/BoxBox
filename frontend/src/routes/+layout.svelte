@@ -5,8 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
-	import { CONFIG } from '#lib/config.js';
+	import { browseRequests } from '#lib/browse/requests.svelte.js';
 	import Spinner from '#lib/components/ui/Spinner.svelte';
 	import Button from '#lib/components/ui/Button.svelte';
 	import { AlertTriangle, X } from 'lucide-svelte';
@@ -14,7 +13,6 @@
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import { isRemotePath } from '#lib/api/remotePaths.js';
 	import { jobsStore } from '#lib/stores/jobs.svelte.js';
-	import { refreshFilesWhenJobsFinish } from '#lib/stores/refreshFilesOnJobs.js';
 	import { websocketStore } from '#lib/stores/websocket.svelte.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { shareWallpaperStore } from '#lib/stores/shareWallpaper.svelte.js';
@@ -28,15 +26,6 @@
 	let { children } = $props();
 	let initialized = $state(false);
 	let authWasActive = false;
-
-	const queryClient = new QueryClient({
-		defaultOptions: {
-			queries: {
-				staleTime: CONFIG.query.staleTimeMs,
-				retry: 1
-			}
-		}
-	});
 
 	// Public routes that don't require authentication
 	const publicRoutes = ['/login', '/s/'];
@@ -81,13 +70,16 @@
 
 	onMount(() => {
 		window.addEventListener(AuthRefreshEvent.eventName, handleAuthRefresh);
-		refreshFilesWhenJobsFinish(queryClient);
+		jobsStore.onFinished = () => void browseRequests.changed();
+		const disconnectBrowse = browseRequests.connect();
 		void authStore.initialize().finally(() => {
 			initialized = true;
 		});
 
 		return () => {
 			window.removeEventListener(AuthRefreshEvent.eventName, handleAuthRefresh);
+			disconnectBrowse();
+			jobsStore.onFinished = undefined;
 		};
 	});
 
@@ -224,81 +216,79 @@
 	{/if}
 
 	<div class="app-content">
-		<QueryClientProvider client={queryClient}>
-			{#if !initialized || (!authStore.isAuthenticated && !isPublicRoute)}
-				<div class="flex min-h-screen items-center justify-center bg-surface-primary">
-					<Spinner size="lg" />
-				</div>
-			{:else if isFullBleedPage}
-				{@render children()}
-			{:else}
-				<div class="flex min-h-screen flex-col bg-surface-primary">
-					{#if authStore.isAuthenticated && !authStore.isDevelopment && !isLoginPage}
-						<header
-							class="sticky top-0 z-50 border-b border-border-secondary bg-surface-primary px-4"
-						>
-							<div class="mx-auto flex h-14 max-w-[1400px] items-center justify-between">
-								<a
-									href={resolve('browse')}
-									class="flex items-center gap-2 text-lg font-semibold text-text-primary no-underline hover:text-accent"
-								>
-									<img src="/logo-boxbox-3d.svg" alt="BoxBox" class="h-9 w-auto" />
-								</a>
-								<nav class="flex items-center gap-4">
-									<Button variant="secondary" size="sm" onclick={handleLogout}>Logout</Button>
-								</nav>
-							</div>
-						</header>
-					{/if}
-					<main
-						class="flex flex-1 flex-col {authStore.isAuthenticated && !isLoginPage
-							? 'mx-auto w-full max-w-[1400px] p-6'
-							: ''}"
+		{#if !initialized || (!authStore.isAuthenticated && !isPublicRoute)}
+			<div class="flex min-h-screen items-center justify-center bg-surface-primary">
+				<Spinner size="lg" />
+			</div>
+		{:else if isFullBleedPage}
+			{@render children()}
+		{:else}
+			<div class="flex min-h-screen flex-col bg-surface-primary">
+				{#if authStore.isAuthenticated && !authStore.isDevelopment && !isLoginPage}
+					<header
+						class="sticky top-0 z-50 border-b border-border-secondary bg-surface-primary px-4"
 					>
-						{@render children()}
-					</main>
-				</div>
-			{/if}
-			{#if authStore.authAlert}
-				<div
-					class="fixed right-4 z-[200] flex w-[calc(100vw-2rem)] max-w-lg items-start gap-3 rounded-lg border px-4 py-3 shadow-lg {isLoginPage
-						? 'top-4'
-						: 'bottom-11'} {authStore.authAlert.kind === 'terminal'
-						? 'border-warning/40 bg-warning/10 text-warning'
-						: 'border-danger/30 bg-danger/10 text-danger'}"
-					role="alert"
-					aria-live="assertive"
-				>
-					<AlertTriangle size={18} class="mt-0.5 shrink-0" />
-					<div class="flex-1 space-y-2">
-						<p class="m-0 text-sm">{authStore.authAlert.message}</p>
-						{#if authStore.authAlert.kind === 'transient' && authStore.authAlert.source === 'restore'}
-							<Button
-								type="button"
-								variant="secondary"
-								size="sm"
-								disabled={authStore.isRestoringSession || authStore.isLoading}
-								onclick={() => authStore.initialize()}
+						<div class="mx-auto flex h-14 max-w-[1400px] items-center justify-between">
+							<a
+								href={resolve('browse')}
+								class="flex items-center gap-2 text-lg font-semibold text-text-primary no-underline hover:text-accent"
 							>
-								{#if authStore.isRestoringSession}
-									<Spinner size="sm" />
-									<span>Retrying...</span>
-								{:else}
-									<span>Retry session</span>
-								{/if}
-							</Button>
-						{/if}
-					</div>
-					<button
-						type="button"
-						class="shrink-0 rounded p-0.5 transition-colors hover:bg-surface-elevated"
-						onclick={() => authStore.clearAuthAlert()}
-						aria-label="Dismiss authentication alert"
-					>
-						<X size={16} />
-					</button>
+								<img src="/logo-boxbox-3d.svg" alt="BoxBox" class="h-9 w-auto" />
+							</a>
+							<nav class="flex items-center gap-4">
+								<Button variant="secondary" size="sm" onclick={handleLogout}>Logout</Button>
+							</nav>
+						</div>
+					</header>
+				{/if}
+				<main
+					class="flex flex-1 flex-col {authStore.isAuthenticated && !isLoginPage
+						? 'mx-auto w-full max-w-[1400px] p-6'
+						: ''}"
+				>
+					{@render children()}
+				</main>
+			</div>
+		{/if}
+		{#if authStore.authAlert}
+			<div
+				class="fixed right-4 z-[200] flex w-[calc(100vw-2rem)] max-w-lg items-start gap-3 rounded-lg border px-4 py-3 shadow-lg {isLoginPage
+					? 'top-4'
+					: 'bottom-11'} {authStore.authAlert.kind === 'terminal'
+					? 'border-warning/40 bg-warning/10 text-warning'
+					: 'border-danger/30 bg-danger/10 text-danger'}"
+				role="alert"
+				aria-live="assertive"
+			>
+				<AlertTriangle size={18} class="mt-0.5 shrink-0" />
+				<div class="flex-1 space-y-2">
+					<p class="m-0 text-sm">{authStore.authAlert.message}</p>
+					{#if authStore.authAlert.kind === 'transient' && authStore.authAlert.source === 'restore'}
+						<Button
+							type="button"
+							variant="secondary"
+							size="sm"
+							disabled={authStore.isRestoringSession || authStore.isLoading}
+							onclick={() => authStore.initialize()}
+						>
+							{#if authStore.isRestoringSession}
+								<Spinner size="sm" />
+								<span>Retrying...</span>
+							{:else}
+								<span>Retry session</span>
+							{/if}
+						</Button>
+					{/if}
 				</div>
-			{/if}
-		</QueryClientProvider>
+				<button
+					type="button"
+					class="shrink-0 rounded p-0.5 transition-colors hover:bg-surface-elevated"
+					onclick={() => authStore.clearAuthAlert()}
+					aria-label="Dismiss authentication alert"
+				>
+					<X size={16} />
+				</button>
+			</div>
+		{/if}
 	</div>
 </div>

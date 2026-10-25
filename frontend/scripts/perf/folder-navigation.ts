@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Browser } from 'playwright';
 
@@ -9,17 +9,22 @@ export async function verifyFolderNavigation(
 	credentials: { username: string; password: string },
 	mount: string
 ) {
+	// Keep navigable siblings outside the 10000-entry startup/virtualization fixture.
+	const navigationRoot = join(mount, 'FolderNavigation');
 	for (const folder of ['ScrollA', 'ScrollB']) {
-		mkdirSync(join(mount, folder), { recursive: true });
+		mkdirSync(join(navigationRoot, folder), { recursive: true });
 		for (let i = 0; i < 500; i++)
-			writeFileSync(join(mount, folder, `File-${String(i).padStart(4, '0')}.txt`), 'fixture');
+			writeFileSync(
+				join(navigationRoot, folder, `File-${String(i).padStart(4, '0')}.txt`),
+				'fixture'
+			);
 	}
 	const context = await browser.newContext();
 	try {
 		await context.request.post(`${url}/api/v1/auth/login`, { data: credentials });
 		const page = await context.newPage();
 		page.setDefaultTimeout(15_000);
-		await page.goto(`${url}/browse?path=perf/ScrollA`);
+		await page.goto(`${url}/browse?path=perf/FolderNavigation/ScrollA`);
 		const list = page.locator('.file-list-container');
 		await page.getByText('File-0000.txt', { exact: true }).click();
 		await page.keyboard.press('PageDown');
@@ -69,5 +74,6 @@ export async function verifyFolderNavigation(
 		);
 	} finally {
 		await context.close();
+		rmSync(navigationRoot, { recursive: true, force: true });
 	}
 }
