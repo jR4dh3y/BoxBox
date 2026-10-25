@@ -3,7 +3,10 @@
  */
 
 import { settingsStorage, storage } from '#lib/utils/storage.js';
-import { beginWallpaperPublication } from '#lib/utils/wallpaperPublication.js';
+import {
+	beginWallpaperPublication,
+	wallpaperPublication
+} from '#lib/utils/wallpaperPublication.js';
 import { currentUsername } from '#lib/utils/sessionUser.js';
 import {
 	getDriveNames,
@@ -118,10 +121,16 @@ class SettingsStore {
 	}
 
 	set(settings: UserSettings, wallpaperChanged = false): string | undefined {
-		const publication =
-			wallpaperChanged && this.username !== null
-				? beginWallpaperPublication(this.username, settings.backgroundImage)
-				: undefined;
+		let publication: string | undefined;
+		if (this.username !== null) {
+			if (wallpaperChanged)
+				publication = beginWallpaperPublication(this.username, settings.backgroundImage);
+			else {
+				const intent = wallpaperPublication(this.username);
+				if (intent.kind === 'pending' && intent.source === settings.backgroundImage)
+					publication = intent.id;
+			}
+		}
 		if (
 			settings.backgroundImage !== this.current.backgroundImage ||
 			settings.backgroundImageMode !== this.current.backgroundImageMode ||

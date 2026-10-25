@@ -63,7 +63,7 @@
 	let serverWallpaperRoots = $state<MountPoint[]>([]);
 	let serverWallpaperPath = $state('');
 	let serverWallpaperItems = $state<FileInfo[]>([]);
-	let serverWallpaperLoading = $state(false);
+	let serverWallpaperLoad = $state.raw<AbortSignal | null>(null);
 	let serverWallpaperError = $state<string | null>(null);
 	let localWallpaperError = $state<string | null>(null);
 	let localWallpaperUploading = $state(false);
@@ -104,7 +104,7 @@
 
 	async function loadServerWallpaperRoots() {
 		const signal = operations.start();
-		serverWallpaperLoading = true;
+		serverWallpaperLoad = signal;
 		serverWallpaperError = null;
 
 		try {
@@ -116,18 +116,19 @@
 			serverWallpaperError =
 				error instanceof Error ? error.message : 'Unable to load server folders.';
 		} finally {
-			serverWallpaperLoading = false;
+			if (serverWallpaperLoad === signal) serverWallpaperLoad = null;
 		}
 	}
 
 	async function openServerWallpaperPath(path: string) {
 		const signal = operations.start();
 		serverWallpaperPath = path;
-		serverWallpaperLoading = true;
+		serverWallpaperItems = [];
+		serverWallpaperLoad = signal;
 		serverWallpaperError = null;
 
 		try {
-			const response = await listDirectory(path);
+			const response = await listDirectory(path, signal);
 			signal.throwIfAborted();
 			serverWallpaperItems = visibleByName(response.items, showHiddenFiles).slice(
 				0,
@@ -138,11 +139,14 @@
 			serverWallpaperError = error instanceof Error ? error.message : 'Unable to open this folder.';
 			serverWallpaperItems = [];
 		} finally {
-			serverWallpaperLoading = false;
+			if (serverWallpaperLoad === signal) serverWallpaperLoad = null;
 		}
 	}
 
 	function openServerWallpaperRoot() {
+		operations.start();
+		serverWallpaperLoad = null;
+		if (serverWallpaperRoots.length === 0) void loadServerWallpaperRoots();
 		serverWallpaperPath = '';
 		serverWallpaperItems = [];
 		serverWallpaperError = null;
@@ -430,7 +434,7 @@
 				</div>
 			{/if}
 
-			{#if serverWallpaperLoading}
+			{#if serverWallpaperLoad}
 				<div
 					class="rounded border border-border-primary bg-surface-secondary px-3 py-8 text-center text-sm text-text-secondary"
 				>

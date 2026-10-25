@@ -8,7 +8,7 @@ import { downloadWallpaper } from '#lib/api/wallpaperImage.js';
 import { getWallpaper, type StoredWallpaper } from '#lib/api/wallpaper.js';
 import { authStore } from '#lib/stores/auth.svelte.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
-import { wallpaperPublication } from './wallpaperPublication';
+import { beginWallpaperPublication, wallpaperPublication } from './wallpaperPublication';
 import { refreshWallpaperDraft } from './wallpaperDraft';
 import {
 	getLocalWallpaperBlob,
@@ -798,6 +798,120 @@ test('blocked intent and completion writes still apply and publish a new image i
 		}
 	});
 });
+
+test('display saves capture and retry the matching failed image or removal at apply time', async () => {
+	for (const change of ['fit', 'blur', 'unrelated', 'removal']) {
+		await withSession(async ({ login, setWallpaper, state, stored, requests }) => {
+			const user = `display-retry-${change}`;
+			setWallpaper(user);
+			await login(user);
+			await syncShareWallpaperOnLogin();
+			const source = await saveLocalWallpaperBlob(new Blob(['failed-image']));
+			const intent = settingsStore.set({ ...settingsStore.current, backgroundImage: source }, true);
+			state.uploadStatus = 500;
+			await assert.rejects(publishShareWallpaper(intent), ApiRequestError);
+			state.uploadStatus = 200;
+			const retryIntent =
+				change === 'removal'
+					? settingsStore.set({ ...settingsStore.current, backgroundImage: null }, true)
+					: intent;
+			const captured = settingsStore.set({
+				...settingsStore.current,
+				backgroundImageMode: change === 'fit' ? 'tile' : settingsStore.current.backgroundImageMode,
+				frostedGlass: change === 'blur' ? false : settingsStore.current.frostedGlass,
+				compactMode: true
+			});
+			assert.equal(captured, retryIntent, 'Save must capture the existing matching intent');
+			await publishShareWallpaper(captured, true);
+			if (change === 'removal') assert.equal(stored.has(user), false);
+			else {
+				assert.equal(stored.get(user)?.source, source);
+				assert.equal(stored.get(user)?.mode, change === 'fit' ? 'tile' : 'contain');
+				assert.equal(stored.get(user)?.frostedGlass, change !== 'blur');
+				assert.equal(requests.filter((request) => request.startsWith('PUT')).length, 2);
+			}
+			assert.equal(wallpaperPublication(user).kind, 'completed');
+			assert.equal(
+				settingsStore.set(settingsStore.current),
+				undefined,
+				'completed intent is not retried'
+			);
+			const mutations = requests.filter((request) => /^(PUT|PATCH|DELETE) /.test(request)).length;
+			await publishShareWallpaper();
+			assert.equal(
+				requests.filter((request) => /^(PUT|PATCH|DELETE) /.test(request)).length,
+				mutations
+			);
+		});
+	}
+});
+
+test('Save captures only its account and source, never completed or unrelated intent', async () => {
+	await withSession(async ({ login, setWallpaper, requests }) => {
+		const user = 'capture-owner';
+		setWallpaper(user);
+		await login(user);
+		await syncShareWallpaperOnLogin();
+		beginWallpaperPublication('another-owner', settingsStore.current.backgroundImage);
+		assert.equal(settingsStore.set(settingsStore.current), undefined);
+		beginWallpaperPublication(user, 'different-source');
+		assert.equal(settingsStore.set(settingsStore.current), undefined);
+		await publishShareWallpaper();
+		assert.equal(
+			requests.some((request) => /^(PUT|PATCH|DELETE) /.test(request)),
+			false
+		);
+	});
+});
+
+for (const successor of ['same-tab', 'other-tab']) {
+	test(`a queued display retry cannot adopt a newer ${successor} intent`, async () => {
+		await withSession(async ({ login, setWallpaper, state, values, requests }) => {
+			const user = `queued-display-${successor}`;
+			setWallpaper(user);
+			await login(user);
+			await syncShareWallpaperOnLogin();
+			const source = await saveLocalWallpaperBlob(new Blob(['queued-display-image']));
+			const original = settingsStore.set(
+				{ ...settingsStore.current, backgroundImage: source },
+				true
+			);
+			state.uploadStatus = 500;
+			await assert.rejects(publishShareWallpaper(original), ApiRequestError);
+			state.uploadStatus = 200;
+			const started = deferred();
+			const gate = deferred();
+			let first = true;
+			state.beforeMetadata = async () => {
+				if (!first) return;
+				first = false;
+				started.resolve();
+				await gate.promise;
+			};
+			const occupying = publishShareWallpaper(original);
+			await started.promise;
+			const captured = settingsStore.set({ ...settingsStore.current, backgroundImageMode: 'tile' });
+			assert.equal(captured, original);
+			const queued = publishShareWallpaper(captured, true);
+			const next =
+				successor === 'same-tab'
+					? settingsStore.set(settingsStore.current, true)
+					: 'other-tab-operation';
+			if (successor === 'other-tab')
+				values.set(`boxbox_wallpaper_pending:${user}`, JSON.stringify({ id: next, source }));
+			const puts = requests.filter((request) => request.startsWith('PUT')).length;
+			gate.resolve();
+			await occupying;
+			await queued;
+			assert.equal(
+				requests.filter((request) => request.startsWith('PUT')).length,
+				puts + 1,
+				'only the already in-flight upload may finish'
+			);
+			assert.deepEqual(wallpaperPublication(user), { kind: 'pending', id: next, source });
+		});
+	});
+}
 
 test('a queued operation cannot adopt a newer same-source intent', async () => {
 	await withSession(async ({ login, setWallpaper, state, stored, requests }) => {
