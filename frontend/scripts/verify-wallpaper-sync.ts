@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium, request, type Page } from 'playwright';
+import { getLocalWallpaperId } from '../src/lib/utils/wallpaperStorage';
 
 // Use an isolated server with alice and bob, both using wallpaper-test.
 const baseURL = process.env.BOXBOX_TEST_URL ?? 'http://127.0.0.1:5182';
@@ -157,6 +158,19 @@ try {
 	assert.equal(downloaded.status(), 200);
 	assert.equal(downloaded.headers()['cache-control'], 'private, no-store');
 	await wallpaperRendered(fresh);
+	const restoredSource = await fresh.evaluate(() => {
+		const settings: unknown = JSON.parse(localStorage.getItem('boxbox_settings:alice') ?? 'null');
+		if (
+			typeof settings !== 'object' ||
+			settings === null ||
+			!('backgroundImage' in settings) ||
+			typeof settings.backgroundImage !== 'string'
+		)
+			throw new Error('Restored wallpaper missing from account preferences');
+		return settings.backgroundImage;
+	});
+	const restoredId = getLocalWallpaperId(restoredSource);
+	assert.equal(restoredId, `${digest}.${encodeURIComponent('alice')}`);
 	const cachedHash = await fresh.evaluate(async (id) => {
 		const database = await new Promise<IDBDatabase>((resolve, reject) => {
 			const request = indexedDB.open('boxbox-wallpapers', 1);
@@ -171,6 +185,8 @@ try {
 					if (
 						typeof record !== 'object' ||
 						record === null ||
+						!('id' in record) ||
+						record.id !== id ||
 						!('blob' in record) ||
 						!(record.blob instanceof Blob)
 					) {
@@ -188,7 +204,7 @@ try {
 		} finally {
 			database.close();
 		}
-	}, digest);
+	}, restoredId);
 	assert.equal(cachedHash, digest);
 	await fresh.screenshot({ path: resolve(output, '02-alice-fresh-browser.png') });
 	checks.push(
@@ -239,6 +255,7 @@ try {
 		baseURL,
 		browser: browser.version(),
 		sha256: digest,
+		restoredId,
 		checks,
 		requests,
 		pageErrors: failures

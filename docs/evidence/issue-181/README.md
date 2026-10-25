@@ -56,9 +56,11 @@ Use an isolated server with a writable fixture mount, two users named `alice` an
 From `frontend/`:
 
 ```sh
-BOXBOX_TEST_URL=http://127.0.0.1:5183 bun scripts/verify-wallpaper-sync.ts
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 BOXBOX_TEST_URL=http://127.0.0.1:5183 bun scripts/verify-wallpaper-sync.ts
 ```
 
 The script saves screenshots and JSON to this directory. Set `BOXBOX_TEST_EVIDENCE` to choose a different output directory.
+
+The fresh-browser check reads Alice's persisted wallpaper reference, verifies its account-owned ID, and hashes the blob at that exact IndexedDB key. See [the account-owned verification rerun](sync-verification-validation.txt) for the baseline failure and corrected result.
 
 Not exercised: Firefox, Safari, a second physical computer, Docker, native desktop clients, and the complete browser/allocation performance comparison suites. Server-side wallpaper changes are covered by regression tests; multi-device live synchronization without a new login is outside this fix.
