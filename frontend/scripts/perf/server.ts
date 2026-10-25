@@ -29,7 +29,13 @@ export function createDirectoryFixture() {
 	return { root, mount, dispose: () => rmSync(root, { recursive: true, force: true }) };
 }
 
-export async function startServer(binary: string, root: string, mount: string, label: string) {
+export async function startServer(
+	binary: string,
+	root: string,
+	mount: string,
+	label: string,
+	additionalUsers: string[] = []
+) {
 	const port = await availablePort();
 	const config = join(root, `${label}.yaml`);
 	writeFileSync(
@@ -61,6 +67,7 @@ export async function startServer(binary: string, root: string, mount: string, l
 	// Ephemeral credentials live only in the child environment, never the config.
 	const password = randomBytes(32).toString('hex');
 	env.BOXBOX_USERS_perf = await Bun.password.hash(password, { algorithm: 'bcrypt', cost: 10 });
+	for (const username of additionalUsers) env[`BOXBOX_USERS_${username}`] = env.BOXBOX_USERS_perf;
 	const log = join(results, `${label}-server.log`);
 	writeFileSync(log, '');
 	const child = Bun.spawn([binary, '--config', config], {

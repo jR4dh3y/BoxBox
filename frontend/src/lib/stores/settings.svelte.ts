@@ -90,10 +90,17 @@ class SettingsStore {
 	current = $state.raw<UserSettings>({ ...defaultSettings });
 	private username: string | null = null;
 	private session = 0;
+	private sessionController = new AbortController();
+
+	get sessionSignal(): AbortSignal {
+		return this.sessionController.signal;
+	}
 	wallpaperRevision = 0;
 
 	/** Call after sign-in: the drive names come from an authenticated endpoint. */
 	async initialize(): Promise<void> {
+		this.sessionController.abort();
+		this.sessionController = new AbortController();
 		const session = ++this.session;
 		const username = currentUsername() ?? 'dev';
 		this.username = username;
@@ -125,6 +132,8 @@ class SettingsStore {
 	}
 
 	clearSession(): void {
+		this.sessionController.abort();
+		this.sessionController = new AbortController();
 		this.session++;
 		this.username = null;
 		this.current = { ...defaultSettings };

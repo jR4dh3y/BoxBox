@@ -4,7 +4,7 @@ import {
 	updateWallpaperDisplay,
 	uploadWallpaper
 } from '#lib/api/wallpaperImage.js';
-import { storage } from '#lib/utils/storage.js';
+import { wallpaperPublication, recordWallpaperPublication } from './wallpaperPublication.js';
 import { currentUsername } from '#lib/utils/sessionUser.js';
 import { getWallpaper } from '#lib/api/wallpaper.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
@@ -19,25 +19,14 @@ import {
 	toLocalWallpaperReference
 } from '#lib/utils/wallpaperStorage.js';
 
-const pendingImages = new Map<string, string>();
-
-function pendingKey(user: string): string {
-	return `boxbox_wallpaper_pending:${encodeURIComponent(user)}`;
-}
-
-function pendingImage(user: string): string | null {
-	try {
-		return pendingImages.get(user) ?? storage.getString(pendingKey(user));
-	} catch {
-		return pendingImages.get(user) ?? null;
-	}
-}
-
 /** Retry a saved local edit before login can replace it with remote state. */
 export async function retryPendingWallpaper(signal: AbortSignal): Promise<boolean> {
 	const user = currentUsername();
 	const { backgroundImage } = settingsStore.current;
-	if (!user || !backgroundImage || pendingImage(user) !== backgroundImage) return false;
+	if (!user || !backgroundImage) return false;
+	const publication = wallpaperPublication(user);
+	signal.throwIfAborted();
+	if (publication.kind !== 'pending' || publication.source !== backgroundImage) return false;
 	await publishWallpaper(signal, true);
 	return true;
 }
@@ -51,16 +40,13 @@ export async function publishWallpaper(
 	const user = currentUsername();
 	if (!user) return;
 	const { backgroundImage } = settingsStore.current;
-	const revision = settingsStore.wallpaperRevision;
 	const source = backgroundImage ?? '';
-	imageChanged ||= backgroundImage !== null && pendingImage(user) === source;
+	const publication = wallpaperPublication(user);
+	signal.throwIfAborted();
+	imageChanged ||= publication.kind === 'pending' && publication.source === source;
 	if (imageChanged && backgroundImage) {
-		pendingImages.set(user, source);
-		try {
-			storage.setString(pendingKey(user), source);
-		} catch {
-			// Keep the pending edit in memory when browser persistence is unavailable.
-		}
+		recordWallpaperPublication(user, { kind: 'pending', source });
+		signal.throwIfAborted();
 	}
 	if (backgroundImage) {
 		await reconcile(backgroundImage, signal, imageChanged, displayChanged);
@@ -68,15 +54,8 @@ export async function publishWallpaper(
 		signal.throwIfAborted();
 		await deleteWallpaper(signal);
 	}
+	if (imageChanged) recordWallpaperPublication(user, { kind: 'completed' });
 	signal.throwIfAborted();
-	if (settingsStore.wallpaperRevision === revision && imageChanged) {
-		pendingImages.delete(user);
-		try {
-			storage.remove(pendingKey(user));
-		} catch {
-			// Publication succeeded even when browser persistence is unavailable.
-		}
-	}
 }
 
 async function reconcile(

@@ -581,3 +581,68 @@ test('successful wallpaper upload and deletion survive blocked pending-key clean
 		}
 	});
 });
+
+test('completed publication overrides a pending marker when cleanup keeps failing', async () => {
+	await withSession(async ({ login, stored, requests }) => {
+		await login('completed-owner');
+		await syncShareWallpaperOnLogin();
+		const reference = await saveLocalWallpaperBlob(new Blob(['completed'], { type: 'image/png' }));
+		settingsStore.set({ ...settingsStore.current, backgroundImage: reference });
+		const original = localStorage.removeItem;
+		localStorage.removeItem = (key: string) => {
+			if (key.startsWith('boxbox_wallpaper_pending:'))
+				throw new DOMException('Blocked', 'SecurityError');
+			original(key);
+		};
+		try {
+			await publishShareWallpaper(true);
+			assert.equal(stored.get('completed-owner')?.source, reference);
+			await authStore.logout();
+			stored.delete('completed-owner');
+			const uploads = requests.filter((request) => request.startsWith('PUT')).length;
+			await login('completed-owner');
+			await syncShareWallpaperOnLogin();
+			assert.equal(settingsStore.current.backgroundImage, null);
+			assert.equal(stored.has('completed-owner'), false);
+			assert.equal(requests.filter((request) => request.startsWith('PUT')).length, uploads);
+		} finally {
+			localStorage.removeItem = original;
+		}
+	});
+});
+
+test('settings operations end on logout, same-user relogin and page replacement', async () => {
+	await withSession(async ({ login }) => {
+		await login('operation-owner');
+		const { SettingsOperations } = await import('./settingsOperation');
+		const page = new SettingsOperations();
+		const save = page.start();
+		assert.equal(save.aborted, false);
+		const reset = page.start();
+		assert.equal(save.aborted, true, 'Reset invalidates an earlier Save');
+		await authStore.logout();
+		assert.equal(reset.aborted, true);
+		await login('operation-owner');
+		assert.equal(page.start().aborted, true, 'same username does not revive an old page');
+		const nextPage = new SettingsOperations();
+		const picker = nextPage.start();
+		nextPage.dispose();
+		assert.equal(picker.aborted, true);
+	});
+});
+
+test('existing persisted pending sources retry and become durable completed intent', async () => {
+	await withSession(async ({ login, values, stored }) => {
+		await login('persisted-owner');
+		await syncShareWallpaperOnLogin();
+		const reference = await saveLocalWallpaperBlob(new Blob(['persisted'], { type: 'image/png' }));
+		settingsStore.set({ ...settingsStore.current, backgroundImage: reference });
+		const pendingKey = 'boxbox_wallpaper_pending:persisted-owner';
+		values.set(pendingKey, reference);
+		await authStore.logout();
+		await login('persisted-owner');
+		await syncShareWallpaperOnLogin();
+		assert.equal(stored.get('persisted-owner')?.source, reference);
+		assert.equal(values.get(pendingKey), '', 'completion replaces the existing durable source');
+	});
+});
