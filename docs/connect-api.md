@@ -31,6 +31,6 @@ The account login and refresh protocol is unchanged. Development mode cannot aut
 
 `GET /system/upload` now includes `createOnly: true` alongside `chunkSizeBytes`. Clients must confirm that capability before relying on no-overwrite behavior with an older deployment.
 
-File uploads use the existing chunk protocol at `/stream/upload/<virtual path>` with `X-Create-Only: true`. The mode is pinned when the session starts; changing it for an existing upload ID fails. The final chunk still requires `X-Checksum: sha256:<hex>`. After checksum verification, publication atomically fails if a destination already exists. Ordinary uploads retain their existing replacement behavior.
+File uploads use the existing chunk protocol at `/stream/upload/<virtual path>` with `X-Create-Only: true`. The mode is pinned when the session starts; changing it for an existing upload ID fails. The final chunk still requires `X-Checksum` with either a bare SHA-256 hex digest or the `sha256:<hex>` form. After checksum verification, publication atomically fails if a destination already exists. Ordinary uploads retain their existing replacement behavior.
 
 An empty file uses one empty chunk and its SHA-256 checksum. Creating a directory uses `POST /stream/upload/<virtual path>` with `X-Upload-Type: directory` and `X-Create-Only: true`; an existing directory is a conflict. Upload/status responses advertise `X-Create-Only: true`. Existing paths are resolved through the file service and revalidated before publication.
