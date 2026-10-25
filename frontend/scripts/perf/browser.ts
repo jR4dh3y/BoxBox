@@ -7,6 +7,7 @@ import bundleBudget from '../../perf-budget.json';
 import { browserViolations, median, type BrowserMetrics } from './gates';
 import { baseArgument, repo, results, run, withBaseline } from './common';
 import { createDirectoryFixture, startServer } from './server';
+import { verifyBrowseOwnership } from './browse-ownership';
 import { verifyFolderNavigation } from './folder-navigation';
 import { verifyDesktopPreferences } from './desktop-preferences';
 import { verifyGridWindow } from './grid-window';
@@ -240,6 +241,7 @@ async function benchmark(base?: string, sha?: string) {
 		await verifyDesktopWatch(browser, join(repo, 'dist/boxbox'));
 		await verifyDesktopPreferences(browser, join(repo, 'dist/boxbox'));
 		await verifyFolderNavigation(browser, head.url, head.credentials, fixture.mount);
+		await verifyBrowseOwnership(browser, head.url, head.credentials, fixture.mount);
 		await loggedOut(browser, head.url);
 		await verifyLazyLoadErrors(browser, head.url, head.credentials);
 		await verifyNavigation(browser, head.url, head.credentials, fixture.mount);

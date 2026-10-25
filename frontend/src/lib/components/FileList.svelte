@@ -106,6 +106,13 @@
 		virtual
 	);
 
+	const columns = [
+		{ field: 'name', label: 'Name', className: '' },
+		{ field: 'type', label: 'Type', className: 'file-type-column' },
+		{ field: 'size', label: 'Size', className: 'file-size-column text-right' },
+		{ field: 'modTime', label: 'Modified', className: 'file-modified-column' }
+	] satisfies { field: SortField; label: string; className: string }[];
+
 	function handleSort(field: SortField) {
 		onSortChange?.(field, sortBy === field && sortDir === 'asc' ? 'desc' : 'asc');
 	}
@@ -157,58 +164,24 @@
 		</colgroup>
 		<thead bind:offsetHeight={headerHeight}>
 			<tr aria-rowindex={1}>
-				<th
-					class="{thClass} {sortBy === 'name' ? thSortedClass : ''}"
-					onclick={() => handleSort('name')}
-					onkeydown={(e) => e.key === 'Enter' && handleSort('name')}
-					tabindex="0"
-					role="columnheader"
-					data-file-header="true"
-					aria-sort={sortBy === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-				>
-					<span class="mr-1">Name</span>
-					<span class="text-[10px] opacity-80">{getSortIndicator('name')}</span>
-				</th>
-				<th
-					class="file-type-column {thClass} {sortBy === 'type' ? thSortedClass : ''}"
-					onclick={() => handleSort('type')}
-					onkeydown={(e) => e.key === 'Enter' && handleSort('type')}
-					tabindex="0"
-					role="columnheader"
-					data-file-header="true"
-					aria-sort={sortBy === 'type' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-				>
-					<span class="mr-1">Type</span>
-					<span class="text-[10px] opacity-80">{getSortIndicator('type')}</span>
-				</th>
-				<th
-					class="file-size-column {thClass} text-right {sortBy === 'size' ? thSortedClass : ''}"
-					onclick={() => handleSort('size')}
-					onkeydown={(e) => e.key === 'Enter' && handleSort('size')}
-					tabindex="0"
-					role="columnheader"
-					data-file-header="true"
-					aria-sort={sortBy === 'size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-				>
-					<span class="mr-1">Size</span>
-					<span class="text-[10px] opacity-80">{getSortIndicator('size')}</span>
-				</th>
-				<th
-					class="file-modified-column {thClass} {sortBy === 'modTime' ? thSortedClass : ''}"
-					onclick={() => handleSort('modTime')}
-					onkeydown={(e) => e.key === 'Enter' && handleSort('modTime')}
-					tabindex="0"
-					role="columnheader"
-					data-file-header="true"
-					aria-sort={sortBy === 'modTime'
-						? sortDir === 'asc'
-							? 'ascending'
-							: 'descending'
-						: 'none'}
-				>
-					<span class="mr-1">Modified</span>
-					<span class="text-[10px] opacity-80">{getSortIndicator('modTime')}</span>
-				</th>
+				{#each columns as column (column.field)}
+					<th
+						class="{column.className} {thClass} {sortBy === column.field ? thSortedClass : ''}"
+						onclick={() => handleSort(column.field)}
+						onkeydown={(event) => event.key === 'Enter' && handleSort(column.field)}
+						tabindex="0"
+						role="columnheader"
+						data-file-header="true"
+						aria-sort={sortBy === column.field
+							? sortDir === 'asc'
+								? 'ascending'
+								: 'descending'
+							: 'none'}
+					>
+						<span class="mr-1">{column.label}</span>
+						<span class="text-[10px] opacity-80">{getSortIndicator(column.field)}</span>
+					</th>
+				{/each}
 			</tr>
 		</thead>
 		<tbody>

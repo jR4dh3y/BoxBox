@@ -8,7 +8,6 @@
 	import type { FileContextAction } from '#lib/utils/fileContextMenu.js';
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { useBrowseActions } from '#lib/browse/actions.svelte.js';
 	import { useBrowseData } from '#lib/browse/data.svelte.js';
 	import { useBrowseUploads } from '#lib/browse/uploads.svelte.js';
@@ -19,7 +18,7 @@
 	import type { FileInfo } from '#lib/api/files.js';
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
-	import FileList from '#lib/components/FileList.svelte';
+	import FileBrowserView from '#lib/components/FileBrowserView.svelte';
 	import StatusBar from '#lib/components/StatusBar.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import Spinner from '#lib/components/ui/Spinner.svelte';
@@ -59,7 +58,6 @@
 	const uploads = useBrowseUploads(location, data);
 	const dropHandler = useFileDrop(data, actions, uploads);
 	const drop = createDropZone(() => dropHandler);
-	const settings = $derived(settingsStore.current);
 
 	const hasOpenDialog = $derived(
 		actions.createDialog.open ||
@@ -272,67 +270,12 @@
 					{/await}
 				{/if}
 			</div>
-		{:else if location.viewMode === 'grid'}
-			{#await import('#lib/components/FileGrid.svelte') then { default: FileGrid }}
-				<FileGrid
-					items={data.displayItems}
-					path={location.path}
-					viewKey={JSON.stringify([
-						location.path,
-						location.trimmedSearchQuery,
-						location.sortBy,
-						location.sortDir
-					])}
-					scrollPositions={paneState.scrollPositions}
-					emptyMessage={data.emptyListMessage}
-					selectedPaths={selection.paths}
-					isLoading={data.isFileListLoading}
-					compactMode={settings.compactMode}
-					cutPaths={actions.cutPaths}
-					favoritePaths={actions.favoritePaths}
-					canPaste={actions.canPaste}
-					canCreate={data.canCreate}
-					showFileExtensions={settings.showFileExtensions}
-					fileOpenBehavior={settings.fileOpenBehavior}
-					dropTarget={drop}
-					{revealPath}
-					onItemClick={actions.openFile}
-					{onFolderHover}
-					onSelectionChange={selection.set}
-					onContextMenuAction={contextAction}
-				/>
-			{:catch}
-				<LoadError label="grid view" inline />
-			{/await}
 		{:else}
-			<FileList
-				items={data.displayItems}
-				path={location.path}
-				viewKey={JSON.stringify([
-					location.path,
-					location.trimmedSearchQuery,
-					location.sortBy,
-					location.sortDir
-				])}
-				scrollPositions={paneState.scrollPositions}
-				sortBy={location.sortBy}
-				sortDir={location.sortDir}
-				emptyMessage={data.emptyListMessage}
-				selectedPaths={selection.paths}
-				isLoading={data.isFileListLoading}
-				compactMode={settings.compactMode}
-				cutPaths={actions.cutPaths}
-				favoritePaths={actions.favoritePaths}
-				canPaste={actions.canPaste}
-				canCreate={data.canCreate}
-				showFileExtensions={settings.showFileExtensions}
-				fileOpenBehavior={settings.fileOpenBehavior}
+			<FileBrowserView
+				{runtime}
 				dropTarget={drop}
 				{revealPath}
-				onItemClick={actions.openFile}
 				{onFolderHover}
-				onSortChange={location.setSort}
-				onSelectionChange={selection.set}
 				onContextMenuAction={contextAction}
 			/>
 		{/if}

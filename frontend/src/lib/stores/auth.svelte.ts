@@ -10,6 +10,7 @@ import {
 	isAuthenticated as hasAccessToken
 } from '#lib/api/auth.js';
 import { ApiRequestError, AuthSessionClosedError } from '#lib/api/client.js';
+import { browseRequests } from '#lib/browse/requests.svelte.js';
 import { CONFIG } from '#lib/config.js';
 import { settingsStore } from './settings.svelte';
 import { resetShareWallpaperLoginSync } from '#lib/utils/wallpaperSession.js';
@@ -54,6 +55,7 @@ class AuthStore {
 				if (document.querySelector('meta[name="boxbox-desktop"]')) await settingsStore.initialize();
 				else void settingsStore.initialize();
 			}
+			if (isDevelopment || isAuthenticated) browseRequests.startSession();
 			this.isAuthenticated = isDevelopment || isAuthenticated;
 
 			if (!isDevelopment && isAuthenticated) this.startTokenRefresh();
@@ -69,6 +71,8 @@ class AuthStore {
 
 		try {
 			await apiLogin(username, password);
+			browseRequests.reset();
+			browseRequests.startSession();
 			this.isAuthenticated = true;
 			this.isLoading = false;
 			this.authAlert = null;
@@ -169,6 +173,7 @@ class AuthStore {
 
 	private reset(): void {
 		resetShareWallpaperLoginSync();
+		browseRequests.reset();
 		this.isAuthenticated = false;
 		this.isDevelopment = false;
 		this.isLoading = false;

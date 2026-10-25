@@ -183,16 +183,22 @@ function parseStats(value: unknown, source: PathReference, serverName?: string):
  * List all configured mount points (roots)
  * GET /api/v1/files
  */
-export async function listRoots(server?: RemoteServer): Promise<RootsResponse> {
+export async function listRoots(
+	server?: RemoteServer,
+	signal?: AbortSignal
+): Promise<RootsResponse> {
 	const source: PathReference = server ? remoteSource(server) : { kind: 'local', path: '' };
-	const value = await api.get<unknown>(sourceEndpoint(source, '/files'));
+	const value = await api.get<unknown>(sourceEndpoint(source, '/files'), undefined, signal);
 	return { roots: parseRoots(value, source, server?.name) };
 }
 
 /** Statistics for one host. Remote hosts never hold up the local catalog. */
-export async function getDriveStats(server?: RemoteServer): Promise<DriveStatsResponse> {
+export async function getDriveStats(
+	server?: RemoteServer,
+	signal?: AbortSignal
+): Promise<DriveStatsResponse> {
 	const source: PathReference = server ? remoteSource(server) : { kind: 'local', path: '' };
-	const value = await api.get<unknown>(sourceEndpoint(source, '/files/stats'));
+	const value = await api.get<unknown>(sourceEndpoint(source, '/files/stats'), undefined, signal);
 	return { drives: parseStats(value, source, server?.name) };
 }
 

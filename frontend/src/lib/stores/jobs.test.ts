@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, test } from 'node:test';
-import { QueryClient } from '@tanstack/svelte-query';
 import {
 	createCopyJob,
 	createMoveJob,
@@ -8,9 +7,7 @@ import {
 	type Job,
 	type JobState
 } from '#lib/api/jobs.js';
-import { fileQueryKeys } from './files';
 import { jobsStore } from './jobs.svelte';
-import { refreshFilesWhenJobsFinish } from './refreshFilesOnJobs';
 
 function job(state: JobState): Job {
 	return {
@@ -22,9 +19,6 @@ function job(state: JobState): Job {
 		createdAt: '2026-01-01T00:00:00Z'
 	};
 }
-
-const listKey = fileQueryKeys.directory('media');
-const statsKey = [...fileQueryKeys.roots(), 'stats'];
 
 const realFetch = globalThis.fetch;
 const realWindow = globalThis.window;
@@ -130,15 +124,10 @@ describe('delayed job creation during a reconnect reload', () => {
 					window: { location: { origin: server.url.origin } },
 					fetch: realFetch
 				});
-				const queryClient = new QueryClient();
-				queryClient.setQueryData(listKey, { path: 'media', items: [] });
-				queryClient.setQueryData(statsKey, { drives: [] });
-				refreshFilesWhenJobsFinish(queryClient);
-				const invalidate = jobsStore.onFinished;
+
 				let calls = 0;
 				jobsStore.onFinished = () => {
 					calls++;
-					invalidate?.();
 				};
 				const create = {
 					copy: () => createCopyJob(pending.sourcePath, 'media/dest'),
@@ -168,8 +157,6 @@ describe('delayed job creation during a reconnect reload', () => {
 					assert.deepEqual(jobsStore.jobs.get(pending.id), completed);
 					assert.equal(jobsStore.active.length, 0);
 					assert.equal(calls, 1);
-					assert.equal(queryClient.getQueryState(listKey)?.isInvalidated, true);
-					assert.equal(queryClient.getQueryState(statsKey)?.isInvalidated, true);
 					jobsStore.upsertJob(pending);
 					await jobsStore.loadJobs();
 					assert.equal(calls, 1, 'repeated observations must not notify twice');
@@ -177,7 +164,6 @@ describe('delayed job creation during a reconnect reload', () => {
 					releaseCreation();
 					releaseListing();
 					await Promise.allSettled([creation, ...(loading ? [loading] : [])]);
-					queryClient.clear();
 					server.stop(true);
 				}
 			});
@@ -357,22 +343,5 @@ describe('jobsStore.loadJobs', () => {
 		serveJobs(job('completed'));
 		await jobsStore.loadJobs();
 		assert.equal(calls, 0);
-	});
-});
-
-describe('refreshFilesWhenJobsFinish', () => {
-	test('marks cached listings and drive stats stale when a job ends, not before', () => {
-		const queryClient = new QueryClient();
-		queryClient.setQueryData(listKey, { path: 'media', items: [] });
-		queryClient.setQueryData(statsKey, { drives: [] });
-		refreshFilesWhenJobsFinish(queryClient);
-		jobsStore.upsertJob(job('running'));
-
-		jobsStore.updateFromWebSocket({ jobId: 'job-1', state: 'running', progress: 50 });
-		assert.equal(queryClient.getQueryState(listKey)?.isInvalidated, false);
-
-		jobsStore.updateFromWebSocket({ jobId: 'job-1', state: 'completed', progress: 100 });
-		assert.equal(queryClient.getQueryState(listKey)?.isInvalidated, true);
-		assert.equal(queryClient.getQueryState(statsKey)?.isInvalidated, true);
 	});
 });

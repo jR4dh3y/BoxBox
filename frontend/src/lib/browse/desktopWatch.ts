@@ -1,5 +1,4 @@
-import type { QueryClient } from '@tanstack/svelte-query';
-import { fileQueryKeys } from '#lib/stores/files.js';
+import { browseRequests } from './requests.svelte';
 
 /**
  * Runs `refresh` with at most one call in flight. Changes during a call trigger one more call after
@@ -52,18 +51,9 @@ export function watchDesktopDirectory(path: string, refresh: () => void): () => 
 }
 
 /** Each refresh finishes before another watcher event can start the next one. */
-export function subscribeDesktopDirectory(path: string, queryClient: QueryClient): () => void {
-	const refresh = coalesceRefresh(() =>
-		Promise.all([
-			queryClient.invalidateQueries(
-				{ queryKey: fileQueryKeys.directory(path) },
-				{ cancelRefetch: false }
-			),
-			queryClient.invalidateQueries(
-				{ queryKey: fileQueryKeys.searches() },
-				{ cancelRefetch: false }
-			)
-		])
+export function subscribeDesktopDirectory(path: string): () => void {
+	return watchDesktopDirectory(
+		path,
+		coalesceRefresh(() => browseRequests.changed(path))
 	);
-	return watchDesktopDirectory(path, refresh);
 }
