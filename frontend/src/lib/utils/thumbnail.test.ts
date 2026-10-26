@@ -29,4 +29,56 @@ describe('thumbnail helpers', () => {
 		);
 		assert.equal(supportsThumbnailFile({ path: 'media/folder.jpg', isDir: true }), false);
 	});
+
+	test('native locations include video, audio, PDF and additional raster images', () => {
+		const original = Object.getOwnPropertyDescriptor(globalThis, 'document');
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { querySelector: () => ({}) }
+		});
+		try {
+			for (const extension of [
+				'mp4',
+				'mkv',
+				'mov',
+				'webm',
+				'mp3',
+				'flac',
+				'wav',
+				'pdf',
+				'bmp',
+				'tiff',
+				'ico',
+				'qoi'
+			]) {
+				assert.equal(
+					supportsThumbnailFile({ path: `root/media/file.${extension}`, isDir: false }),
+					true,
+					extension
+				);
+			}
+			assert.equal(
+				supportsThumbnailFile({ path: 'root/movie', mimeType: 'video/mp4', isDir: false }),
+				false
+			);
+			assert.equal(supportsThumbnailFile({ path: 'root/folder.mp4', isDir: true }), false);
+			assert.equal(
+				supportsThumbnailFile({ path: 'root/source.ts', mimeType: 'video/mp2t', isDir: false }),
+				false
+			);
+			assert.equal(
+				supportsThumbnailFile({ path: 'root/vector.svg', mimeType: 'image/svg+xml', isDir: false }),
+				false
+			);
+		} finally {
+			if (original) Object.defineProperty(globalThis, 'document', original);
+			else Reflect.deleteProperty(globalThis, 'document');
+		}
+	});
+
+	test('web locations retain their server-supported image formats', () => {
+		for (const extension of ['mp4', 'mp3', 'pdf', 'bmp']) {
+			assert.equal(supportsThumbnailFile({ path: `media/file.${extension}`, isDir: false }), false);
+		}
+	});
 });

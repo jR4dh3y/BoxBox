@@ -13,6 +13,7 @@ export default {
     bun: { entrypoint: "src/index.ts" },
     copy: {
       "resources/boxbox-server": "boxbox-server",
+      "resources/native": "native",
     },
     linux: { bundleCEF: true, defaultRenderer: "cef" },
     mac: { bundleCEF: true, defaultRenderer: "cef" },

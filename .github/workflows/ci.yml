@@ -168,6 +168,8 @@ jobs:
     name: Desktop types and tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -177,6 +179,17 @@ jobs:
           bun-version: 1.4.3
       - name: Install workspaces
         run: bun install --frozen-lockfile
+      - name: Set up Go for native thumbnail integration
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Install media preview tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg poppler-utils
+      - name: Check Rust thumbnail renderer
+        run: cargo test --manifest-path desktop/native/Cargo.toml --locked
       - name: Check desktop types
         run: bun run check:desktop
       - name: Test desktop targets

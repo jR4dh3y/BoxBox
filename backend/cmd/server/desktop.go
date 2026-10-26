@@ -2,10 +2,12 @@ package main
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/handler"
@@ -15,6 +17,18 @@ import (
 )
 
 const desktopCookie = "boxbox_desktop"
+
+func desktopThumbnails(files service.FileStreamer) (service.ThumbnailService, error) {
+	value := os.Getenv("BOXBOX_DESKTOP_THUMBNAIL_COMMAND")
+	if value == "" {
+		return service.NewThumbnailService(files), nil
+	}
+	var command []string
+	if err := json.Unmarshal([]byte(value), &command); err != nil || len(command) != 2 || !filepath.IsAbs(command[0]) || !filepath.IsAbs(command[1]) {
+		return nil, fmt.Errorf("invalid desktop thumbnail command")
+	}
+	return service.NewThumbnailServiceWithRenderer(files, service.NewDesktopThumbnailRenderer(command)), nil
+}
 
 func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {
 	watch := handler.DesktopWatch(service.NewDesktopWatcher(filesystem.NewOsFS(), cfg.MountPoints))

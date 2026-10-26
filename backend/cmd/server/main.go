@@ -118,6 +118,9 @@ func main() {
 		log.Info().Str("path", cfg.DataDir).Msg("Data directory created/verified")
 	}
 
+	if *desktopMode {
+		server.BaseContext = func(net.Listener) context.Context { return ctx }
+	}
 	// Bind before announcing readiness so the desktop app never guesses a port.
 	listener, err := net.Listen("tcp", server.Addr)
 	if err != nil {
@@ -235,7 +238,14 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 	// Create handlers
 	authHandler := handler.NewAuthHandler(authService)
 	fileHandler := handler.NewFileHandler(fileService)
-	streamHandler := handler.NewStreamHandler(fileService, cfg.MaxUploadMB)
+	thumbnails := service.NewThumbnailService(fileService)
+	if desktopMode {
+		thumbnails, err = desktopThumbnails(fileService)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+	}
+	streamHandler := handler.NewStreamHandlerWithThumbnails(fileService, cfg.MaxUploadMB, thumbnails)
 	jobHandler := handler.NewJobHandler(jobService)
 	searchHandler := handler.NewSearchHandler(searchService)
 	wsHandler := handler.NewWebSocketHandler(hub, authService, cfg.AllowedOrigins)
