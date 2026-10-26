@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { serverURL } from "./target";
 
 export async function startServer(binary: string, dataDir: string) {
@@ -51,7 +51,12 @@ export async function startServer(binary: string, dataDir: string) {
   );
   const child = Bun.spawn([binary, "--desktop", "--config", configPath], {
     cwd: workingDirectory,
-    env: { ...env, BOXBOX_DESKTOP_TOKEN: token },
+    env: {
+      ...env, BOXBOX_DESKTOP_TOKEN: token,
+      ...(existsSync(join(dirname(binary), "native/thumbnail-worker.js"))
+        ? { BOXBOX_DESKTOP_THUMBNAIL_COMMAND: JSON.stringify([process.execPath, join(dirname(binary), "native/thumbnail-worker.js")]) }
+        : {}),
+    },
     stdin: "pipe",
     stdout: "pipe",
     stderr: "inherit",

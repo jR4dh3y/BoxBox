@@ -30,7 +30,21 @@ export type FileCategory = keyof typeof FILE_EXTENSIONS | 'unknown';
 export const FILE_EXTENSIONS = {
 	video: ['mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'm4v', 'ogv'],
 	audio: ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma', 'opus'],
-	image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif', 'tiff', 'tif', 'raw'],
+	image: [
+		'jpg',
+		'jpeg',
+		'png',
+		'gif',
+		'webp',
+		'svg',
+		'bmp',
+		'ico',
+		'avif',
+		'tiff',
+		'tif',
+		'raw',
+		'qoi'
+	],
 	pdf: ['pdf'],
 	code: [
 		// JavaScript/TypeScript

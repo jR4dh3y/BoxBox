@@ -32,6 +32,7 @@ desktop/.hutch
 desktop/build
 desktop/artifacts
 desktop/resources
+desktop/native/target
 website/node_modules
 website/dist
 website/.astro

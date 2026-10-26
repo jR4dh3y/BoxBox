@@ -7,20 +7,16 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"image"
-	_ "image/gif"
-	"image/jpeg"
-	_ "image/png"
-	"io"
 	"sync"
 
-	"golang.org/x/image/draw"
-	_ "golang.org/x/image/webp"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 )
 
 var (
 	ErrThumbnailNotModified = errors.New("thumbnail not modified")
 	ErrThumbnailTooLarge    = errors.New("thumbnail source exceeds resource limits")
+	ErrThumbnailUnsupported = errors.New("thumbnail source is unsupported")
+	ErrThumbnailUnavailable = errors.New("thumbnail renderer is unavailable")
 )
 
 const (
@@ -43,17 +39,26 @@ type ThumbnailService interface {
 	Render(context.Context, string, int, int, string) (*Thumbnail, error)
 }
 
+// A renderer receives a source already opened and confined by FileStreamer.
+type ThumbnailRenderer func(context.Context, File, *model.FileInfo, int, int) ([]byte, error)
+
 type thumbnailService struct {
-	files FileStreamer
-	slots chan struct{}
-	cache *thumbnailCache
+	files  FileStreamer
+	slots  chan struct{}
+	cache  *thumbnailCache
+	render ThumbnailRenderer
 }
 
 func NewThumbnailService(files FileStreamer) ThumbnailService {
+	return NewThumbnailServiceWithRenderer(files, renderImageThumbnail)
+}
+
+func NewThumbnailServiceWithRenderer(files FileStreamer, render ThumbnailRenderer) ThumbnailService {
 	return &thumbnailService{
-		files: files,
-		slots: make(chan struct{}, maxConcurrentThumbnails),
-		cache: newThumbnailCache(),
+		files:  files,
+		slots:  make(chan struct{}, maxConcurrentThumbnails),
+		cache:  newThumbnailCache(),
+		render: render,
 	}
 }
 
@@ -96,49 +101,14 @@ func (s *thumbnailService) Render(
 	if ifNoneMatch == etag {
 		return nil, ErrThumbnailNotModified
 	}
-	if info.Size < 0 || info.Size > maxThumbnailSourceBytes {
-		return nil, ErrThumbnailTooLarge
-	}
-
-	configuration, _, err := image.DecodeConfig(file)
+	content, err := s.render(ctx, file, info, width, height)
 	if err != nil {
-		return nil, fmt.Errorf("decode image config: %w", err)
-	}
-	if !thumbnailSourceWithinLimits(configuration.Width, configuration.Height) {
-		return nil, ErrThumbnailTooLarge
-	}
-
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, err
-	}
-	source, _, err := image.Decode(file)
-	if err != nil {
-		return nil, fmt.Errorf("decode image: %w", err)
-	}
-	if !thumbnailSourceWithinLimits(source.Bounds().Dx(), source.Bounds().Dy()) {
-		return nil, ErrThumbnailTooLarge
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	targetWidth, targetHeight := fitDimensions(
-		source.Bounds().Dx(),
-		source.Bounds().Dy(),
-		width,
-		height,
-	)
-	target := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
-	draw.CatmullRom.Scale(target, target.Bounds(), source, source.Bounds(), draw.Over, nil)
-
-	var output bytes.Buffer
-	if err := jpeg.Encode(&output, target, &jpeg.Options{Quality: 82}); err != nil {
-		return nil, fmt.Errorf("encode thumbnail: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	thumbnail := &Thumbnail{Content: output.Bytes(), ETag: etag}
+	thumbnail := &Thumbnail{Content: content, ETag: etag}
 	s.cache.add(key, thumbnail)
 	return thumbnail, nil
 }

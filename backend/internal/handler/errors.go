@@ -29,6 +29,8 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrInvalidOperation, "Invalid operation", model.ErrCodeValidationError, http.StatusBadRequest},
 	{service.ErrDirectoryTooLarge, "Directory exceeds server entry limit", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
 	{service.ErrThumbnailTooLarge, "Image exceeds thumbnail limits", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
+	{service.ErrThumbnailUnsupported, "No preview available for this file", model.ErrCodeValidationError, http.StatusUnsupportedMediaType},
+	{service.ErrThumbnailUnavailable, "Preview renderer unavailable", model.ErrCodeInternalError, http.StatusServiceUnavailable},
 
 	// Path validation errors
 	{validator.ErrPathTraversal, "Invalid path", model.ErrCodeValidationError, http.StatusBadRequest},

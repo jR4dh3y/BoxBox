@@ -368,6 +368,9 @@ func (s *fileService) OpenFile(ctx context.Context, path string) (File, *model.F
 	}
 
 	// Open the file
+	if !info.Mode().IsRegular() {
+		return nil, nil, ErrNotFile
+	}
 	file, err := s.fs.Open(fsPath)
 	if err != nil {
 		return nil, nil, err
