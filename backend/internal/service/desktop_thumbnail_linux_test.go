@@ -89,6 +89,18 @@ func TestDesktopThumbnailUsesConfinedDescriptorAndCache(t *testing.T) {
 			if err := os.WriteFile(source, generatedImage(t, "jpeg", 32, 16, color.NRGBA{B: 220, A: 255}), 0600); err != nil {
 				t.Fatal(err)
 			}
+			// Keep the cache key distinct even on filesystems with coarse timestamps.
+			replacementTime := info.ModTime.Add(2 * time.Second)
+			if err := os.Chtimes(source, replacementTime, replacementTime); err != nil {
+				t.Fatal(err)
+			}
+			replacement, err := os.Stat(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !replacement.ModTime().After(info.ModTime) {
+				t.Fatal("replacement fixture did not change the thumbnail cache key")
+			}
 		}
 		return native(ctx, file, info, w, h)
 	}
