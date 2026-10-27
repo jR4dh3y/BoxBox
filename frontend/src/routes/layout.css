@@ -156,15 +156,17 @@ input[type='search']::-webkit-search-cancel-button {
 	background-color: rgb(18 20 24 / 0.68);
 }
 
-/* Frost navigation panels while preserving the wallpaper's detail behind files. */
-.app-shell[data-has-background='true'][data-frosted-glass='true'] .browse-chrome,
-.wallpaper-preview[data-frosted-glass='true'] .browse-chrome {
+/* Blur the wallpaper once so every panel is frosted and the file content stays sharp. */
+.app-shell[data-has-background='true'][data-frosted-glass='true'] .app-personal-background {
+	filter: blur(16px) saturate(110%);
+}
+
+.wallpaper-preview[data-frosted-glass='true'] {
 	-webkit-backdrop-filter: blur(16px) saturate(110%);
 	backdrop-filter: blur(16px) saturate(110%);
 }
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-	.app-shell[data-has-background='true'][data-frosted-glass='true'] .browse-shell,
 	.wallpaper-preview[data-frosted-glass='true'] {
 		background-color: rgb(18 20 24 / 0.82);
 	}
