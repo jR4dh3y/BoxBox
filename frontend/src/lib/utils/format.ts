@@ -192,7 +192,7 @@ export function formatFileDate(date: Date | string | number): string {
 	const isThisYear = dateObj.getFullYear() === now.getFullYear();
 
 	if (isToday) {
-		return dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+		return `Today ${dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
 	}
 
 	if (isThisYear) {

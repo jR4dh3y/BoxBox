@@ -2,31 +2,25 @@
 	/**
 	 * Toolbar component - navigation buttons, path bar, search, and actions
 	 */
-	import {
-		ChevronLeft,
-		ChevronRight,
-		ChevronUp,
-		FolderUp,
-		RefreshCw,
-		Settings,
-		Upload
-	} from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight, PanelLeft, Plus, RefreshCw, Settings } from 'lucide-svelte';
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
 	import SearchBar from '#lib/components/SearchBar.svelte';
+	import LoadError from '#lib/components/LoadError.svelte';
+	import type { AddAction } from '#lib/utils/addMenu.js';
 
 	interface Props {
 		pathSegments?: string[];
 		canGoBack?: boolean;
 		canGoForward?: boolean;
-		canGoUp?: boolean;
 		onBack?: () => void;
 		onForward?: () => void;
-		onUp?: () => void;
 		onNavigate?: (path: string) => void;
 		onRefresh?: () => void;
 		onSettings?: () => void;
-		onUpload?: () => void;
-		onUploadFolder?: () => void;
+		/** Shows the sidebar on windows too narrow to keep it open. */
+		onToggleSidebar?: () => void;
+		onAdd?: (action: AddAction) => void;
+		canCreate?: boolean;
 		uploadDisabled?: boolean;
 		showSearch?: boolean;
 		searchValue?: string;
@@ -40,15 +34,14 @@
 		pathSegments = [],
 		canGoBack = false,
 		canGoForward = false,
-		canGoUp = false,
 		onBack,
 		onForward,
-		onUp,
 		onNavigate,
 		onRefresh,
 		onSettings,
-		onUpload,
-		onUploadFolder,
+		onToggleSidebar,
+		onAdd,
+		canCreate = false,
 		uploadDisabled = false,
 		showSearch = false,
 		searchValue = '',
@@ -58,15 +51,31 @@
 		includeHiddenSuggestions = false
 	}: Props = $props();
 
+	let addMenu = $state<{ x: number; y: number } | null>(null);
+	const addDisabled = $derived(!canCreate && uploadDisabled);
+	function openAddMenu(event: MouseEvent & { currentTarget: HTMLButtonElement }) {
+		const bounds = event.currentTarget.getBoundingClientRect();
+		addMenu = { x: bounds.left, y: bounds.bottom + 4 };
+	}
+
 	const navBtnClass =
-		'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed';
+		'w-7 h-7 shrink-0 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed';
 </script>
 
 <div
-	class="relative z-50 flex items-center gap-2 border-b border-border-secondary bg-surface-primary px-3 py-1.5"
+	class="browse-chrome relative z-50 flex items-center gap-2 border-b border-border-secondary bg-surface-primary px-3 py-1.5"
 >
 	<!-- Navigation buttons -->
-	<div class="flex gap-0.5">
+	<div class="flex shrink-0 gap-0.5">
+		<button
+			type="button"
+			class="{navBtnClass} md:hidden"
+			onclick={onToggleSidebar}
+			title="Sidebar"
+			aria-label="Show sidebar"
+		>
+			<PanelLeft size={16} />
+		</button>
 		<button type="button" class={navBtnClass} disabled={!canGoBack} onclick={onBack} title="Back">
 			<ChevronLeft size={18} />
 		</button>
@@ -79,15 +88,12 @@
 		>
 			<ChevronRight size={18} />
 		</button>
-		<button type="button" class={navBtnClass} disabled={!canGoUp} onclick={onUp} title="Up">
-			<ChevronUp size={18} />
-		</button>
 	</div>
 
 	<EditablePathBar {pathSegments} {onNavigate} {includeHiddenSuggestions} />
 
 	{#if showSearch}
-		<div class="w-64 shrink-0 lg:w-96">
+		<div class="w-48 min-w-28 shrink md:w-64 lg:w-96">
 			<SearchBar
 				value={searchValue}
 				onInput={onSearchInput}
@@ -100,24 +106,17 @@
 	{/if}
 
 	<!-- Action buttons -->
-	<div class="flex gap-1">
+	<div class="flex shrink-0 gap-1">
 		<button
 			type="button"
 			class={navBtnClass}
-			disabled={uploadDisabled}
-			onclick={onUpload}
-			title="Upload files"
+			disabled={addDisabled}
+			onclick={openAddMenu}
+			title={addDisabled ? 'Nothing can be added in this location' : 'New or upload'}
+			aria-haspopup="menu"
+			aria-expanded={addMenu !== null}
 		>
-			<Upload size={16} />
-		</button>
-		<button
-			type="button"
-			class={navBtnClass}
-			disabled={uploadDisabled}
-			onclick={onUploadFolder}
-			title="Upload folder"
-		>
-			<FolderUp size={16} />
+			<Plus size={16} />
 		</button>
 		<button type="button" class={navBtnClass} onclick={onRefresh} title="Refresh">
 			<RefreshCw size={16} />
@@ -127,3 +126,18 @@
 		</button>
 	</div>
 </div>
+
+{#if addMenu}
+	{#await import('./AddMenu.svelte') then { default: AddMenu }}
+		<AddMenu
+			x={addMenu.x}
+			y={addMenu.y}
+			{canCreate}
+			canUpload={!uploadDisabled}
+			onSelect={(action) => onAdd?.(action)}
+			onClose={() => (addMenu = null)}
+		/>
+	{:catch}
+		<LoadError label="add menu" onClose={() => (addMenu = null)} />
+	{/await}
+{/if}

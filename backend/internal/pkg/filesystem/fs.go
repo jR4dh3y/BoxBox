@@ -23,8 +23,14 @@ type FS interface {
 	// ReadDirLimit reads at most limit entries and reports whether more exist.
 	ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, error)
 
+	// ReadDirFileInfoLimit reads metadata for a bounded directory listing.
+	ReadDirFileInfoLimit(name string, limit int) ([]fs.FileInfo, bool, error)
+
 	// EvalSymlinks returns the path after evaluating symbolic links.
 	EvalSymlinks(path string) (string, error)
+
+	// Readlink returns the stored target of a symbolic link.
+	Readlink(path string) (string, error)
 
 	// Stat returns a FileInfo describing the named file.
 	Stat(name string) (fs.FileInfo, error)
@@ -56,6 +62,9 @@ type FS interface {
 
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
+
+	// Mkdir creates one new directory and fails when it already exists.
+	Mkdir(path string, perm os.FileMode) error
 
 	// Chmod changes the mode bits of the named file or directory.
 	Chmod(name string, mode os.FileMode) error
@@ -167,6 +176,53 @@ func (a *AferoFS) ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, err
 	return entries, truncated, nil
 }
 
+func (a *AferoFS) ReadDirFileInfoLimit(name string, limit int) ([]fs.FileInfo, bool, error) {
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		entries, truncated, err := a.ReadDirLimit(name, limit)
+		if err != nil {
+			return nil, false, err
+		}
+		if truncated {
+			return nil, true, nil
+		}
+
+		infos := make([]fs.FileInfo, 0, len(entries))
+		for _, entry := range entries {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			infos = append(infos, info)
+		}
+		return infos, false, nil
+	}
+
+	if err := validateFilesystemPath(name); err != nil {
+		return nil, false, err
+	}
+	name = filepath.Clean("/" + name)
+
+	directory, err := a.fs.Open(name)
+	if err != nil {
+		return nil, false, err
+	}
+	defer directory.Close()
+
+	count := -1
+	if limit > 0 {
+		count = limit + 1
+	}
+	infos, err := directory.Readdir(count)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, false, err
+	}
+	truncated := limit > 0 && len(infos) > limit
+	if truncated {
+		return nil, true, nil
+	}
+	return infos, false, nil
+}
+
 func (a *AferoFS) EvalSymlinks(path string) (string, error) {
 	if err := validateFilesystemPath(path); err != nil {
 		return "", err
@@ -177,6 +233,17 @@ func (a *AferoFS) EvalSymlinks(path string) (string, error) {
 	}
 	// MemMapFs does not implement symbolic links.
 	return filepath.Clean(path), nil
+}
+
+func (a *AferoFS) Readlink(path string) (string, error) {
+	if err := validateFilesystemPath(path); err != nil {
+		return "", err
+	}
+	path = filepath.Clean("/" + path)
+	if reader, ok := a.fs.(afero.LinkReader); ok {
+		return reader.ReadlinkIfPossible(path)
+	}
+	return "", afero.ErrNoReadlink
 }
 
 // Stat returns a FileInfo describing the named file.
@@ -314,6 +381,13 @@ func (a *AferoFS) MkdirAll(path string, perm os.FileMode) error {
 	}
 	path = filepath.Clean("/" + path)
 	return a.fs.MkdirAll(path, perm)
+}
+
+func (a *AferoFS) Mkdir(path string, perm os.FileMode) error {
+	if err := validateFilesystemPath(path); err != nil {
+		return err
+	}
+	return a.fs.Mkdir(filepath.Clean("/"+path), perm)
 }
 
 // Chmod changes the mode bits of the named file or directory.

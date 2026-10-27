@@ -55,6 +55,13 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrInvalidWallpaper, "Wallpaper must be a JPEG, PNG, GIF, or WebP image up to 20 MB with a valid display mode", model.ErrCodeValidationError, http.StatusBadRequest},
 
 	// Auth service errors
+	{service.ErrPairingUnavailable, "Pairing code invalid or unavailable", "PAIRING_UNAVAILABLE", http.StatusNotFound},
+	{service.ErrConnectRateLimited, "Too many pairing requests", "RATE_LIMITED", http.StatusTooManyRequests},
+	{service.ErrPairingInUse, "Pairing is already enabled by another account", model.ErrCodeConflict, http.StatusConflict},
+	{service.ErrInvalidClientName, "Client name must contain 1 to 80 characters without controls", model.ErrCodeValidationError, http.StatusBadRequest},
+	{service.ErrConnectClientNotFound, "Connected client not found", model.ErrCodeNotFound, http.StatusNotFound},
+	{service.ErrConnectClientLimit, "Connected client limit reached", model.ErrCodeConflict, http.StatusConflict},
+	{service.ErrConnectStorage, "Connected client storage unavailable", model.ErrCodeInternalError, http.StatusServiceUnavailable},
 	{service.ErrRefreshSuperseded, "Another request refreshed this session. Retry with the current cookie.", model.ErrCodeRefreshSuperseded, http.StatusConflict},
 	{service.ErrInvalidCredentials, "Invalid credentials", model.ErrCodeUnauthorized, http.StatusUnauthorized},
 	{service.ErrInvalidToken, "Invalid token", model.ErrCodeTokenInvalid, http.StatusUnauthorized},

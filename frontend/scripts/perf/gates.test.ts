@@ -28,6 +28,14 @@ test('ratchets allow tighter budgets, but not increases or deleted limits', () =
 	assert.throws(() => checkRatchets({ bytes: 100 }, { bytes: 'unlimited' }), /finite/);
 });
 
+test('a retired budget may go only to a successor that is no looser', () => {
+	const retired = { 'list/name': 'list' };
+	assert.deepEqual(checkRatchets({ 'list/name': 2300 }, { list: 2048 }, retired), []);
+	assert.match(checkRatchets({ 'list/name': 2300 }, { list: 2400 }, retired).join(), /list\/name/);
+	assert.match(checkRatchets({ 'list/name': 2300 }, {}, retired).join(), /list\/name/);
+	assert.match(checkRatchets({ 'list/type': 2300 }, { list: 2048 }, retired).join(), /list\/type/);
+});
+
 function benchmarks(allocations: number, bytes: number, ns: number) {
 	return Array.from(
 		{ length: 10 },

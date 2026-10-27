@@ -1,0 +1,15 @@
+Full backend suite: FAIL (unchanged job-notification property test)
+
+! move job sends completion notification: Falsified after 35 passed tests.
+ARG_0: 30
+Elapsed time: 4.218372487s
++ notification contains correct job ID: OK, passed 100 tests.
+Elapsed time: 10.155805621s
+--- FAIL: TestProperty_JobCompletionNotification (39.84s)
+    properties.go:57: failed with initial seed: 1792741461649772263
+
+Isolated retry of TestProperty_JobCompletionNotification: PASS
+ok  	github.com/jR4dh3y/BoxBox/backend/internal/service	45.526s
+
+Wallpaper handler/service race checks: PASS
+go test -race ./internal/handler ./internal/service -run Wallpaper -count=1

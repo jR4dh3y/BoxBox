@@ -7,6 +7,7 @@ import bundleBudget from '../../perf-budget.json';
 import { browserViolations, median, type BrowserMetrics } from './gates';
 import { baseArgument, repo, results, run, withBaseline } from './common';
 import { createDirectoryFixture, startServer } from './server';
+import { verifySelectionRefresh } from './selection-refresh';
 import { verifyNavigation } from './navigation';
 import { verifyLazyLoadErrors } from './lazy-load-errors';
 
@@ -57,7 +58,7 @@ async function measure(
 		await page.addInitScript(() => {
 			const observer = new MutationObserver(() => {
 				const files = document.querySelectorAll('[data-file-row="true"], [data-file-item="true"]');
-				if (files.length !== 50 || !files[0].textContent?.includes('File-00000')) return;
+				if (!files[0]?.textContent?.includes('File-00000')) return;
 				observer.disconnect();
 				requestAnimationFrame(() =>
 					requestAnimationFrame(() => performance.mark('boxbox:files-visible'))
@@ -76,12 +77,13 @@ async function measure(
 			// Allow startup revalidation to finish before counting requests; the
 			// rendered marker, not network-idle, supplies the timing measurement.
 			await page.waitForLoadState('networkidle');
-			assert.equal(
-				await page.locator('[data-file-row="true"], [data-file-item="true"]').count(),
-				50,
-				'only the first page is rendered'
-			);
-			assert.equal(await page.getByText('File-00049.txt', { exact: true }).isVisible(), true);
+			const renderedFiles = await page
+				.locator('[data-file-row="true"], [data-file-item="true"]')
+				.count();
+			assert.ok(renderedFiles <= 150, 'a large folder must keep rendered file elements bounded');
+			assert.equal(await page.getByText('File-00000.txt', { exact: true }).isVisible(), true);
+			if (variant === 'head')
+				assert.equal(await page.getByText('10000 items', { exact: true }).isVisible(), true);
 			const timing = await page.evaluate(() => {
 				const scripts = performance
 					.getEntriesByType('resource')
@@ -122,7 +124,7 @@ async function measure(
 				assert.equal(
 					sample.listingRequests,
 					1,
-					'first page must come from the real listing endpoint'
+					'the complete folder must come from one real listing request'
 				);
 				assert.equal(
 					sample.refreshRequests,
@@ -217,6 +219,7 @@ async function benchmark(base?: string, sha?: string) {
 		await loggedOut(browser, head.url);
 		await verifyLazyLoadErrors(browser, head.url, head.credentials);
 		await verifyNavigation(browser, head.url, head.credentials, fixture.mount);
+		await verifySelectionRefresh(browser, head.url, head.credentials, fixture.mount);
 	} finally {
 		writeFileSync(
 			join(results, 'browser.json'),

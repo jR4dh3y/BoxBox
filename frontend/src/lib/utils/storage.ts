@@ -95,15 +95,21 @@ export const tokenStorage = {
  * Settings storage - typed accessors
  */
 export const settingsStorage = {
-	get<T>(): T | null {
-		return storage.get<T>(STORAGE_KEYS.SETTINGS);
+	get<T>(username?: string): T | null {
+		return storage.get<T>(settingsKey(username));
 	},
 
-	set<T>(settings: T): void {
-		storage.set(STORAGE_KEYS.SETTINGS, settings);
+	set<T>(settings: T, username?: string): void {
+		storage.set(settingsKey(username), settings);
 	},
 
-	clear(): void {
-		storage.remove(STORAGE_KEYS.SETTINGS);
+	clear(username?: string): void {
+		storage.remove(settingsKey(username));
 	}
 };
+
+function settingsKey(username?: string): string {
+	return username === undefined
+		? STORAGE_KEYS.SETTINGS
+		: `${STORAGE_KEYS.SETTINGS}:${encodeURIComponent(username)}`;
+}

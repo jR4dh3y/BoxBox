@@ -117,20 +117,14 @@ GET /api/v1/files/stats
 ### List a Directory
 
 ```http
-GET /api/v1/files/{path}?page=1&pageSize=50&sortBy=name&sortDir=asc&filter=log
+GET /api/v1/files/list/{path}
 ```
 
 `{path}` starts with the mount name, for example `home/projects`.
 
-Query options:
-
-| Name | Default | Notes |
-| --- | --- | --- |
-| `page` | `1` | Positive integer. |
-| `pageSize` | `50` | Maximum `1000`. |
-| `sortBy` | `name` | `name`, `size`, `modTime`, or `type`. |
-| `sortDir` | `asc` | `asc` or `desc`. |
-| `filter` | empty | Name contains filter. |
+The response contains every entry of the directory in one request, hidden entries included,
+in no particular order. Clients reconstruct each entry path as `path + "/" + name`, then sort and filter it. Refresh replaces that listing rather than
+appending pages. Directories with more than 10,000 entries return `413`.
 
 Response:
 
@@ -140,16 +134,12 @@ Response:
   "items": [
     {
       "name": "BoxBox",
-      "path": "home/projects/BoxBox",
       "size": 4096,
       "isDir": true,
       "modTime": "2026-05-13T09:00:00Z",
       "permissions": "drwxr-xr-x"
     }
-  ],
-  "totalCount": 1,
-  "page": 1,
-  "pageSize": 50
+  ]
 }
 ```
 

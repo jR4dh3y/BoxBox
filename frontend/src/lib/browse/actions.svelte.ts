@@ -42,6 +42,9 @@ function download(items: FileInfo[]) {
 	}
 }
 
+export type RenameDialog =
+	{ open: true; file: FileInfo; newName: string } | { open: false; file: null; newName: string };
+
 /** What the user does to files and folders: dialogs, file operations, clipboard and preview. */
 export function useBrowseActions(
 	location: BrowseLocation,
@@ -54,7 +57,7 @@ export function useBrowseActions(
 		type: 'file',
 		name: ''
 	});
-	let renameDialog = $state<{ open: boolean; file: FileInfo | null; newName: string }>({
+	let renameDialog = $state<RenameDialog>({
 		open: false,
 		file: null,
 		newName: ''

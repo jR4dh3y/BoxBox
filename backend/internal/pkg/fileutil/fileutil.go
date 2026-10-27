@@ -35,32 +35,45 @@ func detectMimeTypeByExtension(ext string) string {
 		return ""
 	}
 
-	normalizedExt := strings.ToLower(ext)
-	if !strings.HasPrefix(normalizedExt, ".") {
-		normalizedExt = "." + normalizedExt
-	}
-
-	if mimeType := mime.TypeByExtension(normalizedExt); mimeType != "" {
+	hasLeadingDot := strings.HasPrefix(ext, ".")
+	if mimeType := mime.TypeByExtension(ext); mimeType != "" {
 		return mimeType
 	}
+	if !hasLeadingDot {
+		if mimeType := mime.TypeByExtension("." + ext); mimeType != "" {
+			return mimeType
+		}
+	}
+	for fallbackExtension, mimeType := range extensionMimeFallbacks {
+		if strings.EqualFold(ext, fallbackExtension) {
+			return mimeType
+		}
+		if !hasLeadingDot && strings.EqualFold(ext, fallbackExtension[1:]) {
+			return mimeType
+		}
+	}
 
-	return extensionMimeFallbacks[normalizedExt]
+	return ""
 }
 
-// ToFileInfo converts fs.FileInfo to model.FileInfo
-// This is a centralized utility function used by file service and search service
+// ToFileInfo converts fs.FileInfo to model.FileInfo.
 func ToFileInfo(name, path string, info fs.FileInfo) model.FileInfo {
+	return ToFileInfoWithPermissions(name, path, info, info.Mode().String())
+}
+
+// ToFileInfoWithPermissions converts fs.FileInfo using a reusable permission string.
+func ToFileInfoWithPermissions(name, path string, info fs.FileInfo, permissions string) model.FileInfo {
+	isDir := info.IsDir()
 	fileInfo := model.FileInfo{
 		Name:        name,
 		Path:        path,
 		Size:        info.Size(),
-		IsDir:       info.IsDir(),
+		IsDir:       isDir,
 		ModTime:     info.ModTime(),
-		Permissions: info.Mode().String(),
+		Permissions: permissions,
 	}
 
-	// Set MIME type for files
-	if !info.IsDir() {
+	if !isDir {
 		ext := filepath.Ext(name)
 		if mimeType := detectMimeTypeByExtension(ext); mimeType != "" {
 			fileInfo.MimeType = mimeType

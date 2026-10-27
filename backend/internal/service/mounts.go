@@ -3,6 +3,10 @@ package service
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"syscall"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
@@ -59,6 +63,11 @@ func (m *mounts) resolve(path string, access pathAccess) (*model.MountPoint, str
 	if err != nil {
 		return nil, "", err
 	}
+	if access != readExisting {
+		if err := m.requireWritablePath(fsPath, false); err != nil {
+			return nil, "", err
+		}
+	}
 	return mount, fsPath, nil
 }
 
@@ -67,4 +76,87 @@ func isMalformedPath(err error) bool {
 	return errors.Is(err, validator.ErrPathTraversal) ||
 		errors.Is(err, validator.ErrEmptyPath) ||
 		errors.Is(err, validator.ErrInvalidPath)
+}
+
+// The deepest real mount controls writes; read-only aliases win ties.
+// Removing or moving a tree also affects read-only mounts below it.
+func (m *mounts) requireWritablePath(path string, tree bool) error {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	deepest := ""
+	readOnly := false
+	for _, mount := range m.list() {
+		root, err := m.resolveMountRoot(mount.Path, 0)
+		if err != nil {
+			if mount.ReadOnly {
+				// ENOTDIR cannot hide a live root. Other failures may conceal a writable alias.
+				if !errors.Is(err, syscall.ENOTDIR) || pathWithinRoot(root, path) || (tree && pathWithinRoot(path, root)) {
+					return ErrPermissionDenied
+				}
+			}
+			continue
+		}
+		if tree && mount.ReadOnly && pathWithinRoot(path, root) {
+			return ErrPermissionDenied
+		}
+		if !pathWithinRoot(root, path) {
+			continue
+		}
+		if len(root) > len(deepest) {
+			deepest, readOnly = root, mount.ReadOnly
+		} else if root == deepest && mount.ReadOnly {
+			readOnly = true
+		}
+	}
+	if readOnly {
+		return ErrPermissionDenied
+	}
+	return nil
+}
+
+// Resolve missing roots and dangling aliases without losing their protected target.
+func (m *mounts) resolveMountRoot(path string, links int) (string, error) {
+	fallback := filepath.Clean(string(filepath.Separator) + path)
+	if links >= 40 {
+		return fallback, ErrPermissionDenied
+	}
+	existing := path
+	for {
+		resolved, err := m.fs.EvalSymlinks(existing)
+		if err == nil {
+			relative, err := filepath.Rel(existing, path)
+			if err != nil {
+				return fallback, err
+			}
+			return filepath.Abs(filepath.Join(resolved, relative))
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return fallback, err
+		}
+		info, statErr := m.fs.Lstat(existing)
+		if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+			return fallback, statErr
+		}
+		if statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			target, err := m.fs.Readlink(existing)
+			if err != nil {
+				return fallback, err
+			}
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(existing), target)
+			}
+			relative, err := filepath.Rel(existing, path)
+			if err != nil {
+				return fallback, err
+			}
+			return m.resolveMountRoot(filepath.Join(target, relative), links+1)
+		}
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return fallback, err
+		}
+		existing = parent
+	}
 }

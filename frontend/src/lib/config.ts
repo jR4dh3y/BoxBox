@@ -39,8 +39,6 @@ export const CONFIG = {
 		maxReconnectDelayMs: 30 * 1000
 	},
 	ui: {
-		/** Default page size for file listings */
-		defaultPageSize: 50,
 		/** A load shorter than this never shows a spinner */
 		spinnerDelayMs: 150,
 		/** Debounce delay for search input */
