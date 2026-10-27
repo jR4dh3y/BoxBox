@@ -146,33 +146,21 @@ export function formatRelativeTime(date: Date | string | number): string {
 	const diffMonth = Math.round(diffDay / 30);
 	const diffYear = Math.round(diffDay / 365);
 
-	// Past times
-	if (diffMs < 0) {
-		const absSec = Math.abs(diffSec);
-		const absMin = Math.abs(diffMin);
-		const absHour = Math.abs(diffHour);
-		const absDay = Math.abs(diffDay);
-		const absWeek = Math.abs(diffWeek);
-		const absMonth = Math.abs(diffMonth);
-		const absYear = Math.abs(diffYear);
+	const past = diffMs < 0;
+	if (Math.abs(diffSec) < 60) return past ? 'just now' : 'in a moment';
 
-		if (absSec < 60) return 'just now';
-		if (absMin < 60) return `${absMin} minute${absMin === 1 ? '' : 's'} ago`;
-		if (absHour < 24) return `${absHour} hour${absHour === 1 ? '' : 's'} ago`;
-		if (absDay < 7) return `${absDay} day${absDay === 1 ? '' : 's'} ago`;
-		if (absWeek < 4) return `${absWeek} week${absWeek === 1 ? '' : 's'} ago`;
-		if (absMonth < 12) return `${absMonth} month${absMonth === 1 ? '' : 's'} ago`;
-		return `${absYear} year${absYear === 1 ? '' : 's'} ago`;
-	}
+	const formatPeriod = (value: number, unit: string) => {
+		const count = Math.abs(value);
+		const label = `${count} ${unit}${count === 1 ? '' : 's'}`;
+		return past ? `${label} ago` : `in ${label}`;
+	};
 
-	// Future times
-	if (diffSec < 60) return 'in a moment';
-	if (diffMin < 60) return `in ${diffMin} minute${diffMin === 1 ? '' : 's'}`;
-	if (diffHour < 24) return `in ${diffHour} hour${diffHour === 1 ? '' : 's'}`;
-	if (diffDay < 7) return `in ${diffDay} day${diffDay === 1 ? '' : 's'}`;
-	if (diffWeek < 4) return `in ${diffWeek} week${diffWeek === 1 ? '' : 's'}`;
-	if (diffMonth < 12) return `in ${diffMonth} month${diffMonth === 1 ? '' : 's'}`;
-	return `in ${diffYear} year${diffYear === 1 ? '' : 's'}`;
+	if (Math.abs(diffMin) < 60) return formatPeriod(diffMin, 'minute');
+	if (Math.abs(diffHour) < 24) return formatPeriod(diffHour, 'hour');
+	if (Math.abs(diffDay) < 7) return formatPeriod(diffDay, 'day');
+	if (Math.abs(diffWeek) < 4) return formatPeriod(diffWeek, 'week');
+	if (Math.abs(diffMonth) < 12) return formatPeriod(diffMonth, 'month');
+	return formatPeriod(diffYear, 'year');
 }
 
 /**

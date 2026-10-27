@@ -195,23 +195,15 @@ export function getPreviewType(filename: string): PreviewType {
 		return 'code';
 	}
 
-	if (!ext) return 'unsupported';
-
-	if (FILE_EXTENSIONS.archive.includes(ext as (typeof FILE_EXTENSIONS.archive)[number]))
-		return 'unsupported';
 	if (OFFICE_PREVIEW_EXTENSIONS.has(ext)) return 'office';
-	if (FILE_EXTENSIONS.notebook.includes(ext as (typeof FILE_EXTENSIONS.notebook)[number]))
-		return 'notebook';
-
-	if (FILE_EXTENSIONS.video.includes(ext as (typeof FILE_EXTENSIONS.video)[number])) return 'video';
-	if (FILE_EXTENSIONS.audio.includes(ext as (typeof FILE_EXTENSIONS.audio)[number])) return 'audio';
-	if (FILE_EXTENSIONS.image.includes(ext as (typeof FILE_EXTENSIONS.image)[number])) return 'image';
-	if (FILE_EXTENSIONS.pdf.includes(ext as (typeof FILE_EXTENSIONS.pdf)[number])) return 'pdf';
-	if (FILE_EXTENSIONS.code.includes(ext as (typeof FILE_EXTENSIONS.code)[number])) return 'code';
-	if (FILE_EXTENSIONS.text.includes(ext as (typeof FILE_EXTENSIONS.text)[number])) return 'text';
-	if (FILE_EXTENSIONS.web.includes(ext as (typeof FILE_EXTENSIONS.web)[number])) return 'code';
-	if (FILE_EXTENSIONS.style.includes(ext as (typeof FILE_EXTENSIONS.style)[number])) return 'code';
-	if (FILE_EXTENSIONS.data.includes(ext as (typeof FILE_EXTENSIONS.data)[number])) return 'code';
+	for (const type of ['notebook', 'video', 'audio', 'image', 'pdf', 'code', 'text'] as const) {
+		const extensions: readonly string[] = FILE_EXTENSIONS[type];
+		if (extensions.includes(ext)) return type;
+	}
+	for (const type of ['web', 'style', 'data'] as const) {
+		const extensions: readonly string[] = FILE_EXTENSIONS[type];
+		if (extensions.includes(ext)) return 'code';
+	}
 
 	return 'unsupported';
 }
