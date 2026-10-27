@@ -58,9 +58,7 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 		const visible = settings.showHiddenFiles
 			? items
 			: items.filter((item) => !item.name.startsWith('.'));
-		return location.isSearchActive
-			? visible
-			: sortFiles(visible, location.sortBy, location.sortDir);
+		return sortFiles(visible, location.sortBy, location.sortDir);
 	});
 
 	let confirmed: { path: string; timestamp: number; items: readonly FileInfo[] } | undefined;

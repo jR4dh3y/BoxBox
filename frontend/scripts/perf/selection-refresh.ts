@@ -19,10 +19,27 @@ export async function verifySelectionRefresh(
 		const page = await context.newPage();
 		const errors: string[] = [];
 		page.on('pageerror', (error) => errors.push(error.message));
+		for (const view of ['list', 'grid']) {
+			await page.goto(`${url}/browse?path=perf/Selection&view=${view}`);
+			const grid = page.getByRole('grid');
+			await grid.waitFor();
+			await page.getByText('kept.txt', { exact: true }).waitFor();
+			await grid.focus();
+			await page.keyboard.press('Space');
+			await page.getByText(/^1 of 2 selected(?: · .+)?$/).waitFor();
+			assert.equal(await grid.evaluate((element) => element === document.activeElement), true);
+			assert.equal(
+				await grid.evaluate((element) => getComputedStyle(element).outlineStyle),
+				'solid'
+			);
+			await page.keyboard.press('Space');
+			await page.getByText('2 items', { exact: true }).waitFor();
+			assert.equal(await grid.locator('[aria-selected="true"]').count(), 0);
+		}
 		await page.goto(`${url}/browse?path=perf/Selection`);
 		await page.getByText('kept.txt', { exact: true }).click();
 		await page.getByText('gone.txt', { exact: true }).click({ modifiers: ['Control'] });
-		await page.getByText('2 of 2 selected', { exact: true }).waitFor();
+		await page.getByText(/^2 of 2 selected(?: · .+)?$/).waitFor();
 		unlinkSync(join(folder, 'gone.txt'));
 		await page.route('**/api/v1/files/list/perf/Selection', (route) =>
 			route.fulfill({
@@ -34,13 +51,13 @@ export async function verifySelectionRefresh(
 		await page.getByTitle('Refresh', { exact: true }).click();
 		await page.getByRole('alert').filter({ hasText: 'Selection fixture unavailable' }).waitFor();
 		assert.equal(
-			await page.getByText('2 of 2 selected', { exact: true }).count(),
+			await page.getByText(/^2 of 2 selected(?: · .+)?$/).count(),
 			1,
 			'failed refresh retains selection'
 		);
 		await page.unroute('**/api/v1/files/list/perf/Selection');
 		await page.getByRole('button', { name: 'Retry', exact: true }).click();
-		await page.getByText('1 of 1 selected', { exact: true }).waitFor();
+		await page.getByText(/^1 of 1 selected(?: · .+)?$/).waitFor();
 		assert.equal(await page.getByText('gone.txt', { exact: true }).count(), 0);
 		assert.equal(await page.locator('[data-file-row="true"][aria-selected="true"]').count(), 1);
 		writeFileSync(join(folder, 'search-only.txt'), 'fixture\n');
@@ -50,7 +67,7 @@ export async function verifySelectionRefresh(
 		await search.fill('');
 		await page.getByText('kept.txt', { exact: true }).waitFor();
 		assert.equal(
-			await page.getByText('1 of 1 selected', { exact: true }).count(),
+			await page.getByText(/^1 of 1 selected(?: · .+)?$/).count(),
 			1,
 			'leaving search does not prune against an older directory response'
 		);
@@ -79,7 +96,7 @@ export async function verifySelectionRefresh(
 		writeFileSync(join(folder, 'canonical.txt'), 'fixture\n');
 		await page.goto(`${url}/browse?${new URLSearchParams({ path: 'perf/./Selection' })}`);
 		await page.getByText('canonical.txt', { exact: true }).click();
-		await page.getByText('1 of 4 selected', { exact: true }).waitFor();
+		await page.getByText(/^1 of 4 selected(?: · .+)?$/).waitFor();
 		unlinkSync(join(folder, 'canonical.txt'));
 		await page.getByTitle('Refresh', { exact: true }).click();
 		await page.getByText('canonical.txt', { exact: true }).waitFor({ state: 'detached' });

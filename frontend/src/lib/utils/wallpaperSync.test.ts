@@ -6,10 +6,10 @@ import { STORAGE_KEYS } from '#lib/config.js';
 import { ApiRequestError, clearTokens } from '#lib/api/client.js';
 import { downloadWallpaper } from '#lib/api/wallpaperImage.js';
 import { getWallpaper, type StoredWallpaper } from '#lib/api/wallpaper.js';
+import { Preferences } from '#lib/settings/preferences.js';
 import { authStore } from '#lib/stores/auth.svelte.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { beginWallpaperPublication, wallpaperPublication } from './wallpaperPublication';
-import { refreshWallpaperDraft } from './wallpaperDraft';
 import {
 	getLocalWallpaperBlob,
 	deleteLocalWallpaper,
@@ -213,6 +213,28 @@ test('fresh login restores image bytes and display settings; later logins valida
 	});
 });
 
+test('a restored wallpaper keeps the file name of a server image only', async () => {
+	await withSession(async ({ setWallpaper, login, stored }) => {
+		setWallpaper('alice');
+		const server = stored.get('alice');
+		assert.ok(server);
+		stored.set('alice', { ...server, source: 'boxbox-server:pictures/sunset.png' });
+		await login('alice');
+		await syncShareWallpaperOnLogin();
+		assert.equal(settingsStore.current.backgroundImageName, 'sunset.png');
+
+		await authStore.logout();
+		setWallpaper('alice');
+		await login('alice');
+		await syncShareWallpaperOnLogin();
+		assert.equal(
+			settingsStore.current.backgroundImageName,
+			'sunset.png',
+			'the same restored image keeps the name this browser recorded'
+		);
+	});
+});
+
 test('logout, account switching and session expiry isolate all browser preferences', async () => {
 	await withSession(async ({ setWallpaper, login }) => {
 		setWallpaper('alice');
@@ -380,54 +402,6 @@ test('invalid metadata and image errors do not clear an existing wallpaper', asy
 		await assert.rejects(downloadWallpaper(), ApiRequestError);
 		await syncShareWallpaperOnLogin();
 		assert.equal(settingsStore.current.backgroundImage, 'data:image/png;base64,aGVsbG8=');
-	});
-});
-
-test('an open settings draft adopts restored wallpaper without losing unrelated edits', async () => {
-	await withSession(async ({ login, setWallpaper, requests }) => {
-		const reference = setWallpaper('alice');
-		await login('alice');
-		const initial = settingsStore.current;
-		const draft = { ...initial, compactMode: true };
-		await syncShareWallpaperOnLogin();
-		const refreshed = refreshWallpaperDraft(draft, initial, settingsStore.current);
-		assert.equal(refreshed.backgroundImage, reference);
-		assert.equal(refreshed.compactMode, true);
-		settingsStore.set(refreshed);
-		await publishShareWallpaper();
-		assert.equal(
-			requests.some((request) => request.startsWith('DELETE')),
-			false
-		);
-		const edited = refreshWallpaperDraft(
-			{
-				...initial,
-				backgroundImage: 'data:image/png;base64,aGVsbG8=',
-				backgroundImageMode: 'tile'
-			},
-			initial,
-			settingsStore.current
-		);
-		assert.equal(edited.backgroundImage, 'data:image/png;base64,aGVsbG8=');
-		assert.equal(edited.backgroundImageMode, 'tile');
-	});
-});
-
-test('a newly chosen wallpaper keeps its default fit and blur after late restoration', async () => {
-	await withSession(async ({ login, setWallpaper }) => {
-		setWallpaper('alice');
-		await login('alice');
-		const initial = settingsStore.current;
-		assert.equal(initial.backgroundImageMode, 'cover');
-		assert.equal(initial.frostedGlass, false);
-		const draft = { ...initial, backgroundImage: 'data:image/png;base64,aGVsbG8=' };
-		await syncShareWallpaperOnLogin();
-		assert.equal(settingsStore.current.backgroundImageMode, 'contain');
-		assert.equal(settingsStore.current.frostedGlass, true);
-		const refreshed = refreshWallpaperDraft(draft, initial, settingsStore.current);
-		assert.equal(refreshed.backgroundImage, draft.backgroundImage);
-		assert.equal(refreshed.backgroundImageMode, 'cover');
-		assert.equal(refreshed.frostedGlass, false);
 	});
 });
 
@@ -1048,6 +1022,37 @@ test('scoped and legacy restored references identify matching images without bro
 		} finally {
 			if (descriptor) Object.defineProperty(crypto, 'subtle', descriptor);
 			else Reflect.deleteProperty(crypto, 'subtle');
+		}
+	});
+});
+
+test('saving a local wallpaper preserves preferences edited before IndexedDB completes', async () => {
+	await withSession(async ({ login }) => {
+		await login('alice');
+		const preferences = new Preferences();
+		try {
+			const saving = preferences.setWallpaper(
+				'data:image/png;base64,aW1hZ2U=',
+				'new.png',
+				'contain'
+			);
+			assert.equal(settingsStore.current.backgroundImage, null);
+			preferences.setAccentColor('#ab1234');
+			preferences.update({ showHiddenFiles: true, defaultViewMode: 'grid' });
+			assert.equal(await saving, null);
+			assert.equal(settingsStore.current.accentColor, '#ab1234');
+			assert.equal(settingsStore.current.accentColorSource, 'manual');
+			assert.equal(settingsStore.current.showHiddenFiles, true);
+			assert.equal(settingsStore.current.defaultViewMode, 'grid');
+			assert.equal(settingsStore.current.backgroundImageName, 'new.png');
+			assert.equal(settingsStore.current.backgroundImageMode, 'contain');
+			assert.ok(settingsStore.current.backgroundImage);
+			assert.equal(
+				await (await getLocalWallpaperBlob(settingsStore.current.backgroundImage))?.text(),
+				'image'
+			);
+		} finally {
+			preferences.dispose();
 		}
 	});
 });

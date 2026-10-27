@@ -35,9 +35,10 @@ export function syncShareWallpaperOnLogin(): Promise<void> {
 		signal.throwIfAborted();
 		let wallpaper: Pick<
 			typeof initial,
-			'backgroundImage' | 'backgroundImageMode' | 'frostedGlass'
+			'backgroundImage' | 'backgroundImageName' | 'backgroundImageMode' | 'frostedGlass'
 		> = {
 			backgroundImage: null,
+			backgroundImageName: null,
 			backgroundImageMode: 'cover',
 			frostedGlass: false
 		};

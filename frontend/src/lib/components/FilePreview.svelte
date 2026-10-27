@@ -21,6 +21,17 @@
 	let { file, allFiles = [], onNavigate, onFileSaved, onClose }: Props = $props();
 
 	let isFullscreen = $state(false);
+	const isOpen = $derived(file !== null);
+
+	// Closing returns the keyboard to where it was, so shortcuts keep working on the list.
+	$effect(() => {
+		if (!isOpen) return;
+		const opener = document.activeElement;
+		return () => {
+			if (opener instanceof HTMLElement && opener.isConnected)
+				opener.focus({ preventScroll: true });
+		};
+	});
 
 	const previewType = $derived<PreviewType>(file ? getPreviewType(file.name) : 'unsupported');
 	const previewComponent = $derived(loadPreviewComponent(previewType));
@@ -96,7 +107,7 @@
 	}
 
 	const headerBtnClass =
-		'w-8 h-8 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:bg-surface-elevated hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-secondary';
+		'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:bg-surface-elevated hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-secondary';
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -120,11 +131,11 @@
 		>
 			<!-- Header -->
 			<header
-				class="flex shrink-0 items-center justify-between border-b border-border-primary bg-surface-secondary px-4 py-3"
+				class="flex h-11 shrink-0 items-center justify-between border-b border-border-primary bg-surface-secondary pr-2 pl-4"
 			>
 				<div class="flex min-w-0 items-center gap-3">
 					<span
-						class="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap text-text-primary"
+						class="overflow-hidden text-[13px] font-medium text-ellipsis whitespace-nowrap text-text-primary"
 						title={file.name}
 					>
 						{file.name}
@@ -139,7 +150,7 @@
 						disabled={!hasPrevious}
 						title="Previous file"
 					>
-						<ChevronLeft size={18} />
+						<ChevronLeft size={16} />
 					</button>
 					<button
 						type="button"
@@ -148,10 +159,10 @@
 						disabled={!hasNext}
 						title="Next file"
 					>
-						<ChevronRight size={18} />
+						<ChevronRight size={16} />
 					</button>
 					<button type="button" class={headerBtnClass} onclick={handleDownload} title="Download">
-						<Download size={18} />
+						<Download size={16} />
 					</button>
 					<button
 						type="button"
@@ -160,18 +171,13 @@
 						title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
 					>
 						{#if isFullscreen}
-							<Minimize2 size={18} />
+							<Minimize2 size={16} />
 						{:else}
-							<Maximize2 size={18} />
+							<Maximize2 size={16} />
 						{/if}
 					</button>
-					<button
-						type="button"
-						class="{headerBtnClass} hover:bg-danger hover:text-white"
-						onclick={onClose}
-						title="Close"
-					>
-						<X size={18} />
+					<button type="button" class={headerBtnClass} onclick={onClose} title="Close">
+						<X size={16} />
 					</button>
 				</div>
 			</header>
@@ -204,7 +210,7 @@
 						<div class="flex flex-col items-center gap-4 text-sm text-text-secondary">
 							<p>Preview not available for this file type</p>
 							<Button variant="primary" onclick={handleDownload}>
-								<Download size={20} />
+								<Download size={16} />
 								Download File
 							</Button>
 						</div>

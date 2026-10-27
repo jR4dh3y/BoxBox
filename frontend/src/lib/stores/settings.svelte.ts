@@ -8,6 +8,7 @@ import {
 	wallpaperPublication
 } from '#lib/utils/wallpaperPublication.js';
 import { currentUsername } from '#lib/utils/sessionUser.js';
+import { normalizeAccentColorSource, type AccentColorSource } from '#lib/utils/appearance.js';
 import {
 	getDriveNames,
 	setDriveName as apiSetDriveName,
@@ -27,11 +28,16 @@ export interface UserSettings {
 	defaultSortDir: 'asc' | 'desc';
 	defaultViewMode: 'list' | 'grid';
 	accentColor: string | null;
+	accentColorSource: AccentColorSource;
 	backgroundImage: string | null;
+	/** The wallpaper's file name, when it is known; a restored upload from another browser has none. */
+	backgroundImageName: string | null;
 	backgroundImageMode: BackgroundImageMode;
 	frostedGlass: boolean;
 	previewOnSingleClick: boolean;
 	compactMode: boolean;
+	/** Rows show a checkbox on hover, so several items can be picked without modifier keys. */
+	selectionCheckboxes: boolean;
 	driveNameOverrides: Record<string, string>;
 	favoriteFolders: FavoriteFolder[];
 }
@@ -49,11 +55,14 @@ const defaultSettings: UserSettings = {
 	defaultSortDir: 'asc',
 	defaultViewMode: 'list',
 	accentColor: null,
+	accentColorSource: 'wallpaper',
 	backgroundImage: null,
+	backgroundImageName: null,
 	backgroundImageMode: DEFAULT_BACKGROUND_IMAGE_MODE,
 	frostedGlass: false,
 	previewOnSingleClick: false,
 	compactMode: false,
+	selectionCheckboxes: true,
 	driveNameOverrides: {},
 	favoriteFolders: []
 };
@@ -73,6 +82,7 @@ function loadSettings(username: string): UserSettings {
 	const settings = { ...defaultSettings, ...stored };
 	return {
 		...settings,
+		accentColorSource: normalizeAccentColorSource(stored?.accentColorSource, settings.accentColor),
 		backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode)
 	};
 }
