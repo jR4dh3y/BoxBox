@@ -12,7 +12,6 @@
 		headerActions?: Snippet;
 		footer?: Snippet;
 		onclose?: () => void;
-		busy?: boolean;
 	}
 
 	let {
@@ -23,8 +22,7 @@
 		children,
 		headerActions,
 		footer,
-		onclose,
-		busy = false
+		onclose
 	}: Props = $props();
 
 	const widthClass = $derived(
@@ -32,7 +30,7 @@
 	);
 
 	function handleBackdropClick(e: MouseEvent) {
-		if (!busy && e.target === e.currentTarget) {
+		if (e.target === e.currentTarget) {
 			onclose?.();
 		}
 	}
@@ -45,7 +43,7 @@
 		}
 	}
 
-	let dialogEl = $state<HTMLDialogElement | undefined>();
+	let dialogEl = $state<HTMLDivElement | undefined>();
 
 	$effect(() => {
 		if (!open) return;
@@ -61,14 +59,11 @@
 </script>
 
 {#if open}
-	<dialog
+	<div
 		bind:this={dialogEl}
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/55"
 		role="dialog"
 		aria-modal="true"
-		aria-labelledby={title ? titleId : undefined}
-		aria-label={title ? undefined : 'Dialog'}
-		aria-busy={busy}
 		tabindex="-1"
 		onclick={handleBackdropClick}
 		onkeydown={handleKeydown}
@@ -87,7 +82,6 @@
 							type="button"
 							class="flex h-7 w-7 items-center justify-center rounded text-text-secondary transition-colors hover:bg-surface-elevated hover:text-text-primary"
 							onclick={onclose}
-							disabled={busy}
 							aria-label="Close"
 						>
 							<X size={16} />
@@ -104,5 +98,5 @@
 				</div>
 			{/if}
 		</div>
-	</dialog>
+	</div>
 {/if}

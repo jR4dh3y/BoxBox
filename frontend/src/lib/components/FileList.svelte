@@ -1,9 +1,13 @@
 <script lang="ts">
+	/**
+	 * FileList component with sortable columns - FilePilot style
+	 */
+
 	import type { FileInfo } from '#lib/api/files.js';
 	import type { SortField, SortDir } from '#lib/types/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
 	import { getFileTypeDescription, getFileIcon } from '#lib/utils/fileTypes.js';
-	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { untrack } from 'svelte';
 	import { Spinner } from '#lib/components/ui/index.js';
 	import LoadError from '#lib/components/LoadError.svelte';
@@ -55,7 +59,7 @@
 		onFolderHover?: (path: string | null) => void;
 		onSortChange?: (field: SortField, dir: SortDir) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
-		onContextMenuAction?: (action: FileContextAction, items: FileInfo[]) => void;
+		onContextMenuAction?: (action: string, items: FileInfo[]) => void;
 	} = $props();
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
@@ -93,13 +97,6 @@
 	// Context menu state
 	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
 
-	const columns = [
-		{ field: 'name', label: 'Name', className: '' },
-		{ field: 'type', label: 'Type', className: 'file-type-column' },
-		{ field: 'size', label: 'Size', className: 'file-size-column text-right' },
-		{ field: 'modTime', label: 'Modified', className: 'file-modified-column' }
-	] satisfies { field: SortField; label: string; className: string }[];
-
 	function handleSort(field: SortField) {
 		if (sortBy === field) {
 			const newDir = sortDir === 'asc' ? 'desc' : 'asc';
@@ -123,51 +120,7 @@
 			onSelectionChange?.(newSelection);
 		}
 
-	function handleDoubleClick(item: FileInfo, event: MouseEvent) {
-		if (shouldOpenOnDoubleClick(fileOpenBehavior, event)) onItemClick?.(item);
-	}
-
-	function updateSelection(itemPath: string, gesture: FileSelectionGesture): void {
-		const result = applyFileSelection(
-			items.map((item) => item.path),
-			selectedPaths,
-			selectionAnchor,
-			itemPath,
-			gesture
-		);
-		selectionAnchor = result.anchorPath;
-		onSelectionChange?.(new SvelteSet(result.paths));
-	}
-
-	function handleSelectionCheckbox(item: FileInfo, selected: boolean): void {
-		updateSelection(item.path, { type: 'set', selected });
-	}
-
-	function handleKeyDown(item: FileInfo, event: KeyboardEvent) {
-		if (
-			event.target instanceof HTMLInputElement &&
-			(event.target.type !== 'checkbox' || event.key === ' ' || event.key === 'Enter')
-		)
-			return;
-		if ((event.key === 'a' || event.key === 'A') && (event.ctrlKey || event.metaKey)) {
-			event.preventDefault();
-			selectionAnchor = item.path;
-			onSelectionChange?.(new SvelteSet(items.map((visibleItem) => visibleItem.path)));
-			return;
-		}
-
-		const nextPath = moveFileFocus(event, 'list');
-		if (nextPath) {
-			if (!event.ctrlKey && !event.metaKey) {
-				selectionAnchor ??= item.path;
-				updateSelection(nextPath, event.shiftKey ? { type: 'range' } : { type: 'replace' });
-			}
-			return;
-		}
-		if (event.altKey) return;
-
-		if (event.key === 'Enter') {
-			event.preventDefault();
+		if (item.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
 			onItemClick?.(item);
 			return;
 		}
@@ -316,17 +269,19 @@
 		focusTable();
 		event.preventDefault();
 
-		const selectedItems = getSelectedContextMenuItems(items, selectedPaths, item);
+		// If right-clicked item is not selected, select only that item
 		if (!selectedPaths.has(item.path)) {
 			const newSelection = new SvelteSet<string>([item.path]);
-			selectionAnchor = item.path;
 			onSelectionChange?.(newSelection);
 		}
+
+		// Get all selected items for context menu
+		const selectedItems = items.filter((i) => selectedPaths.has(i.path) || i.path === item.path);
 
 		contextMenu = {
 			x: event.clientX,
 			y: event.clientY,
-			items: selectedItems
+			items: selectedItems.length > 0 ? selectedItems : [item]
 		};
 	}
 
@@ -335,7 +290,6 @@
 		if (target?.closest('[data-file-row="true"], [data-file-header="true"]')) return;
 
 		event.preventDefault();
-		selectionAnchor = null;
 		onSelectionChange?.(new SvelteSet<string>());
 		contextMenu = {
 			x: event.clientX,
@@ -358,6 +312,21 @@
 		focusTable();
 	}
 
+	function isSelected(path: string): boolean {
+		return selectedPaths.has(path);
+	}
+
+	function isCut(path: string): boolean {
+		return cutPaths.has(path);
+	}
+
+	function getDisplayName(item: FileInfo): string {
+		if (showFileExtensions || item.isDir) return item.name;
+
+		const dotIndex = item.name.lastIndexOf('.');
+		return dotIndex > 0 ? item.name.slice(0, dotIndex) : item.name;
+	}
+
 	const thClass =
 		'text-left px-3 py-0 bg-surface-secondary border-b border-border-primary font-medium text-text-secondary whitespace-nowrap select-none sticky top-0 z-[5] cursor-pointer transition-colors duration-100 hover:bg-surface-tertiary hover:text-text-primary focus:outline focus:outline-1 focus:outline-accent focus:-outline-offset-1';
 	const thSortedClass = 'text-accent';
@@ -366,8 +335,6 @@
 	const compactTdClass =
 		'h-[28px] px-3 py-0.5 align-middle border-b border-border-secondary text-text-primary';
 	const clippedCellClass = 'block overflow-hidden text-ellipsis whitespace-nowrap';
-	const selectionRevealClass =
-		'flex items-center justify-center group-hover/icon:invisible group-has-[input:focus-visible]/icon:invisible';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -404,10 +371,10 @@
 		onkeydown={handleGridKeyDown}
 	>
 		<colgroup>
-			<col class="file-name-column" />
-			<col class="file-type-column" />
-			<col class="file-size-column" />
-			<col class="file-modified-column" />
+			<col />
+			<col class="w-[170px]" />
+			<col class="w-[112px]" />
+			<col class="w-[168px]" />
 		</colgroup>
 		<thead>
 			<tr aria-rowindex="1" style="height: {LIST_HEADER_HEIGHT}px">
@@ -460,14 +427,13 @@
 				{#each items.slice(rowWindow.itemStart, rowWindow.itemEnd) as item, visibleOffset (item.path)}
 					{@const itemIndex = rowWindow.itemStart + visibleOffset}
 					{@const IconComponent = getFileIcon(item.name, item.isDir)}
-					{@const displayName = fileDisplayName(item, showFileExtensions)}
+					{@const displayName = getDisplayName(item)}
 					{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
 					{@const sizeDescription = item.isDir ? '—' : formatFileSize(item.size)}
 					{@const secondaryText = isSelected(item.path)
 						? 'text-text-primary'
 						: 'text-text-secondary'}
 					{@const modifiedDescription = formatFileDate(item.modTime)}
-					{@const hasThumbnail = supportsThumbnailFile(item)}
 					<tr
 						style={`height: ${compactMode ? 28 : 32}px`}
 						class="cursor-default transition-colors duration-50 {isSelected(item.path)
@@ -487,13 +453,9 @@
 						aria-rowindex={itemIndex + 2}
 						aria-selected={isSelected(item.path)}
 						data-file-row="true"
-						data-file-path={item.path}
-						data-file-index={index}
-						{@attach virtual.item}
 					>
 						<td id={`file-list-cell-${itemIndex}`} class={compactMode ? compactTdClass : tdClass}>
 							<div class="flex min-w-0 items-center gap-2">
-								<!-- Selected items keep their checkbox visible after the pointer leaves. -->
 								<span
 									class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
 										? 'text-folder'
@@ -565,14 +527,13 @@
 	{#await import('./FileContextMenu.svelte') then { default: FileContextMenu }}
 		<FileContextMenu
 			items={contextMenu.items}
-			{path}
 			{canPaste}
 			{favoritePaths}
 			{canCreate}
 			x={contextMenu.x}
 			y={contextMenu.y}
-			onSelect={collection.selectMenuAction}
-			onClose={collection.closeMenu}
+			onSelect={handleContextMenuSelect}
+			onClose={handleContextMenuClose}
 		/>
 	{:catch}
 		<LoadError label="file context menu" onClose={handleContextMenuClose} />

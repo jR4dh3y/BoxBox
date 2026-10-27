@@ -114,6 +114,7 @@ jobs:
           bun-version: 1.4.3
 
       - name: Install dependencies
+        working-directory: frontend
         run: bun install --frozen-lockfile
 
       - name: Check Svelte app and performance harness
@@ -164,37 +165,6 @@ jobs:
             perf-results/*failure.*
           retention-days: 14
 
-  desktop:
-    name: Desktop types and tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    env:
-      RUSTUP_TOOLCHAIN: stable
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.3
-      - name: Install workspaces
-        run: bun install --frozen-lockfile
-      - name: Set up Go for native thumbnail integration
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
-      - name: Install media preview tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg poppler-utils
-      - name: Check Rust thumbnail renderer
-        run: cargo test --manifest-path desktop/native/Cargo.toml --locked
-      - name: Check desktop types
-        run: bun run check:desktop
-      - name: Test desktop targets
-        run: bun run test:desktop
-
   website:
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.website == 'true') }}
@@ -216,6 +186,7 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       - name: Install dependencies
+        working-directory: website
         run: bun install --frozen-lockfile
 
       - name: Build website

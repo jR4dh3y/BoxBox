@@ -136,7 +136,7 @@ func TestDesktopGatewayAllowlist(t *testing.T) {
 		{"GET", "/files", true}, {"GET", "/files/list/media", true}, {"PATCH", "/files/media/a", true}, {"POST", "/stream/upload/media/a", true}, {"GET", "/stream/upload/status/id", true}, {"GET", "/system/upload", true}, {"POST", "/jobs", true}, {"PATCH", "/shares/id", true},
 		{"POST", "/auth/login", false}, {"GET", "/settings", false}, {"GET", "/desktop/files", false}, {"GET", "/ws", false}, {"GET", "/system/drives", false}, {"POST", "/system/upload", false}, {"DELETE", "/stream/download/media/a", false}, {"GET", "/files/../auth", false}, {"GET", "/files/%2e%2e/auth", false}, {"GET", "/files/media//a", false}, {"GET", "/files/media\\a", false}, {"POST", "/connect/redeem", false}, {"GET", "/jobs/id/extra", false},
 	} {
-		if got := DesktopGatewayAllowed(tc.method, tc.route); got != tc.allowed {
+		if got := ClientRouteAllowed(tc.method, tc.route); got != tc.allowed {
 			t.Errorf("%s %s = %v", tc.method, tc.route, got)
 		}
 	}

@@ -126,7 +126,7 @@ func TestFileDownloadsAreNotRecompressed(t *testing.T) {
 
 func TestSmallResponsesOnCompressedRoutesAreNotGzipped(t *testing.T) {
 	handler := newCompressionTestServer(t)
-	// An empty folder's listing and a search with no matches both stay small.
+	// An empty folder's listing and a search with no matches: both go through the compression middleware.
 	for _, target := range []string{
 		"/api/v1/files/list/files/empty",
 		"/api/v1/search?path=files&q=zzzzzz",

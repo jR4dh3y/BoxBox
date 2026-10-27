@@ -2,20 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { benchmarkRegressions, checkRatchets, browserViolations } from './gates';
 
-const metrics = {
-	listingRequests: 1,
-	renderedRows: 30,
-	refreshRequests: 1,
-	scriptRequests: 8,
-	scriptBytes: 300_000
-};
-const limits = {
-	listingRequests: 1,
-	renderedRows: 32,
-	refreshRequests: 1,
-	scriptRequests: 8,
-	scriptBytes: 330_752
-};
+const metrics = { listingRequests: 1, refreshRequests: 1, scriptRequests: 8, scriptBytes: 300_000 };
+const limits = { listingRequests: 1, refreshRequests: 1, scriptRequests: 8, scriptBytes: 330_752 };
 
 test('browser gate rejects duplicate listings and additional scripts', () => {
 	assert.deepEqual(browserViolations(metrics, limits), []);
@@ -30,10 +18,6 @@ test('browser gate rejects duplicate listings and additional scripts', () => {
 	assert.match(
 		browserViolations({ ...metrics, scriptRequests: 9 }, limits).join(),
 		/scriptRequests/
-	);
-	assert.match(
-		browserViolations({ ...metrics, renderedRows: 10_000 }, limits).join(),
-		/renderedRows/
 	);
 });
 

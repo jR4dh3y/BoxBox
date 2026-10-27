@@ -1,7 +1,10 @@
 <script lang="ts">
+	/**
+	 * FileGrid component - icon/thumbnail grid for browsing folders
+	 */
+
 	import type { FileInfo } from '#lib/api/files.js';
-	import FileThumbnail from '#lib/components/FileThumbnail.svelte';
-	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
+	import { getThumbnailUrl } from '#lib/api/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
 	import { getFileTypeDescription, getFileIcon, getPreviewType } from '#lib/utils/fileTypes.js';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -50,7 +53,7 @@
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
 		onSelectionChange?: (paths: Set<string>) => void;
-		onContextMenuAction?: (action: FileContextAction, items: FileInfo[]) => void;
+		onContextMenuAction?: (action: string, items: FileInfo[]) => void;
 	} = $props();
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
@@ -85,18 +88,7 @@
 	});
 
 	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
-
-	function updateSelection(itemPath: string, gesture: FileSelectionGesture): void {
-		const result = applyFileSelection(
-			items.map((item) => item.path),
-			selectedPaths,
-			selectionAnchor,
-			itemPath,
-			gesture
-		);
-		selectionAnchor = result.anchorPath;
-		onSelectionChange?.(new SvelteSet(result.paths));
-	}
+	let thumbnailErrors = new SvelteSet<string>();
 
 	function handleItemClick(item: FileInfo, event: MouseEvent) {
 		activeItemPath = item.path;
@@ -112,39 +104,7 @@
 			onSelectionChange?.(newSelection);
 		}
 
-	function handleDoubleClick(item: FileInfo, event: MouseEvent) {
-		if (shouldOpenOnDoubleClick(fileOpenBehavior, event)) onItemClick?.(item);
-	}
-
-	function handleSelectionCheckbox(item: FileInfo, selected: boolean): void {
-		updateSelection(item.path, { type: 'set', selected });
-	}
-
-	function handleKeyDown(item: FileInfo, event: KeyboardEvent) {
-		if (
-			event.target instanceof HTMLInputElement &&
-			(event.target.type !== 'checkbox' || event.key === ' ' || event.key === 'Enter')
-		)
-			return;
-		if ((event.key === 'a' || event.key === 'A') && (event.ctrlKey || event.metaKey)) {
-			event.preventDefault();
-			selectionAnchor = item.path;
-			onSelectionChange?.(new SvelteSet(items.map((visibleItem) => visibleItem.path)));
-			return;
-		}
-
-		const nextPath = moveFileFocus(event, 'grid');
-		if (nextPath) {
-			if (!event.ctrlKey && !event.metaKey) {
-				selectionAnchor ??= item.path;
-				updateSelection(nextPath, event.shiftKey ? { type: 'range' } : { type: 'replace' });
-			}
-			return;
-		}
-		if (event.altKey) return;
-
-		if (event.key === 'Enter') {
-			event.preventDefault();
+		if (item.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
 			onItemClick?.(item);
 			return;
 		}
@@ -302,17 +262,17 @@
 		gridElement?.focus({ preventScroll: true });
 		event.preventDefault();
 
-		const selectedItems = getSelectedContextMenuItems(items, selectedPaths, item);
 		if (!selectedPaths.has(item.path)) {
 			const newSelection = new SvelteSet<string>([item.path]);
-			selectionAnchor = item.path;
 			onSelectionChange?.(newSelection);
 		}
+
+		const selectedItems = items.filter((i) => selectedPaths.has(i.path) || i.path === item.path);
 
 		contextMenu = {
 			x: event.clientX,
 			y: event.clientY,
-			items: selectedItems
+			items: selectedItems.length > 0 ? selectedItems : [item]
 		};
 	}
 
@@ -321,7 +281,6 @@
 		if (target?.closest('[data-file-item="true"]')) return;
 
 		event.preventDefault();
-		selectionAnchor = null;
 		onSelectionChange?.(new SvelteSet<string>());
 		contextMenu = {
 			x: event.clientX,
@@ -342,6 +301,10 @@
 		}
 		contextMenu = null;
 		gridElement?.focus({ preventScroll: true });
+	}
+
+	function handleThumbnailError(path: string) {
+		thumbnailErrors.add(path);
 	}
 
 	function isSelected(path: string): boolean {
@@ -536,14 +499,13 @@
 	{#await import('./FileContextMenu.svelte') then { default: FileContextMenu }}
 		<FileContextMenu
 			items={contextMenu.items}
-			{path}
 			{canPaste}
 			{favoritePaths}
 			{canCreate}
 			x={contextMenu.x}
 			y={contextMenu.y}
-			onSelect={collection.selectMenuAction}
-			onClose={collection.closeMenu}
+			onSelect={handleContextMenuSelect}
+			onClose={handleContextMenuClose}
 		/>
 	{:catch}
 		<LoadError label="file context menu" onClose={handleContextMenuClose} />

@@ -1,12 +1,19 @@
 import { untrack } from 'svelte';
 import type { BrowseSelection } from './selection.svelte';
-import { browseRequests } from './requests.svelte';
-import { type MountPoint, type DriveStats, type FileInfo } from '#lib/api/files.js';
+import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+import {
+	getDriveStats,
+	listRoots,
+	search,
+	type DriveStatsResponse,
+	type FileInfo,
+	type RootsResponse,
+	type SearchResponse
+} from '#lib/api/files.js';
+import { CONFIG } from '#lib/config.js';
+import { fileQueryKeys } from '#lib/stores/files.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { canPreview } from '#lib/utils/fileTypes.js';
-import { isNativePath } from '#lib/api/desktop.js';
-import { isRemotePath } from '#lib/api/remotePaths.js';
-import { watchDesktopDirectory } from './desktopWatch';
 import { directoryQueryOptions } from './directoryQuery';
 import { sortFiles } from './sortFiles';
 import type { BrowseLocation } from './location.svelte';
@@ -18,20 +25,16 @@ import type { BrowseLocation } from './location.svelte';
 export function useBrowseData(location: BrowseLocation, selection: BrowseSelection) {
 	const queryClient = useQueryClient();
 	const settings = $derived(settingsStore.current);
-	const includeHidden = $derived(settings.showHiddenFiles || revealHidden());
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
 		queryKey: fileQueryKeys.roots(),
-		queryFn: () => listRoots(),
-		staleTime: 0,
-		refetchOnWindowFocus: 'always',
-		refetchInterval: 15_000
+		queryFn: () => listRoots()
 	}));
 
 	const driveStatsQuery = createQuery<DriveStatsResponse>(() => ({
 		queryKey: [...fileQueryKeys.roots(), 'stats'],
 		queryFn: () => getDriveStats(),
-		enabled: location.page === 'files' && location.path === ''
+		enabled: location.path === ''
 	}));
 
 	const directoryQuery = createQuery(() => ({
@@ -41,21 +44,14 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 	const searchQueryResult = createQuery<SearchResponse>(() => ({
 		queryKey: fileQueryKeys.search(location.path, location.trimmedSearchQuery),
 		queryFn: ({ signal }) => search(location.path, location.trimmedSearchQuery, signal),
-		enabled: location.path !== '' && location.isSearchActive,
-		refetchOnWindowFocus: 'always',
-		refetchInterval: isRemotePath(location.path) ? 15_000 : false
+		enabled: location.path !== '' && location.isSearchActive
 	}));
 
-	const isAtRoot = $derived(location.page === 'files' && location.path === '');
-	const inFolder = $derived(location.page === 'files' && location.path !== '');
-	// Pages load their own data; reloading one remounts it.
-	let pageRevision = $state(0);
-	let remoteRoots = $state.raw<MountPoint[]>([]);
-	let remoteStats = $state.raw<DriveStats[]>([]);
-	const roots = $derived([...(catalog.roots.value?.roots ?? []), ...remoteRoots]);
-	const drives = $derived([...(catalog.stats.value?.drives ?? []), ...remoteStats]);
-	const directoryItems = $derived(folder.value?.items ?? []);
-	const searchResults = $derived(matches.value?.results ?? []);
+	const isAtRoot = $derived(location.path === '');
+	const roots = $derived(rootsQuery.data?.roots ?? []);
+	const drives = $derived(driveStatsQuery.data?.drives ?? []);
+	const directoryItems = $derived(directoryQuery.data?.items ?? []);
+	const searchResults = $derived(searchQueryResult.data?.results ?? []);
 
 	const displayItems = $derived.by(() => {
 		const items: FileInfo[] = location.isSearchActive ? searchResults : directoryItems;
@@ -63,26 +59,6 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 			? items
 			: items.filter((item) => !item.name.startsWith('.'));
 		return sortFiles(visible, location.sortBy, location.sortDir);
-	});
-
-	let confirmed: { path: string; timestamp: number; items: readonly FileInfo[] } | undefined;
-	$effect(() => {
-		// Cached data and failed refreshes cannot establish that a selected file vanished.
-		if (folder.pending || !folder.value || folder.error || folder.confirmed <= acquiredRevision)
-			return;
-		const timestamp = folder.confirmed;
-		const items = directoryItems;
-		const path = folder.value.path;
-		untrack(() => {
-			if (
-				confirmed?.path === path &&
-				confirmed.timestamp === timestamp &&
-				confirmed.items === items
-			)
-				return;
-			confirmed = { path, timestamp, items };
-			if (!location.isSearchActive) selection.retain(items, path);
-		});
 	});
 
 	let confirmed: { path: string; timestamp: number; items: readonly FileInfo[] } | undefined;
@@ -118,16 +94,12 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 	);
 	const isReadOnly = $derived(currentMount?.readOnly ?? false);
 	const fileListError = $derived.by(() => {
-		if (isAtRoot) return catalog.roots.error?.message ?? catalog.stats.error?.message ?? null;
-		if (location.isSearchActive) return matches.error?.message ?? null;
-		return folder.error?.message ?? null;
+		if (isAtRoot) return rootsQuery.error?.message ?? driveStatsQuery.error?.message ?? null;
+		if (location.isSearchActive) return searchQueryResult.error?.message ?? null;
+		return directoryQuery.error?.message ?? null;
 	});
 
 	return {
-		setRemoteCatalog(catalog: { roots: MountPoint[]; drives: DriveStats[] }) {
-			remoteRoots = catalog.roots;
-			remoteStats = catalog.drives;
-		},
 		get roots() {
 			return roots;
 		},
@@ -138,18 +110,15 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 			return isAtRoot;
 		},
 		get isLoadingDrives() {
-			return (
-				(catalog.roots.pending && !catalog.roots.value) ||
-				(isAtRoot && catalog.stats.pending && !catalog.stats.value)
-			);
+			return rootsQuery.isLoading || driveStatsQuery.isLoading;
 		},
 		get isSearching() {
-			return location.isSearchActive && matches.pending;
+			return location.isSearchActive && searchQueryResult.isFetching;
 		},
 		get isFileListLoading() {
 			return location.isSearchActive
-				? matches.pending
-				: folder.pending && directoryItems.length === 0;
+				? searchQueryResult.isFetching
+				: directoryQuery.isLoading && directoryItems.length === 0;
 		},
 		get fileListError() {
 			return fileListError;
@@ -172,34 +141,34 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 			return isReadOnly;
 		},
 		get canCreate() {
-			return inFolder && !isReadOnly;
+			return !isAtRoot && !isReadOnly;
 		},
 		get uploadDisabled() {
-			return !inFolder || isReadOnly;
-		},
-		/** Whether items can be created in a folder, which need not be the open one. */
-		isWritable(path: string) {
-			const mount = mountOf(path);
-			return mount !== null && !mount.readOnly;
+			return isAtRoot || isReadOnly;
 		},
 
 		/** Warms a folder the user is about to open. Skips folders loaded moments ago. */
 		prefetchDirectory(path: string) {
-			browseRequests.prefetch(path);
+			void queryClient.prefetchQuery({
+				...directoryQueryOptions(path),
+				staleTime: CONFIG.query.prefetchStaleTimeMs
+			});
 		},
+		/** Marks the folder (and the search) stale so it loads again. */
 		refresh() {
-			void browseRequests.changed(location.path);
+			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directory(location.path) });
+			if (location.isSearchActive) {
+				void queryClient.invalidateQueries({
+					queryKey: fileQueryKeys.search(location.path, location.trimmedSearchQuery)
+				});
+			}
 		},
+		/** Marks every loaded folder stale, for changes that may land outside the open one. */
 		refreshAll() {
-			void browseRequests.changed();
+			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directories() });
+			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.searches() });
 		},
-		refreshMounts() {
-			void browseRequests.changed();
-		},
-		get pageRevision() {
-			return pageRevision;
-		},
-		/** The toolbar refresh button and F5. */
+		/** The toolbar refresh button. */
 		reload() {
 			if (isAtRoot) {
 				void rootsQuery.refetch();
@@ -208,7 +177,7 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 			else void directoryQuery.refetch();
 		},
 		refetchDirectory() {
-			void browseRequests.changed(location.path);
+			void directoryQuery.refetch();
 		}
 	};
 }

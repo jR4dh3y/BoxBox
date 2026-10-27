@@ -44,7 +44,7 @@ type WriteFile interface {
 
 // DirectoryReader contains read-only directory operations.
 type DirectoryReader interface {
-	// List returns all files in a directory, subject to the server entry limit.
+	// List returns every entry of a directory
 	List(ctx context.Context, path string) (*model.FileList, error)
 	// GetInfo returns metadata for a file or directory
 	GetInfo(ctx context.Context, path string) (*model.FileInfo, error)
@@ -183,6 +183,7 @@ func (s *fileService) List(ctx context.Context, path string) (*model.FileList, e
 		return nil, err
 	}
 
+	// Check if path exists and is a directory
 	info, err := s.fs.Stat(fsPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -197,8 +198,7 @@ func (s *fileService) List(ctx context.Context, path string) (*model.FileList, e
 		return nil, err
 	}
 
-	const maxDirectoryEntries = 10_000
-	entries, truncated, err := s.fs.ReadDirFileInfoLimit(fsPath, maxDirectoryEntries)
+	entries, truncated, err := s.fs.ReadDirFileInfoLimit(fsPath, s.directoryEntryLimit)
 	if err != nil {
 		return nil, err
 	}

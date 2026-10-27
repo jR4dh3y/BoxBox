@@ -35,13 +35,13 @@ test('remote paths never reach native open, applications, terminal, trash or cli
 
 test('remote selection and background menus expose server capabilities', () => {
 	const file = { name: 'a.txt', path: remote, isDir: false, size: 1, modTime: '', permissions: '' };
-	const actions = getFileContextMenuItems({ items: [file], canPaste: true, path: remote }).flatMap(
-		(item) => (typeof item === 'string' ? [] : [item.id])
+	const actions = getFileContextMenuItems({ items: [file], canPaste: true }).flatMap((item) =>
+		typeof item === 'string' ? [] : [item.id]
 	);
 	for (const action of ['download', 'share', 'delete'])
 		assert.ok(actions.some((id) => id === action));
 	for (const action of ['open-with', 'open-terminal', 'delete-permanently'])
 		assert.ok(!actions.some((id) => id === action));
-	const background = getFileContextMenuItems({ items: [], canPaste: true, path: remote });
+	const background = getFileContextMenuItems({ items: [], canPaste: true });
 	assert.ok(!background.some((item) => typeof item !== 'string' && item.id === 'open-terminal'));
 });

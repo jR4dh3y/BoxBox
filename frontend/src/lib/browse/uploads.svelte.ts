@@ -1,11 +1,16 @@
 import { toastStore } from '#lib/stores/toast.svelte.js';
 import { uploadStore } from '#lib/stores/upload.svelte.js';
-import { entriesFromDataTransfer, entriesFromFiles } from '#lib/utils/uploadEntries.js';
+import {
+	entriesFromDataTransfer,
+	entriesFromFiles,
+	type UploadEntry
+} from '#lib/utils/uploadEntries.js';
 import type { BrowseData } from './data.svelte';
 import type { BrowseLocation } from './location.svelte';
 
-/** Picking files or folders to upload, and uploading files dropped from other apps. */
+/** Picking and dropping files or folders to upload into the current folder. */
 export function useBrowseUploads(location: BrowseLocation, data: BrowseData) {
+	let isDragOver = $state(false);
 	let fileInput = $state<HTMLInputElement>();
 	let folderInput = $state<HTMLInputElement>();
 	let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -21,18 +26,26 @@ export function useBrowseUploads(location: BrowseLocation, data: BrowseData) {
 	};
 
 	function uploadDestination(): string | null {
-		if (!data.canCreate) {
-			toastStore.error(
-				data.isReadOnly
-					? 'Cannot upload to read-only location'
-					: 'Navigate to a folder first to upload files'
-			);
+		if (data.isAtRoot) {
+			toastStore.warning('Navigate to a folder first to upload files');
+			return null;
+		}
+		if (data.isReadOnly) {
+			toastStore.error('Cannot upload to read-only location');
 			return null;
 		}
 		return location.path;
 	}
 
+	function start(entries: UploadEntry[], destination = uploadDestination()) {
+		if (destination === null) return;
+		uploadStore.addFiles(entries, destination);
+	}
+
 	return {
+		get isDragOver() {
+			return isDragOver;
+		},
 		get fileInput() {
 			return fileInput;
 		},
@@ -49,18 +62,32 @@ export function useBrowseUploads(location: BrowseLocation, data: BrowseData) {
 		openFolderPicker: () => folderInput?.click(),
 		handleInputChange(event: Event & { currentTarget: HTMLInputElement }) {
 			const input = event.currentTarget;
-			const destination = uploadDestination();
-			if (destination !== null && input.files && input.files.length > 0) {
-				uploadStore.addFiles(entriesFromFiles(input.files), destination);
-			}
+			if (input.files && input.files.length > 0) start(entriesFromFiles(input.files));
 			// Reset so the same file can be picked again
 			input.value = '';
 		},
-		/** Uploads files dropped from another app; reading a dropped folder is async. */
-		uploadDropped(dataTransfer: DataTransfer, destination: string) {
+		handleDragOver(event: DragEvent) {
+			event.preventDefault();
+			event.stopPropagation();
+			if (!data.isAtRoot) isDragOver = true;
+		},
+		handleDragLeave(event: DragEvent) {
+			event.preventDefault();
+			event.stopPropagation();
+			isDragOver = false;
+		},
+		handleDrop(event: DragEvent) {
+			event.preventDefault();
+			event.stopPropagation();
+			isDragOver = false;
+			const dataTransfer = event.dataTransfer;
+			if (!dataTransfer) return;
+			// Reading a dropped folder is async; upload to where it was dropped.
+			const destination = uploadDestination();
+			if (destination === null) return;
 			entriesFromDataTransfer(dataTransfer)
 				.then((entries) => {
-					if (entries.length > 0) uploadStore.addFiles(entries, destination);
+					if (entries.length > 0) start(entries, destination);
 				})
 				.catch(() => toastStore.error('Unable to read the dropped items'));
 		}

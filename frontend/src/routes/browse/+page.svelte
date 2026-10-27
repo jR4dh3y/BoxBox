@@ -36,183 +36,30 @@
 	const selectedBytes = $derived(selectedFileBytes(data.displayItems, selection.paths));
 	// Uploads keep running without their panel, so closing the error only hides the message.
 	let uploadErrorDismissed = $state(false);
-	let launchTabId = $state('');
-	let detailsOpen = $state(false);
-	let shortcutsOpen = $state(false);
-	let toolbarRef = $state<ReturnType<typeof ToolbarComponent>>();
 
-	const tabs = useBrowseTabs({
-		initialLocation: launchState.location,
-		onActiveLocationChange(snapshot) {
-			if (pendingSelectPath && tabs.activeTabId !== launchTabId) pendingSelectPath = null;
-			syncBrowseUrl(snapshot, pendingSelectPath);
-		}
-	});
-	launchTabId = tabs.activeTabId;
-
-	const activePane = $derived(tabs.activePane);
-	const activeLocation = $derived(activePane?.location);
-	const activeRuntime = $derived(activePane ? (paneRuntimes[activePane.id] ?? null) : null);
-	const sidebarDrop = createDropZone(() => activeRuntime?.drop);
-	const settings = $derived(settingsStore.current);
-
-	function openInNewTab(path: string): void {
-		if (!activeLocation) return;
-		tabs.newTab({ ...activeLocation.snapshot, page: 'files', path, searchQuery: '' });
-		focusActivePane();
+	function closeDialogs() {
+		actions.closeCreate();
+		actions.closeRename();
+		actions.closeDelete();
+		actions.closeProperties();
 	}
-
-	function closeDetails(): void {
-		detailsOpen = false;
-		void tick().then(() => toolbarRef?.focusDetailsToggle());
-	}
-
-	afterNavigate(({ type }) => {
-		if (type === 'popstate') {
-			untrack(() => activeLocation?.restore(parseBrowseLocation(page.url)));
-		}
-	});
-
-	const onFolderHover = createHoverIntent((path) => {
-		if (path) activeRuntime?.data.prefetchDirectory(path);
-	}, CONFIG.query.prefetchHoverDelayMs);
-
+	// Overlays load on first use, so they stay out of the browse page's first download.
+	const hasOpenDialog = $derived(
+		actions.createDialog.open ||
+			actions.renameDialog.open ||
+			actions.deleteDialog.open ||
+			actions.propertiesDialog.open
+	);
+	const onFolderHover = createHoverIntent(
+		data.prefetchDirectory,
+		CONFIG.query.prefetchHoverDelayMs
+	);
+	// A removed row never fires pointerleave, so drop a pending prefetch on navigation and teardown.
 	$effect(() => {
-		void activePane?.id;
-		void activeLocation?.path;
+		void location.path;
 		return () => onFolderHover(null);
 	});
-
-	function syncBrowseUrl(snapshot: BrowseLocationSnapshot, selectPath: string | null): void {
-		const url = new URL(page.url.href);
-		if (snapshot.page !== 'files') url.searchParams.set('page', snapshot.page);
-		else url.searchParams.delete('page');
-		if (snapshot.path) url.searchParams.set('path', snapshot.path);
-		else url.searchParams.delete('path');
-		if (snapshot.searchQuery) url.searchParams.set('q', snapshot.searchQuery);
-		else url.searchParams.delete('q');
-		url.searchParams.set('sort', snapshot.sortBy);
-		url.searchParams.set('dir', snapshot.sortDir);
-		url.searchParams.set('view', snapshot.viewMode);
-		if (selectPath) url.searchParams.set('select', selectPath);
-		else url.searchParams.delete('select');
-		if (url.href === page.url.href) return;
-
-		void goto(`${resolve('browse')}${url.search}${url.hash}`, {
-			replace:
-				(page.url.searchParams.get('path') ?? '') === snapshot.path &&
-				(page.url.searchParams.get('page') ?? 'files') === snapshot.page,
-			reset: false,
-			state: page.state
-		});
-	}
-
-	function setPaneRuntime(paneId: string, runtime: BrowsePaneRuntime | null): void {
-		if (runtime) {
-			paneRuntimes = { ...paneRuntimes, [paneId]: runtime };
-			return;
-		}
-
-		if (!(paneId in paneRuntimes)) return;
-		const next = { ...paneRuntimes };
-		delete next[paneId];
-		paneRuntimes = next;
-	}
-
-	function handleInitialSelectHandled(path: string): void {
-		if (untrack(() => pendingSelectPath) !== path) return;
-		pendingSelectPath = null;
-		if (activePane) syncBrowseUrl(activePane.location.snapshot, null);
-	}
-
-	function focusActivePane(): void {
-		const paneId = tabs.activePane?.id;
-		if (!paneId) return;
-		void tick().then(() => document.getElementById(`browse-pane-${paneId}`)?.focus());
-	}
-
-	/** A file dropped outside a drop target would replace the app with the file. */
-	function refuseStrayFileDrop(event: DragEvent): void {
-		if (event.defaultPrevented || fileDragKind(event.dataTransfer) === null) return;
-		event.preventDefault();
-		if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
-	}
-
-	function handleKeydown(event: KeyboardEvent): void {
-		if (event.defaultPrevented || shortcutsOpen) return;
-		if (event.key === 'F1' && !activeRuntime?.hasOpenDialog) {
-			event.preventDefault();
-			shortcutsOpen = true;
-			return;
-		}
-		const workspace = document.getElementById('browse-workspace');
-		const insideWorkspace =
-			event.target instanceof Node && workspace?.contains(event.target) === true;
-		if (!insideWorkspace && event.target !== document.body && !activeRuntime?.hasOpenDialog) return;
-
-		const shortcut = getBrowseShortcut({
-			key: event.key,
-			ctrlKey: event.ctrlKey,
-			metaKey: event.metaKey,
-			shiftKey: event.shiftKey,
-			altKey: event.altKey,
-			editable: isTextEntryTarget(event.target)
-		});
-		if (!shortcut || (shortcut === 'open-servers' && !desktop)) return;
-		event.preventDefault();
-		if (activeRuntime?.hasOpenDialog) return;
-
-		switch (shortcut) {
-			case 'new-tab':
-				tabs.newTab();
-				focusActivePane();
-				break;
-			case 'close-tab':
-				tabs.closeTab();
-				focusActivePane();
-				break;
-			case 'next-tab':
-				tabs.cycleTab(1);
-				focusActivePane();
-				break;
-			case 'previous-tab':
-				tabs.cycleTab(-1);
-				focusActivePane();
-				break;
-			case 'toggle-split':
-				tabs.toggleSplit();
-				focusActivePane();
-				break;
-			case 'back':
-				activeLocation?.back();
-				break;
-			case 'forward':
-				activeLocation?.forward();
-				break;
-			case 'up':
-				activeLocation?.up();
-				break;
-			case 'refresh':
-				activeRuntime?.data.reload();
-				break;
-			case 'toggle-hidden':
-				settingsStore.toggleHiddenFiles();
-				break;
-			case 'focus-location':
-				toolbarRef?.focusLocation();
-				break;
-			case 'open-servers':
-				if (desktop) activeLocation?.openPage('servers');
-				break;
-		}
-	}
 </script>
-
-<svelte:window
-	onkeydown={handleKeydown}
-	ondragover={refuseStrayFileDrop}
-	ondrop={refuseStrayFileDrop}
-/>
 
 <svelte:head>
 	<title>BoxBox</title>
@@ -221,12 +68,9 @@
 <div class="browse-shell flex h-screen w-full overflow-hidden bg-surface-primary">
 	<!-- Sidebar -->
 	<Sidebar
-		currentPath={activeLocation?.path ?? ''}
-		currentPage={activeLocation?.page ?? 'files'}
-		onOpenPage={(page) => activeLocation?.openPage(page)}
-		dropTarget={sidebarDrop}
-		roots={activeRuntime?.data.roots ?? []}
-		onNavigate={(path) => activeLocation?.navigate(path)}
+		currentPath={location.path}
+		roots={data.roots}
+		onNavigate={location.navigate}
 		{onFolderHover}
 		open={sidebarOpen}
 		onClose={() => (sidebarOpen = false)}

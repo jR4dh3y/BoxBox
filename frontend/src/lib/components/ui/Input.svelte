@@ -46,7 +46,6 @@
 	{id}
 	{name}
 	{autocomplete}
-	aria-label={ariaLabel}
 	{oninput}
 	{onkeydown}
 	onfocus={handleFocus}

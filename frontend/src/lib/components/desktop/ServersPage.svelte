@@ -66,9 +66,9 @@
 		>
 			{#if controller.editor.kind !== 'pair'}
 				<div class="w-48 shrink-0">
+					<label class="sr-only" for="server-name">Name</label>
 					<Input
 						id="server-name"
-						aria-label="Name"
 						placeholder="Name"
 						required
 						autocomplete="off"
@@ -77,8 +77,9 @@
 				</div>
 				{#if controller.editor.kind === 'create'}
 					<div class="min-w-0 flex-1">
+						<label class="sr-only" for="server-url">Server URL</label>
 						<Input
-							aria-label="Server URL"
+							id="server-url"
 							placeholder="https://files.example.com"
 							required
 							autocomplete="off"
@@ -89,9 +90,9 @@
 			{/if}
 			{#if controller.editor.kind !== 'update'}
 				<div class="w-40 shrink-0">
+					<label class="sr-only" for="server-code">Single-use pairing code</label>
 					<Input
 						id="server-code"
-						aria-label="Single-use pairing code"
 						placeholder="XXXX-XXXX"
 						required
 						autocomplete="off"

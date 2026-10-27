@@ -1,7 +1,7 @@
+import { toastStore } from '#lib/stores/toast.svelte.js';
 import { api, apiRequest } from './client';
 import { array, boolean, isRecord, record, string } from './parse';
 import type { UserSettings } from '#lib/stores/settings.svelte.js';
-import { normalizeFileOpenBehavior } from '#lib/utils/fileOpenBehavior.js';
 import { normalizeBackgroundImageMode } from '#lib/utils/wallpaper.js';
 
 function choice<T extends string>(value: unknown, choices: T[], fallback: T): T {
@@ -16,7 +16,7 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 	const saved = record(value, 'desktop preferences');
 	const flag = (key: keyof UserSettings) =>
 		saved[key] === undefined ? boolean(defaults[key], key) : boolean(saved[key], key);
-	const nullable = (key: 'accentColor' | 'backgroundImage') =>
+	const nullable = (key: 'accentColor' | 'backgroundImage' | 'backgroundImageName') =>
 		saved[key] === undefined ? defaults[key] : saved[key] === null ? null : string(saved[key], key);
 	return {
 		showHiddenFiles: flag('showHiddenFiles'),
@@ -30,10 +30,17 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 		defaultSortDir: choice(saved.defaultSortDir, ['asc', 'desc'], defaults.defaultSortDir),
 		defaultViewMode: choice(saved.defaultViewMode, ['list', 'grid'], defaults.defaultViewMode),
 		accentColor: nullable('accentColor'),
+		accentColorSource: choice(
+			saved.accentColorSource,
+			['manual', 'wallpaper'],
+			defaults.accentColorSource
+		),
 		backgroundImage: nullable('backgroundImage'),
+		backgroundImageName: nullable('backgroundImageName'),
 		backgroundImageMode: normalizeBackgroundImageMode(saved.backgroundImageMode),
 		frostedGlass: flag('frostedGlass'),
-		fileOpenBehavior: normalizeFileOpenBehavior(saved.fileOpenBehavior, saved.previewOnSingleClick),
+		previewOnSingleClick: flag('previewOnSingleClick'),
+		selectionCheckboxes: flag('selectionCheckboxes'),
 		compactMode: flag('compactMode'),
 		driveNameOverrides: isRecord(saved.driveNameOverrides)
 			? Object.fromEntries(
@@ -74,4 +81,71 @@ export async function saveDesktopWallpaper(image: Blob, signal: AbortSignal): Pr
 	const id = string(record(value, 'desktop wallpaper').sha256, 'wallpaper hash');
 	if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Invalid desktop wallpaper reference');
 	return `/api/v1/desktop/wallpaper/${id}`;
+}
+
+/** Move legacy renderer images into desktop storage before preferences are persisted. */
+export async function migrateDesktopWallpaper(
+	settings: UserSettings,
+	signal: AbortSignal
+): Promise<UserSettings> {
+	const { normalizeBackgroundImage } = await import('#lib/utils/appearance.js');
+	const {
+		isInlineWallpaperDataUrl,
+		isLocalWallpaperReference,
+		dataUrlToBlob,
+		getLocalWallpaperBlob
+	} = await import('#lib/utils/wallpaperStorage.js');
+	const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
+	if (
+		!backgroundImage ||
+		(!isInlineWallpaperDataUrl(backgroundImage) && !isLocalWallpaperReference(backgroundImage))
+	)
+		return settings;
+	const image = isInlineWallpaperDataUrl(backgroundImage)
+		? dataUrlToBlob(backgroundImage)
+		: await getLocalWallpaperBlob(backgroundImage);
+	if (!image) throw new Error('The saved desktop wallpaper could not be read.');
+	return { ...settings, backgroundImage: await saveDesktopWallpaper(image, signal) };
+}
+
+/** Desktop persistence shares the settings session's cancellation lifetime. */
+export class DesktopPreferences {
+	private loaded = false;
+	private saving: Promise<void> = Promise.resolve();
+
+	constructor(private readonly signal: AbortSignal) {}
+
+	async load(defaults: UserSettings, fallback: UserSettings): Promise<UserSettings> {
+		try {
+			const saved = (await loadDesktopPreferences(defaults)) ?? fallback;
+			this.signal.throwIfAborted();
+			const migrated = await migrateDesktopWallpaper(saved, this.signal);
+			this.signal.throwIfAborted();
+			this.loaded = true;
+			return migrated;
+		} catch {
+			if (!this.signal.aborted)
+				toastStore.error(
+					'Desktop preferences could not load. Reload to retry. Changes will not survive restart.'
+				);
+			return fallback;
+		}
+	}
+
+	save(settings: UserSettings): void {
+		if (!this.loaded) return;
+		this.saving = this.saving
+			.catch(() => {})
+			.then(async () => {
+				this.signal.throwIfAborted();
+				await saveDesktopPreferences(settings);
+			});
+		void this.saving.catch(() => {
+			if (!this.signal.aborted) toastStore.error('Desktop preferences could not be saved.');
+		});
+	}
+
+	flush(): Promise<void> {
+		return this.saving;
+	}
 }

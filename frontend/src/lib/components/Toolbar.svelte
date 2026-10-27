@@ -10,8 +10,6 @@
 
 	interface Props {
 		pathSegments?: string[];
-		roots?: MountPoint[];
-		pageTitle?: string | null;
 		canGoBack?: boolean;
 		canGoForward?: boolean;
 		onBack?: () => void;
@@ -30,17 +28,10 @@
 		onSearchInput?: (query: string) => void;
 		onSearchClear?: () => void;
 		includeHiddenSuggestions?: boolean;
-		detailsOpen?: boolean;
-		onToggleDetails?: () => void;
-		onShortcuts?: () => void;
-		splitOpen?: boolean;
-		onToggleSplit?: () => void;
 	}
 
 	let {
 		pathSegments = [],
-		roots = [],
-		pageTitle = null,
 		canGoBack = false,
 		canGoForward = false,
 		onBack,
@@ -57,12 +48,7 @@
 		searchLoading = false,
 		onSearchInput,
 		onSearchClear,
-		includeHiddenSuggestions = false,
-		detailsOpen = false,
-		onToggleDetails,
-		onShortcuts,
-		splitOpen = false,
-		onToggleSplit
+		includeHiddenSuggestions = false
 	}: Props = $props();
 
 	let addMenu = $state<{ x: number; y: number } | null>(null);
@@ -104,19 +90,11 @@
 		</button>
 	</div>
 
-	<EditablePathBar
-		bind:this={pathBar}
-		{pathSegments}
-		{roots}
-		{pageTitle}
-		{onNavigate}
-		{includeHiddenSuggestions}
-	/>
+	<EditablePathBar {pathSegments} {onNavigate} {includeHiddenSuggestions} />
 
 	{#if showSearch}
 		<div class="w-48 min-w-28 shrink md:w-64 lg:w-96">
 			<SearchBar
-				bind:this={searchBar}
 				value={searchValue}
 				onInput={onSearchInput}
 				onClear={onSearchClear}
@@ -146,40 +124,6 @@
 		<button type="button" class={navBtnClass} onclick={onSettings} title="Settings">
 			<Settings size={16} />
 		</button>
-		{#if onShortcuts}
-			<button
-				type="button"
-				class={navBtnClass}
-				onclick={onShortcuts}
-				title="Keyboard shortcuts (F1)"
-				aria-label="Keyboard shortcuts"><Keyboard size={16} /></button
-			>
-		{/if}
-		{#if onToggleSplit}
-			<button
-				type="button"
-				class={navBtnClass}
-				aria-label="Split view"
-				aria-pressed={splitOpen}
-				onclick={onToggleSplit}
-				title="Split view (F3)"
-			>
-				<Columns2 size={16} />
-			</button>
-		{/if}
-		{#if onToggleDetails}
-			<button
-				bind:this={detailsToggle}
-				type="button"
-				class={navBtnClass}
-				aria-label="Details"
-				aria-pressed={detailsOpen}
-				onclick={onToggleDetails}
-				title="Selection details (Alt+Enter)"
-			>
-				<PanelRight size={16} />
-			</button>
-		{/if}
 	</div>
 </div>
 

@@ -1,5 +1,5 @@
 /**
- * User preferences use browser storage on the web and private backend storage on desktop.
+ * User preferences, kept in localStorage; drive names are also stored on the server
  */
 
 import { settingsStorage, storage } from '#lib/utils/storage.js';
@@ -34,7 +34,7 @@ export interface UserSettings {
 	backgroundImageName: string | null;
 	backgroundImageMode: BackgroundImageMode;
 	frostedGlass: boolean;
-	fileOpenBehavior: FileOpenBehavior;
+	previewOnSingleClick: boolean;
 	compactMode: boolean;
 	/** Rows show a checkbox on hover, so several items can be picked without modifier keys. */
 	selectionCheckboxes: boolean;
@@ -60,7 +60,7 @@ const defaultSettings: UserSettings = {
 	backgroundImageName: null,
 	backgroundImageMode: DEFAULT_BACKGROUND_IMAGE_MODE,
 	frostedGlass: false,
-	fileOpenBehavior: 'double-click',
+	previewOnSingleClick: false,
 	compactMode: false,
 	selectionCheckboxes: true,
 	driveNameOverrides: {},
@@ -128,14 +128,6 @@ class SettingsStore {
 		} catch {
 			// Initialization should not fail auth because local preference persistence is full.
 		}
-		if (this.desktopLoaded) {
-			this.set(this.current);
-			await this.flush().catch(() => {});
-		}
-	}
-
-	flush(): Promise<void> {
-		return this.saving;
 	}
 
 	set(settings: UserSettings, wallpaperChanged = false): string | undefined {
@@ -190,10 +182,6 @@ class SettingsStore {
 		const rest = { ...this.current.driveNameOverrides };
 		delete rest[originalName];
 		this.set({ ...this.current, driveNameOverrides: rest });
-	}
-
-	toggleHiddenFiles(): void {
-		this.set({ ...this.current, showHiddenFiles: !this.current.showHiddenFiles });
 	}
 
 	pinFavoriteFolder(folder: FavoriteFolder): void {

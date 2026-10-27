@@ -35,7 +35,7 @@ func (h *FileHandler) RegisterRoutes(r chi.Router) {
 	r.Delete("/*", h.Delete)
 }
 
-// ListPath returns a directory listing without the polymorphic file-info lookup.
+// ListPath returns a whole directory without the polymorphic file-info lookup.
 func (h *FileHandler) ListPath(w http.ResponseWriter, r *http.Request) {
 	path := chi.URLParam(r, "*")
 	if path == "" {
@@ -119,7 +119,6 @@ func (h *FileHandler) GetPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse query parameters for listing options
 	// Check if this is a directory or file
 	info, err := h.fileService.GetInfo(r.Context(), path)
 	if err != nil {

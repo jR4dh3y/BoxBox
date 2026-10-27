@@ -10,7 +10,7 @@ import {
 	shouldOpenOnDoubleClick,
 	type FileSelectionGesture
 } from './fileInteractions';
-import { moveFileFocus } from './fileShortcuts';
+import { fileNavigationIndex } from './fileShortcuts';
 import { isDragged, startFileDrag, type FileDropTarget } from './fileDrag';
 
 export interface FileCollectionProps {
@@ -159,6 +159,7 @@ export function useFileCollection(props: () => FileCollectionProps, view: FileCo
 			if (isDragged(item.path)) target.refuse(event);
 			else if (item.isDir) target.drop(event, item.path);
 		},
+		keydown,
 		itemContextMenu(item: FileInfo, event: MouseEvent): void {
 			const { items, selectedPaths, onSelectionChange } = props();
 			if (!selectedPaths.has(item.path)) {

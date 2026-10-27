@@ -3,7 +3,6 @@
 	import { formatFileDate, formatFileSize } from '#lib/utils/format.js';
 	import { getFileTypeDescription } from '#lib/utils/fileTypes.js';
 	import { Button, Input, Modal } from '#lib/components/ui/index.js';
-	import type { BrowseOperation } from '#lib/browse/actions.svelte.js';
 
 	type CreateDialog = { open: boolean; type: 'file' | 'directory'; name: string };
 	import type { RenameDialog } from '#lib/browse/actions.svelte.js';
@@ -14,8 +13,7 @@
 		createDialog,
 		renameDialog,
 		deleteDialog,
-		openWithFile = null,
-		onCloseOpenWith,
+		propertiesDialog,
 		onCreateNameChange,
 		onRenameNameChange,
 		onCreateConfirm,
@@ -24,13 +22,12 @@
 		onCloseCreate,
 		onCloseRename,
 		onCloseDelete,
-		operation = null
+		onCloseProperties
 	}: {
 		createDialog: CreateDialog;
 		renameDialog: RenameDialog;
 		deleteDialog: DeleteDialog;
-		openWithFile?: FileInfo | null;
-		onCloseOpenWith?: () => void;
+		propertiesDialog: PropertiesDialog;
 		onCreateNameChange: (name: string) => void;
 		onRenameNameChange: (name: string) => void;
 		onCreateConfirm: () => void;
@@ -39,28 +36,21 @@
 		onCloseCreate: () => void;
 		onCloseRename: () => void;
 		onCloseDelete: () => void;
-		operation?: BrowseOperation;
+		onCloseProperties: () => void;
 	} = $props();
 
 	function inputValue(event: Event): string {
-		return event.target instanceof HTMLInputElement ? event.target.value : '';
+		return (event.target as HTMLInputElement).value;
 	}
 
 	const deleteCount = $derived(deleteDialog.items.length);
 	const deleteFirst = $derived(deleteDialog.items[0]);
 </script>
 
-{#if openWithFile}
-	{#await import('#lib/components/desktop/OpenWithDialog.svelte') then { default: OpenWithDialog }}
-		<OpenWithDialog open={true} path={openWithFile.path} onclose={() => onCloseOpenWith?.()} />
-	{/await}
-{/if}
-
 <Modal
 	open={createDialog.open}
 	title={createDialog.type === 'file' ? 'New file' : 'New folder'}
 	onclose={onCloseCreate}
-	busy={operation === 'creating'}
 >
 	<Input
 		value={createDialog.name}

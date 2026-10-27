@@ -416,7 +416,6 @@ func (s *jobService) revalidateJobPaths(job *model.Job) error {
 			return err
 		}
 	}
-	job.ResolvedSourcePath = source
 
 	var destination string
 	if destinationPath != "" {
@@ -428,6 +427,11 @@ func (s *jobService) revalidateJobPaths(job *model.Job) error {
 		if err := s.mounts.requireWritablePath(destination, true); err != nil {
 			return err
 		}
+	}
+
+	s.jobMu.Lock()
+	job.ResolvedSourcePath = source
+	if destinationPath != "" {
 		job.ResolvedDestPath = destination
 	}
 	s.jobMu.Unlock()

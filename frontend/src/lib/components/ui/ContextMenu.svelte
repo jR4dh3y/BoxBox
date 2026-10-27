@@ -1,22 +1,22 @@
-<script module lang="ts">
-	export type ContextMenuItem<Id extends string = string> =
-		| 'separator'
-		| {
-				id: Id;
-				label: string;
-				icon?: typeof import('lucide-svelte').Copy;
-				disabled?: boolean;
-				shortcut?: string;
-		  };
-</script>
+<script lang="ts">
+	/**
+	 * Context Menu component - reusable right-click menu
+	 * Follows UI component patterns from contributing guidelines
+	 */
+	export interface ContextMenuItem {
+		id: string;
+		label: string;
+		icon?: typeof import('lucide-svelte').Copy;
+		disabled?: boolean;
+		separator?: boolean;
+		shortcut?: string;
+	}
 
-<script lang="ts" generics="Id extends string">
-	/** Reusable right-click menu. */
 	interface Props {
-		items: ContextMenuItem<Id>[];
+		items: ContextMenuItem[];
 		x: number;
 		y: number;
-		onSelect: (id: Id) => void;
+		onSelect: (id: string) => void;
 		onClose: () => void;
 	}
 
@@ -46,8 +46,8 @@
 		return { x: adjustedX, y: adjustedY };
 	});
 
-	function handleItemClick(item: Exclude<ContextMenuItem<Id>, 'separator'>) {
-		if (item.disabled) return;
+	function handleItemClick(item: ContextMenuItem) {
+		if (item.disabled || item.separator) return;
 		onSelect(item.id);
 		onClose();
 	}
@@ -83,8 +83,8 @@
 		style="left: {adjustedPosition.x}px; top: {adjustedPosition.y}px;"
 		role="menu"
 	>
-		{#each items as item, index (item === 'separator' ? `separator-${index}` : item.id)}
-			{#if item === 'separator'}
+		{#each items as item (item.id)}
+			{#if item.separator}
 				<div class="mx-2 my-1 h-px bg-border-secondary"></div>
 			{:else}
 				<button

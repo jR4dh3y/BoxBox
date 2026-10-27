@@ -3,6 +3,18 @@
  */
 
 import { api, buildUrl } from './client';
+import { array, boolean, record, string, optionalString } from './parse';
+import {
+	number,
+	parseRemotePath,
+	pathEndpoint,
+	qualifyPath,
+	remoteSource,
+	sameSource,
+	sourceEndpoint,
+	type RemoteServer,
+	type PathReference
+} from './remotePaths';
 import { parseDirectory } from './directory';
 import { tokenStorage } from '#lib/utils/storage.js';
 
@@ -19,9 +31,7 @@ export interface FileInfo {
 	mimeType?: string;
 }
 
-/**
- * Full file list response
- */
+/** Every entry of one directory, hidden ones included, in no particular order. */
 export interface FileList {
 	path: string;
 	items: FileInfo[];
@@ -126,17 +136,6 @@ function parseFile(value: unknown, source: PathReference): FileInfo {
 	};
 }
 
-function parseList(value: unknown, source: PathReference): FileList {
-	const list = record(value, 'file list');
-	return {
-		path: qualifyPath(source, string(list.path, 'list path')),
-		items: array(list.items, 'files').map((file) => parseFile(file, source)),
-		totalCount: number(list.totalCount, 'total count'),
-		page: number(list.page, 'page'),
-		pageSize: number(list.pageSize, 'page size')
-	};
-}
-
 function parseRoots(value: unknown, source: PathReference, serverName?: string): MountPoint[] {
 	return array(record(value, 'roots response').roots, 'roots').map((value) => {
 		const root = record(value, 'root');
@@ -204,12 +203,18 @@ export async function getDriveStats(
 }
 
 function listEndpoint(path: string): string {
-	return `/files/list/${encodeRoutePath(path)}`;
+	return pathEndpoint(path, '/files/list');
 }
 
 /** Every entry of a directory in one response. The client sorts and filters. */
 export async function listDirectory(path: string, signal?: AbortSignal): Promise<FileList> {
-	return parseDirectory(await api.get<unknown>(listEndpoint(path), undefined, signal));
+	const listing = parseDirectory(await api.get<unknown>(listEndpoint(path), undefined, signal));
+	const source = parseRemotePath(path);
+	if (source.kind === 'local') return listing;
+	return {
+		path: qualifyPath(source, listing.path),
+		items: listing.items.map((item) => ({ ...item, path: qualifyPath(source, item.path) }))
+	};
 }
 
 /** The URL `listDirectory` requests. static/early-fetch.js must start the same one. */
@@ -222,7 +227,7 @@ export function directoryUrl(path: string): string {
  * Returns FileInfo
  */
 export async function getFileInfo(path: string): Promise<FileInfo> {
-	return api.get<FileInfo>(`/files/${encodeRoutePath(path)}`);
+	return parseFile(await api.get<unknown>(pathEndpoint(path, '/files')), parseRemotePath(path));
 }
 
 /**

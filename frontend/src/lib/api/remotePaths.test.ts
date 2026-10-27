@@ -16,7 +16,6 @@ import {
 	getDownloadUrl,
 	getDriveStats,
 	getFileInfo,
-	getPath,
 	getPreviewUrl,
 	getThumbnailUrl,
 	listDirectory,
@@ -227,10 +226,15 @@ describe('transport facade at HTTP boundary', () => {
 				if (endpoint.startsWith('/files/list/'))
 					return Response.json({
 						path: 'media',
-						items: [file],
-						totalCount: 1,
-						page: 1,
-						pageSize: 50
+						items: [
+							{
+								name: file.name,
+								size: file.size,
+								isDir: file.isDir,
+								modTime: file.modTime,
+								permissions: file.permissions
+							}
+						]
 					});
 				if (endpoint.startsWith('/files/'))
 					return Response.json(
@@ -372,11 +376,16 @@ describe('transport facade at HTTP boundary', () => {
 	});
 
 	test('qualifies listing/stat/search/create results and strips only source prefixes from requests', async () => {
-		assert.equal((await getPath(ref('media/a.txt'))).path, ref('media/a.txt'));
+		assert.equal((await getFileInfo(ref('media/a.txt'))).path, ref('media/a.txt'));
 		assert.equal((await getFileInfo('media/a.txt')).path, 'media/a.txt');
-		const list = await listDirectory(ref('media'), { includeHidden: true, page: 2 });
+		const list = await listDirectory(ref('media'));
 		assert.equal(list.path, ref('media'));
 		assert.equal(list.items[0].path, ref('media/a.txt'));
+		assert.equal(
+			requests.at(-1)?.query.size,
+			0,
+			'whole-folder listing sends no pagination or filtering'
+		);
 		assert.equal(new URL(directoryUrl(ref('media'))).pathname, `${proxy}/files/list/media`);
 		assert.equal((await createDirectory(ref('media'), 'folder')).path, ref('media/a.txt'));
 		assert.equal((await createFile(ref('media'), 'a.txt', 'abc')).path, ref('media/a.txt'));

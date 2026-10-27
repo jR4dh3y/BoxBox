@@ -189,25 +189,11 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 		}
 	}
 
-	var connectService *service.ConnectService
-	if !devMode {
-		connectService, err = service.NewConnectService(fs, authService, service.ConnectServiceConfig{DataDir: cfg.DataDir, Users: cfg.Users})
-		if err != nil {
-			return nil, nil, nil, nil, nil, err
-		}
+	fileConfig := service.FileServiceConfig{MountPoints: mountPoints}
+	if desktopMode {
+		fileConfig.DirectoryEntryLimit = -1
 	}
-
-	var connectService *service.ConnectService
-	if !devMode {
-		connectService, err = service.NewConnectService(fs, authService, service.ConnectServiceConfig{DataDir: cfg.DataDir, Users: cfg.Users})
-		if err != nil {
-			return nil, nil, nil, nil, nil, err
-		}
-	}
-
-	fileService := service.NewFileService(fs, service.FileServiceConfig{
-		MountPoints: mountPoints,
-	})
+	fileService := service.NewFileService(fs, fileConfig)
 
 	searchService := service.NewSearchService(fs, service.SearchServiceConfig{
 		MountPoints: mountPoints,
@@ -255,7 +241,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 	shareHandler := handler.NewShareHandler(shareService, settingsService, cfg.MaxUploadMB)
 
 	// Create router
-	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints, connectService)
+	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints, desktopMode, connectService)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -290,6 +276,7 @@ func createRouter(
 	settingsHandler *handler.SettingsHandler,
 	shareHandler *handler.ShareHandler,
 	mountPoints []model.MountPoint,
+	desktopMode bool,
 	connectService *service.ConnectService,
 ) chi.Router {
 	r := chi.NewRouter()
@@ -326,30 +313,6 @@ func createRouter(
 			connectHandler := handler.NewConnectHandler(connectService)
 			r.Route("/connect", func(r chi.Router) {
 				connectHandler.RegisterPublicRoutes(r, middleware.RateLimit(0.5, cfg.TrustedProxies...))
-				r.Group(func(r chi.Router) {
-					r.Use(middleware.JWTAuth(authService, connectService))
-					r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
-					connectHandler.RegisterRoutes(r)
-				})
-			})
-		}
-
-		if connectService != nil {
-			connectHandler := handler.NewConnectHandler(connectService)
-			r.Route("/connect", func(r chi.Router) {
-				connectHandler.RegisterPublicRoutes(r, middleware.RateLimit(0.5, cfg.TrustedProxies...))
-				r.Group(func(r chi.Router) {
-					r.Use(middleware.JWTAuth(authService, connectService))
-					r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
-					connectHandler.RegisterRoutes(r)
-				})
-			})
-		}
-
-		if connectService != nil {
-			connectHandler := handler.NewConnectHandler(connectService)
-			r.Route("/connect", func(r chi.Router) {
-				connectHandler.RegisterPublicRoutes(r)
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.JWTAuth(authService, connectService))
 					r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))

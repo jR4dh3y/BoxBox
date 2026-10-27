@@ -12,7 +12,7 @@ import {
 import { ApiRequestError, AuthSessionClosedError } from '#lib/api/client.js';
 import { CONFIG } from '#lib/config.js';
 import { settingsStore } from './settings.svelte';
-import { resetShareWallpaperLoginSync } from '#lib/utils/wallpaperSession.js';
+import { resetShareWallpaperLoginSync } from '#lib/utils/wallpaperSync.js';
 
 type AuthAlert =
 	| { kind: 'transient'; source: 'restore' | 'refresh' | 'logout'; message: string }

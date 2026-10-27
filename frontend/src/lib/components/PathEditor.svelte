@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Folder, Home, Loader2 } from 'lucide-svelte';
 	import { onDestroy, onMount, tick } from 'svelte';
-	import { listDirectory, listRoots } from '#lib/api/files.js';
-	import { sortFiles } from '#lib/browse/sortFiles.js';
+	import { listDirectory, type MountPoint } from '#lib/api/files.js';
+	import { suggestedDirectories } from '#lib/browse/pathSuggestions.js';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import { parseRemotePath } from '#lib/api/remotePaths.js';
 	import { toastStore } from '#lib/stores/toast.svelte.js';
@@ -229,12 +229,7 @@
 		prefix: string
 	): Promise<PathSuggestion[]> {
 		const response = await listDirectory(parentPath);
-		const includeHidden = includeHiddenSuggestions || prefix.startsWith('.');
-		const directories = sortFiles(
-			response.items.filter((item) => item.isDir && (includeHidden || !item.name.startsWith('.'))),
-			'name',
-			'asc'
-		);
+		const directories = suggestedDirectories(response.items, prefix, includeHiddenSuggestions);
 
 		return filterSuggestions(directories, parentPath, prefix);
 	}

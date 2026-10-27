@@ -17,3 +17,12 @@ export function resetShareWallpaperLoginSync(): void {
 	controller = new AbortController();
 	loginStarted = false;
 }
+
+let queue: Promise<void> = Promise.resolve();
+
+/** Login restoration and explicit publication share one ordered session queue. */
+export function enqueueWallpaper(task: () => Promise<void>): Promise<void> {
+	const run = queue.then(task);
+	queue = run.catch(() => {});
+	return run;
+}
