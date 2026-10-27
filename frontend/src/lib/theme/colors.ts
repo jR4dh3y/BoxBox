@@ -2,6 +2,8 @@ import { normalizeAccentColor } from '#lib/utils/appearance.js';
 
 const THEME_COLOR_PROPERTIES = [
 	'--color-accent',
+	'--color-accent-base',
+	'--color-accent-icon',
 	'--color-accent-hover',
 	'--color-accent-muted',
 	'--color-accent-solid',
@@ -56,7 +58,11 @@ export function solidAccentColor(accent: string): string {
 	return '#000000';
 }
 
-export function applyAccentColor(accentColor: string | null): void {
+export function applyAccentColor(
+	accentColor: string | null,
+	textColor?: string,
+	iconColor?: string
+): void {
 	if (typeof document === 'undefined') return;
 
 	const color = normalizeAccentColor(accentColor);
@@ -69,9 +75,12 @@ export function applyAccentColor(accentColor: string | null): void {
 		return;
 	}
 
-	rootStyle.setProperty('--color-accent', color);
-	rootStyle.setProperty('--color-border-focus', color);
-	rootStyle.setProperty('--color-folder', color);
+	const ink = normalizeAccentColor(textColor ?? null) ?? color;
+	rootStyle.setProperty('--color-accent-base', color);
+	rootStyle.setProperty('--color-accent-icon', normalizeAccentColor(iconColor ?? null) ?? ink);
+	rootStyle.setProperty('--color-accent', ink);
+	rootStyle.setProperty('--color-border-focus', ink);
+	rootStyle.setProperty('--color-folder', ink);
 	rootStyle.setProperty('--color-accent-hover', mixColor(color, '#000000', 0.32));
 	const solid = solidAccentColor(color);
 	rootStyle.setProperty('--color-accent-solid', solid);

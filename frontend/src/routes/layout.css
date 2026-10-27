@@ -26,6 +26,8 @@
 
 	/* Accent colors */
 	--color-accent: #4a9eff;
+	--color-accent-base: #4a9eff;
+	--color-accent-icon: #4a9eff;
 	--color-accent-hover: #345580;
 	--color-accent-muted: #2d4a6f;
 	/* Filled controls: white text must stay readable on it, so it is darker than the accent. */
@@ -126,19 +128,21 @@ input[type='search']::-webkit-search-cancel-button {
 	position: absolute;
 	inset: 0;
 	content: '';
-	background: rgb(8 10 14 / 0.16);
+	background: rgb(8 10 14 / 0.1);
 }
 
 .app-shell[data-has-background='true'] {
-	--color-text-primary: #edf1f5;
-	--color-text-secondary: #d4dbe3;
-	--color-text-muted: #c1cbd6;
+	--color-text-primary: #f3f6fa;
+	--color-text-secondary: #e1e7ef;
+	--color-text-muted: #dfe7f1;
+	--color-selection: color-mix(in srgb, var(--color-accent-base) 22%, transparent);
+	--color-selection-hover: color-mix(in srgb, var(--color-accent-base) 28%, transparent);
 	background: var(--color-surface-primary);
 }
 
 .app-shell[data-has-background='true'] .browse-shell,
 .wallpaper-preview {
-	background-color: rgb(18 20 24 / 0.7);
+	background-color: rgb(18 20 24 / 0.68);
 }
 
 .app-shell[data-has-background='true'] .file-surface {
@@ -153,21 +157,53 @@ input[type='search']::-webkit-search-cancel-button {
 
 .app-shell[data-has-background='true'][data-frosted-glass='true'] .browse-shell,
 .wallpaper-preview[data-frosted-glass='true'] {
-	background-color: rgb(18 20 24 / 0.68);
+	background-color: rgb(18 20 24 / 0.64);
 }
 
 /* Blur the wallpaper once so every panel is frosted and the file content stays sharp. */
 .app-shell[data-has-background='true'][data-frosted-glass='true'] .app-personal-background {
-	filter: blur(16px) saturate(110%);
+	filter: blur(24px) saturate(145%);
 }
 
 .wallpaper-preview[data-frosted-glass='true'] {
-	-webkit-backdrop-filter: blur(16px) saturate(110%);
-	backdrop-filter: blur(16px) saturate(110%);
+	-webkit-backdrop-filter: blur(24px) saturate(145%);
+	backdrop-filter: blur(24px) saturate(145%);
 }
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
 	.wallpaper-preview[data-frosted-glass='true'] {
 		background-color: rgb(18 20 24 / 0.82);
 	}
+}
+
+/* Surface tokens apply to the browser, leaving content cards and dialogs intact. */
+.app-shell[data-has-background='true'] :where(.browse-chrome, .file-surface) {
+	--color-surface-secondary: rgb(255 255 255 / 0.045);
+	--color-surface-tertiary: rgb(255 255 255 / 0.075);
+	--color-surface-elevated: rgb(255 255 255 / 0.09);
+	--color-border-primary: rgb(255 255 255 / 0.1);
+	--color-border-secondary: rgb(255 255 255 / 0.05);
+}
+
+.app-shell[data-has-background='true']
+	.file-surface
+	:where([data-file-header='true'] th, div[data-file-header='true']) {
+	background-color: rgb(255 255 255 / 0.04);
+	-webkit-backdrop-filter: blur(16px);
+	backdrop-filter: blur(16px);
+}
+
+.app-shell[data-has-background='true'] .file-surface [data-file-header='true'] th:hover {
+	background-color: rgb(255 255 255 / 0.075);
+}
+
+.app-shell[data-has-background='true']
+	.file-surface
+	:where(.text-folder svg, [data-file-header] svg) {
+	color: var(--color-accent-icon);
+}
+
+.app-shell[data-has-background='true'][data-frosted-glass='true'][data-background-mode='cover']
+	.app-personal-background {
+	inset: -72px;
 }

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { argbFromHex, Hct } from '@material/material-color-utilities';
 import { normalizeAccentColorSource } from '#lib/utils/appearance.js';
 import { luminance, parseHexColor, solidAccentColor } from './colors.js';
-import { readableWallpaperAccent, wallpaperAccentFromPixels } from './wallpaperAccent.js';
+import { wallpaperPaletteFromPixels } from './wallpaperPalette.js';
+import { parseWallpaperPalette } from './wallpaperPaletteProtocol.js';
 
 function pixels(...groups: Array<{ color: [number, number, number, number]; count: number }>) {
 	return new Uint8ClampedArray(
@@ -12,21 +14,21 @@ function pixels(...groups: Array<{ color: [number, number, number, number]; coun
 
 describe('wallpaper accent', () => {
 	it('follows the dominant colored region rather than a small vivid detail', () => {
-		const color = wallpaperAccentFromPixels(
+		const palette = wallpaperPaletteFromPixels(
 			pixels(
 				{ color: [100, 140, 210, 255], count: 100 },
 				{ color: [255, 0, 0, 255], count: 5 },
 				{ color: [245, 245, 245, 255], count: 300 }
 			)
 		);
-		assert.ok(color);
-		const [red, green, blue] = parseHexColor(color);
-		assert.ok(blue > green && green > red);
+		assert.ok(palette);
+		const hue = Hct.fromInt(argbFromHex(palette.color)).hue;
+		assert.ok(hue > 230 && hue < 300);
 	});
 
 	it('ignores transparent pixels and does not invent a hue for a monochrome image', () => {
 		assert.equal(
-			wallpaperAccentFromPixels(
+			wallpaperPaletteFromPixels(
 				pixels(
 					{ color: [255, 0, 0, 0], count: 100 },
 					{ color: [255, 255, 255, 255], count: 100 },
@@ -36,16 +38,71 @@ describe('wallpaper accent', () => {
 			),
 			null
 		);
-		assert.equal(wallpaperAccentFromPixels(new Uint8ClampedArray()), null);
+		assert.equal(wallpaperPaletteFromPixels(new Uint8ClampedArray()), null);
 	});
 
-	it('keeps accent text and filled buttons readable for dark, saturated and pale palettes', () => {
-		for (const sample of ['#001133', '#d41428', '#00ff11', '#1d4ed8', '#f4e2b7', '#ffffff']) {
-			const accent = readableWallpaperAccent(sample);
-			assert.ok(
-				(luminance(parseHexColor(accent)) + 0.05) / (luminance([85, 85, 85]) + 0.05) >= 4.5
+	it('keeps controls colorful while giving text and filled buttons readable tones', () => {
+		for (const color of [
+			[30, 80, 180, 255],
+			[190, 50, 25, 255],
+			[40, 150, 60, 255],
+			[220, 180, 30, 255]
+		]) {
+			const palette = wallpaperPaletteFromPixels(
+				new Uint8ClampedArray(Array.from({ length: 100 }, () => color).flat())
 			);
-			assert.ok(1.05 / (luminance(parseHexColor(solidAccentColor(accent))) + 0.05) >= 4.5);
+			assert.ok(palette);
+			const base = Hct.fromInt(argbFromHex(palette.color));
+			assert.ok(base.chroma >= 30, `accent is colorful: ${palette.color}`);
+			assert.ok(Math.abs(base.tone - 65) < 1);
+			assert.ok(
+				(luminance(parseHexColor(palette.textColor)) + 0.05) /
+					(luminance([104, 104, 104]) + 0.05) >=
+					4.5
+			);
+			assert.ok(1.05 / (luminance(parseHexColor(solidAccentColor(palette.color))) + 0.05) >= 4.5);
+			assert.ok(
+				(luminance(parseHexColor(palette.iconColor)) + 0.05) /
+					(luminance([104, 104, 104]) + 0.05) >=
+					3
+			);
+			assert.notEqual(palette.color, palette.textColor);
+		}
+	});
+
+	it('validates the worker result at its boundary', () => {
+		assert.deepEqual(
+			parseWallpaperPalette({ color: '#3344aa', textColor: '#bbccff', iconColor: '#8899ee' }),
+			{
+				color: '#3344aa',
+				textColor: '#bbccff',
+				iconColor: '#8899ee'
+			}
+		);
+		for (const value of [
+			null,
+			[],
+			'blue',
+			{ color: 'url(example)', textColor: '#ffffff' },
+			{ color: '#123456' }
+		]) {
+			assert.equal(parseWallpaperPalette(value), null);
+		}
+	});
+
+	it('returns the same palette for an unchanged image', () => {
+		const gradient = new Uint8ClampedArray(
+			Array.from({ length: 400 }, (_, i) => [
+				40 + (i % 150),
+				80 + (i % 120),
+				140 + (i % 110),
+				255
+			]).flat()
+		);
+		const expected = wallpaperPaletteFromPixels(gradient);
+		assert.ok(expected);
+		for (let repeat = 0; repeat < 5; repeat++) {
+			assert.deepEqual(wallpaperPaletteFromPixels(gradient), expected);
 		}
 	});
 

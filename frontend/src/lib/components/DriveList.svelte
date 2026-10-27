@@ -28,6 +28,7 @@
 <div class="file-surface h-full w-full overflow-auto bg-surface-primary">
 	<div class="min-w-[780px]">
 		<div
+			data-file-header="true"
 			class="sticky top-0 z-[5] grid {columns} h-8 items-center border-b border-border-primary bg-surface-secondary text-[13px] font-medium whitespace-nowrap text-text-secondary select-none"
 		>
 			{#each headers as header (header.label)}

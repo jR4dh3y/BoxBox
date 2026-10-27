@@ -33,7 +33,7 @@
 		{id}
 		onclick={handleChange}
 		class="relative h-5 w-10 rounded-full transition-colors duration-200 {checked
-			? 'bg-accent'
+			? 'bg-accent-solid'
 			: 'bg-surface-elevated'}"
 	>
 		<span

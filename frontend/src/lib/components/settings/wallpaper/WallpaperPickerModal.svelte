@@ -7,6 +7,8 @@
 		ChevronLeft,
 		FileImage,
 		Folder,
+		HardDrive,
+		Upload,
 		Image as ImageIcon
 	} from 'lucide-svelte';
 	import { Button, Modal, ProgressBar, Select } from '#lib/components/ui/index.js';
@@ -344,22 +346,38 @@
 		</div>
 	{:else if wallpaperSource === null}
 		<div class="flex flex-col gap-4">
-			<div class="flex flex-col overflow-hidden rounded border border-border-primary">
+			<div class="flex flex-col gap-3">
 				<button
 					type="button"
-					class="h-9 cursor-pointer border-0 border-b border-border-secondary bg-transparent px-3 text-left text-[13px] text-text-primary hover:bg-surface-elevated"
+					class="flex cursor-pointer items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary p-3 text-left transition-colors hover:bg-surface-tertiary"
 					onclick={() => chooseWallpaperSource('server')}
 				>
-					From this server
+					<span
+						class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-accent-base/10 text-accent-base"
+					>
+						<HardDrive size={22} />
+					</span>
+					<span class="flex flex-col gap-0.5">
+						<span class="text-[13px] text-text-primary">This Server</span>
+						<span class="text-xs text-text-muted">Browse mounted folders</span>
+					</span>
 				</button>
 				<button
 					type="button"
-					class="h-9 cursor-pointer border-0 bg-transparent px-3 text-left text-[13px] text-text-primary hover:bg-surface-elevated disabled:cursor-not-allowed disabled:opacity-60"
+					class="flex cursor-pointer items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary p-3 text-left transition-colors hover:bg-surface-tertiary disabled:cursor-not-allowed disabled:opacity-60"
 					onclick={openLocalWallpaperPicker}
 					disabled={localWallpaperUploading}
 					aria-busy={localWallpaperUploading}
 				>
-					From this device
+					<span
+						class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-accent-base/10 text-accent-base"
+					>
+						<Upload size={22} />
+					</span>
+					<span class="flex flex-col gap-0.5">
+						<span class="text-[13px] text-text-primary">This Device</span>
+						<span class="text-xs text-text-muted">Upload a local image</span>
+					</span>
 				</button>
 			</div>
 

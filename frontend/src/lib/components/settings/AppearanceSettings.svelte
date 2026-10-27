@@ -74,12 +74,18 @@
 </script>
 
 <SettingsRow label="Accent color">
-	<div class="w-40">
+	<div
+		class="w-44"
+		title={accentTheme.current.kind === 'ready'
+			? accentTheme.current.color.toUpperCase()
+			: undefined}
+	>
 		<label for="accent-color-source" class="sr-only">Accent color source</label>
 		<Select
 			id="accent-color-source"
 			options={accentSources}
 			value={settings.accentColorSource}
+			swatch={settings.accentColorSource === 'wallpaper' ? 'var(--color-accent-base)' : undefined}
 			onchange={(value) => {
 				const source = pickOption(accentSources, value);
 				if (source) preferences.setAccentColorSource(source);
@@ -88,24 +94,22 @@
 	</div>
 </SettingsRow>
 {#if settings.accentColorSource === 'wallpaper'}
-	<SettingsRow label="Wallpaper color">
-		<div class="flex min-w-0 items-center gap-2 text-xs text-text-secondary" role="status">
-			<span class="h-4 w-4 shrink-0 rounded-full bg-accent" aria-hidden="true"></span>
-			{#if !hasWallpaper}
-				<span>Choose a wallpaper first</span>
-			{:else if accentTheme.current.kind === 'ready'}
-				<span class="font-mono">{accentTheme.current.color.toUpperCase()}</span>
-			{:else if accentTheme.current.kind === 'unavailable'}
-				<span
-					>No usable color; using {settings.accentColor
-						? 'your custom color'
-						: 'default blue'}</span
-				>
-			{:else}
-				<span>Matching wallpaper…</span>
-			{/if}
-		</div>
-	</SettingsRow>
+	<p
+		role="status"
+		class={hasWallpaper && accentTheme.current.kind === 'ready'
+			? 'sr-only'
+			: 'm-0 py-2 text-xs text-text-secondary'}
+	>
+		{#if !hasWallpaper}
+			Choose a wallpaper first
+		{:else if accentTheme.current.kind === 'ready'}
+			Wallpaper accent {accentTheme.current.color.toUpperCase()}
+		{:else if accentTheme.current.kind === 'unavailable'}
+			No usable color; using {settings.accentColor ? 'your custom color' : 'default blue'}
+		{:else}
+			Matching wallpaper…
+		{/if}
+	</p>
 {:else}
 	<SettingsRow label="Custom color">
 		<div class="flex items-center gap-2">
@@ -154,7 +158,7 @@
 		</Button>
 		{#if hasWallpaper}
 			<Button
-				variant="ghost"
+				variant="secondary"
 				size="sm"
 				onclick={() => void run(preferences.clearWallpaper())}
 				disabled={applying}

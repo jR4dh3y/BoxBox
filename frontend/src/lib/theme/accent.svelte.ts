@@ -1,4 +1,4 @@
-type AccentState =
+export type AccentState =
 	| { kind: 'manual' }
 	| { kind: 'loading' }
 	| { kind: 'ready'; color: string }
@@ -14,27 +14,14 @@ class AccentTheme {
 		const { signal } = controller;
 		this.current = wallpaper ? { kind: 'loading' } : { kind: 'manual' };
 		if (wallpaper || customColor || this.applied) {
-			void import('./colors.js')
-				.then(async ({ applyAccentColor }) => {
-					if (signal.aborted) return;
-					if (!wallpaper) {
-						applyAccentColor(customColor);
-						this.applied = customColor !== null;
-						return;
-					}
-					let color: string | null = null;
-					try {
-						const { sampleWallpaperAccent } = await import('./wallpaperAccent.js');
-						signal.throwIfAborted();
-						color = await sampleWallpaperAccent(wallpaper, signal);
-					} catch {
-						signal.throwIfAborted();
-					}
-					if (signal.aborted) return;
-					applyAccentColor(color ?? customColor);
-					this.applied = color !== null || customColor !== null;
-					this.current = color ? { kind: 'ready', color } : { kind: 'unavailable' };
-				})
+			void import('./applyAccent.js')
+				.then(({ applyAccentTheme }) =>
+					applyAccentTheme(customColor, wallpaper, signal, (state, applied) => {
+						if (signal.aborted) return;
+						this.applied = applied;
+						this.current = state;
+					})
+				)
 				.catch(() => {
 					if (!signal.aborted) this.current = { kind: 'unavailable' };
 				});
