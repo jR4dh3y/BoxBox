@@ -194,13 +194,13 @@ input[autocomplete='current-password']:focus-visible {
 
 .app-shell[data-has-background='true']
 	.file-surface
-	:where([data-file-header='true'] th, div[data-file-header='true']) {
+	:where(th[data-file-header='true'], div[data-file-header='true']) {
 	background-color: rgb(255 255 255 / 0.04);
 	-webkit-backdrop-filter: blur(16px);
 	backdrop-filter: blur(16px);
 }
 
-.app-shell[data-has-background='true'] .file-surface [data-file-header='true'] th:hover {
+.app-shell[data-has-background='true'] .file-surface th[data-file-header='true']:hover {
 	background-color: rgb(255 255 255 / 0.075);
 }
 
