@@ -31,12 +31,12 @@
 {#if loading}
 	<div class="flex justify-center py-8"><Spinner /></div>
 {:else if error}
-	<div class="flex items-center justify-between gap-3 px-4 py-3">
+	<div class="flex items-center justify-between gap-3 py-2">
 		<p class="m-0 text-[13px] text-danger" role="alert">{error}</p>
 		<Button variant="secondary" size="sm" onclick={() => void load()}>Retry</Button>
 	</div>
 {:else if shares.length === 0}
-	<p class="m-0 px-4 py-3 text-[13px] text-text-muted">No shared links.</p>
+	<p class="m-0 py-2 text-[13px] text-text-secondary">No shared links.</p>
 {:else}
 	<ShareLinkList
 		{shares}

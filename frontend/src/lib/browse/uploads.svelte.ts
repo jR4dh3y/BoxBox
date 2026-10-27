@@ -15,12 +15,9 @@ export function useBrowseUploads(location: BrowseLocation, data: BrowseData) {
 	let folderInput = $state<HTMLInputElement>();
 	let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
-	uploadStore.onComplete = (fileName, success, error) => {
-		if (success) {
-			toastStore.success(`${fileName} uploaded successfully`);
-		} else {
-			toastStore.error(`Upload failed: ${error || 'Unknown error'}`);
-		}
+	// The upload panel already reports each finished file; only a failure needs a toast.
+	uploadStore.onComplete = (_fileName, success, error) => {
+		if (!success) toastStore.error(`Upload failed: ${error || 'Unknown error'}`);
 	};
 	// Uploads keep their destination while the user navigates, so refresh every folder.
 	uploadStore.onRefreshNeeded = () => {

@@ -15,11 +15,8 @@
 	import { websocketStore } from '#lib/stores/websocket.svelte.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { shareWallpaperStore } from '#lib/stores/shareWallpaper.svelte.js';
-	import {
-		applyAccentColor,
-		resolveBackgroundImage,
-		resolveBackgroundImageUrl
-	} from '#lib/utils/appearance.js';
+	import { resolveBackgroundImage, resolveBackgroundImageUrl } from '#lib/utils/appearance.js';
+	import { accentTheme } from '#lib/theme/accent.svelte.js';
 	import {
 		getWallpaperBackgroundStyle,
 		normalizeBackgroundImageMode
@@ -40,19 +37,17 @@
 	});
 
 	// Public routes that don't require authentication
-	// '/s/' rather than '/s' so the prefix cannot also match '/settings'
 	const publicRoutes = ['/login', '/s/'];
 	const isPublicRoute = $derived(publicRoutes.some((route) => page.url.pathname.startsWith(route)));
 	// Full-bleed pages render without the standard page chrome
 	const isFullBleedPage = $derived(
-		page.url.pathname.startsWith('/browse') ||
-			page.url.pathname.startsWith('/settings') ||
-			page.url.pathname.startsWith('/s/')
+		page.url.pathname.startsWith('/browse') || page.url.pathname.startsWith('/s/')
 	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
 	// Share pages show the share owner's wallpaper, never the visitor's own.
 	const isSharePage = $derived(page.url.pathname.startsWith('/s/'));
 	let ownBackgroundImage = $state<string | null>(null);
+	const ownBackgroundSource = $derived(settingsStore.current.backgroundImage);
 
 	const backgroundImageMode = $derived(
 		normalizeBackgroundImageMode(
@@ -65,6 +60,10 @@
 	);
 
 	const hasBackgroundImage = $derived(backgroundImage !== null);
+	const accentColor = $derived(settingsStore.current.accentColor);
+	const accentWallpaper = $derived(
+		settingsStore.current.accentColorSource === 'wallpaper' ? backgroundImage : null
+	);
 
 	const frostedGlass = $derived(
 		hasBackgroundImage &&
@@ -130,12 +129,12 @@
 	});
 
 	$effect(() => {
-		applyAccentColor(settingsStore.current.accentColor);
+		return accentTheme.apply(accentColor, accentWallpaper);
 	});
 
 	// Show the synchronous result first, then the one that needs a local-image lookup.
 	$effect(() => {
-		const requested = settingsStore.current.backgroundImage;
+		const requested = ownBackgroundSource;
 		let cancelled = false;
 
 		ownBackgroundImage = resolveBackgroundImage(requested);

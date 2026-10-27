@@ -15,6 +15,7 @@
 	import { CONFIG } from '#lib/config.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
+	import { withPathSelected } from '#lib/browse/selection.svelte.js';
 
 	let {
 		items = [],
@@ -29,6 +30,7 @@
 		canCreate = false,
 		showFileExtensions = true,
 		previewOnSingleClick = false,
+		selectionCheckboxes = true,
 		onItemClick,
 		onFolderHover,
 		onSelectionChange,
@@ -46,6 +48,7 @@
 		canCreate?: boolean;
 		showFileExtensions?: boolean;
 		previewOnSingleClick?: boolean;
+		selectionCheckboxes?: boolean;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -65,7 +68,7 @@
 		itemKey: (item) => item.path,
 		viewKey: () => viewKey,
 		isReady: () => !isLoading,
-		rowHeight: () => (compactMode ? 124 : 148),
+		rowHeight: () => (compactMode ? 136 : 164),
 		itemOffset: () => (compactMode ? 8 : 12),
 		contentEndPadding: () => (compactMode ? 8 : 12),
 		columnsForWidth: (width) => {
@@ -121,6 +124,13 @@
 		) {
 			onItemClick?.(item);
 		}
+	}
+
+	function handleCheck(item: FileInfo, checked: boolean) {
+		activeItemPath = item.path;
+		onSelectionChange?.(withPathSelected(selectedPaths, item.path, checked));
+		// Keyboard navigation stays on the grid instead of the checkbox.
+		gridElement?.focus({ preventScroll: true });
 	}
 
 	function handleOpen(item: FileInfo) {
@@ -282,6 +292,8 @@
 
 	function handleContextMenuClose() {
 		contextMenu = null;
+		// The menu item that had focus is about to be removed.
+		gridElement?.focus({ preventScroll: true });
 	}
 
 	function handleContextMenuSelect(action: string) {
@@ -289,6 +301,7 @@
 			onContextMenuAction(action, contextMenu.items);
 		}
 		contextMenu = null;
+		gridElement?.focus({ preventScroll: true });
 	}
 
 	function handleThumbnailError(path: string) {
@@ -311,15 +324,18 @@
 	}
 
 	const tileClass =
-		'group flex min-w-0 cursor-default flex-col rounded border border-transparent bg-transparent p-2 text-left outline-none transition-colors duration-100 hover:bg-surface-secondary focus:border-border-focus focus:bg-surface-secondary';
+		'group/tile relative flex min-w-0 cursor-default flex-col rounded border p-2 text-left outline-none transition-colors duration-100';
+	// One state sets the colours, so a tile never carries two competing backgrounds.
 	const selectedClass = 'border-accent/70 bg-selection hover:bg-selection-hover';
+	const activeClass = 'border-transparent bg-surface-secondary';
+	const idleClass = 'border-transparent hover:bg-surface-secondary';
 	const thumbnailClass =
 		'flex shrink-0 items-center justify-center overflow-hidden rounded border border-border-primary bg-surface-primary';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="relative h-full w-full overflow-auto bg-surface-primary [overflow-anchor:none]"
+	class="file-surface relative h-full w-full overflow-auto bg-surface-primary [overflow-anchor:none]"
 	use:attachRowWindow
 	onscroll={handleViewportScroll}
 	oncontextmenu={handleBackgroundContextMenu}
@@ -338,7 +354,7 @@
 	{:else}
 		<div
 			bind:this={gridElement}
-			class={compactMode ? 'flex flex-col p-2' : 'flex flex-col p-3'}
+			class="flex flex-col outline-none {compactMode ? 'p-2' : 'p-3'}"
 			role="grid"
 			tabindex="0"
 			aria-busy={isLoading}
@@ -370,8 +386,8 @@
 				)}
 				<div
 					class={compactMode
-						? 'grid h-[124px] grid-flow-row gap-x-2'
-						: 'grid h-[148px] grid-flow-row gap-x-3'}
+						? 'grid h-[136px] grid-flow-row gap-x-2'
+						: 'grid h-[164px] grid-flow-row gap-x-3'}
 					style={`grid-template-columns: repeat(${rowWindow.columnCount}, ${compactMode ? 96 : 112}px)`}
 					role="row"
 					aria-rowindex={rowIndex + 1}
@@ -387,21 +403,23 @@
 							!item.isDir &&
 							getPreviewType(item.name) === 'image' &&
 							!thumbnailErrors.has(item.path)}
-						{@const detailText = item.isDir ? 'Folder' : sizeDescription}
-						<button
-							type="button"
+						{@const detailText = sizeDescription}
+						<!-- A div, because the selection checkbox cannot sit inside a button. The grid owns the keys. -->
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<div
 							id={`file-grid-cell-${itemIndex}`}
-							class="{tileClass} {activeItemIndex === itemIndex
-								? 'bg-surface-secondary'
-								: ''} {isSelected(item.path) ? selectedClass : ''} {isCut(item.path)
-								? 'opacity-50'
-								: ''}"
-							style={`height: ${compactMode ? 116 : 136}px`}
+							class="{tileClass} {isSelected(item.path)
+								? selectedClass
+								: activeItemIndex === itemIndex
+									? activeClass
+									: idleClass} {isCut(item.path) ? 'opacity-50' : ''}"
+							style={`height: ${compactMode ? 128 : 152}px`}
 							role="gridcell"
 							tabindex="-1"
 							aria-colindex={columnOffset + 1}
 							aria-selected={isSelected(item.path)}
 							title={`${item.name}\n${typeDescription}${sizeDescription ? ` - ${sizeDescription}` : ''}\nModified ${modifiedDescription}`}
+							onpointerdown={() => (activeItemPath = item.path)}
 							onclick={(e) => handleItemClick(item, e)}
 							onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
 							onpointerleave={() => onFolderHover?.(null)}
@@ -409,7 +427,23 @@
 							oncontextmenu={(e) => handleContextMenu(item, e)}
 							data-file-item="true"
 						>
-							<div class="{thumbnailClass} {compactMode ? 'h-11' : 'h-16'}">
+							{#if selectionCheckboxes}
+								<input
+									type="checkbox"
+									tabindex="-1"
+									checked={isSelected(item.path)}
+									aria-label={`Select ${item.name}`}
+									class="absolute top-2 left-2 z-[1] m-0 h-4 w-4 cursor-pointer accent-accent {isSelected(
+										item.path
+									)
+										? ''
+										: 'opacity-0 group-hover/tile:opacity-100 pointer-coarse:opacity-100'}"
+									onclick={(event) => event.stopPropagation()}
+									ondblclick={(event) => event.stopPropagation()}
+									onchange={(event) => handleCheck(item, event.currentTarget.checked)}
+								/>
+							{/if}
+							<div class="{thumbnailClass} {compactMode ? 'h-14' : 'h-20'}">
 								{#if showThumbnail}
 									<img
 										src={getThumbnailUrl(
@@ -438,13 +472,15 @@
 									<span class={item.isDir ? 'text-folder' : ''}>{displayName}</span>
 								</div>
 								<div
-									class="mt-0.5 truncate text-center text-[11px] leading-3.5 text-text-muted"
+									class="mt-0.5 truncate text-center text-[11px] leading-3.5 {isSelected(item.path)
+										? 'text-text-primary'
+										: 'text-text-muted'}"
 									title={typeDescription}
 								>
 									{detailText}
 								</div>
 							</div>
-						</button>
+						</div>
 					{/each}
 				</div>
 			{/each}

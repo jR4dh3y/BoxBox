@@ -36,6 +36,10 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 				? 'list'
 				: settingsStore.current.defaultViewMode
 	);
+	// The drive cards are the drives page's own look, so only an explicit choice shows the list.
+	const driveViewMode = $derived<ViewMode>(
+		page.url.searchParams.get('view') === 'list' ? 'list' : 'grid'
+	);
 	const viewKey = $derived(
 		JSON.stringify([
 			path,
@@ -49,7 +53,6 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 	const historyIndex = $derived(page.state.browseHistoryIndex ?? 0);
 	const canGoBack = $derived(historyIndex > 0);
 	const canGoForward = $derived(historyIndex < historyMaxIndex);
-	const canGoUp = $derived(segments.length > 0);
 
 	afterNavigate((navigation) => {
 		if (navigation.type === 'popstate') options.onLocationChange();
@@ -115,6 +118,9 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 		get viewMode() {
 			return viewMode;
 		},
+		get driveViewMode() {
+			return driveViewMode;
+		},
 		get viewKey() {
 			return viewKey;
 		},
@@ -124,15 +130,9 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 		get canGoForward() {
 			return canGoForward;
 		},
-		get canGoUp() {
-			return canGoUp;
-		},
 		navigate,
 		back: () => history.back(),
 		forward: () => history.forward(),
-		up() {
-			if (canGoUp) navigate(segments.slice(0, -1).join('/'));
-		},
 		search: (query: string) => updateParams({ q: query.trim() || null }, { replaceState: true }),
 		clearSearch: () => updateParams({ q: null }, { replaceState: true }),
 		setSort: (field: SortField, dir: SortDir) =>

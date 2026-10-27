@@ -2,25 +2,23 @@
 	/**
 	 * Browse page - the file browser. The logic lives in `#lib/browse`; this page wires it to the UI.
 	 */
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import Sidebar from '#lib/components/Sidebar.svelte';
 	import Toolbar from '#lib/components/Toolbar.svelte';
 	import FileList from '#lib/components/FileList.svelte';
 	import StatusBar from '#lib/components/StatusBar.svelte';
-	import DriveCard from '#lib/components/DriveCard.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import Notifications from '#lib/components/Notifications.svelte';
-	import { Spinner } from '#lib/components/ui/index.js';
+	import { Button } from '#lib/components/ui/index.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { uploadStore } from '#lib/stores/upload.svelte.js';
 	import { useBrowseActions } from '#lib/browse/actions.svelte.js';
 	import { useBrowseData } from '#lib/browse/data.svelte.js';
 	import { useBrowseLocation } from '#lib/browse/location.svelte.js';
-	import { useBrowseSelection } from '#lib/browse/selection.svelte.js';
+	import { selectedFileBytes, useBrowseSelection } from '#lib/browse/selection.svelte.js';
 	import { useBrowseUploads } from '#lib/browse/uploads.svelte.js';
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
+	import type { AddAction } from '#lib/utils/addMenu.js';
 
 	const selection = useBrowseSelection();
 	const location = useBrowseLocation({ onLocationChange: () => selection.clear() });
@@ -28,6 +26,14 @@
 	const actions = useBrowseActions(location, data, selection);
 	const uploads = useBrowseUploads(location, data);
 	const settings = $derived(settingsStore.current);
+	let settingsOpen = $state(false);
+	let sidebarOpen = $state(false);
+	function handleAdd(action: AddAction) {
+		if (action === 'upload-files') uploads.openPicker();
+		else if (action === 'upload-folder') uploads.openFolderPicker();
+		else void actions.handleContextMenuAction(action, []);
+	}
+	const selectedBytes = $derived(selectedFileBytes(data.displayItems, selection.paths));
 	// Uploads keep running without their panel, so closing the error only hides the message.
 	let uploadErrorDismissed = $state(false);
 
@@ -59,13 +65,15 @@
 	<title>BoxBox</title>
 </svelte:head>
 
-<div class="flex h-screen w-full overflow-hidden bg-surface-primary">
+<div class="browse-shell flex h-screen w-full overflow-hidden bg-surface-primary">
 	<!-- Sidebar -->
 	<Sidebar
 		currentPath={location.path}
 		roots={data.roots}
 		onNavigate={location.navigate}
 		{onFolderHover}
+		open={sidebarOpen}
+		onClose={() => (sidebarOpen = false)}
 	/>
 
 	<!-- Main content area -->
@@ -75,15 +83,14 @@
 			pathSegments={location.segments}
 			canGoBack={location.canGoBack}
 			canGoForward={location.canGoForward}
-			canGoUp={location.canGoUp}
 			onBack={location.back}
 			onForward={location.forward}
-			onUp={location.up}
 			onNavigate={location.navigate}
 			onRefresh={data.reload}
-			onSettings={() => goto(resolve('settings'))}
-			onUpload={uploads.openPicker}
-			onUploadFolder={uploads.openFolderPicker}
+			onSettings={() => (settingsOpen = true)}
+			onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
+			onAdd={handleAdd}
+			canCreate={data.canCreate}
 			uploadDisabled={data.uploadDisabled}
 			showSearch={!data.isAtRoot}
 			searchValue={location.searchQuery}
@@ -114,23 +121,19 @@
 			{/if}
 
 			{#if data.isAtRoot}
-				<!-- This Server view - show drive cards -->
-				<div class="h-full overflow-auto p-6">
-					{#if data.isLoadingDrives}
-						<div class="flex items-center gap-2 py-5 text-sm text-text-secondary">
-							<Spinner size="sm" />
-							<span>Loading drives...</span>
-						</div>
-					{:else if data.drives.length === 0}
-						<div class="py-5 text-sm text-text-secondary">No configured storage found</div>
-					{:else}
-						<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-							{#each data.drives as drive (drive.name)}
-								<DriveCard {drive} onClick={() => location.navigate(drive.name)} {onFolderHover} />
-							{/each}
-						</div>
-					{/if}
-				</div>
+				<!-- The drives page loads alongside the drive list, so folder pages never download it. -->
+				{#await import('#lib/components/DrivesView.svelte') then { default: DrivesView }}
+					<DrivesView
+						drives={data.drives}
+						isLoading={data.isLoadingDrives}
+						viewMode={location.driveViewMode}
+						compactMode={settings.compactMode}
+						onOpen={(drive) => location.navigate(drive.name)}
+						{onFolderHover}
+					/>
+				{:catch}
+					<LoadError label="drives" inline />
+				{/await}
 			{:else if data.fileListError && data.displayItems.length === 0}
 				<div role="alert" class="flex h-full items-center justify-center gap-3 p-6 text-sm">
 					<span>{data.fileListError}</span>
@@ -157,6 +160,7 @@
 						canCreate={data.canCreate}
 						showFileExtensions={settings.showFileExtensions}
 						previewOnSingleClick={settings.previewOnSingleClick}
+						selectionCheckboxes={settings.selectionCheckboxes}
 						onItemClick={actions.openFile}
 						{onFolderHover}
 						onSelectionChange={selection.set}
@@ -181,6 +185,7 @@
 					canCreate={data.canCreate}
 					showFileExtensions={settings.showFileExtensions}
 					previewOnSingleClick={settings.previewOnSingleClick}
+					selectionCheckboxes={settings.selectionCheckboxes}
 					onItemClick={actions.openFile}
 					{onFolderHover}
 					onSortChange={location.setSort}
@@ -188,22 +193,14 @@
 					onContextMenuAction={actions.handleContextMenuAction}
 				/>
 			{/if}
-			{#if data.fileListError && data.displayItems.length > 0}
-				<div
-					role="alert"
-					class="absolute top-3 right-3 z-20 flex items-center gap-3 rounded border border-border-primary bg-surface-primary p-3 text-sm"
-				>
-					<span>{data.fileListError}</span>
-					<button type="button" class="underline" onclick={data.reload}>Retry</button>
-				</div>
-			{/if}
 		</div>
 
 		<!-- Status bar -->
 		<StatusBar
 			itemCount={data.itemCount}
 			selectedCount={selection.count}
-			viewMode={location.viewMode}
+			{selectedBytes}
+			viewMode={data.isAtRoot ? location.driveViewMode : location.viewMode}
 			onViewModeChange={location.setViewMode}
 		/>
 	</div>
@@ -245,6 +242,14 @@
 	{/await}
 {/if}
 
+{#if settingsOpen}
+	{#await import('#lib/components/settings/SettingsModal.svelte') then { default: SettingsModal }}
+		<SettingsModal onclose={() => (settingsOpen = false)} />
+	{:catch}
+		<LoadError label="settings" onClose={() => (settingsOpen = false)} />
+	{/await}
+{/if}
+
 {#if actions.shareItem}
 	{#await import('#lib/components/ShareModal.svelte') then { default: ShareModal }}
 		<ShareModal open item={actions.shareItem} onclose={actions.closeShare} />
@@ -269,16 +274,25 @@
 	onchange={uploads.handleInputChange}
 />
 
-<!-- Upload Panel (floating bottom-right) -->
-{#if uploadStore.uploads.length > 0}
-	{#await import('#lib/components/UploadPanel.svelte') then { default: UploadPanel }}
-		<UploadPanel />
-	{:catch}
-		{#if !uploadErrorDismissed}
-			<LoadError label="upload panel" onClose={() => (uploadErrorDismissed = true)} />
-		{/if}
-	{/await}
-{/if}
-
-<!-- Toast notifications -->
-<Notifications />
+<!-- Toasts, a failed refresh and the upload panel stack in one column. -->
+<Notifications>
+	{#if data.fileListError && data.displayItems.length > 0}
+		<!-- The stale list stays visible, so the failure is a notice instead of a page error. -->
+		<div
+			role="alert"
+			class="pointer-events-auto flex items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary py-2 pr-2 pl-4 text-[13px] shadow-lg"
+		>
+			<span class="min-w-0 flex-1 text-text-primary">{data.fileListError}</span>
+			<Button variant="secondary" size="sm" onclick={data.reload}>Retry</Button>
+		</div>
+	{/if}
+	{#if uploadStore.uploads.length > 0}
+		{#await import('#lib/components/UploadPanel.svelte') then { default: UploadPanel }}
+			<UploadPanel />
+		{:catch}
+			{#if !uploadErrorDismissed}
+				<LoadError label="upload panel" onClose={() => (uploadErrorDismissed = true)} />
+			{/if}
+		{/await}
+	{/if}
+</Notifications>

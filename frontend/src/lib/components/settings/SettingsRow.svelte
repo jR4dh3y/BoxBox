@@ -1,25 +1,12 @@
 <script lang="ts">
-	/**
-	 * Settings row component for individual settings
-	 * Displays label, description, and a control (toggle, select, or custom)
-	 */
 	import type { Snippet } from 'svelte';
 
-	interface Props {
-		label: string;
-		description?: string;
-		children?: Snippet;
-	}
-
-	let { label, description, children }: Props = $props();
+	let { label, children }: { label: string; children: Snippet } = $props();
 </script>
 
-<div class="flex items-center justify-between px-3 py-2">
-	<div class="flex flex-col gap-0.5">
-		<span class="text-[13px] text-text-primary">{label}</span>
-		{#if description}
-			<span class="text-[11px] text-text-muted">{description}</span>
-		{/if}
-	</div>
-	{@render children?.()}
+<div
+	class="flex min-h-10 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border-secondary py-1.5 text-[13px] last:border-b-0"
+>
+	<span class="text-text-primary">{label}</span>
+	{@render children()}
 </div>

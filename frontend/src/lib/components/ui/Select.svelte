@@ -31,7 +31,7 @@
 		{id}
 		{name}
 		onchange={handleChange}
-		class="h-8 w-full cursor-pointer appearance-none rounded border border-border-primary bg-surface-secondary px-3 pr-8 text-sm leading-none text-text-primary transition-colors duration-150 focus:border-border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+		class="h-8 w-full cursor-pointer appearance-none rounded border border-border-primary bg-surface-primary px-3 pr-8 text-[13px] leading-none text-text-primary transition-colors duration-150 focus:border-border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 	>
 		{#each options as option (option.value)}
 			<option value={option.value}>{option.label}</option>

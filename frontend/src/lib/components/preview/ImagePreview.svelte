@@ -53,24 +53,26 @@
 	}
 </script>
 
-<div class="flex h-full w-full flex-col">
-	<!-- Controls -->
+<div class="relative flex h-full w-full flex-col">
+	<!-- Controls float over the image so it keeps the whole window -->
 	<div
-		class="flex shrink-0 items-center justify-center gap-2 border-b border-border-primary bg-surface-secondary p-2"
+		class="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-border-primary bg-surface-secondary/95 p-1 shadow-lg"
 	>
-		<Button variant="secondary" size="icon" onclick={zoomOut} title="Zoom out">
-			<ZoomOut size={18} />
+		<Button variant="ghost" size="icon" onclick={zoomOut} title="Zoom out">
+			<ZoomOut size={16} />
 		</Button>
-		<span class="min-w-[50px] text-center text-xs text-text-secondary"
+		<span class="min-w-[44px] text-center text-xs text-text-secondary"
 			>{Math.round(scale * 100)}%</span
 		>
-		<Button variant="secondary" size="icon" onclick={zoomIn} title="Zoom in">
-			<ZoomIn size={18} />
+		<Button variant="ghost" size="icon" onclick={zoomIn} title="Zoom in">
+			<ZoomIn size={16} />
 		</Button>
-		<Button variant="secondary" size="icon" onclick={rotate} title="Rotate">
-			<RotateCw size={18} />
+		<Button variant="ghost" size="icon" onclick={rotate} title="Rotate">
+			<RotateCw size={16} />
 		</Button>
-		<Button variant="secondary" size="sm" onclick={resetView}>Reset</Button>
+		{#if scale !== 1 || rotation !== 0}
+			<Button variant="ghost" size="sm" onclick={resetView}>Reset</Button>
+		{/if}
 	</div>
 
 	<!-- Image container -->

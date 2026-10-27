@@ -2,9 +2,10 @@
 	import type { DriveStats } from '#lib/api/files.js';
 	import { HardDrive } from 'lucide-svelte';
 	import { formatFileSize } from '#lib/utils/format.js';
-	import { Badge, ProgressBar, InlineRename } from '#lib/components/ui/index.js';
+	import { ProgressBar } from '#lib/components/ui/index.js';
+	import { DRIVE_USAGE_BAR, DRIVE_USAGE_TEXT, driveUsageLevel } from '#lib/utils/driveUsage.js';
 	import LoadError from '#lib/components/LoadError.svelte';
-	import { settingsStore } from '#lib/stores/settings.svelte.js';
+	import { useDriveName } from '#lib/browse/driveName.svelte.js';
 
 	interface Props {
 		drive: DriveStats;
@@ -15,78 +16,20 @@
 
 	let { drive, onClick, onFolderHover }: Props = $props();
 
-	let renaming = $state(false);
-	let contextMenuOpen = $state(false);
-	let contextMenuPosition = $state({ x: 0, y: 0 });
+	const name = useDriveName(() => drive);
 
 	const usedFormatted = $derived(formatFileSize(drive.usedBytes));
 	const totalFormatted = $derived(formatFileSize(drive.totalBytes));
 	const freeFormatted = $derived(formatFileSize(drive.freeBytes));
 
-	// Subscribe to the store reactively so UI updates when drive names change
-	const customName = $derived(settingsStore.current.driveNameOverrides[drive.name]);
-	const displayName = $derived(customName || drive.name);
-
-	const progressVariant = $derived.by(() => {
-		if (drive.usedPct >= 90) return 'danger' as const;
-		if (drive.usedPct >= 75) return 'warning' as const;
-		return 'default' as const;
-	});
-
-	// Use the already-derived customName for reactivity
-	const hasCustomName = $derived(!!customName);
-
-	function startRenaming(): void {
-		renaming = true;
-		contextMenuOpen = false;
-	}
-
-	function handleSaveRename(newValue: string): void {
-		if (newValue) {
-			settingsStore.setDriveName(drive.name, newValue);
-		} else {
-			settingsStore.removeDriveName(drive.name);
-		}
-		renaming = false;
-	}
-
-	function handleCancelRename(): void {
-		renaming = false;
-	}
-
-	function resetName(): void {
-		settingsStore.removeDriveName(drive.name);
-		contextMenuOpen = false;
-	}
+	const usageLevel = $derived(driveUsageLevel(drive.usedPct));
 
 	function handleCardClick(): void {
-		if (!renaming) {
-			onClick?.();
-		}
-	}
-
-	function handleContextMenu(e: MouseEvent): void {
-		e.preventDefault();
-		contextMenuPosition = { x: e.clientX, y: e.clientY };
-		contextMenuOpen = true;
-	}
-
-	function handleMenuSelect(id: string): void {
-		if (id === 'rename') {
-			startRenaming();
-		} else if (id === 'reset') {
-			resetName();
-		}
-	}
-
-	function handleMenuClose(): void {
-		contextMenuOpen = false;
+		if (!name.renaming) onClick?.();
 	}
 
 	function handleClickOutside(e: MouseEvent): void {
-		if (contextMenuOpen && e.target !== null) {
-			contextMenuOpen = false;
-		}
+		if (name.menu && e.target !== null) name.closeMenu();
 	}
 </script>
 
@@ -94,11 +37,11 @@
 
 <button
 	type="button"
-	class="relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-all duration-150 hover:border-border-focus hover:bg-surface-tertiary"
+	class="relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary"
 	onclick={handleCardClick}
 	onpointerenter={() => onFolderHover?.(drive.name)}
 	onpointerleave={() => onFolderHover?.(null)}
-	oncontextmenu={handleContextMenu}
+	oncontextmenu={name.openMenu}
 >
 	<div
 		class="flex w-22 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary"
@@ -107,15 +50,27 @@
 	</div>
 
 	<div class="flex min-w-0 flex-1 flex-col gap-1.5">
-		{#if renaming}
-			<InlineRename value={displayName} onSave={handleSaveRename} onCancel={handleCancelRename} />
+		{#if name.renaming}
+			<!-- Renaming is rare, so its field loads on first use. -->
+			{#await import('./ui/InlineRename.svelte') then { default: InlineRename }}
+				<InlineRename value={name.displayName} onSave={name.save} onCancel={name.cancel} />
+			{:catch}
+				<LoadError label="rename field" onClose={name.cancel} />
+			{/await}
 		{:else}
 			<div class="grid h-5 grid-cols-[minmax(0,1fr)_5.25rem] items-center gap-2">
-				<span class="min-w-0 truncate text-sm font-medium text-text-primary" title={displayName}>
-					{displayName}
+				<span
+					class="min-w-0 truncate text-sm font-medium text-text-primary"
+					title={name.displayName}
+				>
+					{name.displayName}
 				</span>
 				<div class="flex w-[5.25rem] shrink-0 justify-end overflow-hidden">
-					<Badge variant="default">{totalFormatted}</Badge>
+					<span
+						class="inline-flex items-center rounded bg-surface-elevated px-2 py-0.5 text-xs font-medium whitespace-nowrap text-text-secondary"
+					>
+						{totalFormatted}
+					</span>
 				</div>
 			</div>
 		{/if}
@@ -139,31 +94,25 @@
 
 		<div class="mt-0.5 flex items-center gap-3">
 			<div class="flex-1">
-				<ProgressBar value={drive.usedPct} size="sm" variant={progressVariant} />
+				<ProgressBar value={drive.usedPct} size="sm" variant={DRIVE_USAGE_BAR[usageLevel]} />
 			</div>
-			<span
-				class="shrink-0 text-[11px] font-medium {drive.usedPct >= 90
-					? 'text-danger'
-					: drive.usedPct >= 75
-						? 'text-warning'
-						: 'text-text-muted'}"
-			>
+			<span class="shrink-0 text-[11px] font-medium {DRIVE_USAGE_TEXT[usageLevel]}">
 				{drive.usedPct.toFixed(1)}%
 			</span>
 		</div>
 	</div>
 
-	{#if contextMenuOpen && !renaming}
+	{#if name.menu && !name.renaming}
 		{#await import('./DriveContextMenu.svelte') then { default: DriveContextMenu }}
 			<DriveContextMenu
-				x={contextMenuPosition.x}
-				y={contextMenuPosition.y}
-				{hasCustomName}
-				onSelect={handleMenuSelect}
-				onClose={handleMenuClose}
+				x={name.menu.x}
+				y={name.menu.y}
+				hasCustomName={name.hasCustomName}
+				onSelect={name.selectMenu}
+				onClose={name.closeMenu}
 			/>
 		{:catch}
-			<LoadError label="drive context menu" onClose={handleMenuClose} />
+			<LoadError label="drive context menu" onClose={name.closeMenu} />
 		{/await}
 	{/if}
 </button>
