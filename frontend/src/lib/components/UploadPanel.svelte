@@ -13,10 +13,14 @@
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	const announced = new Set<string>();
 	$effect(() => {
+		const completed: string[] = [];
 		for (const upload of uploadStore.uploads) {
 			if (upload.status !== 'complete' || announced.has(upload.uploadId)) continue;
 			announced.add(upload.uploadId);
-			announcement = `Upload ${announced.size} complete: ${upload.fileName}`;
+			completed.push(upload.fileName);
+		}
+		if (completed.length > 0) {
+			announcement = `${completed.join(', ')} uploaded. ${announced.size} complete.`;
 		}
 	});
 
