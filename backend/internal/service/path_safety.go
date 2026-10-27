@@ -32,6 +32,30 @@ func resolveExistingPathWithinMount(fsys boxfs.FS, mount *model.MountPoint, path
 	return resolved, nil
 }
 
+// resolveEntryWithinMount resolves symlinks in the parent of path but not in its
+// final element, so the result names the entry itself, which may be a symlink.
+func resolveEntryWithinMount(fsys boxfs.FS, mount *model.MountPoint, path string) (string, error) {
+	root, err := fsys.EvalSymlinks(mount.Path)
+	if err != nil {
+		return "", err
+	}
+	// A job revalidates the mount root by its resolved path, not mount.Path.
+	if clean := filepath.Clean(path); clean == filepath.Clean(mount.Path) || clean == root {
+		return root, nil
+	}
+	parent, err := fsys.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", ErrPathNotFound
+		}
+		return "", err
+	}
+	if !pathWithinRoot(root, parent) {
+		return "", ErrPermissionDenied
+	}
+	return filepath.Join(parent, filepath.Base(path)), nil
+}
+
 func resolveWritablePathWithinMount(fsys boxfs.FS, mount *model.MountPoint, path string) (string, error) {
 	root, err := fsys.EvalSymlinks(mount.Path)
 	if err != nil {
