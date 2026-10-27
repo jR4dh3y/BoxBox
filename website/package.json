@@ -12,7 +12,7 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/vercel": "^11.0.13",
+    "@astrojs/vercel": "^11.0.16",
     "@lucide/astro": "^1.61.0",
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.3.1",
