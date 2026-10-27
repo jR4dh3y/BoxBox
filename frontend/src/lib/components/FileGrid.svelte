@@ -94,17 +94,11 @@
 		activeItemPath = item.path;
 		gridElement?.focus({ preventScroll: true });
 		if (event.ctrlKey || event.metaKey) {
-			const newSelection = new SvelteSet<string>(selectedPaths);
-			if (newSelection.has(item.path)) {
-				newSelection.delete(item.path);
-			} else {
-				newSelection.add(item.path);
-			}
-			onSelectionChange?.(newSelection);
+			onSelectionChange?.(
+				withPathSelected(selectedPaths, item.path, !selectedPaths.has(item.path))
+			);
 		} else if (event.shiftKey && selectedPaths.size > 0) {
-			const newSelection = new SvelteSet<string>(selectedPaths);
-			newSelection.add(item.path);
-			onSelectionChange?.(newSelection);
+			handleCheck(item, true);
 		} else {
 			const newSelection = new SvelteSet<string>([item.path]);
 			onSelectionChange?.(newSelection);
@@ -227,7 +221,12 @@
 			default: {
 				const item = items[currentIndex];
 				if (!item) return;
-				if (event.key === 'Enter' || event.key === ' ') {
+				if (event.key === ' ') {
+					event.preventDefault();
+					handleCheck(item, !selectedPaths.has(item.path));
+					return;
+				}
+				if (event.key === 'Enter') {
 					event.preventDefault();
 					onItemClick?.(item);
 					return;

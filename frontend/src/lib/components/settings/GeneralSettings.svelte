@@ -58,6 +58,7 @@
 <SettingsRow label="Default sort">
 	<div class="w-40">
 		<Select
+			label="Default sort"
 			options={SORT_BY_OPTIONS}
 			value={settings.defaultSortBy}
 			onchange={(value) => {
@@ -70,6 +71,7 @@
 <SettingsRow label="Default sort direction">
 	<div class="w-40">
 		<Select
+			label="Default sort direction"
 			options={SORT_DIR_OPTIONS}
 			value={settings.defaultSortDir}
 			onchange={(value) => {
@@ -82,6 +84,7 @@
 <SettingsRow label="Default view">
 	<div class="w-40">
 		<Select
+			label="Default view"
 			options={VIEW_MODE_OPTIONS}
 			value={settings.defaultViewMode}
 			onchange={(value) => {

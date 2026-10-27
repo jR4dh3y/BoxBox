@@ -8,6 +8,18 @@
 	import { ChevronDown, ChevronUp, X } from 'lucide-svelte';
 	import { slide } from 'svelte/transition';
 
+	let announcement = $state('');
+	// This history is not rendered; only terminal successes update the live region.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const announced = new Set<string>();
+	$effect(() => {
+		for (const upload of uploadStore.uploads) {
+			if (upload.status !== 'complete' || announced.has(upload.uploadId)) continue;
+			announced.add(upload.uploadId);
+			announcement = `Upload ${announced.size} complete: ${upload.fileName}`;
+		}
+	});
+
 	/** Whether the panel is minimized */
 	let isMinimized = $state(false);
 
@@ -71,6 +83,8 @@
 	const shouldShow = $derived(isVisible && uploadStore.hasUploads);
 </script>
 
+<span class="sr-only" role="status" aria-live="polite">{announcement}</span>
+
 {#if shouldShow}
 	<div
 		class="pointer-events-auto overflow-hidden rounded-lg border border-border-primary bg-surface-secondary shadow-2xl"
@@ -81,7 +95,12 @@
 		<div
 			class="flex h-11 cursor-pointer items-center justify-between border-b border-border-secondary bg-surface-primary pr-2 pl-4 select-none"
 			onclick={handleToggleMinimize}
-			onkeydown={(e) => e.key === 'Enter' && handleToggleMinimize()}
+			onkeydown={(e) => {
+				if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+					e.preventDefault();
+					handleToggleMinimize();
+				}
+			}}
 			role="button"
 			tabindex="0"
 		>

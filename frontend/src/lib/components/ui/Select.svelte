@@ -12,6 +12,7 @@
 		disabled?: boolean;
 		id?: string;
 		name?: string;
+		label?: string;
 		swatch?: string;
 		onchange?: (value: string) => void;
 	}
@@ -22,6 +23,7 @@
 		disabled = false,
 		id,
 		name,
+		label,
 		swatch,
 		onchange
 	}: Props = $props();
@@ -45,6 +47,7 @@
 		{disabled}
 		{id}
 		{name}
+		aria-label={label}
 		onchange={handleChange}
 		class="h-8 w-full cursor-pointer appearance-none rounded border border-border-primary bg-surface-primary pr-8 {swatch
 			? 'pl-8'

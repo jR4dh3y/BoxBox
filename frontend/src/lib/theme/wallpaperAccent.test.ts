@@ -83,7 +83,9 @@ describe('wallpaper accent', () => {
 			null,
 			[],
 			'blue',
-			{ color: 'url(example)', textColor: '#ffffff' },
+			{ color: 'url(example)', textColor: '#ffffff', iconColor: '#ffffff' },
+			{ color: '#123456', textColor: 'url(example)', iconColor: '#ffffff' },
+			{ color: '#123456', textColor: '#ffffff', iconColor: 'url(example)' },
 			{ color: '#123456' }
 		]) {
 			assert.equal(parseWallpaperPalette(value), null);

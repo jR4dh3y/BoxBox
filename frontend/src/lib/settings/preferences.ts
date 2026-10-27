@@ -120,8 +120,7 @@ export class Preferences {
 			}
 
 			const applied: UserSettings = {
-				...next,
-				accentColor: normalizeAccentColor(next.accentColor),
+				...settingsStore.current,
 				backgroundImage,
 				backgroundImageName: backgroundImage ? next.backgroundImageName : null,
 				backgroundImageMode: normalizeBackgroundImageMode(next.backgroundImageMode),

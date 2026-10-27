@@ -22,11 +22,9 @@
 	const totalFormatted = $derived(formatFileSize(drive.totalBytes));
 	const freeFormatted = $derived(formatFileSize(drive.freeBytes));
 
+	const cardClass =
+		'relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary';
 	const usageLevel = $derived(driveUsageLevel(drive.usedPct));
-
-	function handleCardClick(): void {
-		if (!name.renaming) onClick?.();
-	}
 
 	function handleClickOutside(e: MouseEvent): void {
 		if (name.menu && e.target !== null) name.closeMenu();
@@ -35,14 +33,7 @@
 
 <svelte:window onclick={handleClickOutside} />
 
-<button
-	type="button"
-	class="relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary"
-	onclick={handleCardClick}
-	onpointerenter={() => onFolderHover?.(drive.name)}
-	onpointerleave={() => onFolderHover?.(null)}
-	oncontextmenu={name.openMenu}
->
+{#snippet contents()}
 	<div
 		class="flex w-22 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary"
 	>
@@ -101,18 +92,33 @@
 			</span>
 		</div>
 	</div>
+{/snippet}
 
-	{#if name.menu && !name.renaming}
-		{#await import('./DriveContextMenu.svelte') then { default: DriveContextMenu }}
-			<DriveContextMenu
-				x={name.menu.x}
-				y={name.menu.y}
-				hasCustomName={name.hasCustomName}
-				onSelect={name.selectMenu}
-				onClose={name.closeMenu}
-			/>
-		{:catch}
-			<LoadError label="drive context menu" onClose={name.closeMenu} />
-		{/await}
-	{/if}
-</button>
+{#if name.renaming}
+	<div class={cardClass}>{@render contents()}</div>
+{:else}
+	<button
+		type="button"
+		class={cardClass}
+		onclick={onClick}
+		onpointerenter={() => onFolderHover?.(drive.name)}
+		onpointerleave={() => onFolderHover?.(null)}
+		oncontextmenu={name.openMenu}
+	>
+		{@render contents()}
+	</button>
+{/if}
+
+{#if name.menu && !name.renaming}
+	{#await import('./DriveContextMenu.svelte') then { default: DriveContextMenu }}
+		<DriveContextMenu
+			x={name.menu.x}
+			y={name.menu.y}
+			hasCustomName={name.hasCustomName}
+			onSelect={name.selectMenu}
+			onClose={name.closeMenu}
+		/>
+	{:catch}
+		<LoadError label="drive context menu" onClose={name.closeMenu} />
+	{/await}
+{/if}

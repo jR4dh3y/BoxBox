@@ -27,6 +27,12 @@
 	let active = $state<Section>('general');
 
 	async function resetPreferences() {
+		if (
+			!window.confirm(
+				'Reset all preferences? This removes your favorites and saved local wallpaper.'
+			)
+		)
+			return;
 		const problem = await preferences.reset();
 		if (problem) toastStore.error(problem, 8000);
 	}

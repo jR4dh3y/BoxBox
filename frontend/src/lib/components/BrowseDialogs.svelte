@@ -5,7 +5,7 @@
 	import { Button, Input, Modal } from '#lib/components/ui/index.js';
 
 	type CreateDialog = { open: boolean; type: 'file' | 'directory'; name: string };
-	type RenameDialog = { open: boolean; file: FileInfo | null; newName: string };
+	import type { RenameDialog } from '#lib/browse/actions.svelte.js';
 	type DeleteDialog = { open: boolean; items: FileInfo[] };
 	type PropertiesDialog = { open: boolean; file: FileInfo | null };
 

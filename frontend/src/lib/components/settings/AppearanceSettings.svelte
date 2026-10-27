@@ -172,6 +172,7 @@
 	<SettingsRow label="Wallpaper fit">
 		<div class="w-40">
 			<Select
+				label="Wallpaper fit"
 				options={WALLPAPER_DISPLAY_OPTIONS}
 				value={normalizeBackgroundImageMode(settings.backgroundImageMode)}
 				disabled={applying}

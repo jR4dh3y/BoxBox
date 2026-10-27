@@ -29,7 +29,10 @@
 		rotation = (rotation + 90) % 360;
 	}
 
-	function resetView() {
+	function resetView(event: MouseEvent) {
+		const reset = event.currentTarget;
+		const rotateButton = reset instanceof HTMLButtonElement ? reset.previousElementSibling : null;
+		if (rotateButton instanceof HTMLButtonElement) rotateButton.focus();
 		scale = 1;
 		rotation = 0;
 	}
