@@ -17,10 +17,5 @@
     "check:desktop": "bun run --cwd desktop check",
     "test:desktop": "bun run --cwd desktop test",
     "install:desktop": "bun desktop/scripts/install.ts"
-  },
-  "workspaces": [
-    "frontend",
-    "desktop",
-    "website"
-  ]
+  }
 }

@@ -5,7 +5,8 @@ Linux desktop client using Electrobun 2.0.4, Bun and bundled Chromium (CEF). It 
 From the repository root:
 
 ```sh
-bun install --frozen-lockfile
+bun install --cwd frontend --frozen-lockfile
+bun install --cwd desktop --frozen-lockfile
 bun run dev:desktop
 ```
 

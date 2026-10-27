@@ -2,7 +2,7 @@
 
 BoxBox is a self-hosted file manager. A Go API server (`backend/`) embeds a SvelteKit app (`frontend/`).
 
-The root Bun workspace also contains the Electrobun CEF app (`desktop/`) and marketing site (`website/`). Install JS dependencies from the root with `bun install`; the shared lockfile is `bun.lock`. Go dependencies remain in `backend/go.mod`.
+The root scripts also run the Electrobun CEF app (`desktop/`) and marketing site (`website/`). Install JS dependencies in each package with `bun install --cwd frontend`, `bun install --cwd desktop`, or `bun install --cwd website`. Each package has its own `bun.lock`. Go dependencies remain in `backend/go.mod`.
 
 Read the code that runs before you change it. Prefer the smallest complete change.
 

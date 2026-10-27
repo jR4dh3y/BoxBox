@@ -36,6 +36,7 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       - name: Install frontend dependencies
+        working-directory: frontend
         run: bun install --frozen-lockfile
 
       - name: Check frontend
@@ -47,6 +48,7 @@ jobs:
         run: bun run build
 
       - name: Install website dependencies
+        working-directory: website
         run: bun install --frozen-lockfile
 
       - name: Build website

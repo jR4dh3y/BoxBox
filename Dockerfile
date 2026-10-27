@@ -18,15 +18,12 @@ FROM --platform=$BUILDPLATFORM oven/bun:1-alpine@sha256:629e17411f1f129dbec3af78
 WORKDIR /app
 
 # Install dependencies first (layer caching optimization)
-COPY package.json bun.lock ./
-COPY frontend/package.json ./frontend/package.json
-COPY desktop/package.json ./desktop/package.json
-COPY website/package.json ./website/package.json
-RUN bun install --frozen-lockfile --filter frontend
+COPY frontend/package.json frontend/bun.lock ./
+RUN bun install --frozen-lockfile
 
 # Copy source and build
-COPY frontend/ ./frontend/
-RUN bun run --cwd frontend build
+COPY frontend/ ./
+RUN bun run build
 
 # -----------------------------------------------------------------------------
 # Stage 2: Build Backend with Go (embeds frontend assets)
@@ -49,7 +46,7 @@ RUN go mod download
 COPY backend/ ./
 
 # Copy frontend build into static/dist for embedding via go:embed
-COPY --from=frontend-builder /app/frontend/build ./internal/static/dist/
+COPY --from=frontend-builder /app/build ./internal/static/dist/
 
 # Build the binary with embedded static files
 # CGO_ENABLED=0 for static binary, ldflags for smaller size
