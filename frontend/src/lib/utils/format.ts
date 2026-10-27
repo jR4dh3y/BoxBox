@@ -149,30 +149,18 @@ export function formatRelativeTime(date: Date | string | number): string {
 	const past = diffMs < 0;
 	if (Math.abs(diffSec) < 60) return past ? 'just now' : 'in a moment';
 
-	let value: number;
-	let unit: string;
-	if (Math.abs(diffMin) < 60) {
-		value = Math.abs(diffMin);
-		unit = 'minute';
-	} else if (Math.abs(diffHour) < 24) {
-		value = Math.abs(diffHour);
-		unit = 'hour';
-	} else if (Math.abs(diffDay) < 7) {
-		value = Math.abs(diffDay);
-		unit = 'day';
-	} else if (Math.abs(diffWeek) < 4) {
-		value = Math.abs(diffWeek);
-		unit = 'week';
-	} else if (Math.abs(diffMonth) < 12) {
-		value = Math.abs(diffMonth);
-		unit = 'month';
-	} else {
-		value = Math.abs(diffYear);
-		unit = 'year';
-	}
+	const formatPeriod = (value: number, unit: string) => {
+		const count = Math.abs(value);
+		const label = `${count} ${unit}${count === 1 ? '' : 's'}`;
+		return past ? `${label} ago` : `in ${label}`;
+	};
 
-	const label = `${value} ${unit}${value === 1 ? '' : 's'}`;
-	return past ? `${label} ago` : `in ${label}`;
+	if (Math.abs(diffMin) < 60) return formatPeriod(diffMin, 'minute');
+	if (Math.abs(diffHour) < 24) return formatPeriod(diffHour, 'hour');
+	if (Math.abs(diffDay) < 7) return formatPeriod(diffDay, 'day');
+	if (Math.abs(diffWeek) < 4) return formatPeriod(diffWeek, 'week');
+	if (Math.abs(diffMonth) < 12) return formatPeriod(diffMonth, 'month');
+	return formatPeriod(diffYear, 'year');
 }
 
 /**
