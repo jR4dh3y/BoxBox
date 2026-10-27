@@ -74,6 +74,14 @@ func TestDirectoryListingEndpointsReturnCompleteRefreshableResults(t *testing.T)
 		if err := json.Unmarshal(rec.Body.Bytes(), &listing); err != nil {
 			t.Fatal(err)
 		}
+		for i := range listing.Items {
+			if endpoint == "/api/v1/files/media/listing" && listing.Items[i].Path == "" {
+				t.Fatal("file-info directory response lost its entry paths")
+			}
+			if listing.Items[i].Path == "" {
+				listing.Items[i].Path = listing.Path + "/" + listing.Items[i].Name
+			}
+		}
 		return listing
 	}
 

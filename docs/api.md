@@ -123,7 +123,7 @@ GET /api/v1/files/list/{path}
 `{path}` starts with the mount name, for example `home/projects`.
 
 The response contains every entry of the directory in one request, hidden entries included,
-in no particular order. Clients sort and filter it. Refresh replaces that listing rather than
+in no particular order. Clients reconstruct each entry path as `path + "/" + name`, then sort and filter it. Refresh replaces that listing rather than
 appending pages. Directories with more than 10,000 entries return `413`.
 
 Response:
@@ -134,7 +134,6 @@ Response:
   "items": [
     {
       "name": "BoxBox",
-      "path": "home/projects/BoxBox",
       "size": 4096,
       "isDir": true,
       "modTime": "2026-05-13T09:00:00Z",

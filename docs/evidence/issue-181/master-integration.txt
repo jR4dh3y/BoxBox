@@ -1,0 +1,54 @@
+PR #188 master integration, 2026-10-25
+
+Wallpaper parent: 141e7305949582a4208214ed6f3776161b049ed7.
+Integrated master: 15c51b5256a6cedc581191e7541a14382aa5d9f6.
+
+Only textual conflict: frontend/perf-budget.json. Kept 301056 bytes,
+the stricter parent ceiling. Kept the existing browser ceiling of 283648
+bytes, 9 scripts, 1 listing and 1 refresh. No ceiling increased.
+Reviewed the staged diff against both parents. Wallpaper implementation and
+regressions match the wallpaper parent. Connect API, create-only upload and
+client persistence implementation and docs match master. Listing parsing,
+selection reconciliation and lazy notifications also match master.
+
+Passed in this isolated checkout, with BUN_RUNTIME_TRANSPILER_CACHE_PATH=0:
+- bun run test: 139 tests across 18 files, zero failures.
+- bun run check: zero errors and warnings.
+- bun run lint; bun run perf:check.
+- Strict standalone TypeScript checks of both wallpaper browser scripts.
+  TypeScript 6 requires --ignoreConfig when passing explicit input files.
+- go vet ./...; go test ./... including the full service suite.
+- bun run perf:browser, including embedded frontend and Go binary build.
+- bun run perf:budget: 299282 raw static JS bytes, ceiling 301056; no cycles.
+- 20 real-server browser samples: 9 scripts, 280931 decoded JS bytes,
+  1 listing and 1 refresh each. Startup ceiling remains 283648 bytes.
+- Files-visible medians: local cold 172 ms, warm 133 ms; slow cold 1373 ms,
+  warm 772 ms, five samples each. Advisory timings, no speedup claim.
+- Browser navigation, lazy chunk failure/recovery and selection refresh checks.
+- verify-wallpaper-settings.ts: all nine real-server Settings scenarios.
+- verify-wallpaper-server-file.ts: mounted file picker, same-path byte changes,
+  unrelated save protection, explicit fit/blur persistence and reload.
+- Svelte autofixer: no issues. Existing editable-draft effect suggestions
+  reviewed; untrack prevents feedback while merging late restoration.
+- git diff --check.
+
+Surface ledger:
+- Entry points apply: Settings local upload and mounted-file picker exercised.
+- Clients apply: shared embedded web frontend tested in Chromium. Desktop was
+  not changed or launched. Mobile, Safari and Firefox were not tested.
+- Providers apply: real Go API, filesystem wallpaper storage and browser cache.
+- Contracts apply: wallpaper metadata/image GET, PUT, DELETE and display PATCH;
+  listing protocol and confirmed selection refresh exercised by browser tests.
+- Reverse state applies: Reset, remote deletion, logout and selection removal
+  covered by existing unit and browser regressions.
+- Connection modes apply: delayed restoration, image/upload/storage failures,
+  stale cache and reload recovery exercised. No relay-specific implementation
+  changed; physical multi-device interaction was not tested.
+- Tests apply: full frontend/backend suites and real browser journeys above.
+- Documents apply: existing API docs preserved from master; this file records
+  the integration checks. No new user-facing contract was introduced.
+
+Limits: no desktop or mobile runtime, Firefox, Safari, physical multi-device
+or relay end-to-end run. No backend race suite rerun; no concurrency resolution
+was needed. CI and a fresh Greptile review must complete on the pushed merge
+head. The parent owns the final PR merge.

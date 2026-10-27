@@ -1,3 +1,5 @@
+import { untrack } from 'svelte';
+import type { BrowseSelection } from './selection.svelte';
 import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 import {
 	getDriveStats,
@@ -20,7 +22,7 @@ import type { BrowseLocation } from './location.svelte';
  * What the browser shows for the current location: drives, a folder listing or search results.
  * Call during component setup because the queries need the component context.
  */
-export function useBrowseData(location: BrowseLocation) {
+export function useBrowseData(location: BrowseLocation, selection: BrowseSelection) {
 	const queryClient = useQueryClient();
 	const settings = $derived(settingsStore.current);
 
@@ -56,9 +58,31 @@ export function useBrowseData(location: BrowseLocation) {
 		const visible = settings.showHiddenFiles
 			? items
 			: items.filter((item) => !item.name.startsWith('.'));
-		return location.isSearchActive
-			? visible
-			: sortFiles(visible, location.sortBy, location.sortDir);
+		return sortFiles(visible, location.sortBy, location.sortDir);
+	});
+
+	let confirmed: { path: string; timestamp: number; items: readonly FileInfo[] } | undefined;
+	$effect(() => {
+		// Cached data and failed refreshes cannot establish that a selected file vanished.
+		if (
+			directoryQuery.isFetching ||
+			!directoryQuery.isSuccess ||
+			!directoryQuery.isFetchedAfterMount
+		)
+			return;
+		const timestamp = directoryQuery.dataUpdatedAt;
+		const items = directoryItems;
+		const path = directoryQuery.data.path;
+		untrack(() => {
+			if (
+				confirmed?.path === path &&
+				confirmed.timestamp === timestamp &&
+				confirmed.items === items
+			)
+				return;
+			confirmed = { path, timestamp, items };
+			if (!location.isSearchActive) selection.retain(items, path);
+		});
 	});
 
 	const currentMount = $derived(

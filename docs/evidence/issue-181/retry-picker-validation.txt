@@ -1,0 +1,126 @@
+PR188 failed-publication retry and picker load ownership, 2026-10-25
+
+Baseline: d1fc2f9d16ce347af8a5e92b5a994f98deabbfab.
+Fetched remote master: 21575b7ef05f96051ce3a732f3c8be8aa916fffb.
+Checkout: /home/radhey/.t3/worktrees/BoxBox/t3-1f5b2cb7.
+Local branch: fix/pr188-save-picker-ownership.
+Remote branch: fix/wallpaper-login-sync-181.
+Recovered the interrupted patch read-only from /tmp/boxbox-pr188-r8-interrupted.patch;
+verified the old checkout still has exactly its three reported modified files.
+That checkout and its artifacts were preserved.
+
+Hard constraints:
+- Only PR188; no other checkout writes, no root checkout access, no PR182 work.
+- No agents, watchers, review polling, merge, rebase or force push.
+- Scoped commits, normal pushes and evidence-based review replies authorized.
+- Preserve concurrent work, every existing assertion and every performance ceiling.
+- No any, compiler-silencing casts, new dependencies or manual package.json edits.
+- Domain publication ownership stays in lib; no late queue adoption of intent.
+- Every Bun command uses BUN_RUNTIME_TRANSPILER_CACHE_PATH=0.
+- Parent alone assesses exact-head Greptile 5/5 and CI before any merge.
+
+Baseline proof, before production edits:
+- Recovered focused tests: 25 pass, 3 fail. Matching failed intent capture returns
+  undefined rather than its ID; both queued successor tests fail at capture.
+- Real Chromium retry-fit against the baseline embedded Go server: failed image
+  PUT, fit-only Save, UI Saved, image API 404 instead of 200.
+- Real Chromium picker overlap: hold folder A, start breadcrumb B, release A
+  while B remains held. Loading count is 0 instead of 1. Prior entries become
+  available beneath the new path. Test fails before its cancellation assertion.
+- Logs: /tmp/pr188-baseline-unit.log, /tmp/pr188-baseline-retry.log,
+  /tmp/pr188-baseline-picker.log. No credentials printed or stored in evidence.
+
+Completion ledger:
+- PROVED: SettingsStore.set captures the current account's matching pending ID
+  synchronously at apply time, including null removal. It begins a new operation
+  only for explicit image changes. Absent, completed, other-account and
+  different-source operations are not adopted. The existing Save/Reset queue
+  carries the captured ID; transport guards remain unchanged.
+- PROVED: Picker loading is the active load's signal or null, replacing the old
+  boolean. Only the matching load clears it in finally. A non-load operation
+  can abort that load without leaving a permanent spinner. A later load keeps
+  its own loading state when the older finally runs.
+- PROVED: Path changes immediately clear old entries. Return to Server aborts
+  the old operation, clears its loading ownership and reloads roots if needed.
+  Directory requests receive their AbortSignal. Roots have no abort parameter;
+  their late responses are ignored by the existing signal check.
+- PROVED: all 34 functional browser scenarios completed sequentially against
+  the final binary built by the official performance run.
+- IN PROGRESS: scoped Git delivery, replies/resolution and one fresh review request.
+
+Surface ledger:
+- Applies: Save, fit, blur, unrelated preferences, Clear+Save and Reset;
+  failed image publication, failed removal retry, durable same-source successors,
+  same-tab and two-tab queued work, completion receipts and login restoration.
+- Applies: roots, folder navigation, breadcrumbs, root return, local file reads,
+  invalid file selection, picker disposal, Settings unmount, logout/account switch.
+- Applies: browser storage, request aborts, mounted Settings/picker UI, real
+  authenticated Go GET/PUT/PATCH/DELETE and file-list endpoints.
+- Applies unchanged: pre-apply staging cleanup, post-apply durable retry,
+  session ownership, no account preference leak, stale-cache safety, late draft
+  restoration, same-path server-file edits, cached X then remote Y recovery.
+  Prior regressions are rerun on the final binary.
+- Does not apply: backend source/API changes, desktop182/native CEF, mobile,
+  relay protocols or new providers. This change uses the existing web APIs.
+- Documents: this evidence extends publication-ownership-validation.txt.
+
+Static and component verification:
+- PASS: 28 focused synchronization tests, 151 frontend tests across 18 files.
+- PASS: frontend check, zero errors/warnings; full lint; perf:check.
+- PASS: strict standalone TypeScript check of all five functional browser scripts.
+- PASS: Svelte autofixer reports no issues in SettingsStore or picker. Its
+  existing bind:this suggestion does not affect load/publication ownership.
+- PASS: embedded frontend/Go build, static bundle budget and git diff --check.
+- Static JS 300994/301056 raw bytes, 100897 gzip advisory. Baseline 300904 raw.
+- Official perf:browser rebuilt the final embedded binary and passed all 20
+  samples plus navigation, lazy recovery and selection-refresh flows.
+- Every startup sample: 282605/283648 decoded bytes, 9 scripts, 1 listing,
+  1 refresh. Baseline recorded evidence: 282515 bytes and 9 scripts.
+- Files-visible medians: local cold 155ms, warm 120ms; slow cold 1362ms,
+  warm 767ms. Advisory timings, not gates or a speedup claim.
+- No performance ceiling or assertion was raised or weakened.
+
+Functional verification, sequential final-binary run:
+- PASS: all 9 Settings cases: draft, save-pending, reset, failed-image,
+  storage-full, new-image, stale-cache, pending-upload, blocked-cleanup.
+- PASS: all 5 lifecycle cases: logout, account switch, same-user relogin,
+  Settings unmount, completed-reload with pending cleanup blocked.
+- PASS: mounted server-file picker, changed bytes at the same path, unrelated
+  save protection, fit/blur PATCH and reload. Save-to-Saved timings:
+  112.0/1392.4/1383.9/1498.2ms, advisory only.
+- PASS: all 6 prior publication cases: save-paint, reset-queue, clear-queue,
+  two-tabs, overlap, blocked-completion. Existing byte/render/receipt assertions
+  remain in place.
+- PASS: 6 new publication cases: retry-fit, retry-blur, retry-unrelated,
+  retry-removal, retry-queue-same, retry-queue-other. Failed PUT is followed by
+  Save with exact API byte and display metadata readback. Failed DELETE is
+  retried by the next unrelated Save. A durable same-source successor inserted
+  after apply is preserved by the older Save and retried on reload.
+- PASS: 7 picker cases: overlap, roots-overlap, root-back, local, invalid-local,
+  switch, unmount. A and B use held real API responses. Loading remains visible
+  while B is pending; old entries are absent and only matching entries appear
+  when B completes. Directory cancellation is observed as requestfailed. Local
+  file interruption and invalid selection clear loading without stale choices;
+  navigation remains usable. Close/unmount/account switch cancel old requests.
+- PASS: zero page errors in all functional scripts.
+- Commands, in order after perf:browser:
+  bun frontend/scripts/verify-wallpaper-settings.ts
+  bun frontend/scripts/verify-wallpaper-lifecycle.ts
+  bun frontend/scripts/verify-wallpaper-server-file.ts
+  bun frontend/scripts/verify-wallpaper-publication.ts
+  bun frontend/scripts/verify-wallpaper-picker.ts
+  Each command carries BUN_RUNTIME_TRANSPILER_CACHE_PATH=0.
+- Final logs: /tmp/pr188-final-{settings,lifecycle,server-file,publication,picker}.log.
+  Performance samples: perf-results/browser.json; /tmp/pr188-perf.log.
+  Static/type/test logs: /tmp/pr188-{budget,check,tests,types,browser-types}.log.
+  Full final lint: /tmp/pr188-final-lint.log.
+
+Limits:
+- Chromium web and disposable local Go service only. No physical desktop,
+  native CEF, Safari, Firefox, mobile, relay or physical multi-device test.
+- Backend source unchanged; Go unit tests/vet not rerun. Real embedded Go service
+  rebuilt and exercised through the functional browser/API scenarios.
+- Existing storage-denial/process-crash limits from the prior ownership evidence
+  still apply. Durable successor injection tests the storage boundary; unit tests
+  also exercise the real begin-publication API. No exactly-once transport claim.
+- No new-head review or CI success is claimed before the parent checks it.

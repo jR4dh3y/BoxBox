@@ -25,9 +25,19 @@
 		onNavigate?: (path: string) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
+		/** On narrow windows the sidebar is a drawer, shown only while this is true. */
+		open?: boolean;
+		onClose?: () => void;
 	}
 
-	let { currentPath = '', roots = [], onNavigate, onFolderHover }: Props = $props();
+	let {
+		currentPath = '',
+		roots = [],
+		onNavigate,
+		onFolderHover,
+		open = false,
+		onClose
+	}: Props = $props();
 
 	const PLACE_ICONS: Record<string, typeof Folder> = {
 		desktop: Monitor,
@@ -55,12 +65,18 @@
 	);
 
 	function isActive(path: string): boolean {
-		if (path === '' && currentPath === '') return true;
-		return currentPath.startsWith(path) && path !== '';
+		if (path === '') return currentPath === '';
+		// "media" owns "media/movies" but not "media2".
+		return currentPath === path || currentPath.startsWith(`${path}/`);
 	}
 
 	function handleNavigate(path: string) {
 		onNavigate?.(path);
+		onClose?.();
+	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (open && event.key === 'Escape') onClose?.();
 	}
 
 	// Collapsed sections state
@@ -78,8 +94,17 @@
 	}
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
+{#if open}
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+	<div class="fixed inset-0 z-[55] bg-black/40 md:hidden" onclick={onClose}></div>
+{/if}
+
 <aside
-	class="flex w-[220px] min-w-[220px] flex-col overflow-x-hidden overflow-y-auto border-r border-border-secondary bg-surface-primary"
+	class="browse-chrome {open
+		? 'fixed inset-y-0 left-0 z-[60] flex shadow-2xl'
+		: 'hidden'} w-[220px] min-w-[220px] flex-col overflow-x-hidden overflow-y-auto border-r border-border-secondary bg-surface-primary md:static md:z-auto md:flex md:shadow-none"
 >
 	<!-- Drives Section -->
 	<div class="border-b border-border-secondary">
@@ -137,7 +162,7 @@
 							onpointerleave={() => onFolderHover?.(null)}
 						>
 							<place.icon size={16} class="shrink-0 opacity-80" />
-							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap capitalize"
 								>{place.name}</span
 							>
 						</button>
@@ -163,7 +188,7 @@
 		{#if !favoritesCollapsed}
 			<div class="pb-2">
 				{#if settingsStore.current.favoriteFolders.length === 0}
-					<div class="px-5 py-2 text-xs text-text-muted italic">No favorites yet</div>
+					<div class="px-5 py-2 text-xs text-text-muted">No favorites yet</div>
 				{:else}
 					{#each settingsStore.current.favoriteFolders as fav (fav.path)}
 						<div class="group relative">

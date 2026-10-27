@@ -261,6 +261,11 @@ export async function parseResponse<T>(response: Response): Promise<T> {
  * Main API request function with automatic token injection and refresh
  */
 export async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+	return parseResponse<T>(await apiFetch(endpoint, options));
+}
+
+/** Authenticated transport shared by JSON and binary endpoints. */
+export async function apiFetch(endpoint: string, options: RequestOptions = {}): Promise<Response> {
 	const { method = 'GET', body, headers = {}, skipAuth = false, params, signal } = options;
 
 	const url = buildUrl(endpoint, params);
@@ -310,7 +315,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
 		}
 	}
 
-	return parseResponse<T>(response);
+	return response;
 }
 
 /**

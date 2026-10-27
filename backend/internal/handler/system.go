@@ -18,6 +18,7 @@ type SystemHandler struct {
 // UploadConfigResponse tells browsers how to split uploads.
 type UploadConfigResponse struct {
 	ChunkSizeBytes int64 `json:"chunkSizeBytes"`
+	CreateOnly     bool  `json:"createOnly"`
 }
 
 // NewSystemHandler creates a new system handler
@@ -40,7 +41,7 @@ func (h *SystemHandler) RegisterRoutes(r chi.Router) {
 // GetUploadConfig returns the chunk size browsers should upload with
 // GET /api/v1/system/upload
 func (h *SystemHandler) GetUploadConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, UploadConfigResponse{ChunkSizeBytes: h.chunkSizeBytes}, http.StatusOK)
+	writeJSON(w, UploadConfigResponse{ChunkSizeBytes: h.chunkSizeBytes, CreateOnly: true}, http.StatusOK)
 }
 
 // GetDrives returns all mounted filesystems on the system

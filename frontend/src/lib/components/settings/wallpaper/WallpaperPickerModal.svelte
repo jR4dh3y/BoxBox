@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	import { SettingsOperations } from '#lib/utils/settingsOperation.js';
 	import {
 		AlertTriangle,
 		Check,
@@ -6,8 +8,8 @@
 		FileImage,
 		Folder,
 		HardDrive,
-		Image as ImageIcon,
-		Upload
+		Upload,
+		Image as ImageIcon
 	} from 'lucide-svelte';
 	import { Button, Modal, ProgressBar, Select } from '#lib/components/ui/index.js';
 	import { visibleByName } from '#lib/browse/sortFiles.js';
@@ -24,11 +26,15 @@
 		type BackgroundImageMode
 	} from '#lib/utils/wallpaper.js';
 
+	const operations = new SettingsOperations();
+	onDestroy(() => operations.dispose());
+
 	type WallpaperSource = 'server';
 	type PreviewOrigin = 'server' | 'local';
 
 	interface WallpaperSelection {
 		backgroundImage: string;
+		name: string;
 		mode: BackgroundImageMode;
 	}
 
@@ -58,7 +64,7 @@
 	let serverWallpaperRoots = $state<MountPoint[]>([]);
 	let serverWallpaperPath = $state('');
 	let serverWallpaperItems = $state<FileInfo[]>([]);
-	let serverWallpaperLoading = $state(false);
+	let serverWallpaperLoad = $state.raw<AbortSignal | null>(null);
 	let serverWallpaperError = $state<string | null>(null);
 	let localWallpaperError = $state<string | null>(null);
 	let localWallpaperUploading = $state(false);
@@ -71,7 +77,7 @@
 	let localWallpaperInput: HTMLInputElement;
 
 	const isPreviewing = $derived(previewBackgroundImage !== null);
-	const title = $derived(isPreviewing ? 'Preview Wallpaper' : 'Choose Wallpaper');
+	const title = $derived(isPreviewing ? 'Preview wallpaper' : 'Choose wallpaper');
 	const modalSize = $derived(isPreviewing ? 'lg' : 'md');
 	const serverWallpaperEntries = $derived.by(() =>
 		serverWallpaperItems.filter((item) => item.isDir || isWallpaperImageFile(item))
@@ -98,46 +104,57 @@
 	}
 
 	async function loadServerWallpaperRoots() {
-		serverWallpaperLoading = true;
+		const signal = operations.start();
+		serverWallpaperLoad = signal;
 		serverWallpaperError = null;
 
 		try {
 			const response = await listRoots();
+			signal.throwIfAborted();
 			serverWallpaperRoots = response.roots;
 		} catch (error) {
+			if (signal.aborted) return;
 			serverWallpaperError =
 				error instanceof Error ? error.message : 'Unable to load server folders.';
 		} finally {
-			serverWallpaperLoading = false;
+			if (serverWallpaperLoad === signal) serverWallpaperLoad = null;
 		}
 	}
 
 	async function openServerWallpaperPath(path: string) {
+		const signal = operations.start();
 		serverWallpaperPath = path;
-		serverWallpaperLoading = true;
+		serverWallpaperItems = [];
+		serverWallpaperLoad = signal;
 		serverWallpaperError = null;
 
 		try {
-			const response = await listDirectory(path);
+			const response = await listDirectory(path, signal);
+			signal.throwIfAborted();
 			serverWallpaperItems = visibleByName(response.items, showHiddenFiles).slice(
 				0,
 				SERVER_WALLPAPER_ITEMS_LIMIT
 			);
 		} catch (error) {
+			if (signal.aborted) return;
 			serverWallpaperError = error instanceof Error ? error.message : 'Unable to open this folder.';
 			serverWallpaperItems = [];
 		} finally {
-			serverWallpaperLoading = false;
+			if (serverWallpaperLoad === signal) serverWallpaperLoad = null;
 		}
 	}
 
 	function openServerWallpaperRoot() {
+		operations.start();
+		serverWallpaperLoad = null;
+		if (serverWallpaperRoots.length === 0) void loadServerWallpaperRoots();
 		serverWallpaperPath = '';
 		serverWallpaperItems = [];
 		serverWallpaperError = null;
 	}
 
 	function previewServerWallpaper(item: FileInfo) {
+		if (operations.start().aborted) return;
 		const backgroundImage = toServerBackgroundImage(item.path);
 		if (!backgroundImage) return;
 
@@ -154,8 +171,9 @@
 		localWallpaperInput?.click();
 	}
 
-	async function handleLocalWallpaperChange(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
+	async function handleLocalWallpaperChange(event: Event & { currentTarget: HTMLInputElement }) {
+		const signal = operations.start();
+		const input = event.currentTarget;
 		const file = input.files?.[0];
 		input.value = '';
 
@@ -177,15 +195,19 @@
 		try {
 			localWallpaperUploading = true;
 			localWallpaperProgressLabel = 'Preparing wallpaper upload...';
-			previewBackgroundImage = await readFileAsDataUrl(file, (progress) => {
+			const image = await readFileAsDataUrl(file, (progress) => {
+				if (signal.aborted) return;
 				localWallpaperProgress = progress;
 				localWallpaperProgressLabel =
 					progress >= 100 ? 'Preparing preview...' : 'Uploading wallpaper...';
 			});
+			signal.throwIfAborted();
+			previewBackgroundImage = image;
 			previewName = file.name;
 			previewOrigin = 'local';
 			previewMode = normalizeBackgroundImageMode(currentMode);
 		} catch {
+			if (signal.aborted) return;
 			localWallpaperError = 'Unable to read this image.';
 			localWallpaperProgress = 0;
 			localWallpaperProgressLabel = '';
@@ -200,6 +222,7 @@
 	}
 
 	function returnFromPreview() {
+		operations.start();
 		const origin = previewOrigin;
 		previewBackgroundImage = null;
 		previewName = '';
@@ -215,10 +238,11 @@
 	}
 
 	function applyPreview() {
-		if (!previewBackgroundImage) return;
+		if (operations.start().aborted || !previewBackgroundImage) return;
 
 		onapply?.({
 			backgroundImage: previewBackgroundImage,
+			name: previewName,
 			mode: normalizeBackgroundImageMode(previewMode)
 		});
 	}
@@ -256,12 +280,12 @@
 				style:background-repeat={previewBackgroundStyle.repeat}
 				style:background-position={previewBackgroundStyle.position}
 			>
-				<div class="absolute inset-0 bg-black/30"></div>
+				<div class="wallpaper-scrim absolute inset-0"></div>
 				<div
-					class="preview-chrome relative flex h-full overflow-hidden rounded bg-surface-primary/70"
+					class="wallpaper-preview relative flex h-full overflow-hidden rounded"
 					data-frosted-glass={frostedGlass ? 'true' : undefined}
 				>
-					<div class="w-36 shrink-0 border-r border-white/10 p-3">
+					<div class="browse-chrome w-28 shrink-0 border-r border-white/10 p-3 sm:w-36">
 						<div class="space-y-2">
 							<div class="preview-field h-7 rounded"></div>
 							<div class="preview-field preview-field-accent h-7 rounded"></div>
@@ -270,16 +294,16 @@
 						</div>
 					</div>
 					<div class="flex min-w-0 flex-1 flex-col">
-						<div class="flex h-12 items-center gap-2 border-b border-white/10 px-3">
+						<div class="browse-chrome flex h-12 items-center gap-2 border-b border-white/10 px-3">
 							<div class="preview-field h-7 w-7 rounded"></div>
 							<div class="preview-field h-7 flex-1 rounded"></div>
 							<div class="preview-field h-7 w-20 rounded"></div>
 						</div>
 						<div class="flex-1 p-4">
-							<div class="rounded border border-white/10 bg-surface-secondary/70">
+							<div class="overflow-hidden rounded border border-white/10">
 								{#each PREVIEW_ROWS as row (`preview-row-${row}`)}
 									<div
-										class="grid grid-cols-[1fr_90px_110px] items-center gap-4 border-b border-white/10 px-3 py-3 last:border-b-0"
+										class="grid grid-cols-[minmax(0,1fr)_minmax(30px,90px)_minmax(30px,110px)] items-center gap-4 border-b border-white/10 px-3 py-3 last:border-b-0"
 									>
 										<div class="flex items-center gap-2">
 											<div class="preview-field preview-field-accent h-4 w-4 rounded"></div>
@@ -316,38 +340,43 @@
 				</div>
 				<Button onclick={applyPreview}>
 					<Check size={16} />
-					Use Wallpaper
+					Use wallpaper
 				</Button>
 			</div>
 		</div>
 	{:else if wallpaperSource === null}
 		<div class="flex flex-col gap-4">
-			<div class="sm:grid-row-2 grid gap-3">
+			<div class="flex flex-col gap-3">
 				<button
 					type="button"
-					class="flex h-16 cursor-pointer items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary px-4 py-3 text-left transition-colors hover:border-border-focus hover:bg-surface-tertiary"
+					class="flex cursor-pointer items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary p-3 text-left transition-colors hover:bg-surface-tertiary"
 					onclick={() => chooseWallpaperSource('server')}
 				>
-					<span class="rounded bg-accent/15 p-2 text-accent"><HardDrive size={22} /></span>
-					<span>
-						<span class="block text-sm font-medium text-text-primary">This Server</span>
-						<span class="block text-xs text-text-muted">Browse mounted folders</span>
+					<span
+						class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-accent-base/10 text-accent-base"
+					>
+						<HardDrive size={22} />
+					</span>
+					<span class="flex flex-col gap-0.5">
+						<span class="text-[13px] text-text-primary">This Server</span>
+						<span class="text-xs text-text-muted">Browse mounted folders</span>
 					</span>
 				</button>
-
 				<button
 					type="button"
-					class="flex h-16 cursor-pointer items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary px-4 py-3 text-left transition-colors hover:border-border-focus hover:bg-surface-tertiary disabled:cursor-not-allowed disabled:opacity-60"
+					class="flex cursor-pointer items-center gap-3 rounded-lg border border-border-primary bg-surface-secondary p-3 text-left transition-colors hover:bg-surface-tertiary disabled:cursor-not-allowed disabled:opacity-60"
 					onclick={openLocalWallpaperPicker}
 					disabled={localWallpaperUploading}
 					aria-busy={localWallpaperUploading}
 				>
-					<span class="rounded bg-accent/15 p-2 text-accent"><Upload size={22} /></span>
-					<span>
-						<span class="block text-sm font-medium text-text-primary">This Device</span>
-						<span class="block text-xs text-text-muted">
-							{localWallpaperUploading ? 'Uploading wallpaper...' : 'Upload a local image'}
-						</span>
+					<span
+						class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-accent-base/10 text-accent-base"
+					>
+						<Upload size={22} />
+					</span>
+					<span class="flex flex-col gap-0.5">
+						<span class="text-[13px] text-text-primary">This Device</span>
+						<span class="text-xs text-text-muted">Upload a local image</span>
 					</span>
 				</button>
 			</div>
@@ -412,7 +441,7 @@
 				</div>
 			{/if}
 
-			{#if serverWallpaperLoading}
+			{#if serverWallpaperLoad}
 				<div
 					class="rounded border border-border-primary bg-surface-secondary px-3 py-8 text-center text-sm text-text-secondary"
 				>
@@ -495,23 +524,5 @@
 
 	.preview-field-accent {
 		background: color-mix(in srgb, var(--color-accent) 55%, transparent);
-	}
-
-	.preview-chrome[data-frosted-glass='true'] .preview-field {
-		-webkit-backdrop-filter: blur(14px) saturate(145%);
-		backdrop-filter: blur(14px) saturate(145%);
-		background: rgb(255 255 255 / 0.16);
-	}
-
-	.preview-chrome[data-frosted-glass='true'] .preview-field-muted {
-		background: rgb(255 255 255 / 0.24);
-	}
-
-	.preview-chrome[data-frosted-glass='true'] .preview-field-strong {
-		background: rgb(255 255 255 / 0.4);
-	}
-
-	.preview-chrome[data-frosted-glass='true'] .preview-field-accent {
-		background: color-mix(in srgb, var(--color-accent) 62%, transparent);
 	}
 </style>

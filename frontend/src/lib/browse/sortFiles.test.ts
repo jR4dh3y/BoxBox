@@ -24,23 +24,24 @@ const folder = [
 	entry('.config', { isDir: true })
 ];
 
-test('names sort naturally and case only breaks ties', () => {
+test('names sort naturally, case only breaks ties, and folders come first', () => {
 	assert.deepEqual(names(sortFiles(folder, 'name', 'asc')), [
+		'apps',
+		'Zed',
 		'9.txt',
 		'10.txt',
-		'apps',
 		'b.txt',
 		'B.txt',
-		'Zed',
 		'.config',
 		'.hidden'
 	]);
 });
 
-test('hidden entries stay last in both directions', () => {
+test('hidden entries stay last and folders stay first in both directions', () => {
 	const descending = names(sortFiles(folder, 'name', 'desc'));
-	assert.deepEqual(descending.slice(-2), ['.hidden', '.config']);
-	assert.equal(descending[0], 'Zed');
+	assert.deepEqual(descending.slice(-2), ['.config', '.hidden']);
+	assert.deepEqual(descending.slice(0, 2), ['Zed', 'apps']);
+	assert.equal(descending[2], 'B.txt');
 });
 
 test('type sort puts folders first in both directions', () => {

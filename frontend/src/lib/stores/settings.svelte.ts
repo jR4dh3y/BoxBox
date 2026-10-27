@@ -2,22 +2,23 @@
  * User preferences, kept in localStorage; drive names are also stored on the server
  */
 
-import { settingsStorage } from '#lib/utils/storage.js';
+import { settingsStorage, storage } from '#lib/utils/storage.js';
+import {
+	beginWallpaperPublication,
+	wallpaperPublication
+} from '#lib/utils/wallpaperPublication.js';
+import { currentUsername } from '#lib/utils/sessionUser.js';
+import { normalizeAccentColorSource, type AccentColorSource } from '#lib/utils/appearance.js';
 import {
 	getDriveNames,
 	setDriveName as apiSetDriveName,
 	deleteDriveName as apiDeleteDriveName
 } from '#lib/api/drive-names.js';
-import { normalizeBackgroundImage } from '#lib/utils/appearance.js';
 import {
 	DEFAULT_BACKGROUND_IMAGE_MODE,
 	normalizeBackgroundImageMode,
 	type BackgroundImageMode
 } from '#lib/utils/wallpaper.js';
-import {
-	isInlineWallpaperDataUrl,
-	saveLocalWallpaperDataUrl
-} from '#lib/utils/wallpaperStorage.js';
 
 export interface UserSettings {
 	showHiddenFiles: boolean;
@@ -27,11 +28,16 @@ export interface UserSettings {
 	defaultSortDir: 'asc' | 'desc';
 	defaultViewMode: 'list' | 'grid';
 	accentColor: string | null;
+	accentColorSource: AccentColorSource;
 	backgroundImage: string | null;
+	/** The wallpaper's file name, when it is known; a restored upload from another browser has none. */
+	backgroundImageName: string | null;
 	backgroundImageMode: BackgroundImageMode;
 	frostedGlass: boolean;
 	previewOnSingleClick: boolean;
 	compactMode: boolean;
+	/** Rows show a checkbox on hover, so several items can be picked without modifier keys. */
+	selectionCheckboxes: boolean;
 	driveNameOverrides: Record<string, string>;
 	favoriteFolders: FavoriteFolder[];
 }
@@ -49,26 +55,36 @@ const defaultSettings: UserSettings = {
 	defaultSortDir: 'asc',
 	defaultViewMode: 'list',
 	accentColor: null,
+	accentColorSource: 'wallpaper',
 	backgroundImage: null,
+	backgroundImageName: null,
 	backgroundImageMode: DEFAULT_BACKGROUND_IMAGE_MODE,
 	frostedGlass: false,
 	previewOnSingleClick: false,
 	compactMode: false,
+	selectionCheckboxes: true,
 	driveNameOverrides: {},
 	favoriteFolders: []
 };
 
-function loadSettings(): UserSettings {
-	const stored = settingsStorage.get<UserSettings>();
-	const settings = stored ? { ...defaultSettings, ...stored } : defaultSettings;
+function loadSettings(username: string): UserSettings {
+	// Only migrate legacy preferences when the previous sync recorded their owner.
+	let stored = settingsStorage.get<Partial<UserSettings>>(username);
+	if (!stored) {
+		try {
+			if (storage.getString('boxbox_wallpaper_owner') === username) {
+				stored = settingsStorage.get<Partial<UserSettings>>();
+			}
+		} catch {
+			// Browsers can disable localStorage even when the session is valid.
+		}
+	}
+	const settings = { ...defaultSettings, ...stored };
 	return {
 		...settings,
+		accentColorSource: normalizeAccentColorSource(stored?.accentColorSource, settings.accentColor),
 		backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode)
 	};
-}
-
-function saveSettings(settings: UserSettings): void {
-	settingsStorage.set(settings);
 }
 
 async function loadDriveNames(): Promise<Record<string, string>> {
@@ -84,54 +100,73 @@ async function loadDriveNames(): Promise<Record<string, string>> {
 	}
 }
 
-async function migrateInlineBackgroundImage(settings: UserSettings): Promise<UserSettings> {
-	const backgroundImage = normalizeBackgroundImage(settings.backgroundImage);
-	if (!backgroundImage || !isInlineWallpaperDataUrl(backgroundImage)) {
-		return settings;
-	}
-
-	try {
-		const migratedBackgroundImage = await saveLocalWallpaperDataUrl(backgroundImage);
-		return {
-			...settings,
-			backgroundImage: migratedBackgroundImage
-		};
-	} catch {
-		return settings;
-	}
-}
-
 class SettingsStore {
-	current = $state.raw<UserSettings>(loadSettings());
+	current = $state.raw<UserSettings>({ ...defaultSettings });
+	private username: string | null = null;
+	private session = 0;
+	private sessionController = new AbortController();
+
+	get sessionSignal(): AbortSignal {
+		return this.sessionController.signal;
+	}
+	wallpaperRevision = 0;
 
 	/** Call after sign-in: the drive names come from an authenticated endpoint. */
 	async initialize(): Promise<void> {
-		const migrated = await migrateInlineBackgroundImage(this.current);
-		if (migrated !== this.current) {
-			try {
-				saveSettings(migrated);
-			} catch {
-				// Keep the in-memory migrated reference even if the browser refuses persistence.
-			}
-			this.current = migrated;
-		}
+		this.sessionController.abort();
+		this.sessionController = new AbortController();
+		const session = ++this.session;
+		const username = currentUsername() ?? 'dev';
+		this.username = username;
+		this.current = loadSettings(username);
 
 		const driveNameOverrides = await loadDriveNames();
+		if (session !== this.session) return;
 		this.current = { ...this.current, driveNameOverrides };
 		try {
-			saveSettings(this.current);
+			settingsStorage.set(this.current, username);
 		} catch {
 			// Initialization should not fail auth because local preference persistence is full.
 		}
 	}
 
-	set(settings: UserSettings): void {
-		saveSettings(settings);
+	set(settings: UserSettings, wallpaperChanged = false): string | undefined {
+		let publication: string | undefined;
+		if (this.username !== null) {
+			if (wallpaperChanged)
+				publication = beginWallpaperPublication(this.username, settings.backgroundImage);
+			else {
+				const intent = wallpaperPublication(this.username);
+				if (intent.kind === 'pending' && intent.source === settings.backgroundImage)
+					publication = intent.id;
+			}
+		}
+		if (
+			settings.backgroundImage !== this.current.backgroundImage ||
+			settings.backgroundImageMode !== this.current.backgroundImageMode ||
+			settings.frostedGlass !== this.current.frostedGlass
+		)
+			this.wallpaperRevision++;
 		this.current = settings;
+		try {
+			if (this.username !== null) settingsStorage.set(settings, this.username);
+		} catch (error) {
+			console.warn('Unable to persist settings', error);
+		}
+		return publication;
 	}
 
-	reset(): void {
-		this.set(defaultSettings);
+	clearSession(): void {
+		this.sessionController.abort();
+		this.sessionController = new AbortController();
+		this.session++;
+		this.username = null;
+		this.current = { ...defaultSettings };
+	}
+
+	reset(): string | undefined {
+		this.wallpaperRevision++;
+		return this.set(defaultSettings, true);
 	}
 
 	async setDriveName(originalName: string, customName: string): Promise<void> {

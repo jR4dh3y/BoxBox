@@ -228,6 +228,22 @@ func (h *StreamHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create-only support is advertised before accepting a transfer's bytes.
+	w.Header().Set("X-Create-Only", "true")
+	if r.Header.Get("X-Upload-Type") == "directory" {
+		if r.Header.Get("X-Create-Only") != "true" {
+			HandleServiceError(w, service.ErrInvalidOperation)
+			return
+		}
+		if err := service.CreateUploadDirectory(h.fileService, path); err != nil {
+			HandleServiceError(w, err)
+			return
+		}
+		writeJSON(w, struct {
+			Complete bool `json:"complete"`
+		}{true}, http.StatusCreated)
+		return
+	}
 	// Parse upload headers
 	uploadReq, err := h.parseUploadHeaders(r)
 	if err != nil {
@@ -246,6 +262,7 @@ func (h *StreamHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		ChunkSize:   uploadReq.ChunkSize,
 		TotalSize:   uploadReq.TotalSize,
 		Checksum:    uploadReq.Checksum,
+		CreateOnly:  r.Header.Get("X-Create-Only") == "true",
 	}, http.MaxBytesReader(w, r.Body, uploadReq.ExpectedSize()))
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
@@ -320,14 +337,17 @@ func (h *StreamHandler) parseUploadHeaders(r *http.Request) (*UploadRequest, err
 		return nil, errors.New("X-Total-Size header is required")
 	}
 	totalSize, err := strconv.ParseInt(totalSizeStr, 10, 64)
-	if err != nil || totalSize < 1 {
-		return nil, errors.New("X-Total-Size must be a positive integer")
+	if err != nil || totalSize < 0 {
+		return nil, errors.New("X-Total-Size must be a non-negative integer")
 	}
 	if h.maxUploadBytes > 0 && totalSize > h.maxUploadBytes {
 		return nil, fmt.Errorf("%w: maximum size is %d bytes", errUploadTooLarge, h.maxUploadBytes)
 	}
 
-	expectedTotalChunks := (totalSize + chunkSize - 1) / chunkSize
+	expectedTotalChunks := int64(1)
+	if totalSize > 0 {
+		expectedTotalChunks = 1 + (totalSize-1)/chunkSize
+	}
 	if int64(totalChunks) != expectedTotalChunks {
 		return nil, errors.New("X-Total-Chunks does not match X-Total-Size and X-Chunk-Size")
 	}
@@ -336,7 +356,7 @@ func (h *StreamHandler) parseUploadHeaders(r *http.Request) (*UploadRequest, err
 	if chunkIndex == totalChunks-1 {
 		expectedChunkSize = totalSize - int64(chunkIndex)*chunkSize
 	}
-	if expectedChunkSize < 1 || expectedChunkSize > chunkSize {
+	if expectedChunkSize < 0 || expectedChunkSize > chunkSize {
 		return nil, errors.New("invalid upload chunk metadata")
 	}
 
@@ -429,6 +449,7 @@ func streamContentDisposition(disposition, filename string) string {
 // UploadStatus returns the status of an upload session
 // GET /api/v1/stream/upload/status/*path
 func (h *StreamHandler) UploadStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Create-Only", "true")
 	uploadID := r.URL.Query().Get("uploadId")
 	if uploadID == "" {
 		writeError(w, "uploadId query parameter is required", model.ErrCodeValidationError, http.StatusBadRequest)

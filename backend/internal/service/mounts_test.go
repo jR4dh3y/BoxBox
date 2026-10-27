@@ -88,3 +88,56 @@ func TestIsMalformedPath(t *testing.T) {
 		t.Fatal("lookup errors are not malformed")
 	}
 }
+
+func TestMountsResolveOverlappingReadOnlyPaths(t *testing.T) {
+	root := t.TempDir()
+	protected := filepath.Join(root, "backups")
+	if err := os.Mkdir(protected, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(protected, "db.bak"), []byte("precious"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(protected, filepath.Join(root, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	list := []model.MountPoint{{Name: "home", Path: root}, {Name: "backups", Path: filepath.Join(root, "alias"), ReadOnly: true}, {Name: "child", Path: protected}}
+	m := newMounts(filesystem.NewOsFS(), func() []model.MountPoint { return list })
+	for _, test := range []struct {
+		path   string
+		access pathAccess
+		want   error
+	}{
+		{"home/backups/db.bak", readExisting, nil},
+		{"home/backups/db.bak", writeExisting, ErrPermissionDenied},
+		{"home/alias/db.bak", writeExisting, ErrPermissionDenied},
+		{"home/backups/new/sub/file", writeMaybeMissing, ErrPermissionDenied},
+		{"child/db.bak", writeExisting, ErrPermissionDenied},
+		{"home/backups-other/new", writeMaybeMissing, nil},
+		{"home/allowed", writeMaybeMissing, nil},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			_, _, err := m.resolve(test.path, test.access)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("resolve: %v, want %v", err, test.want)
+			}
+		})
+	}
+	// Re-read the configuration on each write instead of caching permission decisions.
+	list[1].ReadOnly = false
+	if _, _, err := m.resolve("home/backups/db.bak", writeExisting); err != nil {
+		t.Fatal(err)
+	}
+	list[1].ReadOnly = true
+	if err := os.Remove(filepath.Join(protected, "db.bak")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(protected); err != nil {
+		t.Fatal(err)
+	}
+	// Use the configured real path while its directory is absent.
+	list[1].Path = protected
+	if _, _, err := m.resolve("home/backups/new", writeMaybeMissing); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("missing protected root: %v", err)
+	}
+}

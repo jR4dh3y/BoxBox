@@ -22,6 +22,7 @@ type LoadCase = {
 	label: string;
 	source: string;
 	path: string;
+	enter?: (page: Page) => Promise<void>;
 	ready: (page: Page) => Promise<void>;
 };
 
@@ -33,18 +34,31 @@ const cases: LoadCase[] = [
 		ready: (page) => page.locator('[data-file-item="true"]').first().waitFor()
 	},
 	{
-		label: 'wallpaper settings',
-		source: 'src/lib/components/settings/wallpaper/WallpaperSettings.svelte',
-		path: '/settings',
-		ready: (page) => page.getByRole('button', { name: 'Choose Wallpaper', exact: true }).waitFor()
+		label: 'wallpaper picker',
+		source: 'src/lib/components/settings/wallpaper/WallpaperPickerModal.svelte',
+		path: '/browse?path=perf',
+		enter: async (page) => {
+			await openSection(page, 'Appearance');
+			await page.getByRole('button', { name: 'Choose', exact: true }).click();
+		},
+		ready: (page) => page.getByRole('button', { name: /This Server/ }).waitFor()
 	},
 	{
 		label: 'shared links',
 		source: 'src/lib/components/settings/ShareLinksSettings.svelte',
-		path: '/settings',
+		path: '/browse?path=perf',
+		enter: (page) => openSection(page, 'Shared links'),
 		ready: (page) => page.getByText('No shared links.', { exact: true }).waitFor()
 	}
 ];
+
+async function openSection(page: Page, label: string) {
+	await page.getByRole('button', { name: 'Settings', exact: true }).click();
+	await page
+		.getByRole('navigation', { name: 'Settings sections' })
+		.getByRole('button', { name: label, exact: true })
+		.click();
+}
 
 export async function verifyLazyLoadErrors(
 	browser: Browser,
@@ -66,13 +80,18 @@ export async function verifyLazyLoadErrors(
 			const errors: string[] = [];
 			page.on('pageerror', (error) => errors.push(error.message));
 			await page.goto(`${url}${test.path}`);
+			await test.enter?.(page);
 			const alert = page
 				.getByRole('alert')
 				.filter({ hasText: `Could not load the ${test.label}.` });
 			await alert.waitFor({ timeout: 5000 });
 			assert.ok(blockedRequests > 0, `${test.label}: the component request must be blocked`);
 			await context.unroute(blockedPath);
-			await alert.getByRole('button', { name: 'Reload', exact: true }).click();
+			await Promise.all([
+				page.waitForEvent('domcontentloaded'),
+				alert.getByRole('button', { name: 'Reload', exact: true }).click()
+			]);
+			await test.enter?.(page);
 			await test.ready(page);
 			assert.equal(page.url(), `${url}${test.path}`, 'reload preserves the current location');
 			assert.equal(await alert.count(), 0, 'successful recovery removes the error');

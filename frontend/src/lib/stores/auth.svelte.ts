@@ -49,11 +49,11 @@ class AuthStore {
 				}
 			}
 
+			if (isDevelopment || isAuthenticated) void settingsStore.initialize();
 			this.isDevelopment = isDevelopment;
 			this.isAuthenticated = isDevelopment || isAuthenticated;
 
 			if (!isDevelopment && isAuthenticated) this.startTokenRefresh();
-			if (this.isAuthenticated) void settingsStore.initialize();
 		} finally {
 			this.isRestoringSession = false;
 		}
@@ -66,11 +66,11 @@ class AuthStore {
 
 		try {
 			await apiLogin(username, password);
+			void settingsStore.initialize();
 			this.isAuthenticated = true;
 			this.isLoading = false;
 			this.authAlert = null;
 			this.startTokenRefresh();
-			void settingsStore.initialize();
 			return true;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : 'Login failed';
@@ -166,6 +166,7 @@ class AuthStore {
 
 	private reset(): void {
 		resetShareWallpaperLoginSync();
+		settingsStore.clearSession();
 		this.isAuthenticated = false;
 		this.isDevelopment = false;
 		this.isLoading = false;

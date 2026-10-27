@@ -6,19 +6,13 @@
 	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import { CheckCircle, XCircle, Info, AlertTriangle, X } from 'lucide-svelte';
 	import { fly, fade } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
 
 	const iconMap = {
 		success: CheckCircle,
 		error: XCircle,
 		info: Info,
 		warning: AlertTriangle
-	};
-
-	const colorMap = {
-		success: 'bg-success/10 border-success/30 text-success',
-		error: 'bg-danger/10 border-danger/30 text-danger',
-		info: 'bg-accent/10 border-accent/30 text-accent',
-		warning: 'bg-warning/10 border-warning/30 text-warning'
 	};
 
 	const iconColorMap = {
@@ -31,40 +25,40 @@
 	function handleDismiss(id: string) {
 		toastStore.remove(id);
 	}
+
+	// Newer toasts wait their turn; a lifetime starts only once its toast is shown.
+	const MAX_VISIBLE = 4;
+	const visibleToasts = $derived(toastStore.toasts.slice(0, MAX_VISIBLE));
 </script>
 
-{#if toastStore.toasts.length > 0}
-	<div class="pointer-events-none fixed right-4 bottom-11 z-[100] flex max-w-sm flex-col gap-2">
-		{#each toastStore.toasts as toast (toast.id)}
-			{@const Icon = iconMap[toast.type]}
-			<div
-				class="pointer-events-auto flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg backdrop-blur-sm {colorMap[
-					toast.type
-				]}"
-				in:fly={{ x: 100, duration: 200 }}
-				out:fade={{ duration: 150 }}
-				role="alert"
-			>
-				<!-- Icon -->
-				<div class="mt-0.5 shrink-0 {iconColorMap[toast.type]}">
-					<Icon size={18} />
-				</div>
+{#each visibleToasts as toast (toast.id)}
+	{@const Icon = iconMap[toast.type]}
+	<div
+		class="pointer-events-auto flex items-start gap-3 rounded-lg border border-border-primary bg-surface-secondary px-4 py-3 shadow-lg"
+		in:fly={{ x: 100, duration: 200 }}
+		animate:flip={{ duration: 200 }}
+		out:fade={{ duration: 150 }}
+		{@attach () => toastStore.startLifetime(toast.id)}
+		role="alert"
+	>
+		<!-- Icon -->
+		<div class="mt-0.5 shrink-0 {iconColorMap[toast.type]}">
+			<Icon size={16} />
+		</div>
 
-				<!-- Message -->
-				<p class="m-0 flex-1 pr-2 text-sm text-text-primary">
-					{toast.message}
-				</p>
+		<!-- Message -->
+		<p class="m-0 flex-1 pr-2 text-[13px] text-text-primary">
+			{toast.message}
+		</p>
 
-				<!-- Dismiss button -->
-				<button
-					type="button"
-					class="shrink-0 rounded p-0.5 text-text-muted transition-colors hover:bg-surface-elevated hover:text-text-primary"
-					onclick={() => handleDismiss(toast.id)}
-					aria-label="Dismiss notification"
-				>
-					<X size={14} />
-				</button>
-			</div>
-		{/each}
+		<!-- Dismiss button -->
+		<button
+			type="button"
+			class="shrink-0 rounded p-0.5 text-text-muted transition-colors hover:bg-surface-elevated hover:text-text-primary"
+			onclick={() => handleDismiss(toast.id)}
+			aria-label="Dismiss notification"
+		>
+			<X size={14} />
+		</button>
 	</div>
-{/if}
+{/each}

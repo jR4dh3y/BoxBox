@@ -1,16 +1,26 @@
 <script lang="ts">
-	/**
-	 * Login page component
-	 */
 	import { authStore } from '#lib/stores/auth.svelte.js';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { Button, Input, Spinner } from '#lib/components/ui/index.js';
-	import { X, AlertTriangle } from 'lucide-svelte';
+	import { tick } from 'svelte';
+	import { ArrowRight } from 'lucide-svelte';
+	import { Spinner } from '#lib/components/ui/index.js';
 
 	let username = $state('');
 	let password = $state('');
+	let passwordInput = $state<HTMLInputElement>();
 	const authBusy = $derived(authStore.isLoading || authStore.isRestoringSession);
+	const canSubmit = $derived(!authBusy && username.trim() !== '' && password !== '');
+	const fieldClass =
+		'h-9 w-full min-w-0 bg-transparent px-3 text-[13px] text-text-primary placeholder:text-text-muted focus:outline-none disabled:opacity-60';
+
+	// The fields stay disabled while a saved session is checked, and a disabled field cannot take focus.
+	let autofocused = false;
+	function autofocus(input: HTMLInputElement) {
+		if (authBusy || autofocused) return;
+		autofocused = true;
+		input.focus();
+	}
 
 	async function handleSubmit(event: Event) {
 		event.preventDefault();
@@ -22,83 +32,89 @@
 		const success = await authStore.login(username.trim(), password);
 		if (success) {
 			goto(resolve('browse'));
+			return;
 		}
+		// The fields were disabled while the request ran; hand the password back for a retry.
+		await tick();
+		passwordInput?.focus();
+		passwordInput?.select();
 	}
 
+	// An old error says nothing about the next attempt.
 	function clearError() {
-		authStore.clearError();
+		if (authStore.error) authStore.clearError();
 	}
 </script>
 
 <svelte:head>
-	<title>Login - BoxBox</title>
+	<title>Sign in · BoxBox</title>
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center bg-surface-primary p-4">
-	<div
-		class="w-full max-w-[400px] rounded-lg border border-border-primary bg-surface-secondary p-8"
-	>
-		<div class="mb-6 flex items-center justify-center gap-4">
-			<img src="/logo-boxbox-3d.svg" alt="BoxBox" class="h-16 w-auto shrink-0" />
-			<div class="min-w-0">
-				<h1 class="m-0 text-xl leading-7 font-semibold text-text-primary">Sign in</h1>
-				<p class="m-0 text-sm leading-5 text-text-secondary">Access your files</p>
-			</div>
+	<form class="flex w-[300px] flex-col items-center" onsubmit={handleSubmit}>
+		<!-- The animated mark loads after the form; the box keeps its place meanwhile. -->
+		<div class="mb-8 aspect-[57/41] h-24">
+			{#await import('#lib/components/AnimatedLogo.svelte') then { default: AnimatedLogo }}
+				<AnimatedLogo busy={authStore.isLoading} />
+			{:catch}
+				<img src="/logo-boxbox-3d.svg" alt="BoxBox" class="h-full w-full" />
+			{/await}
 		</div>
 
-		<form class="flex flex-col gap-5" onsubmit={handleSubmit}>
-			{#if authStore.error}
-				<div
-					class="flex items-center gap-2 rounded border border-danger/30 bg-danger/20 px-4 py-3 text-sm text-danger"
-					role="alert"
-				>
-					<span class="shrink-0"><AlertTriangle size={16} /></span>
-					<span class="flex-1">{authStore.error}</span>
-					<button
-						type="button"
-						class="ml-auto flex h-6 w-6 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 text-xl text-danger transition-colors hover:bg-danger/30"
-						onclick={clearError}
-						aria-label="Dismiss error"
-					>
-						<X size={16} />
-					</button>
-				</div>
-			{/if}
-
-			<div class="flex flex-col gap-2">
-				<label for="username" class="text-sm font-medium text-text-secondary">Username</label>
-				<Input
-					type="text"
-					id="username"
-					bind:value={username}
-					placeholder="Enter your username"
-					autocomplete="username"
-					required
-					disabled={authBusy}
-				/>
-			</div>
-
-			<div class="flex flex-col gap-2">
-				<label for="password" class="text-sm font-medium text-text-secondary">Password</label>
-				<Input
-					type="password"
+		<!-- One box for both fields, like a desktop sign-in; the arrow submits. -->
+		<div
+			class="w-full overflow-hidden rounded border bg-surface-secondary {authStore.error
+				? 'border-danger'
+				: 'border-border-primary focus-within:border-border-focus'}"
+		>
+			<label for="username" class="sr-only">Username</label>
+			<input
+				id="username"
+				type="text"
+				placeholder="Username"
+				bind:value={username}
+				oninput={clearError}
+				autocomplete="username"
+				autocapitalize="none"
+				spellcheck="false"
+				required
+				disabled={authBusy}
+				class={fieldClass}
+				{@attach autofocus}
+			/>
+			<div class="flex border-t border-border-secondary">
+				<label for="password" class="sr-only">Password</label>
+				<input
 					id="password"
+					bind:this={passwordInput}
+					type="password"
+					placeholder="Password"
 					bind:value={password}
-					placeholder="Enter your password"
+					oninput={clearError}
 					autocomplete="current-password"
 					required
 					disabled={authBusy}
+					class={fieldClass}
 				/>
+				<button
+					type="submit"
+					class="flex w-9 shrink-0 cursor-pointer items-center justify-center text-accent transition-colors hover:bg-surface-elevated disabled:cursor-default disabled:bg-transparent disabled:text-text-muted"
+					disabled={!canSubmit}
+					aria-label="Sign in"
+					title="Sign in"
+				>
+					{#if authStore.isLoading}
+						<Spinner size="sm" />
+					{:else}
+						<ArrowRight size={16} />
+					{/if}
+				</button>
 			</div>
+		</div>
 
-			<Button type="submit" variant="primary" disabled={authBusy || !username.trim() || !password}>
-				{#if authStore.isLoading}
-					<Spinner size="sm" />
-					<span>Signing in...</span>
-				{:else}
-					<span>Sign In</span>
-				{/if}
-			</Button>
-		</form>
-	</div>
+		<!-- The line keeps its height, so an error does not push the form around. -->
+		<p class="m-0 mt-3 h-5 text-center text-[13px] text-danger" role="alert">
+			{authStore.error ?? ''}
+		</p>
+	</form>
 </div>

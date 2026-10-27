@@ -1,0 +1,90 @@
+PR188 session/publication lifecycle fixes, 2026-10-25
+
+Baseline: 4c5a343b4021629af44a38bb4edd91e2842589e8.
+Remote master remains 15c51b5256a6cedc581191e7541a14382aa5d9f6.
+Isolated checkout: /home/radhey/.t3/worktrees/BoxBox/t3-4eacddc2.
+No parent/existing checkout edits, history rewrite, budget changes or desktop work.
+
+Baseline failures, before replacing the baseline embedded binary:
+- Focused completed-publication regression: 16 pass, 1 fail. After successful
+  upload, blocked pending-key removal, logout, remote deletion and login,
+  backgroundImage was the old local reference instead of null.
+- verify-wallpaper-lifecycle.ts switch: delayed real IndexedDB completion,
+  A logout, B UI login, release completion. Rendered private image count was
+  1 instead of 0. This exercises the mounted Settings component, not a mock.
+- verify-wallpaper-lifecycle.ts completed-reload: upload succeeded, pending-key
+  removal throws persistently, another client deletes remotely, full browser
+  reload. Rendered image count was 1 instead of 0.
+
+Design/surface ledger:
+- SettingsStore owns a session cancellation signal, replaced by initialize and
+  clearSession. Same-username relogin is a new session, token refresh is not.
+- SettingsOperations binds each page/picker to that signal and its own mounted
+  lifetime; a new Save/Reset/Cancel supersedes previous page work.
+- Save checks cancellation around progress/paint boundaries and after IndexedDB
+  completion, before applying settings or enqueuing publication. The queue
+  combines operation and authenticated-session cancellation.
+- An unapplied Save owns its random local image reference. Cancellation cleans
+  up that staged reference, never the active preference image or another
+  account's content-addressed restoration cache. Once applied, later errors
+  cannot delete the current image. Existing account-specific preference keys
+  and login restoration remain intact.
+- Reset checks page/session validity before mutation and passes its signal to
+  publication; an abandoned reset cannot publish against a subsequent login.
+- Picker file reads, progress callbacks, server-list results and Apply check
+  the same lifecycle. The picker only produces a draft; Save owns persistence.
+  Svelte destroys the lazy picker branch with its parent.
+- Publication state is absent/pending(source)/completed, keyed by account.
+  Pending retries require the exact current source. The existing account-specific
+  localStorage key retains the nonempty source
+  for pending intent and an empty string for completed intent (an image source
+  cannot be empty). Existing failed-upload markers remain readable. There is
+  no pending-marker deletion or fallback that can expose an old intent.
+  Completion remains durable across reload when removeItem is blocked.
+  Completion is recorded for its captured
+  account after acknowledged reconciliation even if a newer draft was edited.
+- Memory remains usable if browser publication persistence is unavailable.
+  Genuine transport failures leave pending state and local bytes intact.
+  Completed publication accepts subsequent authoritative remote deletion.
+
+Verification (BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 for every Bun invocation):
+- bun run test: 142 tests, 18 files, zero failures.
+- bun run check: zero errors and warnings.
+- bun run lint; bun run perf:check; strict standalone TypeScript checks for
+  verify-wallpaper-settings.ts, verify-wallpaper-server-file.ts and
+  verify-wallpaper-lifecycle.ts.
+- Svelte autofixer: no issues in either changed component. Existing editable
+  draft/untrack and bind:this suggestions reviewed; no new effect was added.
+- bun run perf:browser rebuilt the embedded frontend/Go binary and passed its
+  navigation, lazy chunk recovery, selection refresh and 20 browser samples.
+- bun run perf:budget: 299596/301056 raw static bytes (baseline 299282).
+- All 20 startup samples: 281206/283648 decoded bytes (baseline 280931),
+  9 scripts, 1 listing, 1 refresh. No ceilings increased.
+- Files-visible medians: local cold 166ms, warm 131ms; slow cold 1372ms,
+  warm 767ms. Advisory timings; no speedup
+  claim or wall-clock gate.
+- Existing real-server Settings scenarios: draft, save-pending, reset,
+  failed-image, storage-full, new-image, stale-cache, pending-upload,
+  blocked-cleanup, plus mounted server-file picker/same-path bytes/display
+  persistence. All 10 pass. Failed upload retries across reload are retained;
+  cached X renders during transient Y failure and reload recovers Y.
+- Five added real-server browser scenarios pass: logout, switch, relogin,
+  unmount, completed-reload. They assert rendered state, persisted preferences,
+  staged-image cleanup, zero stale PUT/DELETE, and both accounts' real remote
+  state. completed-reload asserts exactly the original single PUT.
+- Focused synchronization tests cover pending/completed ownership and operation
+  cancellation on Reset, logout, same-user relogin and page disposal. A seeded
+  pre-existing pending source also retries and becomes durable completion.
+- git diff --check.
+
+Limits:
+- Backend source unchanged; backend tests/vet were not rerun. The real Go
+  server is rebuilt and exercised through the browser/API checks above.
+- Chromium web only. No desktop, mobile, Safari, Firefox, relay or physical
+  multi-device run. Remote deletion is a separate authenticated API client.
+- No crash injection between transport acknowledgement and completion
+  write, or permanent denial of completion writes; memory fallback only lasts
+  for the current browser process. No exactly-once transaction across browser
+  storage and the remote server is claimed.
+- New-head CI and exact-head Greptile 5/5 remain for the parent. No merge,
+  watcher or review polling by this implementation child.

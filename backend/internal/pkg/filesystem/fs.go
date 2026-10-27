@@ -29,6 +29,9 @@ type FS interface {
 	// EvalSymlinks returns the path after evaluating symbolic links.
 	EvalSymlinks(path string) (string, error)
 
+	// Readlink returns the stored target of a symbolic link.
+	Readlink(path string) (string, error)
+
 	// Stat returns a FileInfo describing the named file.
 	Stat(name string) (fs.FileInfo, error)
 
@@ -59,6 +62,9 @@ type FS interface {
 
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
+
+	// Mkdir creates one new directory and fails when it already exists.
+	Mkdir(path string, perm os.FileMode) error
 
 	// Chmod changes the mode bits of the named file or directory.
 	Chmod(name string, mode os.FileMode) error
@@ -229,6 +235,17 @@ func (a *AferoFS) EvalSymlinks(path string) (string, error) {
 	return filepath.Clean(path), nil
 }
 
+func (a *AferoFS) Readlink(path string) (string, error) {
+	if err := validateFilesystemPath(path); err != nil {
+		return "", err
+	}
+	path = filepath.Clean("/" + path)
+	if reader, ok := a.fs.(afero.LinkReader); ok {
+		return reader.ReadlinkIfPossible(path)
+	}
+	return "", afero.ErrNoReadlink
+}
+
 // Stat returns a FileInfo describing the named file.
 func (a *AferoFS) Stat(name string) (fs.FileInfo, error) {
 	if err := validateFilesystemPath(name); err != nil {
@@ -364,6 +381,13 @@ func (a *AferoFS) MkdirAll(path string, perm os.FileMode) error {
 	}
 	path = filepath.Clean("/" + path)
 	return a.fs.MkdirAll(path, perm)
+}
+
+func (a *AferoFS) Mkdir(path string, perm os.FileMode) error {
+	if err := validateFilesystemPath(path); err != nil {
+		return err
+	}
+	return a.fs.Mkdir(filepath.Clean("/"+path), perm)
 }
 
 // Chmod changes the mode bits of the named file or directory.
