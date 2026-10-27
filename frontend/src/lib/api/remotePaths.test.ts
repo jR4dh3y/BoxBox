@@ -26,7 +26,7 @@ import {
 	search
 } from './files';
 import { cancelJob, createCopyJob, createDeleteJob, createMoveJob, getJob, listJobs } from './jobs';
-import { createShare, listShares, revokeShare } from './shares';
+import { createShare, listShares, revokeShare } from './shareManagement';
 import { uploadChunkSize } from '../utils/uploadConfig';
 import {
 	listDesktopServers,

@@ -236,6 +236,7 @@ async function benchmark(base?: string, sha?: string) {
 		await verifyLazyLoadErrors(browser, head.url, head.credentials);
 		await verifyNavigation(browser, head.url, head.credentials, fixture.mount);
 		await verifySelectionRefresh(browser, head.url, head.credentials, fixture.mount);
+		await verifyLazyFeatures(browser, head.url, head.credentials, fixture.mount);
 	} finally {
 		writeFileSync(
 			join(results, 'browser.json'),

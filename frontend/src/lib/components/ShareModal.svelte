@@ -4,13 +4,8 @@
 	 */
 	import { Button, Modal, Select, Spinner } from '#lib/components/ui/index.js';
 	import ShareLinkList from '#lib/components/ShareLinkList.svelte';
-	import {
-		createShare,
-		listShares,
-		type FileInfo,
-		type SharePermissionInput,
-		type ShareRecord
-	} from '#lib/api/index.js';
+	import { type FileInfo, type SharePermissionInput, type ShareRecord } from '#lib/api/index.js';
+	import { createShare, listShares } from '#lib/api/shareManagement.js';
 
 	interface Props {
 		open?: boolean;
