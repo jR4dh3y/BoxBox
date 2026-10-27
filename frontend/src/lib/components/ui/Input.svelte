@@ -8,6 +8,8 @@
 		id?: string;
 		name?: string;
 		autocomplete?: AutoFill;
+		/** Select the base name only, or the whole value, when the field gains focus. */
+		selectOnFocus?: 'basename' | 'all';
 		oninput?: (e: Event) => void;
 		onkeydown?: (e: KeyboardEvent) => void;
 	}
@@ -21,9 +23,18 @@
 		id,
 		name,
 		autocomplete,
+		selectOnFocus,
 		oninput,
 		onkeydown
 	}: Props = $props();
+
+	function handleFocus(event: FocusEvent & { currentTarget: HTMLInputElement }) {
+		if (!selectOnFocus) return;
+		const field = event.currentTarget;
+		// A leading dot is part of the name (.env), not an extension separator.
+		const dot = field.value.lastIndexOf('.');
+		field.setSelectionRange(0, selectOnFocus === 'basename' && dot > 0 ? dot : field.value.length);
+	}
 </script>
 
 <input
@@ -37,5 +48,6 @@
 	{autocomplete}
 	{oninput}
 	{onkeydown}
-	class="w-full rounded border border-border-primary bg-surface-secondary px-3 py-2 text-sm text-text-primary transition-colors duration-150 placeholder:text-text-muted focus:border-border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+	onfocus={handleFocus}
+	class="h-8 w-full rounded border border-border-primary bg-surface-primary px-3 text-[13px] text-text-primary transition-colors duration-150 placeholder:text-text-muted focus:border-border-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 />

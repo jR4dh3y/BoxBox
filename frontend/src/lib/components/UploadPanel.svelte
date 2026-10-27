@@ -1,12 +1,15 @@
 <script lang="ts">
 	/**
-	 * UploadPanel - Google Drive style floating upload panel
-	 * Fixed position bottom-right, minimizable, manually closed
+	 * UploadPanel - Google Drive style upload panel at the bottom of the notification column
+	 * Minimizable, manually closed
 	 */
+	import { createUploadAnnouncements } from '#lib/browse/uploadAnnouncements.svelte.js';
 	import { uploadStore } from '#lib/stores/upload.svelte.js';
 	import UploadProgress from '#lib/components/UploadProgress.svelte';
 	import { ChevronDown, ChevronUp, X } from 'lucide-svelte';
 	import { slide } from 'svelte/transition';
+
+	const announcement = createUploadAnnouncements(() => uploadStore.uploads);
 
 	/** Whether the panel is minimized */
 	let isMinimized = $state(false);
@@ -71,30 +74,40 @@
 	const shouldShow = $derived(isVisible && uploadStore.hasUploads);
 </script>
 
+<span class="sr-only" role="status" aria-live="polite">{announcement.message}</span>
+
 {#if shouldShow}
 	<div
-		class="fixed right-4 bottom-11 z-50 w-[380px] overflow-hidden rounded-lg border border-border-primary bg-surface-secondary shadow-2xl"
+		class="pointer-events-auto overflow-hidden rounded-lg border border-border-primary bg-surface-secondary shadow-2xl"
 		role="region"
 		aria-label="Upload progress"
 	>
 		<!-- Header -->
 		<div
-			class="flex cursor-pointer items-center justify-between border-b border-border-secondary bg-surface-primary px-4 py-3 select-none"
-			onclick={handleToggleMinimize}
-			onkeydown={(e) => e.key === 'Enter' && handleToggleMinimize()}
-			role="button"
-			tabindex="0"
+			class="flex h-11 cursor-pointer items-center justify-between border-b border-border-secondary bg-surface-primary pr-2 pl-4 select-none"
 		>
-			<span class="text-sm font-semibold text-text-primary">{headerText}</span>
+			<button
+				type="button"
+				class="flex h-full flex-1 cursor-pointer items-center text-left text-[13px] font-medium text-text-primary"
+				onclick={handleToggleMinimize}
+				aria-expanded={!isMinimized}>{headerText}</button
+			>
+
 			<div class="flex items-center gap-1">
+				{#if uploadStore.uploads.some((upload) => upload.status === 'complete' || upload.status === 'error' || upload.status === 'cancelled')}
+					<button
+						type="button"
+						class="rounded px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-elevated hover:text-text-primary"
+						onclick={handleClearCompleted}
+					>
+						Clear finished
+					</button>
+				{/if}
 				<!-- Minimize/Expand button -->
 				<button
 					type="button"
-					class="rounded p-1 text-text-muted transition-colors hover:bg-surface-elevated hover:text-text-primary"
-					onclick={(e) => {
-						e.stopPropagation();
-						handleToggleMinimize();
-					}}
+					class="rounded p-1 text-text-secondary transition-colors hover:bg-surface-elevated hover:text-text-primary"
+					onclick={handleToggleMinimize}
 					aria-label={isMinimized ? 'Expand' : 'Minimize'}
 				>
 					{#if isMinimized}
@@ -107,11 +120,8 @@
 				<!-- Close button -->
 				<button
 					type="button"
-					class="rounded p-1 text-text-muted transition-colors hover:bg-surface-elevated hover:text-text-primary"
-					onclick={(e) => {
-						e.stopPropagation();
-						handleClose();
-					}}
+					class="rounded p-1 text-text-secondary transition-colors hover:bg-surface-elevated hover:text-text-primary"
+					onclick={handleClose}
 					aria-label="Close upload panel"
 				>
 					<X size={16} />
@@ -126,7 +136,6 @@
 					uploads={uploadStore.uploads}
 					onCancel={handleCancel}
 					onRemove={handleRemove}
-					onClearCompleted={handleClearCompleted}
 				/>
 			</div>
 		{/if}

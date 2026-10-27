@@ -4,19 +4,29 @@
 	 */
 	import { List, LayoutGrid } from 'lucide-svelte';
 	import type { ViewMode } from '#lib/types/files.js';
+	import { formatFileSize } from '#lib/utils/format.js';
 
 	interface Props {
 		itemCount?: number;
 		selectedCount?: number;
+		/** Combined size of the selected files; 0 when only folders are selected. */
+		selectedBytes?: number;
 		viewMode?: ViewMode;
 		onViewModeChange?: (mode: ViewMode) => void;
 	}
 
-	let { itemCount = 0, selectedCount = 0, viewMode = 'list', onViewModeChange }: Props = $props();
+	let {
+		itemCount = 0,
+		selectedCount = 0,
+		selectedBytes = 0,
+		viewMode = 'list',
+		onViewModeChange
+	}: Props = $props();
 
 	const statusText = $derived.by(() => {
 		if (selectedCount > 0) {
-			return `${selectedCount} of ${itemCount} selected`;
+			const size = selectedBytes > 0 ? ` · ${formatFileSize(selectedBytes)}` : '';
+			return `${selectedCount} of ${itemCount} selected${size}`;
 		}
 
 		return `${itemCount} item${itemCount !== 1 ? 's' : ''}`;
@@ -28,7 +38,7 @@
 </script>
 
 <footer
-	class="flex items-center justify-between border-t border-border-secondary bg-surface-primary px-3 py-1 text-xs text-text-secondary"
+	class="browse-chrome flex items-center justify-between border-t border-border-secondary bg-surface-primary px-3 py-1 text-xs text-text-secondary"
 >
 	<div class="flex items-center gap-3">
 		<span>{statusText}</span>

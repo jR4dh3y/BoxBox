@@ -11,10 +11,11 @@
 	import { untrack } from 'svelte';
 	import { Spinner } from '#lib/components/ui/index.js';
 	import LoadError from '#lib/components/LoadError.svelte';
-	import { FolderOpen } from 'lucide-svelte';
+	import { ChevronDown, ChevronUp, FolderOpen } from 'lucide-svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
+	import { withPathSelected } from '#lib/browse/selection.svelte.js';
 
 	let {
 		items = [],
@@ -31,6 +32,7 @@
 		canCreate = false,
 		showFileExtensions = true,
 		previewOnSingleClick = false,
+		selectionCheckboxes = true,
 		onItemClick,
 		onFolderHover,
 		onSortChange,
@@ -51,6 +53,7 @@
 		canCreate?: boolean;
 		showFileExtensions?: boolean;
 		previewOnSingleClick?: boolean;
+		selectionCheckboxes?: boolean;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -60,7 +63,13 @@
 	} = $props();
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
-	const LIST_HEADER_HEIGHT = 38;
+	const LIST_HEADER_HEIGHT = 32;
+	const columns: { field: SortField; label: string; align: 'left' | 'right' }[] = [
+		{ field: 'name', label: 'Name', align: 'left' },
+		{ field: 'type', label: 'Type', align: 'left' },
+		{ field: 'size', label: 'Size', align: 'right' },
+		{ field: 'modTime', label: 'Modified', align: 'left' }
+	];
 	let tableElement = $state<HTMLTableElement | null>(null);
 	let activeItemPath = $state<string | null>(null);
 	const activeItemIndex = $derived.by(() =>
@@ -101,17 +110,11 @@
 		activeItemPath = item.path;
 		focusTable();
 		if (event.ctrlKey || event.metaKey) {
-			const newSelection = new SvelteSet<string>(selectedPaths);
-			if (newSelection.has(item.path)) {
-				newSelection.delete(item.path);
-			} else {
-				newSelection.add(item.path);
-			}
-			onSelectionChange?.(newSelection);
+			onSelectionChange?.(
+				withPathSelected(selectedPaths, item.path, !selectedPaths.has(item.path))
+			);
 		} else if (event.shiftKey && selectedPaths.size > 0) {
-			const newSelection = new SvelteSet<string>(selectedPaths);
-			newSelection.add(item.path);
-			onSelectionChange?.(newSelection);
+			handleCheck(item, true);
 		} else {
 			const newSelection = new SvelteSet<string>([item.path]);
 			onSelectionChange?.(newSelection);
@@ -131,6 +134,13 @@
 		) {
 			onItemClick?.(item);
 		}
+	}
+
+	function handleCheck(item: FileInfo, checked: boolean) {
+		activeItemPath = item.path;
+		onSelectionChange?.(withPathSelected(selectedPaths, item.path, checked));
+		// Keyboard navigation stays on the table instead of the checkbox.
+		focusTable();
 	}
 
 	function handleDoubleClick(item: FileInfo) {
@@ -218,7 +228,12 @@
 			default: {
 				const item = items[currentIndex];
 				if (!item) return;
-				if (event.key === 'Enter' || event.key === ' ') {
+				if (event.key === ' ') {
+					event.preventDefault();
+					handleCheck(item, !selectedPaths.has(item.path));
+					return;
+				}
+				if (event.key === 'Enter') {
 					event.preventDefault();
 					onItemClick?.(item);
 					return;
@@ -285,6 +300,8 @@
 
 	function handleContextMenuClose() {
 		contextMenu = null;
+		// The menu item that had focus is about to be removed.
+		focusTable();
 	}
 
 	function handleContextMenuSelect(action: string) {
@@ -292,11 +309,7 @@
 			onContextMenuAction(action, contextMenu.items);
 		}
 		contextMenu = null;
-	}
-
-	function getSortIndicator(field: SortField): string {
-		if (sortBy !== field) return '';
-		return sortDir === 'asc' ? '▲' : '▼';
+		focusTable();
 	}
 
 	function isSelected(path: string): boolean {
@@ -315,7 +328,7 @@
 	}
 
 	const thClass =
-		'text-left px-3 py-2 bg-surface-secondary border-b border-border-primary font-medium text-text-secondary whitespace-nowrap select-none sticky top-0 z-[5] cursor-pointer transition-colors duration-100 hover:bg-surface-tertiary hover:text-text-primary focus:outline focus:outline-1 focus:outline-accent focus:-outline-offset-1';
+		'text-left px-3 py-0 bg-surface-secondary border-b border-border-primary font-medium text-text-secondary whitespace-nowrap select-none sticky top-0 z-[5] cursor-pointer transition-colors duration-100 hover:bg-surface-tertiary hover:text-text-primary focus:outline focus:outline-1 focus:outline-accent focus:-outline-offset-1';
 	const thSortedClass = 'text-accent';
 	const tdClass =
 		'h-[32px] px-3 py-1 align-middle border-b border-border-secondary text-text-primary';
@@ -326,7 +339,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="relative h-full w-full overflow-auto bg-surface-primary [overflow-anchor:none] {compactMode
+	class="file-surface relative h-full w-full overflow-auto bg-surface-primary [overflow-anchor:none] {compactMode
 		? 'compact'
 		: ''}"
 	use:attachRowWindow
@@ -341,7 +354,7 @@
 
 	<table
 		bind:this={tableElement}
-		class="w-full min-w-[720px] table-fixed border-collapse text-[13px] leading-5"
+		class="w-full min-w-[720px] table-fixed border-collapse text-[13px] leading-5 outline-none"
 		role="grid"
 		tabindex="0"
 		aria-busy={isLoading}
@@ -364,59 +377,35 @@
 			<col class="w-[168px]" />
 		</colgroup>
 		<thead>
-			<tr aria-rowindex="1" style="height: 38px">
-				<th
-					class="{thClass} {sortBy === 'name' ? thSortedClass : ''}"
-					onclick={() => handleSort('name')}
-					onkeydown={(e) => e.key === 'Enter' && handleSort('name')}
-					tabindex="0"
-					role="columnheader"
-					data-file-header="true"
-					aria-sort={sortBy === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-				>
-					<span class="mr-1">Name</span>
-					<span class="text-[10px] opacity-80">{getSortIndicator('name')}</span>
-				</th>
-				<th
-					class="{thClass} {sortBy === 'type' ? thSortedClass : ''}"
-					onclick={() => handleSort('type')}
-					onkeydown={(e) => e.key === 'Enter' && handleSort('type')}
-					tabindex="0"
-					role="columnheader"
-					data-file-header="true"
-					aria-sort={sortBy === 'type' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-				>
-					<span class="mr-1">Type</span>
-					<span class="text-[10px] opacity-80">{getSortIndicator('type')}</span>
-				</th>
-				<th
-					class="{thClass} text-right {sortBy === 'size' ? thSortedClass : ''}"
-					onclick={() => handleSort('size')}
-					onkeydown={(e) => e.key === 'Enter' && handleSort('size')}
-					tabindex="0"
-					role="columnheader"
-					data-file-header="true"
-					aria-sort={sortBy === 'size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-				>
-					<span class="mr-1">Size</span>
-					<span class="text-[10px] opacity-80">{getSortIndicator('size')}</span>
-				</th>
-				<th
-					class="{thClass} {sortBy === 'modTime' ? thSortedClass : ''}"
-					onclick={() => handleSort('modTime')}
-					onkeydown={(e) => e.key === 'Enter' && handleSort('modTime')}
-					tabindex="0"
-					role="columnheader"
-					data-file-header="true"
-					aria-sort={sortBy === 'modTime'
-						? sortDir === 'asc'
-							? 'ascending'
-							: 'descending'
-						: 'none'}
-				>
-					<span class="mr-1">Modified</span>
-					<span class="text-[10px] opacity-80">{getSortIndicator('modTime')}</span>
-				</th>
+			<tr aria-rowindex="1" style="height: {LIST_HEADER_HEIGHT}px">
+				{#each columns as column (column.field)}
+					<th
+						class="{thClass} {column.align === 'right' ? 'text-right' : ''} {sortBy === column.field
+							? thSortedClass
+							: ''}"
+						onclick={() => handleSort(column.field)}
+						onkeydown={(e) => e.key === 'Enter' && handleSort(column.field)}
+						tabindex="0"
+						role="columnheader"
+						data-file-header="true"
+						aria-sort={sortBy === column.field
+							? sortDir === 'asc'
+								? 'ascending'
+								: 'descending'
+							: 'none'}
+					>
+						<span class="inline-flex items-center gap-1">
+							{column.label}
+							<span class="inline-flex w-3 justify-center">
+								{#if sortBy === column.field}
+									{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown
+											size={12}
+										/>{/if}
+								{/if}
+							</span>
+						</span>
+					</th>
+				{/each}
 			</tr>
 		</thead>
 		<tbody>
@@ -440,18 +429,21 @@
 					{@const IconComponent = getFileIcon(item.name, item.isDir)}
 					{@const displayName = getDisplayName(item)}
 					{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
-					{@const sizeDescription = item.isDir ? '' : formatFileSize(item.size)}
+					{@const sizeDescription = item.isDir ? '—' : formatFileSize(item.size)}
+					{@const secondaryText = isSelected(item.path)
+						? 'text-text-primary'
+						: 'text-text-secondary'}
 					{@const modifiedDescription = formatFileDate(item.modTime)}
 					<tr
 						style={`height: ${compactMode ? 28 : 32}px`}
-						class="cursor-default transition-colors duration-50 hover:bg-surface-secondary {activeItemIndex ===
-						itemIndex
-							? 'bg-surface-secondary'
-							: ''} {isSelected(item.path) ? 'bg-selection hover:bg-selection-hover' : ''} {isCut(
-							item.path
-						)
-							? 'opacity-50'
-							: ''}"
+						class="cursor-default transition-colors duration-50 {isSelected(item.path)
+							? 'bg-selection hover:bg-selection-hover'
+							: activeItemIndex === itemIndex
+								? 'bg-surface-secondary'
+								: 'hover:bg-surface-secondary'} {activeItemIndex === itemIndex
+							? 'shadow-[inset_2px_0_0_var(--color-accent)]'
+							: ''} {isCut(item.path) ? 'opacity-50' : ''}"
+						onpointerdown={() => (activeItemPath = item.path)}
 						onclick={(e) => handleRowClick(item, e)}
 						onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
 						onpointerleave={() => onFolderHover?.(null)}
@@ -465,11 +457,36 @@
 						<td id={`file-list-cell-${itemIndex}`} class={compactMode ? compactTdClass : tdClass}>
 							<div class="flex min-w-0 items-center gap-2">
 								<span
-									class="flex w-5 shrink-0 items-center justify-center {item.isDir
+									class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
 										? 'text-folder'
 										: 'text-text-secondary'}"
 								>
-									<IconComponent size={16} />
+									<span
+										class="flex items-center justify-center {selectionCheckboxes
+											? isSelected(item.path)
+												? 'invisible'
+												: 'group-hover/icon:invisible pointer-coarse:invisible'
+											: ''}"
+									>
+										<IconComponent size={16} />
+									</span>
+									{#if selectionCheckboxes}
+										<!-- Selected items keep their checkbox after the pointer leaves. -->
+										<input
+											type="checkbox"
+											tabindex="-1"
+											checked={isSelected(item.path)}
+											aria-label={`Select ${item.name}`}
+											class="absolute inset-0.5 m-0 cursor-pointer accent-accent {isSelected(
+												item.path
+											)
+												? ''
+												: 'opacity-0 group-hover/icon:opacity-100 pointer-coarse:opacity-100'}"
+											onclick={(event) => event.stopPropagation()}
+											ondblclick={(event) => event.stopPropagation()}
+											onchange={(event) => handleCheck(item, event.currentTarget.checked)}
+										/>
+									{/if}
 								</span>
 								<span
 									class="{clippedCellClass} min-w-0 flex-1 {item.isDir ? 'text-folder' : ''}"
@@ -479,17 +496,17 @@
 								</span>
 							</div>
 						</td>
-						<td class="{compactMode ? compactTdClass : tdClass} text-text-secondary">
+						<td class="{compactMode ? compactTdClass : tdClass} {secondaryText}">
 							<span class={clippedCellClass} title={typeDescription}>{typeDescription}</span>
 						</td>
 						<td
 							class="{compactMode
 								? compactTdClass
-								: tdClass} text-right text-text-secondary tabular-nums"
+								: tdClass} text-right {secondaryText} tabular-nums"
 						>
 							<span class={clippedCellClass} title={sizeDescription}>{sizeDescription}</span>
 						</td>
-						<td class="{compactMode ? compactTdClass : tdClass} text-text-secondary">
+						<td class="{compactMode ? compactTdClass : tdClass} {secondaryText}">
 							<span class={clippedCellClass} title={modifiedDescription}>{modifiedDescription}</span
 							>
 						</td>

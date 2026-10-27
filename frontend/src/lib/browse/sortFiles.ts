@@ -12,8 +12,8 @@ interface SortKey {
 }
 
 /**
- * Returns a sorted copy. Hidden entries always come last, and folders lead a type sort in both
- * directions; otherwise `desc` reverses the whole order, ties included.
+ * Returns a sorted copy. Hidden entries always come last, and folders lead a name or type sort in
+ * both directions; otherwise `desc` reverses the whole order, ties included.
  */
 export function sortFiles(
 	items: readonly FileInfo[],
@@ -34,7 +34,9 @@ export function sortFiles(
 	}));
 	keys.sort((left, right) => {
 		if (left.hidden !== right.hidden) return left.hidden ? 1 : -1;
-		if (sortBy === 'type' && left.value !== right.value) return left.value - right.value;
+		if ((sortBy === 'type' || sortBy === 'name') && left.value !== right.value) {
+			return left.value - right.value;
+		}
 		const comparison =
 			(byValue && left.value - right.value) || compareNames(left.item.name, right.item.name);
 		return direction * Math.sign(comparison);

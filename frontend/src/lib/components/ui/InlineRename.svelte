@@ -46,6 +46,7 @@
 		bind:value={inputValue}
 		onkeydown={handleKeydown}
 		onfocus={handleFocus}
+		{@attach (input) => input.focus()}
 		{placeholder}
 		class="box-border h-5 min-w-0 flex-1 rounded border border-border-focus bg-surface-primary px-2 text-xs text-text-primary outline-none"
 	/>

@@ -75,7 +75,7 @@
 			{#if isLoading}
 				<Spinner size="sm" />
 			{:else}
-				<Search size={18} class="text-text-muted" />
+				<Search size={16} class="text-text-muted" />
 			{/if}
 		</div>
 
@@ -99,7 +99,7 @@
 				class="absolute inset-y-0 right-0 flex items-center pr-3 text-text-muted hover:text-text-secondary"
 				aria-label="Clear search"
 			>
-				<X size={18} />
+				<X size={16} />
 			</button>
 		{/if}
 	</div>

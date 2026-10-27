@@ -1,5 +1,5 @@
 /**
- * Accent color and wallpaper helpers: validation, normalisation and theme application
+ * Validation and resolution of accent and wallpaper preferences.
  */
 
 import { getPreviewUrl } from '#lib/api/files.js';
@@ -10,19 +10,19 @@ import {
 } from '#lib/utils/wallpaperStorage.js';
 
 export const DEFAULT_ACCENT_COLOR = '#4a9eff';
+export type AccentColorSource = 'wallpaper' | 'manual';
+
+export function normalizeAccentColorSource(
+	value: unknown,
+	customColor: string | null
+): AccentColorSource {
+	if (value === 'wallpaper' || value === 'manual') return value;
+	return customColor ? 'manual' : 'wallpaper';
+}
 
 const SERVER_BACKGROUND_PREFIX = 'boxbox-server:';
 
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
-const THEME_COLOR_PROPERTIES = [
-	'--color-accent',
-	'--color-accent-hover',
-	'--color-accent-muted',
-	'--color-border-focus',
-	'--color-folder',
-	'--color-selection',
-	'--color-selection-hover'
-];
 
 export function normalizeAccentColor(color: string | null): string | null {
 	if (!color) return null;
@@ -77,12 +77,13 @@ function getServerBackgroundPath(backgroundImage: string): string | null {
 	return path || null;
 }
 
+/** The file name a wallpaper value points at, or null for a browser-stored image that has no name. */
 export function getBackgroundImageLabel(backgroundImage: string | null): string | null {
 	const normalized = normalizeBackgroundImage(backgroundImage);
 	if (!normalized) return null;
 
 	if (isInlineWallpaperDataUrl(normalized) || isLocalWallpaperReference(normalized)) {
-		return 'Local image selected';
+		return null;
 	}
 
 	const serverPath = getServerBackgroundPath(normalized);
@@ -124,52 +125,4 @@ export async function resolveBackgroundImageUrl(
 	}
 
 	return resolveBackgroundImage(normalized);
-}
-
-function parseHexColor(color: string): [number, number, number] {
-	const hex = color.slice(1);
-	return [
-		Number.parseInt(hex.slice(0, 2), 16),
-		Number.parseInt(hex.slice(2, 4), 16),
-		Number.parseInt(hex.slice(4, 6), 16)
-	];
-}
-
-function toHexColor([red, green, blue]: [number, number, number]): string {
-	return `#${[red, green, blue]
-		.map((value) => Math.round(value).toString(16).padStart(2, '0'))
-		.join('')}`;
-}
-
-function mixColor(color: string, target: string, amount: number): string {
-	const sourceRgb = parseHexColor(color);
-	const targetRgb = parseHexColor(target);
-
-	return toHexColor([
-		sourceRgb[0] + (targetRgb[0] - sourceRgb[0]) * amount,
-		sourceRgb[1] + (targetRgb[1] - sourceRgb[1]) * amount,
-		sourceRgb[2] + (targetRgb[2] - sourceRgb[2]) * amount
-	]);
-}
-
-export function applyAccentColor(accentColor: string | null): void {
-	if (typeof document === 'undefined') return;
-
-	const color = normalizeAccentColor(accentColor);
-	const rootStyle = document.documentElement.style;
-
-	if (!color) {
-		for (const property of THEME_COLOR_PROPERTIES) {
-			rootStyle.removeProperty(property);
-		}
-		return;
-	}
-
-	rootStyle.setProperty('--color-accent', color);
-	rootStyle.setProperty('--color-border-focus', color);
-	rootStyle.setProperty('--color-folder', color);
-	rootStyle.setProperty('--color-accent-hover', mixColor(color, '#000000', 0.32));
-	rootStyle.setProperty('--color-accent-muted', mixColor(color, '#1e1e1e', 0.55));
-	rootStyle.setProperty('--color-selection', mixColor(color, '#1e1e1e', 0.55));
-	rootStyle.setProperty('--color-selection-hover', mixColor(color, '#000000', 0.32));
 }

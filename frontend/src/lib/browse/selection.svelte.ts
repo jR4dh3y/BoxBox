@@ -1,6 +1,28 @@
 import { untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 
+/** Combined size of the selected files; folders have no size until they are measured. */
+export function selectedFileBytes(
+	items: readonly { path: string; isDir: boolean; size: number }[],
+	paths: ReadonlySet<string>
+): number {
+	let total = 0;
+	for (const item of items) if (!item.isDir && paths.has(item.path)) total += item.size;
+	return total;
+}
+
+/** A checkbox adds or removes one path and leaves the rest of the selection alone. */
+export function withPathSelected(
+	paths: ReadonlySet<string>,
+	path: string,
+	selected: boolean
+): SvelteSet<string> {
+	const next = new SvelteSet(paths);
+	if (selected) next.add(path);
+	else next.delete(path);
+	return next;
+}
+
 /** Paths selected in the current folder or its search results. */
 export function useBrowseSelection() {
 	let paths = $state.raw<Set<string>>(new SvelteSet());
