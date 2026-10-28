@@ -74,7 +74,7 @@
 </script>
 
 <div
-	class="browse-chrome relative z-50 flex items-center gap-2 border-b border-border-secondary bg-surface-primary px-3 py-1.5"
+	class="browse-chrome @container relative z-50 flex items-center gap-2 border-b border-border-secondary bg-surface-primary px-3 py-1.5"
 >
 	<!-- Navigation buttons -->
 	<div class="flex shrink-0 gap-0.5">
@@ -112,7 +112,7 @@
 	/>
 
 	{#if showSearch}
-		<div class="w-48 min-w-28 shrink md:w-64 lg:w-96">
+		<div class="w-28 min-w-28 shrink @lg:w-48 @3xl:w-64 @5xl:w-96">
 			<SearchBar
 				value={searchValue}
 				onInput={onSearchInput}

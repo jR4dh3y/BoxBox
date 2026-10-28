@@ -129,7 +129,7 @@
 		{:else if pathSegments.length === 0}
 			<span class="text-[13px] whitespace-nowrap text-text-primary">{rootLabel()}</span>
 		{:else}
-			<div class="flex flex-1 items-center gap-1 overflow-hidden">
+			<div class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap">
 				{#each breadcrumbs as segment, index (segment.path)}
 					{#if index > 0}<span class="text-xs text-text-muted">/</span>{/if}
 					{#if index === breadcrumbs.length - 1}
