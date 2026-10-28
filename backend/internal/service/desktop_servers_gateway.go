@@ -77,7 +77,8 @@ func (s *DesktopServers) Forward(ctx context.Context, id, method, route string, 
 		return nil, err
 	}
 	streaming := method == "GET" && (strings.HasPrefix(route, "/stream/download/") || strings.HasPrefix(route, "/stream/archive/") || strings.HasPrefix(route, "/stream/preview/") || strings.HasPrefix(route, "/stream/thumbnail/"))
-	if response.StatusCode != 204 && response.StatusCode != 304 && !streaming && !gatewayJSON(response.Header) {
+	events := method == "GET" && route == "/jobs/events" && response.StatusCode == http.StatusOK && strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream")
+	if response.StatusCode != 204 && response.StatusCode != 304 && !streaming && !events && !gatewayJSON(response.Header) {
 		response.Body.Close()
 		return nil, ErrRemoteUnavailable
 	}

@@ -79,11 +79,17 @@ export interface RemoteServer {
 	name: string;
 	url: string;
 }
+const serverChanges = new Set<() => void>();
+export function onRemoteServersChanged(changed: () => void): () => void {
+	serverChanges.add(changed);
+	return () => serverChanges.delete(changed);
+}
 let pendingServers: Promise<RemoteServer[]> | undefined;
 
 /** Only concurrent loads are cached, so subsequent reads always confirm server state. */
 export function invalidateRemoteServers(): void {
 	pendingServers = undefined;
+	for (const changed of serverChanges) changed();
 }
 
 function loadRemoteServers(signal?: AbortSignal): Promise<RemoteServer[]> {

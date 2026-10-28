@@ -24,6 +24,7 @@ func NewJobHandler(jobService service.JobService) *JobHandler {
 func (h *JobHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/", h.List)
 	r.Post("/", h.Create)
+	r.Get("/events", h.Events)
 	r.Get("/{id}", h.Get)
 	r.Delete("/{id}", h.Cancel)
 }

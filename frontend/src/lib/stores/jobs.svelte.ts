@@ -27,7 +27,6 @@ class JobsStore {
 	error = $state<string | null>(null);
 	/** Invalidates overlapping loads and responses from a previous session. */
 	private loadVersion = 0;
-	private lastLoadAt = 0;
 	/** Terminal objects are retained by mergeJob, so notifications stay once-only without retaining IDs. */
 	private notifiedFinished = new WeakSet<Job>();
 
@@ -36,7 +35,6 @@ class JobsStore {
 
 	async loadJobs(): Promise<void> {
 		const version = ++this.loadVersion;
-		this.lastLoadAt = Date.now();
 		const atRequest = new Map(this.jobs);
 		this.isLoading = true;
 		this.error = null;
@@ -64,17 +62,29 @@ class JobsStore {
 		}
 	}
 
-	/** Active transfers need frequent updates; idle reconciliation discovers jobs from other clients. */
-	connectPolling(): () => void {
-		const timer = setInterval(() => {
-			if (typeof document !== 'undefined' && document.hidden) return;
-			if (!this.isLoading && (this.active.length || Date.now() - this.lastLoadAt >= 30_000))
-				void this.loadJobs();
-		}, 2000);
-		return () => {
-			clearInterval(timer);
-			this.reset();
-		};
+	/** A reconnect snapshot may contain historical completions; only known active jobs invalidate files. */
+	reconcileJobs(jobs: Job[], owns?: (id: string) => boolean): void {
+		let finished = false;
+		const present = new Set(jobs.map((job) => job.id));
+		for (const [id, job] of this.jobs)
+			if (owns?.(id) && !present.has(id)) {
+				this.jobs.delete(id);
+				if (isJobActive(job)) finished = true;
+			}
+		for (const job of jobs) {
+			const existing = this.jobs.get(job.id);
+			const merged = mergeJob(existing, job);
+			this.jobs.set(job.id, merged);
+			if (existing && isJobActive(existing) && this.markFinished(merged)) finished = true;
+		}
+		if (finished) this.onFinished?.();
+	}
+
+	/** Historical terminal jobs may be repeated after a reconnect, without a new filesystem change. */
+	receiveJob(job: Job): void {
+		const existing = this.jobs.get(job.id);
+		if (existing && isJobTerminal(existing)) return;
+		this.upsertJob(job);
 	}
 
 	upsertJob(job: Job): void {
@@ -109,7 +119,6 @@ class JobsStore {
 
 	reset(): void {
 		this.loadVersion++;
-		this.lastLoadAt = 0;
 		this.notifiedFinished = new WeakSet();
 		this.jobs.clear();
 		this.isLoading = false;

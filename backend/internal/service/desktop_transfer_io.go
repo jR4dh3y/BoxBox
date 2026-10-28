@@ -95,7 +95,15 @@ func validTransferChild(name string) bool {
 	ref, err := parseTransferPath(name)
 	return err == nil && ref.server == "" && !strings.Contains(name, "/") && name != "@remote"
 }
-func (s *DesktopTransfers) copyTree(ctx context.Context, source, dest transferPath, depth int, remaining *int) error {
+
+type transferEntry struct {
+	source, dest transferPath
+	dir          bool
+	size         int64
+}
+
+// scan lists the whole tree before any write, so the job knows its byte total.
+func (s *DesktopTransfers) scan(ctx context.Context, source, dest transferPath, depth int, remaining *int, entries *[]transferEntry) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -108,20 +116,10 @@ func (s *DesktopTransfers) copyTree(ctx context.Context, source, dest transferPa
 		return err
 	}
 	if !info.IsDir {
-		return s.copyFile(ctx, source, dest, info.Size)
+		*entries = append(*entries, transferEntry{source: source, dest: dest, size: info.Size})
+		return nil
 	}
-	if dest.server == "" {
-		err = CreateUploadDirectory(s.files, dest.path)
-	} else {
-		response, requestErr := s.remote(ctx, dest, "POST", "/stream/upload/"+dest.path, nil, http.Header{"X-Create-Only": {"true"}, "X-Upload-Type": {"directory"}}, nil)
-		err = requestErr
-		if response != nil {
-			response.Body.Close()
-		}
-	}
-	if err != nil {
-		return err
-	}
+	*entries = append(*entries, transferEntry{source: source, dest: dest, dir: true})
 	var list model.FileList
 	if source.server == "" {
 		result, listErr := s.files.List(ctx, source.path)
@@ -149,11 +147,21 @@ func (s *DesktopTransfers) copyTree(ctx context.Context, source, dest transferPa
 		nextSource.path += "/" + child.Name
 		nextDest := dest
 		nextDest.path += "/" + child.Name
-		if err := s.copyTree(ctx, nextSource, nextDest, depth+1, remaining); err != nil {
+		if err := s.scan(ctx, nextSource, nextDest, depth+1, remaining, entries); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+func (s *DesktopTransfers) makeDir(ctx context.Context, dest transferPath) error {
+	if dest.server == "" {
+		return CreateUploadDirectory(s.files, dest.path)
+	}
+	response, err := s.remote(ctx, dest, "POST", "/stream/upload/"+dest.path, nil, http.Header{"X-Create-Only": {"true"}, "X-Upload-Type": {"directory"}}, nil)
+	if response != nil {
+		response.Body.Close()
+	}
+	return err
 }
 func (s *DesktopTransfers) open(ctx context.Context, source transferPath) (io.ReadCloser, error) {
 	if source.server == "" {
@@ -166,7 +174,7 @@ func (s *DesktopTransfers) open(ctx context.Context, source transferPath) (io.Re
 	}
 	return response.Body, nil
 }
-func (s *DesktopTransfers) copyFile(ctx context.Context, source, dest transferPath, size int64) error {
+func (s *DesktopTransfers) copyFile(ctx context.Context, source, dest transferPath, size int64, onCopied func(int64)) error {
 	input, err := s.open(ctx, source)
 	if err != nil {
 		return err
@@ -240,6 +248,7 @@ func (s *DesktopTransfers) copyFile(ctx context.Context, source, dest transferPa
 				return ErrRemoteUnavailable
 			}
 		}
+		onCopied(count)
 	}
 	return nil
 }

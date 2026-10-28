@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import './layout.css';
 	import { authStore } from '#lib/stores/auth.svelte.js';
 	import { onDestroy, onMount } from 'svelte';
@@ -98,7 +99,7 @@
 	});
 
 	$effect(() => {
-		if (!initialized) return;
+		if (!initialized || isLocalDesktop()) return;
 
 		if (authStore.isAuthenticated) {
 			websocketStore.connect(authStore.isDevelopment);
@@ -115,7 +116,7 @@
 	});
 
 	$effect(() => {
-		if (!initialized || !authStore.isAuthenticated) return;
+		if (!initialized || !authStore.isAuthenticated || isLocalDesktop()) return;
 
 		websocketStore.syncJobSubscriptions(jobsStore.active.map((job) => job.id));
 	});

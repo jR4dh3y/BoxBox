@@ -30,6 +30,7 @@ var (
 
 // JobService defines the job operations service interface
 type JobService interface {
+	Watch(ctx context.Context) (<-chan model.Job, func())
 	// Create creates a new background job
 	Create(ctx context.Context, params model.JobParams) (*model.Job, error)
 	// Get returns a job by ID
@@ -51,6 +52,7 @@ type runningJob struct {
 
 // jobService implements JobService
 type jobService struct {
+	events     JobEvents
 	fs         filesystem.FS
 	hub        *websocket.Hub
 	jobs       sync.Map // map[string]*runningJob
@@ -219,8 +221,9 @@ func (s *jobService) Create(ctx context.Context, params model.JobParams) (*model
 		CreatedAt:          time.Now(),
 	}
 
-	// Store job
+	// Store and announce before a worker can advance its state.
 	s.allJobs.Store(job.ID, job)
+	s.events.Publish(*job)
 
 	// Queue job for execution
 	select {
@@ -449,11 +452,27 @@ func (s *jobService) executeCopy(ctx context.Context, job *model.Job) error {
 	if srcInfo.IsDir() {
 		return s.copyDir(ctx, job)
 	}
-	return s.copyFile(ctx, job, srcInfo.Size())
+	return s.copyFile(ctx, job, s.byteProgress(job, srcInfo.Size()))
 }
 
-// copyFile copies a single file with progress tracking
-func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int64) error {
+// byteProgress records the copy size and returns a counter that reports copied
+// bytes as the job percentage.
+func (s *jobService) byteProgress(job *model.Job, total int64) func(int64) {
+	s.updateJobIf(job, func(job *model.Job) bool {
+		job.BytesTotal = total
+		return true
+	})
+	var copied int64
+	return func(n int64) {
+		copied += n
+		if total > 0 {
+			s.updateProgress(job, int(float64(copied)/float64(total)*100))
+		}
+	}
+}
+
+// copyFile copies a single file and reports each written chunk to onCopied.
+func (s *jobService) copyFile(ctx context.Context, job *model.Job, onCopied func(int64)) error {
 	sourcePath := jobSourcePath(job)
 	destPath := jobDestPath(job)
 
@@ -481,7 +500,6 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 	defer dst.Close()
 
 	buf := make([]byte, 1024*1024) // 1MB buffer
-	var copied int64
 
 	for {
 		select {
@@ -499,13 +517,7 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 			if writeErr != nil {
 				return writeErr
 			}
-			copied += int64(n)
-
-			// Update progress
-			if totalSize > 0 {
-				progress := int(float64(copied) / float64(totalSize) * 100)
-				s.updateProgress(job, progress)
-			}
+			onCopied(int64(n))
 		}
 		if readErr == io.EOF {
 			break
@@ -519,11 +531,11 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, totalSize int
 }
 
 // copyDir builds one traversal manifest, then copies without walking the
-// directory tree a second time merely to calculate progress.
+// directory tree a second time; progress counts bytes across every file.
 func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 	sourcePath := jobSourcePath(job)
 	destPath := jobDestPath(job)
-	manifest, totalFiles, err := s.collectManifest(ctx, sourcePath, false)
+	manifest, _, err := s.collectManifest(ctx, sourcePath, false)
 	if err != nil {
 		return err
 	}
@@ -535,7 +547,13 @@ func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 		return err
 	}
 
-	copiedFiles := 0
+	var totalBytes int64
+	for _, entry := range manifest {
+		if !entry.Metadata.IsDir() {
+			totalBytes += entry.Metadata.Size()
+		}
+	}
+	onCopied := s.byteProgress(job, totalBytes)
 	for _, entry := range manifest {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -556,13 +574,8 @@ func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 			ResolvedSourceRoot: job.ResolvedSourceRoot,
 			ResolvedDestRoot:   job.ResolvedDestRoot,
 		}
-		if err := s.copyFile(ctx, tempJob, 0); err != nil {
+		if err := s.copyFile(ctx, tempJob, onCopied); err != nil {
 			return err
-		}
-		copiedFiles++
-		if totalFiles > 0 {
-			progress := int(float64(copiedFiles) / float64(totalFiles) * 100)
-			s.updateProgress(job, progress)
 		}
 	}
 	return nil
@@ -598,7 +611,7 @@ func (s *jobService) executeMove(ctx context.Context, job *model.Job) error {
 			return err
 		}
 	} else {
-		if err := s.copyFile(ctx, job, srcInfo.Size()); err != nil {
+		if err := s.copyFile(ctx, job, s.byteProgress(job, srcInfo.Size())); err != nil {
 			return err
 		}
 	}
@@ -743,7 +756,12 @@ func (s *jobService) updateProgress(job *model.Job, progress int) {
 }
 
 // broadcastUpdate sends a job update via WebSocket
+func (s *jobService) Watch(ctx context.Context) (<-chan model.Job, func()) {
+	return s.events.Watch(ctx)
+}
+
 func (s *jobService) broadcastUpdate(job *model.Job) {
+	s.events.Publish(*job)
 	if s.hub != nil {
 		s.hub.BroadcastJobUpdate(job)
 	}

@@ -4,6 +4,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
@@ -135,6 +137,17 @@ func (h *DesktopServersHandler) Forward(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", streamSandboxCSP)
+	if strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream") {
+		controller := http.NewResponseController(w)
+		_ = controller.SetWriteDeadline(time.Time{})
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(response.StatusCode)
+		if controller.Flush() != nil {
+			return
+		}
+		_, _ = io.Copy(flushWriter{w, controller}, response.Body)
+		return
+	}
 	w.WriteHeader(response.StatusCode)
 	_, _ = io.CopyBuffer(w, response.Body, make([]byte, 64<<10))
 }
@@ -142,4 +155,18 @@ func (h *DesktopServersHandler) Forward(w http.ResponseWriter, r *http.Request) 
 // DesktopGatewayUnavailable keeps initialization failures out of the SPA fallback.
 func DesktopGatewayUnavailable(w http.ResponseWriter, r *http.Request) {
 	writeError(w, "Saved server storage unavailable", model.ErrCodeInternalError, http.StatusServiceUnavailable)
+}
+
+// Flush each remote event instead of buffering a long-lived response.
+type flushWriter struct {
+	writer     http.ResponseWriter
+	controller *http.ResponseController
+}
+
+func (w flushWriter) Write(p []byte) (int, error) {
+	n, err := w.writer.Write(p)
+	if err == nil {
+		err = w.controller.Flush()
+	}
+	return n, err
 }

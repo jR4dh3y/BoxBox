@@ -13,7 +13,7 @@ import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { VolumesController } from '#lib/desktop/volumes.svelte.js';
 import type { DesktopVolume, DesktopVolumeAction } from '#lib/api/desktopVolumes.js';
 import { mountedVolumeDrives } from '#lib/desktop/volumeCatalog.js';
-import { jobsStore } from '#lib/stores/jobs.svelte.js';
+import { connectDesktopJobs } from '#lib/desktop/jobEvents.js';
 import { openDesktopTab, parseDesktopLaunch, subscribeDesktopLaunches } from './desktopLaunch';
 import { toastStore } from '#lib/stores/toast.svelte.js';
 
@@ -48,6 +48,7 @@ export function useBrowseWorkspace() {
 	let sidebarOpen = $state(false);
 	let connectionsOpen = $state(false);
 	const volumes = new VolumesController();
+	let jobEvents: ReturnType<typeof connectDesktopJobs> | undefined;
 	const active = $derived(tabs.activePane);
 	const runtime = $derived(active ? runtimes[active.id] : undefined);
 	const volumeDrives = $derived(mountedVolumeDrives(volumes.snapshot.value?.volumes ?? []));
@@ -145,14 +146,16 @@ export function useBrowseWorkspace() {
 		});
 		if (initial?.select) active?.selection.set(new SvelteSet([initial.select]));
 		const stopLaunches = subscribeDesktopLaunches(window, (target) => openDesktopTab(tabs, target));
-		const stopJobs = jobsStore.connectPolling();
+		jobEvents = connectDesktopJobs();
+		jobEvents.syncServers(catalog.servers);
 		const request = new AbortController();
 		void volumes.load(request.signal);
 		const timer = setInterval(() => {
 			if (!document.hidden) void volumes.load(request.signal);
 		}, 5000);
 		return () => {
-			stopJobs();
+			jobEvents?.close();
+			jobEvents = undefined;
 			stopLaunches();
 			clearInterval(timer);
 			request.abort();
@@ -185,6 +188,7 @@ export function useBrowseWorkspace() {
 		},
 		updateCatalog(next: RemoteCatalogSnapshot) {
 			catalog = next;
+			untrack(() => jobEvents?.syncServers(next.servers));
 		},
 		toggleSidebar() {
 			sidebarOpen = !sidebarOpen;

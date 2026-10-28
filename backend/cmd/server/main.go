@@ -118,9 +118,8 @@ func main() {
 		log.Info().Str("path", cfg.DataDir).Msg("Data directory created/verified")
 	}
 
-	if *desktopMode {
-		server.BaseContext = func(net.Listener) context.Context { return ctx }
-	}
+	// Cancel long-lived event streams before waiting for HTTP shutdown.
+	server.BaseContext = func(net.Listener) context.Context { return ctx }
 	// Bind before announcing readiness so the desktop app never guesses a port.
 	listener, err := net.Listen("tcp", server.Addr)
 	if err != nil {

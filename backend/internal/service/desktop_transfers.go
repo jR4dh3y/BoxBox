@@ -53,12 +53,25 @@ type desktopTransfer struct {
 	job    model.Job
 	cancel context.CancelFunc
 }
+
 type DesktopTransfers struct {
 	mu      sync.Mutex
 	jobs    map[string]*desktopTransfer
 	servers *DesktopServers
 	files   FileService
 	uploads UploadService
+	events  JobEvents
+}
+
+// publish must be called with mu held, so subscribers see changes in order.
+func (s *DesktopTransfers) publish(t *desktopTransfer) {
+	s.events.Publish(t.job)
+}
+
+// Watch streams a copy of every later transfer change until stop is called.
+// Transfers have no owner, so the watcher subscribes without the request identity.
+func (s *DesktopTransfers) Watch(context.Context) (<-chan model.Job, func()) {
+	return s.events.Watch(context.Background())
 }
 
 func NewDesktopTransfers(fsys filesystem.FS, mounts []model.MountPoint, servers *DesktopServers, tempDir string) *DesktopTransfers {
@@ -145,7 +158,9 @@ func (s *DesktopTransfers) Create(ctx context.Context, params model.JobParams) (
 	}
 	run, cancel := context.WithCancel(context.Background())
 	job := model.Job{ID: "transfer-" + uuid.New().String(), Type: params.Type, SourcePath: params.SourcePath, DestPath: params.DestPath, State: model.JobStatePending, CreatedAt: time.Now()}
-	s.jobs[job.ID] = &desktopTransfer{job: job, cancel: cancel}
+	t := &desktopTransfer{job: job, cancel: cancel}
+	s.jobs[job.ID] = t
+	s.publish(t)
 	go s.run(run, job.ID, source, dest)
 	return &job, nil
 }
@@ -156,9 +171,9 @@ func (s *DesktopTransfers) run(ctx context.Context, id string, source, dest tran
 	defer t.cancel()
 	t.job.State = model.JobStateRunning
 	t.job.StartedAt = time.Now()
+	s.publish(t)
 	s.mu.Unlock()
-	remaining := 10000
-	err := s.copyTree(ctx, source, dest, 0, &remaining)
+	err := s.copyTree(ctx, t, source, dest)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t.job.CompletedAt = time.Now()
@@ -172,6 +187,57 @@ func (s *DesktopTransfers) run(ctx context.Context, id string, source, dest tran
 		t.job.State = model.JobStateCompleted
 		t.job.Progress = 100
 	}
+	s.publish(t)
+}
+func (s *DesktopTransfers) copyTree(ctx context.Context, t *desktopTransfer, source, dest transferPath) error {
+	// Uploads only refuse an existing file at their last chunk, so refuse before reading anything.
+	if _, err := s.info(ctx, dest); err == nil {
+		return ErrPathExists
+	} else if !errors.Is(err, ErrPathNotFound) {
+		return err
+	}
+	remaining := 10000
+	var entries []transferEntry
+	if err := s.scan(ctx, source, dest, 0, &remaining, &entries); err != nil {
+		return err
+	}
+	var total, copied int64
+	for _, entry := range entries {
+		total += entry.size
+	}
+	s.mu.Lock()
+	t.job.BytesTotal = total
+	s.publish(t)
+	s.mu.Unlock()
+	onCopied := func(n int64) {
+		copied += n
+		if total == 0 {
+			return
+		}
+		progress := int(float64(copied) / float64(total) * 100)
+		s.mu.Lock()
+		// Publish whole-percent steps only, which bounds events to about 100 per job.
+		if progress != t.job.Progress {
+			t.job.Progress = progress
+			s.publish(t)
+		}
+		s.mu.Unlock()
+	}
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var err error
+		if entry.dir {
+			err = s.makeDir(ctx, entry.dest)
+		} else {
+			err = s.copyFile(ctx, entry.source, entry.dest, entry.size, onCopied)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func transferErrorMessage(err error) string {
 	switch {

@@ -15,6 +15,7 @@ func NewDesktopTransfersHandler(transfers *service.DesktopTransfers) *DesktopTra
 func (h *DesktopTransfersHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/transfers", h.List)
 	r.Post("/transfers", h.Create)
+	r.Get("/transfers/events", h.Events)
 	r.Get("/transfers/{id}", h.Get)
 	r.Delete("/transfers/{id}", h.Cancel)
 }

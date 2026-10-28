@@ -346,83 +346,28 @@ describe('jobsStore.loadJobs', () => {
 	});
 });
 
-describe('desktop polling lifecycle', () => {
-	test('idle reconciliation waits thirty seconds without losing external job discovery', async () => {
-		let requests = 0;
-		const now = Date.now;
-		let clock = now();
-		Object.assign(Date, { now: () => clock });
-		Object.assign(globalThis, {
-			fetch: async () => {
-				requests++;
-				return Response.json({ jobs: [] });
-			}
-		});
-		await jobsStore.loadJobs();
-		const disconnect = jobsStore.connectPolling();
-		try {
-			await new Promise((resolve) => setTimeout(resolve, 2100));
-			assert.equal(requests, 1, 'an idle desktop does not fetch every two seconds');
-			clock += 30_000;
-			await new Promise((resolve) => setTimeout(resolve, 2100));
-			assert.equal(requests, 2, 'idle reconciliation still discovers external work');
-		} finally {
-			disconnect();
-			Object.assign(Date, { now });
-		}
-	});
-
-	test('a slow load finishes before another poll; socket completion stays responsive', async () => {
+describe('stream snapshot reconciliation', () => {
+	test('historical completions stay quiet, reconnect completion invalidates once', () => {
 		let calls = 0;
 		jobsStore.onFinished = () => calls++;
-		jobsStore.upsertJob(job('running'));
-		jobsStore.upsertJob({ ...job('running'), id: 'local-socket-job' });
-		const held = holdJobs({ ...job('running'), progress: 50 });
-		const loading = jobsStore.loadJobs();
-		await held.requested;
-		const disconnect = jobsStore.connectPolling();
-		try {
-			await new Promise((resolve) => setTimeout(resolve, 2200));
-			jobsStore.updateFromWebSocket({
-				jobId: 'local-socket-job',
-				state: 'completed',
-				progress: 100
-			});
-			assert.equal(calls, 1, 'local socket publishes while remote listing is pending');
-			held.respond();
-			await loading;
-			assert.equal(jobsStore.jobs.get('job-1')?.progress, 50);
-			serveJobs({ ...job('completed'), progress: 100 });
-			await new Promise((resolve) => setTimeout(resolve, 2100));
-			assert.equal(jobsStore.jobs.get('job-1')?.state, 'completed');
-			assert.equal(calls, 2);
-			await jobsStore.loadJobs();
-			assert.equal(calls, 2, 'terminal reload does not repeat invalidation');
-		} finally {
-			held.respond();
-			disconnect();
-			await loading;
-		}
+		jobsStore.reconcileJobs([job('completed')]);
+		jobsStore.receiveJob(job('completed'));
+		assert.equal(calls, 0);
+		jobsStore.upsertJob({ ...job('running'), id: 'live' });
+		jobsStore.reconcileJobs([{ ...job('completed'), id: 'live' }]);
+		jobsStore.reconcileJobs([{ ...job('completed'), id: 'live' }]);
+		assert.equal(calls, 1);
 	});
+});
 
-	test('disconnect invalidates a held load and never schedules another poll', async () => {
-		const held = holdJobs(job('running'));
-		const loading = jobsStore.loadJobs();
-		await held.requested;
-		const disconnect = jobsStore.connectPolling();
-		disconnect();
-		held.respond();
-		await loading;
-		let requests = 0;
-		Object.assign(globalThis, {
-			fetch: async () => {
-				requests++;
-				return Response.json({ jobs: [] });
-			}
-		});
-		await new Promise((resolve) => setTimeout(resolve, 2100));
-		assert.equal(requests, 0);
-		assert.equal(jobsStore.jobs.size, 0);
-		assert.equal(jobsStore.isLoading, false);
-	});
+test('a delayed creation reply still invalidates if the initial stream snapshot already saw completion', () => {
+	let calls = 0;
+	jobsStore.onFinished = () => calls++;
+	jobsStore.reconcileJobs([job('completed')]);
+	jobsStore.receiveJob(job('completed'));
+	assert.equal(calls, 0);
+	jobsStore.upsertJob(job('pending'));
+	assert.equal(calls, 1);
+	jobsStore.upsertJob(job('pending'));
+	assert.equal(calls, 1);
 });

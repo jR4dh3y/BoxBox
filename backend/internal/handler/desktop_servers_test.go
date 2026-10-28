@@ -134,3 +134,55 @@ func TestDesktopServerOpenAndIconHTTPContract(t *testing.T) {
 		}
 	}
 }
+
+func TestDesktopGatewayFlushesJobEventsOverTLS(t *testing.T) {
+	credential := "boxbox_client_" + base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	release := make(chan struct{})
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/connect/redeem" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(service.ConnectRedemption{ClientID: "client", Credential: credential, ExpiresAt: time.Now().Add(time.Hour)})
+			return
+		}
+		if r.URL.Path != "/api/v1/jobs/events" || r.Header.Get("Authorization") != "Bearer "+credential || r.Header.Get("Cookie") != "" {
+			t.Error("event route or authority leak")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "event: snapshot\ndata: {\"jobs\":[]}\n\n")
+		http.NewResponseController(w).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer upstream.Close()
+	servers, err := service.NewDesktopServers(filesystem.NewOsFS(), t.TempDir(), upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := servers.Create(context.Background(), "Test", upstream.URL, "ABCD-EFGH", "Desktop", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := chi.NewRouter()
+	NewDesktopServersHandler(servers).RegisterRoutes(router)
+	gateway := httptest.NewServer(router)
+	defer gateway.Close()
+	client := http.Client{Timeout: 2 * time.Second}
+	response, err := client.Get(gateway.URL + "/servers/" + saved.ID + "/api/v1/jobs/events")
+	if err != nil {
+		close(release)
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	expected := "event: snapshot\ndata: {\"jobs\":[]}\n\n"
+	buffer := make([]byte, len(expected))
+	_, err = io.ReadFull(response.Body, buffer)
+	close(release)
+	if err != nil || string(buffer) != expected {
+		t.Fatalf("unflushed event: %q %v", buffer, err)
+	}
+	if strings.Contains(string(buffer), credential) {
+		t.Fatal("credential leaked to renderer")
+	}
+}

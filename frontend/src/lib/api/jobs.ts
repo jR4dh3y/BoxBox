@@ -50,6 +50,8 @@ export interface Job {
 	type: JobType;
 	state: JobState;
 	progress: number;
+	/** Bytes the job copies, once known; servers before byte progress omit it. */
+	bytesTotal?: number;
 	sourcePath: string;
 	destPath?: string;
 	error?: string;
@@ -81,7 +83,7 @@ interface MessageResponse {
 	message: string;
 }
 
-function parseJob(value: unknown, source: PathReference): Job {
+export function parseJob(value: unknown, source: PathReference): Job {
 	const job = record(value, 'job');
 	const type = job.type;
 	if (type !== 'copy' && type !== 'move' && type !== 'delete') throw new Error('Invalid job type');
@@ -92,6 +94,7 @@ function parseJob(value: unknown, source: PathReference): Job {
 		type,
 		state: job.state,
 		progress: number(job.progress, 'job progress'),
+		...(job.bytesTotal != null ? { bytesTotal: number(job.bytesTotal, 'job size') } : {}),
 		sourcePath: qualifyPath(source, string(job.sourcePath, 'job source')),
 		...(destination ? { destPath: qualifyPath(source, destination) } : {}),
 		...(job.error != null ? { error: optionalString(job.error, 'job error') } : {}),
@@ -103,7 +106,7 @@ function parseJob(value: unknown, source: PathReference): Job {
 	};
 }
 
-function parseJobs(value: unknown, source: PathReference): Job[] {
+export function parseJobs(value: unknown, source: PathReference): Job[] {
 	return array(record(value, 'jobs response').jobs, 'jobs').map((job) => parseJob(job, source));
 }
 
@@ -146,8 +149,11 @@ export async function listJobs(): Promise<JobListResponse> {
  * Get a specific job by ID
  * GET /api/v1/jobs/:id
  */
-export async function getJob(jobId: string): Promise<Job> {
-	return parseJob(await api.get<unknown>(jobEndpoint(jobId)), parseRemotePath(jobId));
+export async function getJob(jobId: string, signal?: AbortSignal): Promise<Job> {
+	return parseJob(
+		await api.get<unknown>(jobEndpoint(jobId), undefined, signal),
+		parseRemotePath(jobId)
+	);
 }
 
 /**

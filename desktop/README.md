@@ -114,3 +114,16 @@ BoxBox rejects clipboard publication of paths containing `%`, and rejects native
 The local desktop omits Account settings; server web sessions retain account and device-pairing controls. Choose wallpaper opens the local file chooser directly, without a type filter because Electrobun 2.0.4's GTK chooser hides valid files once one is set. The app then rejects files that are not supported images and previews the selected image before saving it. Once preferences are saved, startup keeps their wallpaper and deletes images replaced or abandoned in earlier sessions. Cleanup is skipped if preferences are missing or unreadable; images staged during the current session remain available until restart. The web app retains its server-folder and device-upload choices.
 
 Local files offer native opening and Trash actions rather than server Share or Download. Connected server files retain server actions. Read-only folders disable mutation actions in both list and grid menus; copy and inspection remain available.
+
+### Live file-operation updates
+
+The workspace opens one authenticated event stream for local jobs, one for desktop
+transfers, and one per paired server. Each stream starts with a snapshot and then
+pushes job changes. Reconnecting reconciles missed changes; closing a workspace or
+removing a server closes its streams. Healthy streams do not poll job lists.
+
+Paired-server streams use the desktop gateway, so credentials remain in the host.
+Servers built before `/api/v1/jobs/events` are supported through an initial job
+snapshot and checks of known active jobs only. Focusing the window retries those
+servers. Upgrade the server for live discovery of operations started by other
+clients. Directory and capacity reconciliation remains separate from job events.

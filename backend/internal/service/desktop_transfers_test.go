@@ -28,6 +28,7 @@ type transferFixture struct {
 	mutations atomic.Int32
 	supported atomic.Bool
 	slow      atomic.Bool
+	partial   atomic.Int64 // download bytes sent before the response stalls
 	cancelled chan struct{}
 }
 
@@ -67,6 +68,18 @@ func newTransferFixture(t *testing.T) *transferFixture {
 		})
 	})
 	f.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sent := f.partial.Load(); sent > 0 && strings.Contains(r.URL.Path, "/stream/download/files/") {
+			data, err := os.ReadFile(filepath.Join(f.root, strings.SplitN(r.URL.Path, "/stream/download/files/", 2)[1]))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+			w.Write(data[:sent])
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+			return
+		}
 		if f.slow.Load() && strings.Contains(r.URL.Path, "/stream/download/") {
 			select {
 			case <-r.Context().Done():
@@ -269,5 +282,90 @@ func TestDesktopTransfersSeparateAuthoritiesWithOverlappingPaths(t *testing.T) {
 	untouched, _ := os.ReadFile(filepath.Join(second.root, "same/file"))
 	if string(untouched) != "second authority" {
 		t.Fatal("overlapping source path changed")
+	}
+}
+
+func TestDesktopTransferReportsByteProgress(t *testing.T) {
+	f := newTransferFixture(t)
+	s, remote, _ := transferService(t, f)
+	f.save(t, "source.bin", bytes.Repeat([]byte("a"), 4<<20))
+	f.partial.Store(3 << 20)
+	job, err := s.Create(context.Background(), model.JobParams{Type: model.JobTypeCopy, SourcePath: remote + "/source.bin", DestPath: "files/copied.bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		current, err := s.Get(job.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.Progress == 75 {
+			if current.State != model.JobStateRunning || current.BytesTotal != 4<<20 {
+				t.Fatalf("state=%s bytesTotal=%d", current.State, current.BytesTotal)
+			}
+			break
+		}
+		if current.State.IsTerminal() || time.Now().After(deadline) {
+			t.Fatalf("progress stayed at %d in %s total=%d", current.Progress, current.State, current.BytesTotal)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := s.Cancel(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitTransfer(t, s, job.ID, model.JobStateCancelled)
+}
+
+func TestDesktopTransferPublishesLifecycle(t *testing.T) {
+	f := newTransferFixture(t)
+	s, remote, _ := transferService(t, f)
+	f.save(t, "source.bin", bytes.Repeat([]byte("a"), 3<<20))
+	updates, stop := s.Watch(context.Background())
+	defer stop()
+	job, err := s.Create(context.Background(), model.JobParams{Type: model.JobTypeCopy, SourcePath: remote + "/source.bin", DestPath: "files/copied.bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen []string
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case update := <-updates:
+			if update.ID != job.ID {
+				continue
+			}
+			seen = append(seen, fmt.Sprintf("%s:%d:%d", update.State, update.Progress, update.BytesTotal))
+			if update.State.IsTerminal() {
+				if seen[0] != "pending:0:0" || update.State != model.JobStateCompleted || len(seen) < 5 {
+					t.Fatalf("lifecycle %v", seen)
+				}
+				return
+			}
+		case <-timeout:
+			t.Fatalf("no terminal event: %v", seen)
+		}
+	}
+}
+
+func TestDesktopTransferRefusesExistingDestinationBeforeReading(t *testing.T) {
+	f := newTransferFixture(t)
+	s, remote, local := transferService(t, f)
+	f.save(t, "source.bin", bytes.Repeat([]byte("a"), 2<<20))
+	if err := os.WriteFile(filepath.Join(local, "taken.bin"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.slow.Store(true) // any download would stall for five seconds
+	job, err := s.Create(context.Background(), model.JobParams{Type: model.JobTypeCopy, SourcePath: remote + "/source.bin", DestPath: "files/taken.bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	failed := waitTransfer(t, s, job.ID, model.JobStateFailed)
+	if failed.Error != "Destination already exists" || time.Since(started) > 2*time.Second {
+		t.Fatalf("error %q after %s", failed.Error, time.Since(started))
+	}
+	if data, _ := os.ReadFile(filepath.Join(local, "taken.bin")); string(data) != "keep" {
+		t.Fatal("destination changed")
 	}
 }
