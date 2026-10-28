@@ -23,7 +23,7 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.10",
+    "@astrojs/check": "^0.9.12",
     "@types/node": "^26",
     "@types/sanitize-html": "^2.16.2",
     "typescript": "^7.0.2"
