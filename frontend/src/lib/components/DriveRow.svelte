@@ -33,8 +33,11 @@
 <svelte:window onclick={handleClickOutside} />
 
 {#snippet cells()}
-	<span class="truncate px-3 font-mono text-[12px] text-text-muted" title={drive.device}>
-		{drive.device || '—'}
+	<span
+		class="truncate px-3 font-mono text-[12px] text-text-muted"
+		title={drive.device || drive.serverName}
+	>
+		{drive.device || drive.serverName || '—'}
 	</span>
 	<span class="truncate px-3 font-mono text-[12px] text-text-secondary" title={drive.fsType}>
 		{drive.fsType || '—'}

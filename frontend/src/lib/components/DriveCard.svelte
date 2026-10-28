@@ -74,13 +74,13 @@
 				<span class="ml-1 text-warning">· Read-only</span>
 			{/if}
 		</div>
-		{#if drive.device}
+		{#if drive.device || drive.serverName}
 			<div
 				class="truncate font-mono text-[11px] text-text-muted"
-				title="{drive.device} ({drive.fsType || 'unknown'})"
+				title={drive.device ? `${drive.device} (${drive.fsType || 'unknown'})` : drive.serverName}
 			>
-				{drive.device}
-				{#if drive.fsType}
+				{drive.device || drive.serverName}
+				{#if drive.device && drive.fsType}
 					<span class="text-text-secondary"> · {drive.fsType}</span>
 				{/if}
 			</div>
