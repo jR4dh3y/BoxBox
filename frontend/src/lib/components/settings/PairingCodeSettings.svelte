@@ -108,10 +108,6 @@
 		<p class="mt-3 text-[13px] text-text-secondary" role="status">
 			This pairing code was used or closed. Paired devices are listed above.
 		</p>
-	{:else if pairing.state.kind === 'expired'}
-		<p class="mt-3 text-[13px] text-text-secondary" role="status">
-			This code expired. Confirm your password to generate another.
-		</p>
 	{/if}
 	{#if pairing.error}
 		<p class="mt-3 text-[13px] text-danger" role="alert">{pairing.error}</p>

@@ -1,4 +1,4 @@
-import { api, apiFetch, parseResponse, ApiRequestError } from './client';
+import { api, apiFetch, parseResponse, ApiRequestError, getAccessToken } from './client';
 import { record, array, nonEmptyString } from './parse';
 
 export interface PairingCode {
@@ -9,7 +9,15 @@ export interface PairingCode {
 export async function generatePairingCode(password: string): Promise<PairingCode> {
 	let data: unknown;
 	try {
-		data = await api.post<unknown>('/connect/pairing', { password });
+		const token = getAccessToken();
+		// Confirmation failures are also 401s. Never replay a password-bearing request.
+		const response = await apiFetch('/connect/pairing', {
+			method: 'POST',
+			body: { password },
+			skipAuth: true,
+			headers: token ? { Authorization: `Bearer ${token}` } : {}
+		});
+		data = await parseResponse<unknown>(response);
 	} catch (error) {
 		if (error instanceof ApiRequestError && (error.status === 404 || error.status === 405)) {
 			throw new Error(
@@ -29,10 +37,9 @@ export async function generatePairingCode(password: string): Promise<PairingCode
 		) ||
 		!('expiresAt' in data) ||
 		typeof data.expiresAt !== 'string' ||
-		!Number.isFinite(Date.parse(data.expiresAt)) ||
-		Date.parse(data.expiresAt) <= Date.now()
+		!Number.isFinite(Date.parse(data.expiresAt))
 	)
-		throw new Error('The server returned an invalid or expired pairing code. Try again.');
+		throw new Error('The server returned an invalid pairing code. Try again.');
 	return { code: data.code, expiresAt: data.expiresAt };
 }
 
