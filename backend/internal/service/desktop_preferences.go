@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
@@ -20,6 +21,17 @@ type DesktopPreferences struct {
 	mu   sync.Mutex
 	fs   filesystem.FS
 	path string
+}
+
+// Desktop wallpapers are staged as settings records named by image hash, then referenced by URL.
+const (
+	desktopWallpaperPrefix = "desktop-"
+	desktopWallpaperURL    = "/api/v1/desktop/wallpaper/"
+)
+
+// DesktopWallpaperUser names the settings record that stages the image with this lowercase SHA-256.
+func DesktopWallpaperUser(id string) (string, bool) {
+	return desktopWallpaperPrefix + id, isSHA256Hex(id)
 }
 
 func NewDesktopPreferences(fs filesystem.FS, dataDir string) *DesktopPreferences {
@@ -99,4 +111,35 @@ func (s *DesktopPreferences) Set(value json.RawMessage) error {
 		return ErrDesktopPreferences
 	}
 	return nil
+}
+
+// PruneWallpapers deletes staged wallpapers that the saved preferences do not reference.
+// A renderer holds an unsaved staged reference only while this process serves it, so a
+// staged record outlives its process only when the saved file names it. Call before serving.
+func (s *DesktopPreferences) PruneWallpapers(settings SettingsService) error {
+	value, err := s.Get()
+	if err != nil {
+		return err
+	}
+	// Without a file, the renderer may still adopt a reference from its own storage.
+	if string(value) == "null" {
+		return nil
+	}
+	var saved struct {
+		BackgroundImage *string `json:"backgroundImage"`
+	}
+	if err := json.Unmarshal(value, &saved); err != nil {
+		return err
+	}
+	keep := ""
+	if saved.BackgroundImage != nil {
+		if id, ok := strings.CutPrefix(strings.TrimSpace(*saved.BackgroundImage), desktopWallpaperURL); ok {
+			keep, _ = DesktopWallpaperUser(id)
+		}
+	}
+	return settings.PruneWallpapers(func(username string) bool {
+		id, staged := strings.CutPrefix(username, desktopWallpaperPrefix)
+		_, valid := DesktopWallpaperUser(id)
+		return staged && valid && username != keep
+	})
 }

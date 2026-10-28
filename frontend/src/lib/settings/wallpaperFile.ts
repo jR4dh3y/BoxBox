@@ -13,7 +13,10 @@ const WALLPAPER_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif
 
 export const WALLPAPER_MAX_BYTES = 20 * 1024 * 1024;
 
-/** The picker's filter. Extensions cover systems that report no MIME type for a file. */
+/**
+ * The browser picker's filter. Extensions cover systems that report no MIME type for a file.
+ * Desktop pickers omit it: Electrobun's GTK chooser turns every token into a filter that matches no file.
+ */
 export const WALLPAPER_FILE_ACCEPT = [
 	...WALLPAPER_TYPES,
 	...[...WALLPAPER_EXTENSIONS].map((extension) => `.${extension}`)

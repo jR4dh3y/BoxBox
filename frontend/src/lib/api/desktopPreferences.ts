@@ -117,11 +117,13 @@ export class DesktopPreferences {
 
 	async load(defaults: UserSettings, fallback: UserSettings): Promise<UserSettings> {
 		try {
-			const saved = (await loadDesktopPreferences(defaults)) ?? fallback;
+			const saved = await loadDesktopPreferences(defaults);
 			this.signal.throwIfAborted();
-			const migrated = await migrateDesktopWallpaper(saved, this.signal);
+			const migrated = await migrateDesktopWallpaper(saved ?? fallback, this.signal);
 			this.signal.throwIfAborted();
 			this.loaded = true;
+			// The server keeps only the staged wallpaper the file names, so adopt a fallback or migration now.
+			if (saved === null || migrated !== saved) this.save(migrated);
 			return migrated;
 		} catch {
 			if (!this.signal.aborted)

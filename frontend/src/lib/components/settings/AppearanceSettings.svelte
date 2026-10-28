@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
-	import { WALLPAPER_FILE_ACCEPT } from '#lib/settings/wallpaperFile.js';
 	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import { Button, Select, Toggle } from '#lib/components/ui/index.js';
 	import LoadError from '#lib/components/LoadError.svelte';
@@ -181,13 +180,8 @@
 			</span>
 		{/if}
 		{#if nativePicker}
-			<input
-				bind:this={nativeInput}
-				type="file"
-				accept={WALLPAPER_FILE_ACCEPT}
-				class="hidden"
-				onchange={handleNativeFile}
-			/>
+			<!-- No accept: see WALLPAPER_FILE_ACCEPT. -->
+			<input bind:this={nativeInput} type="file" class="hidden" onchange={handleNativeFile} />
 		{/if}
 		<Button variant="secondary" size="sm" onclick={chooseWallpaper} disabled={applying}>
 			{hasWallpaper ? 'Change' : 'Choose'}

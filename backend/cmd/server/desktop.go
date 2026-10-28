@@ -14,6 +14,7 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
+	"github.com/rs/zerolog/log"
 )
 
 const desktopCookie = "boxbox_desktop"
@@ -36,11 +37,16 @@ func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {
 	clipboard := handler.NewDesktopClipboardHandler(service.NewDesktopClipboard(filesystem.NewOsFS(), cfg.MountPoints))
 	trash := handler.NewDesktopTrashHandler(service.NewDesktopTrashService(filesystem.NewOsFS(), cfg.MountPoints))
 	volumes := handler.NewDesktopVolumesHandler(service.NewDesktopVolumesService(cfg.MountPoints))
+	preferences := service.NewDesktopPreferences(filesystem.NewOsFS(), cfg.DataDir)
+	settings := service.NewSettingsService(filesystem.NewOsFS(), service.SettingsServiceConfig{DataDir: cfg.DataDir})
+	if err := preferences.PruneWallpapers(settings); err != nil {
+		log.Warn().Err(err).Msg("Could not remove unused desktop wallpapers")
+	}
 	servers, serverErr := service.NewDesktopServers(filesystem.NewOsFS(), cfg.DataDir, nil)
 	router := chi.NewRouter()
 	router.Route("/api/v1/desktop", func(r chi.Router) {
 		r.Get("/watch", watch)
-		handler.RegisterDesktopPreferences(r, service.NewDesktopPreferences(filesystem.NewOsFS(), cfg.DataDir), service.NewSettingsService(filesystem.NewOsFS(), service.SettingsServiceConfig{DataDir: cfg.DataDir}))
+		handler.RegisterDesktopPreferences(r, preferences, settings)
 		apps.RegisterRoutes(r)
 		clipboard.RegisterRoutes(r)
 		volumes.RegisterRoutes(r)

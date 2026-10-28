@@ -260,7 +260,7 @@
 <input
 	bind:this={localWallpaperInput}
 	type="file"
-	accept={WALLPAPER_FILE_ACCEPT}
+	accept={nativeFile ? undefined : WALLPAPER_FILE_ACCEPT}
 	class="hidden"
 	onchange={handleLocalWallpaperChange}
 />

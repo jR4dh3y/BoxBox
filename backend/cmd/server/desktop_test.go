@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -245,5 +247,136 @@ func TestDesktopRemoteLaunchUsesPrivateProfileAndBrowseBootstrap(t *testing.T) {
 	restarted.ServeHTTP(saved, list)
 	if saved.Code != 200 || !strings.Contains(saved.Body.String(), profile.ID) {
 		t.Fatal("native launch profile did not survive backend restart")
+	}
+}
+
+func TestDesktopWallpaperRecordsOutliveAProcessOnlyWhenSaved(t *testing.T) {
+	cfg := &model.ServerConfig{DataDir: t.TempDir()}
+	wallpapers := filepath.Join(cfg.DataDir, "wallpapers")
+	address := "127.0.0.1:12345"
+	token := strings.Repeat("w", 64)
+	png := func(tag string) string { return "\x89PNG\r\n\x1a\n" + tag }
+	var router http.Handler
+	start := func() { router = desktopHandler(desktopRoutes(http.NotFoundHandler(), cfg), address, token) }
+	send := func(method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, "http://"+address+"/api/v1/desktop"+path, strings.NewReader(body))
+		r.AddCookie(&http.Cookie{Name: desktopCookie, Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return w
+	}
+	stage := func(image string) string {
+		t.Helper()
+		w := send("PUT", "/wallpaper", image)
+		var meta model.WallpaperMeta
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &meta) != nil {
+			t.Fatalf("stage: %d %s", w.Code, w.Body.String())
+		}
+		return "/api/v1/desktop/wallpaper/" + meta.SHA256
+	}
+	save := func(reference string) int {
+		body := `{"backgroundImage":null}`
+		if reference != "" {
+			body = `{"backgroundImage":"` + reference + `"}`
+		}
+		return send("PUT", "/preferences", body).Code
+	}
+	served := func(reference string) bool {
+		return send("GET", strings.TrimPrefix(reference, "/api/v1/desktop"), "").Code == 200
+	}
+	files := func() []string {
+		entries, _ := os.ReadDir(wallpapers)
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		return names
+	}
+
+	start()
+	// Records that belong to accounts or other software are never selected.
+	if err := os.MkdirAll(wallpapers, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	upper := strings.ToUpper(hex.EncodeToString([]byte("desktop-" + strings.Repeat("a", 64))))
+	foreign := []string{"notes.txt", "desktop-x.json", "6465736b746f702d.json", "616c696365.json", "646576.json", upper + ".json"}
+	for _, name := range foreign {
+		if err := os.WriteFile(filepath.Join(wallpapers, name), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Without a saved file the renderer may still adopt a fallback reference, so nothing is pruned.
+	fallback := stage(png("fallback"))
+	start()
+	if !served(fallback) {
+		t.Fatal("pruned before preferences were ever saved")
+	}
+
+	first := stage(png("first"))
+	if save(first) != 204 {
+		t.Fatal("save first")
+	}
+	// A replacement whose save is still pending, and same-image reuse of the saved image.
+	second := stage(png("second"))
+	if stage(png("first")) != first {
+		t.Fatal("same image changed reference")
+	}
+	if save(second) != 204 || save(first) != 204 {
+		t.Fatal("superseded saves")
+	}
+	// Staged records stay while this process serves a renderer that may still save them.
+	if !served(second) || !served(fallback) {
+		t.Fatal("pruned during the session")
+	}
+	// A rejected save does not change ownership.
+	if send("PUT", "/preferences", `[]`).Code == 204 {
+		t.Fatal("invalid preferences accepted")
+	}
+	// Interrupted writes of an abandoned stage.
+	abandoned := stage(png("abandoned"))
+	id := strings.TrimPrefix(abandoned, "/api/v1/desktop/wallpaper/")
+	user := hex.EncodeToString([]byte("desktop-" + id))
+	for _, name := range []string{user + ".json.tmp", user + "-" + id + ".img.tmp"} {
+		if err := os.WriteFile(filepath.Join(wallpapers, name), []byte("partial"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Remove(filepath.Join(wallpapers, user+".json")); err != nil {
+		t.Fatal(err)
+	}
+
+	start()
+	if !served(first) || served(second) || served(fallback) {
+		t.Fatal("restart did not keep exactly the saved wallpaper")
+	}
+	want := []string{hex.EncodeToString([]byte("desktop-" + strings.TrimPrefix(first, "/api/v1/desktop/wallpaper/")))}
+	for _, name := range files() {
+		if strings.HasPrefix(name, want[0]) || slices.Contains(foreign, name) {
+			continue
+		}
+		t.Fatalf("restart left %s", name)
+	}
+	if len(files()) != len(foreign)+2 {
+		t.Fatalf("saved record or foreign files lost: %v", files())
+	}
+
+	// Removal releases the image at the next start.
+	if save("") != 204 {
+		t.Fatal("remove")
+	}
+	start()
+	if served(first) || len(files()) != len(foreign) {
+		t.Fatalf("removed wallpaper kept: %v", files())
+	}
+
+	// Unreadable preferences never prune.
+	kept := stage(png("kept"))
+	if err := os.WriteFile(filepath.Join(cfg.DataDir, "desktop", "preferences.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	start()
+	if !served(kept) {
+		t.Fatal("pruned with unreadable preferences")
 	}
 }

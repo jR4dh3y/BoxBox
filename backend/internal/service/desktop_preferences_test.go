@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 )
 
@@ -35,5 +37,27 @@ func TestDesktopPreferencesSurviveNewBackend(t *testing.T) {
 	got, err = restarted.Get()
 	if err != nil || string(got) != string(value) {
 		t.Fatal("invalid write replaced saved preferences")
+	}
+}
+
+func TestDesktopWallpaperPrunePreservesAccountNamespaceCollision(t *testing.T) {
+	directory := t.TempDir()
+	fsys := filesystem.NewOsFS()
+	settings := NewSettingsService(fsys, SettingsServiceConfig{DataDir: directory})
+	username := "desktop-" + strings.Repeat("a", 64)
+	image := []byte("\x89PNG\r\n\x1a\naccount wallpaper")
+	if _, err := settings.SetWallpaper(username, image, model.WallpaperDisplay{Mode: "cover"}, "upload"); err != nil {
+		t.Fatal(err)
+	}
+	preferences := NewDesktopPreferences(fsys, directory)
+	if err := preferences.Set(json.RawMessage(`{"backgroundImage":null}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := preferences.PruneWallpapers(settings); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := settings.OpenWallpaper(username)
+	if err != nil || string(got) != string(image) {
+		t.Fatalf("account wallpaper changed: %q, %v", got, err)
 	}
 }

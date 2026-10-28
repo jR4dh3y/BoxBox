@@ -16,12 +16,12 @@ func RegisterDesktopPreferences(r chi.Router, preferences *service.DesktopPrefer
 	serveWallpaper := func(w http.ResponseWriter, r *http.Request) {
 		username := "dev"
 		if id := chi.URLParam(r, "id"); id != "" {
-			decoded, err := hex.DecodeString(id)
-			if err != nil || len(decoded) != sha256.Size {
+			staged, ok := service.DesktopWallpaperUser(id)
+			if !ok {
 				writeError(w, "Invalid wallpaper reference.", model.ErrCodeValidationError, http.StatusBadRequest)
 				return
 			}
-			username = "desktop-" + id
+			username = staged
 		}
 		image, meta, err := settings.OpenWallpaper(username)
 		if err != nil {
@@ -43,8 +43,8 @@ func RegisterDesktopPreferences(r chi.Router, preferences *service.DesktopPrefer
 		}
 		// Staging never replaces an image referenced by committed preferences.
 		digest := sha256.Sum256(image)
-		id := hex.EncodeToString(digest[:])
-		meta, err := settings.SetWallpaper("desktop-"+id, image, model.WallpaperDisplay{Mode: "cover"}, "desktop")
+		username, _ := service.DesktopWallpaperUser(hex.EncodeToString(digest[:]))
+		meta, err := settings.SetWallpaper(username, image, model.WallpaperDisplay{Mode: "cover"}, "desktop")
 		if err != nil {
 			HandleServiceError(w, err)
 			return
