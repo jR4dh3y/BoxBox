@@ -35,6 +35,8 @@
 	--color-accent-solid-hover: #2760b5;
 
 	/* Semantic colors */
+	/* Fixed blue for neutral status; it does not follow the accent. */
+	--color-info: #4a9eff;
 	--color-danger: #dc3545;
 	--color-danger-hover: #b02a37;
 	--color-success: #10b981;

@@ -2,7 +2,7 @@
 	interface Props {
 		value: number;
 		max?: number;
-		variant?: 'default' | 'success' | 'warning' | 'danger';
+		variant?: 'default' | 'info' | 'success' | 'warning' | 'danger';
 		size?: 'sm' | 'md';
 		showLabel?: boolean;
 	}
@@ -13,6 +13,7 @@
 
 	const variantClasses: Record<string, string> = {
 		default: 'bg-accent',
+		info: 'bg-info',
 		success: 'bg-success',
 		warning: 'bg-warning',
 		danger: 'bg-danger'
