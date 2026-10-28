@@ -17,9 +17,6 @@
 		<h3 class="m-0 text-sm font-medium text-text-primary">Paired devices</h3>
 		<Button variant="secondary" size="sm" onclick={() => pairing.refresh()}>Refresh</Button>
 	</div>
-	<p class="mt-2 text-[13px] text-text-secondary">
-		Devices authorized to access this account. Pairing does not indicate whether a device is online.
-	</p>
 	{#if pairing.clients.kind === 'loading'}
 		<p class="mt-3 text-[13px] text-text-secondary">Checking paired devices…</p>
 	{:else if pairing.clients.kind === 'ready'}
@@ -60,10 +57,6 @@
 
 <div class="mt-3 border-t border-border-secondary py-4">
 	<h3 class="m-0 text-sm font-medium text-text-primary">Pair a desktop</h3>
-	<p class="mt-2 text-[13px] text-text-secondary">
-		Generate a one-time code to connect the BoxBox desktop app to this server. Only share it with a
-		device you trust. The code expires after five minutes.
-	</p>
 	<form
 		class="mt-4 flex flex-col items-start gap-3"
 		onsubmit={(event) => {
@@ -107,10 +100,6 @@
 	{:else if pairing.state.kind === 'closed'}
 		<p class="mt-3 text-[13px] text-text-secondary" role="status">
 			This pairing code was used or closed. Paired devices are listed above.
-		</p>
-	{:else if pairing.state.kind === 'expired'}
-		<p class="mt-3 text-[13px] text-text-secondary" role="status">
-			This code expired. Confirm your password to generate another.
 		</p>
 	{/if}
 	{#if pairing.error}

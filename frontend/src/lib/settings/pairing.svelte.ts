@@ -14,7 +14,6 @@ type PairingState =
 	| { kind: 'idle' }
 	| { kind: 'generating' }
 	| { kind: 'ready'; pairing: PairingCode }
-	| { kind: 'expired' }
 	| { kind: 'closed' };
 
 export class AccountPairing {
@@ -22,7 +21,6 @@ export class AccountPairing {
 	state = $state<PairingState>({ kind: 'idle' });
 	error = $state('');
 	copied = $state(false);
-	private timer: ReturnType<typeof setTimeout> | undefined;
 	private disposed = false;
 	clients = $state.raw<ClientsState>({ kind: 'loading' });
 	connectionError = $state('');
@@ -55,7 +53,6 @@ export class AccountPairing {
 				codeState.kind === 'ready' &&
 				(!status.enabled || status.expiresAt !== codeState.pairing.expiresAt)
 			) {
-				clearTimeout(this.timer);
 				this.state = { kind: 'closed' };
 			}
 		} catch (error) {
@@ -93,7 +90,6 @@ export class AccountPairing {
 
 	async generate(): Promise<void> {
 		if (this.state.kind === 'generating' || !this.password) return;
-		clearTimeout(this.timer);
 		this.state = { kind: 'generating' };
 		this.error = '';
 		this.copied = false;
@@ -103,12 +99,6 @@ export class AccountPairing {
 			const pairing = await generatePairingCode(password);
 			if (this.disposed) return;
 			this.state = { kind: 'ready', pairing };
-			this.timer = setTimeout(
-				() => {
-					this.state = { kind: 'expired' };
-				},
-				Date.parse(pairing.expiresAt) - Date.now()
-			);
 		} catch (error) {
 			if (this.disposed) return;
 			this.state = { kind: 'idle' };
@@ -132,7 +122,6 @@ export class AccountPairing {
 		this.disposed = true;
 		clearInterval(this.poll);
 		this.request?.abort();
-		clearTimeout(this.timer);
 		this.password = '';
 		this.state = { kind: 'idle' };
 	}

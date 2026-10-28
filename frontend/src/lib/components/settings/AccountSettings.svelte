@@ -5,8 +5,8 @@
 	import { Button } from '#lib/components/ui/index.js';
 	import { currentUsername } from '#lib/utils/sessionUser.js';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
-	import PairingCodeSettings from './PairingCodeSettings.svelte';
 	import SettingsRow from './SettingsRow.svelte';
+	import PairingCodeSettings from './PairingCodeSettings.svelte';
 
 	const username = currentUsername();
 

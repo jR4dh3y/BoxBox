@@ -8,6 +8,8 @@ This server API is the foundation for the separately reviewed desktop integratio
 
 All routes below are relative to `/api/v1`. Account operations require an account access token in `Authorization: Bearer <access token>`.
 
+In the server web app, open **Settings → Account → Pair a desktop**, confirm your password, and select **Generate pairing code**. Copy the code into the desktop app. The password is cleared after submission; the code is shown only for the current settings visit and hidden when it expires. The same Account section lists paired devices from this server, refreshes while open, and lets the account revoke their access. A redeemed or closed code is hidden on the next refresh. Paired status confirms authorization, not that a desktop is currently online. Code expiry follows the server’s pairing status rather than the browser clock, and password confirmation requests are not automatically replayed.
+
 1. Call `POST /connect/pairing` with `{ "password": "<account password>" }`. Password re-entry uses the account's existing login lockout. The response contains `code` and `expiresAt`.
 2. Give that code to the intended device. The pairing window lasts five minutes and accepts one successful redemption. A new window replaces the same account's old code; another account cannot replace an active window. Restarting the server closes the window.
 3. The device calls `POST /connect/redeem` with `{ "code": "<one-time code>", "clientName": "<device name>" }`. This endpoint needs no account token. The response contains `clientId`, `credential`, `expiresAt` and `username`.

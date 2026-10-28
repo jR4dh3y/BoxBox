@@ -39,11 +39,10 @@ test('account pairing authorizes, validates codes, and clears passwords', async 
 			null,
 			{},
 			{ code: 'wrong', expiresAt: new Date(Date.now() + 300_000).toISOString() },
-			{ code: 'ABCD-EFGH', expiresAt: 'invalid' },
-			{ code: 'ABCD-EFGH', expiresAt: '2000-01-01T00:00:00Z' }
+			{ code: 'ABCD-EFGH', expiresAt: 'invalid' }
 		]) {
 			response = invalid;
-			await assert.rejects(generatePairingCode('confirm-password'), /invalid or expired/);
+			await assert.rejects(generatePairingCode('confirm-password'), /invalid pairing code/);
 		}
 		status = 429;
 		response = { error: 'Too many attempts. Try again later.', code: 'RATE_LIMITED' };
@@ -118,6 +117,98 @@ test('server clients reconcile redeemed codes and revoke with an empty 204 respo
 		clients = { clients: [{ ...device, expiresAt: 'invalid' }] };
 		await assert.rejects(listPairedClients(), /timestamp/);
 	} finally {
+		controller.dispose();
+		Object.assign(globalThis, { window: previous });
+		clearTokens();
+		server.stop(true);
+	}
+});
+
+test('a rejected confirmation password is submitted once without refreshing or replaying', async () => {
+	let attempts = 0;
+	let refreshes = 0;
+	const server = Bun.serve({
+		port: 0,
+		async fetch(request) {
+			if (new URL(request.url).pathname === '/api/v1/auth/refresh') {
+				refreshes++;
+				return Response.json({
+					accessToken: 'refreshed-account',
+					expiresAt: '2030-01-01T00:00:00Z'
+				});
+			}
+			attempts++;
+			assert.equal(request.headers.get('authorization'), 'Bearer test-account');
+			assert.deepEqual(await request.json(), { password: 'wrong-password' });
+			return Response.json({ error: 'Invalid credentials', code: 'UNAUTHORIZED' }, { status: 401 });
+		}
+	});
+	setAccessToken('test-account');
+	const previous = globalThis.window;
+	Object.assign(globalThis, { window: { location: { origin: server.url.origin } } });
+	const controller = new AccountPairing();
+	try {
+		controller.password = 'wrong-password';
+		await controller.generate();
+		assert.equal(attempts, 1);
+		assert.equal(refreshes, 0);
+		assert.equal(controller.password, '');
+		assert.equal(controller.state.kind, 'idle');
+		assert.equal(controller.error, 'Invalid credentials');
+	} finally {
+		controller.dispose();
+		Object.assign(globalThis, { window: previous });
+		clearTokens();
+		server.stop(true);
+	}
+});
+
+test('server pairing status governs expiry with browser clocks ahead and behind', async () => {
+	const serverNow = Date.parse('2030-01-01T12:00:00Z');
+	const expiresAt = new Date(serverNow + 300_000).toISOString();
+	let enabled = true;
+	const server = Bun.serve({
+		port: 0,
+		fetch(request) {
+			const headers = { Date: new Date(serverNow).toUTCString() };
+			if (request.method === 'POST')
+				return Response.json({ code: 'ABCD-EFGH', expiresAt }, { headers });
+			if (new URL(request.url).pathname.endsWith('/clients'))
+				return Response.json({ clients: [] }, { headers });
+			return Response.json(enabled ? { enabled: true, expiresAt } : { enabled: false }, {
+				headers
+			});
+		}
+	});
+	setAccessToken('test-account');
+	const previous = globalThis.window;
+	const originalNow = Date.now;
+	Object.assign(globalThis, { window: { location: { origin: server.url.origin } } });
+	const controller = new AccountPairing();
+	try {
+		for (const offset of [600_000, -600_000]) {
+			Date.now = () => serverNow + offset;
+			enabled = true;
+			controller.password = 'confirm-password';
+			await controller.generate();
+			await new Promise<void>((resolve) => setTimeout(resolve, 0));
+			assert.equal(
+				controller.state.kind,
+				'ready',
+				'a client clock must not expire a server-issued code'
+			);
+			await controller.refresh();
+			assert.equal(controller.state.kind, 'ready');
+			enabled = false;
+			await controller.refresh();
+			assert.equal(
+				controller.state.kind,
+				'closed',
+				'server expiry must hide the code even when the browser clock is behind'
+			);
+		}
+	} finally {
+		Date.now = originalNow;
 		controller.dispose();
 		Object.assign(globalThis, { window: previous });
 		clearTokens();
