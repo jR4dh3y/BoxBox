@@ -36,6 +36,7 @@
 		favoritePaths = new SvelteSet<string>(),
 		canPaste = false,
 		canCreate = false,
+		readOnly = false,
 		showFileExtensions = true,
 		previewOnSingleClick = false,
 		selectionCheckboxes = true,
@@ -58,6 +59,7 @@
 		favoritePaths?: Set<string>;
 		canPaste?: boolean;
 		canCreate?: boolean;
+		readOnly?: boolean;
 		showFileExtensions?: boolean;
 		previewOnSingleClick?: boolean;
 		selectionCheckboxes?: boolean;
@@ -561,6 +563,7 @@
 			{canPaste}
 			{favoritePaths}
 			{canCreate}
+			{readOnly}
 			x={contextMenu.x}
 			y={contextMenu.y}
 			onSelect={handleContextMenuSelect}

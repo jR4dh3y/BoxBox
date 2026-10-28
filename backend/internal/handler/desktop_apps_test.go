@@ -48,8 +48,9 @@ func (s *desktopAppsTestService) OpenTerminal(_ context.Context, path string) er
 func TestDesktopAppsHandlerRegistersDocumentedRoutes(t *testing.T) {
 	serviceFake := &desktopAppsTestService{
 		listResult: service.DesktopAppsResult{
-			MIMEType: "text/plain",
-			Apps:     []service.DesktopApplication{{ID: "editor.desktop", Name: "Editor", IsDefault: true}},
+			MIMEType:    "text/plain",
+			Recommended: []service.DesktopApplication{{ID: "editor.desktop", Name: "Editor", IsDefault: true}},
+			Other:       []service.DesktopApplication{{ID: "viewer.desktop", Name: "Viewer"}},
 		},
 	}
 	router := chi.NewRouter()
@@ -64,7 +65,8 @@ func TestDesktopAppsHandlerRegistersDocumentedRoutes(t *testing.T) {
 	if err := json.Unmarshal(list.Body.Bytes(), &listBody); err != nil {
 		t.Fatal(err)
 	}
-	if listBody.MIMEType != "text/plain" || len(listBody.Apps) != 1 || listBody.Apps[0].ID != "editor.desktop" {
+	if listBody.MIMEType != "text/plain" || len(listBody.Recommended) != 1 || listBody.Recommended[0].ID != "editor.desktop" ||
+		len(listBody.Other) != 1 || listBody.Other[0].ID != "viewer.desktop" {
 		t.Fatalf("GET /apps body = %#v", listBody)
 	}
 

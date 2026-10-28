@@ -57,7 +57,7 @@ This starts the bundled local app, saves or reuses the HTTPS deployment in its b
 - Undo reverses the last rename or move to Trash. It does not undo permanent deletion or completed transfers.
 - Local copy/cut/paste uses the desktop file clipboard, including GNOME copied-files and URI-list formats. A cut clipboard is cleared only after all submitted move jobs are confirmed successful and the clipboard still matches that selection.
 - Paste checks the destination, then asks whether to skip a conflict or keep both with a new name. Transfers remain background jobs with their existing progress and cancellation controls. No replace option is offered.
-- Open With lists installed applications associated with the file's MIME type and launches the chosen application through GIO. Terminal opens the current folder using an installed terminal.
+- Open With lists recommended handlers and other installed applications that accept files. Search covers both groups, including symlinked desktop entries and D-Bus handlers. Launches pass the file as one argument to GIO.
 - Removable drives lists actual removable-volume state and exposes mount, unmount and eject through the user's GIO services and permissions. An unavailable service or busy volume is reported by the UI.
 - Valid names containing `..` work. The desktop removes the server's 10,000-entry directory cap while rendering the complete listing through the shared UI; self-hosted instances keep the default cap.
 
@@ -108,3 +108,9 @@ Open Settings → Connections in the local window to pair a named HTTPS BoxBox s
 Dragging files out to other apps is not available in the current Electrobun SDK. Archive creation/extraction, bulk rename, permission editing, remote download-and-open, full network-protocol mounting, and complete Nautilus/Dolphin parity are not implemented. Default desktop associations and removable-device actions depend on the host desktop services. Only Linux is verified.
 
 BoxBox rejects clipboard publication of paths containing `%`, and rejects native clipboard imports whose literal percent escapes would resolve to a different file. This prevents a selection named `report%20.txt` from selecting a sibling named `report .txt`; full support for literal percent escapes requires changing the shared virtual-path contract.
+
+## Desktop-aware settings and actions
+
+The local desktop omits Account settings; server web sessions retain account and device-pairing controls. Choose wallpaper opens the local file chooser directly, then previews the selected image before saving it. The web app retains its server-folder and device-upload choices.
+
+Local files offer native opening and Trash actions rather than server Share or Download. Connected server files retain server actions. Read-only folders disable mutation actions in both list and grid menus; copy and inspection remain available.

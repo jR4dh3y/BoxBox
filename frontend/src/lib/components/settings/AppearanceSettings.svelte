@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
+	import { WALLPAPER_FILE_ACCEPT } from '#lib/settings/wallpaperFile.js';
 	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import { Button, Select, Toggle } from '#lib/components/ui/index.js';
 	import LoadError from '#lib/components/LoadError.svelte';
@@ -38,6 +40,31 @@
 	const accentIsValid = $derived(isValidAccentColor(accentText.trim() === '' ? null : accentText));
 	let pickerOpen = $state(false);
 	let applying = $state(false);
+	// The desktop's files are already local, so Choose opens the native picker directly.
+	const nativePicker = isLocalDesktop();
+	let nativeInput = $state<HTMLInputElement>();
+	let nativeFile = $state<File>();
+
+	function chooseWallpaper() {
+		if (!nativePicker) {
+			pickerOpen = true;
+			return;
+		}
+		nativeInput?.click();
+	}
+
+	function handleNativeFile(event: Event & { currentTarget: HTMLInputElement }) {
+		const picked = event.currentTarget.files?.[0];
+		event.currentTarget.value = '';
+		if (!picked) return;
+		nativeFile = picked;
+		pickerOpen = true;
+	}
+
+	function closePicker() {
+		pickerOpen = false;
+		nativeFile = undefined;
+	}
 
 	function handleAccentText(event: Event & { currentTarget: HTMLInputElement }) {
 		const value = event.currentTarget.value.trim();
@@ -63,12 +90,12 @@
 		if (problem) toastStore.error(problem, 8000);
 	}
 
-	function chooseWallpaper(selection: {
+	function applyWallpaper(selection: {
 		backgroundImage: string;
 		name: string;
 		mode: BackgroundImageMode;
 	}) {
-		pickerOpen = false;
+		closePicker();
 		void run(preferences.setWallpaper(selection.backgroundImage, selection.name, selection.mode));
 	}
 </script>
@@ -153,7 +180,16 @@
 				{wallpaperLabel}
 			</span>
 		{/if}
-		<Button variant="secondary" size="sm" onclick={() => (pickerOpen = true)} disabled={applying}>
+		{#if nativePicker}
+			<input
+				bind:this={nativeInput}
+				type="file"
+				accept={WALLPAPER_FILE_ACCEPT}
+				class="hidden"
+				onchange={handleNativeFile}
+			/>
+		{/if}
+		<Button variant="secondary" size="sm" onclick={chooseWallpaper} disabled={applying}>
 			{hasWallpaper ? 'Change' : 'Choose'}
 		</Button>
 		{#if hasWallpaper}
@@ -202,10 +238,11 @@
 			currentMode={normalizeBackgroundImageMode(settings.backgroundImageMode)}
 			frostedGlass={settings.frostedGlass}
 			showHiddenFiles={settings.showHiddenFiles}
-			onapply={chooseWallpaper}
-			onclose={() => (pickerOpen = false)}
+			file={nativeFile}
+			onapply={applyWallpaper}
+			onclose={closePicker}
 		/>
 	{:catch}
-		<LoadError label="wallpaper picker" onClose={() => (pickerOpen = false)} />
+		<LoadError label="wallpaper picker" onClose={closePicker} />
 	{/await}
 {/if}

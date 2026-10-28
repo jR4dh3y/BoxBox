@@ -1,5 +1,10 @@
 import { useBrowsePaste } from './paste.svelte';
-import { isNativePath, isLocalDesktop, openDesktopFile } from '#lib/api/desktop.js';
+import {
+	isNativePath,
+	isLocalDesktop,
+	openDesktopFile,
+	supportsServerTransfer
+} from '#lib/api/desktop.js';
 import {
 	beginBrowseClipboardPublication,
 	finishBrowseClipboardPublication,
@@ -346,10 +351,10 @@ export function useBrowseActions(
 					}
 					break;
 				case 'download':
-					download(items);
+					if (supportsServerTransfer(items)) download(items);
 					break;
 				case 'share':
-					if (only) shareItem = only;
+					if (only && supportsServerTransfer(items)) shareItem = only;
 					break;
 				case 'properties':
 					if (only) propertiesDialog = { open: true, file: only };

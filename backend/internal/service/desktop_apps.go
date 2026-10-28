@@ -25,7 +25,7 @@ var (
 	ErrDesktopTerminalLaunchFailed   = errors.New("terminal could not be launched")
 )
 
-// DesktopApplication is an installed desktop entry associated with a MIME type.
+// DesktopApplication is an installed desktop entry that can open a file.
 type DesktopApplication struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -33,10 +33,12 @@ type DesktopApplication struct {
 	IsDefault bool   `json:"isDefault"`
 }
 
-// DesktopAppsResult is returned by GET /api/v1/desktop/apps.
+// DesktopAppsResult is returned by GET /api/v1/desktop/apps. Recommended apps are
+// associated with the file type; other apps are every visible app that accepts files.
 type DesktopAppsResult struct {
-	MIMEType string               `json:"mimeType"`
-	Apps     []DesktopApplication `json:"apps"`
+	MIMEType    string               `json:"mimeType"`
+	Recommended []DesktopApplication `json:"recommended"`
+	Other       []DesktopApplication `json:"other"`
 }
 
 // DesktopApps exposes the local desktop actions supported by the private app server.
@@ -95,7 +97,12 @@ func (s *desktopAppsService) ListApps(ctx context.Context, path string) (Desktop
 	if err != nil {
 		return DesktopAppsResult{}, err
 	}
-	return DesktopAppsResult{MIMEType: mimeType, Apps: s.appsForMIMEType(mimeType)}, nil
+	recommended, other := s.applicationsForMIMEType(mimeType)
+	return DesktopAppsResult{
+		MIMEType:    mimeType,
+		Recommended: desktopApplications(recommended),
+		Other:       desktopApplications(other),
+	}, nil
 }
 
 func (s *desktopAppsService) OpenWith(ctx context.Context, path, appID string) error {
@@ -110,7 +117,9 @@ func (s *desktopAppsService) OpenWith(ctx context.Context, path, appID string) e
 	if err != nil {
 		return err
 	}
-	for _, app := range s.installedAppsForMIMEType(mimeType) {
+	// Only an entry the list could have offered is launched; the renderer never supplies a command.
+	recommended, other := s.applicationsForMIMEType(mimeType)
+	for _, app := range append(recommended, other...) {
 		if app.application.ID != appID {
 			continue
 		}
@@ -193,8 +202,7 @@ func (s *desktopAppsService) detectMIMEType(ctx context.Context, path string) (s
 	return "", fmt.Errorf("%w: GIO returned no usable content type", ErrDesktopRuntimeUnavailable)
 }
 
-func (s *desktopAppsService) appsForMIMEType(mimeType string) []DesktopApplication {
-	installed := s.installedAppsForMIMEType(mimeType)
+func desktopApplications(installed []installedDesktopApp) []DesktopApplication {
 	apps := make([]DesktopApplication, len(installed))
 	for i, app := range installed {
 		apps[i] = app.application
@@ -206,10 +214,46 @@ type installedDesktopApp struct {
 	application DesktopApplication
 	path        string
 	mimeTypes   []string
+	// NoDisplay entries are handler-only: offered when associated, never in the full list.
+	noDisplay    bool
+	acceptsFiles bool
 }
 
-func (s *desktopAppsService) installedAppsForMIMEType(mimeType string) []installedDesktopApp {
+// applicationsForMIMEType returns associated apps first, then every other visible app
+// whose Exec line takes a file or URL, sorted by name.
+func (s *desktopAppsService) applicationsForMIMEType(mimeType string) ([]installedDesktopApp, []installedDesktopApp) {
 	apps := readInstalledDesktopApps(s.commands)
+	recommended := recommendedDesktopApps(apps, mimeType)
+	offered := make(map[string]struct{}, len(recommended))
+	for _, app := range recommended {
+		offered[app.application.ID] = struct{}{}
+	}
+	var other []string
+	for id, app := range apps {
+		if _, exists := offered[id]; !exists && !app.noDisplay && app.acceptsFiles {
+			other = append(other, id)
+		}
+	}
+	sortDesktopIDsByName(other, apps)
+	others := make([]installedDesktopApp, len(other))
+	for i, id := range other {
+		others[i] = apps[id]
+	}
+	return recommended, others
+}
+
+func sortDesktopIDsByName(ids []string, apps map[string]installedDesktopApp) {
+	sort.Slice(ids, func(i, j int) bool {
+		left := strings.ToLower(apps[ids[i]].application.Name)
+		right := strings.ToLower(apps[ids[j]].application.Name)
+		if left == right {
+			return ids[i] < ids[j]
+		}
+		return left < right
+	})
+}
+
+func recommendedDesktopApps(apps map[string]installedDesktopApp, mimeType string) []installedDesktopApp {
 	associations := readMIMEAssociations(mimeType, mimeAppsFiles())
 	orderedIDs := make([]string, 0, len(apps))
 	seen := make(map[string]struct{}, len(apps))
@@ -217,7 +261,7 @@ func (s *desktopAppsService) installedAppsForMIMEType(mimeType string) []install
 		if !validDesktopID(id) {
 			return
 		}
-		if _, exists := apps[id]; !exists {
+		if app, exists := apps[id]; !exists || !app.acceptsFiles {
 			return
 		}
 		if _, exists := seen[id]; exists {
@@ -244,14 +288,7 @@ func (s *desktopAppsService) installedAppsForMIMEType(mimeType string) []install
 			matching = append(matching, id)
 		}
 	}
-	sort.Slice(matching, func(i, j int) bool {
-		left := strings.ToLower(apps[matching[i]].application.Name)
-		right := strings.ToLower(apps[matching[j]].application.Name)
-		if left == right {
-			return matching[i] < matching[j]
-		}
-		return left < right
-	})
+	sortDesktopIDsByName(matching, apps)
 	for _, id := range matching {
 		appendID(id)
 	}
@@ -280,7 +317,11 @@ func readInstalledDesktopApps(commands DesktopCommandRunner) map[string]installe
 			if entry.IsDir() {
 				return nil
 			}
-			if !entry.Type().IsRegular() || filepath.Ext(entry.Name()) != ".desktop" {
+			if filepath.Ext(entry.Name()) != ".desktop" {
+				return nil
+			}
+			info, err := os.Stat(path)
+			if err != nil || !info.Mode().IsRegular() {
 				return nil
 			}
 			id, ok := desktopIDForPath(directory, path)
@@ -335,10 +376,15 @@ func readDesktopApplication(path, id string, commands DesktopCommandRunner) (ins
 	if values["Hidden"] == "true" {
 		return installedDesktopApp{}, true, nil
 	}
-	if values["Type"] != "Application" || values["NoDisplay"] == "true" {
+	if values["Type"] != "Application" {
 		return installedDesktopApp{}, false, nil
 	}
-	if values["Exec"] == "" && values["DBusActivatable"] != "true" {
+	exec := values["Exec"]
+	if exec == "" && values["DBusActivatable"] != "true" {
+		return installedDesktopApp{}, false, nil
+	}
+	// GIO refuses an Exec line it cannot split, so the entry could never launch.
+	if exec != "" && !validDesktopExec(exec) {
 		return installedDesktopApp{}, false, nil
 	}
 	if tryExec := values["TryExec"]; tryExec != "" {
@@ -352,10 +398,49 @@ func readDesktopApplication(path, id string, commands DesktopCommandRunner) (ins
 	}
 	app := DesktopApplication{ID: id, Name: name, Icon: values["Icon"]}
 	return installedDesktopApp{
-		application: app,
-		path:        path,
-		mimeTypes:   strings.Split(values["MimeType"], ";"),
+		application:  app,
+		path:         path,
+		mimeTypes:    strings.Split(values["MimeType"], ";"),
+		noDisplay:    values["NoDisplay"] == "true",
+		acceptsFiles: values["DBusActivatable"] == "true" || execAcceptsFiles(exec),
 	}, false, nil
+}
+
+// validDesktopExec rejects the Exec lines GIO cannot split into arguments: an unterminated
+// quote or a trailing escape. Such an entry could never launch.
+func validDesktopExec(exec string) bool {
+	var quote byte
+	for i := 0; i < len(exec); i++ {
+		switch character := exec[i]; {
+		case quote == '\'':
+			if character == '\'' {
+				quote = 0
+			}
+		case character == '\\':
+			if i+1 >= len(exec) {
+				return false
+			}
+			i++
+		case character == '"' || character == '\'':
+			if quote == character {
+				quote = 0
+			} else if quote == 0 {
+				quote = character
+			}
+		}
+	}
+	return quote == 0 && strings.TrimSpace(exec) != ""
+}
+
+// execAcceptsFiles reports whether GIO will pass the opened file to the command.
+func execAcceptsFiles(exec string) bool {
+	exec = strings.ReplaceAll(exec, "%%", "")
+	for _, code := range []string{"%f", "%F", "%u", "%U"} {
+		if strings.Contains(exec, code) {
+			return true
+		}
+	}
+	return false
 }
 
 func desktopIDForPath(root, path string) (string, bool) {

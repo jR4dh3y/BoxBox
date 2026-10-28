@@ -68,14 +68,10 @@ func TestDesktopAppsUseXDGAssociationsAndSafeGioLaunch(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantIDs := []string{"Visual Studio Code.desktop", "simple-editor.desktop"}
-	gotIDs := make([]string, len(listed.Apps))
-	for i, app := range listed.Apps {
-		gotIDs[i] = app.ID
+	if got := desktopAppIDs(listed.Recommended); !reflect.DeepEqual(got, wantIDs) {
+		t.Fatalf("recommended IDs = %v, want %v", got, wantIDs)
 	}
-	if !reflect.DeepEqual(gotIDs, wantIDs) {
-		t.Fatalf("application IDs = %v, want %v", gotIDs, wantIDs)
-	}
-	if listed.MIMEType != "text/plain" || listed.Apps[0].Name != "Visual Studio Code" || !listed.Apps[0].IsDefault {
+	if listed.MIMEType != "text/plain" || listed.Recommended[0].Name != "Visual Studio Code" || !listed.Recommended[0].IsDefault {
 		t.Fatalf("unexpected application list: %#v", listed)
 	}
 
@@ -95,6 +91,109 @@ func TestDesktopAppsUseXDGAssociationsAndSafeGioLaunch(t *testing.T) {
 	}
 	if len(runner.starts) != 0 || len(runner.outputs) != 2 {
 		t.Fatalf("unexpected process calls: runs=%#v starts=%#v outputs=%#v", runner.runs, runner.starts, runner.outputs)
+	}
+}
+
+func desktopAppIDs(apps []DesktopApplication) []string {
+	ids := make([]string, len(apps))
+	for i, app := range apps {
+		ids[i] = app.ID
+	}
+	return ids
+}
+
+func writeDesktopEntry(t *testing.T, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(xdgApplications(t), name), []byte("[Desktop Entry]\nType=Application\n"+body), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDesktopAppsOfferEveryLaunchableAppBeyondAssociations(t *testing.T) {
+	root, filePath := setupDesktopAppFixture(t)
+	writeDesktopEntry(t, "zip-viewer.desktop", "Name=Archive Viewer\nExec=viewer %U\nMimeType=application/zip;\n")
+	writeDesktopEntry(t, "calculator.desktop", "Name=Calculator\nExec=calculator\n")
+	writeDesktopEntry(t, "broken.desktop", "Name=Broken\nExec=\"broken %f\n")
+	writeDesktopEntry(t, "handler.desktop", "Name=Handler Only\nNoDisplay=true\nExec=handler %f\n")
+	writeDesktopEntry(t, "slides-handler.desktop", "Name=Slides Handler\nNoDisplay=true\nExec=slides %f\nMimeType=application/vnd.openxmlformats-officedocument.presentationml.presentation;\n")
+	runner := &fakeDesktopCommandRunner{output: []byte("standard::content-type: application/vnd.openxmlformats-officedocument.presentationml.presentation\n")}
+	apps := NewDesktopAppsService(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}}, runner)
+	virtualPath := "home/My Files/annual report.txt"
+
+	listed, err := apps.ListApps(context.Background(), virtualPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := desktopAppIDs(listed.Recommended); !reflect.DeepEqual(got, []string{"slides-handler.desktop"}) {
+		t.Fatalf("recommended IDs = %v", got)
+	}
+	// Removed associations only apply to the file type; the app stays launchable from the full list.
+	wantOther := []string{"zip-viewer.desktop", "hidden.desktop", "simple-editor.desktop", "Visual Studio Code.desktop"}
+	if got := desktopAppIDs(listed.Other); !reflect.DeepEqual(got, wantOther) {
+		t.Fatalf("other IDs = %v, want %v", got, wantOther)
+	}
+
+	if err := apps.OpenWith(context.Background(), virtualPath, "zip-viewer.desktop"); err != nil {
+		t.Fatal(err)
+	}
+	want := desktopCommandCall{name: "gio", args: []string{"launch", filepath.Join(xdgApplications(t), "zip-viewer.desktop"), filePath}}
+	if len(runner.runs) != 1 || !reflect.DeepEqual(runner.runs[0], want) {
+		t.Fatalf("runs = %#v, want %#v", runner.runs, want)
+	}
+	for _, id := range []string{"calculator.desktop", "broken.desktop", "handler.desktop", "missing.desktop", "../zip-viewer.desktop"} {
+		if err := apps.OpenWith(context.Background(), virtualPath, id); !errors.Is(err, ErrDesktopApplicationUnavailable) {
+			t.Errorf("OpenWith(%q) error = %v, want unavailable", id, err)
+		}
+	}
+	if len(runner.runs) != 1 {
+		t.Fatalf("unlisted applications launched: %#v", runner.runs)
+	}
+}
+
+func TestDesktopAppsOfferAssociatedHandlerOnlyEntriesAndSkipStaleDefaults(t *testing.T) {
+	root, _ := setupDesktopAppFixture(t)
+	writeDesktopEntry(t, "userapp-browser.desktop", "Name=Browser\nNoDisplay=true\nExec=browser %u\n")
+	if err := os.WriteFile(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "mimeapps.list"), []byte(`[Default Applications]
+text/plain=uninstalled-office.desktop;userapp-browser.desktop;
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeDesktopCommandRunner{output: []byte("standard::content-type: text/plain\n")}
+	apps := NewDesktopAppsService(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}}, runner)
+
+	listed, err := apps.ListApps(context.Background(), "home/My Files/annual report.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Recommended) == 0 || listed.Recommended[0].ID != "userapp-browser.desktop" || !listed.Recommended[0].IsDefault {
+		t.Fatalf("recommended = %#v, want the installed default first", listed.Recommended)
+	}
+	for _, app := range append(listed.Recommended, listed.Other...) {
+		if app.ID == "uninstalled-office.desktop" {
+			t.Fatalf("stale default was offered: %#v", listed)
+		}
+	}
+}
+
+func TestDesktopExecValidation(t *testing.T) {
+	for exec, valid := range map[string]bool{
+		`/usr/bin/code --reuse-window %F`:  true,
+		`"/opt/My App/app" %u`:             true,
+		`sh -c 'echo "$1"' sh %f`:          true,
+		`app --title="Quote \" inside" %f`: true,
+		`"/opt/unterminated %f`:            false,
+		`app 'unterminated %f`:             false,
+		`app trailing\`:                    false,
+		`   `:                              false,
+	} {
+		if got := validDesktopExec(exec); got != valid {
+			t.Errorf("validDesktopExec(%q) = %v, want %v", exec, got, valid)
+		}
+	}
+	for exec, accepts := range map[string]bool{"app %F": true, "app %U": true, "app": false, "app %%f": false, "app %i %c": false} {
+		if got := execAcceptsFiles(exec); got != accepts {
+			t.Errorf("execAcceptsFiles(%q) = %v, want %v", exec, got, accepts)
+		}
 	}
 }
 
@@ -287,5 +386,43 @@ func TestDesktopOpenConfinesPaths(t *testing.T) {
 		if len(runner.runs) != 0 {
 			t.Fatalf("launched opener for %q", path)
 		}
+	}
+}
+
+func TestDesktopAppsFollowEntrySymlinksAndRequireFileSupport(t *testing.T) {
+	root, filePath := setupDesktopAppFixture(t)
+	writeDesktopEntry(t, "unusable.desktop", "Name=No File Support\nExec=calculator\nMimeType=text/plain;\n")
+	writeDesktopEntry(t, "dbus.desktop", "Name=Activated Editor\nDBusActivatable=true\nMimeType=text/plain;\n")
+	entry := filepath.Join(t.TempDir(), "editor.desktop")
+	if err := os.WriteFile(entry, []byte("[Desktop Entry]\nType=Application\nName=Linked Editor\nExec=editor %F\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(xdgApplications(t), "linked.desktop")
+	if err := os.Symlink(entry, link); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeDesktopCommandRunner{output: []byte("standard::content-type: text/plain\n")}
+	apps := NewDesktopAppsService(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}}, runner)
+	path := "home/My Files/annual report.txt"
+	listed, err := apps.ListApps(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := make(map[string]bool)
+	for _, app := range append(listed.Recommended, listed.Other...) {
+		found[app.ID] = true
+	}
+	if found["unusable.desktop"] || !found["dbus.desktop"] || !found["linked.desktop"] {
+		t.Fatalf("offered app IDs = %v", found)
+	}
+	if err := apps.OpenWith(context.Background(), path, "unusable.desktop"); !errors.Is(err, ErrDesktopApplicationUnavailable) {
+		t.Fatalf("non-file handler error = %v", err)
+	}
+	if err := apps.OpenWith(context.Background(), path, "linked.desktop"); err != nil {
+		t.Fatal(err)
+	}
+	want := desktopCommandCall{name: "gio", args: []string{"launch", link, filePath}}
+	if len(runner.runs) != 1 || !reflect.DeepEqual(runner.runs[0], want) {
+		t.Fatalf("runs = %#v, want %#v", runner.runs, want)
 	}
 }

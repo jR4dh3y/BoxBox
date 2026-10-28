@@ -9,9 +9,11 @@ export interface DesktopApplication {
 	isDefault: boolean;
 }
 
+/** Recommended apps are associated with the file type; other apps accept any file. */
 export interface DesktopAppsResponse {
 	mimeType: string;
-	apps: DesktopApplication[];
+	recommended: DesktopApplication[];
+	other: DesktopApplication[];
 }
 
 function parseApplication(value: unknown): DesktopApplication {
@@ -35,7 +37,8 @@ export async function listDesktopApps(
 	);
 	return {
 		mimeType: string(value.mimeType, 'MIME type'),
-		apps: array(value.apps, 'application list').map(parseApplication)
+		recommended: array(value.recommended, 'recommended applications').map(parseApplication),
+		other: array(value.other, 'other applications').map(parseApplication)
 	};
 }
 

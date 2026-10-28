@@ -9,26 +9,31 @@
 	import LoadError from '#lib/components/LoadError.svelte';
 	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import { Preferences } from '#lib/settings/preferences.js';
+	import {
+		initialSettingsSection,
+		settingsSections,
+		type SettingsSection
+	} from '#lib/settings/sections.js';
 	import GeneralSettings from './GeneralSettings.svelte';
 	import AppearanceSettings from './AppearanceSettings.svelte';
 	import AccountSettings from './AccountSettings.svelte';
 
-	let { onclose, initialSection = 'general' }: { onclose: () => void; initialSection?: Section } =
-		$props();
+	let {
+		onclose,
+		initialSection = 'general'
+	}: { onclose: () => void; initialSection?: SettingsSection } = $props();
 
-	type Section = 'general' | 'appearance' | 'links' | 'account' | 'connections';
-	const sections: { id: Section; label: string }[] = [
-		{ id: 'general', label: 'General' },
-		{ id: 'appearance', label: 'Appearance' },
-		{ id: 'links', label: 'Shared links' },
-		{ id: 'account', label: 'Account' },
-		...(isLocalDesktop() ? [{ id: 'connections' as const, label: 'Connections' }] : [])
-	];
+	const sections = settingsSections(isLocalDesktop());
 
 	const preferences = new Preferences();
 	onDestroy(() => preferences.dispose());
 
-	let active = $state<Section>(untrack(() => initialSection));
+	let active = $state<SettingsSection>(
+		initialSettingsSection(
+			sections,
+			untrack(() => initialSection)
+		)
+	);
 
 	async function resetPreferences() {
 		if (
@@ -87,7 +92,7 @@
 				{#await import('../desktop/ServersPage.svelte') then { default: ServersPage }}
 					<ServersPage onChanged={() => void browseRequests.changed()} />
 				{:catch}<LoadError label="connections" inline />{/await}
-			{:else}
+			{:else if active === 'account'}
 				<AccountSettings />
 			{/if}
 		</div>

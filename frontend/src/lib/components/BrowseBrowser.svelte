@@ -259,6 +259,7 @@
 						favoritePaths={actions.favoritePaths}
 						canPaste={actions.canPaste}
 						canCreate={data.canCreate}
+						readOnly={data.isReadOnly}
 						showFileExtensions={settings.showFileExtensions}
 						previewOnSingleClick={settings.previewOnSingleClick}
 						selectionCheckboxes={settings.selectionCheckboxes}
@@ -285,6 +286,7 @@
 					favoritePaths={actions.favoritePaths}
 					canPaste={actions.canPaste}
 					canCreate={data.canCreate}
+					readOnly={data.isReadOnly}
 					showFileExtensions={settings.showFileExtensions}
 					previewOnSingleClick={settings.previewOnSingleClick}
 					selectionCheckboxes={settings.selectionCheckboxes}
