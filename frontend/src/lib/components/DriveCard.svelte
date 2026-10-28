@@ -24,7 +24,7 @@
 	const freeFormatted = $derived(formatFileSize(drive.freeBytes));
 
 	const cardClass =
-		'@container relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary';
+		'relative flex w-full cursor-pointer flex-wrap items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary';
 	const usageLevel = $derived(driveUsageLevel(drive.usedPct));
 
 	function handleClickOutside(e: MouseEvent): void {
@@ -36,14 +36,14 @@
 
 {#snippet contents()}
 	<div
-		class="flex w-12 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary @sm:w-22"
+		class="flex size-22 shrink-0 items-center justify-center self-center rounded bg-surface-elevated text-text-secondary"
 	>
 		{#if drive.serverName}<DeploymentIcon icon={drive.serverIcon} size={22} />{:else}<HardDrive
 				size={22}
 			/>{/if}
 	</div>
 
-	<div class="flex min-w-0 flex-1 flex-col gap-1.5">
+	<div class="flex min-w-0 flex-1 basis-40 flex-col gap-1.5">
 		{#if name.renaming}
 			<!-- Renaming is rare, so its field loads on first use. -->
 			{#await import('./ui/InlineRename.svelte') then { default: InlineRename }}
@@ -52,9 +52,9 @@
 				<LoadError label="rename field" onClose={name.cancel} />
 			{/await}
 		{:else}
-			<div class="flex h-5 min-w-0 items-center gap-2">
+			<div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
 				<span
-					class="min-w-0 flex-1 truncate text-sm font-medium text-text-primary"
+					class="min-w-0 flex-1 basis-36 text-sm font-medium break-words text-text-primary"
 					title={name.displayName}
 				>
 					{name.displayName}
@@ -66,10 +66,7 @@
 				</span>
 			</div>
 		{/if}
-		<div
-			class="truncate text-xs text-text-muted"
-			title="{usedFormatted} used · {freeFormatted} free"
-		>
+		<div class="text-xs text-text-muted" title="{usedFormatted} used · {freeFormatted} free">
 			{usedFormatted} used · {freeFormatted} free
 			{#if drive.readOnly}
 				<span class="ml-1 text-warning">· Read-only</span>

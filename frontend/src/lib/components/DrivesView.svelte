@@ -30,7 +30,7 @@
 {:else}
 	<div class="h-full overflow-auto p-4 sm:p-6">
 		<!-- Columns follow the pane's width, so split panes get fewer, wider cards. -->
-		<div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-4">
+		<div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,24rem),1fr))] gap-4">
 			{#each drives as drive (drive.name)}
 				<DriveCard {drive} onClick={() => onOpen(drive)} {onFolderHover} />
 			{/each}
