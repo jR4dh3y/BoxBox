@@ -371,3 +371,13 @@ test('a delayed creation reply still invalidates if the initial stream snapshot 
 	jobsStore.upsertJob(job('pending'));
 	assert.equal(calls, 1);
 });
+
+test('fast operations remain visible without relying on the remote server clock', () => {
+	const historical = { ...job('completed'), id: 'historical' };
+	jobsStore.reconcileJobs([historical]);
+	assert.equal(jobsStore.recent.has(historical.id), false);
+	jobsStore.receiveJob({ ...job('completed'), createdAt: '2000-01-01T00:00:00Z' });
+	assert.equal(jobsStore.recent.has('job-1'), true);
+	jobsStore.reset();
+	assert.equal(jobsStore.recent.size, 0);
+});

@@ -2,7 +2,7 @@
  * Background jobs the current user has started
  */
 
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { listJobs, isJobActive, isJobTerminal, type Job, type JobUpdate } from '#lib/api/jobs.js';
 
 function newestFirst(left: Job, right: Job): number {
@@ -21,6 +21,7 @@ function mergeJob(current: Job | undefined, incoming: Job): Job {
 
 class JobsStore {
 	jobs = new SvelteMap<string, Job>();
+	readonly recent = new SvelteSet<string>();
 	/** Called when a pending or running job ends, however it ends: it may have changed files. */
 	onFinished?: () => void;
 	isLoading = $state(false);
@@ -50,6 +51,7 @@ class JobsStore {
 			for (const job of response.jobs) this.jobs.set(job.id, mergeJob(atRequest.get(job.id), job));
 			for (const [id, job] of liveUpdates)
 				this.jobs.set(id, mergeJob(job, this.jobs.get(id) ?? job));
+			for (const id of this.recent) if (!this.jobs.has(id)) this.recent.delete(id);
 			// Mark every completion, then invalidate once for the batch.
 			if (wasActive.filter((job) => this.markFinished(this.jobs.get(job.id))).length)
 				this.onFinished?.();
@@ -69,6 +71,7 @@ class JobsStore {
 		for (const [id, job] of this.jobs)
 			if (owns?.(id) && !present.has(id)) {
 				this.jobs.delete(id);
+				this.recent.delete(id);
 				if (isJobActive(job)) finished = true;
 			}
 		for (const job of jobs) {
@@ -88,6 +91,7 @@ class JobsStore {
 	}
 
 	upsertJob(job: Job): void {
+		this.recent.add(job.id);
 		const merged = mergeJob(this.jobs.get(job.id), job);
 		this.jobs.set(job.id, merged);
 		// A newly created job may already be terminal in a reload received before its POST reply.
@@ -97,6 +101,7 @@ class JobsStore {
 	private markFinished(job: Job | undefined): boolean {
 		if (!job || !isJobTerminal(job) || this.notifiedFinished.has(job)) return false;
 		this.notifiedFinished.add(job);
+		this.recent.add(job.id);
 		return true;
 	}
 
@@ -121,6 +126,7 @@ class JobsStore {
 		this.loadVersion++;
 		this.notifiedFinished = new WeakSet();
 		this.jobs.clear();
+		this.recent.clear();
 		this.isLoading = false;
 		this.error = null;
 	}

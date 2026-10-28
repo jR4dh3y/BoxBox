@@ -134,10 +134,8 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 			state = { kind: 'submitting', queue };
 			const result = await queue.start();
 			if (result.state === 'failed') throw result.failure.error;
+			// The transfer panel shows submitted jobs, so success needs no toast.
 			if (result.state === 'submitted' && result.jobs.length) {
-				toastStore.success(
-					`${result.jobs.length} transfer${result.jobs.length === 1 ? '' : 's'} queued`
-				);
 				// Only a pasted cut has a clipboard to clear once the moves finish.
 				if (
 					plan.operation === 'move' &&

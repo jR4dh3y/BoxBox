@@ -1,6 +1,6 @@
 import type { DeploymentIcon } from './deploymentIcon';
 import { SvelteMap } from 'svelte/reactivity';
-import { api } from '#lib/api/client.js';
+import { api, ApiRequestError } from '#lib/api/client.js';
 import { array, record, nonEmptyString } from '#lib/api/parse.js';
 import { qualifyRemotePath } from '#lib/api/remotePaths.js';
 import {
@@ -29,7 +29,7 @@ export interface ServersClient {
 export type ServerStatus =
 	| { kind: 'checking' }
 	| { kind: 'ready'; paths: { name: string; path: string }[] }
-	| { kind: 'failed'; message: string };
+	| { kind: 'failed'; message: string; needsPairing: boolean };
 
 export async function probeDesktopServer(id: string): Promise<{ name: string; path: string }[]> {
 	const value = await api.get<unknown>(`/desktop/servers/${encodeURIComponent(id)}/api/v1/files`);
@@ -82,10 +82,11 @@ export class ServersController {
 		this.confirmingRemoveId = null;
 		this.action.reset();
 	}
-	async check(server: DesktopServer): Promise<void> {
+	async check(server: DesktopServer, { background = false } = {}): Promise<void> {
 		const version = (this.#checks.get(server.id) ?? 0) + 1;
 		this.#checks.set(server.id, version);
-		this.statuses.set(server.id, { kind: 'checking' });
+		if (!background || !this.statuses.has(server.id))
+			this.statuses.set(server.id, { kind: 'checking' });
 		try {
 			const paths = await probeDesktopServer(server.id);
 			if (this.#checks.get(server.id) === version)
@@ -94,13 +95,16 @@ export class ServersController {
 			if (this.#checks.get(server.id) !== version) return;
 			this.statuses.set(server.id, {
 				kind: 'failed',
-				message: error instanceof Error ? error.message : 'Server is unavailable'
+				message: error instanceof Error ? error.message : 'Server is unavailable',
+				needsPairing: error instanceof ApiRequestError && error.code === 'REMOTE_AUTH_REQUIRED'
 			});
 		}
 	}
 	async refresh(): Promise<void> {
 		await this.servers.load();
-		await Promise.all((this.servers.value ?? []).map((server) => this.check(server)));
+		await Promise.all(
+			(this.servers.value ?? []).map((server) => this.check(server, { background: true }))
+		);
 	}
 	async save(): Promise<boolean> {
 		const editor = this.editor;

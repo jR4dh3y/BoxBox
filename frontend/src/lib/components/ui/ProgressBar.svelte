@@ -1,15 +1,26 @@
 <script lang="ts">
 	interface Props {
-		value: number;
+		/** Omit the value when the amount of work is unknown. */
+		value?: number;
 		max?: number;
 		variant?: 'default' | 'info' | 'success' | 'warning' | 'danger';
 		size?: 'sm' | 'md';
 		showLabel?: boolean;
+		label?: string;
 	}
 
-	let { value, max = 100, variant = 'default', size = 'md', showLabel = false }: Props = $props();
+	let {
+		value,
+		max = 100,
+		variant = 'default',
+		size = 'md',
+		showLabel = false,
+		label
+	}: Props = $props();
 
-	const percentage = $derived(Math.min(100, Math.max(0, (value / max) * 100)));
+	const percentage = $derived(
+		value === undefined ? undefined : Math.min(100, Math.max(0, (value / max) * 100))
+	);
 
 	const variantClasses: Record<string, string> = {
 		default: 'bg-accent',
@@ -26,17 +37,28 @@
 </script>
 
 <div class="w-full">
-	<div class="w-full overflow-hidden rounded-full bg-surface-elevated {sizeClasses[size]}">
-		<div
-			class="{variantClasses[variant]} h-full rounded-full transition-all duration-300"
-			style="width: {percentage}%"
-			role="progressbar"
-			aria-valuenow={value}
-			aria-valuemin={0}
-			aria-valuemax={max}
-		></div>
+	<div
+		class="relative w-full overflow-hidden rounded-full bg-surface-elevated {sizeClasses[size]}"
+		role="progressbar"
+		aria-label={label}
+		aria-valuenow={value}
+		aria-valuemin={0}
+		aria-valuemax={max}
+	>
+		{#if percentage === undefined}
+			<div
+				class="{variantClasses[
+					variant
+				]} absolute inset-y-0 w-1/3 rounded-full opacity-70 motion-safe:animate-progress-sweep motion-reduce:w-full motion-reduce:opacity-40"
+			></div>
+		{:else}
+			<div
+				class="{variantClasses[variant]} h-full rounded-full transition-[width] duration-300"
+				style="width: {percentage}%"
+			></div>
+		{/if}
 	</div>
-	{#if showLabel}
+	{#if showLabel && percentage !== undefined}
 		<span class="mt-1 text-xs text-text-secondary">{percentage.toFixed(0)}%</span>
 	{/if}
 </div>

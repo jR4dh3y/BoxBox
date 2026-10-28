@@ -50,7 +50,7 @@
 <Modal open title="Settings" size="xl" padded={false} {onclose}>
 	<div class="flex h-[26rem] max-h-[calc(90vh-5.5rem)] flex-col sm:flex-row">
 		<nav
-			class="flex shrink-0 gap-0.5 border-b border-border-secondary p-2 sm:w-40 sm:flex-col sm:border-r sm:border-b-0"
+			class="flex min-w-0 shrink-0 gap-0.5 overflow-x-auto border-b border-border-secondary p-2 sm:w-40 sm:flex-col sm:border-r sm:border-b-0"
 			aria-label="Settings sections"
 		>
 			{#each sections as section (section.id)}

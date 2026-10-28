@@ -21,7 +21,8 @@
 	onchange={workspace.updateCatalog}
 />
 <DesktopUndoShortcut />
-<div class="flex h-full min-h-0">
+<!-- Holds the wallpaper tint for the sidebar, tabs and panes together. -->
+<div class="browse-shell flex h-full min-h-0">
 	<Sidebar
 		currentPath={active?.location.path ?? ''}
 		roots={runtime?.data.roots ?? []}

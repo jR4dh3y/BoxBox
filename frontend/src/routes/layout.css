@@ -54,6 +54,16 @@
 	--animate-led-a: led-blink 2.7s step-end 900ms infinite;
 	--animate-led-b: led-blink 3.4s step-end 1300ms infinite;
 	--animate-led-busy: led-blink 0.5s step-end infinite;
+	--animate-progress-sweep: progress-sweep 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+
+	@keyframes progress-sweep {
+		from {
+			left: -33%;
+		}
+		to {
+			left: 100%;
+		}
+	}
 
 	@keyframes plate-emerge {
 		from {
@@ -144,8 +154,8 @@ input[autocomplete='current-password']:focus-visible {
 	--color-text-primary: #f3f6fa;
 	--color-text-secondary: #e1e7ef;
 	--color-text-muted: #dfe7f1;
-	--color-selection: color-mix(in srgb, var(--color-accent-base) 22%, transparent);
-	--color-selection-hover: color-mix(in srgb, var(--color-accent-base) 28%, transparent);
+	--color-selection: color-mix(in srgb, var(--color-accent-base) 30%, #15171c);
+	--color-selection-hover: color-mix(in srgb, var(--color-accent-base) 36%, #15171c);
 	background: var(--color-surface-primary);
 }
 
@@ -166,12 +176,19 @@ input[autocomplete='current-password']:focus-visible {
 
 .app-shell[data-has-background='true'][data-frosted-glass='true'] .browse-shell,
 .wallpaper-preview[data-frosted-glass='true'] {
-	background-color: rgb(18 20 24 / 0.64);
+	background-color: rgb(18 20 24 / 0.68);
 }
 
-/* Blur the wallpaper once so every panel is frosted and the file content stays sharp. */
-.app-shell[data-has-background='true'][data-frosted-glass='true'] .app-personal-background {
-	filter: blur(24px) saturate(145%);
+/* The desktop workspace is the shell around its panes, so a pane must not tint twice. */
+.app-shell[data-has-background='true'] .browse-shell .browse-shell {
+	background-color: transparent;
+}
+
+/* Blur the wallpaper once so every panel is frosted and the file content stays sharp.
+   The blur sits on the scrim above the image, so the image keeps its own box, crop and scale. */
+.app-shell[data-has-background='true'][data-frosted-glass='true'] .app-personal-background::after {
+	-webkit-backdrop-filter: blur(24px) saturate(145%);
+	backdrop-filter: blur(24px) saturate(145%);
 }
 
 .wallpaper-preview[data-frosted-glass='true'] {
@@ -210,9 +227,4 @@ input[autocomplete='current-password']:focus-visible {
 	.file-surface
 	:where(.text-folder svg, [data-file-header] svg) {
 	color: var(--color-accent-icon);
-}
-
-.app-shell[data-has-background='true'][data-frosted-glass='true'][data-background-mode='cover']
-	.app-personal-background {
-	inset: -72px;
 }

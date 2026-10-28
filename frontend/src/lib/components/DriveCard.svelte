@@ -24,7 +24,7 @@
 	const freeFormatted = $derived(formatFileSize(drive.freeBytes));
 
 	const cardClass =
-		'relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary';
+		'@container relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary';
 	const usageLevel = $derived(driveUsageLevel(drive.usedPct));
 
 	function handleClickOutside(e: MouseEvent): void {
@@ -36,7 +36,7 @@
 
 {#snippet contents()}
 	<div
-		class="flex w-22 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary"
+		class="flex w-12 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary @sm:w-22"
 	>
 		{#if drive.serverName}<DeploymentIcon icon={drive.serverIcon} size={22} />{:else}<HardDrive
 				size={22}
@@ -52,23 +52,24 @@
 				<LoadError label="rename field" onClose={name.cancel} />
 			{/await}
 		{:else}
-			<div class="grid h-5 grid-cols-[minmax(0,1fr)_5.25rem] items-center gap-2">
+			<div class="flex h-5 min-w-0 items-center gap-2">
 				<span
-					class="min-w-0 truncate text-sm font-medium text-text-primary"
+					class="min-w-0 flex-1 truncate text-sm font-medium text-text-primary"
 					title={name.displayName}
 				>
 					{name.displayName}
 				</span>
-				<div class="flex w-[5.25rem] shrink-0 justify-end overflow-hidden">
-					<span
-						class="inline-flex items-center rounded bg-surface-elevated px-2 py-0.5 text-xs font-medium whitespace-nowrap text-text-secondary"
-					>
-						{totalFormatted}
-					</span>
-				</div>
+				<span
+					class="inline-flex shrink-0 items-center rounded bg-surface-elevated px-2 py-0.5 text-xs font-medium whitespace-nowrap text-text-secondary"
+				>
+					{totalFormatted}
+				</span>
 			</div>
 		{/if}
-		<div class="text-xs text-text-muted">
+		<div
+			class="truncate text-xs text-text-muted"
+			title="{usedFormatted} used · {freeFormatted} free"
+		>
 			{usedFormatted} used · {freeFormatted} free
 			{#if drive.readOnly}
 				<span class="ml-1 text-warning">· Read-only</span>

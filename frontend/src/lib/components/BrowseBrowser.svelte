@@ -20,6 +20,7 @@
 	import { Button } from '#lib/components/ui/index.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { uploadStore } from '#lib/stores/upload.svelte.js';
+	import { jobsStore } from '#lib/stores/jobs.svelte.js';
 	import { useBrowseActions } from '#lib/browse/actions.svelte.js';
 	import { useBrowseData } from '#lib/browse/data.svelte.js';
 	import { useBrowseLocation } from '#lib/browse/location.svelte.js';
@@ -399,7 +400,7 @@
 
 <!-- Toasts, a failed refresh and the upload panel stack in one column. -->
 {#if focused}<Notifications>
-		{#if paneState}{#await import('./desktop/TransferJobs.svelte') then { default: TransferJobs }}<TransferJobs
+		{#if jobsStore.jobs.size}{#await import('./desktop/TransferJobs.svelte') then { default: TransferJobs }}<TransferJobs
 				/>{/await}{/if}
 		{#if data.fileListError && data.displayItems.length > 0}
 			<!-- The stale list stays visible, so the failure is a notice instead of a page error. -->

@@ -34,18 +34,21 @@
 
 {#snippet cells()}
 	<span
-		class="truncate px-3 font-mono text-[12px] text-text-muted"
+		class="hidden truncate px-3 font-mono text-[12px] text-text-muted @3xl:block"
 		title={drive.device || drive.serverName}
 	>
 		{drive.device || drive.serverName || '—'}
 	</span>
-	<span class="truncate px-3 font-mono text-[12px] text-text-secondary" title={drive.fsType}>
+	<span
+		class="hidden truncate px-3 font-mono text-[12px] text-text-secondary @3xl:block"
+		title={drive.fsType}
+	>
 		{drive.fsType || '—'}
 	</span>
 	<span class="truncate px-3 text-right text-text-secondary tabular-nums">
 		{formatFileSize(drive.totalBytes)}
 	</span>
-	<span class="truncate px-3 text-right text-text-secondary tabular-nums">
+	<span class="hidden truncate px-3 text-right text-text-secondary tabular-nums @sm:block">
 		{formatFileSize(drive.freeBytes)}
 	</span>
 	<span class="flex items-center gap-3 px-3">
@@ -62,10 +65,9 @@
 	<!-- A rename field cannot sit inside the row's button. -->
 	<div class={rowClass}>
 		<span class="flex min-w-0 items-center gap-2 px-3">
-			{#if drive.serverIcon}<DeploymentIcon icon={drive.serverIcon} />{:else}<HardDrive
-					size={16}
-					class="shrink-0 text-text-secondary"
-				/>{/if}
+			{#if drive.serverIcon}<span class="flex shrink-0 text-text-secondary"
+					><DeploymentIcon icon={drive.serverIcon} /></span
+				>{:else}<HardDrive size={16} class="shrink-0 text-text-secondary" />{/if}
 			{#await import('./ui/InlineRename.svelte') then { default: InlineRename }}
 				<InlineRename value={name.displayName} onSave={name.save} onCancel={name.cancel} />
 			{:catch}
@@ -84,13 +86,19 @@
 		oncontextmenu={name.openMenu}
 	>
 		<span class="flex min-w-0 items-center gap-2 px-3">
-			{#if drive.serverIcon}<DeploymentIcon icon={drive.serverIcon} />{:else}<HardDrive
-					size={16}
-					class="shrink-0 text-text-secondary"
-				/>{/if}
+			{#if drive.serverIcon}<span class="flex shrink-0 text-text-secondary"
+					><DeploymentIcon icon={drive.serverIcon} /></span
+				>{:else}<HardDrive size={16} class="shrink-0 text-text-secondary" />{/if}
 			<span class="min-w-0 truncate text-text-primary" title={name.displayName}>
 				{name.displayName}
 			</span>
+			{#if drive.serverName}
+				<!-- The device column carries the server when it has room. -->
+				<span
+					class="min-w-0 flex-1 basis-0 truncate text-xs text-text-muted @3xl:hidden"
+					title={drive.serverName}>{drive.serverName}</span
+				>
+			{/if}
 			{#if drive.readOnly}
 				<span class="shrink-0 text-xs text-warning">Read-only</span>
 			{/if}
