@@ -1,3 +1,4 @@
+import { parseDeploymentIcon, type DeploymentIcon } from '#lib/desktop/deploymentIcon.js';
 import { isLocalDesktop } from './desktop';
 import { api } from './client';
 import { array, nonEmptyString, record, string } from './parse';
@@ -28,7 +29,8 @@ export function parseRemotePath(reference: string): PathReference {
 	const [, serverId, ...parts] = reference.split('/');
 	if (!serverId || !UUID.test(serverId)) throw new Error('Invalid remote server ID');
 	const path = parts.join('/');
-	validateRemotePath(path);
+	if (path) validateRemotePath(path);
+	else if (parts.length) throw new Error('Invalid remote path');
 	return { kind: 'remote', serverId, path };
 }
 
@@ -62,6 +64,7 @@ export function encodeRoutePath(path: string): string {
 
 export function pathEndpoint(reference: string, prefix: string): string {
 	const source = parseRemotePath(reference);
+	if (source.kind === 'remote' && !source.path) throw new Error('Choose a remote drive first');
 	return sourceEndpoint(source, `${prefix}/${encodeRoutePath(source.path)}`);
 }
 
@@ -71,6 +74,7 @@ export function number(value: unknown, label: string): number {
 }
 
 export interface RemoteServer {
+	icon?: DeploymentIcon;
 	id: string;
 	name: string;
 	url: string;
@@ -91,7 +95,12 @@ function loadRemoteServers(signal?: AbortSignal): Promise<RemoteServer[]> {
 			const url = new URL(nonEmptyString(server.url, 'server URL'));
 			if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash)
 				throw new Error('Invalid server URL');
-			return { id, name: string(server.name, 'server name'), url: url.href };
+			return {
+				icon: parseDeploymentIcon(server.icon),
+				id,
+				name: string(server.name, 'server name'),
+				url: url.href
+			};
 		})
 	);
 }

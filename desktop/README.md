@@ -25,7 +25,7 @@ bun run --cwd desktop scripts/native-smoke.ts # requires a graphical Linux sessi
 
 The stable release wrapper is `desktop/build/stable-linux-x64/BoxBox/bin/launcher`; distributable files are in `desktop/artifacts/`. Generated SDKs and binaries are ignored by Git. Linux is the supported application target; macOS and Windows integration is not implemented.
 
-The installed runtime checks for an existing BoxBox process before initializing CEF. Opening another folder forwards it to that process. Concurrent launches use a kernel-held guard, which is released if the launcher exits or crashes. Closing the last window stops the local backend and exits the app.
+The installed runtime checks for an existing BoxBox process before initializing CEF. Opening another folder or deployment forwards it to that process and opens a new tab, preserving existing tabs and split panes. Concurrent launches use a kernel-held guard, which is released if the launcher exits or crashes. Closing the last window stops the local backend and exits the app.
 
 ## Local files
 
@@ -41,7 +41,7 @@ Activating a local file uses its OS default application through `xdg-open`. The 
 BOXBOX_DESKTOP_URL=https://files.example.com bun run dev:desktop
 ```
 
-This opens the remote BoxBox server's login page in a sandboxed CEF window without starting a local backend. Only HTTP(S) URLs without embedded credentials are accepted. The remote server receives no desktop API or local filesystem bridge. Remote file activation retains the server's web behavior; download-and-open is not implemented.
+This starts the bundled local app, saves or reuses the HTTPS deployment in its backend profile store, and opens that deployment's native remote location. Use the deployment base URL without credentials, a query or a fragment. New deployments remain unpaired until you enter a single-use code in Settings → Connections. Existing paired profiles retain their name, icon and device key across launches. The remote server receives only allowlisted API requests with the device key in an Authorization header; local cookies and filesystem APIs stay on loopback. Remote file activation retains the server previews; download-and-open is not implemented.
 
 ## Daily file operations
 
@@ -59,7 +59,7 @@ This opens the remote BoxBox server's login page in a sandboxed CEF window witho
 - Paste checks the destination, then asks whether to skip a conflict or keep both with a new name. Transfers remain background jobs with their existing progress and cancellation controls. No replace option is offered.
 - Open With lists installed applications associated with the file's MIME type and launches the chosen application through GIO. Terminal opens the current folder using an installed terminal.
 - Removable drives lists actual removable-volume state and exposes mount, unmount and eject through the user's GIO services and permissions. An unavailable service or busy volume is reported by the UI.
-- Valid names containing `..` work. The desktop removes the server's 10,000-entry directory cap while retaining paginated rendering; self-hosted instances keep the default cap.
+- Valid names containing `..` work. The desktop removes the server's 10,000-entry directory cap while rendering the complete listing through the shared UI; self-hosted instances keep the default cap.
 
 ## Keyboard shortcuts
 
@@ -101,7 +101,7 @@ The installer installs the runtime bundle into the user's XDG data directory and
 
 ## Saved servers
 
-Open Servers in the sidebar, or press Ctrl+Shift+O in the local window, to pair a named HTTPS BoxBox server using a single-use code from its Settings → Connect page. Browse its mounts alongside local files in Locations, including independent tabs and split panes. Saved credentials remain in the private Go backend; Servers supports rename, re-pair, retry and removal. Cross-source copies stream through that backend with checksum verification and no overwrite; cancellation retains sources and may leave completed files in a partial destination. See [Remote desktop integration](../docs/remote-desktop.md) for setup, security, API details, limitations and dependent release ordering.
+Open Settings → Connections in the local window to pair a named HTTPS BoxBox server using a single-use code from the remote server's Settings → Account page. Browse its mounts alongside local files in Locations, including independent tabs and split panes. Saved credentials remain in the private Go backend; Connections supports rename, deployment icons, re-pair, retry and removal. Device keys expire after 30 days. The credential file uses mode 0600 inside a mode 0700 directory; browser JSON contains only the public profile and expiration. Cross-source copies stream through that backend with checksum verification and no overwrite; cancellation retains sources and may leave completed files in a partial destination. See [Remote desktop integration](../docs/remote-desktop.md) for setup, security, API details, limitations and dependent release ordering.
 
 ## Remaining desktop gaps
 

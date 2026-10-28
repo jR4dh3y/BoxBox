@@ -1,3 +1,4 @@
+import { parseDeploymentIcon, type DeploymentIcon } from '#lib/desktop/deploymentIcon.js';
 import { api } from './client';
 import { array, nonEmptyString, record, string } from './parse';
 import { invalidateRemoteServers } from './remotePaths';
@@ -7,15 +8,17 @@ export interface DesktopServer {
 	name: string;
 	url: string;
 	expiresAt: string;
+	icon?: DeploymentIcon;
 }
 
 export type DesktopServerSave =
-	| { kind: 'create'; name: string; url: string; code: string }
-	| { kind: 'update'; id: string; name: string };
+	| { kind: 'create'; name: string; url: string; code: string; icon?: DeploymentIcon }
+	| { kind: 'update'; id: string; name: string; icon?: DeploymentIcon };
 
 function parseServer(value: unknown): DesktopServer {
 	const server = record(value, 'server');
 	return {
+		icon: parseDeploymentIcon(server.icon),
 		id: nonEmptyString(server.id, 'server id'),
 		name: string(server.name, 'server name'),
 		url: nonEmptyString(server.url, 'server URL'),
@@ -33,12 +36,14 @@ export async function saveDesktopServer(command: DesktopServerSave): Promise<Des
 		command.kind === 'create'
 			? await api.post<unknown>('/desktop/servers', {
 					name: command.name,
+					icon: command.icon ?? 'server',
 					url: command.url,
 					code: command.code,
 					clientName: 'BoxBox Desktop'
 				})
 			: await api.patch<unknown>(`/desktop/servers/${encodeURIComponent(command.id)}`, {
-					name: command.name
+					name: command.name,
+					icon: command.icon ?? 'server'
 				});
 	invalidateRemoteServers();
 	return parseServer(result);

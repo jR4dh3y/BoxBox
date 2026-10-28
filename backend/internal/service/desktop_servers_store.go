@@ -63,16 +63,19 @@ func (s *DesktopServers) load(dataDir string) error {
 	}
 	for id, record := range snapshot.Servers {
 		parsed, err := uuid.Parse(id)
-		if err != nil || parsed.String() != id || id != record.ID || !validDesktopName(record.Name) {
+		if err != nil || parsed.String() != id || id != record.ID || !validDesktopName(record.Name) || !validDesktopIcon(record.Icon) {
 			return ErrDesktopServerStorage
 		}
 		u, err := desktopServerURL(record.URL)
 		if err != nil || u.String() != record.URL {
 			return ErrDesktopServerStorage
 		}
-		if record.ExpiresAt.IsZero() || record.ClientID == "" || len(record.ClientID) > 128 || !validDesktopCredential(record.Credential) {
+		unpaired := record.ExpiresAt.IsZero() && record.ClientID == "" && record.Credential == ""
+		if !unpaired && (record.ExpiresAt.IsZero() || record.ClientID == "" || len(record.ClientID) > 128 || !validDesktopCredential(record.Credential)) {
 			return ErrDesktopServerStorage
 		}
+		record.Icon = desktopIcon(record.Icon)
+		snapshot.Servers[id] = record
 	}
 	s.records = snapshot.Servers
 	return nil

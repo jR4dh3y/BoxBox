@@ -99,7 +99,7 @@ func transferService(t *testing.T, f *transferFixture) (*service.DesktopTransfer
 	if err != nil {
 		t.Fatal(err)
 	}
-	remote, err := servers.Create(context.Background(), "Remote", f.server.URL, "ABCD-EFGH", "Tests")
+	remote, err := servers.Create(context.Background(), "Remote", f.server.URL, "ABCD-EFGH", "Tests", "server")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,11 +248,11 @@ func TestDesktopTransfersSeparateAuthoritiesWithOverlappingPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := servers.Create(context.Background(), "First", first.server.URL, "ABCD-EFGH", "Tests")
+	a, err := servers.Create(context.Background(), "First", first.server.URL, "ABCD-EFGH", "Tests", "server")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := servers.Create(context.Background(), "Second", second.server.URL, "ABCD-EFGH", "Tests")
+	b, err := servers.Create(context.Background(), "Second", second.server.URL, "ABCD-EFGH", "Tests", "server")
 	if err != nil {
 		t.Fatal(err)
 	}

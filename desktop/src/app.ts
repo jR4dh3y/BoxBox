@@ -1,10 +1,10 @@
 import type { BrowserWindow } from "electrobun/main";
 import { join } from "node:path";
-import { localBootstrapURL } from "./connections-host";
+import { localBootstrapURL, remoteLaunchTarget } from "./connections-host";
 import type { InstanceOwner, InstanceRequest } from "./instance";
 import type { LaunchTarget } from "./launch";
+import { rendererTargetScript } from "./renderer-target";
 import { LocalServer } from "./server";
-import { remoteURL } from "./target";
 
 type Electrobun = typeof import("electrobun/main");
 
@@ -16,11 +16,11 @@ export class DesktopApp {
   readonly #instance: InstanceOwner | undefined;
   readonly #server: LocalServer;
   readonly #windows = new Set<number>();
-  /** One window per remote URL, whether a saved profile or a launch opened it. */
-  readonly #remoteWindows = new Map<string, number>();
   #localWindowId: number | undefined;
   #primaryWindowId: number | undefined;
   #quitting = false;
+  #localReady = false;
+  #pendingTargets: LaunchTarget[] = [];
 
   constructor(sdk: Electrobun, instance: InstanceOwner | undefined) {
     this.#sdk = sdk;
@@ -33,11 +33,14 @@ export class DesktopApp {
         void this.quit(1);
       },
     );
-    sdk.default.events.on("before-quit", (event: { response: { allow: boolean } }) => {
-      if (this.#quitting) return;
-      event.response = { allow: false };
-      void this.quit();
-    });
+    sdk.default.events.on(
+      "before-quit",
+      (event: { response: { allow: boolean } }) => {
+        if (this.#quitting) return;
+        event.response = { allow: false };
+        void this.quit();
+      },
+    );
   }
 
   async start(request: InstanceRequest): Promise<void> {
@@ -47,8 +50,10 @@ export class DesktopApp {
     }
     const primary =
       request.kind === "remote"
-        ? this.#openRemote(request.url, "BoxBox — Remote")
-        : await this.#openLocal(request.kind === "local" ? request.target : undefined);
+        ? await this.#openRemote(request.url)
+        : await this.#openLocal(
+            request.kind === "local" ? request.target : undefined,
+          );
     this.#primaryWindowId = primary.id;
     this.#instance?.setRequestHandler((next) => this.#handle(next));
   }
@@ -60,7 +65,10 @@ export class DesktopApp {
       console.error("Could not stop the local BoxBox server:", error);
     });
     await this.#instance?.close().catch((error) => {
-      console.error("Could not close the BoxBox Desktop instance socket:", error);
+      console.error(
+        "Could not close the BoxBox Desktop instance socket:",
+        error,
+      );
     });
     // Electrobun begins native/CEF shutdown synchronously from this call.
     this.#sdk.Utils.quit(code);
@@ -76,7 +84,7 @@ export class DesktopApp {
         await this.#openLocal(request.target);
         return;
       case "remote":
-        this.#openRemote(request.url, "BoxBox — Remote");
+        await this.#openRemote(request.url);
         return;
     }
   }
@@ -109,7 +117,10 @@ export class DesktopApp {
     const existing = this.#window(this.#localWindowId);
     if (existing) {
       existing.show();
-      if (target) existing.webview.loadURL(localBootstrapURL(server.url, target));
+      if (target) {
+        this.#pendingTargets.push(target);
+        if (this.#localReady) this.#deliverTargets(existing, server.url);
+      }
       return existing;
     }
 
@@ -122,34 +133,32 @@ export class DesktopApp {
       frame: BROWSER_FRAME,
     });
     this.#localWindowId = window.id;
+    window.webview.on("dom-ready", () => {
+      this.#localReady = true;
+      this.#deliverTargets(window, server.url);
+    });
     this.#track(window, () => {
-      if (this.#localWindowId === window.id) this.#localWindowId = undefined;
+      if (this.#localWindowId === window.id) {
+        this.#localWindowId = undefined;
+        this.#localReady = false;
+        this.#pendingTargets = [];
+      }
     });
     return window;
   }
 
-  #openRemote(value: string, title: string): BrowserWindow {
-    if (this.#quitting) throw new Error("BoxBox Desktop is shutting down");
-    const url = remoteURL(value);
-    const existing = this.#window(this.#remoteWindows.get(url));
-    if (existing) {
-      existing.show();
-      return existing;
+  #deliverTargets(window: BrowserWindow, bootstrapURL: string): void {
+    for (const target of this.#pendingTargets.splice(0)) {
+      window.webview.executeJavascript(
+        rendererTargetScript(bootstrapURL, target),
+      );
     }
-
-    const window = new this.#sdk.BrowserWindow({
-      title,
-      url,
-      renderer: "cef",
-      sandbox: true,
-      allowedProtocols: { views: false, appData: false },
-      frame: BROWSER_FRAME,
-    });
-    this.#remoteWindows.set(url, window.id);
-    this.#track(window, () => {
-      if (this.#remoteWindows.get(url) === window.id) this.#remoteWindows.delete(url);
-    });
-    return window;
   }
 
+  async #openRemote(value: string): Promise<BrowserWindow> {
+    if (this.#quitting) throw new Error("BoxBox Desktop is shutting down");
+    const server = await this.#server.get();
+    const target = await remoteLaunchTarget(server.url, value);
+    return this.#openLocal(target);
+  }
 }

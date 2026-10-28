@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -68,6 +69,14 @@ func TestPairedClientOperationsOnReservedMountNames(t *testing.T) {
 	}
 	connectRequest(t, router, "DELETE", "/files/list/renamed.txt", client.Credential, "", http.StatusOK)
 
+	capabilities := connectRequest(t, router, "GET", "/system/upload", client.Credential, "", http.StatusOK)
+	var uploadConfig struct {
+		CreateOnly bool `json:"createOnly"`
+	}
+	if json.Unmarshal(capabilities.Body.Bytes(), &uploadConfig) != nil || !uploadConfig.CreateOnly {
+		t.Fatal("paired client cannot discover create-only upload support")
+	}
+
 	content := []byte("paired upload")
 	checksum := sha256.Sum256(content)
 	req := httptest.NewRequest(http.MethodPost, "http://boxbox.test/api/v1/stream/upload/status/uploaded.txt", bytes.NewReader(content))
@@ -87,6 +96,18 @@ func TestPairedClientOperationsOnReservedMountNames(t *testing.T) {
 	}
 	if uploaded, err := os.ReadFile(filepath.Join(statusRoot, "uploaded.txt")); err != nil || !bytes.Equal(uploaded, content) {
 		t.Fatal("paired one-chunk upload did not reach the status mount")
+	}
+	// A second upload must preserve the previously published destination.
+	repeated := req.Clone(req.Context())
+	repeated.Body = io.NopCloser(bytes.NewReader(content))
+	repeated.Header.Set("X-Upload-ID", "reserved-status-conflict")
+	conflict := httptest.NewRecorder()
+	router.ServeHTTP(conflict, repeated)
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("create-only paired overwrite: %d", conflict.Code)
+	}
+	if uploaded, err := os.ReadFile(filepath.Join(statusRoot, "uploaded.txt")); err != nil || !bytes.Equal(uploaded, content) {
+		t.Fatal("create-only paired upload changed existing destination")
 	}
 }
 

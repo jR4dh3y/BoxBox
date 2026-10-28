@@ -1,3 +1,4 @@
+import type { DeploymentIcon } from '#lib/desktop/deploymentIcon.js';
 /**
  * File API module for file operations
  */
@@ -43,6 +44,7 @@ export interface FileList {
 export interface MountPoint {
 	label?: string;
 	serverName?: string;
+	serverIcon?: DeploymentIcon;
 	name: string;
 	path: string;
 	readOnly: boolean;
@@ -64,6 +66,7 @@ export interface RootsResponse {
 export interface DriveStats {
 	label?: string;
 	serverName?: string;
+	serverIcon?: DeploymentIcon;
 	name: string;
 	path: string;
 	device?: string; // The underlying device (e.g., /dev/sda1)
@@ -136,7 +139,12 @@ function parseFile(value: unknown, source: PathReference): FileInfo {
 	};
 }
 
-function parseRoots(value: unknown, source: PathReference, serverName?: string): MountPoint[] {
+function parseRoots(
+	value: unknown,
+	source: PathReference,
+	serverName?: string,
+	serverIcon?: DeploymentIcon
+): MountPoint[] {
 	return array(record(value, 'roots response').roots, 'roots').map((value) => {
 		const root = record(value, 'root');
 		const name = string(root.name, 'root name');
@@ -151,12 +159,17 @@ function parseRoots(value: unknown, source: PathReference, serverName?: string):
 				? {}
 				: { autoDiscover: boolean(root.autoDiscover, 'auto-discover flag') }),
 			...(kind === undefined ? {} : { kind }),
-			...(serverName === undefined ? {} : { label: name, serverName })
+			...(serverName === undefined ? {} : { label: name, serverName, serverIcon })
 		};
 	});
 }
 
-function parseStats(value: unknown, source: PathReference, serverName?: string): DriveStats[] {
+function parseStats(
+	value: unknown,
+	source: PathReference,
+	serverName?: string,
+	serverIcon?: DeploymentIcon
+): DriveStats[] {
 	return array(record(value, 'stats response').drives, 'drives').map((value) => {
 		const drive = record(value, 'drive');
 		const name = string(drive.name, 'drive name');
@@ -169,7 +182,7 @@ function parseStats(value: unknown, source: PathReference, serverName?: string):
 			usedPct: number(drive.usedPct, 'used percentage'),
 			readOnly: boolean(drive.readOnly, 'read-only flag'),
 			...(source.kind === 'remote'
-				? { label: name, serverName }
+				? { label: name, serverName, serverIcon }
 				: {
 						device: optionalString(drive.device, 'device'),
 						fsType: optionalString(drive.fsType, 'filesystem'),
@@ -189,7 +202,7 @@ export async function listRoots(
 ): Promise<RootsResponse> {
 	const source: PathReference = server ? remoteSource(server) : { kind: 'local', path: '' };
 	const value = await api.get<unknown>(sourceEndpoint(source, '/files'), undefined, signal);
-	return { roots: parseRoots(value, source, server?.name) };
+	return { roots: parseRoots(value, source, server?.name, server?.icon) };
 }
 
 /** Statistics for one host. Remote hosts never hold up the local catalog. */
@@ -199,7 +212,7 @@ export async function getDriveStats(
 ): Promise<DriveStatsResponse> {
 	const source: PathReference = server ? remoteSource(server) : { kind: 'local', path: '' };
 	const value = await api.get<unknown>(sourceEndpoint(source, '/files/stats'), undefined, signal);
-	return { drives: parseStats(value, source, server?.name) };
+	return { drives: parseStats(value, source, server?.name, server?.icon) };
 }
 
 function listEndpoint(path: string): string {

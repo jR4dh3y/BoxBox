@@ -1,3 +1,6 @@
+import type { RemoteCatalogSnapshot, RemoteCatalogState } from './catalog';
+import { parseRemotePath } from '#lib/api/remotePaths.js';
+import { browseRequests } from './requests.svelte';
 import { untrack } from 'svelte';
 import type { BrowseSelection } from './selection.svelte';
 import { createQuery, useQueryClient } from '@tanstack/svelte-query';
@@ -22,9 +25,37 @@ import type { BrowseLocation } from './location.svelte';
  * What the browser shows for the current location: drives, a folder listing or search results.
  * Call during component setup because the queries need the component context.
  */
-export function useBrowseData(location: BrowseLocation, selection: BrowseSelection) {
+export function useBrowseData(
+	location: BrowseLocation,
+	selection: BrowseSelection,
+	catalog: () => RemoteCatalogSnapshot | undefined = () => undefined
+) {
 	const queryClient = useQueryClient();
 	const settings = $derived(settingsStore.current);
+	const source = $derived(parseRemotePath(location.path));
+	const isDeploymentRoot = $derived(source.kind === 'remote' && source.path === '');
+	const deploymentState = $derived.by((): RemoteCatalogState | null => {
+		if (source.kind !== 'remote') return null;
+		const snapshot = catalog();
+		if (!snapshot || snapshot.status.kind !== 'ready')
+			return snapshot?.status ?? { kind: 'loading' };
+		return (
+			snapshot.states[source.serverId] ?? {
+				kind: 'error',
+				message: 'This deployment is no longer saved. Open Connections to add it again.'
+			}
+		);
+	});
+	const serverName = $derived(
+		source.kind === 'remote'
+			? catalog()?.servers.find((server) => server.id === source.serverId)?.name
+			: undefined
+	);
+	$effect(() =>
+		browseRequests.onChange(() => {
+			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.all });
+		})
+	);
 
 	const rootsQuery = createQuery<RootsResponse>(() => ({
 		queryKey: fileQueryKeys.roots(),
@@ -34,26 +65,46 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 	const driveStatsQuery = createQuery<DriveStatsResponse>(() => ({
 		queryKey: [...fileQueryKeys.roots(), 'stats'],
 		queryFn: () => getDriveStats(),
-		enabled: location.path === ''
+		enabled: location.path === '' || isDeploymentRoot
 	}));
 
 	const directoryQuery = createQuery(() => ({
 		...directoryQueryOptions(location.path),
-		enabled: location.path !== ''
+		refetchInterval: source.kind === 'remote' ? 15_000 : false,
+		enabled: location.path !== '' && !isDeploymentRoot
 	}));
 	const searchQueryResult = createQuery<SearchResponse>(() => ({
 		queryKey: fileQueryKeys.search(location.path, location.trimmedSearchQuery),
 		queryFn: ({ signal }) => search(location.path, location.trimmedSearchQuery, signal),
-		enabled: location.path !== '' && location.isSearchActive
+		enabled: location.path !== '' && !isDeploymentRoot && location.isSearchActive
 	}));
 
-	const isAtRoot = $derived(location.path === '');
-	const roots = $derived(rootsQuery.data?.roots ?? []);
-	const drives = $derived(driveStatsQuery.data?.drives ?? []);
+	const isAtRoot = $derived(location.path === '' || isDeploymentRoot);
+	const combinedRoots = $derived([...(rootsQuery.data?.roots ?? []), ...(catalog()?.roots ?? [])]);
+	const roots = $derived(
+		combinedRoots.filter(
+			(root, index) => combinedRoots.findLastIndex((item) => item.name === root.name) === index
+		)
+	);
+	const combinedDrives = $derived(
+		isDeploymentRoot
+			? (catalog()?.drives ?? []).filter((drive) => drive.name.startsWith(location.path + '/'))
+			: [...(driveStatsQuery.data?.drives ?? []), ...(catalog()?.drives ?? [])]
+	);
+	const drives = $derived(
+		combinedDrives.filter(
+			(drive, index) => combinedDrives.findIndex((item) => item.name === drive.name) === index
+		)
+	);
 	const directoryItems = $derived(directoryQuery.data?.items ?? []);
 	const searchResults = $derived(searchQueryResult.data?.results ?? []);
 
 	const displayItems = $derived.by(() => {
+		if (
+			source.kind === 'remote' &&
+			(location.isSearchActive ? searchQueryResult.isError : directoryQuery.isError)
+		)
+			return [];
 		const items: FileInfo[] = location.isSearchActive ? searchResults : directoryItems;
 		const visible = settings.showHiddenFiles
 			? items
@@ -87,12 +138,16 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 
 	const currentMount = $derived(
 		location.path
-			? roots.find(
-					(root) => location.path === root.name || location.path.startsWith(`${root.name}/`)
-				)
+			? [...roots]
+					.sort((a, b) => b.name.length - a.name.length)
+					.find((root) => location.path === root.name || location.path.startsWith(`${root.name}/`))
 			: null
 	);
-	const isReadOnly = $derived(currentMount?.readOnly ?? false);
+	const isReadOnly = $derived(
+		isDeploymentRoot ||
+			(source.kind === 'remote' && !currentMount) ||
+			(currentMount?.readOnly ?? false)
+	);
 	const fileListError = $derived.by(() => {
 		if (isAtRoot) return rootsQuery.error?.message ?? driveStatsQuery.error?.message ?? null;
 		if (location.isSearchActive) return searchQueryResult.error?.message ?? null;
@@ -100,6 +155,12 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 	});
 
 	return {
+		get isDeploymentRoot() {
+			return isDeploymentRoot;
+		},
+		get serverName() {
+			return serverName;
+		},
 		get roots() {
 			return roots;
 		},
@@ -109,8 +170,13 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 		get isAtRoot() {
 			return isAtRoot;
 		},
+		get deploymentError() {
+			return deploymentState?.kind === 'error' ? deploymentState.message : null;
+		},
 		get isLoadingDrives() {
-			return rootsQuery.isLoading || driveStatsQuery.isLoading;
+			return isDeploymentRoot
+				? deploymentState?.kind === 'loading'
+				: rootsQuery.isLoading || driveStatsQuery.isLoading;
 		},
 		get isSearching() {
 			return location.isSearchActive && searchQueryResult.isFetching;
@@ -171,6 +237,7 @@ export function useBrowseData(location: BrowseLocation, selection: BrowseSelecti
 		/** The toolbar refresh button. */
 		reload() {
 			if (isAtRoot) {
+				void browseRequests.changed();
 				void rootsQuery.refetch();
 				void driveStatsQuery.refetch();
 			} else if (location.isSearchActive) void searchQueryResult.refetch();

@@ -34,6 +34,7 @@ var (
 type DesktopServer struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+	Icon      string    `json:"icon"`
 	URL       string    `json:"url"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
@@ -135,9 +136,70 @@ func (s *DesktopServers) record(id string) (desktopServerRecord, error) {
 	return r, nil
 }
 
-func (s *DesktopServers) Create(ctx context.Context, name, rawURL, code, clientName string) (*DesktopServer, error) {
+func validDesktopIcon(icon string) bool {
+	switch icon {
+	case "", "server", "cloud", "home", "building", "hard-drive":
+		return true
+	}
+	return false
+}
+
+func desktopIcon(icon string) string {
+	if icon == "" {
+		return "server"
+	}
+	return icon
+}
+
+// matchingURL is called with the records lock held. Old duplicate profiles stay deterministic.
+func (s *DesktopServers) matchingURL(rawURL string) (desktopServerRecord, bool) {
+	var best desktopServerRecord
+	found := false
+	for _, record := range s.records {
+		if record.URL != rawURL {
+			continue
+		}
+		if !found || record.ExpiresAt.After(best.ExpiresAt) || (record.ExpiresAt.Equal(best.ExpiresAt) && record.ID < best.ID) {
+			best, found = record, true
+		}
+	}
+	return best, found
+}
+
+// Open reuses a deployment without network access, so offline and unpaired launches work.
+func (s *DesktopServers) Open(rawURL string) (*DesktopServer, error) {
+	u, err := desktopServerURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.failed {
+		return nil, ErrDesktopServerStorage
+	}
+	if record, ok := s.matchingURL(u.String()); ok {
+		public := record.DesktopServer
+		return &public, nil
+	}
+	if len(s.records) >= 100 {
+		return nil, ErrDesktopServerStorage
+	}
+	name := []rune(u.Hostname())
+	if len(name) > 80 {
+		name = name[:80]
+	}
+	public := DesktopServer{ID: uuid.New().String(), Name: string(name), URL: u.String(), Icon: "server"}
+	previous := s.cloneRecords()
+	s.records[public.ID] = desktopServerRecord{DesktopServer: public}
+	if err := s.save(previous); err != nil {
+		return nil, err
+	}
+	return &public, nil
+}
+
+func (s *DesktopServers) Create(ctx context.Context, name, rawURL, code, clientName, icon string) (*DesktopServer, error) {
 	name = strings.TrimSpace(name)
-	if !validDesktopName(name) {
+	if !validDesktopName(name) || !validDesktopIcon(icon) {
 		return nil, ErrDesktopServerInput
 	}
 	u, err := desktopServerURL(rawURL)
@@ -150,12 +212,19 @@ func (s *DesktopServers) Create(ctx context.Context, name, rawURL, code, clientN
 	}
 	record.DesktopServer.ID = uuid.New().String()
 	record.Name = name
+	record.Icon = desktopIcon(icon)
 	record.URL = u.String()
 	s.mu.Lock()
-	if s.failed || len(s.records) >= 100 {
+	old, exists := s.matchingURL(u.String())
+	if s.failed || (!exists && len(s.records) >= 100) {
 		s.mu.Unlock()
 		s.revoke(ctx, record)
 		return nil, ErrDesktopServerStorage
+	}
+	if exists {
+		expiry := record.ExpiresAt
+		record.DesktopServer = old.DesktopServer
+		record.ExpiresAt = expiry
 	}
 	previous := s.cloneRecords()
 	s.records[record.ID] = record
@@ -165,6 +234,10 @@ func (s *DesktopServers) Create(ctx context.Context, name, rawURL, code, clientN
 		s.revoke(ctx, record)
 		return nil, err
 	}
+	if exists && old.Credential != record.Credential {
+		s.revoke(ctx, old)
+	}
+
 	public := record.DesktopServer
 	return &public, nil
 }
@@ -205,9 +278,9 @@ func (s *DesktopServers) Pair(ctx context.Context, id, code, clientName string) 
 	return &public, nil
 }
 
-func (s *DesktopServers) Rename(id, name string) (*DesktopServer, error) {
+func (s *DesktopServers) Update(id, name string, icon *string) (*DesktopServer, error) {
 	name = strings.TrimSpace(name)
-	if !validDesktopName(name) {
+	if !validDesktopName(name) || icon != nil && !validDesktopIcon(*icon) {
 		return nil, ErrDesktopServerInput
 	}
 	s.mu.Lock()
@@ -221,6 +294,9 @@ func (s *DesktopServers) Rename(id, name string) (*DesktopServer, error) {
 	}
 	previous := s.cloneRecords()
 	r.Name = name
+	if icon != nil {
+		r.Icon = desktopIcon(*icon)
+	}
 	s.records[id] = r
 	if err := s.save(previous); err != nil {
 		return nil, err

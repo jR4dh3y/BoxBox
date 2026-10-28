@@ -2,7 +2,9 @@
 	/**
 	 * Settings, as a window over the file browser. Every change applies as soon as it is made.
 	 */
-	import { onDestroy } from 'svelte';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { browseRequests } from '#lib/browse/requests.svelte.js';
+	import { onDestroy, untrack } from 'svelte';
 	import { Modal } from '#lib/components/ui/index.js';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import { toastStore } from '#lib/stores/toast.svelte.js';
@@ -11,20 +13,22 @@
 	import AppearanceSettings from './AppearanceSettings.svelte';
 	import AccountSettings from './AccountSettings.svelte';
 
-	let { onclose }: { onclose: () => void } = $props();
+	let { onclose, initialSection = 'general' }: { onclose: () => void; initialSection?: Section } =
+		$props();
 
-	type Section = 'general' | 'appearance' | 'links' | 'account';
+	type Section = 'general' | 'appearance' | 'links' | 'account' | 'connections';
 	const sections: { id: Section; label: string }[] = [
 		{ id: 'general', label: 'General' },
 		{ id: 'appearance', label: 'Appearance' },
 		{ id: 'links', label: 'Shared links' },
-		{ id: 'account', label: 'Account' }
+		{ id: 'account', label: 'Account' },
+		...(isLocalDesktop() ? [{ id: 'connections' as const, label: 'Connections' }] : [])
 	];
 
 	const preferences = new Preferences();
 	onDestroy(() => preferences.dispose());
 
-	let active = $state<Section>('general');
+	let active = $state<Section>(untrack(() => initialSection));
 
 	async function resetPreferences() {
 		if (
@@ -79,6 +83,10 @@
 				{:catch}
 					<LoadError label="shared links" inline />
 				{/await}
+			{:else if active === 'connections'}
+				{#await import('../desktop/ServersPage.svelte') then { default: ServersPage }}
+					<ServersPage onChanged={() => void browseRequests.changed()} />
+				{:catch}<LoadError label="connections" inline />{/await}
 			{:else}
 				<AccountSettings />
 			{/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { DriveStats } from '#lib/api/files.js';
 	import { HardDrive } from 'lucide-svelte';
+	import DeploymentIcon from './desktop/DeploymentIcon.svelte';
 	import { formatFileSize } from '#lib/utils/format.js';
 	import { ProgressBar } from '#lib/components/ui/index.js';
 	import { DRIVE_USAGE_BAR, DRIVE_USAGE_TEXT, driveUsageLevel } from '#lib/utils/driveUsage.js';
@@ -58,7 +59,10 @@
 	<!-- A rename field cannot sit inside the row's button. -->
 	<div class={rowClass}>
 		<span class="flex min-w-0 items-center gap-2 px-3">
-			<HardDrive size={16} class="shrink-0 text-text-secondary" />
+			{#if drive.serverIcon}<DeploymentIcon icon={drive.serverIcon} />{:else}<HardDrive
+					size={16}
+					class="shrink-0 text-text-secondary"
+				/>{/if}
 			{#await import('./ui/InlineRename.svelte') then { default: InlineRename }}
 				<InlineRename value={name.displayName} onSave={name.save} onCancel={name.cancel} />
 			{:catch}
@@ -77,7 +81,10 @@
 		oncontextmenu={name.openMenu}
 	>
 		<span class="flex min-w-0 items-center gap-2 px-3">
-			<HardDrive size={16} class="shrink-0 text-text-secondary" />
+			{#if drive.serverIcon}<DeploymentIcon icon={drive.serverIcon} />{:else}<HardDrive
+					size={16}
+					class="shrink-0 text-text-secondary"
+				/>{/if}
 			<span class="min-w-0 truncate text-text-primary" title={name.displayName}>
 				{name.displayName}
 			</span>

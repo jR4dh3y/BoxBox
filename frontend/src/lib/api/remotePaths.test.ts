@@ -124,11 +124,14 @@ describe('qualified references', () => {
 			`/desktop/servers/${ID}/api/v1/files/media/a%20%23%25.txt`
 		);
 	});
+	test('deployment roots navigate but cannot address file endpoints', () => {
+		assert.deepEqual(parseRemotePath(`@remote/${ID}`), { kind: 'remote', serverId: ID, path: '' });
+		assert.throws(() => pathEndpoint(`@remote/${ID}`, '/files'), /Choose a remote drive/);
+	});
 	test('rejects missing mounts, invalid IDs, absolute paths, traversal and control characters', () => {
 		for (const path of [
 			'@remote',
 			'@remote/no-id/media',
-			`@remote/${ID}`,
 			`@remote/${ID}/`,
 			`@remote/${ID}//etc`,
 			ref('media') + '/../etc',
@@ -313,16 +316,18 @@ describe('transport facade at HTTP boundary', () => {
 			kind: 'create',
 			name: 'Home',
 			url: 'https://home.example/box',
+			icon: 'cloud',
 			code: 'ABCD-EFGH'
 		});
 		assert.deepEqual(requests.at(-1)?.body, {
 			name: 'Home',
 			url: 'https://home.example/box',
+			icon: 'cloud',
 			code: 'ABCD-EFGH',
 			clientName: 'BoxBox Desktop'
 		});
-		await saveDesktopServer({ kind: 'update', id: ID, name: 'Renamed' });
-		assert.deepEqual(requests.at(-1)?.body, { name: 'Renamed' });
+		await saveDesktopServer({ kind: 'update', id: ID, name: 'Renamed', icon: 'home' });
+		assert.deepEqual(requests.at(-1)?.body, { name: 'Renamed', icon: 'home' });
 		await pairDesktopServer(ID, 'JKLM-NPQR');
 		assert.deepEqual(requests.at(-1)?.body, { code: 'JKLM-NPQR', clientName: 'BoxBox Desktop' });
 		await removeDesktopServer(ID);

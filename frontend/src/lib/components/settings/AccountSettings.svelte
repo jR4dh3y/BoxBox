@@ -4,6 +4,8 @@
 	import { authStore } from '#lib/stores/auth.svelte.js';
 	import { Button } from '#lib/components/ui/index.js';
 	import { currentUsername } from '#lib/utils/sessionUser.js';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import PairingCodeSettings from './PairingCodeSettings.svelte';
 	import SettingsRow from './SettingsRow.svelte';
 
 	const username = currentUsername();
@@ -13,10 +15,15 @@
 	}
 </script>
 
-{#if authStore.isDevelopment}
+{#if isLocalDesktop()}
+	<p class="py-2 text-[13px] text-text-secondary">
+		Local files stay on this computer. Manage paired deployments in Connections.
+	</p>
+{:else if authStore.isDevelopment}
 	<p class="m-0 py-2 text-[13px] text-text-secondary">Sign-in is turned off in development.</p>
 {:else}
 	<SettingsRow label={username ? `Signed in as ${username}` : 'Signed in'}>
 		<Button variant="secondary" size="sm" onclick={signOut}>Sign out</Button>
 	</SettingsRow>
+	<PairingCodeSettings />
 {/if}

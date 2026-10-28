@@ -6,10 +6,14 @@
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
 	import SearchBar from '#lib/components/SearchBar.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
+	import type { MountPoint } from '#lib/api/files.js';
 	import type { AddAction } from '#lib/utils/addMenu.js';
 
 	interface Props {
 		pathSegments?: string[];
+		pageTitle?: string | null;
+		roots?: MountPoint[];
+		serverName?: string;
 		canGoBack?: boolean;
 		canGoForward?: boolean;
 		onBack?: () => void;
@@ -32,6 +36,9 @@
 
 	let {
 		pathSegments = [],
+		pageTitle = null,
+		roots = [],
+		serverName,
 		canGoBack = false,
 		canGoForward = false,
 		onBack,
@@ -51,6 +58,10 @@
 		includeHiddenSuggestions = false
 	}: Props = $props();
 
+	let pathBar: EditablePathBar | undefined;
+	export function focusLocation() {
+		pathBar?.edit();
+	}
 	let addMenu = $state<{ x: number; y: number } | null>(null);
 	const addDisabled = $derived(!canCreate && uploadDisabled);
 	function openAddMenu(event: MouseEvent & { currentTarget: HTMLButtonElement }) {
@@ -90,7 +101,15 @@
 		</button>
 	</div>
 
-	<EditablePathBar {pathSegments} {onNavigate} {includeHiddenSuggestions} />
+	<EditablePathBar
+		bind:this={pathBar}
+		{pageTitle}
+		{roots}
+		{serverName}
+		{pathSegments}
+		{onNavigate}
+		{includeHiddenSuggestions}
+	/>
 
 	{#if showSearch}
 		<div class="w-48 min-w-28 shrink md:w-64 lg:w-96">

@@ -2,6 +2,7 @@
  * Restores the server wallpaper on login and publishes explicit settings saves.
  * One queue and session cancellation keep work from crossing account changes.
  */
+import { isLocalDesktop } from '#lib/api/desktop.js';
 import { wallpaperPublication } from './wallpaperPublication.js';
 import { getWallpaper } from '#lib/api/wallpaper.js';
 import { deleteLocalWallpaper } from '#lib/utils/wallpaperStorage.js';
@@ -22,7 +23,7 @@ function enqueue(task: () => Promise<void>): Promise<void> {
  * The server is authoritative on login, including wallpapers removed elsewhere.
  */
 export function syncShareWallpaperOnLogin(): Promise<void> {
-	if (loginSyncStarted) return Promise.resolve();
+	if (isLocalDesktop() || loginSyncStarted) return Promise.resolve();
 	loginSyncStarted = true;
 	const { signal } = sessionController;
 	const revision = settingsStore.wallpaperRevision;
@@ -73,6 +74,7 @@ export function publishShareWallpaper(
 	displayChanged = false,
 	operation: AbortSignal = sessionController.signal
 ): Promise<void> {
+	if (isLocalDesktop()) return Promise.resolve();
 	const signal = AbortSignal.any([sessionController.signal, operation]);
 	return enqueue(async () => {
 		signal.throwIfAborted();

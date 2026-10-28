@@ -8,6 +8,9 @@ describe("desktop targets", () => {
     );
     for (const value of [
       "file:///etc/passwd",
+      "http://files.example.test",
+      "https://files.example.test?token=secret",
+      "https://files.example.test#fragment",
       "javascript:alert(1)",
       "https://user:password@example.test",
     ]) {

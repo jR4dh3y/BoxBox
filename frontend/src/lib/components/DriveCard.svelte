@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { DriveStats } from '#lib/api/files.js';
+	import DeploymentIcon from './desktop/DeploymentIcon.svelte';
 	import { HardDrive } from 'lucide-svelte';
 	import { formatFileSize } from '#lib/utils/format.js';
 	import { ProgressBar } from '#lib/components/ui/index.js';
@@ -37,7 +38,9 @@
 	<div
 		class="flex w-22 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary"
 	>
-		<HardDrive size={22} />
+		{#if drive.serverName}<DeploymentIcon icon={drive.serverIcon} size={22} />{:else}<HardDrive
+				size={22}
+			/>{/if}
 	</div>
 
 	<div class="flex min-w-0 flex-1 flex-col gap-1.5">

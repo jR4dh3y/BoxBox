@@ -44,7 +44,12 @@ describe('saved servers', () => {
 	test('adding a server closes the editor and shows the saved list', async () => {
 		const controller = new ServersController(client([]));
 		controller.edit({ kind: 'create' });
-		controller.draft = { name: 'Office', url: 'https://office.test', code: 'ABCD-EFGH' };
+		controller.draft = {
+			name: 'Office',
+			url: 'https://office.test',
+			code: 'ABCD-EFGH',
+			icon: 'cloud'
+		};
 		assert.equal(await controller.save(), true);
 		assert.equal(controller.editor.kind, 'closed');
 		assert.deepEqual(
@@ -60,7 +65,7 @@ describe('saved servers', () => {
 		};
 		const controller = new ServersController(failing);
 		controller.edit({ kind: 'create' });
-		controller.draft = { name: 'Home', url: 'https://home.test', code: 'ABCD-EFGH' };
+		controller.draft = { name: 'Home', url: 'https://home.test', code: 'ABCD-EFGH', icon: 'cloud' };
 		assert.equal(await controller.save(), false);
 		assert.equal(controller.editor.kind, 'create');
 		assert.equal(controller.draft.name, 'Home');
@@ -84,6 +89,11 @@ describe('saved servers', () => {
 		await controller.remove(home);
 		controller.edit({ kind: 'update', server: home });
 		assert.equal(controller.confirmingRemoveId, null);
-		assert.deepEqual(controller.draft, { name: 'Home', url: 'https://home.test/', code: '' });
+		assert.deepEqual(controller.draft, {
+			name: 'Home',
+			url: 'https://home.test/',
+			code: '',
+			icon: 'server'
+		});
 	});
 });

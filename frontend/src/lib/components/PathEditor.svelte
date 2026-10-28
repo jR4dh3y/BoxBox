@@ -20,6 +20,7 @@
 
 	interface Props {
 		pathSegments?: string[];
+		serverName?: string;
 		roots: MountPoint[];
 		onNavigate?: (path: string) => void;
 		includeHiddenSuggestions?: boolean;
@@ -28,6 +29,7 @@
 
 	let {
 		pathSegments = [],
+		serverName,
 		roots,
 		onNavigate,
 		includeHiddenSuggestions = false,
@@ -94,7 +96,22 @@
 		onNavigate?.('');
 	}
 
+	function displayPath(value: string): string {
+		const source = parseRemotePath(currentPath);
+		const prefix = source.kind === 'remote' ? `@remote/${source.serverId}` : null;
+		return prefix && serverName && (value === prefix || value.startsWith(prefix + '/'))
+			? serverName + value.slice(prefix.length)
+			: value;
+	}
+
 	function normalizeInputPath(value: string): string {
+		const source = parseRemotePath(currentPath);
+		if (
+			source.kind === 'remote' &&
+			serverName &&
+			(value === serverName || value.startsWith(serverName + '/'))
+		)
+			return `@remote/${source.serverId}${value.slice(serverName.length)}`;
 		let path = value;
 		if (isLocalDesktop()) {
 			try {
@@ -228,6 +245,18 @@
 		parentPath: string,
 		prefix: string
 	): Promise<PathSuggestion[]> {
+		const source = parseRemotePath(parentPath);
+		if (source.kind === 'remote' && !source.path)
+			return roots
+				.filter(
+					(root) =>
+						root.name.startsWith(parentPath + '/') &&
+						root.name
+							.slice(parentPath.length + 1)
+							.toLocaleLowerCase()
+							.startsWith(prefix.toLocaleLowerCase())
+				)
+				.map((root) => ({ path: root.name }));
 		const response = await listDirectory(parentPath);
 		const directories = suggestedDirectories(response.items, prefix, includeHiddenSuggestions);
 
@@ -280,9 +309,9 @@
 		if (isEditingPath) return;
 
 		isEditingPath = true;
-		pathDraft = currentPath;
+		pathDraft = displayPath(currentPath);
 		pathSelectionStart = 0;
-		pathSelectionEnd = currentPath.length;
+		pathSelectionEnd = pathDraft.length;
 		suggestions = [];
 		activeSuggestionIndex = 0;
 		suggestionSelectedByKeyboard = false;
@@ -327,7 +356,7 @@
 	}
 
 	function completePath(value: string): void {
-		pathDraft = `${value}/`;
+		pathDraft = `${displayPath(value)}/`;
 		activeSuggestionIndex = 0;
 		suggestionSelectedByKeyboard = false;
 		queueSuggestions();
@@ -545,7 +574,7 @@
 						}}
 					>
 						<Folder size={14} class="shrink-0 text-folder" />
-						<span class="min-w-0 flex-1 truncate">{suggestion.path}</span>
+						<span class="min-w-0 flex-1 truncate">{displayPath(suggestion.path)}</span>
 					</button>
 				{/each}
 			</div>

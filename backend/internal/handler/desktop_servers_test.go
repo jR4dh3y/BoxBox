@@ -43,7 +43,7 @@ func TestDesktopGatewayHTTPBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := servers.Create(context.Background(), "Test", upstream.URL, "ABCD-EFGH", "Desktop")
+	server, err := servers.Create(context.Background(), "Test", upstream.URL, "ABCD-EFGH", "Desktop", "server")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +95,42 @@ func TestDesktopGatewayUnavailableBoundary(t *testing.T) {
 		router.ServeHTTP(response, httptest.NewRequest("GET", path, nil))
 		if response.Code != 503 || !strings.Contains(response.Header().Get("Content-Type"), "application/json") {
 			t.Fatalf("%s: %d %s", path, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestDesktopServerOpenAndIconHTTPContract(t *testing.T) {
+	servers, err := service.NewDesktopServers(filesystem.NewOsFS(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := chi.NewRouter()
+	NewDesktopServersHandler(servers).RegisterRoutes(router)
+	open := func() service.DesktopServer {
+		t.Helper()
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("POST", "/servers/open", strings.NewReader(`{"url":"https://offline.example.test/box/"}`)))
+		var profile service.DesktopServer
+		if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &profile) != nil || profile.ID == "" || !profile.ExpiresAt.IsZero() {
+			t.Fatalf("open boundary: %d", response.Code)
+		}
+		return profile
+	}
+	profile := open()
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest("PATCH", "/servers/"+profile.ID, strings.NewReader(`{"name":"Storage","icon":"hard-drive"}`)))
+	if response.Code != 200 {
+		t.Fatalf("icon update: %d", response.Code)
+	}
+	reopened := open()
+	if reopened.ID != profile.ID || reopened.Icon != "hard-drive" || reopened.Name != "Storage" {
+		t.Fatal("opening deployment changed its saved metadata")
+	}
+	for _, body := range []string{`{"url":"http://insecure.test"}`, `{"url":"https://host/?token=private"}`, `{"url":"https://host","credential":"private"}`} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("POST", "/servers/open", strings.NewReader(body)))
+		if response.Code != 400 {
+			t.Fatalf("invalid open accepted: %d", response.Code)
 		}
 	}
 }

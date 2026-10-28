@@ -1,53 +1,85 @@
-import { api } from './client';
-import { array, boolean, nonEmptyString, optionalString, record } from './parse';
+import { api, apiFetch, parseResponse, ApiRequestError } from './client';
+import { record, array, nonEmptyString } from './parse';
 
-export interface PairingStatus {
-	enabled: boolean;
-	expiresAt: string | null;
+export interface PairingCode {
+	code: string;
+	expiresAt: string;
+}
+
+export async function generatePairingCode(password: string): Promise<PairingCode> {
+	let data: unknown;
+	try {
+		data = await api.post<unknown>('/connect/pairing', { password });
+	} catch (error) {
+		if (error instanceof ApiRequestError && (error.status === 404 || error.status === 405)) {
+			throw new Error(
+				'This server does not support device pairing. Update the server, then try again.',
+				{ cause: error }
+			);
+		}
+		throw error;
+	}
+	if (
+		typeof data !== 'object' ||
+		data === null ||
+		!('code' in data) ||
+		typeof data.code !== 'string' ||
+		!/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/.test(
+			data.code
+		) ||
+		!('expiresAt' in data) ||
+		typeof data.expiresAt !== 'string' ||
+		!Number.isFinite(Date.parse(data.expiresAt)) ||
+		Date.parse(data.expiresAt) <= Date.now()
+	)
+		throw new Error('The server returned an invalid or expired pairing code. Try again.');
+	return { code: data.code, expiresAt: data.expiresAt };
 }
 
 export interface PairedClient {
-	id: string;
-	name: string;
+	clientId: string;
+	clientName: string;
+	username: string;
 	createdAt: string;
 	expiresAt: string;
 }
 
-export async function getPairingStatus(): Promise<PairingStatus> {
-	const value = record(await api.get<unknown>('/connect/pairing'), 'pairing status');
-	return {
-		enabled: boolean(value.enabled, 'pairing enabled'),
-		expiresAt: optionalString(value.expiresAt, 'pairing expiry') ?? null
-	};
-}
+export type PairingStatus = { enabled: false } | { enabled: true; expiresAt: string };
 
-export async function enablePairing(
-	password: string
-): Promise<{ code: string; expiresAt: string }> {
-	const value = record(await api.post<unknown>('/connect/pairing', { password }), 'pairing code');
-	return {
-		code: nonEmptyString(value.code, 'pairing code'),
-		expiresAt: nonEmptyString(value.expiresAt, 'pairing expiry')
-	};
-}
-
-export async function disablePairing(): Promise<void> {
-	await api.delete<unknown>('/connect/pairing');
-}
-
-export async function listPairedClients(): Promise<PairedClient[]> {
-	const response = record(await api.get<unknown>('/connect/clients'), 'paired clients');
-	return array(response.clients, 'paired clients').map((item) => {
-		const value = record(item, 'paired client');
+export async function listPairedClients(signal?: AbortSignal): Promise<PairedClient[]> {
+	const data = await api.get<unknown>('/connect/clients', undefined, signal);
+	const body = record(data, 'paired clients');
+	return array(body.clients, 'paired clients').map((value) => {
+		const client = record(value, 'paired client');
 		return {
-			id: nonEmptyString(value.clientId, 'client id'),
-			name: nonEmptyString(value.clientName, 'client name'),
-			createdAt: nonEmptyString(value.createdAt, 'client creation time'),
-			expiresAt: nonEmptyString(value.expiresAt, 'client expiry')
+			clientId: nonEmptyString(client.clientId, 'client ID'),
+			clientName: nonEmptyString(client.clientName, 'client name'),
+			username: nonEmptyString(client.username, 'client username'),
+			createdAt: timestamp(client.createdAt),
+			expiresAt: timestamp(client.expiresAt)
 		};
 	});
 }
 
+export async function pairingStatus(signal?: AbortSignal): Promise<PairingStatus> {
+	const data = record(
+		await api.get<unknown>('/connect/pairing', undefined, signal),
+		'pairing status'
+	);
+	if (data.enabled === false) return { enabled: false };
+	if (data.enabled === true) return { enabled: true, expiresAt: timestamp(data.expiresAt) };
+	throw new Error('Invalid pairing status');
+}
+
 export async function revokePairedClient(id: string): Promise<void> {
-	await api.delete<unknown>(`/connect/clients/${encodeURIComponent(id)}`);
+	const response = await apiFetch(`/connect/clients/${encodeURIComponent(id)}`, {
+		method: 'DELETE'
+	});
+	if (!response.ok) await parseResponse<never>(response);
+}
+
+function timestamp(value: unknown): string {
+	const text = nonEmptyString(value, 'device timestamp');
+	if (!Number.isFinite(Date.parse(text))) throw new Error('Invalid device timestamp');
+	return text;
 }

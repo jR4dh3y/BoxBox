@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -200,5 +201,49 @@ func TestDesktopPreferencesGateAndNewOrigin(t *testing.T) {
 				t.Fatalf("preferences lost at new origin: %d %s", rec.Code, rec.Body.String())
 			}
 		}
+	}
+}
+
+func TestDesktopRemoteLaunchUsesPrivateProfileAndBrowseBootstrap(t *testing.T) {
+	cfg := &model.ServerConfig{DataDir: t.TempDir()}
+	address := "127.0.0.1:12345"
+	token := strings.Repeat("c", 64)
+	router := desktopHandler(desktopRoutes(http.NotFoundHandler(), cfg), address, token)
+	open := func(cookie bool) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest("POST", "http://"+address+"/api/v1/desktop/servers/open", strings.NewReader(`{"url":"https://offline.example.test"}`))
+		r.Header.Set("Content-Type", "application/json")
+		if cookie {
+			r.AddCookie(&http.Cookie{Name: desktopCookie, Value: token})
+		}
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, r)
+		return response
+	}
+	if response := open(false); response.Code != 401 {
+		t.Fatalf("unauthenticated profile mutation: %d", response.Code)
+	}
+	response := open(true)
+	var profile struct {
+		ID string `json:"id"`
+	}
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &profile) != nil || profile.ID == "" {
+		t.Fatalf("native host profile request: %d", response.Code)
+	}
+	next := "/browse?path=" + url.QueryEscape("@remote/"+profile.ID)
+	r := httptest.NewRequest("GET", "http://"+address+"/_desktop?token="+token+"&next="+url.QueryEscape(next), nil)
+	bootstrap := httptest.NewRecorder()
+	router.ServeHTTP(bootstrap, r)
+	if bootstrap.Code != 303 || bootstrap.Header().Get("Location") != next {
+		t.Fatal("remote bootstrap did not stay inside the local browse UI")
+	}
+	// The next process loads the same profile without a remote request or new ID.
+	restarted := desktopHandler(desktopRoutes(http.NotFoundHandler(), cfg), address, token)
+	list := httptest.NewRequest("GET", "http://"+address+"/api/v1/desktop/servers", nil)
+	list.AddCookie(bootstrap.Result().Cookies()[0])
+	saved := httptest.NewRecorder()
+	restarted.ServeHTTP(saved, list)
+	if saved.Code != 200 || !strings.Contains(saved.Body.String(), profile.ID) {
+		t.Fatal("native launch profile did not survive backend restart")
 	}
 }

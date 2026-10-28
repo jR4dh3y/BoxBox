@@ -40,7 +40,7 @@ func gatewayFixture(t *testing.T, handler http.HandlerFunc) (*DesktopServers, *D
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := servers.Create(context.Background(), "Test", upstream.URL+"/box", "ABCD-EFGH", "Desktop")
+	server, err := servers.Create(context.Background(), "Test", upstream.URL+"/box", "ABCD-EFGH", "Desktop", "server")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestDesktopGatewayTLSForwardingAndPersistence(t *testing.T) {
 	if err != nil || len(restored.List()) != 1 {
 		t.Fatalf("restore %v", err)
 	}
-	renamed, err := restored.Rename(server.ID, "Renamed")
+	renamed, err := restored.Update(server.ID, "Renamed", nil)
 	if err != nil || renamed.URL != server.URL || renamed.ID != server.ID {
 		t.Fatalf("rename %v", err)
 	}
@@ -158,7 +158,7 @@ func TestDesktopGatewayOfflineDeletionAndVerifiedTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = verified.Create(context.Background(), "Test", upstream.URL, "ABCD-EFGH", "Desktop"); !errors.Is(err, ErrRemoteUnavailable) {
+	if _, err = verified.Create(context.Background(), "Test", upstream.URL, "ABCD-EFGH", "Desktop", "server"); !errors.Is(err, ErrRemoteUnavailable) {
 		t.Fatalf("untrusted TLS accepted: %v", err)
 	}
 	upstream.Close()
@@ -242,7 +242,7 @@ func TestDesktopServerPairReplacesAccessAtSameAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, err := servers.Create(context.Background(), "Original", upstream.URL, "ABCD-EFGH", "Desktop")
+	old, err := servers.Create(context.Background(), "Original", upstream.URL, "ABCD-EFGH", "Desktop", "server")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestDesktopServerPersistenceFailures(t *testing.T) {
 			servers, server, _ := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) { t.Error("failed-closed request reached upstream") })
 			fsys := &authPersistenceFaultFS{FS: servers.fs, storePath: servers.path, stage: stage}
 			servers.fs = fsys
-			if result, err := servers.Rename(server.ID, "Changed"); result != nil || !errors.Is(err, ErrDesktopServerStorage) {
+			if result, err := servers.Update(server.ID, "Changed", nil); result != nil || !errors.Is(err, ErrDesktopServerStorage) {
 				t.Fatalf("rename %v %v", result, err)
 			}
 			published := stage == authPersistenceFailDirectoryOpen || stage == authPersistenceFailDirectorySync || stage == authPersistenceFailDirectoryClose
@@ -347,5 +347,116 @@ func TestDesktopGatewayThumbnailVersion(t *testing.T) {
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("thumbnail status: %d", response.StatusCode)
+	}
+}
+
+func TestDesktopServerOpenPersistsUnpairedAndReusesPairedProfile(t *testing.T) {
+	servers, profile, upstream := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, "{}")
+	})
+	icon := "cloud"
+	if _, err := servers.Update(profile.ID, "My deployment", &icon); err != nil {
+		t.Fatal(err)
+	}
+	reused, err := servers.Open(upstream.URL + "/box/")
+	if err != nil || reused.ID != profile.ID || reused.Icon != icon || reused.ExpiresAt.IsZero() {
+		t.Fatalf("paired profile was not reused: %v", err)
+	}
+	unpaired, err := servers.Open("https://offline.example.test/")
+	if err != nil || !unpaired.ExpiresAt.IsZero() || unpaired.Icon != "server" {
+		t.Fatalf("unpaired launch failed: %v", err)
+	}
+	if _, err := servers.Forward(context.Background(), unpaired.ID, "GET", "/files", nil, nil, nil); !errors.Is(err, ErrRemoteAuthRequired) {
+		t.Fatalf("unpaired profile forwarded: %v", err)
+	}
+	if _, err := servers.Update(unpaired.ID, "Offline", &icon); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := NewDesktopServers(filesystem.NewOsFS(), filepath.Dir(filepath.Dir(servers.path)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := restored.Open("https://offline.example.test")
+	if err != nil || reopened.ID != unpaired.ID || reopened.Name != "Offline" || reopened.Icon != icon || len(restored.List()) != 2 {
+		t.Fatalf("unpaired profile did not persist: %v", err)
+	}
+	if updated, err := restored.Update(unpaired.ID, "Offline", nil); err != nil || updated.Icon != icon {
+		t.Fatal("name-only update lost saved icon")
+	}
+	invalid := "arbitrary-icon"
+	if _, err := restored.Update(unpaired.ID, "Offline", &invalid); !errors.Is(err, ErrDesktopServerInput) {
+		t.Fatal("invalid icon accepted")
+	}
+	if err := restored.Delete(context.Background(), unpaired.ID); err != nil || len(restored.List()) != 1 {
+		t.Fatal("unpaired profile removal failed")
+	}
+}
+
+func TestDesktopServerPairUnpairedKeepsIdentityAndIcon(t *testing.T) {
+	servers, _, upstream := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, "{}")
+	})
+	if err := servers.Delete(context.Background(), servers.List()[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := servers.Open(upstream.URL + "/box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	icon := "hard-drive"
+	if _, err := servers.Update(profile.ID, "Storage", &icon); err != nil {
+		t.Fatal(err)
+	}
+	paired, err := servers.Pair(context.Background(), profile.ID, "ABCD-EFGH", "Desktop")
+	if err != nil || paired.ID != profile.ID || paired.Icon != icon || paired.Name != "Storage" || !paired.ExpiresAt.After(time.Now()) {
+		t.Fatalf("pairing lost deployment metadata: %v", err)
+	}
+}
+
+func TestDesktopCreateReusesURLLaunchProfile(t *testing.T) {
+	servers, paired, upstream := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	ctx := context.Background()
+	if err := servers.Delete(ctx, paired.ID); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := servers.Open(upstream.URL + "/box/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	icon := "cloud"
+	saved, err := servers.Update(opened.ID, "Saved deployment", &icon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := servers.Create(ctx, "Duplicate form name", upstream.URL+"/box", "ABCD-EFGH", "Desktop", "home")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ID != saved.ID || created.Name != saved.Name || created.Icon != saved.Icon || created.ExpiresAt.IsZero() || len(servers.List()) != 1 {
+		t.Fatalf("adding an existing URL lost saved identity: %+v", created)
+	}
+	reopened, err := servers.Open(upstream.URL + "/box")
+	if err != nil || reopened.ID != created.ID {
+		t.Fatal("URL launch did not reuse the paired profile")
+	}
+}
+
+func TestDesktopOpenPrefersNewestPairingForLegacyDuplicateURLs(t *testing.T) {
+	servers, paired, _ := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	servers.mu.Lock()
+	unpaired := desktopServerRecord{DesktopServer: DesktopServer{ID: "11111111-1111-4111-8111-111111111111", Name: "Unpaired", Icon: "server", URL: paired.URL}}
+	newest := servers.records[paired.ID]
+	newest.ID = "22222222-2222-4222-8222-222222222222"
+	newest.ExpiresAt = paired.ExpiresAt.Add(time.Hour)
+	servers.records[unpaired.ID] = unpaired
+	servers.records[newest.ID] = newest
+	servers.mu.Unlock()
+	for range 100 {
+		opened, err := servers.Open(paired.URL)
+		if err != nil || opened.ID != newest.ID {
+			t.Fatalf("URL launch chose a stale duplicate: %+v, %v", opened, err)
+		}
 	}
 }

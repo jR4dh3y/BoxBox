@@ -28,7 +28,8 @@ func (h *DesktopServersHandler) RegisterRoutes(r chi.Router) {
 		})
 		r.Get("/servers", h.List)
 		r.Post("/servers", h.Create)
-		r.Patch("/servers/{serverID}", h.Rename)
+		r.Post("/servers/open", h.Open)
+		r.Patch("/servers/{serverID}", h.Update)
 		r.Delete("/servers/{serverID}", h.Delete)
 		r.Post("/servers/{serverID}/pair", h.Pair)
 		r.HandleFunc("/servers/{serverID}/api/v1/*", h.Forward)
@@ -42,6 +43,7 @@ func (h *DesktopServersHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *DesktopServersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name       string `json:"name"`
+		Icon       string `json:"icon"`
 		URL        string `json:"url"`
 		Code       string `json:"code"`
 		ClientName string `json:"clientName"`
@@ -50,13 +52,29 @@ func (h *DesktopServersHandler) Create(w http.ResponseWriter, r *http.Request) {
 		HandleServiceError(w, service.ErrDesktopServerInput)
 		return
 	}
-	result, err := h.servers.Create(r.Context(), req.Name, req.URL, req.Code, req.ClientName)
+	result, err := h.servers.Create(r.Context(), req.Name, req.URL, req.Code, req.ClientName, req.Icon)
 	if err != nil {
 		HandleServiceError(w, err)
 		return
 	}
 	writeJSON(w, result, 201)
 }
+func (h *DesktopServersHandler) Open(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		HandleServiceError(w, service.ErrDesktopServerInput)
+		return
+	}
+	result, err := h.servers.Open(req.URL)
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	writeJSON(w, result, http.StatusOK)
+}
+
 func (h *DesktopServersHandler) Pair(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code       string `json:"code"`
@@ -73,15 +91,16 @@ func (h *DesktopServersHandler) Pair(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, result, 200)
 }
-func (h *DesktopServersHandler) Rename(w http.ResponseWriter, r *http.Request) {
+func (h *DesktopServersHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name string `json:"name"`
+		Name string  `json:"name"`
+		Icon *string `json:"icon"`
 	}
 	if err := decodeJSONBody(w, r, &req); err != nil {
 		HandleServiceError(w, service.ErrDesktopServerInput)
 		return
 	}
-	result, err := h.servers.Rename(chi.URLParam(r, "serverID"), req.Name)
+	result, err := h.servers.Update(chi.URLParam(r, "serverID"), req.Name, req.Icon)
 	if err != nil {
 		HandleServiceError(w, err)
 		return

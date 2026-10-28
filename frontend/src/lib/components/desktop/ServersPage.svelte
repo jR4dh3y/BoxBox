@@ -1,14 +1,13 @@
 <script lang="ts">
+	import DeploymentIcon from './DeploymentIcon.svelte';
+	import { deploymentIcons } from '#lib/desktop/deploymentIcon.js';
 	import { onMount, tick } from 'svelte';
 	import { Button, Input, Spinner } from '#lib/components/ui/index.js';
 	import { CONFIG } from '#lib/config.js';
 	import { ServersController, type ServerEditor } from '#lib/desktop/servers.svelte.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 
-	let {
-		onChanged = () => {},
-		onNavigate
-	}: { onChanged?: () => void; onNavigate?: (path: string) => void } = $props();
+	let { onChanged = () => {} }: { onChanged?: () => void } = $props();
 	const controller = new ServersController(undefined, () => onChanged());
 	const { servers, action } = controller;
 	const showSpinner = createDelayedFlag(
@@ -65,6 +64,18 @@
 			onkeydown={formKeydown}
 		>
 			{#if controller.editor.kind !== 'pair'}
+				<label class="flex items-center gap-2"
+					><DeploymentIcon icon={controller.draft.icon} /><span class="sr-only"
+						>Deployment icon</span
+					><select
+						aria-label="Deployment icon"
+						class="rounded border border-border-primary bg-surface-secondary px-2 py-1"
+						bind:value={controller.draft.icon}
+						>{#each deploymentIcons as icon (icon.value)}<option value={icon.value}
+								>{icon.label}</option
+							>{/each}</select
+					></label
+				>
 				<div class="w-48 shrink-0">
 					<label class="sr-only" for="server-name">Name</label>
 					<Input
@@ -101,11 +112,7 @@
 				</div>
 			{/if}
 			<Button type="submit" variant="primary" size="sm" disabled={action.busy}>
-				{action.busy
-					? 'Saving…'
-					: controller.editor.kind === 'update'
-						? 'Save name'
-						: 'Pair server'}
+				{action.busy ? 'Saving…' : controller.editor.kind === 'update' ? 'Save' : 'Pair server'}
 			</Button>
 			<Button
 				variant="ghost"
@@ -117,8 +124,8 @@
 	{/if}
 
 	<p class="border-b border-border-secondary px-3 py-2 text-text-secondary">
-		Enable Connect mode in the server’s settings, then enter its HTTPS URL and single-use code. Edit
-		changes the name; pair a new entry to change the URL.
+		Generate a pairing code in the server’s Settings → Account, then enter its HTTPS URL and
+		single-use code. Edit changes the name and icon; pair a new entry to change the URL.
 	</p>
 	<div class="min-h-0 flex-1 overflow-auto">
 		{#if servers.state.kind === 'loading'}
@@ -149,7 +156,7 @@
 							>URL</th
 						>
 						<th
-							class="sticky top-0 h-8 w-80 border-b border-border-primary bg-surface-secondary px-3"
+							class="sticky top-0 h-8 w-[45%] border-b border-border-primary bg-surface-secondary px-3"
 							><span class="sr-only">Actions</span></th
 						>
 					</tr>
@@ -159,7 +166,11 @@
 						{@const status = controller.statuses.get(server.id)}
 						{@const confirming = controller.confirmingRemoveId === server.id}
 						<tr class="h-9 border-b border-border-secondary hover:bg-surface-secondary">
-							<td class="truncate px-3 text-text-primary" title={server.name}>{server.name}</td>
+							<td class="truncate px-3 text-text-primary" title={server.name}
+								><span class="flex items-center gap-2"
+									><DeploymentIcon icon={server.icon} />{server.name}</span
+								></td
+							>
 							<td class="px-3 text-text-secondary"
 								><p class="truncate" title={server.url}>{server.url}</p>
 								{#if status?.kind === 'failed'}<p role="alert" class="text-xs text-danger">
@@ -168,15 +179,13 @@
 								{:else if status?.kind === 'checking'}<p class="text-xs text-text-muted">
 										Checking server…
 									</p>
-								{:else if status?.kind === 'ready'}<div class="flex flex-wrap gap-2">
-										{#each status.paths as root (root.path)}<button
-												type="button"
-												class="text-xs text-accent underline"
-												onclick={() => onNavigate?.(root.path)}>Browse {root.name}</button
-											>{/each}
-									</div>{/if}
+								{:else if status?.kind === 'ready'}<p class="text-xs text-text-muted">
+										{status.paths.length} drive{status.paths.length === 1 ? '' : 's'} available
+									</p>{/if}
 								<p class="text-xs text-text-muted">
-									Access expires {new Date(server.expiresAt).toLocaleDateString()}
+									{Date.parse(server.expiresAt) > Date.now()
+										? `Access expires ${new Date(server.expiresAt).toLocaleDateString()}`
+										: 'Pair this deployment to open its drives'}
 								</p></td
 							>
 							<td class="px-3">

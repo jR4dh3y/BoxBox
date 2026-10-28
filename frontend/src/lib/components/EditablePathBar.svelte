@@ -8,12 +8,14 @@
 	let {
 		pathSegments = [],
 		roots = [],
+		serverName,
 		pageTitle = null,
 		onNavigate,
 		includeHiddenSuggestions = false
 	}: {
 		pathSegments?: string[];
 		roots?: MountPoint[];
+		serverName?: string;
 		/** Shown instead of the path while the pane shows a page rather than a folder. */
 		pageTitle?: string | null;
 		onNavigate?: (path: string) => void;
@@ -24,11 +26,12 @@
 		const path = pathSegments.join('/');
 		const root = roots.find((root) => path === root.name || path.startsWith(`${root.name}/`));
 		if (root) {
-			const label = root.serverName
-				? `${root.serverName} · ${root.label ?? root.name}`
-				: (root.label ?? root.name);
+			const label = root.label ?? root.name;
 			const suffix = path.slice(root.name.length).split('/').filter(Boolean);
 			return [
+				...(root.serverName
+					? [{ label: root.serverName, path: pathSegments.slice(0, 2).join('/') }]
+					: []),
 				{ label, path: root.name },
 				...suffix.map((label, index) => ({
 					label,
@@ -37,9 +40,12 @@
 			];
 		}
 		return pathSegments[0] === '@remote'
-			? pathSegments
-					.slice(2)
-					.map((label, index) => ({ label, path: pathSegments.slice(0, index + 3).join('/') }))
+			? [
+					{ label: serverName ?? 'Deployment', path: pathSegments.slice(0, 2).join('/') },
+					...pathSegments
+						.slice(2)
+						.map((label, index) => ({ label, path: pathSegments.slice(0, index + 3).join('/') }))
+				]
 			: pathSegments.map((label, index) => ({
 					label,
 					path: pathSegments.slice(0, index + 1).join('/')
@@ -87,6 +93,7 @@
 		</div>
 	{:then { default: PathEditor }}
 		<PathEditor
+			{serverName}
 			{pathSegments}
 			{roots}
 			{onNavigate}

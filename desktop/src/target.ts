@@ -1,12 +1,14 @@
 export function remoteURL(value: string): string {
   const url = new URL(value);
   if (
-    !["http:", "https:"].includes(url.protocol) ||
+    url.protocol !== "https:" ||
+    url.search ||
+    url.hash ||
     url.username ||
     url.password
   ) {
     throw new Error(
-      "Use an HTTP(S) BoxBox server URL without embedded credentials",
+      "Use an HTTPS BoxBox deployment URL without credentials, a query or a fragment",
     );
   }
   return url.href;

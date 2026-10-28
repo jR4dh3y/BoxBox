@@ -2,5 +2,5 @@ import { isLocalDesktop } from '#lib/api/desktop.js';
 
 /** Desktop locations include this computer and paired BoxBox deployments. */
 export function rootLabel(): string {
-	return isLocalDesktop() ? 'Locations' : 'This Server';
+	return isLocalDesktop() ? 'This PC' : 'This Server';
 }

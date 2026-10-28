@@ -2,6 +2,8 @@
  * User preferences, kept in localStorage; drive names are also stored on the server
  */
 
+import { isLocalDesktop } from '#lib/api/desktop.js';
+import type { DesktopPreferences } from '#lib/api/desktopPreferences.js';
 import { settingsStorage, storage } from '#lib/utils/storage.js';
 import {
 	beginWallpaperPublication,
@@ -102,6 +104,7 @@ async function loadDriveNames(): Promise<Record<string, string>> {
 
 class SettingsStore {
 	current = $state.raw<UserSettings>({ ...defaultSettings });
+	private desktop: DesktopPreferences | undefined;
 	private username: string | null = null;
 	private session = 0;
 	private sessionController = new AbortController();
@@ -119,6 +122,14 @@ class SettingsStore {
 		const username = currentUsername() ?? 'dev';
 		this.username = username;
 		this.current = loadSettings(username);
+		if (isLocalDesktop()) {
+			const { DesktopPreferences } = await import('#lib/api/desktopPreferences.js');
+			if (session !== this.session) return;
+			this.desktop = new DesktopPreferences(this.sessionSignal);
+			const loaded = await this.desktop.load(defaultSettings, this.current);
+			if (session !== this.session) return;
+			this.current = loaded;
+		}
 
 		const driveNameOverrides = await loadDriveNames();
 		if (session !== this.session) return;
@@ -148,6 +159,7 @@ class SettingsStore {
 		)
 			this.wallpaperRevision++;
 		this.current = settings;
+		this.desktop?.save(settings);
 		try {
 			if (this.username !== null) settingsStorage.set(settings, this.username);
 		} catch (error) {
@@ -160,6 +172,7 @@ class SettingsStore {
 		this.sessionController.abort();
 		this.sessionController = new AbortController();
 		this.session++;
+		this.desktop = undefined;
 		this.username = null;
 		this.current = { ...defaultSettings };
 	}

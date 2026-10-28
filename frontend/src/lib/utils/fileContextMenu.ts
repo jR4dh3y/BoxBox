@@ -3,6 +3,7 @@
  * Centralized definition of context menu items for file operations
  */
 
+import { isNativePath } from '#lib/api/desktop.js';
 import type { ContextMenuItem } from '#lib/components/ui/ContextMenu.svelte';
 import type { FileInfo } from '#lib/api/files.js';
 import {
@@ -21,6 +22,9 @@ import {
 } from 'lucide-svelte';
 
 export type FileContextAction =
+	| 'preview'
+	| 'open-with'
+	| 'open-terminal'
 	| 'new-file'
 	| 'new-folder'
 	| 'copy'
@@ -83,6 +87,14 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 
 	return [
 		...createItems,
+		...(singleItem && isNativePath(items[0].path)
+			? singleFolder
+				? [{ id: 'open-terminal', label: 'Open in Terminal', icon: Info }]
+				: [
+						{ id: 'open-with', label: 'Open with…', icon: Info },
+						{ id: 'preview', label: 'Preview', icon: Info }
+					]
+			: []),
 		{ id: 'copy', label: 'Copy', icon: Copy, shortcut: 'Ctrl+C' },
 		{ id: 'cut', label: 'Cut', icon: Scissors, shortcut: 'Ctrl+X' },
 		{ id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl+V', disabled: !canPaste },

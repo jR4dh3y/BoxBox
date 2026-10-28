@@ -1,3 +1,4 @@
+import type { DeploymentIcon } from './deploymentIcon';
 import { SvelteMap } from 'svelte/reactivity';
 import { api } from '#lib/api/client.js';
 import { array, record, nonEmptyString } from '#lib/api/parse.js';
@@ -51,7 +52,12 @@ export class ServersController {
 	readonly servers: RemoteValue<DesktopServer[]>;
 	readonly action = new PendingAction<ServerAction>('The server list could not be changed');
 	editor = $state<ServerEditor>({ kind: 'closed' });
-	draft = $state({ name: '', url: '', code: '' });
+	draft = $state<{ name: string; url: string; code: string; icon: DeploymentIcon }>({
+		name: '',
+		url: '',
+		code: '',
+		icon: 'server'
+	});
 	confirmingRemoveId = $state<string | null>(null);
 	#client: ServersClient;
 	#onChanged: () => void;
@@ -66,8 +72,13 @@ export class ServersController {
 		this.editor = editor;
 		this.draft =
 			editor.kind === 'update' || editor.kind === 'pair'
-				? { name: editor.server.name, url: editor.server.url, code: '' }
-				: { name: '', url: '', code: '' };
+				? {
+						name: editor.server.name,
+						url: editor.server.url,
+						code: '',
+						icon: editor.server.icon ?? 'server'
+					}
+				: { name: '', url: '', code: '', icon: 'server' };
 		this.confirmingRemoveId = null;
 		this.action.reset();
 	}
@@ -94,7 +105,7 @@ export class ServersController {
 	async save(): Promise<boolean> {
 		const editor = this.editor;
 		if (editor.kind === 'closed') return false;
-		const { name, url, code } = this.draft;
+		const { name, url, code, icon } = this.draft;
 		this.draft.code = '';
 		const done = await this.action.run(
 			'editor',
@@ -104,8 +115,8 @@ export class ServersController {
 				else
 					await this.#client.save(
 						editor.kind === 'update'
-							? { kind: 'update', id: editor.server.id, name }
-							: { kind: 'create', name, url, code }
+							? { kind: 'update', id: editor.server.id, name, icon }
+							: { kind: 'create', name, url, code, icon }
 					);
 			}
 		);
