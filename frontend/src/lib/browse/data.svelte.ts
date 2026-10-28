@@ -3,34 +3,21 @@ import { parseRemotePath } from '#lib/api/remotePaths.js';
 import { browseRequests } from './requests.svelte';
 import { untrack } from 'svelte';
 import type { BrowseSelection } from './selection.svelte';
-import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-import {
-	getDriveStats,
-	listRoots,
-	search,
-	type DriveStatsResponse,
-	type FileInfo,
-	type RootsResponse,
-	type SearchResponse
-} from '#lib/api/files.js';
-import { CONFIG } from '#lib/config.js';
-import { fileQueryKeys } from '#lib/stores/files.js';
+import type { FileInfo } from '#lib/api/files.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { canPreview } from '#lib/utils/fileTypes.js';
-import { directoryQueryOptions } from './directoryQuery';
 import { sortFiles } from './sortFiles';
 import type { BrowseLocation } from './location.svelte';
 
 /**
  * What the browser shows for the current location: drives, a folder listing or search results.
- * Call during component setup because the queries need the component context.
+ * Call during component setup so request leases follow the component lifecycle.
  */
 export function useBrowseData(
 	location: BrowseLocation,
 	selection: BrowseSelection,
 	catalog: () => RemoteCatalogSnapshot | undefined = () => undefined
 ) {
-	const queryClient = useQueryClient();
 	const settings = $derived(settingsStore.current);
 	const source = $derived(parseRemotePath(location.path));
 	const isDeploymentRoot = $derived(source.kind === 'remote' && source.path === '');
@@ -51,36 +38,36 @@ export function useBrowseData(
 			? catalog()?.servers.find((server) => server.id === source.serverId)?.name
 			: undefined
 	);
-	$effect(() =>
-		browseRequests.onChange(() => {
-			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.all });
-		})
-	);
-
-	const rootsQuery = createQuery<RootsResponse>(() => ({
-		queryKey: fileQueryKeys.roots(),
-		queryFn: () => listRoots()
-	}));
-
-	const driveStatsQuery = createQuery<DriveStatsResponse>(() => ({
-		queryKey: [...fileQueryKeys.roots(), 'stats'],
-		queryFn: () => getDriveStats(),
-		enabled: location.path === '' || isDeploymentRoot
-	}));
-
-	const directoryQuery = createQuery(() => ({
-		...directoryQueryOptions(location.path),
-		refetchInterval: source.kind === 'remote' ? 15_000 : false,
-		enabled: location.path !== '' && !isDeploymentRoot
-	}));
-	const searchQueryResult = createQuery<SearchResponse>(() => ({
-		queryKey: fileQueryKeys.search(location.path, location.trimmedSearchQuery),
-		queryFn: ({ signal }) => search(location.path, location.trimmedSearchQuery, signal),
-		enabled: location.path !== '' && !isDeploymentRoot && location.isSearchActive
-	}));
+	const localCatalog = $derived(browseRequests.catalog());
+	const folder = $derived(browseRequests.folder(location.path));
+	const matches = $derived(browseRequests.matches(location.path, location.trimmedSearchQuery));
+	let acquiredRevision = $state(0);
+	$effect(() => {
+		const current = folder;
+		if (!location.path || isDeploymentRoot) return;
+		return untrack(() => {
+			acquiredRevision = current.confirmed;
+			return browseRequests.observe(location.path);
+		});
+	});
+	$effect(() => {
+		void localCatalog;
+		const atRoot = location.path === '';
+		return untrack(() => browseRequests.observeCatalog(atRoot));
+	});
+	$effect(() => {
+		void matches;
+		const path = location.path;
+		const query = location.trimmedSearchQuery;
+		if (!path || isDeploymentRoot || !location.isSearchActive) return;
+		return untrack(() => browseRequests.observeSearch(path, query));
+	});
 
 	const isAtRoot = $derived(location.path === '' || isDeploymentRoot);
-	const combinedRoots = $derived([...(rootsQuery.data?.roots ?? []), ...(catalog()?.roots ?? [])]);
+	const combinedRoots = $derived([
+		...(localCatalog.roots.value?.roots ?? []),
+		...(catalog()?.roots ?? [])
+	]);
 	const roots = $derived(
 		combinedRoots.filter(
 			(root, index) => combinedRoots.findLastIndex((item) => item.name === root.name) === index
@@ -89,21 +76,18 @@ export function useBrowseData(
 	const combinedDrives = $derived(
 		isDeploymentRoot
 			? (catalog()?.drives ?? []).filter((drive) => drive.name.startsWith(location.path + '/'))
-			: [...(driveStatsQuery.data?.drives ?? []), ...(catalog()?.drives ?? [])]
+			: [...(localCatalog.stats.value?.drives ?? []), ...(catalog()?.drives ?? [])]
 	);
 	const drives = $derived(
 		combinedDrives.filter(
 			(drive, index) => combinedDrives.findIndex((item) => item.name === drive.name) === index
 		)
 	);
-	const directoryItems = $derived(directoryQuery.data?.items ?? []);
-	const searchResults = $derived(searchQueryResult.data?.results ?? []);
+	const directoryItems = $derived(folder.value?.items ?? []);
+	const searchResults = $derived(matches.value?.results ?? []);
 
 	const displayItems = $derived.by(() => {
-		if (
-			source.kind === 'remote' &&
-			(location.isSearchActive ? searchQueryResult.isError : directoryQuery.isError)
-		)
+		if (source.kind === 'remote' && (location.isSearchActive ? matches.error : folder.error))
 			return [];
 		const items: FileInfo[] = location.isSearchActive ? searchResults : directoryItems;
 		const visible = settings.showHiddenFiles
@@ -115,15 +99,11 @@ export function useBrowseData(
 	let confirmed: { path: string; timestamp: number; items: readonly FileInfo[] } | undefined;
 	$effect(() => {
 		// Cached data and failed refreshes cannot establish that a selected file vanished.
-		if (
-			directoryQuery.isFetching ||
-			!directoryQuery.isSuccess ||
-			!directoryQuery.isFetchedAfterMount
-		)
+		if (folder.pending || !folder.value || folder.error || folder.confirmed <= acquiredRevision)
 			return;
-		const timestamp = directoryQuery.dataUpdatedAt;
+		const timestamp = folder.confirmed;
 		const items = directoryItems;
-		const path = directoryQuery.data.path;
+		const path = folder.value.path;
 		untrack(() => {
 			if (
 				confirmed?.path === path &&
@@ -149,9 +129,10 @@ export function useBrowseData(
 			(currentMount?.readOnly ?? false)
 	);
 	const fileListError = $derived.by(() => {
-		if (isAtRoot) return rootsQuery.error?.message ?? driveStatsQuery.error?.message ?? null;
-		if (location.isSearchActive) return searchQueryResult.error?.message ?? null;
-		return directoryQuery.error?.message ?? null;
+		if (isAtRoot)
+			return localCatalog.roots.error?.message ?? localCatalog.stats.error?.message ?? null;
+		if (location.isSearchActive) return matches.error?.message ?? null;
+		return folder.error?.message ?? null;
 	});
 
 	return {
@@ -176,15 +157,15 @@ export function useBrowseData(
 		get isLoadingDrives() {
 			return isDeploymentRoot
 				? deploymentState?.kind === 'loading'
-				: rootsQuery.isLoading || driveStatsQuery.isLoading;
+				: localCatalog.roots.pending || localCatalog.stats.pending;
 		},
 		get isSearching() {
-			return location.isSearchActive && searchQueryResult.isFetching;
+			return location.isSearchActive && matches.pending;
 		},
 		get isFileListLoading() {
 			return location.isSearchActive
-				? searchQueryResult.isFetching
-				: directoryQuery.isLoading && directoryItems.length === 0;
+				? matches.pending
+				: folder.pending && directoryItems.length === 0;
 		},
 		get fileListError() {
 			return fileListError;
@@ -213,38 +194,21 @@ export function useBrowseData(
 			return isAtRoot || isReadOnly;
 		},
 
-		/** Warms a folder the user is about to open. Skips folders loaded moments ago. */
+		/** Warms a folder the user is about to open without another cache owner. */
 		prefetchDirectory(path: string) {
-			void queryClient.prefetchQuery({
-				...directoryQueryOptions(path),
-				staleTime: CONFIG.query.prefetchStaleTimeMs
-			});
+			void browseRequests.prefetch(path);
 		},
-		/** Marks the folder (and the search) stale so it loads again. */
 		refresh() {
-			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directory(location.path) });
-			if (location.isSearchActive) {
-				void queryClient.invalidateQueries({
-					queryKey: fileQueryKeys.search(location.path, location.trimmedSearchQuery)
-				});
-			}
+			void browseRequests.changed(location.path);
 		},
-		/** Marks every loaded folder stale, for changes that may land outside the open one. */
 		refreshAll() {
-			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.directories() });
-			void queryClient.invalidateQueries({ queryKey: fileQueryKeys.searches() });
+			void browseRequests.changed();
 		},
-		/** The toolbar refresh button. */
 		reload() {
-			if (isAtRoot) {
-				void browseRequests.changed();
-				void rootsQuery.refetch();
-				void driveStatsQuery.refetch();
-			} else if (location.isSearchActive) void searchQueryResult.refetch();
-			else void directoryQuery.refetch();
+			void (isAtRoot ? browseRequests.changed() : browseRequests.changed(location.path));
 		},
 		refetchDirectory() {
-			void directoryQuery.refetch();
+			void browseRequests.changed(location.path);
 		}
 	};
 }

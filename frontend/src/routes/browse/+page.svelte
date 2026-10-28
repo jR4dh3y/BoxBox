@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import LoadError from '#lib/components/LoadError.svelte';
+	import BrowseBrowser from '#lib/components/BrowseBrowser.svelte';
 </script>
 
 <div class="h-screen">
@@ -8,6 +9,7 @@
 		{#await import('#lib/components/desktop/BrowseWorkspace.svelte') then { default: BrowseWorkspace }}
 			<BrowseWorkspace />
 		{:catch}<LoadError label="desktop workspace" inline />{/await}
-	{:else}{#await import('#lib/components/BrowseBrowser.svelte') then { default: BrowseBrowser }}<BrowseBrowser
-			/>{:catch}<LoadError label="file browser" inline />{/await}{/if}
+	{:else}
+		<BrowseBrowser />
+	{/if}
 </div>
