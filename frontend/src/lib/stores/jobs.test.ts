@@ -347,6 +347,31 @@ describe('jobsStore.loadJobs', () => {
 });
 
 describe('desktop polling lifecycle', () => {
+	test('idle reconciliation waits thirty seconds without losing external job discovery', async () => {
+		let requests = 0;
+		const now = Date.now;
+		let clock = now();
+		Object.assign(Date, { now: () => clock });
+		Object.assign(globalThis, {
+			fetch: async () => {
+				requests++;
+				return Response.json({ jobs: [] });
+			}
+		});
+		await jobsStore.loadJobs();
+		const disconnect = jobsStore.connectPolling();
+		try {
+			await new Promise((resolve) => setTimeout(resolve, 2100));
+			assert.equal(requests, 1, 'an idle desktop does not fetch every two seconds');
+			clock += 30_000;
+			await new Promise((resolve) => setTimeout(resolve, 2100));
+			assert.equal(requests, 2, 'idle reconciliation still discovers external work');
+		} finally {
+			disconnect();
+			Object.assign(Date, { now });
+		}
+	});
+
 	test('a slow load finishes before another poll; socket completion stays responsive', async () => {
 		let calls = 0;
 		jobsStore.onFinished = () => calls++;

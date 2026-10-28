@@ -157,15 +157,16 @@ export function useBrowseData(
 		get isLoadingDrives() {
 			return isDeploymentRoot
 				? deploymentState?.kind === 'loading'
-				: localCatalog.roots.pending || localCatalog.stats.pending;
+				: (localCatalog.roots.pending && !localCatalog.roots.value) ||
+						(localCatalog.stats.pending && !localCatalog.stats.value);
 		},
 		get isSearching() {
-			return location.isSearchActive && matches.pending;
+			return location.isSearchActive && matches.pending && !matches.value;
 		},
 		get isFileListLoading() {
 			return location.isSearchActive
-				? matches.pending
-				: folder.pending && directoryItems.length === 0;
+				? matches.pending && !matches.value
+				: folder.pending && !folder.value;
 		},
 		get fileListError() {
 			return fileListError;

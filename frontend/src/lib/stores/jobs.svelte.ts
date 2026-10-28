@@ -27,6 +27,7 @@ class JobsStore {
 	error = $state<string | null>(null);
 	/** Invalidates overlapping loads and responses from a previous session. */
 	private loadVersion = 0;
+	private lastLoadAt = 0;
 	/** Terminal objects are retained by mergeJob, so notifications stay once-only without retaining IDs. */
 	private notifiedFinished = new WeakSet<Job>();
 
@@ -35,6 +36,7 @@ class JobsStore {
 
 	async loadJobs(): Promise<void> {
 		const version = ++this.loadVersion;
+		this.lastLoadAt = Date.now();
 		const atRequest = new Map(this.jobs);
 		this.isLoading = true;
 		this.error = null;
@@ -62,10 +64,12 @@ class JobsStore {
 		}
 	}
 
-	/** Desktop polling supplements local socket updates with remote and transfer jobs. */
+	/** Active transfers need frequent updates; idle reconciliation discovers jobs from other clients. */
 	connectPolling(): () => void {
 		const timer = setInterval(() => {
-			if (!this.isLoading) void this.loadJobs();
+			if (typeof document !== 'undefined' && document.hidden) return;
+			if (!this.isLoading && (this.active.length || Date.now() - this.lastLoadAt >= 30_000))
+				void this.loadJobs();
 		}, 2000);
 		return () => {
 			clearInterval(timer);
@@ -105,6 +109,7 @@ class JobsStore {
 
 	reset(): void {
 		this.loadVersion++;
+		this.lastLoadAt = 0;
 		this.notifiedFinished = new WeakSet();
 		this.jobs.clear();
 		this.isLoading = false;
