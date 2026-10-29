@@ -125,7 +125,7 @@
 			<Home size={14} />
 		</button>
 		{#if pageTitle}
-			<span class="text-[13px] whitespace-nowrap text-text-primary">{pageTitle}</span>
+			<span class="min-w-0 truncate text-[13px] text-text-primary">{pageTitle}</span>
 		{:else if pathSegments.length === 0}
 			<span class="text-[13px] whitespace-nowrap text-text-primary">{rootLabel()}</span>
 		{:else}

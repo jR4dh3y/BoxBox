@@ -111,11 +111,9 @@
 			onchange={(hardwareAcceleration) => preferences.update({ hardwareAcceleration })}
 		/>
 	</SettingsRow>
-	<p class="mb-3 text-xs text-text-muted" role="status">
-		{settings.hardwareAcceleration !== activeHardwareAcceleration
-			? 'Restart BoxBox to apply this change.'
-			: 'Uses your GPU for rendering. Changes take effect after restarting BoxBox.'}
-	</p>
+	{#if settings.hardwareAcceleration !== activeHardwareAcceleration}
+		<p class="mb-3 text-xs text-text-muted" role="status">Restart BoxBox to apply this change.</p>
+	{/if}
 {/if}
 
 <SettingsRow label="Accent color">

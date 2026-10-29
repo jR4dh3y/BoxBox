@@ -255,20 +255,46 @@ input[autocomplete='current-password']:focus-visible {
 	display: none;
 }
 
+/* Constant perceptual lightness gives every wallpaper the same readable hierarchy. */
 .app-shell[data-wallpaper-tint='true'],
 .app-shell[data-wallpaper-tint='true'] :where(.browse-chrome, .file-surface) {
-	--color-surface-primary: color-mix(in srgb, var(--wallpaper-tint) 8%, #171a1f);
-	--color-surface-secondary: color-mix(in srgb, var(--wallpaper-tint) 14%, #24272d);
-	--color-surface-tertiary: color-mix(in srgb, var(--wallpaper-tint) 18%, #2c3037);
-	--color-surface-elevated: color-mix(in srgb, var(--wallpaper-tint) 22%, #343942);
-	--color-surface-context-menu: color-mix(in srgb, var(--wallpaper-tint) 12%, #1c2026);
-	--color-border-primary: color-mix(in srgb, var(--wallpaper-tint) 24%, #444b55);
-	--color-border-secondary: color-mix(in srgb, var(--wallpaper-tint) 18%, #343a43);
-	--color-text-primary: #f3f6fa;
-	--color-text-secondary: #dce3ed;
-	--color-text-muted: #c4cfdd;
-	--scrollbar-thumb: color-mix(in srgb, var(--wallpaper-tint) 32%, #737d8e);
-	--scrollbar-thumb-hover: color-mix(in srgb, var(--wallpaper-tint) 40%, #a5b0c1);
+	--color-surface-primary: oklch(from var(--wallpaper-tint) 0.18 min(c, 0.035) h);
+	--color-surface-secondary: oklch(from var(--wallpaper-tint) 0.235 min(c, 0.04) h);
+	--color-surface-tertiary: oklch(from var(--wallpaper-tint) 0.285 min(c, 0.045) h);
+	--color-surface-elevated: oklch(from var(--wallpaper-tint) 0.33 min(c, 0.05) h);
+	--color-border-primary: oklch(from var(--wallpaper-tint) 0.43 min(c, 0.05) h);
+	--color-border-secondary: oklch(from var(--wallpaper-tint) 0.335 min(c, 0.035) h);
+	--color-text-primary: oklch(from var(--wallpaper-tint) 0.96 min(c, 0.012) h);
+	--color-text-secondary: oklch(from var(--wallpaper-tint) 0.84 min(c, 0.025) h);
+	--color-text-muted: oklch(from var(--wallpaper-tint) 0.73 min(c, 0.035) h);
+	--color-text-disabled: oklch(from var(--wallpaper-tint) 0.57 min(c, 0.025) h);
+	--color-surface-context-menu: var(--color-surface-secondary);
+	--scrollbar-thumb: oklch(from var(--wallpaper-tint) 0.64 min(c, 0.075) h);
+	--scrollbar-thumb-hover: oklch(from var(--wallpaper-tint) 0.78 min(c, 0.09) h);
+}
+
+.app-shell[data-wallpaper-tint='true'] .browse-shell {
+	background-color: oklch(from var(--wallpaper-tint) 0.18 min(c, 0.035) h / 0.8);
+}
+
+.app-shell[data-wallpaper-tint='true'] .browse-chrome {
+	background-color: oklch(from var(--wallpaper-tint) 0.21 min(c, 0.045) h / 0.76);
+	border-color: var(--color-border-secondary);
+}
+
+.app-shell[data-wallpaper-tint='true']
+	.file-surface
+	:where(th[data-file-header='true'], div[data-file-header='true']) {
+	background-color: oklch(from var(--wallpaper-tint) 0.25 min(c, 0.045) h / 0.9);
+}
+
+.app-shell[data-wallpaper-tint='true'] .file-surface th[data-file-header='true']:hover {
+	background-color: var(--color-surface-tertiary);
+}
+
+/* Keep the split workspace from stacking the same translucent pigment twice. */
+.app-shell[data-wallpaper-tint='true'] .browse-shell .browse-shell {
+	background-color: transparent;
 }
 
 @media (forced-colors: active) {

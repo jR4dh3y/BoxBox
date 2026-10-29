@@ -2,7 +2,7 @@
 	/**
 	 * Browse page - the file browser. The logic lives in `#lib/browse`; this page wires it to the UI.
 	 */
-	import { onMount, untrack } from 'svelte';
+	import { onMount, untrack, type Snippet } from 'svelte';
 	import { createDropZone } from '#lib/browse/dropZone.svelte.js';
 	import { useFileDrop } from '#lib/browse/fileDrop.js';
 	import { browseRequests } from '#lib/browse/requests.svelte.js';
@@ -131,6 +131,43 @@
 	}
 </script>
 
+{#snippet browserToolbar(
+	extraActions?: Snippet,
+	refresh: () => void = data.reload,
+	refreshDisabled = false,
+	pageTitle: string | null = null
+)}
+	<Toolbar
+		bind:this={toolbar}
+		{pageTitle}
+		pathSegments={location.segments}
+		roots={data.roots}
+		serverName={data.serverName}
+		canGoBack={location.canGoBack}
+		canGoForward={location.canGoForward}
+		onBack={location.back}
+		onForward={location.forward}
+		onNavigate={location.navigate}
+		onRefresh={refresh}
+		{refreshDisabled}
+		actions={extraActions}
+		onSettings={() => {
+			settingsSection = 'general';
+			settingsOpen = true;
+		}}
+		onToggleSidebar={() => (onToggleSidebar ? onToggleSidebar() : (sidebarOpen = !sidebarOpen))}
+		onAdd={handleAdd}
+		canCreate={data.canCreate}
+		uploadDisabled={data.uploadDisabled}
+		showSearch={!data.isAtRoot && !pageTitle}
+		searchValue={location.searchQuery}
+		searchLoading={data.isSearching}
+		onSearchInput={location.search}
+		onSearchClear={location.clearSearch}
+		includeHiddenSuggestions={settings.showHiddenFiles}
+	/>
+{/snippet}
+
 <svelte:window onkeydown={keydown} />
 
 <svelte:head>
@@ -157,33 +194,9 @@
 	<!-- Main content area -->
 	<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 		<!-- Toolbar with navigation and path bar -->
-		<Toolbar
-			bind:this={toolbar}
-			pageTitle={paneState?.location.page === 'trash' ? 'Trash' : null}
-			pathSegments={location.segments}
-			roots={data.roots}
-			serverName={data.serverName}
-			canGoBack={location.canGoBack}
-			canGoForward={location.canGoForward}
-			onBack={location.back}
-			onForward={location.forward}
-			onNavigate={location.navigate}
-			onRefresh={data.reload}
-			onSettings={() => {
-				settingsSection = 'general';
-				settingsOpen = true;
-			}}
-			onToggleSidebar={() => (onToggleSidebar ? onToggleSidebar() : (sidebarOpen = !sidebarOpen))}
-			onAdd={handleAdd}
-			canCreate={data.canCreate}
-			uploadDisabled={data.uploadDisabled}
-			showSearch={!data.isAtRoot}
-			searchValue={location.searchQuery}
-			searchLoading={data.isSearching}
-			onSearchInput={location.search}
-			onSearchClear={location.clearSearch}
-			includeHiddenSuggestions={settings.showHiddenFiles}
-		/>
+		{#if paneState?.location.page !== 'trash'}
+			{@render browserToolbar()}
+		{/if}
 
 		<!-- File list or Drive cards -->
 		<div
@@ -208,6 +221,7 @@
 			{#if paneState?.location.page === 'trash'}
 				{#await import('./desktop/TrashPage.svelte') then { default: TrashPage }}<TrashPage
 						onChanged={() => void browseRequests.changed()}
+						toolbar={browserToolbar}
 					/>{/await}
 			{:else if data.isDeploymentRoot && data.deploymentError}
 				<div class="space-y-3 p-6 text-sm text-text-secondary">

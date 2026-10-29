@@ -1,13 +1,19 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { File, Folder, RefreshCw } from 'lucide-svelte';
+	import { onMount, type Snippet } from 'svelte';
+	import { File, Folder, Trash2, Undo2 } from 'lucide-svelte';
 	import { Button, Spinner } from '#lib/components/ui/index.js';
 	import { CONFIG } from '#lib/config.js';
 	import { fullFileDate, parentFolder } from '#lib/browse/details.js';
 	import { TrashController, type TrashAction } from '#lib/desktop/trash.svelte.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 
-	let { onChanged }: { onChanged: () => void } = $props();
+	let {
+		onChanged,
+		toolbar
+	}: {
+		onChanged: () => void;
+		toolbar: Snippet<[Snippet, () => void, boolean, string]>;
+	} = $props();
 
 	const controller = new TrashController();
 	const { items, action } = controller;
@@ -16,6 +22,16 @@
 		CONFIG.ui.spinnerDelayMs
 	);
 	const error = $derived(action.error ?? items.refreshError);
+	const deleteLabel = $derived(
+		action.state.kind === 'running' && action.state.action === 'delete'
+			? 'Deleting…'
+			: controller.confirmingDelete
+				? 'Confirm delete'
+				: 'Delete permanently'
+	);
+	const restoreLabel = $derived(
+		action.state.kind === 'running' && action.state.action === 'restore' ? 'Restoring…' : 'Restore'
+	);
 
 	onMount(() => {
 		const request = new AbortController();
@@ -38,12 +54,33 @@
 	}
 </script>
 
+{#snippet trashActions()}
+	<Button
+		variant={controller.confirmingDelete ? 'danger' : 'secondary'}
+		size="sm"
+		disabled={!controller.selected || action.busy}
+		onclick={() => run('delete')}
+		title={deleteLabel}
+	>
+		<Trash2 size={14} />
+		<span class="sr-only @xl:not-sr-only">{deleteLabel}</span>
+	</Button>
+	<Button
+		variant="primary"
+		size="sm"
+		disabled={!controller.selected?.canRestore || action.busy}
+		onclick={() => run('restore')}
+		title={restoreLabel}
+	>
+		<Undo2 size={14} />
+		<span class="sr-only @xl:not-sr-only">{restoreLabel}</span>
+	</Button>
+{/snippet}
+
 <div class="flex h-full min-h-0 flex-col text-[13px]">
-	<div class="flex h-10 shrink-0 items-center gap-2 border-b border-border-secondary px-3">
-		<p
-			class="m-0 min-w-0 flex-1 truncate"
-			role={error || controller.confirmingDelete ? 'alert' : undefined}
-		>
+	{@render toolbar(trashActions, () => void items.load(), items.refreshing || action.busy, 'Trash')}
+	{#if error || (controller.confirmingDelete && controller.selected)}
+		<p class="m-0 shrink-0 border-b border-border-secondary px-3 py-2" role="alert">
 			{#if error}
 				<span class="text-danger">{error}</span>
 			{:else if controller.confirmingDelete && controller.selected}
@@ -52,41 +89,7 @@
 				>
 			{/if}
 		</p>
-		<Button
-			variant={controller.confirmingDelete ? 'danger' : 'secondary'}
-			size="sm"
-			disabled={!controller.selected || action.busy}
-			onclick={() => run('delete')}
-		>
-			{#if action.state.kind === 'running' && action.state.action === 'delete'}
-				Deleting…
-			{:else if controller.confirmingDelete}
-				Confirm delete
-			{:else}
-				Delete permanently
-			{/if}
-		</Button>
-		<Button
-			variant="primary"
-			size="sm"
-			disabled={!controller.selected?.canRestore || action.busy}
-			onclick={() => run('restore')}
-		>
-			{action.state.kind === 'running' && action.state.action === 'restore'
-				? 'Restoring…'
-				: 'Restore'}
-		</Button>
-		<Button
-			variant="ghost"
-			size="icon"
-			title="Reload Trash"
-			disabled={items.refreshing || action.busy}
-			onclick={() => void items.load()}
-		>
-			<RefreshCw size={16} class={items.refreshing ? 'animate-spin' : ''} />
-			<span class="sr-only">Reload Trash</span>
-		</Button>
-	</div>
+	{/if}
 
 	<div class="min-h-0 flex-1 overflow-auto">
 		{#if items.state.kind === 'loading'}
