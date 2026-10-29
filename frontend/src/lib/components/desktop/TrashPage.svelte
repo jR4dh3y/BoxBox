@@ -46,7 +46,7 @@
 	}
 
 	function rowKeydown(event: KeyboardEvent, id: string): void {
-		if (event.target instanceof HTMLInputElement) return;
+		if (event.target instanceof HTMLInputElement && event.key !== 'Delete') return;
 		if (event.key === 'Enter' || event.key === ' ') {
 			event.preventDefault();
 			controller.select(id);

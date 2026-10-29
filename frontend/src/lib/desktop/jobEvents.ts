@@ -53,13 +53,12 @@ class JobStream {
 					const current = await getJob(job.id, this.controller.signal);
 					if (!this.stopped) jobsStore.upsertJob(current);
 				} catch (error) {
-					if (!this.stopped && error instanceof ApiRequestError && error.status === 404)
+					if (this.stopped) return;
+					if (error instanceof ApiRequestError && error.status === 404)
 						jobsStore.jobs.delete(job.id);
-					else throw error;
+					// A failed source must not skip recovery for the next source.
 				}
 			}
-		} catch {
-			/* Reconnect reconciles jobs after the source becomes available. */
 		} finally {
 			this.recovering = false;
 		}

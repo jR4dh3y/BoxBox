@@ -268,3 +268,70 @@ test('many remote sources share one connection and only unavailable sources reco
 		server.stop(true);
 	}
 });
+
+test('failed recovery on the newest server does not starve an older server completion', async () => {
+	const offline = '11111111-1111-4111-8111-111111111111';
+	const legacy = '22222222-2222-4222-8222-222222222222';
+	let offlineReads = 0,
+		legacyReads = 0,
+		finishes = 0;
+	const server = Bun.serve({
+		port: 0,
+		fetch(request) {
+			const path = new URL(request.url).pathname;
+			if (path.endsWith('/events'))
+				return new Response(
+					new ReadableStream<Uint8Array>({
+						start(controller) {
+							if (path === '/api/v1/desktop/servers/events') {
+								for (const serverId of [offline, legacy]) {
+									const active = {
+										...job(),
+										createdAt:
+											serverId === offline ? '2026-10-29T00:00:00Z' : '2026-10-28T00:00:00Z'
+									};
+									for (const event of [
+										{ serverId, kind: 'snapshot', data: { jobs: [active] } },
+										{ serverId, kind: 'unavailable' }
+									])
+										controller.enqueue(
+											encoder.encode(`event: source\ndata: ${JSON.stringify(event)}\n\n`)
+										);
+								}
+							} else controller.enqueue(encoder.encode('event: snapshot\ndata: {"jobs":[]}\n\n'));
+						}
+					}),
+					{ headers: { 'Content-Type': 'text/event-stream' } }
+				);
+			if (path.includes(offline)) {
+				offlineReads++;
+				return Response.json({ error: 'Offline', code: 'REMOTE_UNAVAILABLE' }, { status: 502 });
+			}
+			if (path.includes(legacy)) {
+				legacyReads++;
+				return Response.json(job('proof', 'completed', 100));
+			}
+			return Response.json({ jobs: [] });
+		}
+	});
+	Object.assign(globalThis, {
+		window: Object.assign(new EventTarget(), { location: { origin: server.url.origin } })
+	});
+	const streams = connectDesktopJobs();
+	jobsStore.onFinished = () => finishes++;
+	try {
+		streams.syncServers(
+			[offline, legacy].map((id) => ({ id, name: id, url: 'https://example.test' }))
+		);
+		await new Promise((resolve) => setTimeout(resolve, 2200));
+		assert.ok(offlineReads > 0, 'the first source fails during recovery');
+		assert.equal(legacyReads, 1, 'the next source must still recover');
+		assert.equal(jobsStore.jobs.get(`@remote/${legacy}/proof`)?.state, 'completed');
+		assert.equal(jobsStore.jobs.get(`@remote/${offline}/proof`)?.state, 'running');
+		assert.equal(finishes, 1, 'completion still triggers refresh');
+	} finally {
+		streams.close();
+		await settle();
+		server.stop(true);
+	}
+});
