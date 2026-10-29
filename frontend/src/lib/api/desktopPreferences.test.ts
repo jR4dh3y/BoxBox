@@ -20,6 +20,8 @@ const defaults: UserSettings = {
 	backgroundImageName: null,
 	backgroundImageMode: 'cover',
 	frostedGlass: false,
+	wallpaperTint: false,
+	hardwareAcceleration: true,
 	previewOnSingleClick: false,
 	compactMode: false,
 	selectionCheckboxes: true,
@@ -81,4 +83,11 @@ test('an unchanged saved file is not rewritten', async () => {
 	const writes = serve({ backgroundImage: `/api/v1/desktop/wallpaper/${hash}` });
 	await load(defaults);
 	assert.deepEqual(writes, []);
+});
+
+test('desktop rendering and tint choices survive a new settings session', async () => {
+	serve({ hardwareAcceleration: false, wallpaperTint: true });
+	const saved = await load(defaults);
+	assert.equal(saved.hardwareAcceleration, false);
+	assert.equal(saved.wallpaperTint, true);
 });

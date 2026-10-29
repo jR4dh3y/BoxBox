@@ -228,3 +228,51 @@ input[autocomplete='current-password']:focus-visible {
 	:where(.text-folder svg, [data-file-header] svg) {
 	color: var(--color-accent-icon);
 }
+
+/* Keep native scrolling and keyboard behavior; only the scrollbar's paint changes. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--scrollbar-thumb, #60656f) transparent;
+}
+*::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+	background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+	background: var(--scrollbar-thumb, #60656f);
+	border: 2px solid transparent;
+	border-radius: 8px;
+	background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+	background-color: var(--scrollbar-thumb-hover, #8b929e);
+}
+*::-webkit-scrollbar-button {
+	display: none;
+}
+
+.app-shell[data-wallpaper-tint='true'],
+.app-shell[data-wallpaper-tint='true'] :where(.browse-chrome, .file-surface) {
+	--color-surface-primary: color-mix(in srgb, var(--wallpaper-tint) 8%, #171a1f);
+	--color-surface-secondary: color-mix(in srgb, var(--wallpaper-tint) 14%, #24272d);
+	--color-surface-tertiary: color-mix(in srgb, var(--wallpaper-tint) 18%, #2c3037);
+	--color-surface-elevated: color-mix(in srgb, var(--wallpaper-tint) 22%, #343942);
+	--color-surface-context-menu: color-mix(in srgb, var(--wallpaper-tint) 12%, #1c2026);
+	--color-border-primary: color-mix(in srgb, var(--wallpaper-tint) 24%, #444b55);
+	--color-border-secondary: color-mix(in srgb, var(--wallpaper-tint) 18%, #343a43);
+	--color-text-primary: #f3f6fa;
+	--color-text-secondary: #dce3ed;
+	--color-text-muted: #c4cfdd;
+	--scrollbar-thumb: color-mix(in srgb, var(--wallpaper-tint) 32%, #737d8e);
+	--scrollbar-thumb-hover: color-mix(in srgb, var(--wallpaper-tint) 40%, #a5b0c1);
+}
+
+@media (forced-colors: active) {
+	* {
+		scrollbar-color: auto;
+	}
+}

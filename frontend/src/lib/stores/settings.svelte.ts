@@ -36,6 +36,8 @@ export interface UserSettings {
 	backgroundImageName: string | null;
 	backgroundImageMode: BackgroundImageMode;
 	frostedGlass: boolean;
+	wallpaperTint: boolean;
+	hardwareAcceleration: boolean;
 	previewOnSingleClick: boolean;
 	compactMode: boolean;
 	/** Rows show a checkbox on hover, so several items can be picked without modifier keys. */
@@ -62,6 +64,8 @@ const defaultSettings: UserSettings = {
 	backgroundImageName: null,
 	backgroundImageMode: DEFAULT_BACKGROUND_IMAGE_MODE,
 	frostedGlass: false,
+	wallpaperTint: false,
+	hardwareAcceleration: true,
 	previewOnSingleClick: false,
 	compactMode: false,
 	selectionCheckboxes: true,

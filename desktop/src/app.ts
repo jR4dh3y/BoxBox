@@ -1,3 +1,4 @@
+import { hardwareAccelerationEnabled } from "./rendering";
 import type { BrowserWindow } from "electrobun/main";
 import { join } from "node:path";
 import { localBootstrapURL, remoteLaunchTarget } from "./connections-host";
@@ -134,6 +135,12 @@ export class DesktopApp {
     });
     this.#localWindowId = window.id;
     window.webview.on("dom-ready", () => {
+      window.webview.executeJavascript(`
+        if (location.origin === ${JSON.stringify(new URL(server.url).origin)} &&
+            document.querySelector('meta[name="boxbox-desktop"]')) {
+          document.documentElement.dataset.hardwareAcceleration = '${hardwareAccelerationEnabled()}';
+        }
+      `);
       this.#localReady = true;
       this.#deliverTargets(window, server.url);
     });

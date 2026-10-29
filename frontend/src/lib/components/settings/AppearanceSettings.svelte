@@ -41,6 +41,9 @@
 	let applying = $state(false);
 	// The desktop's files are already local, so Choose opens the native picker directly.
 	const nativePicker = isLocalDesktop();
+	const activeHardwareAcceleration =
+		typeof document !== 'undefined' &&
+		document.documentElement.dataset.hardwareAcceleration !== 'false';
 	let nativeInput = $state<HTMLInputElement>();
 	let nativeFile = $state<File>();
 
@@ -98,6 +101,22 @@
 		void run(preferences.setWallpaper(selection.backgroundImage, selection.name, selection.mode));
 	}
 </script>
+
+{#if nativePicker}
+	<SettingsRow label="Hardware acceleration">
+		<Toggle
+			checked={settings.hardwareAcceleration}
+			label="Hardware acceleration"
+			showLabel={false}
+			onchange={(hardwareAcceleration) => preferences.update({ hardwareAcceleration })}
+		/>
+	</SettingsRow>
+	<p class="mb-3 text-xs text-text-muted" role="status">
+		{settings.hardwareAcceleration !== activeHardwareAcceleration
+			? 'Restart BoxBox to apply this change.'
+			: 'Uses your GPU for rendering. Changes take effect after restarting BoxBox.'}
+	</p>
+{/if}
 
 <SettingsRow label="Accent color">
 	<div
@@ -212,6 +231,14 @@
 				}}
 			/>
 		</div>
+	</SettingsRow>
+	<SettingsRow label="Tint components from wallpaper">
+		<Toggle
+			checked={settings.wallpaperTint}
+			label="Tint components from wallpaper"
+			showLabel={false}
+			onchange={(wallpaperTint) => preferences.update({ wallpaperTint })}
+		/>
 	</SettingsRow>
 	<SettingsRow label="Frosted glass">
 		<Toggle

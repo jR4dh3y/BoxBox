@@ -122,7 +122,11 @@
 	});
 
 	$effect(() => {
-		return accentTheme.apply(accentColor, accentWallpaper);
+		return accentTheme.apply(
+			accentColor,
+			accentWallpaper,
+			!isSharePage && settingsStore.current.wallpaperTint ? backgroundImage : null
+		);
 	});
 
 	// Show the synchronous result first, then the one that needs a local-image lookup.
@@ -172,6 +176,13 @@
 
 <div
 	class="app-shell"
+	style:--wallpaper-tint={accentTheme.wallpaperColor ?? undefined}
+	data-wallpaper-tint={!isSharePage &&
+	hasBackgroundImage &&
+	settingsStore.current.wallpaperTint &&
+	accentTheme.wallpaperColor
+		? 'true'
+		: undefined}
 	data-has-background={hasBackgroundImage ? 'true' : undefined}
 	data-background-mode={hasBackgroundImage ? backgroundImageMode : undefined}
 	data-frosted-glass={frostedGlass ? 'true' : undefined}

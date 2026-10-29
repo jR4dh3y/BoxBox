@@ -6,21 +6,34 @@ export type AccentState =
 
 class AccentTheme {
 	current = $state.raw<AccentState>({ kind: 'manual' });
+	wallpaperColor = $state<string | null>(null);
 	private applied = false;
 
 	/** Each effect owns its work; a replaced wallpaper or session cannot apply a late result. */
-	apply(customColor: string | null, wallpaper: string | null): () => void {
+	apply(
+		customColor: string | null,
+		wallpaper: string | null,
+		surfaceWallpaper: string | null = null
+	): () => void {
 		const controller = new AbortController();
 		const { signal } = controller;
 		this.current = wallpaper ? { kind: 'loading' } : { kind: 'manual' };
-		if (wallpaper || customColor || this.applied) {
+		this.wallpaperColor = null;
+		if (wallpaper || surfaceWallpaper || customColor || this.applied) {
 			void import('./applyAccent.js')
 				.then(({ applyAccentTheme }) =>
-					applyAccentTheme(customColor, wallpaper, signal, (state, applied) => {
-						if (signal.aborted) return;
-						this.applied = applied;
-						this.current = state;
-					})
+					applyAccentTheme(
+						customColor,
+						wallpaper,
+						signal,
+						(state, applied, wallpaperColor) => {
+							if (signal.aborted) return;
+							this.applied = applied;
+							this.current = state;
+							this.wallpaperColor = wallpaperColor;
+						},
+						surfaceWallpaper
+					)
 				)
 				.catch(() => {
 					if (!signal.aborted) this.current = { kind: 'unavailable' };

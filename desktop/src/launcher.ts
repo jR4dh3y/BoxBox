@@ -1,3 +1,4 @@
+import { configureRendering } from "./rendering";
 import { spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 import {
@@ -44,8 +45,13 @@ while (Date.now() < deadline) {
 if (!launched) throw new Error("The running BoxBox Desktop did not become ready");
 
 async function runNative(executable: string, args: string[]): Promise<void> {
+  const hardwareAcceleration = await configureRendering(resolve(import.meta.dir));
   const child = spawn(executable, args, {
-    env: { ...process.env, BOXBOX_DESKTOP_MANAGED_LAUNCH: "1" },
+    env: {
+      ...process.env,
+      BOXBOX_DESKTOP_MANAGED_LAUNCH: "1",
+      BOXBOX_HARDWARE_ACCELERATION: String(hardwareAcceleration),
+    },
     cwd: join(import.meta.dir, "../bin"),
     stdio: ["pipe", "inherit", "inherit"],
     detached: true,

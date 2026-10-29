@@ -39,6 +39,8 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 		backgroundImageName: nullable('backgroundImageName'),
 		backgroundImageMode: normalizeBackgroundImageMode(saved.backgroundImageMode),
 		frostedGlass: flag('frostedGlass'),
+		wallpaperTint: flag('wallpaperTint'),
+		hardwareAcceleration: flag('hardwareAcceleration'),
 		previewOnSingleClick: flag('previewOnSingleClick'),
 		selectionCheckboxes: flag('selectionCheckboxes'),
 		compactMode: flag('compactMode'),

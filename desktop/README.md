@@ -14,6 +14,10 @@ Go, Bun, Rust 1.88 or newer, `xdg-open`, GIO, GTK 3, WebKitGTK 4.1, Ayatana AppI
 
 Linux builds allow CEF to use GPU compositing and rasterization. BoxBox removes Electrobun's default `disable-gpu` and `disable-gpu-compositing` flags; those defaults force wallpaper blur and hover repaints onto the CPU. Chromium still decides which graphics features the driver supports.
 
+Appearance → Hardware acceleration is available only in the desktop app. The choice is saved per app/channel and takes effect after fully closing and reopening BoxBox. The launcher applies it to the SDK startup configuration before CEF loads; changing modes requires a writable bundle directory, as created by the desktop installer.
+
+Appearance → Tint components from wallpaper colours cards, menus, dialogs and controls using the sampled wallpaper hue. It is independent of the accent colour, preserves status colours, and is saved on this client. Removing the wallpaper restores neutral surfaces. Scrollbars follow the surface theme without replacing native scrolling.
+
 `dev:desktop` builds the shared UI and Go binary before opening the desktop window. Restart it after changing the UI or backend; it does not start Vite or Air. The packaged app includes the backend and does not require Go or Bun on the destination machine.
 
 ```sh
