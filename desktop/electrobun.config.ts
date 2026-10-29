@@ -1,10 +1,18 @@
+import { readFileSync } from "node:fs";
 import type { ElectrobunConfig } from "electrobun";
+
+const version = readFileSync(
+  new URL("../VERSION", import.meta.url),
+  "utf8",
+).trim();
+if (!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(version))
+  throw new Error("Invalid release VERSION");
 
 export default {
   app: {
     name: "BoxBox",
     identifier: "io.boxbox.desktop",
-    version: "0.1.6",
+    version,
   },
   runtime: { exitOnLastWindowClosed: false },
   scripts: { postBuild: "scripts/prepare-launcher.ts" },

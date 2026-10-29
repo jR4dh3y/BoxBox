@@ -2,7 +2,7 @@
 
 BoxBox can authorize a client to use its file API without giving that client an account session. Use HTTPS with a trusted certificate when exposing these endpoints. Existing mount permissions and path confinement continue to apply.
 
-This server API is the foundation for the separately reviewed desktop integration. The desktop management UI, local gateway, native file actions and cross-server transfer jobs are outside this change.
+The [Linux desktop app](/docs/desktop/) uses this API through its local gateway. This page describes the server authorization contract; the desktop guide covers pairing and native file actions.
 
 ## Authorize a device
 
@@ -25,7 +25,7 @@ The server stores only SHA-256 credential digests in `<data_dir>/connect/clients
 
 ## Access boundary
 
-Paired credentials can use the supported methods on `/files`, `/stream`, `/search`, `/jobs`, `/shares`, and `GET /system/upload`. Paired identity is bound to the account that enabled pairing. It cannot enable pairing, administer clients, sign in, refresh account tokens, edit settings, access desktop endpoints, or open a WebSocket. Poll job status instead. Stream/media requests also require the header; paired credentials are rejected in query parameters.
+Paired credentials can use the supported methods on `/files`, `/stream`, `/search`, `/jobs`, `/shares`, and `GET /system/upload`. Paired identity is bound to the account that enabled pairing. It cannot enable pairing, administer clients, sign in, refresh account tokens, edit settings, access desktop endpoints, or open a WebSocket. Use the job event stream when available; older servers can fall back to per-job status requests. Stream/media requests also require the header; paired credentials are rejected in query parameters.
 
 The account login and refresh protocol is unchanged. Development mode cannot authorize paired devices or accept their credentials. Pairing responses, including authentication failures, use `Cache-Control: no-store`. Errors retain the existing `{error,code}` API envelope. Invalid credentials return 401, unauthorized credential kinds return 403, unavailable pairing codes return 404, conflicting pairing ownership returns 409 and rate limiting returns 429.
 

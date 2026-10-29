@@ -2,6 +2,8 @@
 
 Linux desktop client using Electrobun 2.0.4, Bun and bundled Chromium (CEF). It shares the Svelte frontend and Go API with the self-hosted edition.
 
+For a published package, use [Downloads](https://boxbox.radhey.dev/download/) and the [desktop installation guide](../docs/desktop.md). The desktop supports Linux x86_64; the ARM64 release is a server binary, not a desktop app.
+
 From the repository root:
 
 ```sh

@@ -1,3 +1,5 @@
+import desktopTemplate from "../assets/boxbox.desktop" with { type: "text" };
+import iconSource from "../../frontend/static/logo-boxbox-3d.svg" with { type: "text" };
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -22,11 +24,6 @@ const DESKTOP_MARKER = "X-BoxBox-Managed=true";
 const DEFAULT_SOURCE = resolve(
   import.meta.dir,
   "../build/stable-linux-x64/BoxBox",
-);
-const DESKTOP_TEMPLATE = resolve(import.meta.dir, "../assets/boxbox.desktop");
-const ICON_SOURCE = resolve(
-  import.meta.dir,
-  "../../frontend/static/logo-boxbox-3d.svg",
 );
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -82,10 +79,6 @@ export async function installDesktopIntegration(
 
   const bundle = await inspectBundle(source);
 
-  await stat(ICON_SOURCE).catch(() => {
-    throw new Error(`Missing icon asset: ${ICON_SOURCE}`);
-  });
-
   const applicationsDirectory = join(dataHome, "applications");
   // The Electrobun identifier already carries the .desktop suffix, so the
   // same string is both the desktop file ID and the installed file name.
@@ -104,8 +97,8 @@ export async function installDesktopIntegration(
   await inspectDesktopFile(desktopFile);
   await inspectWritableFile(iconFile);
 
-  const desktopEntry = await renderDesktopEntry(launcher);
-  const icon = await readFile(ICON_SOURCE);
+  const desktopEntry = renderDesktopEntry(launcher);
+  const icon = iconSource;
 
   await mkdir(dataHome, { recursive: true, mode: 0o755 });
   const stageRoot = await mkdtemp(join(dataHome, ".boxbox-stage-"));
@@ -495,8 +488,8 @@ async function inspectWritableFile(path: string): Promise<void> {
   }
 }
 
-async function renderDesktopEntry(launcher: string): Promise<string> {
-  const template = await readFile(DESKTOP_TEMPLATE, "utf8");
+function renderDesktopEntry(launcher: string): string {
+  const template = desktopTemplate;
   if (!template.includes("Exec=@EXEC@ %U")) {
     throw new Error("The desktop entry template is missing Exec=@EXEC@ %U");
   }
