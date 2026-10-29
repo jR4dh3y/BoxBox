@@ -4,6 +4,8 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { expandRuntimeArchive } from "../desktop/scripts/runtimeArchive";
 
+if (process.argv.length > 2) throw new Error("Usage: bun scripts/package-release.ts (always builds fresh output)");
+
 const root = resolve(import.meta.dir, "..");
 const version = (await readFile(join(root, "VERSION"), "utf8")).trim();
 if (!/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version))
