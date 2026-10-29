@@ -9,7 +9,7 @@ const root = resolve(import.meta.dir, "..");
 const version = (await readFile(join(root, "VERSION"), "utf8")).trim();
 const directory = join(root, "dist/release");
 const stage = await mkdtemp(join(root, "dist/release-check-"));
-async function run(command: string[], env = process.env): Promise<void> {
+async function run(command: [string, ...string[]], env = process.env): Promise<void> {
   const child = Bun.spawn(command, {
     env,
     stdout: "inherit",

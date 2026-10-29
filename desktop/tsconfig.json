@@ -17,5 +17,11 @@
       "electrobun/view": ["./.hutch/devkit/api/browser/index.ts"]
     }
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts", "*.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "*.config.ts",
+    "../scripts/package-release.ts",
+    "../scripts/check-release-package.ts"
+  ]
 }

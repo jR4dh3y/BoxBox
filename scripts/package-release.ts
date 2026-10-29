@@ -17,7 +17,7 @@ const output = join(root, "dist/release");
 await mkdir(output, { recursive: true });
 const stage = await mkdtemp(join(output, ".stage-"));
 async function run(
-  command: string[],
+  command: [string, ...string[]],
   cwd = root,
   env = process.env,
 ): Promise<void> {
@@ -29,10 +29,11 @@ async function run(
   });
   if ((await child.exited) !== 0) throw new Error(`${command[0]} failed`);
 }
-const git = (args: string[]) =>
-  new TextDecoder()
-    .decode(Bun.spawnSync(["git", ...args], { cwd: root }).stdout)
-    .trim();
+function git(args: string[]): string {
+  const result = Bun.spawnSync(["git", ...args], { cwd: root });
+  if (result.exitCode !== 0) throw new Error("Cannot read release source revision");
+  return new TextDecoder().decode(result.stdout).trim();
+}
 const sha = git(["rev-parse", "HEAD"]);
 const dirty = git(["status", "--porcelain"]).length > 0;
 if (expectedTag && dirty)
@@ -59,8 +60,7 @@ async function archive(name: string): Promise<void> {
   assets.push(file);
 }
 try {
-  if (!process.argv.includes("--skip-build"))
-    await run(["bun", "run", "build:desktop"]);
+  await run(["bun", "run", "build:desktop"]);
   const bundle = join(root, "desktop/build/stable-linux-x64/BoxBox");
   const metadata: unknown = JSON.parse(
     await readFile(join(bundle, "Resources/metadata.json"), "utf8"),

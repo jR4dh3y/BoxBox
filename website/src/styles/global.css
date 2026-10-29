@@ -20,6 +20,8 @@
 
 	/* Accent colors */
 	--color-accent: #4a9eff;
+	--color-accent-solid: #2f6fcf;
+	--color-accent-solid-hover: #2760b5;
 	--color-accent-hover: #345580;
 	--color-accent-muted: #2d4a6f;
 
