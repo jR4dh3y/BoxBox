@@ -77,6 +77,22 @@ describe('trash controller', () => {
 		assert.equal(controller.confirmingDelete, false);
 	});
 
+	test('unchecking a selection clears it and withdraws delete confirmation', async () => {
+		const client = trash([item()]);
+		const controller = new TrashController(client);
+		await controller.items.load();
+		controller.select('a');
+		await controller.run('delete');
+
+		controller.select(null);
+
+		assert.equal(controller.selected, null);
+		assert.equal(controller.confirmingDelete, false);
+		assert.equal(await controller.run('restore'), false);
+		assert.equal(await controller.run('delete'), false);
+		assert.deepEqual(client.calls, []);
+	});
+
 	test('does not restore an item without a recorded origin', async () => {
 		const client = trash([item({ canRestore: false })]);
 		const controller = new TrashController(client);

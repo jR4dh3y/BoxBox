@@ -9,9 +9,11 @@
 
 	let {
 		onChanged,
+		selectionCheckboxes = true,
 		toolbar
 	}: {
 		onChanged: () => void;
+		selectionCheckboxes?: boolean;
 		toolbar: Snippet<[Snippet, () => void, boolean, string]>;
 	} = $props();
 
@@ -44,6 +46,7 @@
 	}
 
 	function rowKeydown(event: KeyboardEvent, id: string): void {
+		if (event.target instanceof HTMLInputElement) return;
 		if (event.key === 'Enter' || event.key === ' ') {
 			event.preventDefault();
 			controller.select(id);
@@ -138,10 +141,37 @@
 						>
 							<td class="truncate px-3" title={item.name}>
 								<span class="inline-flex min-w-0 items-center gap-2 align-middle">
-									{#if item.isDir}<Folder size={16} class="shrink-0 text-folder" />{:else}<File
-											size={16}
-											class="shrink-0 text-text-secondary"
-										/>{/if}
+									<span
+										class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center"
+									>
+										<span
+											class="flex items-center justify-center {selectionCheckboxes
+												? selected
+													? 'invisible'
+													: 'group-hover/icon:invisible pointer-coarse:invisible'
+												: ''}"
+										>
+											{#if item.isDir}<Folder size={16} class="text-folder" />{:else}<File
+													size={16}
+													class="text-text-secondary"
+												/>{/if}
+										</span>
+										{#if selectionCheckboxes}
+											<input
+												type="checkbox"
+												checked={selected}
+												disabled={action.busy}
+												aria-label={`Select ${item.name}`}
+												class="absolute inset-0.5 m-0 cursor-pointer accent-accent {selected
+													? ''
+													: 'opacity-0 group-hover/icon:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100'}"
+												onclick={(event) => event.stopPropagation()}
+												ondblclick={(event) => event.stopPropagation()}
+												onchange={(event) =>
+													controller.select(event.currentTarget.checked ? item.id : null)}
+											/>
+										{/if}
+									</span>
 									<span class="truncate text-text-primary">{item.name}</span>
 								</span>
 							</td>

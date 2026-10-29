@@ -222,6 +222,7 @@
 				{#await import('./desktop/TrashPage.svelte') then { default: TrashPage }}<TrashPage
 						onChanged={() => void browseRequests.changed()}
 						toolbar={browserToolbar}
+						selectionCheckboxes={settings.selectionCheckboxes}
 					/>{/await}
 			{:else if data.isDeploymentRoot && data.deploymentError}
 				<div class="space-y-3 p-6 text-sm text-text-secondary">

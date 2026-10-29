@@ -38,7 +38,7 @@ export class TrashController {
 		return this.items.value?.find((item) => item.id === this.selectedId) ?? null;
 	}
 
-	select(id: string): void {
+	select(id: string | null): void {
 		if (this.action.busy) return;
 		this.selectedId = id;
 		this.confirmingDelete = false;
