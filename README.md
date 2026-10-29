@@ -20,6 +20,8 @@
 
 <p align="center">
   <a href="https://boxbox.radhey.dev">Website</a> ·
+  <a href="https://boxbox.radhey.dev/download/">Downloads</a> ·
+  <a href="https://boxbox.radhey.dev/docs/desktop/">Linux desktop</a> ·
   <a href="https://boxbox.radhey.dev/docs/quickstart/">Quick start</a> ·
   <a href="https://boxbox.radhey.dev/docs/">Docs</a> ·
   <a href="https://github.com/jR4dh3y/BoxBox/releases">Releases</a>

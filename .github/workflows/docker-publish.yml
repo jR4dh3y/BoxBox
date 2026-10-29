@@ -1,6 +1,7 @@
-name: Publish Release Docker Image
+name: Publish BoxBox Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -21,6 +22,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify release source
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: python3 .github/scripts/check_release.py
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -47,13 +54,21 @@ jobs:
         working-directory: frontend
         run: bun run build
 
+      - name: Set up Node for Astro
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+
       - name: Install website dependencies
         working-directory: website
         run: bun install --frozen-lockfile
 
-      - name: Build website
+      - name: Validate website
         working-directory: website
-        run: bun run build
+        run: |
+          bunx tsc --noEmit
+          bun test src/lib/releases.test.ts
+          bun run build
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -70,7 +85,8 @@ jobs:
 
   publish:
     name: Publish release image
-    needs: preflight
+    needs: [preflight, package]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
     steps:
@@ -117,3 +133,63 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  package:
+    name: Build downloadable packages
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-desktop
+      - name: Validate desktop
+        run: |
+          bun run check:desktop
+          bun run test:desktop
+      - name: Build release packages
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        run: bun scripts/package-release.ts
+      - name: Verify packaged installation and backend
+        run: bun scripts/check-release-package.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: boxbox-release
+          path: dist/release/*
+          retention-days: 14
+          if-no-files-found: error
+
+  github-release:
+    name: Publish GitHub downloads
+    needs: [package, publish]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: boxbox-release
+          path: release
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          notes="docs/releases/$RELEASE_TAG.md"
+          test -f "$notes"
+          if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft > /tmp/release-draft; then
+            test "$(cat /tmp/release-draft)" = true || { echo 'Published releases cannot be overwritten'; exit 1; }
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "BoxBox $RELEASE_TAG" --notes-file "$notes"
+          fi
+          gh release upload "$RELEASE_TAG" release/* --clobber
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --latest
+          fi

@@ -37,8 +37,8 @@ function hrefFor(slug: string) {
     </header>
 
     <div class="mx-auto grid max-w-360 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_240px]">
-      <aside class="border-b border-border-primary bg-[#101010] lg:sticky lg:top-[calc(3.5rem_+_1px)] lg:h-[calc(100vh_-_3.5rem_-_1px)] lg:border-b-0 lg:border-r lg:bg-transparent">
-        <nav class="px-4 py-4 lg:py-8" aria-label="Documentation">
+      <aside class="min-w-0 border-b border-border-primary bg-[#101010] lg:sticky lg:top-[calc(3.5rem_+_1px)] lg:h-[calc(100vh_-_3.5rem_-_1px)] lg:border-b-0 lg:border-r lg:bg-transparent">
+        <nav class="min-w-0 px-4 py-4 lg:py-8" aria-label="Documentation">
           <div class="mb-3 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">Documentation</div>
           <div class="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
             {nav.map((item) => (

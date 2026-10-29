@@ -1,0 +1,22 @@
+---
+import { ArrowUpRight, FolderOpen, PanelsTopLeft, Server } from '@lucide/astro';
+---
+<section id="desktop" class="relative z-10 mx-auto max-w-7xl px-5 py-20 md:py-28">
+  <div class="grid items-center gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
+    <div>
+      <h2 class="text-3xl font-bold leading-tight tracking-tight text-white md:text-5xl">Local files.<br />Remote servers.<br /><span class="text-accent">One workspace.</span></h2>
+      <p class="mt-6 max-w-lg text-lg leading-relaxed text-text-secondary">BoxBox Desktop brings your Linux machine and paired BoxBox servers into the same file manager. Work locally on its own, or connect your homelab over HTTPS.</p>
+      <ul class="my-7 space-y-4 text-sm leading-relaxed text-text-secondary">
+        <li class="flex gap-3"><FolderOpen class="mt-0.5 h-5 w-5 shrink-0 text-accent" /><span>Open files in installed apps, use your clipboard, and restore local files from Trash.</span></li>
+        <li class="flex gap-3"><PanelsTopLeft class="mt-0.5 h-5 w-5 shrink-0 text-accent" /><span>Browse with tabs and split panes. Copy between local folders and paired servers with live progress.</span></li>
+        <li class="flex gap-3"><Server class="mt-0.5 h-5 w-5 shrink-0 text-accent" /><span>Pair with a one-time code. Revoke device access from the server whenever you need to.</span></li>
+      </ul>
+      <a href="/download/#desktop" class="inline-flex min-h-11 items-center gap-2 font-semibold text-accent hover:underline">Get the Linux desktop app <ArrowUpRight class="h-5 w-5" /></a>
+      <p class="mt-3 text-xs leading-relaxed text-text-muted">Linux x86_64. macOS, Windows and ARM desktop builds are not currently supported.</p>
+    </div>
+    <figure class="min-w-0">
+      <img src="/media/boxbox-desktop.webp" width="1440" height="960" alt="BoxBox Desktop showing local and paired-server drives in a shared workspace" loading="lazy" decoding="async" class="w-full rounded-xl border border-border-primary shadow-2xl" />
+      <figcaption class="mt-4 text-sm leading-relaxed text-text-muted">The desktop app uses the same file browser as the server, with native local file actions.</figcaption>
+    </figure>
+  </div>
+</section>

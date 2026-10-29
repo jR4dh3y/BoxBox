@@ -3,6 +3,7 @@ import Layout from '../layouts/Layout.astro';
 import FeaturesBento from '../components/FeaturesBento.astro';
 import AppInterfaceDemo from '../components/AppInterfaceDemo.astro';
 import ReleaseBanner from '../components/ReleaseBanner.astro';
+import DesktopSection from '../components/DesktopSection.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 
 import {
@@ -10,7 +11,7 @@ import {
   GitFork
 } from '@lucide/astro';
 ---
-<Layout title="BoxBox | Self-hosted File Manager" description="Browse your Linux server, upload whole folders, edit code, and share files with controlled access. Self-hosted file management in your browser.">
+<Layout title="BoxBox | Self-hosted File Manager & Linux Desktop" description="Manage local files with the Linux desktop app, or self-host BoxBox to browse and share your server files. Pair both in one workspace.">
 <ReleaseBanner />
 <section class="relative min-h-screen flex flex-col items-center justify-start pt-20 pb-20 px-4 text-center overflow-hidden z-10">
 
@@ -19,13 +20,13 @@ import {
   </h1>
 
   <p class="text-lg md:text-2xl text-text-secondary max-w-3xl mx-auto mb-12 font-medium leading-relaxed animate-fade-in-up" style="animation-delay: 300ms;">
-    Browse your server like local folders. Upload whole directories, edit code, and share files or folders with the access you choose. All in your browser.
+    Browse your server like local folders. Upload whole directories, edit code, and share files or folders with the access you choose. Use the browser on your server, or the Linux desktop app for local files and paired servers.
   </p>
 
   <div class="flex flex-wrap items-center justify-center gap-4 animate-fade-in-up" style="animation-delay: 400ms;">
-    <a href="/docs/quickstart/" class="bg-accent hover:bg-accent-hover text-white font-semibold text-lg px-8 py-4 rounded-lg flex items-center gap-2 transition-all">
+    <a href="/download/" class="bg-accent hover:bg-accent-hover text-white font-semibold text-lg px-8 py-4 rounded-lg flex items-center gap-2 transition-all">
       <CirclePlay class="w-5 h-5" />
-      Install & Deploy
+      Get BoxBox
     </a>
     <a href="https://github.com/jR4dh3y/BoxBox" target="_blank" class="glass-panel text-text-primary hover:text-white font-semibold text-lg px-8 py-4 rounded-lg flex items-center gap-2 transition-all">
       <GitFork class="w-5 h-5" />
@@ -35,6 +36,8 @@ import {
 
   <AppInterfaceDemo />
 </section>
+
+<DesktopSection />
 
 <!-- Features Section -->
 <FeaturesBento />
