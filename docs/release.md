@@ -12,7 +12,7 @@ The next release adds the Linux x86_64 desktop app alongside the existing amd64/
 bun scripts/package-release.ts
 ```
 
-This builds the desktop runtime, a self-contained installer archive, both standalone server targets, `SHA256SUMS` and `release-manifest.json` under `dist/release/`. Use `--skip-build` only with an already-built stable bundle for the same VERSION. A local working-tree build is marked dirty in its manifest; official tag builds require clean source.
+This builds the desktop runtime, a self-contained installer archive, both standalone server targets, `SHA256SUMS` and `release-manifest.json` under `dist/release/`. Every packaging run builds the desktop from the current checkout so its manifest cannot describe a stale bundle. A local working-tree build is marked dirty in its manifest; official tag builds require clean source.
 
 For a public stable release, merge both the desktop PR and its website/release follow-up into master first. Set `VERSION` to the intended version, keep `docs/releases/v0.4.0.md` current, and tag the tested master commit with `v0.4.0`. The release workflow verifies that the tag matches VERSION and belongs to master. It validates the server, website, Docker build, desktop tests and artifacts before publishing. The GitHub release stays a draft while files upload, then becomes public only after the Docker image succeeds. Published releases are not overwritten.
 
