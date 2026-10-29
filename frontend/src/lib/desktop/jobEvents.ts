@@ -3,13 +3,13 @@ import { getJob, parseJob, parseJobs } from '#lib/api/jobs.js';
 import {
 	onRemoteServersChanged,
 	parseRemotePath,
-	sourceEndpoint,
 	type PathReference,
 	type RemoteServer
 } from '#lib/api/remotePaths.js';
+import { record, string } from '#lib/api/parse.js';
 import { jobsStore } from '#lib/stores/jobs.svelte.js';
 
-/** One source owns its stream, reconnects and recovery. Healthy streams never poll jobs. */
+/** Reconcile each source independently; healthy sources never poll jobs. */
 class JobStream {
 	private controller = new AbortController();
 	private retry: ReturnType<typeof setTimeout> | undefined;
@@ -17,13 +17,20 @@ class JobStream {
 	private stopped = false;
 	private attempts = 0;
 	private recovering = false;
+	private unavailable = new Set<string>();
+	private blocked = new Set<string>();
 	healthy = false;
 
 	constructor(
 		private readonly endpoint: string,
 		private readonly source: PathReference,
-		private readonly owns: (id: string) => boolean
+		private readonly owns: (id: string) => boolean,
+		private readonly sources?: Map<string, PathReference>
 	) {
+		if (sources) {
+			this.unavailable = new Set(sources.keys());
+			this.fallback = setInterval(() => void this.recover(), 2000);
+		}
 		void this.connect();
 	}
 
@@ -32,7 +39,16 @@ class JobStream {
 			return;
 		this.recovering = true;
 		try {
-			for (const job of jobsStore.active.filter((job) => this.owns(job.id))) {
+			for (const job of jobsStore.active.filter((job) => {
+				const source = parseRemotePath(job.id);
+				return (
+					this.owns(job.id) &&
+					(!this.sources ||
+						(source.kind === 'remote' &&
+							this.unavailable.has(source.serverId) &&
+							!this.blocked.has(source.serverId)))
+				);
+			})) {
 				try {
 					const current = await getJob(job.id, this.controller.signal);
 					if (!this.stopped) jobsStore.upsertJob(current);
@@ -53,10 +69,13 @@ class JobStream {
 		let unsupported = false;
 		let blocked = false;
 		try {
-			const response = await fetch(buildUrl(`${this.endpoint}/events`), {
-				signal: this.controller.signal,
-				credentials: 'same-origin'
-			});
+			const response = await fetch(
+				buildUrl(this.sources ? this.endpoint : `${this.endpoint}/events`),
+				{
+					signal: this.controller.signal,
+					credentials: 'same-origin'
+				}
+			);
 			unsupported = response.status === 404 || response.status === 405;
 			if (
 				!response.ok ||
@@ -96,13 +115,33 @@ class JobStream {
 							.filter((line) => line.startsWith('data: '))
 							.map((line) => line.slice(6))
 							.join('\n');
-						if (event === 'snapshot') {
+						if (event === 'source' && this.sources) {
+							const envelope = record(JSON.parse(data), 'remote job event');
+							const id = string(envelope.serverId, 'remote job source');
+							const source = this.sources.get(id);
+							if (!source) throw new Error('Unknown remote job source');
+							if (envelope.kind === 'snapshot') {
+								jobsStore.reconcileJobs(parseJobs(envelope.data, source), (jobId) =>
+									jobId.startsWith(`@remote/${id}/`)
+								);
+								this.unavailable.delete(id);
+								this.blocked.delete(id);
+								this.healthy = this.unavailable.size === 0;
+								this.attempts = 0;
+							} else if (envelope.kind === 'job') {
+								jobsStore.receiveJob(parseJob(envelope.data, source));
+							} else if (envelope.kind === 'unavailable' || envelope.kind === 'blocked') {
+								if (envelope.kind === 'blocked') this.blocked.add(id);
+								this.unavailable.add(id);
+								this.healthy = false;
+							} else throw new Error('Invalid remote job event');
+						} else if (event === 'snapshot' && !this.sources) {
 							jobsStore.reconcileJobs(parseJobs(JSON.parse(data), this.source), this.owns);
 							this.healthy = true;
 							this.attempts = 0;
 							clearInterval(this.fallback);
 							this.fallback = undefined;
-						} else if (event === 'job')
+						} else if (event === 'job' && !this.sources)
 							jobsStore.receiveJob(parseJob(JSON.parse(data), this.source));
 					}
 				}
@@ -114,9 +153,10 @@ class JobStream {
 		}
 		if (this.stopped) return;
 		this.healthy = false;
+		if (this.sources) this.unavailable = new Set(this.sources.keys());
 		if (blocked) return;
 		// Older deployments lack events. Discover their existing work once, then only check known active jobs.
-		if (unsupported) {
+		if (unsupported && !this.sources) {
 			try {
 				const snapshot = parseJobs(
 					await api.get<unknown>(this.endpoint, undefined, this.controller.signal),
@@ -162,29 +202,41 @@ export function connectDesktopJobs() {
 	);
 	start('transfers', '/desktop/transfers', local, (id) => id.startsWith('transfer-'));
 	let servers: RemoteServer[] = [];
+	let remotes: JobStream | undefined;
+	let sourceKey = '';
 	const syncServers = (next: RemoteServer[]) => {
+		for (const old of servers)
+			if (!next.some((server) => server.id === old.id))
+				jobsStore.reconcileJobs([], (id) => id.startsWith(`@remote/${old.id}/`));
 		servers = next;
-		for (const [id, stream] of streams)
-			if (id !== 'local' && id !== 'transfers' && !next.some((server) => server.id === id)) {
-				stream.close();
-				streams.delete(id);
-				jobsStore.reconcileJobs([], (jobId) => jobId.startsWith(`@remote/${id}/`));
-			}
-		for (const server of next)
-			if (!streams.has(server.id)) {
-				const source: PathReference = { kind: 'remote', serverId: server.id, path: '' };
-				start(server.id, sourceEndpoint(source, '/jobs'), source, (id) => {
-					const ref = parseRemotePath(id);
-					return ref.kind === 'remote' && ref.serverId === server.id;
-				});
-			}
+		const key = next
+			.map((server) => server.id)
+			.sort()
+			.join(',');
+		if (key === sourceKey) return;
+		sourceKey = key;
+		remotes?.close();
+		remotes = undefined;
+		if (!next.length) return;
+		const sources = new Map<string, PathReference>();
+		const query = new URLSearchParams();
+		for (const server of next) {
+			sources.set(server.id, { kind: 'remote', serverId: server.id, path: '' });
+			query.append('server', server.id);
+		}
+		remotes = new JobStream(
+			`/desktop/servers/events?${query}`,
+			local,
+			(id) => {
+				const source = parseRemotePath(id);
+				return source.kind === 'remote' && sources.has(source.serverId);
+			},
+			sources
+		);
 	};
 	const restartRemotes = (failedOnly = false) => {
-		for (const [id, stream] of streams)
-			if (id !== 'local' && id !== 'transfers' && (!failedOnly || !stream.healthy)) {
-				stream.close();
-				streams.delete(id);
-			}
+		if (failedOnly && remotes?.healthy) return;
+		sourceKey = '';
 		syncServers(servers);
 	};
 	const stopChanges = onRemoteServersChanged(() => restartRemotes());
@@ -197,6 +249,7 @@ export function connectDesktopJobs() {
 			stopChanges();
 			window.removeEventListener('focus', retryFailed);
 			window.removeEventListener('online', retryFailed);
+			remotes?.close();
 			for (const stream of streams.values()) stream.close();
 			streams.clear();
 			jobsStore.reset();

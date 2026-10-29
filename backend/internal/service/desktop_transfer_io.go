@@ -140,6 +140,9 @@ func (s *DesktopTransfers) scan(ctx context.Context, source, dest transferPath, 
 		return ErrDirectoryTooLarge
 	}
 	for _, child := range list.Items {
+		if strings.Contains(child.Name, "%") {
+			return ErrTransferFilename
+		}
 		if !validTransferChild(child.Name) {
 			return ErrRemoteUnavailable
 		}

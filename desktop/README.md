@@ -124,7 +124,8 @@ Local files offer native opening and Trash actions rather than server Share or D
 ### Live file-operation updates
 
 The workspace opens one authenticated event stream for local jobs, one for desktop
-transfers, and one per paired server. Each stream starts with a snapshot and then
+transfers, and one shared stream for all paired servers. Remote upstream streams
+are combined by the private backend so they cannot exhaust the browser connection pool. Each stream starts with a snapshot and then
 pushes job changes. Reconnecting reconciles missed changes; closing a workspace or
 removing a server closes its streams. Healthy streams do not poll job lists.
 
@@ -133,3 +134,5 @@ Servers built before `/api/v1/jobs/events` are supported through an initial job
 snapshot and checks of known active jobs only. Focusing the window retries those
 servers. Upgrade the server for live discovery of operations started by other
 clients. Directory and capacity reconciliation remains separate from job events.
+
+Cross-source transfers reject percent characters in selected paths and directory-entry names before creating any destination. The shared virtual-path resolver decodes URL escapes, so accepting those literal names could read a different sibling. Rename the affected entry before copying.

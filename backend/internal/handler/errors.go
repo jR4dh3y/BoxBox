@@ -57,6 +57,7 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrInvalidWallpaper, "Wallpaper must be a JPEG, PNG, GIF, or WebP image up to 20 MB with a valid display mode", model.ErrCodeValidationError, http.StatusBadRequest},
 
 	// Desktop server and gateway errors
+	{service.ErrTransferFilename, "Transfers cannot copy filenames containing percent characters", model.ErrCodeValidationError, http.StatusBadRequest},
 	{service.ErrDesktopServerNotFound, "Saved server not found", model.ErrCodeNotFound, http.StatusNotFound},
 	{service.ErrDesktopServerInput, "Invalid saved server input", model.ErrCodeValidationError, http.StatusBadRequest},
 	{service.ErrDesktopServerStorage, "Saved server storage unavailable", model.ErrCodeInternalError, http.StatusServiceUnavailable},

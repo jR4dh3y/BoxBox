@@ -369,3 +369,71 @@ func TestDesktopTransferRefusesExistingDestinationBeforeReading(t *testing.T) {
 		t.Fatal("destination changed")
 	}
 }
+
+func TestDesktopTransfersRejectPercentChildrenBeforeWriting(t *testing.T) {
+	for _, direction := range []string{"download", "upload"} {
+		for _, sibling := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/sibling=%v", direction, sibling), func(t *testing.T) {
+				f := newTransferFixture(t)
+				s, remote, local := transferService(t, f)
+				sourceRoot, destinationRoot := f.root, local
+				source, destination := remote+"/source", "files/copied"
+				if direction == "upload" {
+					sourceRoot, destinationRoot = local, f.root
+					source, destination = "files/source", remote+"/copied"
+				}
+				folder := filepath.Join(sourceRoot, "source", "nested")
+				if err := os.MkdirAll(folder, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(folder, "report%20.txt"), []byte("literal percent"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if sibling {
+					if err := os.WriteFile(filepath.Join(folder, "report .txt"), []byte("different sibling"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				job, err := s.Create(context.Background(), model.JobParams{Type: model.JobTypeCopy, SourcePath: source, DestPath: destination})
+				if err != nil {
+					t.Fatal(err)
+				}
+				failed := waitTransfer(t, s, job.ID, model.JobStateFailed)
+				if !strings.Contains(failed.Error, "percent") {
+					t.Fatalf("unhelpful error: %s", failed.Error)
+				}
+				if _, err := os.Stat(filepath.Join(destinationRoot, "copied")); !os.IsNotExist(err) {
+					t.Fatalf("destination created before rejecting ambiguous filename: %v", err)
+				}
+				if f.mutations.Load() != 0 {
+					t.Fatal("remote destination mutated during scan")
+				}
+				data, err := os.ReadFile(filepath.Join(folder, "report%20.txt"))
+				if err != nil || string(data) != "literal percent" {
+					t.Fatal("source changed")
+				}
+			})
+		}
+	}
+}
+
+func TestDesktopTransfersRejectPercentPathsAtHTTPBoundary(t *testing.T) {
+	f := newTransferFixture(t)
+	transfers, remote, _ := transferService(t, f)
+	router := chi.NewRouter()
+	handler.NewDesktopTransfersHandler(transfers).RegisterRoutes(router)
+	for _, params := range []model.JobParams{
+		{Type: model.JobTypeCopy, SourcePath: remote + "/report%20.txt", DestPath: "files/output"},
+		{Type: model.JobTypeCopy, SourcePath: remote + "/report", DestPath: "files/output%2520.txt"},
+	} {
+		body, _ := json.Marshal(params)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/transfers", bytes.NewReader(body)))
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "percent") {
+			t.Fatalf("unsafe transfer accepted: %d %s", response.Code, response.Body.String())
+		}
+	}
+	if len(transfers.List()) != 0 || f.mutations.Load() != 0 {
+		t.Fatal("rejected reference started a transfer")
+	}
+}

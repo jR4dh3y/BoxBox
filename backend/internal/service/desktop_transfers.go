@@ -14,11 +14,16 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 )
 
+var ErrTransferFilename = errors.New("transfers do not support percent characters in filenames")
+
 type transferPath struct{ server, path string }
 
 // Qualified references are consumed here, never by a local filesystem resolver.
 func parseTransferPath(value string) (transferPath, error) {
 	ref := transferPath{path: value}
+	if strings.Contains(value, "%") {
+		return ref, ErrTransferFilename
+	}
 	if value == "@remote" || strings.HasPrefix(value, "@remote/") {
 		parts := strings.SplitN(value, "/", 3)
 		if len(parts) != 3 {
@@ -241,6 +246,8 @@ func (s *DesktopTransfers) copyTree(ctx context.Context, t *desktopTransfer, sou
 }
 func transferErrorMessage(err error) string {
 	switch {
+	case errors.Is(err, ErrTransferFilename):
+		return "Cannot copy filenames containing percent characters; no destination was created"
 	case errors.Is(err, ErrPathExists):
 		return "Destination already exists"
 	case errors.Is(err, ErrRemoteAuthRequired):

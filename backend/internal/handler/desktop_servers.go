@@ -29,6 +29,7 @@ func (h *DesktopServersHandler) RegisterRoutes(r chi.Router) {
 			})
 		})
 		r.Get("/servers", h.List)
+		r.Get("/servers/events", h.Events)
 		r.Post("/servers", h.Create)
 		r.Post("/servers/open", h.Open)
 		r.Patch("/servers/{serverID}", h.Update)
