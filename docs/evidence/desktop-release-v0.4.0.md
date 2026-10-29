@@ -15,7 +15,8 @@ This follow-up is stacked on PR #182. It prepares the website, installation path
 | Installed backend | PASS | Private bootstrap establishes its cookie; authenticated file API and desktop HTML respond |
 | Release workflow | PASS static | Actionlint and seven Python tests; stable tags must match VERSION and belong to master; manual dispatch never publishes |
 | Website checks | PASS | TypeScript, three metadata tests and production Astro build; six browser availability/size combinations, zero page errors |
-| Desktop checks | PASS | TypeScript and 55 tests |
+| Desktop checks | PASS | TypeScript and 55 tests; CI installs FFmpeg and Poppler for the media fixtures |
+| Backend cancellation regression | PASS | Kernel pidfd exit notification replaces an immediate process snapshot; 100 repetitions, 20 race-enabled repetitions, full Go tests and vet |
 | Publication | NOT RUN | No public tag, GitHub release, Docker image publication or live website deployment performed locally |
 
 The website's Astro checker currently rejects the repository's existing TypeScript 7 dependency. Validation uses TypeScript plus the production build and rendered browser checks; this change does not downgrade the website toolchain.
