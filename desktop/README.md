@@ -12,6 +12,8 @@ bun run dev:desktop
 
 Go, Bun, Rust 1.88 or newer, `xdg-open`, GIO, GTK 3, WebKitGTK 4.1, Ayatana AppIndicator and librsvg must be installed. Native file clipboard support uses `wl-clipboard` on Wayland or `xclip` on X11. Publishing interoperable cut/copy formats also needs Python 3 with PyGObject and GTK 4; when unavailable, copy can use URI-list fallback and cut reports the missing capability. Install FFmpeg and Poppler (`ffmpeg` and `poppler-utils` on Debian/Ubuntu) for video/audio previews and PDF first pages. These optional media tools are discovered at runtime; missing tools leave the file icon. Electrobun downloads its pinned native SDK, Bun runtime and CEF on the first build. Its Linux native wrapper still links WebKitGTK even when CEF is selected; the app explicitly requires and renders with CEF.
 
+Linux builds allow CEF to use GPU compositing and rasterization. BoxBox removes Electrobun's default `disable-gpu` and `disable-gpu-compositing` flags; those defaults force wallpaper blur and hover repaints onto the CPU. Chromium still decides which graphics features the driver supports.
+
 `dev:desktop` builds the shared UI and Go binary before opening the desktop window. Restart it after changing the UI or backend; it does not start Vite or Air. The packaged app includes the backend and does not require Go or Bun on the destination machine.
 
 ```sh

@@ -219,6 +219,7 @@ describe('transport facade at HTTP boundary', () => {
 								device: '/dev/private',
 								mountPoint: '/secret',
 								totalBytes: 100,
+								fsType: 'ext4',
 								freeBytes: 50,
 								usedBytes: 50,
 								usedPct: 50,
@@ -376,6 +377,7 @@ describe('transport facade at HTTP boundary', () => {
 		assert.equal(remoteRoots.roots[0].path, ref('media'));
 		assert.equal(remoteRoots.roots[0].serverName, 'Home');
 		assert.equal(remoteStats.drives[0].path, ref('media'));
+		assert.equal(remoteStats.drives[0].fsType, 'ext4');
 		assert.equal(remoteStats.drives[0].device, undefined);
 		assert.equal(remoteStats.drives[0].mountPoint, undefined);
 	});

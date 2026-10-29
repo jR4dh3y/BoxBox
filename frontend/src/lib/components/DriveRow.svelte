@@ -20,6 +20,7 @@
 	let { drive, columns, compactMode = false, onOpen, onFolderHover }: Props = $props();
 
 	const name = useDriveName(() => drive);
+	const serverDetails = $derived([drive.serverName, drive.fsType].filter(Boolean).join(' · '));
 	const usageLevel = $derived(driveUsageLevel(drive.usedPct));
 	const rowClass = $derived(
 		`grid w-full ${columns} ${compactMode ? 'h-7' : 'h-8'} items-center border-b border-border-secondary text-left text-[13px]`
@@ -96,7 +97,7 @@
 				<!-- The device column carries the server when it has room. -->
 				<span
 					class="min-w-0 flex-1 basis-0 truncate text-xs text-text-muted @3xl:hidden"
-					title={drive.serverName}>{drive.serverName}</span
+					title={serverDetails}>{serverDetails}</span
 				>
 			{/if}
 			{#if drive.readOnly}

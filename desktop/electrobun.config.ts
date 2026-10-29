@@ -15,7 +15,15 @@ export default {
       "resources/boxbox-server": "boxbox-server",
       "resources/native": "native",
     },
-    linux: { bundleCEF: true, defaultRenderer: "cef" },
+    linux: {
+      bundleCEF: true,
+      defaultRenderer: "cef",
+      // Electrobun defaults to software rendering for VM compatibility.
+      chromiumFlags: {
+        "disable-gpu": false,
+        "disable-gpu-compositing": false,
+      },
+    },
     mac: { bundleCEF: true, defaultRenderer: "cef" },
     win: { bundleCEF: true, defaultRenderer: "cef" },
   },

@@ -181,11 +181,11 @@ function parseStats(
 			usedBytes: number(drive.usedBytes, 'used bytes'),
 			usedPct: number(drive.usedPct, 'used percentage'),
 			readOnly: boolean(drive.readOnly, 'read-only flag'),
+			fsType: optionalString(drive.fsType, 'filesystem'),
 			...(source.kind === 'remote'
 				? { label: name, serverName, serverIcon }
 				: {
 						device: optionalString(drive.device, 'device'),
-						fsType: optionalString(drive.fsType, 'filesystem'),
 						mountPoint: optionalString(drive.mountPoint, 'mount point')
 					})
 		};

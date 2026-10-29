@@ -25,6 +25,9 @@
 
 	const cardClass =
 		'relative flex w-full cursor-pointer flex-wrap items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary';
+	const details = $derived(
+		[drive.device || drive.serverName, drive.fsType].filter(Boolean).join(' · ')
+	);
 	const usageLevel = $derived(driveUsageLevel(drive.usedPct));
 
 	function handleClickOutside(e: MouseEvent): void {
@@ -73,12 +76,10 @@
 			{/if}
 		</div>
 		{#if drive.device || drive.serverName}
-			<div
-				class="truncate font-mono text-[11px] text-text-muted"
-				title={drive.device ? `${drive.device} (${drive.fsType || 'unknown'})` : drive.serverName}
-			>
-				{drive.device || drive.serverName}
-				{#if drive.device && drive.fsType}
+			<div class="truncate text-[11px] text-text-muted" title={details}>
+				{#if drive.device}<span class="font-mono">{drive.device}</span
+					>{:else}{drive.serverName}{/if}
+				{#if drive.fsType}
 					<span class="text-text-secondary"> · {drive.fsType}</span>
 				{/if}
 			</div>
