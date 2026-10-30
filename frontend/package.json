@@ -50,7 +50,7 @@
 		"@e965/xlsx": "^0.20.3",
 		"@material/material-color-utilities": "^0.4.0",
 		"@noble/hashes": "^2.4.0",
-		"@tanstack/svelte-query": "^6.3.2",
+		"@tanstack/svelte-query": "^6.3.5",
 		"docx-preview": "^0.4.1",
 		"lucide-svelte": "^1.0.1",
 		"monaco-editor": "^0.57.0",
