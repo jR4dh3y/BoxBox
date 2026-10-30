@@ -27,6 +27,8 @@
 
 BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provides a browser UI for mounted Linux paths, large file and folder uploads, previews, code editing, search, share links, and background file operations.
 
+`frontend/` contains the shared Svelte UI, `desktop/` the Linux Electrobun app with bundled CEF, and `website/` the marketing site. The Go API stays in `backend/`. Run `bun install --cwd frontend` and `bun install --cwd desktop`, then `bun run dev:desktop` for local filesystem access. Each package has its own lockfile. See [desktop setup and remote mode](desktop/README.md).
+
 <p align="center">
   <a href="https://boxbox.radhey.dev/media/boxbox-promo.mp4">
     <img src=".github/assets/promo-thumbnail.jpg" alt="Watch the 40-second BoxBox promo" width="860">

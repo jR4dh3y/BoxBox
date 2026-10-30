@@ -67,9 +67,6 @@ export {
 
 // Shares API
 export {
-	createShare,
-	listShares,
-	revokeShare,
 	deleteShareItem,
 	createShareFolder,
 	getShareInfo,

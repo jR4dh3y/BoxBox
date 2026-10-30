@@ -6,12 +6,12 @@ export function driveUsageLevel(usedPct: number): DriveUsageLevel {
 	return 'normal';
 }
 
-/** Bar colour for each level; a normal drive keeps the accent. */
+/** Bar colour for each level; fixed so usage stays readable under any accent. */
 export const DRIVE_USAGE_BAR = {
-	normal: 'default',
+	normal: 'info',
 	warning: 'warning',
 	danger: 'danger'
-} as const satisfies Record<DriveUsageLevel, 'default' | 'warning' | 'danger'>;
+} as const satisfies Record<DriveUsageLevel, 'info' | 'warning' | 'danger'>;
 
 export const DRIVE_USAGE_TEXT: Record<DriveUsageLevel, string> = {
 	normal: 'text-text-muted',
