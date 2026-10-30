@@ -9,7 +9,10 @@ const root = resolve(import.meta.dir, "..");
 const version = (await readFile(join(root, "VERSION"), "utf8")).trim();
 const directory = join(root, "dist/release");
 const stage = await mkdtemp(join(root, "dist/release-check-"));
-async function run(command: [string, ...string[]], env = process.env): Promise<void> {
+async function run(
+  command: [string, ...string[]],
+  env = process.env,
+): Promise<void> {
   const child = Bun.spawn(command, {
     env,
     stdout: "inherit",
@@ -94,29 +97,35 @@ try {
   );
   const previousHome = process.env.HOME;
   process.env.HOME = home;
-  const server = await startServer(
-    join(app, "Resources/app/boxbox-server"),
-    join(stage, "server-data"),
-  );
   try {
-    const bootstrap = await fetch(server.url, { redirect: "manual" });
-    assert.equal(bootstrap.status, 303);
-    const cookie = bootstrap.headers.get("set-cookie")?.split(";")[0];
-    assert.ok(cookie);
-    const response = await fetch(new URL("/api/v1/files", server.url), {
-      headers: { Cookie: cookie },
-    });
-    assert.equal(response.status, 200);
-    const page = await fetch(new URL("/", server.url), {
-      headers: { Cookie: cookie },
-    });
-    assert.match(await page.text(), /name="boxbox-desktop"/);
+    for (const [binary, data] of [
+      [join(app, "Resources/app/boxbox-server"), "installed-data"],
+      [join(stage, `boxbox-v${version}-linux-amd64/boxbox`), "standalone-data"],
+    ] satisfies [string, string][]) {
+      const server = await startServer(binary, join(stage, data));
+      try {
+        const bootstrap = await fetch(server.url, { redirect: "manual" });
+        assert.equal(bootstrap.status, 303);
+        const cookie = bootstrap.headers.get("set-cookie")?.split(";")[0];
+        assert.ok(cookie);
+        const response = await fetch(new URL("/api/v1/files", server.url), {
+          headers: { Cookie: cookie },
+        });
+        assert.equal(response.status, 200);
+        const page = await fetch(new URL("/", server.url), {
+          headers: { Cookie: cookie },
+        });
+        assert.equal(page.status, 200);
+        assert.match(await page.text(), /name="boxbox-desktop"/);
+      } finally {
+        await server.stop();
+      }
+    }
   } finally {
     process.env.HOME = previousHome;
-    await server.stop();
   }
   console.log(
-    "PASS: all package checksums; standalone installer; default handler unchanged; update preserves preferences; installed backend authenticates",
+    "PASS: all package checksums; standalone installer; default handler unchanged; update preserves preferences; installed and standalone backends authenticate and serve the embedded UI",
   );
 } finally {
   await rm(stage, { recursive: true, force: true });

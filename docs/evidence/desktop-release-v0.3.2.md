@@ -30,7 +30,7 @@ bun run check:desktop
 bun run test:desktop
 bun test website/src/lib/releases.test.ts
 python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
-cd website && bunx tsc --noEmit && bun run build
+(cd website && bunx tsc --noEmit && bun run build)
 # From the repository root:
 bun scripts/package-release.ts
 bun scripts/check-release-package.ts
@@ -41,3 +41,7 @@ Release archives are generated under `dist/release/` and are ignored by Git. `re
 ## Version correction
 
 The release target changed to v0.3.2. VERSION, release notes, installation and tagging instructions, and release metadata fixtures now use that version. The v0.4.0 package/runtime evidence above records the earlier build; it does not prove a rebuilt v0.3.2 archive. Rebuild packages before distribution. The landing page now uses a short announcement instead of the earlier desktop feature section.
+
+## Release review follow-up
+
+Release build jobs no longer persist checkout credentials or receive package write permission; only the image publishing job receives that permission. The cancellation test checks renderer shutdown before skipping child-exit observation on kernels or sandboxes without pidfd support. Release screenshots use the version tag. The archive checker now starts both the installed backend and extracted amd64 standalone binary, authenticates, and checks the embedded UI response; ARM remains architecture-checked only.

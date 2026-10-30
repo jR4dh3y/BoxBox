@@ -185,11 +185,13 @@ func TestDesktopThumbnailCancellationKillsMediaChildren(t *testing.T) {
 	if childPID == 0 {
 		t.Fatal("media child never started")
 	}
-	pidfd, err := unix.PidfdOpen(childPID, 0)
-	if err != nil {
-		t.Fatal(err)
+	pidfd, pidfdErr := unix.PidfdOpen(childPID, 0)
+	if pidfdErr != nil && !errors.Is(pidfdErr, unix.ENOSYS) && !errors.Is(pidfdErr, unix.EPERM) {
+		t.Fatal(pidfdErr)
 	}
-	defer unix.Close(pidfd)
+	if pidfdErr == nil {
+		defer unix.Close(pidfd)
+	}
 	cancel()
 	select {
 	case err := <-done:
@@ -198,6 +200,9 @@ func TestDesktopThumbnailCancellationKillsMediaChildren(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("renderer did not cancel")
+	}
+	if pidfdErr != nil {
+		t.Skipf("renderer cancelled; child exit observation unavailable: %v", pidfdErr)
 	}
 	// SIGKILL is asynchronous for descendants; observe exit instead of one /proc snapshot.
 	events := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
