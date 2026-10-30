@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseRelease } from "./releases";
-const prefix = "https://github.com/jR4dh3y/BoxBox/releases/download/v0.4.0/";
-const name = "boxbox-desktop-v0.4.0-linux-amd64.tar.gz";
+const prefix = "https://github.com/jR4dh3y/BoxBox/releases/download/v0.3.2/";
+const name = "boxbox-desktop-v0.3.2-linux-amd64.tar.gz";
 
 test("older server-only releases cannot advertise a desktop download", () => {
   assert.equal(
@@ -13,7 +13,7 @@ test("older server-only releases cannot advertise a desktop download", () => {
 });
 test("published desktop and checksums use exact assets from the same version", () => {
   const release = parseRelease({
-    tag_name: "v0.4.0",
+    tag_name: "v0.3.2",
     assets: [
       { name, browser_download_url: prefix + name, size: 200000000 },
       { name: "SHA256SUMS", browser_download_url: prefix + "SHA256SUMS" },
@@ -27,7 +27,7 @@ test("malformed releases and off-origin asset URLs are rejected", () => {
   assert.equal(parseRelease({ tag_name: "../../unsafe" }), null);
   assert.equal(
     parseRelease({
-      tag_name: "v0.4.0",
+      tag_name: "v0.3.2",
       assets: [
         { name, browser_download_url: "https://example.test/" + name, size: 1 },
       ],
@@ -36,7 +36,7 @@ test("malformed releases and off-origin asset URLs are rejected", () => {
   );
   assert.equal(
     parseRelease({
-      tag_name: "v0.4.0",
+      tag_name: "v0.3.2",
       assets: [{ name, browser_download_url: prefix + name, size: -1 }],
     })?.desktop,
     null,

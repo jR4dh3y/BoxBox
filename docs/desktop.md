@@ -20,12 +20,12 @@ Other glibc distributions need equivalent packages. Only the published Linux x86
 
 Open [Downloads](/download/) and choose the **desktop** package. If the latest release has no desktop asset yet, the page links to the source-build instructions instead. The standalone server tarballs are different downloads.
 
-For v0.4.0, download `boxbox-desktop-v0.4.0-linux-amd64.tar.gz` and `SHA256SUMS` from the same [GitHub release](https://github.com/jR4dh3y/BoxBox/releases). Verify before extracting:
+For v0.3.2, download `boxbox-desktop-v0.3.2-linux-amd64.tar.gz` and `SHA256SUMS` from the same [GitHub release](https://github.com/jR4dh3y/BoxBox/releases). Verify before extracting:
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
-tar -xzf boxbox-desktop-v0.4.0-linux-amd64.tar.gz
-cd boxbox-desktop-v0.4.0-linux-amd64
+tar -xzf boxbox-desktop-v0.3.2-linux-amd64.tar.gz
+cd boxbox-desktop-v0.3.2-linux-amd64
 ./install.sh
 ```
 
@@ -46,7 +46,7 @@ The app installs under `${XDG_DATA_HOME:-$HOME/.local/share}/boxbox`; preference
 
 To connect a server:
 
-1. Run a BoxBox server with the pairing API: v0.4.0 or newer, or a recent nightly containing it. Older public releases do not provide pairing.
+1. Run a BoxBox server with the pairing API: v0.3.2 or newer, or a recent nightly containing it. Older public releases do not provide pairing.
 2. Open the server in your browser over HTTPS with a trusted certificate. In **Settings → Account → Pair a desktop**, confirm your password and generate a single-use code.
 3. In the desktop app, open **Settings → Connections → Add server**, enter its HTTPS address and code, and pair it.
 
