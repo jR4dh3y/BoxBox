@@ -1,11 +1,11 @@
-# v0.4.0 desktop launch validation
+# v0.3.2 desktop launch validation
 
-This follow-up is stacked on PR #182. It prepares the website, installation path and release automation; it does not publish v0.4.0 or merge the desktop PR.
+This follow-up is stacked on PR #182. It prepares the website, installation path and release automation; it does not publish v0.3.2 or merge the desktop PR.
 
 | Surface | Result | Evidence |
 |---|---|---|
-| Landing page | PASS | Linux desktop section, actual rendered app preview, download entry point; 1440px and 390px Chromium |
-| Download availability | PASS | Desktop link hidden for v0.3.1 server-only metadata and API failure; correct v0.4.0 asset link for matching metadata |
+| Landing page | PASS | Compact desktop announcement and Download for Linux link before Get started; 1440px and 390px Chromium, no horizontal overflow |
+| Download availability | PASS | Desktop link hidden for v0.3.1 server-only metadata and API failure; correct v0.3.2 asset link for matching metadata (release parser tests rerun) |
 | Docs and navigation | PASS | Desktop and pairing guides reachable; long inline paths wrap on mobile without disabling code-block scrolling |
 | Release API | PASS | Typed metadata parsing rejects invalid tags and off-origin assets; existing public API cache retained |
 | Installer archive | PASS | Uses the included Bun runtime and embedded desktop/icon assets; installs into an isolated home with spaces |
@@ -37,3 +37,7 @@ bun scripts/check-release-package.ts
 ```
 
 Release archives are generated under `dist/release/` and are ignored by Git. `release-manifest.json` records the source revision and whether the checkout was dirty. Official version-tag builds reject a dirty checkout.
+
+## Version correction
+
+The release target changed to v0.3.2. VERSION, release notes, installation and tagging instructions, and release metadata fixtures now use that version. The v0.4.0 package/runtime evidence above records the earlier build; it does not prove a rebuilt v0.3.2 archive. Rebuild packages before distribution. The landing page now uses a short announcement instead of the earlier desktop feature section.
