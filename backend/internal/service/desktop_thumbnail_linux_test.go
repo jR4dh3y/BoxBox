@@ -10,10 +10,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
@@ -174,13 +175,22 @@ func TestDesktopThumbnailCancellationKillsMediaChildren(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if value, err := os.ReadFile(pidPath); err == nil {
-			childPID, _ = strconv.Atoi(string(value))
-			break
+			if pid, err := strconv.Atoi(string(value)); err == nil && pid > 0 {
+				childPID = pid
+				break
+			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	if childPID == 0 {
 		t.Fatal("media child never started")
+	}
+	pidfd, pidfdErr := unix.PidfdOpen(childPID, 0)
+	if pidfdErr != nil && !errors.Is(pidfdErr, unix.ENOSYS) && !errors.Is(pidfdErr, unix.EPERM) {
+		t.Fatal(pidfdErr)
+	}
+	if pidfdErr == nil {
+		defer unix.Close(pidfd)
 	}
 	cancel()
 	select {
@@ -191,11 +201,25 @@ func TestDesktopThumbnailCancellationKillsMediaChildren(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("renderer did not cancel")
 	}
-	if err := syscall.Kill(childPID, 0); err == nil {
-		stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(childPID), "stat"))
-		if err == nil && !strings.HasPrefix(strings.SplitN(string(stat), ") ", 2)[1], "Z ") {
+	if pidfdErr != nil {
+		t.Skipf("renderer cancelled; child exit observation unavailable: %v", pidfdErr)
+	}
+	// SIGKILL is asynchronous for descendants; observe exit instead of one /proc snapshot.
+	events := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		remaining := time.Until(deadline).Milliseconds()
+		if remaining <= 0 {
 			t.Fatal("cancelled renderer left its media child running")
 		}
+		n, err := unix.Poll(events, int(remaining))
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil || n != 1 || events[0].Revents&unix.POLLIN == 0 {
+			t.Fatalf("media child did not exit: events=%v, err=%v", events, err)
+		}
+		break
 	}
 }
 
