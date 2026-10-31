@@ -8,6 +8,7 @@ import {
   readFile,
   readdir,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -38,8 +39,10 @@ exit 23
 `,
       { mode: 0o755 },
     );
+    const command = join(stage, "boxbox");
+    await symlink(join(appdir, "AppRun"), command);
     const child = Bun.spawn(
-      [join(appdir, "AppRun"), "--select", "/folder with spaces/a;$.txt"],
+      [command, "--select", "/folder with spaces/a;$.txt"],
       {
         env: { ...process.env, TMPDIR: temporary },
         stdout: "pipe",

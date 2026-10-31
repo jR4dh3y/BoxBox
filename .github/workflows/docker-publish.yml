@@ -206,3 +206,13 @@ jobs:
     uses: ./.github/workflows/appimages.yml
     with:
       tag: ${{ github.ref_name }}
+
+  aur:
+    name: Publish AUR package
+    needs: github-release
+    if: ${{ !contains(github.ref_name, '-') }}
+    uses: ./.github/workflows/aur.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}

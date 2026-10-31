@@ -21,6 +21,9 @@ if (!tool)
   throw new Error(
     "APPIMAGETOOL must name the verified appimagetool executable",
   );
+const runtimeFile = process.env.APPIMAGE_RUNTIME;
+if (!runtimeFile)
+  throw new Error("APPIMAGE_RUNTIME must name the verified type2 runtime");
 const output = join(root, "dist/appimages");
 await mkdir(output, { recursive: true });
 const stage = await mkdtemp(join(output, ".stage-"));
@@ -102,6 +105,8 @@ try {
       resolve(tool),
       "--appimage-extract-and-run",
       "--no-appstream",
+      "--runtime-file",
+      resolve(runtimeFile),
       appdir,
       join(output, file),
     ],

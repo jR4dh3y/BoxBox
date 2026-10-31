@@ -4,7 +4,7 @@ BoxBox Desktop manages files on your Linux computer and on paired BoxBox servers
 
 ## Supported systems
 
-The desktop download targets **Linux x86_64 with glibc**, built on Ubuntu 24.04. It is not a Windows, macOS, Linux ARM or Alpine/musl desktop package. The server remains available for Linux amd64 and arm64.
+Desktop builds target **Linux with glibc**, built on Ubuntu 24.04. The original desktop archive supports x86_64; the AppImage workflow provides x86_64 and ARM64 builds. Windows, macOS, 32-bit ARM and Alpine/musl desktop packages are not provided. The server remains available for Linux amd64 and arm64.
 
 Install these runtime libraries on Ubuntu 24.04:
 
@@ -14,9 +14,17 @@ sudo apt install libgtk-3-0t64 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 li
 
 For clipboard integration on Wayland, install `wl-clipboard`; on X11, install `xclip`. Interoperable cut/copy also uses Python 3, PyGObject and GTK 4 (`python3-gi gir1.2-gtk-4.0`). Without them, file copy can fall back to URI lists, while cut reports the missing capability. FFmpeg and Poppler (`ffmpeg poppler-utils`) enable video/audio and PDF thumbnails; missing helpers leave file icons.
 
-Other glibc distributions need equivalent packages. Only the published Linux x86_64 target is offered; distro compatibility depends on those runtime libraries.
+Other glibc distributions need equivalent packages. Choose an asset for your architecture; distro compatibility depends on those runtime libraries.
 
 ## Download and install
+
+Arch Linux users can install the native desktop package from AUR after the GitHub publishing workflow completes:
+
+```bash
+paru -S boxbox-bin
+```
+
+The package uses the x86_64 desktop archive, installs a `boxbox` command and desktop entry, and updates through `paru`. It does not install an AppImage. Its launcher creates a temporary writable runtime for renderer settings and removes it after exit; allow space for an expanded Chromium bundle. Preferences and paired servers remain in the usual user data directory. Set the default file manager explicitly with `xdg-mime default io.boxbox.desktop inode/directory x-scheme-handler/file`.
 
 Open [Downloads](/download/) and choose the **desktop** package. If the latest release has no desktop asset yet, the page links to the source-build instructions instead. The standalone server tarballs are different downloads.
 
