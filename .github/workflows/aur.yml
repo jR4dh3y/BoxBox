@@ -53,8 +53,10 @@ jobs:
             useradd -m builder
             chown -R builder:builder /package
             cd /package
-            sudo -u builder makepkg --nodeps --noconfirm
             sudo -u builder makepkg --printsrcinfo > .SRCINFO
+            mapfile -t dependencies < <(sed -n "s/^[[:space:]]*depends = //p" .SRCINFO)
+            pacman -S --needed --noconfirm "${dependencies[@]}"
+            sudo -u builder makepkg --noconfirm
             status=0
             output=$(namcap PKGBUILD ./*.pkg.tar.zst 2>&1) || status=$?
             printf "%s\n" "$output"
