@@ -55,7 +55,12 @@ jobs:
             cd /package
             sudo -u builder makepkg --nodeps --noconfirm
             sudo -u builder makepkg --printsrcinfo > .SRCINFO
-            namcap PKGBUILD ./*.pkg.tar.zst
+            status=0
+            output=$(namcap PKGBUILD ./*.pkg.tar.zst 2>&1) || status=$?
+            printf "%s\n" "$output"
+            if (( status != 0 )) || grep -Eq "(^|[[:space:]])E:" <<< "$output"; then
+              exit 1
+            fi
           '
       - name: Publish package metadata to AUR
         env:
