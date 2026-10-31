@@ -283,3 +283,9 @@ git push origin v0.3.2-rc.1
 ```
 
 Set `VERSION` to `0.3.2-rc.1` and add matching release notes before creating that tag. It publishes `ghcr.io/jr4dh3y/boxbox:v0.3.2-rc.1` but does not update `latest`.
+
+## Desktop AppImages
+
+After GitHub downloads are published, the release workflow calls [Publish desktop AppImages](../.github/workflows/appimages.yml). Native Ubuntu 24.04 runners build x86_64 and ARM64 desktop AppImages and verify CEF launch, folder handoff and shutdown before uploading both architectures and their `.sha256` files. This job does not modify the GHCR images or existing archive checksums.
+
+For an existing release such as `v0.3.2`, manually run **Publish desktop AppImages** and provide that tag. Packaging tools come from the workflow revision; application code comes from the release tag. Uploads refuse to overwrite existing assets. If a run fails before uploading, fix the failure and rerun it. See the [desktop guide](desktop.md#appimage-builds) for runtime dependencies and launch instructions.

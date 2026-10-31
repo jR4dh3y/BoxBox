@@ -74,7 +74,18 @@ async function until(
 let primary: ReturnType<typeof launch> | undefined;
 let secondary: ReturnType<typeof launch> | undefined;
 try {
-  const installed = await installDesktopIntegration({ env });
+  const launcher =
+    process.argv[2] ?? (await installDesktopIntegration({ env })).launcher;
+  // Exercise startup with a rendering preference that requires writable metadata.
+  const preferences = join(
+    env.XDG_DATA_HOME,
+    "io.boxbox.desktop/stable/desktop",
+  );
+  await mkdir(preferences, { recursive: true });
+  await writeFile(
+    join(preferences, "preferences.json"),
+    '{"hardwareAcceleration":false}',
+  );
   const firstDirectory = join(fixture, "first");
   const secondDirectory = join(fixture, "second");
   await mkdir(firstDirectory);
@@ -84,7 +95,7 @@ try {
   await writeFile(firstFile, "first native launch");
   await writeFile(secondFile, "forwarded native launch");
 
-  const owner = launch(installed.launcher, firstFile);
+  const owner = launch(launcher, firstFile);
   primary = owner;
   await until(
     () => owner.output.includes(`/api/v1/files/list/root${firstDirectory}`),
@@ -94,7 +105,7 @@ try {
   assert.equal(owner.child.exitCode, null);
   assert.ok(owner.output.includes("CEF EVENT LOOP STARTED"));
 
-  const forwarded = launch(installed.launcher, secondFile);
+  const forwarded = launch(launcher, secondFile);
   secondary = forwarded;
   await until(
     () => forwarded.child.exitCode !== null,

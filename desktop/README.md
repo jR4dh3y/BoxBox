@@ -2,7 +2,7 @@
 
 Linux desktop client using Electrobun 2.0.4, Bun and bundled Chromium (CEF). It shares the Svelte frontend and Go API with the self-hosted edition.
 
-For a published package, use [Downloads](https://boxbox.radhey.dev/download/) and the [desktop installation guide](../docs/desktop.md). The desktop supports Linux x86_64; the ARM64 release is a server binary, not a desktop app.
+For a published package, use [Downloads](https://boxbox.radhey.dev/download/) and the [desktop installation guide](../docs/desktop.md). The original desktop archive supports Linux x86_64; ARM64 server archives do not contain a desktop app. The separate AppImage workflow adds native x86_64 and ARM64 desktop packages.
 
 From the repository root:
 
@@ -138,3 +138,7 @@ servers. Upgrade the server for live discovery of operations started by other
 clients. Directory and capacity reconciliation remains separate from job events.
 
 Cross-source transfers reject percent characters in selected paths and directory-entry names before creating any destination. The shared virtual-path resolver decodes URL escapes, so accepting those literal names could read a different sibling. Rename the affected entry before copying.
+
+## AppImage packaging
+
+The separate [AppImage workflow](../.github/workflows/appimages.yml) builds and checks native x86_64 and ARM64 packages, then attaches both to the GitHub release. It also supports manual backfills by release tag. See [AppImage builds](../docs/desktop.md#appimage-builds) for launch commands, host dependencies and temporary disk requirements. This does not add ARM64 archive installation support.

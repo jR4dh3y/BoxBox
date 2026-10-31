@@ -72,3 +72,21 @@ bun run install:desktop
 ```
 
 Source builds need Go, Bun and Rust in addition to the native build libraries. Use [Development](/docs/development/) for development commands and [the paired-client API](/docs/connect-api/) for the authorization contract.
+
+## AppImage builds
+
+The **Publish desktop AppImages** GitHub Actions workflow builds the desktop natively on Ubuntu 24.04 for x86_64 and ARM64. It attaches `boxbox-desktop-v<version>-x86_64.AppImage` and `boxbox-desktop-v<version>-aarch64.AppImage`, each with a `.sha256` file, after both builds and native launch checks pass. ARM64 is 64-bit ARM; 32-bit ARM is not supported.
+
+Download the AppImage and its checksum from the same GitHub release, then run:
+
+```sh
+sha256sum --check boxbox-desktop-v0.3.2-x86_64.AppImage.sha256
+chmod +x boxbox-desktop-v0.3.2-x86_64.AppImage
+./boxbox-desktop-v0.3.2-x86_64.AppImage
+```
+
+Use `aarch64` in both filenames on ARM64. The host still needs the GTK 3, WebKitGTK 4.1 and Ayatana AppIndicator libraries listed above. If FUSE is unavailable, use `./boxbox-desktop-v0.3.2-x86_64.AppImage --appimage-extract-and-run`.
+
+The launcher copies its runtime into a private temporary directory so renderer settings remain writable. Allow space for the expanded Chromium bundle and expect a copy on each launch. The copy is removed when the launcher exits. Preferences and paired servers remain in the normal BoxBox data directory. AppImages do not install desktop associations or change the default file manager. Close BoxBox before switching between an installed archive and an AppImage; both share the same app identity.
+
+Maintainers can run the workflow manually with an existing release tag to add AppImages to a previously published release. New published releases trigger it automatically. Existing release assets are never overwritten. This workflow is separate from the GHCR server images and the archive package workflow.
