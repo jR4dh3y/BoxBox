@@ -283,3 +283,15 @@ git push origin v0.3.2-rc.1
 ```
 
 Set `VERSION` to `0.3.2-rc.1` and add matching release notes before creating that tag. It publishes `ghcr.io/jr4dh3y/boxbox:v0.3.2-rc.1` but does not update `latest`.
+
+## Desktop AppImages
+
+After GitHub downloads are published, the release workflow calls [Publish desktop AppImages](../.github/workflows/appimages.yml). Native Ubuntu 24.04 runners build x86_64 and ARM64 desktop AppImages and verify CEF launch, folder handoff and shutdown before uploading both architectures and their `.sha256` files. This job does not modify the GHCR images or existing archive checksums.
+
+For an existing release such as `v0.3.2`, manually run **Publish desktop AppImages** and provide that tag. Packaging tools come from the workflow revision; application code comes from the release tag. Uploads refuse to overwrite existing assets. If a run fails before uploading, fix the failure and rerun it. See the [desktop guide](desktop.md#appimage-builds) for runtime dependencies and launch instructions.
+
+## AUR publishing
+
+Stable releases also call **Publish AUR package**, which generates `boxbox-bin` metadata from the published desktop archive and its SHA-256 checksum. GitHub Actions builds the package in an Arch Linux container, runs namcap, and pushes the packaging files to `aur.archlinux.org/boxbox-bin.git`. Packaging templates live in `packaging/aur/`; the launcher and desktop entry reuse the desktop sources. Only x86_64 is supported because the desktop archive is x86_64.
+
+The repository secret `AUR_SSH_PRIVATE_KEY` must contain a key authorized for the AUR maintainer account. The workflow uses an SSH agent and the pinned AUR host key; it does not commit credentials. Publishing occurs only through GitHub Actions. Use the workflow's manual tag input to publish an existing stable release such as `v0.3.2`. Prereleases do not update AUR. Install or update with `paru -S boxbox-bin`.

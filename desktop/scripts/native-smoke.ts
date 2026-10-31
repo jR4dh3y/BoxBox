@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installDesktopIntegration } from "./install";
@@ -44,6 +44,9 @@ function launch(executable: string, target: string) {
     get output() {
       return output;
     },
+    get applicationPid() {
+      return applicationPid;
+    },
     stop(signal: "SIGTERM" | "SIGKILL" = "SIGTERM") {
       if (child.exitCode !== null) return;
       if (applicationPid !== undefined) {
@@ -74,7 +77,18 @@ async function until(
 let primary: ReturnType<typeof launch> | undefined;
 let secondary: ReturnType<typeof launch> | undefined;
 try {
-  const installed = await installDesktopIntegration({ env });
+  const launcher =
+    process.argv[2] ?? (await installDesktopIntegration({ env })).launcher;
+  // Exercise startup with a rendering preference that requires writable metadata.
+  const preferences = join(
+    env.XDG_DATA_HOME,
+    "io.boxbox.desktop/stable/desktop",
+  );
+  await mkdir(preferences, { recursive: true });
+  await writeFile(
+    join(preferences, "preferences.json"),
+    '{"hardwareAcceleration":false}',
+  );
   const firstDirectory = join(fixture, "first");
   const secondDirectory = join(fixture, "second");
   await mkdir(firstDirectory);
@@ -84,7 +98,7 @@ try {
   await writeFile(firstFile, "first native launch");
   await writeFile(secondFile, "forwarded native launch");
 
-  const owner = launch(installed.launcher, firstFile);
+  const owner = launch(launcher, firstFile);
   primary = owner;
   await until(
     () => owner.output.includes(`/api/v1/files/list/root${firstDirectory}`),
@@ -93,8 +107,20 @@ try {
   );
   assert.equal(owner.child.exitCode, null);
   assert.ok(owner.output.includes("CEF EVENT LOOP STARTED"));
+  assert.ok(
+    owner.applicationPid,
+    "The native launcher reported an application PID",
+  );
+  const environment = await readFile(
+    `/proc/${owner.applicationPid}/environ`,
+    "utf8",
+  );
+  assert.ok(
+    environment.split("\0").includes("BOXBOX_HARDWARE_ACCELERATION=false"),
+    "The saved rendering preference reaches the running application",
+  );
 
-  const forwarded = launch(installed.launcher, secondFile);
+  const forwarded = launch(launcher, secondFile);
   secondary = forwarded;
   await until(
     () => forwarded.child.exitCode !== null,

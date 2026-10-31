@@ -22,6 +22,7 @@
     "scripts/**/*.ts",
     "*.config.ts",
     "../scripts/package-release.ts",
+    "../scripts/package-appimage.ts",
     "../scripts/check-release-package.ts"
   ]
 }
