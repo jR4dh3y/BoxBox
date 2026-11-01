@@ -82,6 +82,28 @@ func TestChooserCancelDirectoryAndSaveFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestChooserFiltersUseSelectedSymlinkName(t *testing.T) {
+	c, root := chooserFixture(t)
+	if err := os.WriteFile(filepath.Join(root, "data.bin"), []byte("text"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for alias, target := range map[string]string{"photo.txt": "data.bin", "photo.bin": "Report.txt"} {
+		if err := os.Symlink(target, filepath.Join(root, alias)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request, result := c.Begin(ChooserRequest{Kind: "open", Filters: []ChooserFilter{{Rules: []ChooserRule{{Kind: 0, Value: "*.txt"}}}}})
+	if err := c.Select(context.Background(), request.ID, ChooserSelection{Paths: []string{"fixture/photo.bin"}}); !errors.Is(err, ErrInvalidOperation) {
+		t.Fatalf("nonmatching alias accepted: %v", err)
+	}
+	if err := c.Select(context.Background(), request.ID, ChooserSelection{Paths: []string{"fixture/photo.txt"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-result; got.Code != 0 || len(got.URIs) != 1 {
+		t.Fatalf("result %#v", got)
+	}
+}
 func TestPortalOptionDecoding(t *testing.T) {
 	c, root := chooserFixture(t)
 	p := chooserPortal{chooser: c}

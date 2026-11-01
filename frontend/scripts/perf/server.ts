@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,7 +24,10 @@ export function createDirectoryFixture() {
 	const mount = join(root, 'mount');
 	mkdirSync(mount, { mode: 0o700 });
 	for (let index = 0; index < 10_000; index++) {
-		writeFileSync(join(mount, `File-${String(index).padStart(5, '0')}.txt`), 'fixture\n');
+		const file = join(mount, `File-${String(index).padStart(5, '0')}.txt`);
+		writeFileSync(file, 'fixture\n');
+		// Equal timestamps make natural-name ties deterministic for both default sorts.
+		utimesSync(file, 1_700_000_000, 1_700_000_000);
 	}
 	return { root, mount, dispose: () => rmSync(root, { recursive: true, force: true }) };
 }

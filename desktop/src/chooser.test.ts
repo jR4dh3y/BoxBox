@@ -46,3 +46,34 @@ test("invalid chooser bootstrap fails before polling", async () => {
     ),
   ).rejects.toThrow("Invalid chooser bootstrap");
 });
+
+test("failed window creation retries the same chooser revision", async () => {
+  const known: string[] = [];
+  const id = "b".repeat(32);
+  const controller = new AbortController();
+  let updates = 0;
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(request) {
+      known.push(new URL(request.url).searchParams.get("known") ?? "");
+      if (known.length === 3) controller.abort();
+      return Response.json([{ id }]);
+    },
+  });
+  try {
+    await watchChoosers(
+      `${server.url}_desktop?token=${"a".repeat(64)}`,
+      AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]),
+      () => {
+        updates++;
+        if (updates === 1) throw new Error("window unavailable");
+      },
+    );
+    expect(known).toEqual(["", "", id]);
+    expect(updates).toBe(2);
+  } finally {
+    controller.abort();
+    server.stop(true);
+  }
+});

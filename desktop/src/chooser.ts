@@ -32,10 +32,12 @@ export async function watchChoosers(
         }
         return item.id;
       });
-      known = ids.sort().join(",");
+      ids.sort();
       update(ids);
+      known = ids.join(",");
     } catch {
       if (signal.aborted) return;
+      console.error("File chooser poll or window update failed; retrying.");
       // A transient server failure must not strand later portal requests.
       await new Promise<void>((resolve) => {
         const done = () => {

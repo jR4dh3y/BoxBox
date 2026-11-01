@@ -206,7 +206,7 @@ func (c *DesktopChooser) Select(ctx context.Context, id string, selection Choose
 					return ErrNotFile
 				}
 				if result.Filter != nil {
-					matches, err := c.matches(*result.Filter, info.Name(), mount, resolved)
+					matches, err := c.matches(*result.Filter, filepath.Base(path), mount, resolved)
 					if err != nil {
 						return err
 					}
