@@ -61,7 +61,7 @@ try {
 		root,
 		root,
 		'cache-ownership',
-		[other]
+		{ additionalUsers: [other] }
 	);
 	try {
 		const browser = await chromium.launch({ headless: true });

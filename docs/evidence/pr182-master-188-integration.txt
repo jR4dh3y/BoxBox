@@ -1,0 +1,81 @@
+PR #182 master integration, 2026-10-25
+
+Desktop parent: 0af37c068a4916d0c0334063bdeaef243b053eb7
+Integrated master: 724a9a21c119b394e767c02bb1197cd6073b02fe
+Worktree: /home/radhey/.t3/worktrees/BoxBox/t3-a2797d99
+PR: https://github.com/jR4dh3y/BoxBox/pull/182 (keep open and unmerged)
+
+Conflict resolutions, reviewed against both parents:
+- backend/internal/service/job.go: retain desktop job locking and exclusive
+  destination handling plus master's writable-path checks at creation and
+  revalidation. Virtual paths still use mounts.resolve; resolved-path confinement
+  helpers remain in place.
+- frontend/perf-budget.json: keep 268288, the smaller parent ceiling.
+- frontend/scripts/perf/budget.json: keep master's 283648 byte ceiling and
+  desktop's 32-row ceiling; runtime uses min(283648, 268288). No ceiling raised.
+- frontend/scripts/perf/server.ts: options object supports writable paste fixtures
+  and additional wallpaper-test accounts. Update every affected caller.
+- frontend/src/lib/api/client.ts: retain desktop transport/auth behavior and
+  no-content responses; share apiFetch with master's binary wallpaper endpoints.
+- frontend/src/lib/components/settings/SettingsPage.svelte: combine desktop
+  controls/private wallpaper storage with master's account/session/page ownership,
+  durable apply-time intent, draft refresh, cancellation and publication IDs.
+- frontend/src/lib/stores/auth.svelte.ts: initialize account preferences before
+  authenticated layout work; reset both browse requests and wallpaper/settings
+  sessions on logout/expiry. Keep the lazy remote-query reset bridge.
+- frontend/src/lib/stores/settings.svelte.ts: retain account-scoped web settings,
+  memory updates on storage failure, revision/session guards and desktop private
+  preferences/migration. Desktop persistence is lazy and session-bound.
+- frontend/src/lib/utils/wallpaperSync.ts: preserve authoritative login restore
+  (including remote deletion) and the shared cancellable publication queue.
+  Settings-only publication and image restore/cache work load lazily. Reference
+  parsing stays small; IndexedDB helpers load only when needed.
+- frontend/src/routes/settings/+page.svelte: keep the desktop lazy Settings route
+  and load-error recovery; integrated behavior lives in SettingsPage.
+- Layout keeps one browse lifecycle/job-completion owner and starts web wallpaper
+  restoration even when there is no local image; local desktop bypasses web sync.
+- Regenerated root bun.lock includes master's fake-indexeddb test dependency.
+  Wallpaper picker verification uses the actual desktop-branch label This Server.
+
+Validation passed on the integrated source:
+- Go vet ./... and go test -race ./...; focused read-only/mount/job/wallpaper tests.
+- Frontend check: zero errors/warnings; lint (Prettier and ESLint); perf:check.
+- Frontend tests: 272 pass, 0 fail, 42 files.
+- Desktop check (Electrobun prepare and tsc): pass in the temporary build copy.
+- Desktop tests: 40 pass, 0 fail, 161 assertions.
+- Svelte autofixer: no issues for integrated layout and SettingsPage. Suggestions
+  concern existing imperative DOM effects and the untracked settings draft sync.
+- Embedded frontend/Go production build and static bundle gate: pass.
+- Full browser gate: all 20 samples pass, plus folder/grid/selection, lazy-load
+  recovery, shared ownership, desktop persistence/watch, navigation and paste-race
+  flows. Fixture cleanup and all pre-existing assertions remain enabled.
+- Desktop TLS connectivity: 3000ms job polling completes and refreshes once;
+  offline loopback startup/navigation/search/catalog work; qualified remote and
+  web offline waits resume online.
+- Real Go-server wallpaper flows: 39 pass (9 settings, 5 lifecycle, 7 picker,
+  12 publication, 1 mounted server-file, 5 cache-ownership scenarios).
+- Multi-device/account sync script: all 7 checks pass; exact restored image hash,
+  account-owned cache reference, reload without another image download, logout,
+  shared-browser isolation and returning account; zero page errors.
+
+Performance evidence:
+- Initial integrated browser attempt: 272550 startup bytes, 10 scripts (failed).
+- Final: 268280 startup bytes, 9 scripts; 1 listing, 1 refresh, 29 rows in every
+  sample. Ceiling remains 268288: 8 bytes of runtime startup headroom.
+- Static bundle: 248334 raw bytes / 88786 gzip bytes, ceiling 268288 raw bytes.
+- Advisory files-visible medians (5 samples each): local cold 158ms, local warm
+  123ms, slow cold 1434ms, slow warm 754ms. Wall time is not the merge gate.
+
+Execution limits and recovered interruptions:
+- The host restarted during an earlier browser run. Recreated the temporary build
+  from this checkout and reran interrupted checks. Current source matches that copy.
+- Electrobun prepare failed with NoSpaceLeft in the worktree. The identical desktop
+  source passes prepare/tsc in /tmp/pr182-integrated-build; no source workaround.
+- Earlier byte-budget attempts and a stale picker-label check failed; source
+  splitting and the correct UI locator fixed them without weakening assertions.
+- Physical CEF/native clipboard/drag interactions were not rerun. Browser/native
+  integration fixtures do not substitute for those physical interactions.
+- Parent owns new-head CI/review monitoring; this task does not watch or merge PRs.
+
+Detailed local logs: perf-results/master-188/ (ignored).
+Production browser artifacts: /tmp/pr182-integrated-build/perf-results/.

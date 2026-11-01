@@ -189,6 +189,13 @@ jobs:
         working-directory: website
         run: bun install --frozen-lockfile
 
+      - name: Test release metadata
+        run: bun test website/src/lib/releases.test.ts
+
+      - name: Check website TypeScript
+        working-directory: website
+        run: bunx tsc --noEmit
+
       - name: Build website
         working-directory: website
         run: bun run build
@@ -215,3 +222,26 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  desktop:
+    name: Desktop package validation
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.desktop == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/setup-desktop
+      - name: Check and test desktop
+        run: |
+          bun run check:desktop
+          bun run test:desktop
+      - name: Build and verify release packages
+        run: |
+          bun scripts/package-release.ts
+          bun scripts/check-release-package.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: desktop-release-preview
+          path: dist/release/*
+          retention-days: 7

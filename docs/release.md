@@ -2,6 +2,22 @@
 
 Use this workflow to keep stable releases and nightly builds in separate GHCR packages while still getting automatic nightly and branch images for testing.
 
+## v0.3.2 Desktop Release
+
+The next release adds the Linux x86_64 desktop app alongside the existing amd64/arm64 server packages. Check [Downloads](/download/) for published assets; the website does not offer a desktop link until a real release asset exists. See [Linux Desktop](/docs/desktop/) for dependencies and pairing.
+
+`VERSION` is the release source of truth and also sets the Electrobun app version. Build the full distribution locally with:
+
+```bash
+bun scripts/package-release.ts
+```
+
+This builds the desktop runtime, a self-contained installer archive, both standalone server targets, `SHA256SUMS` and `release-manifest.json` under `dist/release/`. Every packaging run builds the desktop from the current checkout so its manifest cannot describe a stale bundle. A local working-tree build is marked dirty in its manifest; official tag builds require clean source.
+
+For a public stable release, merge both the desktop PR and its website/release follow-up into master first. Set `VERSION` to the intended version, keep `docs/releases/v0.3.2.md` current, and tag the tested master commit with `v0.3.2`. The release workflow verifies that the tag matches VERSION and belongs to master. It validates the server, website, Docker build, desktop tests and artifacts before publishing. The GitHub release stays a draft while files upload, then becomes public only after the Docker image succeeds. Published releases are not overwritten.
+
+Manual workflow dispatch prepares CI artifacts without creating a public release or moving Docker `latest`. Only a version tag publishes. Publishing an unmerged desktop branch as stable is rejected.
+
 ## v0.3.1 Security Release
 
 `v0.3.1` fixes session invalidation and recovery for GHSA-jj9r-xc63-6c4p. All users must sign in again after upgrading.
@@ -244,9 +260,9 @@ When the tested change is merged into `master`, tag the release:
 
 ```bash
 git switch master
-git pull
-git tag v0.3.0
-git push origin v0.3.0
+git pull --ff-only
+git tag v0.3.2
+git push origin v0.3.2
 ```
 
 The release workflow runs the preflight again, publishes the version tags, and updates:
@@ -262,8 +278,20 @@ Use a new patch tag if you need a hotfix. Do not retag an already-published vers
 You do not need prerelease tags for normal testing because `test/*` branch images already cover that. Use a prerelease only if you want a named image for other people to test before a stable release:
 
 ```bash
-git tag v0.2.0-rc.1
-git push origin v0.2.0-rc.1
+git tag v0.3.2-rc.1
+git push origin v0.3.2-rc.1
 ```
 
-That publishes `ghcr.io/jr4dh3y/boxbox:v0.2.0-rc.1` but does not update `latest`.
+Set `VERSION` to `0.3.2-rc.1` and add matching release notes before creating that tag. It publishes `ghcr.io/jr4dh3y/boxbox:v0.3.2-rc.1` but does not update `latest`.
+
+## Desktop AppImages
+
+After GitHub downloads are published, the release workflow calls [Publish desktop AppImages](../.github/workflows/appimages.yml). Native Ubuntu 24.04 runners build x86_64 and ARM64 desktop AppImages and verify CEF launch, folder handoff and shutdown before uploading both architectures and their `.sha256` files. This job does not modify the GHCR images or existing archive checksums.
+
+For an existing release such as `v0.3.2`, manually run **Publish desktop AppImages** and provide that tag. Packaging tools come from the workflow revision; application code comes from the release tag. Uploads refuse to overwrite existing assets. If a run fails before uploading, fix the failure and rerun it. See the [desktop guide](desktop.md#appimage-builds) for runtime dependencies and launch instructions.
+
+## AUR publishing
+
+Stable releases also call **Publish AUR package**, which generates `boxbox-bin` metadata from the published desktop archive and its SHA-256 checksum. GitHub Actions builds the package in an Arch Linux container, runs namcap, and pushes the packaging files to `aur.archlinux.org/boxbox-bin.git`. Packaging templates live in `packaging/aur/`; the launcher and desktop entry reuse the desktop sources. Only x86_64 is supported because the desktop archive is x86_64.
+
+The repository secret `AUR_SSH_PRIVATE_KEY` must contain a key authorized for the AUR maintainer account. The workflow uses an SSH agent and the pinned AUR host key; it does not commit credentials. Publishing occurs only through GitHub Actions. Use the workflow's manual tag input to publish an existing stable release such as `v0.3.2`. Prereleases do not update AUR. Install or update with `paru -S boxbox-bin`.

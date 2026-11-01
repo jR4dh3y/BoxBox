@@ -4,6 +4,8 @@
 	 */
 	import {
 		ChevronDown,
+		ArrowUpFromLine,
+		Trash2,
 		Download,
 		FileText,
 		Folder,
@@ -16,11 +18,18 @@
 		Video,
 		X
 	} from 'lucide-svelte';
+	import DeploymentIcon from './desktop/DeploymentIcon.svelte';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import type { DesktopVolume, DesktopVolumeAction } from '#lib/api/desktopVolumes.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import type { MountPoint } from '#lib/api/files.js';
 
 	interface Props {
 		currentPath?: string;
+		volumes?: DesktopVolume[];
+		volumeBusy?: boolean;
+		onVolumeAction?: (volume: DesktopVolume, action: DesktopVolumeAction) => void;
+		onTrash?: () => void;
 		roots?: MountPoint[];
 		onNavigate?: (path: string) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
@@ -32,6 +41,10 @@
 
 	let {
 		currentPath = '',
+		volumes = [],
+		volumeBusy = false,
+		onVolumeAction,
+		onTrash,
 		roots = [],
 		onNavigate,
 		onFolderHover,
@@ -49,16 +62,26 @@
 	};
 
 	const drives = $derived([
-		{ name: 'This Server', path: '', icon: Server },
+		{
+			name: isLocalDesktop() ? 'This PC' : 'This Server',
+			path: '',
+			serverIcon: undefined,
+			icon: Server
+		},
 		...roots
 			.filter((root) => root.kind !== 'place')
-			.map((root) => ({ name: root.name, path: root.name, icon: HardDrive }))
+			.map((root) => ({
+				name: root.label ?? root.name,
+				path: root.name,
+				serverIcon: root.serverIcon,
+				icon: HardDrive
+			}))
 	]);
 	const places = $derived(
 		roots
 			.filter((root) => root.kind === 'place')
 			.map((root) => ({
-				name: root.name,
+				name: root.label ?? root.name,
 				path: root.name,
 				icon: PLACE_ICONS[root.name.toLowerCase()] ?? Folder
 			}))
@@ -129,7 +152,10 @@
 						onpointerenter={() => drive.path && onFolderHover?.(drive.path)}
 						onpointerleave={() => onFolderHover?.(null)}
 					>
-						<drive.icon size={16} class="shrink-0 opacity-80" />
+						{#if drive.serverIcon}<DeploymentIcon icon={drive.serverIcon} />{:else}<drive.icon
+								size={16}
+								class="shrink-0 opacity-80"
+							/>{/if}
 						<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{drive.name}</span>
 					</button>
 				{/each}
@@ -171,6 +197,37 @@
 			{/if}
 		</div>
 	{/if}
+
+	{#if volumes.length > 0}
+		<div class="border-b border-border-secondary py-2">
+			<p class="px-3 pb-1 text-[11px] font-medium text-text-secondary uppercase">Devices</p>
+			{#each volumes as volume (volume.id)}
+				<div class="flex items-center pr-2">
+					<button
+						type="button"
+						class={navItemClass}
+						disabled={volumeBusy || (!volume.browsePath && !volume.canMount)}
+						onclick={() =>
+							volume.mounted && volume.browsePath
+								? handleNavigate(volume.browsePath)
+								: onVolumeAction?.(volume, 'mount')}
+						><HardDrive size={16} /><span class="truncate">{volume.name}</span></button
+					>
+					{#if volume.canEject || volume.canUnmount}<button
+							type="button"
+							class="text-xs text-text-secondary"
+							disabled={volumeBusy}
+							aria-label="Eject {volume.name}"
+							onclick={() => onVolumeAction?.(volume, volume.canEject ? 'eject' : 'unmount')}
+							><ArrowUpFromLine size={14} /></button
+						>{/if}
+				</div>
+			{/each}
+		</div>
+	{/if}
+	{#if onTrash}<button type="button" class={navItemClass} onclick={onTrash}
+			><Trash2 size={16} />Trash</button
+		>{/if}
 
 	<!-- Favorites Section -->
 	<div class="border-b border-border-secondary">

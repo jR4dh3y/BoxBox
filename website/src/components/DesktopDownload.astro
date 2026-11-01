@@ -1,0 +1,41 @@
+---
+import { Download, ArrowUpRight } from '@lucide/astro';
+---
+<div id="desktop-download" class="space-y-4">
+  <p id="desktop-release-status" class="text-sm leading-relaxed text-text-secondary" role="status">Find published desktop packages on GitHub Releases, or follow the installation guide.</p>
+  <a id="desktop-release-download" hidden class="inline-flex items-center justify-center gap-2 rounded-lg bg-accent-solid px-6 py-3 font-semibold text-white transition-colors hover:bg-accent-solid-hover" href="/docs/desktop/">
+    <Download class="h-5 w-5" /> Download for Linux x86_64
+  </a>
+  <div class="flex flex-wrap gap-x-5 gap-y-3 text-sm">
+    <a href="/docs/desktop/" class="inline-flex items-center gap-1 text-accent hover:underline">Install, pair & update <ArrowUpRight class="h-4 w-4" /></a>
+    <a id="desktop-release-checksums" hidden href="https://github.com/jR4dh3y/BoxBox/releases" class="text-text-secondary hover:text-white hover:underline">SHA-256 checksums</a>
+    <a href="https://github.com/jR4dh3y/BoxBox/releases" class="text-text-secondary hover:text-white hover:underline">All releases</a>
+  </div>
+  <noscript><p class="text-sm text-text-secondary">Visit <a href="https://github.com/jR4dh3y/BoxBox/releases" class="text-accent underline">GitHub Releases</a> to check for a desktop package, or follow the source-build instructions.</p></noscript>
+</div>
+<script>
+  const status = document.getElementById('desktop-release-status');
+  const download = document.querySelector<HTMLAnchorElement>('#desktop-release-download');
+  const checksums = document.querySelector<HTMLAnchorElement>('#desktop-release-checksums');
+  if (status && download && checksums) {
+    status.textContent = 'Checking the latest desktop package…';
+    fetch('/api/releases.json').then(async response => {
+      if (!response.ok) throw new Error('Release service unavailable');
+      const release: unknown = await response.json();
+      if (typeof release !== 'object' || release === null || !('desktop' in release)) throw new Error('Invalid release');
+      const asset = release.desktop;
+      if (typeof asset !== 'object' || asset === null || !('url' in asset) || typeof asset.url !== 'string' || !/^https:\/\/github\.com\/jR4dh3y\/BoxBox\/releases\/download\/v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\/boxbox-desktop-v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-linux-amd64\.tar\.gz$/.test(asset.url)) {
+        status.textContent = 'The desktop package is not in the latest public release yet. You can build it from source using the installation guide.';
+        return;
+      }
+      download.href = asset.url; download.hidden = false;
+      status.textContent = 'Linux x86_64 desktop package available. Includes the app and its runtime; no Go, Bun or Docker installation needed.';
+      if ('checksumsUrl' in release && typeof release.checksumsUrl === 'string' && /^https:\/\/github\.com\/jR4dh3y\/BoxBox\/releases\/download\/v[\w.-]+\/SHA256SUMS$/.test(release.checksumsUrl)) {
+        checksums.href = release.checksumsUrl; checksums.hidden = false;
+      }
+    }).catch(() => { status.textContent = 'Release information is temporarily unavailable. Check GitHub Releases or follow the source-build guide.'; });
+  }
+</script>
+<style>
+  [hidden] { display: none !important; }
+</style>

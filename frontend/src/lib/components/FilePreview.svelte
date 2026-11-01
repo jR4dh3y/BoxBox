@@ -2,7 +2,17 @@
 	/**
 	 * FilePreview - Modal component for previewing files
 	 */
-	import { X, Download, Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import {
+		X,
+		Download,
+		ExternalLink,
+		Maximize2,
+		Minimize2,
+		ChevronLeft,
+		ChevronRight
+	} from 'lucide-svelte';
+	import { isNativePath, openDesktopFile } from '#lib/api/desktop.js';
+	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import type { FileInfo } from '#lib/api/files.js';
 	import { getPreviewUrl, getDownloadUrl, saveFileContent } from '#lib/api/files.js';
 	import { getPreviewType, type PreviewType } from '#lib/utils/fileTypes.js';
@@ -36,7 +46,9 @@
 	const previewType = $derived<PreviewType>(file ? getPreviewType(file.name) : 'unsupported');
 	const previewComponent = $derived(loadPreviewComponent(previewType));
 	const previewUrl = $derived(file ? getPreviewUrl(file.path) : '');
-	const downloadUrl = $derived(file ? getDownloadUrl(file.path) : '');
+	// A file on this computer opens in its native app; a browser download would only copy it.
+	const native = $derived(file ? isNativePath(file.path) : false);
+	const downloadUrl = $derived(file && !native ? getDownloadUrl(file.path) : '');
 	const currentIndex = $derived(file ? allFiles.findIndex((item) => item.path === file.path) : -1);
 	const hasPrevious = $derived(currentIndex > 0);
 	const hasNext = $derived(currentIndex >= 0 && currentIndex < allFiles.length - 1);
@@ -106,6 +118,13 @@
 		}
 	}
 
+	function openNatively() {
+		if (!file) return;
+		void openDesktopFile(file.path).catch((error: unknown) =>
+			toastStore.error(error instanceof Error ? error.message : 'Open failed')
+		);
+	}
+
 	const headerBtnClass =
 		'w-7 h-7 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:bg-surface-elevated hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-secondary';
 </script>
@@ -161,9 +180,20 @@
 					>
 						<ChevronRight size={16} />
 					</button>
-					<button type="button" class={headerBtnClass} onclick={handleDownload} title="Download">
-						<Download size={16} />
-					</button>
+					{#if native}
+						<button
+							type="button"
+							class={headerBtnClass}
+							onclick={openNatively}
+							title="Open in default application"
+						>
+							<ExternalLink size={16} />
+						</button>
+					{:else}
+						<button type="button" class={headerBtnClass} onclick={handleDownload} title="Download">
+							<Download size={16} />
+						</button>
+					{/if}
 					<button
 						type="button"
 						class={headerBtnClass}
@@ -209,10 +239,17 @@
 					{:else}
 						<div class="flex flex-col items-center gap-4 text-sm text-text-secondary">
 							<p>Preview not available for this file type</p>
-							<Button variant="primary" onclick={handleDownload}>
-								<Download size={16} />
-								Download File
-							</Button>
+							{#if native}
+								<Button variant="primary" onclick={openNatively}>
+									<ExternalLink size={16} />
+									Open in default application
+								</Button>
+							{:else}
+								<Button variant="primary" onclick={handleDownload}>
+									<Download size={16} />
+									Download File
+								</Button>
+							{/if}
 						</div>
 					{/if}
 				{/await}

@@ -59,7 +59,7 @@ try {
 		root,
 		root,
 		'picker',
-		['other']
+		{ additionalUsers: ['other'] }
 	));
 	const browser = (cleanupBrowser = await chromium.launch({ headless: true }));
 	for (const scenario of [
@@ -138,7 +138,7 @@ try {
 					assert.equal(await page.getByRole('button', { name: /child.svg/ }).count(), 0);
 					assert.equal(await page.getByRole('button', { name: 'folder', exact: true }).count(), 1);
 				} else if (scenario === 'root-back') {
-					await page.getByRole('button', { name: 'Server', exact: true }).click();
+					await page.getByRole('button', { name: 'This Server', exact: true }).click();
 					first.release();
 					await first.completed;
 					await page.getByRole('button', { name: /perf Read only/ }).waitFor();
