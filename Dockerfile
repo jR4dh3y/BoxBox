@@ -13,7 +13,7 @@
 # Static assets are architecture-independent, so this stage always runs on the
 # builder's native platform instead of emulating the target arch.
 # -----------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM oven/bun:1-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373 AS frontend-builder
+FROM --platform=$BUILDPLATFORM oven/bun:1-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS frontend-builder
 
 WORKDIR /app
 
@@ -58,7 +58,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
 # -----------------------------------------------------------------------------
 # Stage 3: Minimal Production Runtime
 # -----------------------------------------------------------------------------
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 
 WORKDIR /app
 
