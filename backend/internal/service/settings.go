@@ -20,6 +20,7 @@ type SettingsService interface {
 	SetWallpaper(username string, image []byte, display model.WallpaperDisplay, source string) (*model.WallpaperMeta, error)
 	SetWallpaperDisplay(username string, display model.WallpaperDisplay) (*model.WallpaperMeta, error)
 	DeleteWallpaper(username string) error
+	PruneWallpapers(remove func(username string) bool) error
 }
 
 type settingsService struct {

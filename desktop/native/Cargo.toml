@@ -1,0 +1,19 @@
+[package]
+name = "boxbox-thumbnail"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "ico", "qoi"] }
+fast_image_resize = { version = "=6.0.0", features = ["image"] }
+libc = "=0.2.191"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

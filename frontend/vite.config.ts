@@ -48,7 +48,7 @@ export default defineConfig({
 					groups: [
 						{
 							name: 'app',
-							test: /node_modules[\\/](?!@sveltejs[\\/]kit[\\/])|[\\/]src[\\/]lib[\\/]/,
+							test: /node_modules[\\/](?!\.bun[\\/]|@sveltejs[\\/]kit[\\/])|[\\/]src[\\/]lib[\\/]/,
 							tags: ['$initial']
 						}
 					]

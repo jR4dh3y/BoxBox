@@ -19,7 +19,7 @@ def affected_jobs(paths):
         if path.startswith("docs/"):
             jobs.add("website")
             continue
-        if path == ".github/workflows/ci.yml" or path.startswith(".github/scripts/"):
+        if path.startswith(".github/workflows/") or path.startswith(".github/scripts/"):
             return set(JOBS)
         if path in SHARED:
             jobs.update(("frontend", "website", "desktop", "docker"))
@@ -32,6 +32,8 @@ def affected_jobs(paths):
                 jobs.add("backend")
         elif path.startswith("website/"):
             jobs.add("website")
+        elif path.startswith(".github/actions/setup-desktop/"):
+            jobs.add("desktop")
         elif path.startswith("desktop/"):
             jobs.add("desktop")
         elif path in {"Dockerfile", ".dockerignore"} or path.startswith("docker-compose"):

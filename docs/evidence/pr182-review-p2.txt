@@ -1,0 +1,59 @@
+PR #182 P2 review fixes, 2026-10-25
+Base: e6d504273d0287eddd3747e4d29d2180b7a858ad
+Worktree: /home/radhey/.t3/worktrees/BoxBox/t3-a2797d99
+
+Validated findings:
+- PRRT_kwDOQxzOhc6wAw2S / discussion_r4370632178: the old embedded binary
+  fails the new character-by-character browser regression on the first slash:
+  actual root, expected /. Keep pathDraft and its display/caret offsets in typed
+  coordinates; convert only suggestions and submission. Preserve trailing slash
+  intent when converting / and ~/ for child lookups.
+- PRRT_kwDOQxzOhc6wAw2U / discussion_r4370632183: the old embedded binary
+  fails the new real-server regression: a completed late upload changes bytes
+  returned by the committed wallpaper URL after Settings unmounts.
+
+Wallpaper contract:
+- Uploads stage content-addressed immutable references; selecting a reference in
+  committed desktop preferences activates the image. Staging cannot replace the
+  bytes behind an earlier saved reference, even if server work outlives HTTP/page
+  cancellation. Existing saved unversioned URLs remain readable and unchanged.
+- Pass the page/session operation signal through uploads and migration. Existing
+  settings operation ownership still guards application/commit after staging.
+- Reuse the existing Go wallpaper validation, atomic writes and storage service;
+  new references are parsed at the frontend boundary. No new native bridge.
+- Retain immutable image files, including abandoned stages; automatic pruning is
+  outside this fix. No cleanup may remove bytes referenced by saved preferences.
+
+Regression coverage:
+- Disk-backed HTTP handler test recreates handlers/services for each request.
+  It commits image A, stages B, then checks preferences, A, B and legacy bytes;
+  malformed image IDs are rejected.
+- Browser test uses the actual desktop Go server. It holds an upload RESPONSE
+  only after route.fetch has completed the real server mutation, leaves Settings,
+  releases the response, and checks saved reference plus exact old image bytes.
+  Restarts the backend on a new origin and checks again. An explicit later Save
+  activates B while A remains readable.
+- Character-by-character browser test covers /tmp, ~/Downloads, ~/ and a real
+  fixture's absolute/file URL paths, and verifies real mount navigation.
+- Both fixtures are part of the existing full browser gate; all older fixture
+  assertions and cleanup remain enabled.
+
+Passed:
+- go vet ./...; go test ./... (including new handler persistence regression).
+- Frontend check (zero errors/warnings), lint, perf:check, 272 tests.
+- Desktop tests: 40 tests / 161 assertions.
+- Svelte autofixer: no issues in PathEditor and SettingsPage.
+- Embedded frontend/Go production build; static budget: 248334 raw / 88787 gzip.
+- Full real browser gate: 20 samples, all existing flows and both new regressions.
+- Startup remains 268280 / 268288 bytes, 9 scripts, 29 rendered rows,
+  1 listing and 1 refresh in every sample. No ceiling or assertion relaxed.
+- Advisory files-visible medians: local cold 155ms, warm 116ms; slow cold
+  1445ms, warm 760ms (five samples each; wall time is not a gate).
+
+Limits:
+- Physical CEF/native clipboard/drag interactions were not rerun. Real desktop
+  Go storage and browser cancellation/navigation were exercised.
+- Rust is allowed for measured future Bun-host CPU bottlenecks. These are
+  correctness fixes with no evidence justifying another build/bridge layer.
+- Logs: perf-results/review-p2/; production artifacts in
+  /tmp/pr182-integrated-build/perf-results/. Root user checkout untouched.

@@ -1,0 +1,23 @@
+name: Set up desktop build
+description: Install the Linux desktop build dependencies
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+      with:
+        go-version-file: backend/go.mod
+        cache-dependency-path: backend/go.sum
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.3
+    - name: Native libraries
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev pkg-config zstd ffmpeg poppler-utils
+        rustc --version
+    - name: Install workspace dependencies
+      shell: bash
+      run: |
+        bun install --cwd frontend --frozen-lockfile
+        bun install --cwd desktop --frozen-lockfile

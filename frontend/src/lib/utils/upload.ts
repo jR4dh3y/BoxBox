@@ -5,17 +5,18 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { getAccessToken } from '#lib/api/client.js';
+import { array, boolean, isRecord, optionalString, record, string } from '#lib/api/parse.js';
+import {
+	number,
+	parseRemotePath,
+	pathEndpoint,
+	qualifyPath,
+	sourceEndpoint
+} from '#lib/api/remotePaths.js';
 import { CONFIG } from '#lib/config.js';
 import { generateUploadId, getChunkCount } from './uploadIds';
 
 const DEFAULT_CHUNK_SIZE = CONFIG.upload.defaultChunkSize;
-
-// API base URL
-const API_BASE_URL = '/api/v1/stream';
-
-function encodeRoutePath(path: string): string {
-	return path.split('/').map(encodeURIComponent).join('/');
-}
 
 /**
  * Upload progress callback
@@ -73,6 +74,35 @@ interface UploadStatusResponse {
 	lastActivity: string;
 }
 
+function parseUploadResponse(value: unknown, path: string): UploadResponse {
+	const response = record(value, 'upload response');
+	const resultPath = optionalString(response.path, 'upload path');
+	return {
+		uploadId: string(response.uploadId, 'upload ID'),
+		chunkIndex: number(response.chunkIndex, 'chunk index'),
+		receivedChunks: number(response.receivedChunks, 'received chunks'),
+		totalChunks: number(response.totalChunks, 'total chunks'),
+		complete: boolean(response.complete, 'upload complete'),
+		...(resultPath ? { path: qualifyPath(parseRemotePath(path), resultPath) } : {})
+	};
+}
+
+function parseUploadStatus(value: unknown, path: string): UploadStatusResponse {
+	const response = record(value, 'upload status');
+	return {
+		uploadId: string(response.uploadId, 'upload ID'),
+		path: qualifyPath(parseRemotePath(path), string(response.path, 'upload path')),
+		totalChunks: number(response.totalChunks, 'total chunks'),
+		receivedChunks: number(response.receivedChunks, 'received chunks'),
+		missingChunks: array(response.missingChunks, 'missing chunks').map((chunk) =>
+			number(chunk, 'chunk index')
+		),
+		complete: boolean(response.complete, 'upload complete'),
+		createdAt: string(response.createdAt, 'created time'),
+		lastActivity: string(response.lastActivity, 'last activity')
+	};
+}
+
 /**
  * Calculate SHA-256 checksum of a file
  */
@@ -116,7 +146,7 @@ export function* splitFileIntoChunks(
 	file: File,
 	chunkSize: number = DEFAULT_CHUNK_SIZE
 ): Generator<{ index: number; blob: Blob; isLast: boolean }> {
-	const totalChunks = Math.ceil(file.size / chunkSize);
+	const totalChunks = getChunkCount(file.size, chunkSize);
 
 	for (let i = 0; i < totalChunks; i++) {
 		const start = i * chunkSize;
@@ -181,7 +211,7 @@ async function uploadChunk(
 			reject(new Error('Upload cancelled'));
 		};
 
-		xhr.open('POST', `${API_BASE_URL}/upload/${encodeRoutePath(path)}`);
+		xhr.open('POST', `/api/v1${pathEndpoint(path, '/stream/upload')}`);
 
 		for (const [key, value] of Object.entries(headers)) {
 			xhr.setRequestHeader(key, value);
@@ -199,8 +229,8 @@ async function uploadChunk(
 			if (xhr.status < 200 || xhr.status >= 300) {
 				let message = `Upload failed with status ${xhr.status}`;
 				try {
-					const errorData = JSON.parse(xhr.responseText) as { error?: string };
-					message = errorData.error || message;
+					const errorData: unknown = JSON.parse(xhr.responseText);
+					if (isRecord(errorData) && typeof errorData.error === 'string') message = errorData.error;
 				} catch {
 					// Keep the HTTP status message when the server response is not JSON.
 				}
@@ -209,7 +239,7 @@ async function uploadChunk(
 			}
 
 			try {
-				resolve(JSON.parse(xhr.responseText) as UploadResponse);
+				resolve(parseUploadResponse(JSON.parse(xhr.responseText), path));
 			} catch {
 				reject(new Error('Invalid upload response'));
 			}
@@ -237,7 +267,10 @@ async function uploadChunk(
 /**
  * Get upload status for resuming
  */
-export async function getUploadStatus(uploadId: string): Promise<UploadStatusResponse | null> {
+export async function getUploadStatus(
+	uploadId: string,
+	destinationPath = ''
+): Promise<UploadStatusResponse | null> {
 	const token = getAccessToken();
 	const headers: Record<string, string> = {};
 
@@ -247,7 +280,7 @@ export async function getUploadStatus(uploadId: string): Promise<UploadStatusRes
 
 	try {
 		const response = await fetch(
-			`${API_BASE_URL}/upload/status/?uploadId=${encodeURIComponent(uploadId)}`,
+			`/api/v1${sourceEndpoint(parseRemotePath(destinationPath), '/stream/upload/status/')}?uploadId=${encodeURIComponent(uploadId)}`,
 			{
 				method: 'GET',
 				headers
@@ -262,7 +295,7 @@ export async function getUploadStatus(uploadId: string): Promise<UploadStatusRes
 			throw new Error('Failed to get upload status');
 		}
 
-		return response.json();
+		return parseUploadStatus(await response.json(), destinationPath);
 	} catch {
 		return null;
 	}
@@ -334,7 +367,8 @@ export async function uploadFile(
 				signal,
 				(loaded) => {
 					progress.uploadedSize = Math.min(chunk.index * chunkSize + loaded, file.size);
-					progress.percentage = Math.round((progress.uploadedSize / file.size) * 100);
+					progress.percentage =
+						file.size === 0 ? 100 : Math.round((progress.uploadedSize / file.size) * 100);
 					reportProgress();
 				}
 			);
@@ -344,7 +378,8 @@ export async function uploadFile(
 			if (progress.uploadedSize > file.size) {
 				progress.uploadedSize = file.size;
 			}
-			progress.percentage = Math.round((progress.uploadedSize / file.size) * 100);
+			progress.percentage =
+				file.size === 0 ? 100 : Math.round((progress.uploadedSize / file.size) * 100);
 			reportProgress();
 
 			if (response.complete) {
@@ -356,11 +391,7 @@ export async function uploadFile(
 			}
 		}
 
-		// Should not reach here if upload completed successfully
-		progress.status = 'complete';
-		progress.percentage = 100;
-		reportProgress();
-		return { success: true, path: destinationPath };
+		throw new Error('The server did not confirm upload completion');
 	} catch (error) {
 		progress.status = 'error';
 		progress.error = error instanceof Error ? error.message : 'Upload failed';
@@ -381,7 +412,7 @@ export async function resumeUpload(
 	const { chunkSize = DEFAULT_CHUNK_SIZE, onProgress, signal } = options;
 
 	// Get current upload status
-	const status = await getUploadStatus(uploadId);
+	const status = await getUploadStatus(uploadId, destinationPath);
 
 	if (!status) {
 		// Session expired or not found, start fresh
@@ -454,7 +485,8 @@ export async function resumeUpload(
 						chunkSize
 					);
 					progress.uploadedSize = Math.min(baseUploadedSize + loaded, file.size);
-					progress.percentage = Math.round((progress.uploadedSize / file.size) * 100);
+					progress.percentage =
+						file.size === 0 ? 100 : Math.round((progress.uploadedSize / file.size) * 100);
 					reportProgress();
 				}
 			);
@@ -463,7 +495,8 @@ export async function resumeUpload(
 			missingChunks.delete(chunk.index);
 			const uploadedChunks = totalChunks - missingChunks.size;
 			progress.uploadedSize = calculateUploadedSize(uploadedChunks, file.size, chunkSize);
-			progress.percentage = Math.round((progress.uploadedSize / file.size) * 100);
+			progress.percentage =
+				file.size === 0 ? 100 : Math.round((progress.uploadedSize / file.size) * 100);
 			reportProgress();
 
 			if (response.complete) {
@@ -475,10 +508,7 @@ export async function resumeUpload(
 			}
 		}
 
-		progress.status = 'complete';
-		progress.percentage = 100;
-		reportProgress();
-		return { success: true, path: destinationPath };
+		throw new Error('The server did not confirm upload completion');
 	} catch (error) {
 		progress.status = 'error';
 		progress.error = error instanceof Error ? error.message : 'Upload failed';
