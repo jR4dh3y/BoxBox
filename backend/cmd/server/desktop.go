@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -32,6 +33,10 @@ func desktopThumbnails(files service.FileStreamer) (service.ThumbnailService, er
 }
 
 func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {
+	return desktopRoutesWithChooser(next, cfg, nil)
+}
+
+func desktopRoutesWithChooser(next http.Handler, cfg *model.ServerConfig, chooser *service.DesktopChooser) http.Handler {
 	watch := handler.DesktopWatch(service.NewDesktopWatcher(filesystem.NewOsFS(), cfg.MountPoints))
 	apps := handler.NewDesktopAppsHandler(service.NewDesktopAppsService(filesystem.NewOsFS(), cfg.MountPoints, nil))
 	clipboard := handler.NewDesktopClipboardHandler(service.NewDesktopClipboard(filesystem.NewOsFS(), cfg.MountPoints))
@@ -46,6 +51,9 @@ func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {
 	router := chi.NewRouter()
 	router.Route("/api/v1/desktop", func(r chi.Router) {
 		r.Get("/watch", watch)
+		if chooser != nil {
+			handler.RegisterDesktopChooser(r, chooser)
+		}
 		handler.RegisterDesktopPreferences(r, preferences, settings)
 		apps.RegisterRoutes(r)
 		clipboard.RegisterRoutes(r)
@@ -93,7 +101,7 @@ func desktopHandler(next http.Handler, address, token string) http.Handler {
 				SameSite: http.SameSiteStrictMode,
 			})
 			destination := "/"
-			if next, err := url.ParseRequestURI(r.URL.Query().Get("next")); err == nil && next.Path == "/browse" && !next.IsAbs() && next.Host == "" {
+			if next, err := url.ParseRequestURI(r.URL.Query().Get("next")); err == nil && (next.Path == "/browse" || next.Path == "/chooser") && !next.IsAbs() && next.Host == "" {
 				destination = next.String()
 			}
 			http.Redirect(w, r, destination, http.StatusSeeOther)
@@ -106,4 +114,14 @@ func desktopHandler(next http.Handler, address, token string) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func startDesktopChooser(ctx context.Context, cfg *model.ServerConfig) (*service.DesktopChooser, func()) {
+	chooser := service.NewDesktopChooser(filesystem.NewOsFS(), cfg.MountPoints)
+	close, err := chooser.StartPortal(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("File chooser portal unavailable")
+		return chooser, func() { chooser.Close() }
+	}
+	return chooser, close
 }

@@ -17,11 +17,23 @@ type desktopAppsTestService struct {
 	listPath      string
 	openPath      string
 	openAppID     string
+	defaultPath   string
+	defaultAppID  string
+	defaultError  error
 	terminalPath  string
 	listResult    service.DesktopAppsResult
 	listError     error
 	openWithError error
 	terminalError error
+}
+
+func (s *desktopAppsTestService) SetDefault(_ context.Context, path, appID string) error {
+	s.defaultPath, s.defaultAppID = path, appID
+	return s.defaultError
+}
+
+func (s *desktopAppsTestService) Icon(_ context.Context, appID string) (service.DesktopAppIcon, error) {
+	return service.DesktopAppIcon{PNG: []byte("png:" + appID)}, nil
 }
 
 func (s *desktopAppsTestService) Open(_ context.Context, path string) error {
@@ -80,6 +92,34 @@ func TestDesktopAppsHandlerRegistersDocumentedRoutes(t *testing.T) {
 	router.ServeHTTP(terminal, httptest.NewRequest(http.MethodPost, "/api/v1/desktop/terminal", strings.NewReader(`{"path":"home/notes.txt"}`)))
 	if terminal.Code != http.StatusOK || serviceFake.terminalPath != "home/notes.txt" {
 		t.Fatalf("POST /terminal status/path = %d/%q", terminal.Code, serviceFake.terminalPath)
+	}
+	setDefault := httptest.NewRecorder()
+	router.ServeHTTP(setDefault, httptest.NewRequest(http.MethodPost, "/api/v1/desktop/apps/default", strings.NewReader(`{"path":"home/notes.txt","appId":"viewer.desktop"}`)))
+	if setDefault.Code != http.StatusOK || serviceFake.defaultPath != "home/notes.txt" || serviceFake.defaultAppID != "viewer.desktop" {
+		t.Fatalf("default response = %d, path/app = %q/%q", setDefault.Code, serviceFake.defaultPath, serviceFake.defaultAppID)
+	}
+	icon := httptest.NewRecorder()
+	router.ServeHTTP(icon, httptest.NewRequest(http.MethodGet, "/api/v1/desktop/apps/icon?appId=viewer.desktop", nil))
+	if icon.Code != http.StatusOK || icon.Header().Get("Content-Type") != "image/png" || icon.Body.String() != "png:viewer.desktop" {
+		t.Fatalf("icon response = %d %s", icon.Code, icon.Body.String())
+	}
+}
+
+func TestDesktopDefaultValidationAndFailure(t *testing.T) {
+	fake := &desktopAppsTestService{defaultError: service.ErrDesktopDefaultFailed}
+	router := chi.NewRouter()
+	router.Route("/api/v1/desktop", NewDesktopAppsHandler(fake).RegisterRoutes)
+	for _, body := range []string{`{}`, `{"path":"home/a","appId":""}`, `{"path":"home/a","appId":"a.desktop","mimeType":"text/plain"}`} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/desktop/apps/default", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("accepted %s: %d", body, response.Code)
+		}
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/desktop/apps/default", strings.NewReader(`{"path":"home/a","appId":"a.desktop"}`)))
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "default application") {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }
 

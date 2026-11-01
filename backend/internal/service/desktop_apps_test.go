@@ -1,8 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,24 +23,32 @@ type desktopCommandCall struct {
 }
 
 type fakeDesktopCommandRunner struct {
-	output      []byte
-	outputError error
-	runOutput   []byte
-	runError    error
-	startError  error
-	paths       map[string]string
-	outputs     []desktopCommandCall
-	runs        []desktopCommandCall
-	starts      []desktopCommandCall
+	output        []byte
+	outputError   error
+	runOutput     []byte
+	runError      error
+	startError    error
+	paths         map[string]string
+	outputs       []desktopCommandCall
+	runs          []desktopCommandCall
+	starts        []desktopCommandCall
+	defaultID     string
+	ignoreDefault bool
 }
 
 func (r *fakeDesktopCommandRunner) Output(_ context.Context, name string, args ...string) ([]byte, error) {
 	r.outputs = append(r.outputs, desktopCommandCall{name: name, args: append([]string(nil), args...)})
+	if name == "gio" && len(args) == 2 && args[0] == "mime" {
+		return []byte("Default application for text/plain: " + r.defaultID + "\n"), r.outputError
+	}
 	return r.output, r.outputError
 }
 
 func (r *fakeDesktopCommandRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
 	r.runs = append(r.runs, desktopCommandCall{name: name, args: append([]string(nil), args...)})
+	if name == "gio" && len(args) == 3 && args[0] == "mime" && !r.ignoreDefault {
+		r.defaultID = args[2]
+	}
 	return r.runOutput, r.runError
 }
 
@@ -358,6 +369,136 @@ text/plain=hidden.desktop;
 func xdgApplications(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(os.Getenv("XDG_DATA_HOME"), "applications")
+}
+
+func TestDesktopSetDefaultValidatesFileAndInstalledApplication(t *testing.T) {
+	root, _ := setupDesktopAppFixture(t)
+	writeDesktopEntry(t, "other.desktop", "Name=Other\nExec=viewer %f\n")
+	runner := &fakeDesktopCommandRunner{output: []byte("standard::content-type: text/plain\n")}
+	apps := NewDesktopAppsService(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}}, runner)
+	for _, id := range []string{"simple-editor.desktop", "other.desktop"} {
+		if err := apps.SetDefault(context.Background(), "home/My Files/annual report.txt", id); err != nil {
+			t.Fatal(err)
+		}
+		want := desktopCommandCall{name: "gio", args: []string{"mime", "text/plain", id}}
+		if !reflect.DeepEqual(runner.runs[len(runner.runs)-1], want) {
+			t.Fatalf("runs = %#v", runner.runs)
+		}
+	}
+	for _, request := range [][2]string{{"home/../secret", "other.desktop"}, {"home/My Files", "other.desktop"}, {"home/My Files/annual report.txt", "../other.desktop"}, {"home/My Files/annual report.txt", "missing.desktop"}} {
+		before := len(runner.runs)
+		if err := apps.SetDefault(context.Background(), request[0], request[1]); err == nil || len(runner.runs) != before {
+			t.Fatalf("accepted %#v", request)
+		}
+	}
+	runner.runError = errors.New("read-only mimeapps.list")
+	if err := apps.SetDefault(context.Background(), "home/My Files/annual report.txt", "other.desktop"); !errors.Is(err, ErrDesktopDefaultFailed) {
+		t.Fatalf("error = %v", err)
+	}
+	runner.runError = nil
+	runner.ignoreDefault = true
+	runner.defaultID = "simple-editor.desktop"
+	if err := apps.SetDefault(context.Background(), "home/My Files/annual report.txt", "other.desktop"); !errors.Is(err, ErrDesktopDefaultFailed) {
+		t.Fatalf("unconfirmed default error = %v", err)
+	}
+}
+
+func TestDesktopDefaultPreservesSpecificConfigAndSymlink(t *testing.T) {
+	setupDesktopAppFixture(t)
+	t.Setenv("XDG_CURRENT_DESKTOP", "First:Example")
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	target := filepath.Join(t.TempDir(), "mimeapps.list")
+	original := "# Keep my settings\n[Default Applications]\ntext/plain=simple-editor.desktop;Visual Studio Code.desktop;\nimage/png=image.desktop;\n\n[Added Associations]\ntext/plain=other.desktop;\n"
+	if err := os.WriteFile(target, []byte(original), 0640); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(configHome, "example-mimeapps.list")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := updateDesktopMIMEOverride("text/plain", "Visual Studio Code.desktop"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(target)
+	want := strings.Replace(original, "text/plain=simple-editor.desktop;Visual Studio Code.desktop;", "text/plain=Visual Studio Code.desktop;simple-editor.desktop;", 1)
+	if err != nil || string(data) != want {
+		t.Fatalf("config = %q, error = %v", data, err)
+	}
+	info, err := os.Lstat(link)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("link was replaced: %v, %v", info, err)
+	}
+	info, err = os.Stat(target)
+	if err != nil || info.Mode().Perm() != 0640 {
+		t.Fatalf("mode changed: %v, %v", info, err)
+	}
+}
+
+func TestDesktopIconsOnlyReturnBoundedRasterForInstalledEntries(t *testing.T) {
+	root, _ := setupDesktopAppFixture(t)
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, image.NewRGBA(image.Rect(0, 0, 32, 32))); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeDesktopCommandRunner{output: buffer.Bytes()}
+	apps := NewDesktopAppsService(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}}, runner)
+	icon, err := apps.Icon(context.Background(), "Visual Studio Code.desktop")
+	if err != nil || !bytes.Equal(icon.PNG, buffer.Bytes()) {
+		t.Fatalf("icon/error = %v/%v", icon, err)
+	}
+	call := runner.outputs[0]
+	if call.name != "python3" || call.args[0] != "-I" || call.args[len(call.args)-1] != "code" {
+		t.Fatalf("call = %#v", call)
+	}
+	for _, id := range []string{"../secret", "unknown.desktop", "simple-editor.desktop"} {
+		if _, err := apps.Icon(context.Background(), id); !errors.Is(err, ErrDesktopApplicationUnavailable) {
+			t.Fatalf("accepted %q: %v", id, err)
+		}
+	}
+	runner.output = []byte("<svg onload='bad' />")
+	if _, err := apps.Icon(context.Background(), "Visual Studio Code.desktop"); !errors.Is(err, ErrDesktopApplicationUnavailable) {
+		t.Fatalf("accepted non-PNG: %v", err)
+	}
+}
+
+func TestDesktopIconsNativeRasterization(t *testing.T) {
+	root, _ := setupDesktopAppFixture(t)
+	// GdkPixbuf discovers SVG loaders through the system XDG data directories.
+	t.Setenv("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
+	commands := osDesktopCommandRunner{}
+	if _, err := commands.Output(context.Background(), "python3", "-I", "-c", "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk"); err != nil {
+		t.Skip("optional Python GTK icon helper is unavailable")
+	}
+	iconPath := filepath.Join(t.TempDir(), "application.svg")
+	if err := os.WriteFile(iconPath, []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#369"/></svg>`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	writeDesktopEntry(t, "native-icon.desktop", "Name=Native Icon\nExec=viewer %f\nIcon="+iconPath+"\n")
+	apps := NewDesktopAppsService(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}}, commands)
+	icon, err := apps.Icon(context.Background(), "native-icon.desktop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := png.DecodeConfig(bytes.NewReader(icon.PNG))
+	if err != nil || config.Width != 32 || config.Height != 32 {
+		t.Fatalf("icon = %#v, error = %v", config, err)
+	}
+}
+
+func TestDesktopDefaultUsesDesktopSpecificAssociationAndFirstAvailableFallback(t *testing.T) {
+	root, _ := setupDesktopAppFixture(t)
+	t.Setenv("XDG_CURRENT_DESKTOP", "Example")
+	if err := os.WriteFile(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "example-mimeapps.list"), []byte("[Default Applications]\ntext/plain=missing.desktop;simple-editor.desktop;Visual Studio Code.desktop;\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	apps := NewDesktopAppsService(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}}, &fakeDesktopCommandRunner{output: []byte("standard::content-type: text/plain\n")})
+	result, err := apps.ListApps(context.Background(), "home/My Files/annual report.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Recommended[0].ID != "simple-editor.desktop" || !result.Recommended[0].IsDefault || result.Recommended[1].IsDefault {
+		t.Fatalf("recommended = %#v", result.Recommended)
+	}
 }
 
 func TestDesktopOpenConfinesPaths(t *testing.T) {

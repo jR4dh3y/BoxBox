@@ -10,6 +10,7 @@
 		type FileDropTarget
 	} from '#lib/browse/fileDrag.js';
 	import type { FileInfo } from '#lib/api/files.js';
+	import { DEFAULT_SORT_BY, DEFAULT_SORT_DIR } from '#lib/browse/sortFiles.js';
 	import type { SortField, SortDir } from '#lib/types/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
 	import { getFileTypeDescription, getFileIcon } from '#lib/utils/fileTypes.js';
@@ -26,8 +27,8 @@
 	let {
 		items = [],
 		viewKey,
-		sortBy = 'name',
-		sortDir = 'asc',
+		sortBy = DEFAULT_SORT_BY,
+		sortDir = DEFAULT_SORT_DIR,
 		emptyMessage = 'This folder is empty',
 		selectedPaths = new SvelteSet<string>(),
 		isLoading = false,
@@ -486,6 +487,7 @@
 						aria-rowindex={itemIndex + 2}
 						aria-selected={isSelected(item.path)}
 						data-file-row="true"
+						data-file-path={item.path}
 					>
 						<td id={`file-list-cell-${itemIndex}`} class={compactMode ? compactTdClass : tdClass}>
 							<div class="flex min-w-0 items-center gap-2">

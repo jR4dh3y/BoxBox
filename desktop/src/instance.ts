@@ -8,6 +8,7 @@ import { remoteURL } from "./target";
 
 export type InstanceRequest =
   | { readonly kind: "activate" }
+  | { readonly kind: "portal" }
   | { readonly kind: "local"; readonly target: LaunchTarget }
   | { readonly kind: "remote"; readonly url: string };
 
@@ -167,8 +168,8 @@ export function parseInstanceRequest(value: unknown): InstanceRequest | undefine
   }
   if (!isRecord(value)) return undefined;
   const record = value;
-  if (record.kind === "activate" && Object.keys(record).length === 1) {
-    return { kind: "activate" };
+  if ((record.kind === "activate" || record.kind === "portal") && Object.keys(record).length === 1) {
+    return { kind: record.kind };
   }
   if (record.kind === "local" && Object.keys(record).length === 2) {
     const target = parseLaunchTargetMessage(record.target);

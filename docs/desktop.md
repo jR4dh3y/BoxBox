@@ -12,7 +12,7 @@ Install these runtime libraries on Ubuntu 24.04:
 sudo apt install libgtk-3-0t64 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2 xdg-utils
 ```
 
-For clipboard integration on Wayland, install `wl-clipboard`; on X11, install `xclip`. Interoperable cut/copy also uses Python 3, PyGObject and GTK 4 (`python3-gi gir1.2-gtk-4.0`). Without them, file copy can fall back to URI lists, while cut reports the missing capability. FFmpeg and Poppler (`ffmpeg poppler-utils`) enable video/audio and PDF thumbnails; missing helpers leave file icons.
+For clipboard integration on Wayland, install `wl-clipboard`; on X11, install `xclip`. Interoperable cut/copy also uses Python 3, PyGObject and GTK 4 (`python3-gi gir1.2-gtk-4.0`). Without them, file copy can fall back to URI lists, while cut reports the missing capability. Open With application icons use Python 3, PyGObject and GTK 3 (`python3-gi gir1.2-gtk-3.0`); missing or unreadable icons use a generic application icon. The optional "Use as default" choice updates the local user's MIME association through GIO when opening a local file. FFmpeg and Poppler (`ffmpeg poppler-utils`) enable video/audio and PDF thumbnails; missing helpers leave file icons.
 
 Other glibc distributions need equivalent packages. Choose an asset for your architecture; distro compatibility depends on those runtime libraries.
 
@@ -98,3 +98,16 @@ Use `aarch64` in both filenames on ARM64. The host still needs the GTK 3, WebKit
 The launcher copies its runtime into a private temporary directory so renderer settings remain writable. Allow space for the expanded Chromium bundle and expect a copy on each launch. The copy is removed when the launcher exits. Preferences and paired servers remain in the normal BoxBox data directory. AppImages do not install desktop associations or change the default file manager. Close BoxBox before switching between an installed archive and an AppImage; both share the same app identity.
 
 Maintainers can run the workflow manually with an existing release tag to add AppImages to a previously published release. New published releases trigger it automatically. Existing release assets are never overwritten. This workflow is separate from the GHCR server images and the archive package workflow.
+
+## Other applications' file dialogs
+
+BoxBox Desktop includes an opt-in Linux FileChooser portal backend. It can provide
+Open, Save and folder dialogs for portal-aware applications such as browsers.
+Making BoxBox the default folder handler alone does not change their file dialogs.
+Direct toolkit and custom choosers remain application-owned.
+
+See [the desktop guide](../desktop/README.md#use-boxbox-as-other-applications-file-chooser)
+for registration, safe opt-in, undo, supported options and window-manager limits.
+The backend handles only FileChooser; ScreenCast, screenshots and other portal
+interfaces continue using their configured backends. No host defaults are changed
+by building, installing or launching BoxBox normally.

@@ -110,6 +110,7 @@ try {
     { mode: 0o755 },
   );
   await cp(join(root, "LICENSE"), join(desktopRoot, "LICENSE"));
+  await cp(join(root, "desktop/assets/boxbox.portal"), join(desktopRoot, "boxbox.portal"));
   await writeFile(
     join(desktopRoot, "README.txt"),
     `BoxBox Desktop v${version} — Linux x86_64\nSource: ${sha}\n\nExtract into a writable folder, then run ./install.sh (no sudo).\nGo, Bun and Docker are not required. GTK 3, WebKitGTK 4.1 and Ayatana AppIndicator are required.\nSee https://boxbox.radhey.dev/docs/desktop/ for dependencies, pairing, updates and removal.\nThe installer leaves your default file manager unchanged unless you pass --set-default.\n`,

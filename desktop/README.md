@@ -65,7 +65,8 @@ This starts the bundled local app, saves or reuses the HTTPS deployment in its b
 - Undo reverses the last rename or move to Trash. It does not undo permanent deletion or completed transfers.
 - Local copy/cut/paste uses the desktop file clipboard, including GNOME copied-files and URI-list formats. A cut clipboard is cleared only after all submitted move jobs are confirmed successful and the clipboard still matches that selection.
 - Paste checks the destination, then asks whether to skip a conflict or keep both with a new name. Transfers remain background jobs with their existing progress and cancellation controls. No replace option is offered.
-- Open With lists recommended handlers and other installed applications that accept files. Search covers both groups, including symlinked desktop entries and D-Bus handlers. Launches pass the file as one argument to GIO.
+- Open With lists recommended handlers and other installed applications that accept files, with their host icon and a generic fallback when unavailable. Icons use Python 3, PyGObject and GTK 3 to resolve the active icon theme and rasterize SVGs. Search covers both groups, including symlinked desktop entries and D-Bus handlers. Select "Use as default" before Open to set that application's association for the file's detected MIME type on this computer. Leaving it unchecked opens once. Association failures keep the dialog open; a saved default is retained if the subsequent launch fails. Launches pass the file as one argument to GIO. These actions apply only to local Linux files.
+- New file views default to folders first, then files, with newest modified time first within both groups and natural filename ties. Browse, search, shared folders, wallpaper browsing, address suggestions and Trash follow this order, including visible hidden entries. Trash still displays its separate deletion date. Existing saved sorts and explicit URL/header choices are preserved. Drive/server/application catalogs and OS-owned file dialogs keep their own ordering. File creation time is not available in the current file metadata contract.
 - Removable drives lists actual removable-volume state and exposes mount, unmount and eject through the user's GIO services and permissions. An unavailable service or busy volume is reported by the UI.
 - Valid names containing `..` work. The desktop removes the server's 10,000-entry directory cap while rendering the complete listing through the shared UI; self-hosted instances keep the default cap.
 
@@ -142,3 +143,57 @@ Cross-source transfers reject percent characters in selected paths and directory
 ## AppImage packaging
 
 The separate [AppImage workflow](../.github/workflows/appimages.yml) builds and checks native x86_64 and ARM64 packages, then attaches both to the GitHub release. It also supports manual backfills by release tag. See [AppImage builds](../docs/desktop.md#appimage-builds) for launch commands, host dependencies and temporary disk requirements. This does not add ARM64 archive installation support.
+
+## Use BoxBox as other applications' file chooser
+
+Linux portal-aware applications can use BoxBox for Open, Save and folder dialogs.
+This is separate from the default folder handler. Applications using direct GTK,
+Qt or custom dialogs keep their own chooser unless configured to use portals.
+For GTK applications, `GTK_USE_PORTAL=1` can request the portal path. Browser and
+sandbox settings also affect whether their requests reach xdg-desktop-portal.
+
+The backend implements only `org.freedesktop.impl.portal.FileChooser`. It supports
+single and multiple files or folders, SaveFile, SaveFiles, file filters and the
+current filter, suggested locations and names, accept labels, and extra choices.
+Cancel, portal Request.Close and closing the chooser window cancel the request.
+Saving returns a destination URI; BoxBox never writes the application's contents.
+Existing destinations require confirmation. Local mounted paths only are returned;
+remote BoxBox deployments cannot access the private chooser API.
+
+Portal windows use the existing BoxBox file table and sorting. They are separate
+windows; native transient parenting and compositor activation tokens are not yet
+implemented, so focus and stacking depend on the window manager. Paths containing
+invalid UTF-8 cannot be represented by the current BoxBox file API and are rejected.
+
+### Opt in and undo
+
+No installation or normal launch changes chooser defaults. The AUR package installs
+backend metadata but does not select it. For a manually installed desktop bundle,
+an administrator must first register the supplied metadata:
+
+```sh
+sudo install -Dm644 boxbox.portal /usr/share/xdg-desktop-portal/portals/boxbox.portal
+```
+
+Then use the **installed, writable** launcher:
+
+```sh
+~/.local/share/boxbox/bin/launcher --enable-chooser
+# Undo only BoxBox's managed FileChooser override:
+~/.local/share/boxbox/bin/launcher --disable-chooser
+```
+
+The enable command registers a per-user D-Bus activation service pointing to that
+launcher. It copies the effective portal configuration into the user configuration
+only when needed, preserves other interfaces and backend preferences, and changes
+only the FileChooser key. Undo restores the previous key. It refuses modified
+managed lines and symlinked configuration files rather than overwriting them.
+If you later change other portal preferences in a system configuration, update the
+user copy too. Re-run enable after moving the installed launcher. Remove its
+`$XDG_DATA_HOME/dbus-1/services/org.freedesktop.impl.portal.desktop.boxbox.service`
+when uninstalling. Disable before deleting the application.
+
+Log out and back in after selecting or restoring a backend. Restarting the session
+portal can interrupt other applications' active sharing and chooser requests, so
+the command does not restart it automatically. GTK remains selected when BoxBox
+has not been opted in, or after restoring its previous routing.

@@ -472,6 +472,17 @@ function installEnvironment(root: string): TestEnvironment {
 }
 
 describe("desktop install integration", () => {
+  test("keeps expanded CEF links relative after moving away from the build tree", async () => {
+    const root = await temporaryRoot("install-links");
+    const bundle = await createBundle(root);
+    await writeFile(join(bundle,"bin","runtime-library"),"runtime");
+    await symlink("runtime-library",join(bundle,"bin","runtime-link"));
+    const result = await installDesktopIntegration({source:bundle,env:installEnvironment(root)});
+    await rm(bundle,{recursive:true});
+    expect(await readlink(join(result.appDirectory,"bin","runtime-link"))).toBe("runtime-library");
+    expect(await readFile(join(result.appDirectory,"bin","runtime-link"),"utf8")).toBe("runtime");
+  });
+
   test("installs the bundle, icon and quoted desktop entry into temp XDG dirs", async () => {
     const root = await temporaryRoot("install");
     const bundle = await createBundle(root, { launcherMode: 0o750 });

@@ -1,3 +1,4 @@
+import { watchChoosers, chooserBootstrap, cancelChooser } from "./chooser";
 import { hardwareAccelerationEnabled } from "./rendering";
 import type { BrowserWindow } from "electrobun/main";
 import { join } from "node:path";
@@ -18,6 +19,8 @@ export class DesktopApp {
   readonly #server: LocalServer;
   readonly #windows = new Set<number>();
   #localWindowId: number | undefined;
+  readonly #chooserWindows = new Map<string, BrowserWindow>();
+  readonly #chooserAbort = new AbortController();
   #primaryWindowId: number | undefined;
   #quitting = false;
   #localReady = false;
@@ -50,18 +53,50 @@ export class DesktopApp {
       throw new Error("BoxBox Desktop requires a CEF build");
     }
     const primary =
-      request.kind === "remote"
-        ? await this.#openRemote(request.url)
-        : await this.#openLocal(
-            request.kind === "local" ? request.target : undefined,
-          );
-    this.#primaryWindowId = primary.id;
+      request.kind === "portal"
+        ? undefined
+        : request.kind === "remote"
+          ? await this.#openRemote(request.url)
+          : await this.#openLocal(
+              request.kind === "local" ? request.target : undefined,
+            );
+    this.#primaryWindowId = primary?.id;
+    const server = await this.#server.get();
+    void watchChoosers(server.url, this.#chooserAbort.signal, (ids) => {
+      const active = new Set(ids);
+      for (const [id, window] of this.#chooserWindows) {
+        if (!active.has(id)) {
+          this.#chooserWindows.delete(id);
+          window.close();
+        }
+      }
+      for (const id of ids) {
+        if (this.#chooserWindows.has(id)) continue;
+        const window = new this.#sdk.BrowserWindow({
+          title: "Choose a file · BoxBox",
+          url: chooserBootstrap(server.url, id),
+          renderer: "cef",
+          sandbox: true,
+          allowedProtocols: { views: false, appData: false },
+          frame: BROWSER_FRAME,
+        });
+        this.#chooserWindows.set(id, window);
+        this.#track(window, () => {
+          this.#chooserWindows.delete(id);
+          void cancelChooser(server.url, id).catch(() => undefined);
+        });
+      }
+    }).catch((error: unknown) => {
+      if (!this.#quitting)
+        console.error("File chooser connection failed:", error);
+    });
     this.#instance?.setRequestHandler((next) => this.#handle(next));
   }
 
   async quit(code = 0): Promise<void> {
     if (this.#quitting) return;
     this.#quitting = true;
+    this.#chooserAbort.abort();
     await this.#server.stop().catch((error) => {
       console.error("Could not stop the local BoxBox server:", error);
     });
@@ -78,6 +113,8 @@ export class DesktopApp {
   async #handle(request: InstanceRequest): Promise<void> {
     if (this.#quitting) return;
     switch (request.kind) {
+      case "portal":
+        return;
       case "activate":
         this.#focusPrimary();
         return;
@@ -141,6 +178,25 @@ export class DesktopApp {
           document.documentElement.dataset.hardwareAcceleration = '${hardwareAccelerationEnabled()}';
         }
       `);
+      if (process.env.BOXBOX_DESKTOP_SMOKE === "1") {
+        window.webview.executeJavascript(`
+          if (!window.boxboxPaintProbe) {
+            window.boxboxPaintProbe = true;
+            const seen = new Set();
+            const report = () => {
+              const path = new URLSearchParams(location.search).get('path');
+              const row = [...document.querySelectorAll('[data-file-path]')].find(row => row.dataset.filePath?.startsWith(path + '/'));
+              if (!path || !row || seen.has(path) || row.getBoundingClientRect().height === 0) return;
+              seen.add(path);
+              requestAnimationFrame(() => requestAnimationFrame(() => {
+                fetch('/api/v1/_desktop-painted/' + path);
+              }));
+            };
+            new MutationObserver(report).observe(document, {subtree:true,childList:true,attributes:true});
+            report();
+          }
+        `);
+      }
       this.#localReady = true;
       this.#deliverTargets(window, server.url);
     });

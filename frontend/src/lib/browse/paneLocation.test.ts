@@ -16,6 +16,14 @@ const initial: BrowseLocationSnapshot = {
 };
 
 describe('browse location', () => {
+	test('fresh panes use newest first while explicit URL sorts win', () => {
+		const defaultLocation = parseBrowseLocation(new URL('http://boxbox.local/browse?path=media'));
+		assert.equal(defaultLocation.sortBy, 'modTime');
+		assert.equal(defaultLocation.sortDir, 'desc');
+		const explicit = parseBrowseLocation(new URL('http://boxbox.local/browse?sort=name&dir=asc'));
+		assert.equal(explicit.sortBy, 'name');
+		assert.equal(explicit.sortDir, 'asc');
+	});
 	test('This PC defaults to master drive cards while folders retain display preferences', () => {
 		const root = usePaneLocation({
 			initial: parseBrowseLocation(new URL('http://boxbox.local/browse'))

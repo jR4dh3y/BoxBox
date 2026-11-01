@@ -14,7 +14,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev pkg-config zstd ffmpeg poppler-utils
+        sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev pkg-config zstd ffmpeg poppler-utils python3-gi gir1.2-gtk-3.0
         rustc --version
     - name: Install workspace dependencies
       shell: bash
