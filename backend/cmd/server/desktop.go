@@ -52,6 +52,9 @@ func desktopRoutesWithChooser(next http.Handler, cfg *model.ServerConfig, choose
 	router.Route("/api/v1/desktop", func(r chi.Router) {
 		r.Get("/watch", watch)
 		if chooser != nil {
+			if serverErr == nil {
+				chooser.ConfigureServers(servers, filepath.Join(cfg.DataDir, "desktop", "chooser-imports"))
+			}
 			handler.RegisterDesktopChooser(r, chooser)
 		}
 		handler.RegisterDesktopPreferences(r, preferences, settings)

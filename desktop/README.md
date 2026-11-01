@@ -160,8 +160,20 @@ search; Escape or Clear search restores the listing. Search respects hidden-file
 and file-type filters and clears selections that no longer match. Navigating to
 another folder clears the query. Other locations lists configured local roots and
 discovered drives. Opening an unmounted drive uses the existing desktop mount
-action, then browses the confirmed local path. Remote BoxBox servers cannot be
-selected for a system file request.
+action, then browses the confirmed local path.
+
+Paired server locations load independently in the background after the local
+picker paints. Other locations shows each server's exposed roots, loading state,
+errors and retry. Only locations exposed by that server are browsable; this does
+not enable remote disk mounting or expose host paths outside its configured roots.
+Opening remote files downloads private local copies before completing the portal
+request. Cancel or a failed batch removes its partial copies. Successful copies
+remain in `<data_dir>/desktop/chooser-imports/` for the receiving application;
+remove them manually when no longer needed. Edits to these copies do not sync.
+Remote save destinations and remote folder grants are unavailable because BoxBox
+does not provide a writable local filesystem projection. Use a local folder for
+those requests. Remote filenames containing percent characters follow the existing
+cross-server transfer restriction.
 
 Cancel, portal Request.Close and closing the chooser window cancel the request.
 Saving returns a destination URI; BoxBox never writes the application's contents.

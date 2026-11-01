@@ -6,6 +6,8 @@ import { parseDirectory } from '#lib/api/directory.js';
 import { sortFiles } from '#lib/browse/sortFiles.js';
 import type { SortDir, SortField } from '#lib/types/files.js';
 import type { DesktopVolume } from '#lib/api/desktopVolumes.js';
+import type { ChooserServers } from './chooserServers.svelte.js';
+import { isRemotePath, parseRemotePath } from '#lib/api/remotePaths.js';
 import { VolumesController } from './volumes.svelte.js';
 
 function integer(value: unknown): number {
@@ -58,6 +60,9 @@ function parseRequest(value: unknown) {
 
 /** One portal picker. Directory reads and sort choices use the same contracts as Browse. */
 export class FileChooser {
+	servers = $state<ChooserServers | null>(null);
+	serversError = $state('');
+	#background = new AbortController();
 	view = $state<'files' | 'locations'>('files');
 	request = $state<ReturnType<typeof parseRequest> | null>(null);
 	roots = $state<MountPoint[]>([]);
@@ -109,6 +114,12 @@ export class FileChooser {
 			this.sortDir
 		);
 	}
+	get remote() {
+		return isRemotePath(this.path);
+	}
+	get remoteUnavailable() {
+		return this.remote && (this.request?.kind !== 'open' || this.request.directory);
+	}
 	async initialize() {
 		try {
 			const [request, roots] = await Promise.all([
@@ -123,8 +134,27 @@ export class FileChooser {
 				this.request.choices.map((choice) => [choice.id, choice.value])
 			);
 			await this.open(this.request.folder || this.roots[0]?.name || '');
+			// Start network discovery after the local picker has had a chance to paint.
+			requestAnimationFrame(() =>
+				requestAnimationFrame(() => {
+					void this.loadServers();
+				})
+			);
 		} catch (error) {
 			this.fail(error);
+		}
+	}
+	async loadServers() {
+		this.serversError = '';
+		if (this.#background.signal.aborted) return;
+		try {
+			const { ChooserServers } = await import('./chooserServers.svelte.js');
+			if (this.#background.signal.aborted) return;
+			this.servers ??= new ChooserServers();
+			await this.servers.load(this.#background.signal);
+		} catch {
+			if (!this.#background.signal.aborted)
+				this.serversError = 'Server locations could not be loaded.';
 		}
 	}
 	async open(path: string) {
@@ -150,6 +180,11 @@ export class FileChooser {
 		} finally {
 			if (this.#abort === abort) this.loading = false;
 		}
+	}
+	parent() {
+		const source = parseRemotePath(this.path);
+		if (source.kind === 'remote' && !source.path.includes('/')) this.showLocations();
+		else void this.open(this.path.slice(0, this.path.lastIndexOf('/')));
 	}
 	showLocations() {
 		this.#abort?.abort();
@@ -200,7 +235,7 @@ export class FileChooser {
 		this.replace = false;
 	}
 	async accept() {
-		if (this.busy || !this.request || this.view !== 'files') return;
+		if (this.busy || !this.request || this.view !== 'files' || this.remoteUnavailable) return;
 		let paths: string[];
 		if (this.request.kind === 'save') {
 			if (!this.name || this.name === '.' || this.name === '..' || /[/\0]/.test(this.name)) {
@@ -242,6 +277,7 @@ export class FileChooser {
 	}
 	dispose() {
 		this.#abort?.abort();
+		this.#background.abort();
 	}
 	fail(error: unknown) {
 		this.error = error instanceof Error ? error.message : 'Unable to open the file chooser.';

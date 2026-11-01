@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
@@ -72,20 +73,24 @@ type ChooserResult struct {
 	Choices []ChooserChoiceResult
 }
 type chooserPending struct {
-	request ChooserRequest
-	result  chan ChooserResult
+	request  ChooserRequest
+	result   chan ChooserResult
+	ctx      context.Context
+	cancel   context.CancelFunc
+	selectMu sync.Mutex
 }
 
 var ErrChooserClosed = errors.New("file chooser request is closed")
 var ErrChooserReplace = errors.New("a destination already exists; confirm replacement")
 
-// DesktopChooser owns pending local portal interactions; every returned path is mount-resolved.
+// DesktopChooser resolves local selections and imports remote files before returning local URIs.
 type DesktopChooser struct {
 	mu      sync.Mutex
 	pending map[string]*chooserPending
 	changed chan struct{}
 	mounts  *mounts
 	fs      filesystem.FS
+	remote  *chooserRemote
 }
 
 func NewDesktopChooser(fsys filesystem.FS, points []model.MountPoint) *DesktopChooser {
@@ -98,7 +103,8 @@ func (c *DesktopChooser) Begin(request ChooserRequest) (ChooserRequest, <-chan C
 	key := make([]byte, 16)
 	_, _ = rand.Read(key)
 	request.ID = hex.EncodeToString(key)
-	p := &chooserPending{request: request, result: make(chan ChooserResult, 1)}
+	ctx, cancel := context.WithCancel(context.Background())
+	p := &chooserPending{request: request, result: make(chan ChooserResult, 1), ctx: ctx, cancel: cancel}
 	c.pending[request.ID] = p
 	c.notify()
 	return request, p.result
@@ -125,6 +131,7 @@ func (c *DesktopChooser) Cancel(id string) {
 	defer c.mu.Unlock()
 	if p := c.pending[id]; p != nil {
 		delete(c.pending, id)
+		p.cancel()
 		p.result <- ChooserResult{Code: 1}
 		c.notify()
 	}
@@ -140,10 +147,23 @@ func (c *DesktopChooser) Select(ctx context.Context, id string, selection Choose
 		c.Cancel(id)
 		return nil
 	}
-	request, err := c.Get(id)
-	if err != nil {
-		return err
+	c.mu.Lock()
+	pending := c.pending[id]
+	remote := c.remote
+	c.mu.Unlock()
+	if pending == nil {
+		return ErrChooserClosed
 	}
+	pending.selectMu.Lock()
+	defer pending.selectMu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	stop := context.AfterFunc(pending.ctx, cancel)
+	defer stop()
+	if pending.ctx.Err() != nil {
+		return ErrChooserClosed
+	}
+	request := pending.request
 	if len(selection.Paths) == 0 || len(selection.Paths) > 1024 || (!request.Multiple && len(selection.Paths) != 1) {
 		return fmt.Errorf("%w: invalid selection count", ErrInvalidOperation)
 	}
@@ -181,7 +201,38 @@ func (c *DesktopChooser) Select(ctx context.Context, id string, selection Choose
 		}
 		result.Choices = append(result.Choices, ChooserChoiceResult{ID: choice.ID, Value: value})
 	}
-	for _, path := range paths {
+	var imported string
+	accepted := false
+	defer func() {
+		if imported != "" && !accepted {
+			os.RemoveAll(imported)
+		}
+	}()
+	for index, path := range paths {
+		if strings.HasPrefix(path, "@remote") {
+			if request.Kind != "open" || request.Directory {
+				return fmt.Errorf("%w: remote locations support opening files only", ErrInvalidOperation)
+			}
+			if remote == nil {
+				return ErrRemoteUnavailable
+			}
+			if imported == "" {
+				if err := os.MkdirAll(remote.dir, 0700); err != nil {
+					return err
+				}
+				var err error
+				imported, err = os.MkdirTemp(remote.dir, "request-")
+				if err != nil {
+					return err
+				}
+			}
+			local, err := c.importRemote(ctx, remote, path, filepath.Join(imported, fmt.Sprint(index)), result.Filter)
+			if err != nil {
+				return err
+			}
+			result.URIs = append(result.URIs, (&url.URL{Scheme: "file", Path: local}).String())
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -230,11 +281,16 @@ func (c *DesktopChooser) Select(ctx context.Context, id string, selection Choose
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	p := c.pending[id]
 	if p == nil {
 		return ErrChooserClosed
 	}
 	delete(c.pending, id)
+	p.cancel()
+	accepted = true
 	p.result <- result
 	c.notify()
 	return nil
@@ -337,6 +393,15 @@ func (c *DesktopChooser) Directory(ctx context.Context, id, path string) (*model
 	request, err := c.Get(id)
 	if err != nil {
 		return nil, err
+	}
+	if strings.HasPrefix(path, "@remote") {
+		c.mu.Lock()
+		remote := c.remote
+		c.mu.Unlock()
+		if remote == nil {
+			return nil, ErrRemoteUnavailable
+		}
+		return c.remoteDirectory(ctx, remote, request, path)
 	}
 	listing, err := NewFileService(c.fs, FileServiceConfig{MountPoints: c.mounts.list()}).List(ctx, path)
 	if err != nil {

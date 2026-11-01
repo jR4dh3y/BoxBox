@@ -162,5 +162,32 @@ test('failed mounts stay in Other locations and expose the action error', async 
 	await chooser.openVolume(removable);
 	assert.equal(chooser.view, 'locations');
 	assert.equal(volumes.error, 'Mount permission denied');
+	await volumes.snapshot.load();
+	assert.equal(volumes.error, 'Mount permission denied');
 	assert.equal(chooser.path, '');
+});
+
+test('remote saves and folder grants cannot submit a non-local destination', async () => {
+	const chooser = imageChooser();
+	chooser.path = '@remote/11111111-1111-4111-8111-111111111111/photos';
+	assert.equal(chooser.remoteUnavailable, false);
+	assert.ok(chooser.request);
+	chooser.request.directory = true;
+	assert.equal(chooser.remoteUnavailable, true);
+	await chooser.accept();
+	assert.equal(chooser.busy, false);
+	assert.equal(chooser.done, false);
+	chooser.request.directory = false;
+	chooser.request.kind = 'save';
+	assert.equal(chooser.remoteUnavailable, true);
+	await chooser.accept();
+	assert.equal(chooser.done, false);
+});
+
+test('up from a remote drive returns to Other locations', () => {
+	const chooser = imageChooser();
+	chooser.path = '@remote/11111111-1111-4111-8111-111111111111/photos';
+	chooser.parent();
+	assert.equal(chooser.view, 'locations');
+	assert.equal(chooser.selected.size, 0);
 });

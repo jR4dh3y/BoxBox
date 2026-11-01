@@ -77,8 +77,7 @@
 								variant="ghost"
 								title="Parent folder"
 								disabled={!chooser.path.includes('/')}
-								onclick={() => chooser.open(chooser.path.slice(0, chooser.path.lastIndexOf('/')))}
-								><ArrowUp size={16} /></Button
+								onclick={() => chooser.parent()}><ArrowUp size={16} /></Button
 							>
 							<label class="sr-only" for="chooser-location">Location</label><input
 								id="chooser-location"
@@ -147,6 +146,16 @@
 						/>
 					</div>
 				{/if}
+				{#if chooser.remote && chooser.view === 'files'}<p
+						role="status"
+						class="px-4 py-2 text-text-secondary"
+					>
+						{chooser.remoteUnavailable
+							? 'Remote locations support opening files only. Save destinations and folder selection require a local folder.'
+							: chooser.busy
+								? 'Downloading local copies… You can cancel this request.'
+								: 'Opening downloads a local copy. Changes in the receiving app will not sync to the server.'}
+					</p>{/if}
 				{#if chooser.error}<p role="alert" class="px-4 py-2 text-danger">{chooser.error}</p>{/if}
 				{#if chooser.done}<p role="status" class="px-4 py-2 text-text-secondary">
 						Selection complete. This window will close.
@@ -206,6 +215,7 @@
 					onclick={() => chooser.accept()}
 					disabled={chooser.loading ||
 						chooser.view === 'locations' ||
+						chooser.remoteUnavailable ||
 						chooser.busy ||
 						!chooser.request ||
 						chooser.done ||

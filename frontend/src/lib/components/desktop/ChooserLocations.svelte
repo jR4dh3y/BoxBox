@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Folder, HardDrive, RefreshCw } from 'lucide-svelte';
+	import { Folder, HardDrive, RefreshCw, Server } from 'lucide-svelte';
 	import type { FileChooser } from '#lib/desktop/chooser.svelte.js';
 	import { Button } from '#lib/components/ui/index.js';
 	let { chooser }: { chooser: FileChooser } = $props();
@@ -9,7 +9,7 @@
 		const abort = new AbortController();
 		void volumes.load(abort.signal);
 		const timer = setInterval(() => {
-			if (!document.hidden && !volumes.busy) void volumes.load(abort.signal);
+			if (!document.hidden && !volumes.busy) void volumes.snapshot.load(abort.signal);
 		}, 5000);
 		return () => {
 			abort.abort();
@@ -25,7 +25,10 @@
 			variant="ghost"
 			title="Refresh drives"
 			disabled={volumes.busy}
-			onclick={() => volumes.load()}><RefreshCw size={16} /></Button
+			onclick={() => {
+				void volumes.load();
+				void chooser.loadServers();
+			}}><RefreshCw size={16} /></Button
 		>
 	</div>
 	<ul aria-label="Local folders" class="mb-5">
@@ -84,4 +87,46 @@
 		</ul>
 	{/if}
 	{#if volumes.error}<p role="alert" class="px-3 py-2 text-danger">{volumes.error}</p>{/if}
+	<h3 class="mt-5 mb-2 text-text-secondary">Servers</h3>
+	{#if chooser.serversError}
+		<p role="alert" class="px-3 py-2 text-danger">{chooser.serversError}</p>
+		<Button variant="secondary" onclick={() => chooser.loadServers()}>Retry servers</Button>
+	{:else if !chooser.servers || chooser.servers.catalog.state.kind === 'loading'}
+		<p role="status" class="px-3 py-2 text-text-secondary">Loading server locations…</p>
+	{:else if chooser.servers.catalog.state.kind === 'failed'}
+		<p role="alert" class="px-3 py-2 text-danger">{chooser.servers.catalog.state.message}</p>
+		<Button variant="secondary" onclick={() => chooser.loadServers()}>Retry servers</Button>
+	{:else}
+		{#if !chooser.servers.catalog.state.value.length}
+			<p class="px-3 py-2 text-text-secondary">
+				No paired servers. Add one from Servers in BoxBox.
+			</p>
+		{/if}
+		{#each chooser.servers.catalog.state.value as entry (entry.server.id)}
+			<div class="px-3 py-2">
+				<h4 class="flex items-center gap-2"><Server size={16} />{entry.server.name}</h4>
+				{#if entry.roots.state.kind === 'loading'}
+					<p role="status" class="mt-2 text-text-secondary">Loading locations…</p>
+				{:else if entry.roots.state.kind === 'failed'}
+					<p role="alert" class="mt-2 text-danger">{entry.roots.state.message}</p>
+					<Button variant="secondary" onclick={() => entry.roots.load()}>Retry</Button>
+				{:else}
+					{#if !entry.roots.state.value.length}<p class="mt-2 text-text-secondary">
+							No locations exposed by this server.
+						</p>{/if}
+					{#each entry.roots.state.value as root (root.name)}
+						<button
+							type="button"
+							class="mt-1 flex w-full min-w-0 items-center gap-3 rounded px-3 py-3 text-left hover:bg-surface-secondary focus-visible:outline-2 focus-visible:outline-accent"
+							onclick={() => chooser.open(root.name)}
+						>
+							<HardDrive size={20} class="shrink-0" /><span class="truncate"
+								>{root.label || root.name}</span
+							>
+						</button>
+					{/each}
+				{/if}
+			</div>
+		{/each}
+	{/if}
 </section>
