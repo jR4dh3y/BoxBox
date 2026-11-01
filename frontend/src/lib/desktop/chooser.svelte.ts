@@ -60,6 +60,7 @@ export class FileChooser {
 	roots = $state<MountPoint[]>([]);
 	path = $state('');
 	location = $state('');
+	query = $state('');
 	name = $state('');
 	items = $state<FileInfo[]>([]);
 	selected = $state(new SvelteSet<string>());
@@ -78,8 +79,10 @@ export class FileChooser {
 	constructor(readonly id: string) {}
 	get visible() {
 		const filter = this.request?.filters[this.filter];
+		const query = this.query.trim().toLocaleLowerCase();
 		return sortFiles(
 			this.items.filter((item) => {
+				if (!item.name.toLocaleLowerCase().includes(query)) return false;
 				if (!this.hidden && item.name.startsWith('.')) return false;
 				if (item.isDir) return true;
 				if (this.request?.directory) return false;
@@ -134,11 +137,18 @@ export class FileChooser {
 			this.items = response.items;
 			this.path = path;
 			this.location = path;
+			this.query = '';
 		} catch (error) {
 			if (!abort.signal.aborted) this.fail(error);
 		} finally {
 			if (this.#abort === abort) this.loading = false;
 		}
+	}
+	search(query: string) {
+		this.query = query;
+		const visible = new SvelteSet(this.visible.map((item) => item.path));
+		this.selected = new SvelteSet([...this.selected].filter((path) => visible.has(path)));
+		this.replace = false;
 	}
 	choose(item: FileInfo) {
 		if (item.isDir) {
@@ -152,7 +162,7 @@ export class FileChooser {
 		}
 	}
 	select(paths: Set<string>) {
-		const eligible = this.items.filter(
+		const eligible = this.visible.filter(
 			(item) => paths.has(item.path) && item.isDir === this.request?.directory
 		);
 		this.selected = new SvelteSet(

@@ -155,6 +155,11 @@ sandbox settings also affect whether their requests reach xdg-desktop-portal.
 The backend implements only `org.freedesktop.impl.portal.FileChooser`. It supports
 single and multiple files or folders, SaveFile, SaveFiles, file filters and the
 current filter, suggested locations and names, accept labels, and extra choices.
+The top bar searches file and folder names in the current folder. Ctrl+F focuses
+search; Escape or Clear search restores the listing. Search respects hidden-file
+and file-type filters and clears selections that no longer match. Navigating to
+another folder clears the query.
+
 Cancel, portal Request.Close and closing the chooser window cancel the request.
 Saving returns a destination URI; BoxBox never writes the application's contents.
 Existing destinations require confirmation. Local mounted paths only are returned;
