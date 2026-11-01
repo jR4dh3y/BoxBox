@@ -450,12 +450,19 @@ func TestDesktopIconsOnlyReturnBoundedRasterForInstalledEntries(t *testing.T) {
 	if call.name != "python3" || call.args[0] != "-I" || call.args[len(call.args)-1] != "code" {
 		t.Fatalf("call = %#v", call)
 	}
+	if cached, err := apps.Icon(context.Background(), "Visual Studio Code.desktop"); err != nil || !bytes.Equal(cached.PNG, buffer.Bytes()) {
+		t.Fatalf("cached icon/error = %v/%v", cached, err)
+	}
+	if len(runner.outputs) != 1 {
+		t.Fatalf("icon helper calls = %d, want 1", len(runner.outputs))
+	}
 	for _, id := range []string{"../secret", "unknown.desktop", "simple-editor.desktop"} {
 		if _, err := apps.Icon(context.Background(), id); !errors.Is(err, ErrDesktopApplicationUnavailable) {
 			t.Fatalf("accepted %q: %v", id, err)
 		}
 	}
 	runner.output = []byte("<svg onload='bad' />")
+	apps = NewDesktopAppsService(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}}, runner)
 	if _, err := apps.Icon(context.Background(), "Visual Studio Code.desktop"); !errors.Is(err, ErrDesktopApplicationUnavailable) {
 		t.Fatalf("accepted non-PNG: %v", err)
 	}

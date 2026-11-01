@@ -177,8 +177,9 @@ cross-server transfer restriction.
 
 Cancel, portal Request.Close and closing the chooser window cancel the request.
 Saving returns a destination URI; BoxBox never writes the application's contents.
-Existing destinations require confirmation. Local mounted paths only are returned;
-remote BoxBox deployments cannot access the private chooser API.
+Existing destinations require confirmation. Local selections return mounted paths.
+Remote selections return `file://` URIs for private local copies. Remote BoxBox
+deployments cannot access the private chooser API.
 
 Portal windows use the existing BoxBox file table and sorting. They are separate
 windows; native transient parenting and compositor activation tokens are not yet

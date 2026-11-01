@@ -52,7 +52,7 @@ export class DesktopApp {
       throw new Error("BoxBox Desktop requires a CEF build");
     }
     if (request.kind === "remote") await this.#openRemote(request.url);
-    else if (request.kind !== "portal")
+    else
       await this.#openLocal(
         request.kind === "local" ? request.target : undefined,
       );

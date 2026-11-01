@@ -72,6 +72,7 @@ func (h *DesktopAppsHandler) Icon(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "private, max-age=30")
 	_, _ = w.Write(icon.PNG)
 }
 

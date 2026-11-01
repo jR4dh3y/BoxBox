@@ -72,7 +72,7 @@ for (const appImage of [false, true]) {
       );
       const persistent = appImage
         ? join(root, "BoxBox.AppImage")
-        : join(appdir, "AppRun");
+        : join(appdir, "BoxBox/bin/launcher");
       if (appImage) await symlink(join(appdir, "AppRun"), persistent);
       const env = {
         ...process.env,

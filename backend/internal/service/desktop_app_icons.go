@@ -21,10 +21,16 @@ func (s *desktopAppsService) Icon(ctx context.Context, appID string) (DesktopApp
 	if !validDesktopID(appID) {
 		return DesktopAppIcon{}, ErrDesktopApplicationUnavailable
 	}
-	app, exists := readInstalledDesktopApps(s.commands)[appID]
+	app, exists := s.installedDesktopApps()[appID]
 	if !exists || app.application.Icon == "" || !app.acceptsFiles {
 		return DesktopAppIcon{}, ErrDesktopApplicationUnavailable
 	}
+	s.cacheMu.Lock()
+	if cached, ok := s.iconCache[appID]; ok && time.Since(cached.loadedAt) < desktopCacheTTL {
+		s.cacheMu.Unlock()
+		return cached.icon, nil
+	}
+	s.cacheMu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	data, err := s.commands.Output(ctx, "python3", "-I", "-c", desktopAppIconScript, app.application.Icon)
@@ -41,5 +47,19 @@ func (s *desktopAppsService) Icon(ctx context.Context, appID string) (DesktopApp
 	if config.Width > 64 || config.Height > 64 {
 		return DesktopAppIcon{}, fmt.Errorf("%w: icon dimensions exceed 64 pixels", ErrDesktopApplicationUnavailable)
 	}
-	return DesktopAppIcon{PNG: data}, nil
+	icon := DesktopAppIcon{PNG: append([]byte(nil), data...)}
+	s.cacheMu.Lock()
+	if len(s.iconCache) >= desktopIconCacheLimit {
+		var oldest string
+		var oldestAt time.Time
+		for id, entry := range s.iconCache {
+			if oldest == "" || entry.loadedAt.Before(oldestAt) {
+				oldest, oldestAt = id, entry.loadedAt
+			}
+		}
+		delete(s.iconCache, oldest)
+	}
+	s.iconCache[appID] = desktopIconCacheEntry{loadedAt: time.Now(), icon: icon}
+	s.cacheMu.Unlock()
+	return icon, nil
 }

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
@@ -66,6 +67,22 @@ type desktopAppsService struct {
 	mounts    *mounts
 	commands  DesktopCommandRunner
 	defaultMu sync.Mutex
+	cacheMu   sync.Mutex
+	appsCache desktopAppsCache
+	iconCache map[string]desktopIconCacheEntry
+}
+
+const desktopCacheTTL = 30 * time.Second
+const desktopIconCacheLimit = 128
+
+type desktopAppsCache struct {
+	loadedAt time.Time
+	apps     map[string]installedDesktopApp
+}
+
+type desktopIconCacheEntry struct {
+	loadedAt time.Time
+	icon     DesktopAppIcon
 }
 
 // NewDesktopAppsService creates the GIO/XDG-backed desktop integration.
@@ -75,9 +92,10 @@ func NewDesktopAppsService(fsys filesystem.FS, mountPoints []model.MountPoint, c
 		commands = osDesktopCommandRunner{}
 	}
 	return &desktopAppsService{
-		fs:       fsys,
-		mounts:   newMounts(fsys, fixedMounts(mountPoints)),
-		commands: commands,
+		fs:        fsys,
+		mounts:    newMounts(fsys, fixedMounts(mountPoints)),
+		commands:  commands,
+		iconCache: make(map[string]desktopIconCacheEntry),
 	}
 }
 
@@ -257,7 +275,7 @@ type installedDesktopApp struct {
 // applicationsForMIMEType returns associated apps first, then every other visible app
 // whose Exec line takes a file or URL, sorted by name.
 func (s *desktopAppsService) applicationsForMIMEType(mimeType string) ([]installedDesktopApp, []installedDesktopApp) {
-	apps := readInstalledDesktopApps(s.commands)
+	apps := s.installedDesktopApps()
 	recommended := recommendedDesktopApps(apps, mimeType)
 	offered := make(map[string]struct{}, len(recommended))
 	for _, app := range recommended {
@@ -275,6 +293,16 @@ func (s *desktopAppsService) applicationsForMIMEType(mimeType string) ([]install
 		others[i] = apps[id]
 	}
 	return recommended, others
+}
+
+func (s *desktopAppsService) installedDesktopApps() map[string]installedDesktopApp {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.appsCache.apps != nil && time.Since(s.appsCache.loadedAt) < desktopCacheTTL {
+		return s.appsCache.apps
+	}
+	s.appsCache = desktopAppsCache{loadedAt: time.Now(), apps: readInstalledDesktopApps(s.commands)}
+	return s.appsCache.apps
 }
 
 func sortDesktopIDsByName(ids []string, apps map[string]installedDesktopApp) {
