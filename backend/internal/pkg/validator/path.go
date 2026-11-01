@@ -29,9 +29,15 @@ func SanitizePath(basePath, requestedPath string) (string, error) {
 		return "", ErrEmptyPath
 	}
 
-	// Decode URL-encoded characters that might hide traversal sequences
-	decodedPath, err := url.PathUnescape(requestedPath)
+	decodedPath, err := decodePath(requestedPath)
 	if err != nil {
+		return "", ErrInvalidPath
+	}
+	return sanitizeDecodedPath(basePath, decodedPath)
+}
+
+func sanitizeDecodedPath(basePath, decodedPath string) (string, error) {
+	if strings.ContainsRune(basePath, 0) || strings.ContainsRune(decodedPath, 0) {
 		return "", ErrInvalidPath
 	}
 
@@ -61,54 +67,44 @@ func SanitizePath(basePath, requestedPath string) (string, error) {
 		return "", ErrPathTraversal
 	}
 
-	// If the relative path starts with "..", it's outside the base
-	if strings.HasPrefix(rel, "..") {
+	// Reject a parent component in the relative result while allowing names like "...hidden".
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", ErrPathTraversal
 	}
 
 	return fullPath, nil
 }
 
-// containsTraversalSequence checks if a path contains any path traversal sequences
+// containsTraversalSequence reports parent components without rejecting dot substrings.
 func containsTraversalSequence(path string) bool {
-	// Check for various forms of path traversal
-	traversalPatterns := []string{
-		"..",
-		"..\\",
-		"../",
-		"/..",
-		"\\..",
-	}
-
-	// Normalize path separators for consistent checking
+	// Treat both platform separators as delimiters while preserving dot substrings.
 	normalizedPath := strings.ReplaceAll(path, "\\", "/")
-
-	for _, pattern := range traversalPatterns {
-		normalizedPattern := strings.ReplaceAll(pattern, "\\", "/")
-		if strings.Contains(normalizedPath, normalizedPattern) {
+	for _, component := range strings.Split(normalizedPath, "/") {
+		if component == ".." {
 			return true
 		}
 	}
-
-	// Also check for URL-encoded traversal sequences
-	encodedPatterns := []string{
-		"%2e%2e",    // ..
-		"%2e%2e%2f", // ../
-		"%2e%2e/",   // ../
-		"..%2f",     // ../
-		"%2e%2e%5c", // ..\
-		"%2e%2e\\",  // ..\
-		"..%5c",     // ..\
-	}
-
-	lowerPath := strings.ToLower(path)
-	for _, pattern := range encodedPatterns {
-		if strings.Contains(lowerPath, pattern) {
-			return true
-		}
-	}
-
 	return false
+}
+
+// decodePath handles a request decoded by the HTTP stack and one extra encoded layer.
+func decodePath(path string) (string, error) {
+	decoded, err := url.PathUnescape(path)
+	if err != nil {
+		return "", err
+	}
+	if strings.ContainsRune(decoded, 0) {
+		return "", ErrInvalidPath
+	}
+
+	doubleDecoded, err := url.PathUnescape(decoded)
+	if err == nil {
+		decoded = doubleDecoded
+	}
+	if strings.ContainsRune(decoded, 0) {
+		return "", ErrInvalidPath
+	}
+	return decoded, nil
 }
 
 // ValidatePathAgainstMounts validates that a path is within one of the configured mount points.
@@ -118,17 +114,13 @@ func ValidatePathAgainstMounts(requestedPath string, mounts []model.MountPoint) 
 		return nil, "", ErrEmptyPath
 	}
 
-	decodedPath, err := url.PathUnescape(requestedPath)
+	decodedPath, err := decodePath(requestedPath)
 	if err != nil {
 		return nil, "", ErrInvalidPath
 	}
 	if containsTraversalSequence(decodedPath) {
 		return nil, "", ErrPathTraversal
 	}
-	if strings.ContainsRune(decodedPath, 0) {
-		return nil, "", ErrInvalidPath
-	}
-
 	// Clean and normalize the requested path
 	cleanPath := filepath.Clean(decodedPath)
 	if containsTraversalSequence(cleanPath) {
@@ -152,7 +144,7 @@ func ValidatePathAgainstMounts(requestedPath string, mounts []model.MountPoint) 
 			relativePath = strings.TrimPrefix(relativePath, "\\")
 
 			// Sanitize the relative path against the mount's filesystem path
-			fullPath, err := SanitizePath(mount.Path, relativePath)
+			fullPath, err := sanitizeDecodedPath(mount.Path, relativePath)
 			if err != nil {
 				return nil, "", err
 			}

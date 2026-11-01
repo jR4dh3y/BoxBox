@@ -24,11 +24,13 @@ const (
 
 // Job represents a background job for file operations
 type Job struct {
-	ID                 string    `json:"id"`
-	Owner              string    `json:"-"`
-	Type               JobType   `json:"type"`
-	State              JobState  `json:"state"`
-	Progress           int       `json:"progress"` // 0-100
+	ID       string   `json:"id"`
+	Owner    string   `json:"-"`
+	Type     JobType  `json:"type"`
+	State    JobState `json:"state"`
+	Progress int      `json:"progress"` // 0-100
+	// BytesTotal is set once a copy knows its size; zero means unknown or empty.
+	BytesTotal         int64     `json:"bytesTotal,omitzero"`
 	SourcePath         string    `json:"sourcePath"`
 	DestPath           string    `json:"destPath,omitempty"`
 	ResolvedSourcePath string    `json:"-"`

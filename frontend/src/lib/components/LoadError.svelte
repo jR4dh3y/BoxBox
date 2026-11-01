@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '#lib/components/ui/index.js';
+	import Button from '#lib/components/ui/Button.svelte';
 
 	/** Reload retries failed module downloads because browsers can cache failed imports. */
 	let {

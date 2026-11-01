@@ -2,29 +2,38 @@
 	/**
 	 * Settings, as a window over the file browser. Every change applies as soon as it is made.
 	 */
-	import { onDestroy } from 'svelte';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { browseRequests } from '#lib/browse/requests.svelte.js';
+	import { onDestroy, untrack } from 'svelte';
 	import { Modal } from '#lib/components/ui/index.js';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import { Preferences } from '#lib/settings/preferences.js';
+	import {
+		initialSettingsSection,
+		settingsSections,
+		type SettingsSection
+	} from '#lib/settings/sections.js';
 	import GeneralSettings from './GeneralSettings.svelte';
 	import AppearanceSettings from './AppearanceSettings.svelte';
 	import AccountSettings from './AccountSettings.svelte';
 
-	let { onclose }: { onclose: () => void } = $props();
+	let {
+		onclose,
+		initialSection = 'general'
+	}: { onclose: () => void; initialSection?: SettingsSection } = $props();
 
-	type Section = 'general' | 'appearance' | 'links' | 'account';
-	const sections: { id: Section; label: string }[] = [
-		{ id: 'general', label: 'General' },
-		{ id: 'appearance', label: 'Appearance' },
-		{ id: 'links', label: 'Shared links' },
-		{ id: 'account', label: 'Account' }
-	];
+	const sections = settingsSections(isLocalDesktop());
 
 	const preferences = new Preferences();
 	onDestroy(() => preferences.dispose());
 
-	let active = $state<Section>('general');
+	let active = $state<SettingsSection>(
+		initialSettingsSection(
+			sections,
+			untrack(() => initialSection)
+		)
+	);
 
 	async function resetPreferences() {
 		if (
@@ -41,7 +50,7 @@
 <Modal open title="Settings" size="xl" padded={false} {onclose}>
 	<div class="flex h-[26rem] max-h-[calc(90vh-5.5rem)] flex-col sm:flex-row">
 		<nav
-			class="flex shrink-0 gap-0.5 border-b border-border-secondary p-2 sm:w-40 sm:flex-col sm:border-r sm:border-b-0"
+			class="flex min-w-0 shrink-0 gap-0.5 overflow-x-auto border-b border-border-secondary p-2 sm:w-40 sm:flex-col sm:border-r sm:border-b-0"
 			aria-label="Settings sections"
 		>
 			{#each sections as section (section.id)}
@@ -79,7 +88,11 @@
 				{:catch}
 					<LoadError label="shared links" inline />
 				{/await}
-			{:else}
+			{:else if active === 'connections'}
+				{#await import('../desktop/ServersPage.svelte') then { default: ServersPage }}
+					<ServersPage onChanged={() => void browseRequests.changed()} />
+				{:catch}<LoadError label="connections" inline />{/await}
+			{:else if active === 'account'}
 				<AccountSettings />
 			{/if}
 		</div>

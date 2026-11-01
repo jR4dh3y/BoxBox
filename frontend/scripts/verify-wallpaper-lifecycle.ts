@@ -11,7 +11,7 @@ const server = await startServer(
 	root,
 	root,
 	'wallpaper-lifecycle',
-	['other']
+	{ additionalUsers: ['other'] }
 );
 const browser = await chromium.launch({ headless: true });
 const image = Buffer.from(

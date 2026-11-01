@@ -1,3 +1,15 @@
+import { useBrowsePaste } from './paste.svelte';
+import {
+	isNativePath,
+	isLocalDesktop,
+	openDesktopFile,
+	supportsServerTransfer
+} from '#lib/api/desktop.js';
+import {
+	beginBrowseClipboardPublication,
+	finishBrowseClipboardPublication,
+	publishBrowseClipboardInOrder
+} from './clipboardPublication';
 import { SvelteSet } from 'svelte/reactivity';
 import {
 	createDirectory,
@@ -8,7 +20,7 @@ import {
 	rename,
 	type FileInfo
 } from '#lib/api/files.js';
-import { createCopyJob, createDeleteJob, createMoveJob } from '#lib/api/jobs.js';
+import { createDeleteJob } from '#lib/api/jobs.js';
 import { clipboardStore } from '#lib/stores/clipboard.svelte.js';
 import { jobsStore } from '#lib/stores/jobs.svelte.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
@@ -51,6 +63,8 @@ export function useBrowseActions(
 	data: BrowseData,
 	selection: BrowseSelection
 ) {
+	const pasteController = useBrowsePaste(location, data);
+	let openWithFile = $state<FileInfo | null>(null);
 	let previewFile = $state<FileInfo | null>(null);
 	let createDialog = $state<{ open: boolean; type: 'file' | 'directory'; name: string }>({
 		open: false,
@@ -110,24 +124,25 @@ export function useBrowseActions(
 		}
 	}
 
-	async function paste() {
-		if (!clipboardStore.hasItems || !location.path) return;
-
-		const operation = clipboardStore.operation;
+	async function publishClipboard(items: FileInfo[], operation: 'copy' | 'cut') {
+		const revision = beginBrowseClipboardPublication();
+		if (operation === 'copy') clipboardStore.copy(items);
+		else clipboardStore.cut(items);
+		if (!isLocalDesktop() || items.some((item) => !isNativePath(item.path))) {
+			finishBrowseClipboardPublication(revision, 'failed');
+			return;
+		}
 		try {
-			for (const item of clipboardStore.items) {
-				const destPath = `${location.path}/${item.name}`;
-				if (operation === 'copy') {
-					jobsStore.upsertJob(await createCopyJob(item.path, destPath));
-				} else if (operation === 'cut') {
-					jobsStore.upsertJob(await createMoveJob(item.path, destPath));
-				}
-			}
-			if (operation === 'cut') clipboardStore.clear();
-			data.refetchDirectory();
-		} catch (error) {
-			console.error('Paste operation failed:', error);
-			toastStore.error(errorMessage(error, 'Paste failed'));
+			const { setDesktopClipboard } = await import('#lib/api/desktopClipboard.js');
+			await publishBrowseClipboardInOrder(() =>
+				setDesktopClipboard(
+					items.map((item) => item.path),
+					operation
+				)
+			);
+			finishBrowseClipboardPublication(revision, 'published');
+		} catch {
+			finishBrowseClipboardPublication(revision, 'failed');
 		}
 	}
 
@@ -142,6 +157,10 @@ export function useBrowseActions(
 
 		try {
 			await rename(oldPath, newPath);
+			if (isNativePath(oldPath)) {
+				const { desktopUndo } = await import('./undo.svelte');
+				desktopUndo.rememberRename(oldPath, newPath);
+			}
 			renameDialog = { open: false, file: null, newName: '' };
 			data.refetchDirectory();
 		} catch (error) {
@@ -155,8 +174,14 @@ export function useBrowseActions(
 		if (items.length === 0) return;
 
 		try {
+			const trashed: string[] = [];
 			for (const item of items) {
-				if (item.isDir) {
+				if (isNativePath(item.path)) {
+					const { trashDesktopFile } = await import('#lib/api/desktopTrash.js');
+					trashed.push((await trashDesktopFile(item.path)).id);
+					const { desktopUndo } = await import('./undo.svelte');
+					desktopUndo.rememberTrash([...trashed]);
+				} else if (item.isDir) {
 					jobsStore.upsertJob(await createDeleteJob(item.path));
 				} else {
 					await deleteFile(item.path);
@@ -176,6 +201,13 @@ export function useBrowseActions(
 	}
 
 	return {
+		paste: pasteController,
+		get openWithFile() {
+			return openWithFile;
+		},
+		closeOpenWith() {
+			openWithFile = null;
+		},
 		get previewFile() {
 			return previewFile;
 		},
@@ -201,7 +233,7 @@ export function useBrowseActions(
 			return cutPaths;
 		},
 		get canPaste() {
-			return clipboardStore.hasItems;
+			return clipboardStore.hasItems || (isNativePath(location.path) && data.canCreate);
 		},
 
 		setCreateName(name: string) {
@@ -232,6 +264,12 @@ export function useBrowseActions(
 				location.navigate(file.path);
 				return;
 			}
+			if (isNativePath(file.path)) {
+				void openDesktopFile(file.path).catch((error) =>
+					toastStore.error(errorMessage(error, 'Open failed'))
+				);
+				return;
+			}
 			if (!canPreview(file.name)) {
 				toastStore.info(`Preview not available for ${getFileTypeDescription(file.name)}`);
 				return;
@@ -250,8 +288,31 @@ export function useBrowseActions(
 		},
 
 		async handleContextMenuAction(action: string, items: FileInfo[]) {
+			if (
+				data.isReadOnly &&
+				['new-file', 'new-folder', 'cut', 'paste', 'rename', 'delete'].includes(action)
+			) {
+				toastStore.error('This location is read-only or unavailable');
+				return;
+			}
 			const [only] = items.length === 1 ? items : [];
 			switch (action) {
+				case 'open-with':
+					if (only && isNativePath(only.path)) openWithFile = only;
+					break;
+				case 'preview':
+					if (only) previewFile = only;
+					break;
+				case 'open-terminal':
+					if (only?.isDir && isNativePath(only.path)) {
+						const { openDesktopTerminal } = await import('#lib/api/desktopApps.js');
+						try {
+							await openDesktopTerminal(only.path);
+						} catch (error) {
+							toastStore.error(errorMessage(error, 'Terminal could not open'));
+						}
+					}
+					break;
 				case 'new-file':
 					openCreate('file');
 					break;
@@ -259,13 +320,13 @@ export function useBrowseActions(
 					openCreate('directory');
 					break;
 				case 'copy':
-					clipboardStore.copy(items);
+					await publishClipboard(items, 'copy');
 					break;
 				case 'cut':
-					clipboardStore.cut(items);
+					await publishClipboard(items, 'cut');
 					break;
 				case 'paste':
-					await paste();
+					await pasteController.paste();
 					break;
 				case 'pin':
 					if (only?.isDir) {
@@ -290,10 +351,10 @@ export function useBrowseActions(
 					}
 					break;
 				case 'download':
-					download(items);
+					if (supportsServerTransfer(items)) download(items);
 					break;
 				case 'share':
-					if (only) shareItem = only;
+					if (only && supportsServerTransfer(items)) shareItem = only;
 					break;
 				case 'properties':
 					if (only) propertiesDialog = { open: true, file: only };
