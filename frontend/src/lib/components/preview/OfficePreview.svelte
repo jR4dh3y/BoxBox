@@ -214,10 +214,12 @@
 				<p class="text-sm font-medium text-text-primary">Local preview unavailable</p>
 				<p class="text-sm text-text-secondary">{error}</p>
 			</div>
-			<Button variant="primary" onclick={openDownload}>
-				<Download size={18} />
-				Download File
-			</Button>
+			{#if downloadUrl}
+				<Button variant="primary" onclick={openDownload}>
+					<Download size={18} />
+					Download File
+				</Button>
+			{/if}
 		</div>
 	{/if}
 

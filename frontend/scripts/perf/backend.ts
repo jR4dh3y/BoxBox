@@ -8,28 +8,28 @@ const ref = baseArgument();
 if (!ref) throw new Error('Pass --base <revision> for same-runner benchmark comparison');
 const pattern = '^(BenchmarkListDirectory|BenchmarkSearchWalk)$';
 
-// A base revision whose List still takes sort options gets this adapter instead of
-// list_folder_test.go. It lists the whole folder in one call, so both revisions do the same work.
-const optionsAdapter = `package service
+// A base revision from before the single-trip listing pages through a folder. This adapter opens
+// the whole folder that way, so the base measures the same user work as `listWholeFolder` on head.
+const pagingAdapter = `package service
 
 import (
 	"context"
-	"reflect"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 )
 
 func listWholeFolder(ctx context.Context, svc FileService, path string) (int, error) {
-	opts := model.ListOptions{SortBy: "name", SortDir: "asc", IncludeHidden: true}
-	// Paged revisions get one page large enough for the whole fixture.
-	if pageSize := reflect.ValueOf(&opts).Elem().FieldByName("PageSize"); pageSize.IsValid() {
-		pageSize.SetInt(1 << 30)
+	seen := 0
+	for page := 1; ; page++ {
+		list, err := svc.List(ctx, path, model.ListOptions{Page: page, PageSize: 50, SortBy: "name", SortDir: "asc", IncludeHidden: true})
+		if err != nil {
+			return 0, err
+		}
+		seen += len(list.Items)
+		if seen >= list.TotalCount || len(list.Items) == 0 {
+			return seen, nil
+		}
 	}
-	list, err := svc.List(ctx, path, opts)
-	if err != nil {
-		return 0, err
-	}
-	return len(list.Items), nil
 }
 `;
 
@@ -45,10 +45,8 @@ await withBaseline(ref, async (base, sha) => {
 	]) {
 		copyFileSync(service(repo, name), service(base, name));
 	}
-	const takesOptions = readFileSync(service(base, 'file.go'), 'utf8').includes(
-		'opts model.ListOptions'
-	);
-	if (takesOptions) writeFileSync(service(base, 'list_folder_test.go'), optionsAdapter);
+	const pages = readFileSync(service(base, 'file.go'), 'utf8').includes('opts model.ListOptions');
+	if (pages) writeFileSync(service(base, 'list_folder_test.go'), pagingAdapter);
 	else copyFileSync(service(repo, 'list_folder_test.go'), service(base, 'list_folder_test.go'));
 	const binaries = [join(results, 'backend-base.test'), join(results, 'backend-head.test')];
 	for (const [index, root] of [base, repo].entries()) {

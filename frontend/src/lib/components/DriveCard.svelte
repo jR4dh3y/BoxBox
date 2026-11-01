@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { DriveStats } from '#lib/api/files.js';
+	import DeploymentIcon from './desktop/DeploymentIcon.svelte';
 	import { HardDrive } from 'lucide-svelte';
 	import { formatFileSize } from '#lib/utils/format.js';
 	import { ProgressBar } from '#lib/components/ui/index.js';
@@ -23,7 +24,10 @@
 	const freeFormatted = $derived(formatFileSize(drive.freeBytes));
 
 	const cardClass =
-		'relative flex w-full cursor-pointer items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary';
+		'relative flex w-full cursor-pointer flex-wrap items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4 text-left transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary';
+	const details = $derived(
+		[drive.device || drive.serverName, drive.fsType].filter(Boolean).join(' · ')
+	);
 	const usageLevel = $derived(driveUsageLevel(drive.usedPct));
 
 	function handleClickOutside(e: MouseEvent): void {
@@ -35,12 +39,14 @@
 
 {#snippet contents()}
 	<div
-		class="flex w-22 shrink-0 items-center justify-center rounded bg-surface-elevated text-text-secondary"
+		class="flex size-22 shrink-0 items-center justify-center self-center rounded bg-surface-elevated text-text-secondary"
 	>
-		<HardDrive size={22} />
+		{#if drive.serverName}<DeploymentIcon icon={drive.serverIcon} size={22} />{:else}<HardDrive
+				size={22}
+			/>{/if}
 	</div>
 
-	<div class="flex min-w-0 flex-1 flex-col gap-1.5">
+	<div class="flex min-w-0 flex-1 basis-40 flex-col gap-1.5">
 		{#if name.renaming}
 			<!-- Renaming is rare, so its field loads on first use. -->
 			{#await import('./ui/InlineRename.svelte') then { default: InlineRename }}
@@ -49,34 +55,30 @@
 				<LoadError label="rename field" onClose={name.cancel} />
 			{/await}
 		{:else}
-			<div class="grid h-5 grid-cols-[minmax(0,1fr)_5.25rem] items-center gap-2">
+			<div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
 				<span
-					class="min-w-0 truncate text-sm font-medium text-text-primary"
+					class="min-w-0 flex-1 basis-36 text-sm font-medium break-words text-text-primary"
 					title={name.displayName}
 				>
 					{name.displayName}
 				</span>
-				<div class="flex w-[5.25rem] shrink-0 justify-end overflow-hidden">
-					<span
-						class="inline-flex items-center rounded bg-surface-elevated px-2 py-0.5 text-xs font-medium whitespace-nowrap text-text-secondary"
-					>
-						{totalFormatted}
-					</span>
-				</div>
+				<span
+					class="inline-flex shrink-0 items-center rounded bg-surface-elevated px-2 py-0.5 text-xs font-medium whitespace-nowrap text-text-secondary"
+				>
+					{totalFormatted}
+				</span>
 			</div>
 		{/if}
-		<div class="text-xs text-text-muted">
+		<div class="text-xs text-text-muted" title="{usedFormatted} used · {freeFormatted} free">
 			{usedFormatted} used · {freeFormatted} free
 			{#if drive.readOnly}
 				<span class="ml-1 text-warning">· Read-only</span>
 			{/if}
 		</div>
-		{#if drive.device}
-			<div
-				class="truncate font-mono text-[11px] text-text-muted"
-				title="{drive.device} ({drive.fsType || 'unknown'})"
-			>
-				{drive.device}
+		{#if drive.device || drive.serverName}
+			<div class="truncate text-[11px] text-text-muted" title={details}>
+				{#if drive.device}<span class="font-mono">{drive.device}</span
+					>{:else}{drive.serverName}{/if}
 				{#if drive.fsType}
 					<span class="text-text-secondary"> · {drive.fsType}</span>
 				{/if}

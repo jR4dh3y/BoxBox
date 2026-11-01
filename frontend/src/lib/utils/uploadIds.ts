@@ -9,5 +9,5 @@ export function getChunkCount(
 	fileSize: number,
 	chunkSize: number = CONFIG.upload.defaultChunkSize
 ): number {
-	return Math.ceil(fileSize / chunkSize);
+	return Math.max(1, Math.ceil(fileSize / chunkSize));
 }

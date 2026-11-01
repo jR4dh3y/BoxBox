@@ -40,9 +40,7 @@
 <footer
 	class="browse-chrome flex items-center justify-between border-t border-border-secondary bg-surface-primary px-3 py-1 text-xs text-text-secondary"
 >
-	<div class="flex items-center gap-3">
-		<span>{statusText}</span>
-	</div>
+	<span role="status" aria-live="polite" aria-atomic="true">{statusText}</span>
 	<div class="flex items-center gap-3">
 		<div class="flex gap-0.5 rounded bg-surface-secondary p-0.5">
 			<button

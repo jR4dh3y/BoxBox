@@ -20,6 +20,8 @@
 
 	/* Accent colors */
 	--color-accent: #4a9eff;
+	--color-accent-solid: #2f6fcf;
+	--color-accent-solid-hover: #2760b5;
 	--color-accent-hover: #345580;
 	--color-accent-muted: #2d4a6f;
 
@@ -243,3 +245,6 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
   background: rgba(74, 158, 255, 0.08);
   color: #ffffff;
 }
+
+/* Inline package names and installation paths must fit phone-sized docs. */
+.doc-content :not(pre) > code { overflow-wrap: anywhere; }

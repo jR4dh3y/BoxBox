@@ -50,6 +50,9 @@ func NewHandler(devMode ...bool) (*Handler, error) {
 			1,
 		)
 	}
+	if len(devMode) > 1 && devMode[1] {
+		indexHTML = bytes.Replace(indexHTML, []byte("<head>"), []byte(`<head><meta name="boxbox-desktop" content="true">`), 1)
+	}
 
 	return &Handler{
 		fsys:      fsys,

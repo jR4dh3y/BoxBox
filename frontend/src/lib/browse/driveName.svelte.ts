@@ -9,7 +9,7 @@ export function useDriveName(drive: () => DriveStats) {
 
 	return {
 		get displayName() {
-			return customName || drive().name;
+			return customName || drive().label || drive().name;
 		},
 		get hasCustomName() {
 			return !!customName;

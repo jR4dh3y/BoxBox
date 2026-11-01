@@ -3,7 +3,7 @@
  * File and folder share links with token-authenticated recipient access
  */
 
-import { api, apiRequest } from './client';
+import { apiRequest } from './client';
 import type { BackgroundImageMode } from '#lib/utils/wallpaper.js';
 
 /**
@@ -110,40 +110,8 @@ export interface ShareDirectoryResponse {
 	items: ShareItem[];
 }
 
-interface ShareActionResponse {
+export interface ShareActionResponse {
 	success: boolean;
-}
-
-/**
- * Create a share link for a file or folder
- * POST /api/v1/shares
- */
-export async function createShare(
-	path: string,
-	options: CreateShareOptions
-): Promise<CreateShareResponse> {
-	return api.post<CreateShareResponse>('/shares', {
-		path,
-		...(options.permissions ? { permissions: options.permissions } : {}),
-		...(options.maxUploadBytes !== undefined ? { maxUploadBytes: options.maxUploadBytes } : {}),
-		expiresInSeconds: options.expiresInSeconds ?? null
-	});
-}
-
-/**
- * List active share links
- * GET /api/v1/shares
- */
-export async function listShares(): Promise<ShareListResponse> {
-	return api.get<ShareListResponse>('/shares');
-}
-
-/**
- * Revoke a share link
- * DELETE /api/v1/shares/{id}
- */
-export async function revokeShare(id: string): Promise<ShareActionResponse> {
-	return api.delete<ShareActionResponse>(`/shares/${encodeURIComponent(id)}`);
 }
 
 /** Remove an item below a shared folder. The token is the only credential. */

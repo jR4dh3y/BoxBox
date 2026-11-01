@@ -10,6 +10,8 @@ import { createDirectoryFixture, startServer } from './server';
 import { verifySelectionRefresh } from './selection-refresh';
 import { verifyNavigation } from './navigation';
 import { verifyLazyLoadErrors } from './lazy-load-errors';
+import { verifyLazyFeatures } from './lazy-features';
+import { verifyTrashSelection } from './trash-selection';
 
 const profiles = [
 	{ name: 'local', latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
@@ -220,6 +222,8 @@ async function benchmark(base?: string, sha?: string) {
 		await verifyLazyLoadErrors(browser, head.url, head.credentials);
 		await verifyNavigation(browser, head.url, head.credentials, fixture.mount);
 		await verifySelectionRefresh(browser, head.url, head.credentials, fixture.mount);
+		await verifyLazyFeatures(browser, head.url, head.credentials, fixture.mount);
+		await verifyTrashSelection(browser, head.url, head.credentials);
 	} finally {
 		writeFileSync(
 			join(results, 'browser.json'),
