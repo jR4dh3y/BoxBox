@@ -3,8 +3,9 @@
 	import { page } from '$app/state';
 	import { FileChooser } from '#lib/desktop/chooser.svelte.js';
 	import FileList from '#lib/components/FileList.svelte';
+	import ChooserLocations from './ChooserLocations.svelte';
 	import { Button, Input } from '#lib/components/ui/index.js';
-	import { ArrowUp, Folder, HardDrive, Search, X } from 'lucide-svelte';
+	import { ArrowUp, Folder, HardDrive, Search, X, MapPin } from 'lucide-svelte';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	let searchInput: HTMLInputElement | undefined;
 	const chooser = new FileChooser(page.url.searchParams.get('id') ?? '');
@@ -42,7 +43,7 @@
 				{#each chooser.roots as root (root.name)}
 					<button
 						class="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-surface-tertiary focus-visible:outline-2 focus-visible:outline-accent"
-						class:bg-selection={chooser.path === root.name}
+						class:bg-selection={chooser.view === 'files' && chooser.path === root.name}
 						onclick={() => chooser.open(root.name)}
 					>
 						{#if root.name === 'root'}<HardDrive size={16} />{:else}<Folder size={16} />{/if}<span
@@ -50,89 +51,102 @@
 						>
 					</button>
 				{/each}
+				<button
+					type="button"
+					class="mt-2 flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-surface-tertiary focus-visible:outline-2 focus-visible:outline-accent"
+					class:bg-selection={chooser.view === 'locations'}
+					onclick={() => chooser.showLocations()}
+					><MapPin size={16} class="shrink-0" /><span>Other locations</span></button
+				>
 			</nav>
 			<section aria-label="Files" class="flex min-w-0 flex-1 flex-col">
-				<div class="flex min-h-12 shrink-0 items-center gap-3 border-b border-border-secondary p-2">
-					<form
-						class="flex min-w-0 flex-1 items-center gap-2"
-						onsubmit={(event) => {
-							event.preventDefault();
-							void chooser.open(chooser.location);
-						}}
+				{#if chooser.view === 'locations'}
+					<ChooserLocations {chooser} />
+				{:else}
+					<div
+						class="flex min-h-12 shrink-0 items-center gap-3 border-b border-border-secondary p-2"
 					>
-						<Button
-							variant="ghost"
-							title="Parent folder"
-							disabled={!chooser.path.includes('/')}
-							onclick={() => chooser.open(chooser.path.slice(0, chooser.path.lastIndexOf('/')))}
-							><ArrowUp size={16} /></Button
-						>
-						<label class="sr-only" for="chooser-location">Location</label><input
-							id="chooser-location"
-							class="min-w-0 flex-1 rounded border border-border-secondary bg-surface-primary px-3 py-2 outline-accent"
-							title="Enter a location and press Enter"
-							bind:value={chooser.location}
-						/>
-					</form>
-					<form
-						role="search"
-						class="relative w-48 max-w-[45%] shrink-0"
-						onsubmit={(event) => event.preventDefault()}
-					>
-						<label class="sr-only" for="chooser-search">Search this folder</label>
-						<Search
-							size={16}
-							class="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-text-secondary"
-						/>
-						<input
-							id="chooser-search"
-							bind:this={searchInput}
-							type="search"
-							placeholder="Search this folder"
-							class="w-full rounded border border-border-secondary bg-surface-primary py-2 pr-8 pl-8 outline-accent [&::-webkit-search-cancel-button]:appearance-none"
-							value={chooser.query}
-							oninput={(event) => chooser.search(event.currentTarget.value)}
-							onkeydown={(event) => {
-								if (event.key === 'Escape') {
-									event.preventDefault();
-									chooser.search('');
-								}
+						<form
+							class="flex min-w-0 flex-1 items-center gap-2"
+							onsubmit={(event) => {
+								event.preventDefault();
+								void chooser.open(chooser.location);
 							}}
-						/>
-						{#if chooser.query}
-							<button
-								type="button"
-								aria-label="Clear search"
-								class="absolute top-1/2 right-1 -translate-y-1/2 rounded p-1 text-text-secondary hover:bg-surface-tertiary focus-visible:outline-2 focus-visible:outline-accent"
-								onclick={() => {
-									chooser.search('');
-									searchInput?.focus();
-								}}><X size={16} /></button
+						>
+							<Button
+								variant="ghost"
+								title="Parent folder"
+								disabled={!chooser.path.includes('/')}
+								onclick={() => chooser.open(chooser.path.slice(0, chooser.path.lastIndexOf('/')))}
+								><ArrowUp size={16} /></Button
 							>
-						{/if}
-					</form>
-				</div>
-				<div class="min-h-0 flex-1 overflow-auto">
-					<FileList
-						items={chooser.visible}
-						emptyMessage={chooser.query.trim()
-							? 'No matching files or folders'
-							: 'This folder is empty'}
-						viewKey={chooser.path}
-						selectedPaths={chooser.selected}
-						isLoading={chooser.loading}
-						selectionCheckboxes={true}
-						onSelectionChange={(paths) => chooser.select(paths)}
-						onItemClick={(item) => chooser.choose(item)}
-						sortBy={chooser.sortBy}
-						sortDir={chooser.sortDir}
-						onSortChange={(field, dir) => {
-							chooser.sortBy = field;
-							chooser.sortDir = dir;
-						}}
-						readOnly={true}
-					/>
-				</div>
+							<label class="sr-only" for="chooser-location">Location</label><input
+								id="chooser-location"
+								class="min-w-0 flex-1 rounded border border-border-secondary bg-surface-primary px-3 py-2 outline-accent"
+								title="Enter a location and press Enter"
+								bind:value={chooser.location}
+							/>
+						</form>
+						<form
+							role="search"
+							class="relative w-48 max-w-[45%] shrink-0"
+							onsubmit={(event) => event.preventDefault()}
+						>
+							<label class="sr-only" for="chooser-search">Search this folder</label>
+							<Search
+								size={16}
+								class="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-text-secondary"
+							/>
+							<input
+								id="chooser-search"
+								bind:this={searchInput}
+								type="search"
+								placeholder="Search this folder"
+								class="w-full rounded border border-border-secondary bg-surface-primary py-2 pr-8 pl-8 outline-accent [&::-webkit-search-cancel-button]:appearance-none"
+								value={chooser.query}
+								oninput={(event) => chooser.search(event.currentTarget.value)}
+								onkeydown={(event) => {
+									if (event.key === 'Escape') {
+										event.preventDefault();
+										chooser.search('');
+									}
+								}}
+							/>
+							{#if chooser.query}
+								<button
+									type="button"
+									aria-label="Clear search"
+									class="absolute top-1/2 right-1 -translate-y-1/2 rounded p-1 text-text-secondary hover:bg-surface-tertiary focus-visible:outline-2 focus-visible:outline-accent"
+									onclick={() => {
+										chooser.search('');
+										searchInput?.focus();
+									}}><X size={16} /></button
+								>
+							{/if}
+						</form>
+					</div>
+					<div class="min-h-0 flex-1 overflow-auto">
+						<FileList
+							items={chooser.visible}
+							emptyMessage={chooser.query.trim()
+								? 'No matching files or folders'
+								: 'This folder is empty'}
+							viewKey={chooser.path}
+							selectedPaths={chooser.selected}
+							isLoading={chooser.loading}
+							selectionCheckboxes={true}
+							onSelectionChange={(paths) => chooser.select(paths)}
+							onItemClick={(item) => chooser.choose(item)}
+							sortBy={chooser.sortBy}
+							sortDir={chooser.sortDir}
+							onSortChange={(field, dir) => {
+								chooser.sortBy = field;
+								chooser.sortDir = dir;
+							}}
+							readOnly={true}
+						/>
+					</div>
+				{/if}
 				{#if chooser.error}<p role="alert" class="px-4 py-2 text-danger">{chooser.error}</p>{/if}
 				{#if chooser.done}<p role="status" class="px-4 py-2 text-text-secondary">
 						Selection complete. This window will close.
@@ -191,6 +205,7 @@
 					variant="primary"
 					onclick={() => chooser.accept()}
 					disabled={chooser.loading ||
+						chooser.view === 'locations' ||
 						chooser.busy ||
 						!chooser.request ||
 						chooser.done ||

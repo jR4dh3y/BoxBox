@@ -5,6 +5,8 @@ import { listRoots, type FileInfo, type MountPoint } from '#lib/api/files.js';
 import { parseDirectory } from '#lib/api/directory.js';
 import { sortFiles } from '#lib/browse/sortFiles.js';
 import type { SortDir, SortField } from '#lib/types/files.js';
+import type { DesktopVolume } from '#lib/api/desktopVolumes.js';
+import { VolumesController } from './volumes.svelte.js';
 
 function integer(value: unknown): number {
 	if (typeof value !== 'number' || !Number.isInteger(value))
@@ -56,6 +58,7 @@ function parseRequest(value: unknown) {
 
 /** One portal picker. Directory reads and sort choices use the same contracts as Browse. */
 export class FileChooser {
+	view = $state<'files' | 'locations'>('files');
 	request = $state<ReturnType<typeof parseRequest> | null>(null);
 	roots = $state<MountPoint[]>([]);
 	path = $state('');
@@ -76,7 +79,10 @@ export class FileChooser {
 	done = $state(false);
 	#abort: AbortController | undefined;
 	#replacementTarget: string | undefined;
-	constructor(readonly id: string) {}
+	constructor(
+		readonly id: string,
+		readonly volumes = new VolumesController()
+	) {}
 	get visible() {
 		const filter = this.request?.filters[this.filter];
 		const query = this.query.trim().toLocaleLowerCase();
@@ -122,6 +128,7 @@ export class FileChooser {
 		}
 	}
 	async open(path: string) {
+		this.view = 'files';
 		this.#abort?.abort();
 		const abort = new AbortController();
 		this.#abort = abort;
@@ -143,6 +150,27 @@ export class FileChooser {
 		} finally {
 			if (this.#abort === abort) this.loading = false;
 		}
+	}
+	showLocations() {
+		this.#abort?.abort();
+		this.loading = false;
+		this.view = 'locations';
+		this.selected = new SvelteSet();
+		this.query = '';
+		this.replace = false;
+		this.error = '';
+	}
+	async openVolume(volume: DesktopVolume) {
+		if (this.volumes.busy) return;
+		let current = volume;
+		if (!volume.mounted) {
+			if (!volume.canMount || !(await this.volumes.act(volume, 'mount'))) return;
+			const mounted = this.volumes.snapshot.value?.volumes.find((item) => item.id === volume.id);
+			if (!mounted || this.view !== 'locations') return;
+			current = mounted;
+		}
+		if (current.browsePath) await this.open(current.browsePath);
+		else this.error = 'This drive does not expose a local folder that BoxBox can select from.';
 	}
 	search(query: string) {
 		this.query = query;
@@ -172,7 +200,7 @@ export class FileChooser {
 		this.replace = false;
 	}
 	async accept() {
-		if (this.busy || !this.request) return;
+		if (this.busy || !this.request || this.view !== 'files') return;
 		let paths: string[];
 		if (this.request.kind === 'save') {
 			if (!this.name || this.name === '.' || this.name === '..' || /[/\0]/.test(this.name)) {

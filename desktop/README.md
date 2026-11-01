@@ -158,7 +158,10 @@ current filter, suggested locations and names, accept labels, and extra choices.
 The top bar searches file and folder names in the current folder. Ctrl+F focuses
 search; Escape or Clear search restores the listing. Search respects hidden-file
 and file-type filters and clears selections that no longer match. Navigating to
-another folder clears the query.
+another folder clears the query. Other locations lists configured local roots and
+discovered drives. Opening an unmounted drive uses the existing desktop mount
+action, then browses the confirmed local path. Remote BoxBox servers cannot be
+selected for a system file request.
 
 Cancel, portal Request.Close and closing the chooser window cancel the request.
 Saving returns a destination URI; BoxBox never writes the application's contents.

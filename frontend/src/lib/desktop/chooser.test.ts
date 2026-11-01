@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FileChooser, globMatch } from './chooser.svelte';
+import { VolumesController } from './volumes.svelte';
+import type { DesktopVolume } from '#lib/api/desktopVolumes.js';
 test('portal globs cover wildcards, case classes and literal regex characters', () => {
 	assert.equal(globMatch('*.[pP][nN][gG]', 'image.PNG'), true);
 	assert.equal(globMatch('Report?.txt', 'Report1.txt'), true);
@@ -98,4 +100,67 @@ test('searching a save destination keeps the entered filename', () => {
 	chooser.name = 'holiday.png';
 	chooser.search('logo');
 	assert.equal(chooser.name, 'holiday.png');
+});
+
+test('Other locations clears file selection and cannot submit the previous destination', async () => {
+	const chooser = imageChooser();
+	chooser.select(new Set(['home/logo']));
+	chooser.search('logo');
+	chooser.showLocations();
+	assert.equal(chooser.view, 'locations');
+	assert.equal(chooser.selected.size, 0);
+	assert.equal(chooser.query, '');
+	await chooser.accept();
+	assert.equal(chooser.busy, false);
+	assert.equal(chooser.done, false);
+	assert.equal(chooser.error, '');
+});
+
+const removable: DesktopVolume = {
+	id: 'usb',
+	name: 'Photos',
+	driveName: 'USB drive',
+	mounted: false,
+	readOnly: false,
+	canMount: true,
+	canUnmount: false,
+	canEject: false
+};
+
+test('mounting in Other locations opens the fresh backend browse path', async () => {
+	const actions: string[] = [];
+	const volumes = new VolumesController({
+		list: async () => ({ available: true, volumes: [removable] }),
+		act: async (id, action) => {
+			actions.push(`${id}/${action}`);
+			return {
+				available: true,
+				volumes: [{ ...removable, mounted: true, browsePath: 'root/media/Photos' }]
+			};
+		}
+	});
+	const chooser = new FileChooser('request', volumes);
+	chooser.showLocations();
+	const opened: string[] = [];
+	chooser.open = async (path) => {
+		opened.push(path);
+	};
+	await chooser.openVolume(removable);
+	assert.deepEqual(actions, ['usb/mount']);
+	assert.deepEqual(opened, ['root/media/Photos']);
+});
+
+test('failed mounts stay in Other locations and expose the action error', async () => {
+	const volumes = new VolumesController({
+		list: async () => ({ available: true, volumes: [removable] }),
+		act: async () => {
+			throw new Error('Mount permission denied');
+		}
+	});
+	const chooser = new FileChooser('request', volumes);
+	chooser.showLocations();
+	await chooser.openVolume(removable);
+	assert.equal(chooser.view, 'locations');
+	assert.equal(volumes.error, 'Mount permission denied');
+	assert.equal(chooser.path, '');
 });

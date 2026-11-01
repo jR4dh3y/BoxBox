@@ -365,7 +365,7 @@
 
 	<table
 		bind:this={tableElement}
-		class="w-full min-w-[720px] table-fixed border-collapse text-[13px] leading-5 outline-none"
+		class="w-full table-fixed border-collapse text-[13px] leading-5 outline-none"
 		role="grid"
 		tabindex="0"
 		aria-busy={isLoading}
@@ -383,9 +383,9 @@
 	>
 		<colgroup>
 			<col />
-			<col class="w-[170px]" />
-			<col class="w-[112px]" />
-			<col class="w-[168px]" />
+			<col class="w-[18%]" />
+			<col class="w-[15%]" />
+			<col class="w-[25%]" />
 		</colgroup>
 		<thead>
 			<tr aria-rowindex="1" style="height: {LIST_HEADER_HEIGHT}px">
@@ -405,9 +405,13 @@
 								: 'descending'
 							: 'none'}
 					>
-						<span class="inline-flex items-center gap-1">
-							{column.label}
-							<span class="inline-flex w-3 justify-center">
+						<span
+							class="flex min-w-0 items-center gap-1 {column.align === 'right'
+								? 'justify-end'
+								: ''}"
+						>
+							<span class="truncate">{column.label}</span>
+							<span class="inline-flex w-3 shrink-0 justify-center">
 								{#if sortBy === column.field}
 									{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown
 											size={12}
