@@ -18,34 +18,11 @@
 {#if !isLocalDesktop()}
 	<p class="p-6 text-text-primary">The file chooser is available in BoxBox Desktop.</p>
 {:else}
-	<main class="flex h-dvh flex-col bg-surface-primary text-[13px] text-text-primary">
-		<header
-			class="flex shrink-0 items-center justify-between gap-4 border-b border-border-secondary px-4 py-3"
-		>
-			<div class="min-w-0">
-				<h1 class="truncate text-sm font-medium">{chooser.request?.title || 'Choose a file'}</h1>
-				{#if chooser.request?.appId}<p class="truncate text-xs text-text-secondary">
-						{chooser.request.appId}
-					</p>{/if}
-			</div>
-			<div class="flex shrink-0 gap-2">
-				<Button variant="secondary" onclick={() => chooser.cancel()}>Cancel</Button>
-				<Button
-					variant="primary"
-					onclick={() => chooser.accept()}
-					disabled={chooser.loading ||
-						chooser.busy ||
-						!chooser.request ||
-						chooser.done ||
-						(chooser.request.kind === 'open' &&
-							!chooser.request.directory &&
-							chooser.selected.size === 0) ||
-						(chooser.request.kind === 'save' && !chooser.name)}
-				>
-					{chooser.replace ? 'Replace' : chooser.request?.acceptLabel || 'Open'}
-				</Button>
-			</div>
-		</header>
+	<main
+		aria-labelledby="chooser-title"
+		class="flex h-dvh flex-col bg-surface-primary text-[13px] text-text-primary"
+	>
+		<h1 id="chooser-title" class="sr-only">{chooser.request?.title || 'Choose a file'}</h1>
 		<div class="flex min-h-0 flex-1">
 			<nav
 				aria-label="Places"
@@ -65,7 +42,7 @@
 			</nav>
 			<section aria-label="Files" class="flex min-w-0 flex-1 flex-col">
 				<form
-					class="flex items-center gap-2 border-b border-border-secondary p-2"
+					class="flex min-h-12 shrink-0 items-center gap-2 border-b border-border-secondary p-2"
 					onsubmit={(event) => {
 						event.preventDefault();
 						void chooser.open(chooser.location);
@@ -110,7 +87,7 @@
 			</section>
 		</div>
 		<footer
-			class="flex shrink-0 flex-wrap items-center gap-3 border-t border-border-secondary px-4 py-3"
+			class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-3 border-t border-border-secondary px-4 py-3"
 		>
 			{#if chooser.request?.kind === 'save'}<label class="flex flex-1 items-center gap-2"
 					>Name <Input bind:value={chooser.name} placeholder="File name" /></label
@@ -151,10 +128,27 @@
 						/>{choice.label}</label
 					>{/if}
 			{/each}
-			<label class="ml-auto flex items-center gap-2"
+			<label class="flex items-center gap-2"
 				><input type="checkbox" class="accent-accent" bind:checked={chooser.hidden} />Show hidden
 				files</label
 			>
+			<div class="ml-auto flex shrink-0 items-center gap-2">
+				<Button variant="secondary" onclick={() => chooser.cancel()}>Cancel</Button>
+				<Button
+					variant="primary"
+					onclick={() => chooser.accept()}
+					disabled={chooser.loading ||
+						chooser.busy ||
+						!chooser.request ||
+						chooser.done ||
+						(chooser.request.kind === 'open' &&
+							!chooser.request.directory &&
+							chooser.selected.size === 0) ||
+						(chooser.request.kind === 'save' && !chooser.name)}
+				>
+					{chooser.replace ? 'Replace' : chooser.request?.acceptLabel || 'Open'}
+				</Button>
+			</div>
 		</footer>
 	</main>
 {/if}
