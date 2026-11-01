@@ -70,9 +70,9 @@
 						<label class="sr-only" for="chooser-location">Location</label><input
 							id="chooser-location"
 							class="min-w-0 flex-1 rounded border border-border-secondary bg-surface-primary px-3 py-2 outline-accent"
+							title="Enter a location and press Enter"
 							bind:value={chooser.location}
 						/>
-						<Button variant="secondary" type="submit">Go</Button>
 					</form>
 					<form
 						role="search"
