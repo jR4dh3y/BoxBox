@@ -458,6 +458,7 @@
 							}}
 							oncontextmenu={(e) => handleContextMenu(item, e)}
 							data-file-item="true"
+							data-file-path={item.path}
 						>
 							{#if selectionCheckboxes}
 								<input

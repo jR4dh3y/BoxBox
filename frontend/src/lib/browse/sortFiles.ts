@@ -2,18 +2,23 @@ import type { FileInfo } from '#lib/api/files.js';
 import type { SortDir, SortField } from '#lib/types/files.js';
 
 // Natural order: "9.txt" before "10.txt". Case and accents only decide otherwise equal names.
-const compareNames = new Intl.Collator(undefined, { numeric: true }).compare;
+const collateNames = new Intl.Collator('en', { numeric: true }).compare;
+const compareText = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
+const compareNames = (left: string, right: string) =>
+	collateNames(left, right) || compareText(left, right);
+
+export const DEFAULT_SORT_BY = 'modTime';
+export const DEFAULT_SORT_DIR = 'desc';
 
 interface SortKey {
 	item: FileInfo;
-	hidden: boolean;
-	/** Size, time, or 0 for folders and 1 for files; names compare separately. */
+	/** Size or modified time; names compare separately. */
 	value: number;
 }
 
 /**
- * Returns a sorted copy. Hidden entries always come last, and folders lead a name or type sort in
- * both directions; otherwise `desc` reverses the whole order, ties included.
+ * Folders lead every sort. Time and size ties use ascending natural names, then paths,
+ * so recursive search results and repeated reads have a deterministic order.
  */
 export function sortFiles(
 	items: readonly FileInfo[],
@@ -24,28 +29,22 @@ export function sortFiles(
 	const byValue = sortBy === 'size' || sortBy === 'modTime';
 	const keys: SortKey[] = items.map((item) => ({
 		item,
-		hidden: item.name.startsWith('.'),
-		value:
-			sortBy === 'size'
-				? item.size
-				: sortBy === 'modTime'
-					? Date.parse(item.modTime) || 0
-					: Number(!item.isDir)
+		value: sortBy === 'size' ? item.size : sortBy === 'modTime' ? Date.parse(item.modTime) || 0 : 0
 	}));
 	keys.sort((left, right) => {
-		if (left.hidden !== right.hidden) return left.hidden ? 1 : -1;
-		if ((sortBy === 'type' || sortBy === 'name') && left.value !== right.value) {
-			return left.value - right.value;
-		}
-		const comparison =
-			(byValue && left.value - right.value) || compareNames(left.item.name, right.item.name);
-		return direction * Math.sign(comparison);
+		if (left.item.isDir !== right.item.isDir) return left.item.isDir ? -1 : 1;
+		if (byValue && left.value !== right.value)
+			return direction * Math.sign(left.value - right.value);
+		return (
+			(byValue ? 1 : direction) * compareNames(left.item.name, right.item.name) ||
+			compareNames(left.item.path, right.item.path)
+		);
 	});
 	return keys.map((key) => key.item);
 }
 
-/** Name-ordered entries, without hidden ones unless `includeHidden`, for pickers and suggestions. */
-export function visibleByName(items: readonly FileInfo[], includeHidden: boolean): FileInfo[] {
+/** Default ordering for pickers and suggestions, filtering hidden entries only when requested. */
+export function visibleByDefault(items: readonly FileInfo[], includeHidden: boolean): FileInfo[] {
 	const visible = includeHidden ? items : items.filter((item) => !item.name.startsWith('.'));
-	return sortFiles(visible, 'name', 'asc');
+	return sortFiles(visible, DEFAULT_SORT_BY, DEFAULT_SORT_DIR);
 }

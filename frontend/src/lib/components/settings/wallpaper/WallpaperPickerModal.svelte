@@ -12,7 +12,7 @@
 		Image as ImageIcon
 	} from 'lucide-svelte';
 	import { Button, Modal, ProgressBar, Select } from '#lib/components/ui/index.js';
-	import { visibleByName } from '#lib/browse/sortFiles.js';
+	import { visibleByDefault } from '#lib/browse/sortFiles.js';
 	import { listDirectory, listRoots, type FileInfo, type MountPoint } from '#lib/api/files.js';
 	import { resolveBackgroundImage, toServerBackgroundImage } from '#lib/utils/appearance.js';
 	import { formatFileSize } from '#lib/utils/format.js';
@@ -142,7 +142,7 @@
 		try {
 			const response = await listDirectory(path, signal);
 			signal.throwIfAborted();
-			serverWallpaperItems = visibleByName(response.items, showHiddenFiles).slice(
+			serverWallpaperItems = visibleByDefault(response.items, showHiddenFiles).slice(
 				0,
 				SERVER_WALLPAPER_ITEMS_LIMIT
 			);

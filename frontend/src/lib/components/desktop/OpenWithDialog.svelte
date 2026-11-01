@@ -1,17 +1,20 @@
 <script lang="ts">
 	import { Button, Input, Modal, Spinner } from '#lib/components/ui/index.js';
 	import { CONFIG } from '#lib/config.js';
+	import ApplicationIcon from './ApplicationIcon.svelte';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import {
 		listDesktopApps,
 		openDesktopWithApp,
+		setDesktopDefaultApp,
 		type DesktopApplication,
 		type DesktopAppsResponse
 	} from '#lib/api/desktopApps.js';
 	import {
 		filterOpenWithChoices,
 		initialOpenWithChoice,
-		visibleOpenWithChoice
+		visibleOpenWithChoice,
+		withDefaultApplication
 	} from '#lib/desktop/openWith.js';
 
 	interface Props {
@@ -27,6 +30,7 @@
 	let selectedAppId = $state('');
 	let loading = $state(false);
 	let launching = $state(false);
+	let useAsDefault = $state(false);
 	let errorMessage = $state<string | null>(null);
 	let retryToken = $state(0);
 	let requestGeneration = 0;
@@ -47,6 +51,7 @@
 		apps = { mimeType: '', recommended: [], other: [] };
 		search = '';
 		selectedAppId = '';
+		useAsDefault = false;
 		errorMessage = null;
 		loading = true;
 		void retry;
@@ -79,6 +84,11 @@
 		launching = true;
 		errorMessage = null;
 		try {
+			if (useAsDefault) {
+				await setDesktopDefaultApp(path, appId);
+				apps = withDefaultApplication(apps, appId);
+				useAsDefault = false;
+			}
 			await openDesktopWithApp(path, appId);
 			onclose();
 		} catch (error) {
@@ -102,6 +112,7 @@
 			onchange={(event) => (selectedAppId = event.currentTarget.value)}
 			class="accent-accent"
 		/>
+		<ApplicationIcon {app} />
 		<span class="min-w-0 flex-1 truncate text-text-primary">{app.name}</span>
 		{#if app.isDefault}
 			<span class="shrink-0 text-text-muted">Default</span>
@@ -169,6 +180,15 @@
 					{/each}
 				{/if}
 			</fieldset>
+			<label class="mt-3 flex items-center gap-2 text-[13px] text-text-secondary">
+				<input
+					type="checkbox"
+					bind:checked={useAsDefault}
+					disabled={!chosenAppId || launching}
+					class="accent-accent"
+				/>
+				Use as default for {apps.mimeType || 'this file type'}
+			</label>
 		{/if}
 	{/if}
 

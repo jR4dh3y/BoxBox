@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
@@ -22,6 +24,7 @@ var (
 	ErrDesktopApplicationUnavailable = errors.New("application is not available for this file")
 	ErrDesktopTerminalUnavailable    = errors.New("no supported terminal is installed")
 	ErrDesktopLaunchFailed           = errors.New("desktop application could not be launched")
+	ErrDesktopDefaultFailed          = errors.New("default application could not be changed")
 	ErrDesktopTerminalLaunchFailed   = errors.New("terminal could not be launched")
 )
 
@@ -46,6 +49,8 @@ type DesktopApps interface {
 	Open(ctx context.Context, path string) error
 	ListApps(ctx context.Context, path string) (DesktopAppsResult, error)
 	OpenWith(ctx context.Context, path, appID string) error
+	SetDefault(ctx context.Context, path, appID string) error
+	Icon(ctx context.Context, appID string) (DesktopAppIcon, error)
 	OpenTerminal(ctx context.Context, path string) error
 }
 
@@ -58,9 +63,26 @@ type DesktopCommandRunner interface {
 }
 
 type desktopAppsService struct {
-	fs       filesystem.FS
-	mounts   *mounts
-	commands DesktopCommandRunner
+	fs        filesystem.FS
+	mounts    *mounts
+	commands  DesktopCommandRunner
+	defaultMu sync.Mutex
+	cacheMu   sync.Mutex
+	appsCache desktopAppsCache
+	iconCache map[string]desktopIconCacheEntry
+}
+
+const desktopCacheTTL = 30 * time.Second
+const desktopIconCacheLimit = 128
+
+type desktopAppsCache struct {
+	loadedAt time.Time
+	apps     map[string]installedDesktopApp
+}
+
+type desktopIconCacheEntry struct {
+	loadedAt time.Time
+	icon     DesktopAppIcon
 }
 
 // NewDesktopAppsService creates the GIO/XDG-backed desktop integration.
@@ -70,9 +92,10 @@ func NewDesktopAppsService(fsys filesystem.FS, mountPoints []model.MountPoint, c
 		commands = osDesktopCommandRunner{}
 	}
 	return &desktopAppsService{
-		fs:       fsys,
-		mounts:   newMounts(fsys, fixedMounts(mountPoints)),
-		commands: commands,
+		fs:        fsys,
+		mounts:    newMounts(fsys, fixedMounts(mountPoints)),
+		commands:  commands,
+		iconCache: make(map[string]desktopIconCacheEntry),
 	}
 }
 
@@ -106,16 +129,49 @@ func (s *desktopAppsService) ListApps(ctx context.Context, path string) (Desktop
 }
 
 func (s *desktopAppsService) OpenWith(ctx context.Context, path, appID string) error {
+	app, resolved, _, err := s.applicationForFile(ctx, path, appID)
+	if err != nil {
+		return err
+	}
+	if output, err := s.commands.Run(ctx, "gio", "launch", app.path, resolved); err != nil {
+		return launchFailed(output, err)
+	}
+	return nil
+}
+
+// SetDefault changes the user's association for the inspected MIME type, never an extension guessed by the renderer.
+func (s *desktopAppsService) SetDefault(ctx context.Context, path, appID string) error {
+	_, _, mimeType, err := s.applicationForFile(ctx, path, appID)
+	if err != nil {
+		return err
+	}
+	s.defaultMu.Lock()
+	defer s.defaultMu.Unlock()
+	if _, err := s.commands.Run(ctx, "gio", "mime", mimeType, appID); err != nil {
+		return fmt.Errorf("%w: %v", ErrDesktopDefaultFailed, err)
+	}
+	if err := updateDesktopMIMEOverride(mimeType, appID); err != nil {
+		return fmt.Errorf("%w: %v", ErrDesktopDefaultFailed, err)
+	}
+	output, err := s.commands.Output(ctx, "gio", "mime", mimeType)
+	firstLine, _, _ := strings.Cut(string(output), "\n")
+	if err != nil || !strings.HasSuffix(firstLine, ": "+appID) {
+		return fmt.Errorf("%w: the desktop did not confirm the selected default", ErrDesktopDefaultFailed)
+	}
+	return nil
+}
+
+func (s *desktopAppsService) applicationForFile(ctx context.Context, path, appID string) (installedDesktopApp, string, string, error) {
 	if !validDesktopID(appID) {
-		return ErrDesktopApplicationUnavailable
+		return installedDesktopApp{}, "", "", ErrDesktopApplicationUnavailable
 	}
 	resolved, err := s.resolveFile(path)
 	if err != nil {
-		return err
+		return installedDesktopApp{}, "", "", err
 	}
 	mimeType, err := s.detectMIMEType(ctx, resolved)
 	if err != nil {
-		return err
+		return installedDesktopApp{}, "", "", err
 	}
 	// Only an entry the list could have offered is launched; the renderer never supplies a command.
 	recommended, other := s.applicationsForMIMEType(mimeType)
@@ -123,12 +179,9 @@ func (s *desktopAppsService) OpenWith(ctx context.Context, path, appID string) e
 		if app.application.ID != appID {
 			continue
 		}
-		if output, err := s.commands.Run(ctx, "gio", "launch", app.path, resolved); err != nil {
-			return launchFailed(output, err)
-		}
-		return nil
+		return app, resolved, mimeType, nil
 	}
-	return ErrDesktopApplicationUnavailable
+	return installedDesktopApp{}, "", "", ErrDesktopApplicationUnavailable
 }
 
 func (s *desktopAppsService) OpenTerminal(ctx context.Context, path string) error {
@@ -222,7 +275,7 @@ type installedDesktopApp struct {
 // applicationsForMIMEType returns associated apps first, then every other visible app
 // whose Exec line takes a file or URL, sorted by name.
 func (s *desktopAppsService) applicationsForMIMEType(mimeType string) ([]installedDesktopApp, []installedDesktopApp) {
-	apps := readInstalledDesktopApps(s.commands)
+	apps := s.installedDesktopApps()
 	recommended := recommendedDesktopApps(apps, mimeType)
 	offered := make(map[string]struct{}, len(recommended))
 	for _, app := range recommended {
@@ -240,6 +293,16 @@ func (s *desktopAppsService) applicationsForMIMEType(mimeType string) ([]install
 		others[i] = apps[id]
 	}
 	return recommended, others
+}
+
+func (s *desktopAppsService) installedDesktopApps() map[string]installedDesktopApp {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.appsCache.apps != nil && time.Since(s.appsCache.loadedAt) < desktopCacheTTL {
+		return s.appsCache.apps
+	}
+	s.appsCache = desktopAppsCache{loadedAt: time.Now(), apps: readInstalledDesktopApps(s.commands)}
+	return s.appsCache.apps
 }
 
 func sortDesktopIDsByName(ids []string, apps map[string]installedDesktopApp) {
@@ -293,14 +356,17 @@ func recommendedDesktopApps(apps map[string]installedDesktopApp, mimeType string
 		appendID(id)
 	}
 
-	defaultIDs := make(map[string]struct{}, len(associations.defaults))
+	defaultID := ""
 	for _, id := range associations.defaults {
-		defaultIDs[id] = struct{}{}
+		if app, exists := apps[id]; exists && app.acceptsFiles {
+			defaultID = id
+			break
+		}
 	}
 	result := make([]installedDesktopApp, 0, len(orderedIDs))
 	for _, id := range orderedIDs {
 		app := apps[id]
-		_, app.application.IsDefault = defaultIDs[id]
+		app.application.IsDefault = id == defaultID
 		result = append(result, app)
 	}
 	return result
@@ -453,7 +519,7 @@ func desktopIDForPath(root, path string) (string, bool) {
 }
 
 func validDesktopID(id string) bool {
-	return id != "" && filepath.Base(id) == id && !strings.ContainsAny(id, "/\\\x00") && strings.HasSuffix(id, ".desktop")
+	return id != "" && filepath.Base(id) == id && !strings.ContainsAny(id, "/\\\x00\r\n;") && strings.HasSuffix(id, ".desktop")
 }
 
 func unescapeDesktopValue(value string) string {
@@ -485,10 +551,13 @@ func mimeAppsFiles() []string {
 	dataDirectories := xdgApplicationDirectories()
 	files := make([]string, 0, len(configDirectories)+len(dataDirectories))
 	seen := make(map[string]struct{})
-	for _, directory := range configDirectories {
-		appendUniquePath(&files, seen, filepath.Join(directory, "mimeapps.list"))
-	}
-	for _, directory := range dataDirectories {
+	for _, directory := range append(configDirectories, dataDirectories...) {
+		for _, desktop := range strings.Split(os.Getenv("XDG_CURRENT_DESKTOP"), ":") {
+			desktop = strings.ToLower(desktop)
+			if desktop != "" && !strings.ContainsAny(desktop, "/\\\x00") {
+				appendUniquePath(&files, seen, filepath.Join(directory, desktop+"-mimeapps.list"))
+			}
+		}
 		appendUniquePath(&files, seen, filepath.Join(directory, "mimeapps.list"))
 	}
 	return files
@@ -645,7 +714,10 @@ func terminalArguments(name, directory string) []string {
 type osDesktopCommandRunner struct{}
 
 func (osDesktopCommandRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).Output()
+	command := exec.CommandContext(ctx, name, args...)
+	// GIO inspection output is parsed by the private desktop API.
+	command.Env = append(os.Environ(), "LC_ALL=C")
+	return command.Output()
 }
 
 func (osDesktopCommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {

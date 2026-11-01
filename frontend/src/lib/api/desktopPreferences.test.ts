@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import type { UserSettings } from '#lib/stores/settings.svelte.js';
-import { DesktopPreferences } from './desktopPreferences';
+import { DesktopPreferences, parseDesktopPreferences } from './desktopPreferences';
 
 const realFetch = globalThis.fetch;
 const realWindow = globalThis.window;
@@ -11,8 +11,8 @@ const defaults: UserSettings = {
 	showHiddenFiles: false,
 	showFileExtensions: true,
 	confirmDelete: true,
-	defaultSortBy: 'name',
-	defaultSortDir: 'asc',
+	defaultSortBy: 'modTime',
+	defaultSortDir: 'desc',
 	defaultViewMode: 'list',
 	accentColor: null,
 	accentColorSource: 'wallpaper',
@@ -62,6 +62,15 @@ async function load(fallback: UserSettings): Promise<UserSettings> {
 	await preferences.flush();
 	return loaded;
 }
+
+test('missing saved sort uses newest first and explicit saved preferences stay intact', () => {
+	const empty = parseDesktopPreferences({}, defaults);
+	assert.equal(empty.defaultSortBy, 'modTime');
+	assert.equal(empty.defaultSortDir, 'desc');
+	const saved = parseDesktopPreferences({ defaultSortBy: 'name', defaultSortDir: 'asc' }, defaults);
+	assert.equal(saved.defaultSortBy, 'name');
+	assert.equal(saved.defaultSortDir, 'asc');
+});
 
 test('an adopted fallback wallpaper is saved so the server keeps it', async () => {
 	const writes = serve(null);

@@ -30,7 +30,8 @@ var extensionMimeFallbacks = map[string]string{
 	".pdf":  "application/pdf",
 }
 
-func detectMimeTypeByExtension(ext string) string {
+// MimeTypeByExtension returns an empty string when an extension is unknown.
+func MimeTypeByExtension(ext string) string {
 	if ext == "" {
 		return ""
 	}
@@ -75,7 +76,7 @@ func ToFileInfoWithPermissions(name, path string, info fs.FileInfo, permissions 
 
 	if !isDir {
 		ext := filepath.Ext(name)
-		if mimeType := detectMimeTypeByExtension(ext); mimeType != "" {
+		if mimeType := MimeTypeByExtension(ext); mimeType != "" {
 			fileInfo.MimeType = mimeType
 		}
 	}
@@ -86,7 +87,7 @@ func ToFileInfoWithPermissions(name, path string, info fs.FileInfo, permissions 
 // DetectMimeType returns the MIME type for a file based on its extension
 // Returns "application/octet-stream" if the type cannot be determined
 func DetectMimeType(filename string) string {
-	if mimeType := detectMimeTypeByExtension(filepath.Ext(filename)); mimeType != "" {
+	if mimeType := MimeTypeByExtension(filepath.Ext(filename)); mimeType != "" {
 		return mimeType
 	}
 	return "application/octet-stream"

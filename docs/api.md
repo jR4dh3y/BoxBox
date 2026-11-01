@@ -124,6 +124,8 @@ GET /api/v1/files/list/{path}
 
 The response holds every entry of the directory, hidden entries included, in no particular order. Clients reconstruct each entry path as `path + "/" + name`, then sort and filter it. Refresh replaces the listing rather than appending pages. A server rejects a directory with more than 10,000 entries with `413`; the desktop app has no limit.
 
+BoxBox's file views default to folders first, then files, ordered by newest `modTime` within each group with natural filename ties. Saved preferences and explicit sorts override the default field and direction. The metadata exposes modification time, not creation time. Public shared-folder listings apply the default order on the server.
+
 Response:
 
 ```json
@@ -552,3 +554,18 @@ Errors use:
 Common codes include `VALIDATION_ERROR`, `UNAUTHORIZED`, `TOKEN_INVALID`, `SESSION_RECOVERY_REQUIRED`, `ACCESS_DENIED`, `READ_ONLY`, `INVALID_PATH`, `NOT_FOUND`, `CONFLICT`, `JOB_NOT_FOUND`, `CHECKSUM_MISMATCH`, and `INTERNAL_ERROR`.
 
 Auth storage errors before rename return `500` with `INTERNAL_ERROR` and no token pair or `Set-Cookie` header. Refresh and logout preserve the existing cookie for retry. Login does not clear an unrelated cookie. `SESSION_RECOVERY_REQUIRED` returns `401` if a durability step fails after rename. It has no token pair; refresh and logout clear the cookie, while login does not clear an unrelated cookie. Logout does not count as successful in this case.
+
+### Private desktop file chooser
+
+The authenticated loopback-only desktop server exposes `GET /api/v1/desktop/chooser`
+for active portal requests, `GET /api/v1/desktop/chooser/{id}` for picker options,
+`GET /api/v1/desktop/chooser/{id}/directory?path=home` for mount-confined listings
+with content-detected unknown MIME types when filters need them, and
+`POST /api/v1/desktop/chooser/{id}` for selection or cancellation. These routes are absent
+from normal deployments and are not forwarded through remote gateways. Native
+launchers long-poll the active request set using a `known` list of request IDs.
+Picker selections contain virtual mount paths; the server resolves every path
+through the mount confinement boundary before returning local file URIs to the
+session portal. Requests originate from the D-Bus portal frontend, never from
+remote clients or arbitrary launcher commands. Full protocol details are the
+installed `org.freedesktop.impl.portal.FileChooser` and Request interfaces.
