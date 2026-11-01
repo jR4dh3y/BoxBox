@@ -20,6 +20,8 @@ Make sure `$GOPATH/bin` is on your `PATH`.
 ```text
 backend/      Go API server and embedded static host
 frontend/     SvelteKit app compiled to static files
+desktop/      Electrobun Linux client with bundled CEF
+website/      Astro marketing site
 docs/         Markdown project documentation
 scripts/      Local development helpers
 Dockerfile    Single-container production build
@@ -28,7 +30,7 @@ Dockerfile    Single-container production build
 ## Install Dependencies
 
 ```bash
-bun install --cwd frontend
+bun install
 cd backend && go mod download
 ```
 
@@ -166,7 +168,7 @@ Wall-clock results are **advisory**, as required by the repository's performance
 Run locally from the repository root:
 
 ```bash
-bun install --cwd frontend --frozen-lockfile
+bun install --frozen-lockfile
 (cd frontend && bunx playwright install chromium)
 bun run --cwd frontend perf:browser --base origin/master
 

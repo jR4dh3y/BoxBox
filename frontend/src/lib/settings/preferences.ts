@@ -1,3 +1,4 @@
+import { isLocalDesktop } from '#lib/api/desktop.js';
 import { settingsStore, type UserSettings } from '#lib/stores/settings.svelte.js';
 import { SettingsOperations } from '#lib/utils/settingsOperation.js';
 import {
@@ -113,7 +114,12 @@ export class Preferences {
 
 		try {
 			let backgroundImage = normalizeBackgroundImage(next.backgroundImage);
-			if (backgroundImage && isInlineWallpaperDataUrl(backgroundImage)) {
+			if (isLocalDesktop()) {
+				const { migrateDesktopWallpaper } = await import('#lib/api/desktopPreferences.js');
+				backgroundImage = (await migrateDesktopWallpaper({ ...next, backgroundImage }, signal))
+					.backgroundImage;
+				signal.throwIfAborted();
+			} else if (backgroundImage && isInlineWallpaperDataUrl(backgroundImage)) {
 				backgroundImage = await saveLocalWallpaperDataUrl(backgroundImage);
 				savedLocalImage = backgroundImage;
 				signal.throwIfAborted();

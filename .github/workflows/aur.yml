@@ -1,0 +1,89 @@
+name: Publish AUR package
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      AUR_SSH_PRIVATE_KEY:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release tag
+        required: true
+        type: string
+        default: v0.3.2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-aur
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Generate package from verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          mkdir -p release aur
+          gh release download "$RELEASE_TAG" --pattern SHA256SUMS --dir release
+          archive="boxbox-desktop-${RELEASE_TAG}-linux-amd64.tar.gz"
+          checksum=$(awk -v archive="$archive" '$2 == archive {print $1}' release/SHA256SUMS)
+          bash scripts/prepare-aur.sh aur "${RELEASE_TAG#v}" "$checksum"
+      - name: Build and validate Arch package
+        run: |
+          docker run --rm -v "$PWD/aur:/package" archlinux:base-devel bash -euc '
+            pacman -Syu --noconfirm
+            pacman -S --needed --noconfirm namcap
+            useradd -m builder
+            chown -R builder:builder /package
+            cd /package
+            sudo -u builder makepkg --printsrcinfo > .SRCINFO
+            mapfile -t dependencies < <(sed -n "s/^[[:space:]]*depends = //p" .SRCINFO)
+            pacman -S --needed --noconfirm "${dependencies[@]}"
+            sudo -u builder makepkg --noconfirm
+            status=0
+            output=$(namcap PKGBUILD ./*.pkg.tar.zst 2>&1) || status=$?
+            printf "%s\n" "$output"
+            if (( status != 0 )) || grep -Eq "(^|[[:space:]])E:" <<< "$output"; then
+              exit 1
+            fi
+          '
+      - name: Publish package metadata to AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          test -n "$AUR_SSH_PRIVATE_KEY"
+          eval "$(ssh-agent -s)"
+          trap 'ssh-agent -k >/dev/null' EXIT
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" | ssh-add -
+          unset AUR_SSH_PRIVATE_KEY
+          export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$PWD/packaging/aur/known_hosts"
+          git clone ssh://aur@aur.archlinux.org/boxbox-bin.git aur-publish
+          cp aur/PKGBUILD aur/.SRCINFO aur/AppRun aur/boxbox.desktop aur/boxbox.svg aur-publish/
+          cd aur-publish
+          git config user.name 'Radhey Kalra'
+          git config user.email 'radheykalra901@gmail.com'
+          git add PKGBUILD .SRCINFO AppRun boxbox.desktop boxbox.svg
+          if git diff --cached --quiet; then
+            echo 'AUR package already matches this release'
+            exit 0
+          fi
+          git commit -m "Update boxbox-bin to $RELEASE_TAG"
+          git push origin HEAD:master

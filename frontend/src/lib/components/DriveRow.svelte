@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { DriveStats } from '#lib/api/files.js';
 	import { HardDrive } from 'lucide-svelte';
+	import DeploymentIcon from './desktop/DeploymentIcon.svelte';
 	import { formatFileSize } from '#lib/utils/format.js';
 	import { ProgressBar } from '#lib/components/ui/index.js';
 	import { DRIVE_USAGE_BAR, DRIVE_USAGE_TEXT, driveUsageLevel } from '#lib/utils/driveUsage.js';
@@ -19,6 +20,7 @@
 	let { drive, columns, compactMode = false, onOpen, onFolderHover }: Props = $props();
 
 	const name = useDriveName(() => drive);
+	const serverDetails = $derived([drive.serverName, drive.fsType].filter(Boolean).join(' · '));
 	const usageLevel = $derived(driveUsageLevel(drive.usedPct));
 	const rowClass = $derived(
 		`grid w-full ${columns} ${compactMode ? 'h-7' : 'h-8'} items-center border-b border-border-secondary text-left text-[13px]`
@@ -32,16 +34,22 @@
 <svelte:window onclick={handleClickOutside} />
 
 {#snippet cells()}
-	<span class="truncate px-3 font-mono text-[12px] text-text-muted" title={drive.device}>
-		{drive.device || '—'}
+	<span
+		class="hidden truncate px-3 font-mono text-[12px] text-text-muted @3xl:block"
+		title={drive.device || drive.serverName}
+	>
+		{drive.device || drive.serverName || '—'}
 	</span>
-	<span class="truncate px-3 font-mono text-[12px] text-text-secondary" title={drive.fsType}>
+	<span
+		class="hidden truncate px-3 font-mono text-[12px] text-text-secondary @3xl:block"
+		title={drive.fsType}
+	>
 		{drive.fsType || '—'}
 	</span>
 	<span class="truncate px-3 text-right text-text-secondary tabular-nums">
 		{formatFileSize(drive.totalBytes)}
 	</span>
-	<span class="truncate px-3 text-right text-text-secondary tabular-nums">
+	<span class="hidden truncate px-3 text-right text-text-secondary tabular-nums @sm:block">
 		{formatFileSize(drive.freeBytes)}
 	</span>
 	<span class="flex items-center gap-3 px-3">
@@ -58,7 +66,9 @@
 	<!-- A rename field cannot sit inside the row's button. -->
 	<div class={rowClass}>
 		<span class="flex min-w-0 items-center gap-2 px-3">
-			<HardDrive size={16} class="shrink-0 text-text-secondary" />
+			{#if drive.serverIcon}<span class="flex shrink-0 text-text-secondary"
+					><DeploymentIcon icon={drive.serverIcon} /></span
+				>{:else}<HardDrive size={16} class="shrink-0 text-text-secondary" />{/if}
 			{#await import('./ui/InlineRename.svelte') then { default: InlineRename }}
 				<InlineRename value={name.displayName} onSave={name.save} onCancel={name.cancel} />
 			{:catch}
@@ -77,10 +87,19 @@
 		oncontextmenu={name.openMenu}
 	>
 		<span class="flex min-w-0 items-center gap-2 px-3">
-			<HardDrive size={16} class="shrink-0 text-text-secondary" />
+			{#if drive.serverIcon}<span class="flex shrink-0 text-text-secondary"
+					><DeploymentIcon icon={drive.serverIcon} /></span
+				>{:else}<HardDrive size={16} class="shrink-0 text-text-secondary" />{/if}
 			<span class="min-w-0 truncate text-text-primary" title={name.displayName}>
 				{name.displayName}
 			</span>
+			{#if drive.serverName}
+				<!-- The device column carries the server when it has room. -->
+				<span
+					class="min-w-0 flex-1 basis-0 truncate text-xs text-text-muted @3xl:hidden"
+					title={serverDetails}>{serverDetails}</span
+				>
+			{/if}
 			{#if drive.readOnly}
 				<span class="shrink-0 text-xs text-warning">Read-only</span>
 			{/if}

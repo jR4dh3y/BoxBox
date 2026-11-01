@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
@@ -164,6 +166,66 @@ func (s *settingsService) DeleteWallpaper(username string) error {
 	}
 	_ = s.fs.Remove(s.wallpaperImagePath(username, meta.SHA256))
 	return nil
+}
+
+// PruneWallpapers deletes every file, including interrupted writes, of the users remove selects.
+func (s *settingsService) PruneWallpapers(remove func(username string) bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	entries, err := s.fs.ReadDir(s.wallpapersDir())
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, entry := range entries {
+		username, ok := wallpaperFileUser(entry.Name())
+		if !ok || !entry.Type().IsRegular() || !remove(username) {
+			continue
+		}
+		// A matching name alone does not grant ownership of an account wallpaper.
+		if _, err := s.fs.Lstat(s.wallpaperMetaPath(username)); err == nil {
+			meta, err := s.readWallpaperMetaLocked(username)
+			if err != nil || meta.Source != "desktop" {
+				continue
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			failures = append(failures, err)
+			continue
+		}
+		if err := s.fs.Remove(filepath.Join(s.wallpapersDir(), entry.Name())); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// wallpaperFileUser inverts wallpaperMetaPath, wallpaperImagePath and writeFileAtomicLocked.
+// Any other name is not a wallpaper record and is never selected.
+func wallpaperFileUser(name string) (string, bool) {
+	name = strings.TrimSuffix(name, ".tmp")
+	encoded, ok := strings.CutSuffix(name, ".json")
+	if !ok {
+		image, isImage := strings.CutSuffix(name, ".img")
+		var digest string
+		encoded, digest, ok = strings.Cut(image, "-")
+		if !isImage || !ok || !isSHA256Hex(digest) {
+			return "", false
+		}
+	}
+	username, err := hex.DecodeString(encoded)
+	if err != nil || len(username) == 0 || hex.EncodeToString(username) != encoded {
+		return "", false
+	}
+	return string(username), true
+}
+
+func isSHA256Hex(value string) bool {
+	digest, err := hex.DecodeString(value)
+	return err == nil && len(digest) == sha256.Size && hex.EncodeToString(digest) == value
 }
 
 func (s *settingsService) readWallpaperMetaLocked(username string) (*model.WallpaperMeta, error) {

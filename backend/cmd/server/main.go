@@ -3,8 +3,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,9 +33,19 @@ func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "", "Path to configuration file")
 	devMode := flag.Bool("dev", false, "Run locally without authentication (forces host to 127.0.0.1)")
+	desktopMode := flag.Bool("desktop", false, "Run a private loopback server for the desktop app")
 	flag.Parse()
 
-	if *devMode {
+	var token string
+	if *desktopMode {
+		var err error
+		token, err = desktopToken()
+		if err != nil {
+			log.Fatal().Err(err).Msg("Invalid desktop launch")
+		}
+	}
+	localIdentity := *devMode || *desktopMode
+	if localIdentity {
 		if err := setDevCredentials(); err != nil {
 			log.Fatal().Err(err).Msg("Failed to initialize development credentials")
 		}
@@ -51,6 +64,12 @@ func main() {
 	if *devMode {
 		cfg.Host = "127.0.0.1"
 		log.Warn().Msg("DEVELOPMENT MODE: authentication disabled; listening on loopback only")
+	}
+	if *desktopMode {
+		cfg.Host = "127.0.0.1"
+		cfg.Port = 0
+		cfg.AllowedOrigins = nil
+		cfg.TrustedProxies = nil
 	}
 
 	for _, warning := range loadResult.Warnings {
@@ -71,7 +90,7 @@ func main() {
 	defer cancel()
 
 	// Initialize components
-	server, hub, jobService, authService, streamHandler, err := initializeServer(cfg, *devMode)
+	server, hub, jobService, authService, streamHandler, err := initializeServer(cfg, localIdentity, *desktopMode)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize server")
 	}
@@ -99,21 +118,36 @@ func main() {
 		log.Info().Str("path", cfg.DataDir).Msg("Data directory created/verified")
 	}
 
+	// Cancel long-lived event streams before waiting for HTTP shutdown.
+	server.BaseContext = func(net.Listener) context.Context { return ctx }
+	// Bind before announcing readiness so the desktop app never guesses a port.
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to listen")
+	}
+	if *desktopMode {
+		server.Handler = desktopHandler(desktopRoutes(server.Handler, cfg), listener.Addr().String(), token)
+	}
 	// Start HTTP server in background
 	go func() {
 		addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 		log.Info().Str("addr", addr).Msg("Starting HTTP server")
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("HTTP server error")
 		}
 	}()
+	if *desktopMode {
+		if err := json.NewEncoder(os.Stdout).Encode(map[string]string{"url": "http://" + listener.Addr().String()}); err != nil {
+			log.Fatal().Err(err).Msg("Failed to announce desktop server")
+		}
+	}
 
 	// Wait for shutdown signal
-	waitForShutdown(cancel, server, jobService, authService, streamHandler)
+	waitForShutdown(cancel, server, jobService, authService, streamHandler, *desktopMode)
 }
 
 // initializeServer creates and configures all server components
-func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *websocket.Hub, service.JobService, service.AuthService, *handler.StreamHandler, error) {
+func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http.Server, *websocket.Hub, service.JobService, service.AuthService, *handler.StreamHandler, error) {
 	// Create filesystem abstraction (using real OS filesystem)
 	fs := filesystem.NewOsFS()
 
@@ -146,7 +180,6 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("initialize auth service: %w", err)
 	}
-
 	var connectService *service.ConnectService
 	if !devMode {
 		connectService, err = service.NewConnectService(fs, authService, service.ConnectServiceConfig{DataDir: cfg.DataDir, Users: cfg.Users})
@@ -155,9 +188,11 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 		}
 	}
 
-	fileService := service.NewFileService(fs, service.FileServiceConfig{
-		MountPoints: mountPoints,
-	})
+	fileConfig := service.FileServiceConfig{MountPoints: mountPoints}
+	if desktopMode {
+		fileConfig.DirectoryEntryLimit = -1
+	}
+	fileService := service.NewFileService(fs, fileConfig)
 
 	searchService := service.NewSearchService(fs, service.SearchServiceConfig{
 		MountPoints: mountPoints,
@@ -188,7 +223,14 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 	// Create handlers
 	authHandler := handler.NewAuthHandler(authService)
 	fileHandler := handler.NewFileHandler(fileService)
-	streamHandler := handler.NewStreamHandler(fileService, cfg.MaxUploadMB)
+	thumbnails := service.NewThumbnailService(fileService)
+	if desktopMode {
+		thumbnails, err = desktopThumbnails(fileService)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+	}
+	streamHandler := handler.NewStreamHandlerWithThumbnails(fileService, cfg.MaxUploadMB, thumbnails)
 	jobHandler := handler.NewJobHandler(jobService)
 	searchHandler := handler.NewSearchHandler(searchService)
 	wsHandler := handler.NewWebSocketHandler(hub, authService, cfg.AllowedOrigins)
@@ -198,7 +240,7 @@ func initializeServer(cfg *model.ServerConfig, devMode bool) (*http.Server, *web
 	shareHandler := handler.NewShareHandler(shareService, settingsService, cfg.MaxUploadMB)
 
 	// Create router
-	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints, connectService)
+	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints, desktopMode, connectService)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -233,6 +275,7 @@ func createRouter(
 	settingsHandler *handler.SettingsHandler,
 	shareHandler *handler.ShareHandler,
 	mountPoints []model.MountPoint,
+	desktopMode bool,
 	connectService *service.ConnectService,
 ) chi.Router {
 	r := chi.NewRouter()
@@ -265,7 +308,6 @@ func createRouter(
 			r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
 			authHandler.RegisterRoutes(r)
 		})
-
 		if connectService != nil {
 			connectHandler := handler.NewConnectHandler(connectService)
 			r.Route("/connect", func(r chi.Router) {
@@ -337,7 +379,7 @@ func createRouter(
 
 	// Static file handler for SPA frontend (catch-all)
 	// This must be after all API routes
-	staticHandler, err := static.NewHandler(devMode)
+	staticHandler, err := static.NewHandler(devMode, desktopMode)
 	if err != nil {
 		log.Warn().Err(err).Msg("Static handler not available, frontend will not be served")
 	} else {
@@ -349,10 +391,17 @@ func createRouter(
 }
 
 // waitForShutdown handles graceful shutdown on interrupt signals
-func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService service.JobService, authService service.AuthService, streamHandler *handler.StreamHandler) {
+func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService service.JobService, authService service.AuthService, streamHandler *handler.StreamHandler, desktopMode bool) {
 	// Create channel to receive OS signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	if desktopMode {
+		// The desktop parent keeps stdin open; EOF also handles a crashed parent.
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			sigCh <- syscall.SIGTERM
+		}()
+	}
 
 	// Wait for signal
 	sig := <-sigCh

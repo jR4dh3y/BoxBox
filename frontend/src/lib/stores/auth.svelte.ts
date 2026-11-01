@@ -10,6 +10,7 @@ import {
 	isAuthenticated as hasAccessToken
 } from '#lib/api/auth.js';
 import { ApiRequestError, AuthSessionClosedError } from '#lib/api/client.js';
+import { browseRequests } from '#lib/browse/requests.svelte.js';
 import { CONFIG } from '#lib/config.js';
 import { settingsStore } from './settings.svelte';
 import { resetShareWallpaperLoginSync } from '#lib/utils/wallpaperSync.js';
@@ -51,6 +52,7 @@ class AuthStore {
 
 			if (isDevelopment || isAuthenticated) void settingsStore.initialize();
 			this.isDevelopment = isDevelopment;
+			if (isDevelopment || isAuthenticated) browseRequests.startSession();
 			this.isAuthenticated = isDevelopment || isAuthenticated;
 
 			if (!isDevelopment && isAuthenticated) this.startTokenRefresh();
@@ -66,6 +68,8 @@ class AuthStore {
 
 		try {
 			await apiLogin(username, password);
+			browseRequests.reset();
+			browseRequests.startSession();
 			void settingsStore.initialize();
 			this.isAuthenticated = true;
 			this.isLoading = false;
@@ -166,6 +170,7 @@ class AuthStore {
 
 	private reset(): void {
 		resetShareWallpaperLoginSync();
+		browseRequests.reset();
 		settingsStore.clearSession();
 		this.isAuthenticated = false;
 		this.isDevelopment = false;

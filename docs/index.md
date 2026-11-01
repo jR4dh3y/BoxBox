@@ -16,6 +16,10 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 | [Architecture](/docs/architecture/) | Understand the Go backend, Svelte frontend, and embedded static deployment. |
 | [Troubleshooting](/docs/troubleshooting/) | Diagnose common deployment, login, upload, and mount issues. |
 
+## Desktop
+
+The [Linux desktop guide](/docs/desktop/) covers downloads, runtime libraries, native file operations, pairing and updates. Local use does not require server credentials or Docker. The credentials below apply to the separately deployed server.
+
 ## Current Runtime Facts
 
 - The production image is a single container.
