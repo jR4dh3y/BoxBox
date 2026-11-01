@@ -30,7 +30,7 @@
 		"@tailwindcss/vite": "^4.3.3",
 		"@types/bun": "^1.4.2",
 		"@types/node": "^26",
-		"eslint": "^10.12.0",
+		"eslint": "^10.13.0",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^3.23.1",
 		"fake-indexeddb": "^6.2.6",
