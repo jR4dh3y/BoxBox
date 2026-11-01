@@ -124,7 +124,7 @@
 						class="max-w-64 rounded border border-border-secondary bg-surface-primary p-2"
 						bind:value={chooser.filter}
 					>
-						{#each chooser.request.filters as filter, index}<option value={index}
+						{#each chooser.request.filters as filter, index (index)}<option value={index}
 								>{filter.name}</option
 							>{/each}
 					</select></label

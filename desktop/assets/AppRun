@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 appdir=$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)
+BOXBOX_DESKTOP_ENTRYPOINT=${APPIMAGE:-"$appdir/AppRun"}
+export BOXBOX_DESKTOP_ENTRYPOINT
 # Forward before copying the read-only runtime when this user already has an instance.
 # The Bun launcher validates socket ownership and the fixed request protocol.
 instance_root=${XDG_RUNTIME_DIR:-/tmp}/boxbox-desktop-$(id -u)

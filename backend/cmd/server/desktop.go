@@ -102,7 +102,15 @@ func desktopHandler(next http.Handler, address, token string) http.Handler {
 			})
 			destination := "/"
 			if next, err := url.ParseRequestURI(r.URL.Query().Get("next")); err == nil && (next.Path == "/browse" || next.Path == "/chooser") && !next.IsAbs() && next.Host == "" {
-				destination = next.String()
+				switch next.Path {
+				case "/browse":
+					destination = "/browse"
+				case "/chooser":
+					destination = "/chooser"
+				}
+				if query := next.Query().Encode(); query != "" {
+					destination += "?" + query
+				}
 			}
 			http.Redirect(w, r, destination, http.StatusSeeOther)
 			return

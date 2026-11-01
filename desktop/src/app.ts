@@ -21,7 +21,6 @@ export class DesktopApp {
   #localWindowId: number | undefined;
   readonly #chooserWindows = new Map<string, BrowserWindow>();
   readonly #chooserAbort = new AbortController();
-  #primaryWindowId: number | undefined;
   #quitting = false;
   #localReady = false;
   #pendingTargets: LaunchTarget[] = [];
@@ -52,15 +51,11 @@ export class DesktopApp {
     if (!build.availableRenderers.includes("cef")) {
       throw new Error("BoxBox Desktop requires a CEF build");
     }
-    const primary =
-      request.kind === "portal"
-        ? undefined
-        : request.kind === "remote"
-          ? await this.#openRemote(request.url)
-          : await this.#openLocal(
-              request.kind === "local" ? request.target : undefined,
-            );
-    this.#primaryWindowId = primary?.id;
+    if (request.kind === "remote") await this.#openRemote(request.url);
+    else if (request.kind !== "portal")
+      await this.#openLocal(
+        request.kind === "local" ? request.target : undefined,
+      );
     const server = await this.#server.get();
     void watchChoosers(server.url, this.#chooserAbort.signal, (ids) => {
       const active = new Set(ids);
@@ -116,7 +111,7 @@ export class DesktopApp {
       case "portal":
         return;
       case "activate":
-        this.#focusPrimary();
+        await this.#openLocal();
         return;
       case "local":
         await this.#openLocal(request.target);
@@ -138,15 +133,6 @@ export class DesktopApp {
       onClose();
       if (!this.#quitting && this.#windows.size === 0) void this.quit();
     });
-  }
-
-  #focusPrimary(): void {
-    for (const id of [this.#primaryWindowId, ...this.#windows]) {
-      const window = this.#window(id);
-      if (!window) continue;
-      window.show();
-      return;
-    }
   }
 
   async #openLocal(target?: LaunchTarget): Promise<BrowserWindow> {

@@ -1,7 +1,8 @@
 import { SvelteSet } from 'svelte/reactivity';
 import { api, ApiRequestError } from '#lib/api/client.js';
 import { array, boolean, record, string } from '#lib/api/parse.js';
-import { listDirectory, listRoots, type FileInfo, type MountPoint } from '#lib/api/files.js';
+import { listRoots, type FileInfo, type MountPoint } from '#lib/api/files.js';
+import { parseDirectory } from '#lib/api/directory.js';
 import { sortFiles } from '#lib/browse/sortFiles.js';
 import type { SortDir, SortField } from '#lib/types/files.js';
 
@@ -126,7 +127,9 @@ export class FileChooser {
 		this.replace = false;
 		this.selected = new SvelteSet();
 		try {
-			const response = await listDirectory(path, abort.signal);
+			const response = parseDirectory(
+				await api.get<unknown>(`/desktop/chooser/${this.id}/directory`, { path }, abort.signal)
+			);
 			if (abort.signal.aborted) return;
 			this.items = response.items;
 			this.path = path;

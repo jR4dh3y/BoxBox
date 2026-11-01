@@ -3,9 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"mime"
-	"net/http"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -248,28 +245,4 @@ func (p *chooserPortal) parse(kind, appID, title string, options map[string]dbus
 		r.Choices = append(r.Choices, ChooserChoice{ID: choice.ID, Label: choice.Label, Options: choice.Options, Value: choice.Value})
 	}
 	return r, nil
-}
-func chooserMatches(filter ChooserFilter, name, path string) bool {
-	for _, rule := range filter.Rules {
-		if rule.Kind == 0 {
-			if match, _ := filepath.Match(rule.Value, name); match {
-				return true
-			}
-		} else {
-			content := mime.TypeByExtension(filepath.Ext(name))
-			if content == "" {
-				if f, err := os.Open(path); err == nil {
-					data := make([]byte, 512)
-					n, _ := f.Read(data)
-					f.Close()
-					content = http.DetectContentType(data[:n])
-				}
-			}
-			content, _, _ = mime.ParseMediaType(content)
-			if content == rule.Value || strings.HasSuffix(rule.Value, "/*") && strings.HasPrefix(content, strings.TrimSuffix(rule.Value, "*")) {
-				return true
-			}
-		}
-	}
-	return len(filter.Rules) == 0
 }

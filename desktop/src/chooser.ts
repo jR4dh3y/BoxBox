@@ -12,27 +12,41 @@ export async function watchChoosers(
   let known = "";
   while (!signal.aborted) {
     url.searchParams.set("known", known);
-    const response = await fetch(url, {
-      headers: { Cookie: `boxbox_desktop=${token}` },
-      signal,
-    });
-    if (!response.ok) throw new Error("File chooser connection failed");
-    const value: unknown = await response.json();
-    if (!Array.isArray(value)) throw new Error("Invalid chooser response");
-    const ids = value.map((item: unknown) => {
-      if (
-        typeof item !== "object" ||
-        item === null ||
-        !("id" in item) ||
-        typeof item.id !== "string" ||
-        !/^[a-f0-9]{32}$/.test(item.id)
-      ) {
-        throw new Error("Invalid chooser request");
-      }
-      return item.id;
-    });
-    known = ids.sort().join(",");
-    update(ids);
+    try {
+      const response = await fetch(url, {
+        headers: { Cookie: `boxbox_desktop=${token}` },
+        signal,
+      });
+      if (!response.ok) throw new Error("File chooser connection failed");
+      const value: unknown = await response.json();
+      if (!Array.isArray(value)) throw new Error("Invalid chooser response");
+      const ids = value.map((item: unknown) => {
+        if (
+          typeof item !== "object" ||
+          item === null ||
+          !("id" in item) ||
+          typeof item.id !== "string" ||
+          !/^[a-f0-9]{32}$/.test(item.id)
+        ) {
+          throw new Error("Invalid chooser request");
+        }
+        return item.id;
+      });
+      known = ids.sort().join(",");
+      update(ids);
+    } catch {
+      if (signal.aborted) return;
+      // A transient server failure must not strand later portal requests.
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(timer);
+          signal.removeEventListener("abort", done);
+          resolve();
+        };
+        const timer = setTimeout(done, 500);
+        signal.addEventListener("abort", done, { once: true });
+      });
+    }
   }
 }
 

@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +17,7 @@ import (
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
 )
 
 type ChooserRule struct {
@@ -185,7 +189,7 @@ func (c *DesktopChooser) Select(ctx context.Context, id string, selection Choose
 		if request.Kind != "open" {
 			access = writeMaybeMissing
 		}
-		_, resolved, err := c.mounts.resolve(path, access)
+		mount, resolved, err := c.mounts.resolve(path, access)
 		if err != nil {
 			return err
 		}
@@ -197,8 +201,19 @@ func (c *DesktopChooser) Select(ctx context.Context, id string, selection Choose
 			if info.IsDir() != request.Directory {
 				return fmt.Errorf("%w: select the requested file type", ErrInvalidOperation)
 			}
-			if !info.IsDir() && result.Filter != nil && !chooserMatches(*result.Filter, info.Name(), resolved) {
-				return fmt.Errorf("%w: file does not match the selected filter", ErrInvalidOperation)
+			if !info.IsDir() {
+				if !info.Mode().IsRegular() {
+					return ErrNotFile
+				}
+				if result.Filter != nil {
+					matches, err := c.matches(*result.Filter, info.Name(), mount, resolved)
+					if err != nil {
+						return err
+					}
+					if !matches {
+						return fmt.Errorf("%w: file does not match the selected filter", ErrInvalidOperation)
+					}
+				}
 			}
 		} else {
 			if statErr == nil && info.IsDir() {
@@ -249,4 +264,113 @@ func (c *DesktopChooser) Folder(local string) string {
 		}
 	}
 	return ""
+}
+
+func (c *DesktopChooser) matches(filter ChooserFilter, name string, mount *model.MountPoint, path string) (bool, error) {
+	for _, rule := range filter.Rules {
+		if rule.Kind == 0 {
+			if match, _ := filepath.Match(chooserGlob(rule.Value), name); match {
+				return true, nil
+			}
+		} else {
+			content := fileutil.MimeTypeByExtension(filepath.Ext(name))
+			if content == "" {
+				var err error
+				content, err = c.sniffType(mount, path)
+				if err != nil {
+					return false, err
+				}
+			}
+			content, _, _ = mime.ParseMediaType(content)
+			if content == rule.Value || strings.HasSuffix(rule.Value, "/*") && strings.HasPrefix(content, strings.TrimSuffix(rule.Value, "*")) {
+				return true, nil
+			}
+		}
+	}
+	return len(filter.Rules) == 0, nil
+}
+
+// Verify the opened descriptor before sniffing, in case a symlink changed after resolution.
+func (c *DesktopChooser) sniffType(mount *model.MountPoint, path string) (string, error) {
+	file, err := c.fs.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if err := verifyOpenFileWithinMount(c.fs, mount, file); err != nil {
+		return "", err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", ErrNotFile
+	}
+	var data [512]byte
+	n, err := file.Read(data[:])
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	return http.DetectContentType(data[:n]), nil
+}
+
+// Portal globs follow shell negation, while filepath.Match uses a caret.
+func chooserGlob(pattern string) string {
+	var result strings.Builder
+	for i := 0; i < len(pattern); i++ {
+		result.WriteByte(pattern[i])
+		if pattern[i] == '\\' && i+1 < len(pattern) {
+			i++
+			result.WriteByte(pattern[i])
+		} else if pattern[i] == '[' && i+1 < len(pattern) && pattern[i+1] == '!' {
+			i++
+			result.WriteByte('^')
+		}
+	}
+	return result.String()
+}
+
+// Directory enriches unknown MIME types only for MIME-filtered picker requests.
+// Normal Browse listings keep their metadata-only path.
+func (c *DesktopChooser) Directory(ctx context.Context, id, path string) (*model.FileList, error) {
+	request, err := c.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	listing, err := NewFileService(c.fs, FileServiceConfig{MountPoints: c.mounts.list()}).List(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	needsTypes := false
+	for _, filter := range request.Filters {
+		for _, rule := range filter.Rules {
+			needsTypes = needsTypes || rule.Kind == 1
+		}
+	}
+	if !needsTypes || request.Directory {
+		return listing, nil
+	}
+	for i := range listing.Items {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		item := &listing.Items[i]
+		if item.IsDir || item.MimeType != "" {
+			continue
+		}
+		mount, resolved, err := c.mounts.resolve(item.Path, readExisting)
+		if err != nil {
+			continue
+		}
+		info, err := c.fs.Stat(resolved)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		content, err := c.sniffType(mount, resolved)
+		if err == nil {
+			item.MimeType = content
+		}
+	}
+	return listing, nil
 }

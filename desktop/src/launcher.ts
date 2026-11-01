@@ -18,7 +18,9 @@ if (
   (option[0] === "--enable-chooser" || option[0] === "--disable-chooser")
 ) {
   const path = await installChooserPortal({
-    launcher: resolve(import.meta.dir, "../bin/launcher"),
+    launcher:
+      process.env.BOXBOX_DESKTOP_ENTRYPOINT ||
+      resolve(import.meta.dir, "../bin/launcher"),
     enable: option[0] === "--enable-chooser",
   });
   console.log(`Updated FileChooser routing in ${path}. Log in again to apply.`);

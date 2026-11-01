@@ -29,14 +29,17 @@ func (s *desktopAppsService) Icon(ctx context.Context, appID string) (DesktopApp
 	defer cancel()
 	data, err := s.commands.Output(ctx, "python3", "-I", "-c", desktopAppIconScript, app.application.Icon)
 	if err != nil {
-		return DesktopAppIcon{}, fmt.Errorf("%w: icon helper: %v", ErrDesktopApplicationUnavailable, err)
+		return DesktopAppIcon{}, fmt.Errorf("%w: icon helper: %w", ErrDesktopApplicationUnavailable, err)
 	}
 	if len(data) > 128*1024 {
 		return DesktopAppIcon{}, fmt.Errorf("%w: icon exceeds size limit", ErrDesktopApplicationUnavailable)
 	}
 	config, err := png.DecodeConfig(bytes.NewReader(data))
-	if err != nil || config.Width > 64 || config.Height > 64 {
-		return DesktopAppIcon{}, fmt.Errorf("%w: invalid icon PNG: %v", ErrDesktopApplicationUnavailable, err)
+	if err != nil {
+		return DesktopAppIcon{}, fmt.Errorf("%w: invalid icon PNG: %w", ErrDesktopApplicationUnavailable, err)
+	}
+	if config.Width > 64 || config.Height > 64 {
+		return DesktopAppIcon{}, fmt.Errorf("%w: icon dimensions exceed 64 pixels", ErrDesktopApplicationUnavailable)
 	}
 	return DesktopAppIcon{PNG: data}, nil
 }

@@ -557,9 +557,11 @@ Auth storage errors before rename return `500` with `INTERNAL_ERROR` and no toke
 
 ### Private desktop file chooser
 
-The authenticated loopback-only desktop server exposes `GET /desktop/chooser`
-for active portal requests, `GET /desktop/chooser/{id}` for picker options, and
-`POST /desktop/chooser/{id}` for selection or cancellation. These routes are absent
+The authenticated loopback-only desktop server exposes `GET /api/v1/desktop/chooser`
+for active portal requests, `GET /api/v1/desktop/chooser/{id}` for picker options,
+`GET /api/v1/desktop/chooser/{id}/directory?path=home` for mount-confined listings
+with content-detected unknown MIME types when filters need them, and
+`POST /api/v1/desktop/chooser/{id}` for selection or cancellation. These routes are absent
 from normal deployments and are not forwarded through remote gateways. Native
 launchers long-poll the active request set using a `known` list of request IDs.
 Picker selections contain virtual mount paths; the server resolves every path

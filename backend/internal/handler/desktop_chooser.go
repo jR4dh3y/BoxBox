@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
 
@@ -37,9 +38,18 @@ func RegisterDesktopChooser(r chi.Router, chooser *service.DesktopChooser) {
 		}
 		writeJSON(w, request, http.StatusOK)
 	})
+	r.Get("/chooser/{id}/directory", func(w http.ResponseWriter, r *http.Request) {
+		listing, err := chooser.Directory(r.Context(), chi.URLParam(r, "id"), r.URL.Query().Get("path"))
+		if err != nil {
+			HandleServiceError(w, err)
+			return
+		}
+		writeJSON(w, directoryListing(listing), http.StatusOK)
+	})
 	r.Post("/chooser/{id}", func(w http.ResponseWriter, r *http.Request) {
 		var selection service.ChooserSelection
 		if err := decodeJSONBody(w, r, &selection); err != nil {
+			writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
 			return
 		}
 		err := chooser.Select(r.Context(), chi.URLParam(r, "id"), selection)
