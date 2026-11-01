@@ -27,6 +27,8 @@ var (
 	ErrDirectoryTooLarge  = errors.New("directory exceeds entry limit")
 )
 
+const defaultDirectoryEntryLimit = 10_000
+
 // File represents an open file that can be read and seeked
 type File interface {
 	io.Reader
@@ -42,7 +44,7 @@ type WriteFile interface {
 
 // DirectoryReader contains read-only directory operations.
 type DirectoryReader interface {
-	// List returns all files in a directory, subject to the server entry limit.
+	// List returns every entry of a directory
 	List(ctx context.Context, path string) (*model.FileList, error)
 	// GetInfo returns metadata for a file or directory
 	GetInfo(ctx context.Context, path string) (*model.FileInfo, error)
@@ -86,20 +88,29 @@ type FileService interface {
 
 // fileService implements FileService
 type fileService struct {
-	fs     filesystem.FS
-	mounts *mounts
+	fs                  filesystem.FS
+	mounts              *mounts
+	directoryEntryLimit int
 }
 
 // FileServiceConfig holds configuration for the file service
 type FileServiceConfig struct {
 	MountPoints []model.MountPoint
+	// DirectoryEntryLimit uses the default 10,000-entry cap when zero; negative disables the cap.
+	DirectoryEntryLimit int
 }
 
 // NewFileService creates a new file service
 func NewFileService(fsys filesystem.FS, cfg FileServiceConfig) FileService {
+	directoryEntryLimit := cfg.DirectoryEntryLimit
+	if directoryEntryLimit == 0 {
+		directoryEntryLimit = defaultDirectoryEntryLimit
+	}
+
 	return &fileService{
-		fs:     fsys,
-		mounts: newMounts(fsys, fixedMounts(cfg.MountPoints)),
+		fs:                  fsys,
+		mounts:              newMounts(fsys, fixedMounts(cfg.MountPoints)),
+		directoryEntryLimit: directoryEntryLimit,
 	}
 }
 
@@ -187,8 +198,7 @@ func (s *fileService) List(ctx context.Context, path string) (*model.FileList, e
 		return nil, err
 	}
 
-	const maxDirectoryEntries = 10_000
-	entries, truncated, err := s.fs.ReadDirFileInfoLimit(fsPath, maxDirectoryEntries)
+	entries, truncated, err := s.fs.ReadDirFileInfoLimit(fsPath, s.directoryEntryLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +388,9 @@ func (s *fileService) OpenFile(ctx context.Context, path string) (File, *model.F
 	}
 
 	// Open the file
+	if !info.Mode().IsRegular() {
+		return nil, nil, ErrNotFile
+	}
 	file, err := s.fs.Open(fsPath)
 	if err != nil {
 		return nil, nil, err

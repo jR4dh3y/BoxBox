@@ -66,6 +66,12 @@ func JWTAuth(authService service.AuthService, clients ...ClientCredentialValidat
 				}
 				ctx := authcontext.WithUsername(r.Context(), client.Username)
 				ctx = authcontext.WithClientID(ctx, client.ClientID)
+				if r.URL.Path == "/api/v1/jobs/events" {
+					ctx = authcontext.WithAuthorization(ctx, func() bool {
+						current, err := clients[0].ValidateClientCredential(tokenString)
+						return err == nil && current != nil && current.Username == client.Username
+					})
+				}
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -88,6 +94,12 @@ func JWTAuth(authService service.AuthService, clients ...ClientCredentialValidat
 			ctx := context.WithValue(r.Context(), UserClaimsKey, claims)
 			ctx = authcontext.WithUsername(ctx, claims.Username)
 			ctx = authcontext.WithAccountSession(ctx)
+			if r.URL.Path == "/api/v1/jobs/events" {
+				ctx = authcontext.WithAuthorization(ctx, func() bool {
+					_, err := authService.ValidateAccessToken(tokenString)
+					return err == nil
+				})
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

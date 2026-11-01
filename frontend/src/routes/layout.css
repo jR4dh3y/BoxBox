@@ -35,6 +35,8 @@
 	--color-accent-solid-hover: #2760b5;
 
 	/* Semantic colors */
+	/* Fixed blue for neutral status; it does not follow the accent. */
+	--color-info: #4a9eff;
 	--color-danger: #dc3545;
 	--color-danger-hover: #b02a37;
 	--color-success: #10b981;
@@ -52,6 +54,16 @@
 	--animate-led-a: led-blink 2.7s step-end 900ms infinite;
 	--animate-led-b: led-blink 3.4s step-end 1300ms infinite;
 	--animate-led-busy: led-blink 0.5s step-end infinite;
+	--animate-progress-sweep: progress-sweep 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+
+	@keyframes progress-sweep {
+		from {
+			left: -33%;
+		}
+		to {
+			left: 100%;
+		}
+	}
 
 	@keyframes plate-emerge {
 		from {
@@ -142,8 +154,8 @@ input[autocomplete='current-password']:focus-visible {
 	--color-text-primary: #f3f6fa;
 	--color-text-secondary: #e1e7ef;
 	--color-text-muted: #dfe7f1;
-	--color-selection: color-mix(in srgb, var(--color-accent-base) 22%, transparent);
-	--color-selection-hover: color-mix(in srgb, var(--color-accent-base) 28%, transparent);
+	--color-selection: color-mix(in srgb, var(--color-accent-base) 30%, #15171c);
+	--color-selection-hover: color-mix(in srgb, var(--color-accent-base) 36%, #15171c);
 	background: var(--color-surface-primary);
 }
 
@@ -164,12 +176,19 @@ input[autocomplete='current-password']:focus-visible {
 
 .app-shell[data-has-background='true'][data-frosted-glass='true'] .browse-shell,
 .wallpaper-preview[data-frosted-glass='true'] {
-	background-color: rgb(18 20 24 / 0.64);
+	background-color: rgb(18 20 24 / 0.68);
 }
 
-/* Blur the wallpaper once so every panel is frosted and the file content stays sharp. */
-.app-shell[data-has-background='true'][data-frosted-glass='true'] .app-personal-background {
-	filter: blur(24px) saturate(145%);
+/* The desktop workspace is the shell around its panes, so a pane must not tint twice. */
+.app-shell[data-has-background='true'] .browse-shell .browse-shell {
+	background-color: transparent;
+}
+
+/* Blur the wallpaper once so every panel is frosted and the file content stays sharp.
+   The blur sits on the scrim above the image, so the image keeps its own box, crop and scale. */
+.app-shell[data-has-background='true'][data-frosted-glass='true'] .app-personal-background::after {
+	-webkit-backdrop-filter: blur(24px) saturate(145%);
+	backdrop-filter: blur(24px) saturate(145%);
 }
 
 .wallpaper-preview[data-frosted-glass='true'] {
@@ -210,7 +229,76 @@ input[autocomplete='current-password']:focus-visible {
 	color: var(--color-accent-icon);
 }
 
-.app-shell[data-has-background='true'][data-frosted-glass='true'][data-background-mode='cover']
-	.app-personal-background {
-	inset: -72px;
+/* Keep native scrolling and keyboard behavior; only the scrollbar's paint changes. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--scrollbar-thumb, #60656f) transparent;
+}
+*::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+	background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+	background: var(--scrollbar-thumb, #60656f);
+	border: 2px solid transparent;
+	border-radius: 8px;
+	background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+	background-color: var(--scrollbar-thumb-hover, #8b929e);
+}
+*::-webkit-scrollbar-button {
+	display: none;
+}
+
+/* Constant perceptual lightness gives every wallpaper the same readable hierarchy. */
+.app-shell[data-wallpaper-tint='true'],
+.app-shell[data-wallpaper-tint='true'] :where(.browse-chrome, .file-surface) {
+	--color-surface-primary: oklch(from var(--wallpaper-tint) 0.18 min(c, 0.035) h);
+	--color-surface-secondary: oklch(from var(--wallpaper-tint) 0.235 min(c, 0.04) h);
+	--color-surface-tertiary: oklch(from var(--wallpaper-tint) 0.285 min(c, 0.045) h);
+	--color-surface-elevated: oklch(from var(--wallpaper-tint) 0.33 min(c, 0.05) h);
+	--color-border-primary: oklch(from var(--wallpaper-tint) 0.43 min(c, 0.05) h);
+	--color-border-secondary: oklch(from var(--wallpaper-tint) 0.335 min(c, 0.035) h);
+	--color-text-primary: oklch(from var(--wallpaper-tint) 0.96 min(c, 0.012) h);
+	--color-text-secondary: oklch(from var(--wallpaper-tint) 0.84 min(c, 0.025) h);
+	--color-text-muted: oklch(from var(--wallpaper-tint) 0.73 min(c, 0.035) h);
+	--color-text-disabled: oklch(from var(--wallpaper-tint) 0.57 min(c, 0.025) h);
+	--color-surface-context-menu: var(--color-surface-secondary);
+	--scrollbar-thumb: oklch(from var(--wallpaper-tint) 0.64 min(c, 0.075) h);
+	--scrollbar-thumb-hover: oklch(from var(--wallpaper-tint) 0.78 min(c, 0.09) h);
+}
+
+.app-shell[data-wallpaper-tint='true'] .browse-shell {
+	background-color: oklch(from var(--wallpaper-tint) 0.18 min(c, 0.035) h / 0.8);
+}
+
+.app-shell[data-wallpaper-tint='true'] .browse-chrome {
+	background-color: oklch(from var(--wallpaper-tint) 0.21 min(c, 0.045) h / 0.76);
+	border-color: var(--color-border-secondary);
+}
+
+.app-shell[data-wallpaper-tint='true']
+	.file-surface
+	:where(th[data-file-header='true'], div[data-file-header='true']) {
+	background-color: oklch(from var(--wallpaper-tint) 0.25 min(c, 0.045) h / 0.9);
+}
+
+.app-shell[data-wallpaper-tint='true'] .file-surface th[data-file-header='true']:hover {
+	background-color: var(--color-surface-tertiary);
+}
+
+/* Keep the split workspace from stacking the same translucent pigment twice. */
+.app-shell[data-wallpaper-tint='true'] .browse-shell .browse-shell {
+	background-color: transparent;
+}
+
+@media (forced-colors: active) {
+	* {
+		scrollbar-color: auto;
+	}
 }

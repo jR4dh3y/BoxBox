@@ -5,6 +5,7 @@
 	import { Button, Input, Modal } from '#lib/components/ui/index.js';
 
 	type CreateDialog = { open: boolean; type: 'file' | 'directory'; name: string };
+	import { isNativePath } from '#lib/api/desktop.js';
 	import type { RenameDialog } from '#lib/browse/actions.svelte.js';
 	type DeleteDialog = { open: boolean; items: FileInfo[] };
 	type PropertiesDialog = { open: boolean; file: FileInfo | null };
@@ -43,6 +44,9 @@
 		return (event.target as HTMLInputElement).value;
 	}
 
+	const deleteToTrash = $derived(
+		deleteDialog.items.length > 0 && deleteDialog.items.every((item) => isNativePath(item.path))
+	);
 	const deleteCount = $derived(deleteDialog.items.length);
 	const deleteFirst = $derived(deleteDialog.items[0]);
 </script>
@@ -76,14 +80,23 @@
 	{/snippet}
 </Modal>
 
-<Modal open={deleteDialog.open} title="Delete" onclose={onCloseDelete}>
+<Modal
+	open={deleteDialog.open}
+	title={deleteToTrash ? 'Move to Trash' : 'Delete'}
+	onclose={onCloseDelete}
+>
 	<div class="flex flex-col gap-3 text-[13px] text-text-secondary">
 		{#if deleteCount === 1 && deleteFirst}
 			<p class="m-0 break-all">
-				<span class="text-text-primary">{deleteFirst.name}</span> will be deleted permanently.
+				<span class="text-text-primary">{deleteFirst.name}</span>
+				{deleteToTrash ? 'will be moved to Trash.' : 'will be deleted permanently.'}
 			</p>
 		{:else}
-			<p class="m-0">{deleteCount} items will be deleted permanently.</p>
+			<p class="m-0">
+				{deleteCount} items {deleteToTrash
+					? 'will be moved to Trash.'
+					: 'will be deleted permanently.'}
+			</p>
 			<ul class="m-0 max-h-40 list-none overflow-auto p-0">
 				{#each deleteDialog.items as item (item.path)}
 					<li class="truncate py-0.5 text-text-primary" title={item.path}>{item.name}</li>
@@ -92,7 +105,9 @@
 		{/if}
 	</div>
 	{#snippet footer()}
-		<Button variant="danger" onclick={onDeleteConfirm}>Delete</Button>
+		<Button variant="danger" onclick={onDeleteConfirm}
+			>{deleteToTrash ? 'Move to Trash' : 'Delete'}</Button
+		>
 	{/snippet}
 </Modal>
 

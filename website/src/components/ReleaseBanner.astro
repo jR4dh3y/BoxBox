@@ -42,9 +42,12 @@ import { Rocket } from '@lucide/astro';
       .then((release) => {
         if (!release || !release.tagName) return;
 
-        const dismissed = localStorage.getItem('boxbox-dismissed-release');
+        if (typeof release.htmlUrl === 'string' && /^https:\/\/github\.com\/jR4dh3y\/BoxBox\/releases\/tag\/v[\w.-]+$/.test(release.htmlUrl)) link.href = release.htmlUrl;
+
+        let dismissed: string | null = null;
+        try { dismissed = localStorage.getItem('boxbox-dismissed-release'); } catch { /* Storage can be disabled. */ }
         if (dismissed !== release.tagName) {
-          text.textContent = `${release.name || release.tagName} is here — self-host the latest BoxBox.`;
+          text.textContent = `${release.name || release.tagName} is here — see what’s new.`;
           open();
         }
 
