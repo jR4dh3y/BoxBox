@@ -28,8 +28,9 @@
 {:else if viewMode === 'list'}
 	<DriveList {drives} {compactMode} {onOpen} {onFolderHover} />
 {:else}
-	<div class="h-full overflow-auto p-6">
-		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+	<div class="@container h-full overflow-auto p-4 sm:p-6">
+		<!-- Cap at three columns; narrower panes keep each card readable. -->
+		<div class="grid grid-cols-1 gap-4 @min-[49rem]:grid-cols-2 @min-[74rem]:grid-cols-3">
 			{#each drives as drive (drive.name)}
 				<DriveCard {drive} onClick={() => onOpen(drive)} {onFolderHover} />
 			{/each}

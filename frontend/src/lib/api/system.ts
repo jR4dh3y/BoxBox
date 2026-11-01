@@ -3,6 +3,7 @@
  */
 
 import { api } from './client';
+import { parseRemotePath, sourceEndpoint } from './remotePaths';
 
 /**
  * System drive information (from df command)
@@ -33,8 +34,8 @@ export interface UploadConfig {
  * Get the chunk size uploads should use
  * GET /api/v1/system/upload
  */
-export async function getUploadConfig(): Promise<UploadConfig> {
-	return api.get<UploadConfig>('/system/upload');
+export async function getUploadConfig(destinationPath = ''): Promise<UploadConfig> {
+	return api.get<UploadConfig>(sourceEndpoint(parseRemotePath(destinationPath), '/system/upload'));
 }
 
 /**

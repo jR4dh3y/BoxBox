@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -164,11 +165,11 @@ func (s *synchronizedFS) OpenFile(name string, flag int, perm os.FileMode) (afer
 	return file, nil
 }
 
-func (s *synchronizedFS) Rename(oldpath, newpath string) error {
+func (s *synchronizedFS) RenameNoReplace(oldpath, newpath string) error {
 	if s.failRename {
-		return errors.New("cross-device link")
+		return syscall.EXDEV
 	}
-	return s.FS.Rename(oldpath, newpath)
+	return s.FS.RenameNoReplace(oldpath, newpath)
 }
 
 type hookedFile struct {
@@ -316,5 +317,57 @@ func TestJobMidFlightCancellationCleansUpPartialDestination(t *testing.T) {
 				t.Fatal("source file content was modified")
 			}
 		})
+	}
+}
+
+func TestFolderCopyProgressCountsBytes(t *testing.T) {
+	memFS := filesystem.NewMemMapFS()
+	_ = memFS.MkdirAll("/data/media/folder", 0o755)
+	_ = memFS.MkdirAll("/data/backup", 0o755)
+	payload := bytes.Repeat([]byte("X"), 2*1024*1024)
+	_ = memFS.WriteFile("/data/media/folder/a.bin", payload, 0o644)
+	_ = memFS.WriteFile("/data/media/folder/b.bin", payload, 0o644)
+	// Many empty files would dominate a per-file count.
+	for _, name := range []string{"c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"} {
+		_ = memFS.WriteFile("/data/media/folder/"+name, nil, 0o644)
+	}
+
+	var (
+		svc     JobService
+		jobID   string
+		atStart = make(chan *model.Job, 1)
+	)
+	syncFS := &synchronizedFS{FS: memFS, onWriteFile: func(name string) {
+		if name != "/data/backup/folder/b.bin" {
+			return
+		}
+		job, err := svc.Get(context.Background(), jobID)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		atStart <- job
+	}}
+	svc = NewJobService(syncFS, nil, JobServiceConfig{Workers: 1, MountPoints: []model.MountPoint{
+		{Name: "media", Path: "/data/media"},
+		{Name: "backup", Path: "/data/backup"},
+	}})
+	job, err := svc.Create(context.Background(), model.JobParams{Type: model.JobTypeCopy, SourcePath: "media/folder", DestPath: "backup/folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID = job.ID
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	svc.Start(ctx)
+	defer svc.Stop()
+
+	select {
+	case snapshot := <-atStart:
+		if snapshot.BytesTotal != int64(2*len(payload)) || snapshot.Progress != 50 {
+			t.Fatalf("second file started at progress=%d bytesTotal=%d, want 50 and %d", snapshot.Progress, snapshot.BytesTotal, 2*len(payload))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("second file was not copied")
 	}
 }

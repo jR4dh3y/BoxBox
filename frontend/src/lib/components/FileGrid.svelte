@@ -3,6 +3,12 @@
 	 * FileGrid component - icon/thumbnail grid for browsing folders
 	 */
 
+	import {
+		startFileDrag,
+		endFileDrag,
+		isDragged,
+		type FileDropTarget
+	} from '#lib/browse/fileDrag.js';
 	import type { FileInfo } from '#lib/api/files.js';
 	import { getThumbnailUrl } from '#lib/api/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
@@ -28,9 +34,11 @@
 		favoritePaths = new SvelteSet<string>(),
 		canPaste = false,
 		canCreate = false,
+		readOnly = false,
 		showFileExtensions = true,
 		previewOnSingleClick = false,
 		selectionCheckboxes = true,
+		dropTarget,
 		onItemClick,
 		onFolderHover,
 		onSelectionChange,
@@ -46,9 +54,11 @@
 		favoritePaths?: Set<string>;
 		canPaste?: boolean;
 		canCreate?: boolean;
+		readOnly?: boolean;
 		showFileExtensions?: boolean;
 		previewOnSingleClick?: boolean;
 		selectionCheckboxes?: boolean;
+		dropTarget?: FileDropTarget;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -423,6 +433,29 @@
 							onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
 							onpointerleave={() => onFolderHover?.(null)}
 							ondblclick={() => handleOpen(item)}
+							class:ring-1={dropTarget?.overPath === item.path}
+							class:ring-accent={dropTarget?.overPath === item.path}
+							draggable={!!dropTarget}
+							ondragstart={(event) => {
+								if (!event.dataTransfer) return;
+								const selected = selectedPaths.has(item.path)
+									? items.filter((entry) => selectedPaths.has(entry.path))
+									: [item];
+								startFileDrag(event.dataTransfer, selected);
+							}}
+							ondragend={endFileDrag}
+							ondragover={(event) => {
+								if (isDragged(item.path)) {
+									dropTarget?.refuse(event);
+									return;
+								}
+								if (item.isDir && dropTarget?.over(event, item.path)) event.stopPropagation();
+							}}
+							ondragleave={(event) => item.isDir && dropTarget?.leave(event)}
+							ondrop={(event) => {
+								if (isDragged(item.path)) dropTarget?.refuse(event);
+								else if (item.isDir) dropTarget?.drop(event, item.path);
+							}}
 							oncontextmenu={(e) => handleContextMenu(item, e)}
 							data-file-item="true"
 						>
@@ -502,6 +535,7 @@
 			{canPaste}
 			{favoritePaths}
 			{canCreate}
+			{readOnly}
 			x={contextMenu.x}
 			y={contextMenu.y}
 			onSelect={handleContextMenuSelect}

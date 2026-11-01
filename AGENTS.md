@@ -2,9 +2,13 @@
 
 BoxBox is a self-hosted file manager. A Go API server (`backend/`) embeds a SvelteKit app (`frontend/`).
 
+The root scripts also run the Electrobun CEF app (`desktop/`) and marketing site (`website/`). Install JS dependencies in each package with `bun install --cwd frontend`, `bun install --cwd desktop`, or `bun install --cwd website`. Each package has its own `bun.lock`. Go dependencies remain in `backend/go.mod`.
+
 Read the code that runs before you change it. Prefer the smallest complete change.
 
 ## Commands
+
+- Desktop, from the root: `bun run dev:desktop`, `bun run build:desktop`, `bun run check:desktop`, and `bun run test:desktop`. Desktop builds include the Go server and embedded frontend. See `desktop/README.md` for Linux prerequisites and remote mode.
 
 - Backend, from `backend/`: `go vet ./...` and `go test ./...`. The service tests take about 80 seconds. Add `-race` for concurrency changes.
 - Frontend, from `frontend/`: `bun run format`, `bun run check`, `bun run lint`, `bun run test`, `bun run build`. Tests use `node:test` and run under `bun test`. A test that imports `.svelte.ts` code needs the preload in `frontend/test/`, which `bun run test` already uses.

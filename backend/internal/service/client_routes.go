@@ -62,6 +62,9 @@ func ClientRouteAllowed(method, route string) bool {
 	case "search":
 		return len(p) == 1 && method == "GET"
 	case "jobs":
+		if len(p) == 2 && p[1] == "events" {
+			return method == "GET"
+		}
 		return len(p) == 1 && (method == "GET" || method == "POST") || len(p) == 2 && (method == "GET" || method == "DELETE")
 	case "shares":
 		return len(p) == 1 && (method == "GET" || method == "POST") || len(p) == 2 && (method == "PATCH" || method == "DELETE")

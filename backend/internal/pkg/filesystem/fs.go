@@ -93,8 +93,15 @@ type AferoFS struct {
 var errInvalidFilesystemPath = errors.New("invalid filesystem path")
 
 func validateFilesystemPath(path string) error {
-	if strings.ContainsRune(path, '\x00') || strings.Contains(path, "..") {
+	if strings.ContainsRune(path, '\x00') {
 		return errInvalidFilesystemPath
+	}
+
+	normalizedPath := strings.ReplaceAll(path, `\`, "/")
+	for _, component := range strings.Split(normalizedPath, "/") {
+		if component == ".." {
+			return errInvalidFilesystemPath
+		}
 	}
 	return nil
 }

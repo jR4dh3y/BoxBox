@@ -2,14 +2,21 @@
 	/**
 	 * Toolbar component - navigation buttons, path bar, search, and actions
 	 */
+	import type { Snippet } from 'svelte';
 	import { ChevronLeft, ChevronRight, PanelLeft, Plus, RefreshCw, Settings } from 'lucide-svelte';
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
 	import SearchBar from '#lib/components/SearchBar.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
+	import type { MountPoint } from '#lib/api/files.js';
 	import type { AddAction } from '#lib/utils/addMenu.js';
 
 	interface Props {
+		actions?: Snippet;
+		refreshDisabled?: boolean;
 		pathSegments?: string[];
+		pageTitle?: string | null;
+		roots?: MountPoint[];
+		serverName?: string;
 		canGoBack?: boolean;
 		canGoForward?: boolean;
 		onBack?: () => void;
@@ -31,7 +38,12 @@
 	}
 
 	let {
+		actions,
+		refreshDisabled = false,
 		pathSegments = [],
+		pageTitle = null,
+		roots = [],
+		serverName,
 		canGoBack = false,
 		canGoForward = false,
 		onBack,
@@ -51,6 +63,10 @@
 		includeHiddenSuggestions = false
 	}: Props = $props();
 
+	let pathBar: EditablePathBar | undefined;
+	export function focusLocation() {
+		pathBar?.edit();
+	}
 	let addMenu = $state<{ x: number; y: number } | null>(null);
 	const addDisabled = $derived(!canCreate && uploadDisabled);
 	function openAddMenu(event: MouseEvent & { currentTarget: HTMLButtonElement }) {
@@ -63,7 +79,7 @@
 </script>
 
 <div
-	class="browse-chrome relative z-50 flex items-center gap-2 border-b border-border-secondary bg-surface-primary px-3 py-1.5"
+	class="browse-chrome @container relative z-50 flex items-center gap-2 border-b border-border-secondary bg-surface-primary px-3 py-1.5"
 >
 	<!-- Navigation buttons -->
 	<div class="flex shrink-0 gap-0.5">
@@ -90,10 +106,18 @@
 		</button>
 	</div>
 
-	<EditablePathBar {pathSegments} {onNavigate} {includeHiddenSuggestions} />
+	<EditablePathBar
+		bind:this={pathBar}
+		{pageTitle}
+		{roots}
+		{serverName}
+		{pathSegments}
+		{onNavigate}
+		{includeHiddenSuggestions}
+	/>
 
 	{#if showSearch}
-		<div class="w-48 min-w-28 shrink md:w-64 lg:w-96">
+		<div class="w-28 min-w-28 shrink @lg:w-48 @3xl:w-64 @5xl:w-96">
 			<SearchBar
 				value={searchValue}
 				onInput={onSearchInput}
@@ -107,18 +131,28 @@
 
 	<!-- Action buttons -->
 	<div class="flex shrink-0 gap-1">
+		{#if actions}
+			{@render actions()}
+		{:else}
+			<button
+				type="button"
+				class={navBtnClass}
+				disabled={addDisabled}
+				onclick={openAddMenu}
+				title={addDisabled ? 'Nothing can be added in this location' : 'New or upload'}
+				aria-haspopup="menu"
+				aria-expanded={addMenu !== null}
+			>
+				<Plus size={16} />
+			</button>
+		{/if}
 		<button
 			type="button"
 			class={navBtnClass}
-			disabled={addDisabled}
-			onclick={openAddMenu}
-			title={addDisabled ? 'Nothing can be added in this location' : 'New or upload'}
-			aria-haspopup="menu"
-			aria-expanded={addMenu !== null}
+			onclick={onRefresh}
+			disabled={refreshDisabled}
+			title="Refresh"
 		>
-			<Plus size={16} />
-		</button>
-		<button type="button" class={navBtnClass} onclick={onRefresh} title="Refresh">
 			<RefreshCw size={16} />
 		</button>
 		<button type="button" class={navBtnClass} onclick={onSettings} title="Settings">
