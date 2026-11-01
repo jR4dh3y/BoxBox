@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isLocalDesktop } from '#lib/api/desktop.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import { Button, Select, Toggle } from '#lib/components/ui/index.js';
@@ -38,6 +39,34 @@
 	const accentIsValid = $derived(isValidAccentColor(accentText.trim() === '' ? null : accentText));
 	let pickerOpen = $state(false);
 	let applying = $state(false);
+	// The desktop's files are already local, so Choose opens the native picker directly.
+	const nativePicker = isLocalDesktop();
+	const activeHardwareAcceleration =
+		typeof document !== 'undefined' &&
+		document.documentElement.dataset.hardwareAcceleration !== 'false';
+	let nativeInput = $state<HTMLInputElement>();
+	let nativeFile = $state<File>();
+
+	function chooseWallpaper() {
+		if (!nativePicker) {
+			pickerOpen = true;
+			return;
+		}
+		nativeInput?.click();
+	}
+
+	function handleNativeFile(event: Event & { currentTarget: HTMLInputElement }) {
+		const picked = event.currentTarget.files?.[0];
+		event.currentTarget.value = '';
+		if (!picked) return;
+		nativeFile = picked;
+		pickerOpen = true;
+	}
+
+	function closePicker() {
+		pickerOpen = false;
+		nativeFile = undefined;
+	}
 
 	function handleAccentText(event: Event & { currentTarget: HTMLInputElement }) {
 		const value = event.currentTarget.value.trim();
@@ -63,15 +92,29 @@
 		if (problem) toastStore.error(problem, 8000);
 	}
 
-	function chooseWallpaper(selection: {
+	function applyWallpaper(selection: {
 		backgroundImage: string;
 		name: string;
 		mode: BackgroundImageMode;
 	}) {
-		pickerOpen = false;
+		closePicker();
 		void run(preferences.setWallpaper(selection.backgroundImage, selection.name, selection.mode));
 	}
 </script>
+
+{#if nativePicker}
+	<SettingsRow label="Hardware acceleration">
+		<Toggle
+			checked={settings.hardwareAcceleration}
+			label="Hardware acceleration"
+			showLabel={false}
+			onchange={(hardwareAcceleration) => preferences.update({ hardwareAcceleration })}
+		/>
+	</SettingsRow>
+	{#if settings.hardwareAcceleration !== activeHardwareAcceleration}
+		<p class="mb-3 text-xs text-text-muted" role="status">Restart BoxBox to apply this change.</p>
+	{/if}
+{/if}
 
 <SettingsRow label="Accent color">
 	<div
@@ -153,7 +196,11 @@
 				{wallpaperLabel}
 			</span>
 		{/if}
-		<Button variant="secondary" size="sm" onclick={() => (pickerOpen = true)} disabled={applying}>
+		{#if nativePicker}
+			<!-- No accept: see WALLPAPER_FILE_ACCEPT. -->
+			<input bind:this={nativeInput} type="file" class="hidden" onchange={handleNativeFile} />
+		{/if}
+		<Button variant="secondary" size="sm" onclick={chooseWallpaper} disabled={applying}>
 			{hasWallpaper ? 'Change' : 'Choose'}
 		</Button>
 		{#if hasWallpaper}
@@ -183,6 +230,14 @@
 			/>
 		</div>
 	</SettingsRow>
+	<SettingsRow label="Tint components from wallpaper">
+		<Toggle
+			checked={settings.wallpaperTint}
+			label="Tint components from wallpaper"
+			showLabel={false}
+			onchange={(wallpaperTint) => preferences.update({ wallpaperTint })}
+		/>
+	</SettingsRow>
 	<SettingsRow label="Frosted glass">
 		<Toggle
 			checked={settings.frostedGlass}
@@ -202,10 +257,11 @@
 			currentMode={normalizeBackgroundImageMode(settings.backgroundImageMode)}
 			frostedGlass={settings.frostedGlass}
 			showHiddenFiles={settings.showHiddenFiles}
-			onapply={chooseWallpaper}
-			onclose={() => (pickerOpen = false)}
+			file={nativeFile}
+			onapply={applyWallpaper}
+			onclose={closePicker}
 		/>
 	{:catch}
-		<LoadError label="wallpaper picker" onClose={() => (pickerOpen = false)} />
+		<LoadError label="wallpaper picker" onClose={closePicker} />
 	{/await}
 {/if}

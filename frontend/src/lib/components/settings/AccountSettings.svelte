@@ -5,6 +5,7 @@
 	import { Button } from '#lib/components/ui/index.js';
 	import { currentUsername } from '#lib/utils/sessionUser.js';
 	import SettingsRow from './SettingsRow.svelte';
+	import PairingCodeSettings from './PairingCodeSettings.svelte';
 
 	const username = currentUsername();
 
@@ -19,4 +20,5 @@
 	<SettingsRow label={username ? `Signed in as ${username}` : 'Signed in'}>
 		<Button variant="secondary" size="sm" onclick={signOut}>Sign out</Button>
 	</SettingsRow>
+	<PairingCodeSettings />
 {/if}

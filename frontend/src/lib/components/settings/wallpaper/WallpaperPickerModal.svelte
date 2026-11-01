@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { SettingsOperations } from '#lib/utils/settingsOperation.js';
 	import {
 		AlertTriangle,
@@ -25,6 +25,11 @@
 		readFileAsDataUrl,
 		type BackgroundImageMode
 	} from '#lib/utils/wallpaper.js';
+	import {
+		WALLPAPER_FILE_ACCEPT,
+		decodeWallpaperImage,
+		wallpaperFileProblem
+	} from '#lib/settings/wallpaperFile.js';
 
 	const operations = new SettingsOperations();
 	onDestroy(() => operations.dispose());
@@ -43,11 +48,11 @@
 		currentMode?: BackgroundImageMode;
 		frostedGlass?: boolean;
 		showHiddenFiles: boolean;
+		/** A file the desktop's native picker already chose. Server folders do not apply there. */
+		file?: File;
 		onapply?: (selection: WallpaperSelection) => void;
 		onclose?: () => void;
 	}
-
-	const LOCAL_WALLPAPER_MAX_BYTES = 20 * 1024 * 1024;
 	const PREVIEW_ROWS = [0, 1, 2, 3, 4, 5];
 	const SERVER_WALLPAPER_ITEMS_LIMIT = 200;
 
@@ -56,9 +61,15 @@
 		currentMode = DEFAULT_BACKGROUND_IMAGE_MODE,
 		frostedGlass = false,
 		showHiddenFiles,
+		file,
 		onapply,
 		onclose
 	}: Props = $props();
+
+	const nativeFile = untrack(() => file);
+	onMount(() => {
+		if (nativeFile) void loadLocalFile(nativeFile);
+	});
 
 	let wallpaperSource = $state<WallpaperSource | null>(null);
 	let serverWallpaperRoots = $state<MountPoint[]>([]);
@@ -171,24 +182,24 @@
 		localWallpaperInput?.click();
 	}
 
-	async function handleLocalWallpaperChange(event: Event & { currentTarget: HTMLInputElement }) {
-		const signal = operations.start();
+	function handleLocalWallpaperChange(event: Event & { currentTarget: HTMLInputElement }) {
 		const input = event.currentTarget;
-		const file = input.files?.[0];
+		const picked = input.files?.[0];
 		input.value = '';
+		if (picked) void loadLocalFile(picked);
+	}
 
-		if (!file || localWallpaperUploading) return;
+	async function loadLocalFile(file: File) {
+		if (localWallpaperUploading) return;
+		const signal = operations.start();
 
 		localWallpaperError = null;
 		localWallpaperProgress = 0;
 		localWallpaperProgressLabel = '';
-		if (!file.type.startsWith('image/') && !isLocalImageFile(file.name)) {
-			localWallpaperError = 'Choose an image file.';
-			return;
-		}
-
-		if (file.size > LOCAL_WALLPAPER_MAX_BYTES) {
-			localWallpaperError = `Choose an image smaller than ${formatFileSize(LOCAL_WALLPAPER_MAX_BYTES)} so it can be saved locally.`;
+		const problem = wallpaperFileProblem(file);
+		if (problem) {
+			localWallpaperError = problem;
+			previewBackgroundImage = null;
 			return;
 		}
 
@@ -202,6 +213,8 @@
 					progress >= 100 ? 'Preparing preview...' : 'Uploading wallpaper...';
 			});
 			signal.throwIfAborted();
+			await decodeWallpaperImage(image);
+			signal.throwIfAborted();
 			previewBackgroundImage = image;
 			previewName = file.name;
 			previewOrigin = 'local';
@@ -209,16 +222,12 @@
 		} catch {
 			if (signal.aborted) return;
 			localWallpaperError = 'Unable to read this image.';
+			previewBackgroundImage = null;
 			localWallpaperProgress = 0;
 			localWallpaperProgressLabel = '';
 		} finally {
 			localWallpaperUploading = false;
 		}
-	}
-
-	function isLocalImageFile(name: string): boolean {
-		const extension = name.split('.').pop()?.toLowerCase();
-		return ['avif', 'gif', 'jpeg', 'jpg', 'png', 'svg', 'webp'].includes(extension ?? '');
 	}
 
 	function returnFromPreview() {
@@ -251,14 +260,51 @@
 <input
 	bind:this={localWallpaperInput}
 	type="file"
-	accept="image/*"
+	accept={nativeFile ? undefined : WALLPAPER_FILE_ACCEPT}
 	class="hidden"
 	onchange={handleLocalWallpaperChange}
 />
 
+{#snippet localStatus()}
+	{#if localWallpaperUploading}
+		<div
+			class="rounded border border-border-primary bg-surface-secondary px-3 py-2"
+			role="status"
+			aria-live="polite"
+		>
+			<div class="mb-2 flex items-center justify-between gap-3 text-xs">
+				<span class="text-text-secondary">{localWallpaperProgressLabel}</span>
+				<span class="shrink-0 font-medium text-accent">{localWallpaperProgress}%</span>
+			</div>
+			<ProgressBar value={localWallpaperProgress} size="sm" />
+		</div>
+	{/if}
+
+	{#if localWallpaperError}
+		<div
+			class="flex items-start gap-2 rounded border border-danger/30 bg-danger/15 px-3 py-2 text-sm text-danger"
+		>
+			<AlertTriangle size={16} class="mt-0.5 shrink-0" />
+			<span>{localWallpaperError}</span>
+		</div>
+	{/if}
+{/snippet}
+
 <Modal {open} {title} size={modalSize} {onclose}>
 	{#snippet headerActions()}
-		{#if isPreviewing}
+		{#if nativeFile}
+			{#if isPreviewing}
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={openLocalWallpaperPicker}
+					disabled={localWallpaperUploading}
+				>
+					<FileImage size={14} />
+					Choose another
+				</Button>
+			{/if}
+		{:else if isPreviewing}
 			<Button variant="ghost" size="sm" onclick={returnFromPreview}>
 				<ChevronLeft size={14} />
 				{previewOrigin === 'server' ? 'Back to folder' : 'Back'}
@@ -344,6 +390,17 @@
 				</Button>
 			</div>
 		</div>
+	{:else if nativeFile}
+		<div class="flex flex-col gap-3">
+			{@render localStatus()}
+			{#if localWallpaperError}
+				<div class="flex justify-end">
+					<Button variant="secondary" size="sm" onclick={openLocalWallpaperPicker}>
+						Choose another image
+					</Button>
+				</div>
+			{/if}
+		</div>
 	{:else if wallpaperSource === null}
 		<div class="flex flex-col gap-4">
 			<div class="flex flex-col gap-3">
@@ -381,28 +438,7 @@
 				</button>
 			</div>
 
-			{#if localWallpaperUploading}
-				<div
-					class="rounded border border-border-primary bg-surface-secondary px-3 py-2"
-					role="status"
-					aria-live="polite"
-				>
-					<div class="mb-2 flex items-center justify-between gap-3 text-xs">
-						<span class="text-text-secondary">{localWallpaperProgressLabel}</span>
-						<span class="shrink-0 font-medium text-accent">{localWallpaperProgress}%</span>
-					</div>
-					<ProgressBar value={localWallpaperProgress} size="sm" />
-				</div>
-			{/if}
-
-			{#if localWallpaperError}
-				<div
-					class="flex items-start gap-2 rounded border border-danger/30 bg-danger/15 px-3 py-2 text-sm text-danger"
-				>
-					<AlertTriangle size={16} class="mt-0.5 shrink-0" />
-					<span>{localWallpaperError}</span>
-				</div>
-			{/if}
+			{@render localStatus()}
 		</div>
 	{:else if wallpaperSource === 'server'}
 		<div class="flex flex-col gap-3">

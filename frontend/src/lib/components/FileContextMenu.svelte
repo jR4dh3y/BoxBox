@@ -7,7 +7,7 @@
 
 	interface Props extends Pick<
 		FileContextMenuOptions,
-		'items' | 'canPaste' | 'favoritePaths' | 'canCreate'
+		'items' | 'canPaste' | 'favoritePaths' | 'canCreate' | 'readOnly'
 	> {
 		x: number;
 		y: number;
@@ -15,10 +15,11 @@
 		onClose: () => void;
 	}
 
-	let { items, canPaste, favoritePaths, canCreate, x, y, onSelect, onClose }: Props = $props();
+	let { items, canPaste, favoritePaths, canCreate, readOnly, x, y, onSelect, onClose }: Props =
+		$props();
 
 	const menuItems = $derived(
-		getFileContextMenuItems({ items, canPaste, favoritePaths, canCreate })
+		getFileContextMenuItems({ items, canPaste, favoritePaths, canCreate, readOnly })
 	);
 </script>
 
