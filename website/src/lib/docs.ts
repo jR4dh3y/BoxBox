@@ -43,6 +43,8 @@ const docNav = [
     description:
       "Deploy from GHCR with Compose, port binding, and optional reverse proxy examples.",
   },
+  { slug: "desktop", title: "Linux Desktop", description: "Download, install, pair, update and remove the Linux desktop app." },
+  { slug: "connect-api", title: "Paired Client API", description: "Authorize desktop devices and revoke server access." },
   {
     slug: "release",
     title: "Release Workflow",

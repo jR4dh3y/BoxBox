@@ -80,7 +80,7 @@ func TestInitializeServerExpandsAutoDiscoverMounts(t *testing.T) {
 		DataDir:     t.TempDir(),
 		MountPoints: []model.MountPoint{{Name: "drives", Path: parent, AutoDiscover: true}},
 	}
-	server, _, _, _, _, err := initializeServer(cfg, true)
+	server, _, _, _, _, err := initializeServer(cfg, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}

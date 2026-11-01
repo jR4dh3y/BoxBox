@@ -4,7 +4,7 @@
 	 * Editable with a Save bar when onSave is given; read-only otherwise.
 	 */
 	import { onMount, onDestroy } from 'svelte';
-	import { getMonacoLanguage } from '#lib/utils/fileTypes.js';
+	import { getMonacoLanguage } from './codeLanguage.js';
 	import { getFileContent } from '#lib/api/files.js';
 	import { Button, Spinner } from '#lib/components/ui/index.js';
 	import { loadMonacoLanguage } from './monacoLanguages';

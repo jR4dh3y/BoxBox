@@ -33,3 +33,14 @@ func Username(ctx context.Context) string {
 	username, _ := ctx.Value(usernameKey{}).(string)
 	return username
 }
+
+// Long-lived streams recheck authorization before releasing another event.
+type authorizationKey struct{}
+
+func WithAuthorization(ctx context.Context, valid func() bool) context.Context {
+	return context.WithValue(ctx, authorizationKey{}, valid)
+}
+func Authorized(ctx context.Context) bool {
+	valid, ok := ctx.Value(authorizationKey{}).(func() bool)
+	return !ok || valid()
+}

@@ -3,15 +3,12 @@
  */
 
 import { isJobState, type JobUpdate } from './jobs';
+import { isRecord } from './parse';
 
 export type WSServerMessage =
 	| { type: 'job_update' | 'job_complete'; payload: JobUpdate }
 	| { type: 'error'; payload: { message: string } }
 	| { type: 'pong' };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
-}
 
 function parseJobUpdate(payload: unknown): JobUpdate | null {
 	if (!isRecord(payload)) return null;

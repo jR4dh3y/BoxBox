@@ -1,0 +1,583 @@
+<script lang="ts">
+	import { Folder, Home, Loader2 } from 'lucide-svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
+	import { listDirectory, type MountPoint } from '#lib/api/files.js';
+	import { suggestedDirectories } from '#lib/browse/pathSuggestions.js';
+	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { parseRemotePath } from '#lib/api/remotePaths.js';
+	import { toastStore } from '#lib/stores/toast.svelte.js';
+	import { desktopInputPath } from '#lib/browse/desktopPath.js';
+
+	interface PathSuggestion {
+		path: string;
+	}
+
+	interface PathDisplayPart {
+		text: string;
+		selected: boolean;
+		caret?: boolean;
+	}
+
+	interface Props {
+		pathSegments?: string[];
+		serverName?: string;
+		roots: MountPoint[];
+		onNavigate?: (path: string) => void;
+		includeHiddenSuggestions?: boolean;
+		onClose: () => void;
+	}
+
+	let {
+		pathSegments = [],
+		serverName,
+		roots,
+		onNavigate,
+		includeHiddenSuggestions = false,
+		onClose
+	}: Props = $props();
+
+	const suggestionListId = 'toolbar-path-suggestions';
+
+	let isEditingPath = $state(false);
+	let pathDraft = $state('');
+	let suggestions = $state<PathSuggestion[]>([]);
+	let activeSuggestionIndex = $state(0);
+	let suggestionSelectedByKeyboard = $state(false);
+	let isLoadingSuggestions = $state(false);
+	let pathSelectionStart = $state(0);
+	let pathSelectionEnd = $state(0);
+	let pathInputEl = $state<HTMLInputElement | undefined>();
+	let suggestionListEl = $state<HTMLDivElement | undefined>();
+	let suggestionTimer: ReturnType<typeof setTimeout> | undefined;
+	let blurTimer: ReturnType<typeof setTimeout> | undefined;
+	let suggestionRequestId = 0;
+
+	const currentPath = $derived(pathSegments.join('/'));
+	const activeSuggestion = $derived(suggestions[activeSuggestionIndex] ?? null);
+	const completionSuffix = $derived.by(() => {
+		if (!isEditingPath || !activeSuggestion) return '';
+
+		const normalizedDraft = normalizeInputPath(pathDraft).toLocaleLowerCase();
+		const suggestionPath = activeSuggestion.path;
+
+		if (!suggestionPath.toLocaleLowerCase().startsWith(normalizedDraft)) return '';
+		return suggestionPath.slice(normalizedDraft.length);
+	});
+	const hasPathSelection = $derived(pathSelectionStart !== pathSelectionEnd);
+	const pathSelectionMin = $derived(Math.min(pathSelectionStart, pathSelectionEnd));
+	const pathSelectionMax = $derived(Math.max(pathSelectionStart, pathSelectionEnd));
+	const draftDisplayParts = $derived.by(() =>
+		buildPathDisplayParts(pathDraft, pathSelectionMin, pathSelectionMax, pathSelectionStart)
+	);
+	const completionDisplayText = $derived(
+		!hasPathSelection && pathDraft.length > 0 ? formatPathText(completionSuffix) : ''
+	);
+	const showSuggestionPopup = $derived(
+		isEditingPath && (suggestions.length > 0 || isLoadingSuggestions)
+	);
+	const activeSuggestionOptionId = $derived(
+		showSuggestionPopup && activeSuggestion
+			? `${suggestionListId}-${activeSuggestionIndex}`
+			: undefined
+	);
+
+	onMount(() => {
+		void beginPathEdit();
+	});
+
+	onDestroy(() => {
+		clearSuggestionTimer();
+		clearBlurTimer();
+		suggestionRequestId++;
+	});
+
+	function handleRootClick() {
+		cancelPathEdit();
+		onNavigate?.('');
+	}
+
+	function displayPath(value: string): string {
+		const source = parseRemotePath(currentPath);
+		const prefix = source.kind === 'remote' ? `@remote/${source.serverId}` : null;
+		return prefix && serverName && (value === prefix || value.startsWith(prefix + '/'))
+			? serverName + value.slice(prefix.length)
+			: value;
+	}
+
+	function normalizeInputPath(value: string): string {
+		const source = parseRemotePath(currentPath);
+		if (
+			source.kind === 'remote' &&
+			serverName &&
+			(value === serverName || value.startsWith(serverName + '/'))
+		)
+			return `@remote/${source.serverId}${value.slice(serverName.length)}`;
+		let path = value;
+		if (isLocalDesktop()) {
+			try {
+				path = desktopInputPath(value);
+			} catch {
+				return '';
+			}
+		}
+		if (value.endsWith('/') && !path.endsWith('/')) path += '/';
+		return path
+			.replaceAll('\\', '/')
+			.replace(/^\/+/, '')
+			.replace(/\/{2,}/g, '/');
+	}
+
+	function normalizeNavigablePath(value: string): string {
+		return normalizeInputPath(value).replace(/\/+$/, '').trim();
+	}
+
+	function formatPathText(value: string): string {
+		return value
+			.replaceAll('\\', '/')
+			.replace(/\/{2,}/g, '/')
+			.replaceAll('/', ' / ');
+	}
+
+	function pushDisplayPart(parts: PathDisplayPart[], part: PathDisplayPart): void {
+		const previous = parts.at(-1);
+		if (!part.caret && previous && !previous.caret && previous.selected === part.selected) {
+			previous.text += part.text;
+			return;
+		}
+
+		parts.push(part);
+	}
+
+	function buildPathDisplayParts(
+		value: string,
+		selectionMin: number,
+		selectionMax: number,
+		caretOffset: number
+	): PathDisplayPart[] {
+		const normalized = value;
+		const parts: PathDisplayPart[] = [];
+
+		for (let offset = 0; offset <= normalized.length; offset += 1) {
+			if (selectionMin === selectionMax && offset === caretOffset) {
+				pushDisplayPart(parts, { text: '', selected: false, caret: true });
+			}
+
+			if (offset === normalized.length) break;
+
+			pushDisplayPart(parts, {
+				text: normalized[offset] === '/' ? ' / ' : normalized[offset],
+				selected: offset >= selectionMin && offset < selectionMax
+			});
+		}
+
+		return parts;
+	}
+
+	function syncPathSelection(): void {
+		if (!pathInputEl) return;
+
+		pathSelectionStart = pathInputEl.selectionStart ?? pathDraft.length;
+		pathSelectionEnd = pathInputEl.selectionEnd ?? pathSelectionStart;
+	}
+
+	function scrollActiveSuggestionIntoView(): void {
+		const activeOption = suggestionListEl?.querySelector<HTMLElement>(
+			`[data-suggestion-index="${activeSuggestionIndex}"]`
+		);
+
+		activeOption?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+	}
+
+	function queueActiveSuggestionScroll(): void {
+		void tick().then(scrollActiveSuggestionIntoView);
+	}
+
+	function resetSuggestionScroll(): void {
+		void tick().then(() => {
+			if (suggestionListEl) {
+				suggestionListEl.scrollTop = 0;
+			}
+		});
+	}
+
+	function getSuggestionParts(value: string): { parentPath: string; prefix: string } {
+		const normalized = normalizeInputPath(value);
+		const withoutTrailingSlash = normalized.replace(/\/+$/, '');
+
+		if (normalized.endsWith('/')) {
+			return { parentPath: withoutTrailingSlash, prefix: '' };
+		}
+
+		const lastSlashIndex = withoutTrailingSlash.lastIndexOf('/');
+		if (lastSlashIndex === -1) {
+			return { parentPath: '', prefix: withoutTrailingSlash };
+		}
+
+		return {
+			parentPath: withoutTrailingSlash.slice(0, lastSlashIndex),
+			prefix: withoutTrailingSlash.slice(lastSlashIndex + 1)
+		};
+	}
+
+	function buildSuggestionPath(parentPath: string, name: string): string {
+		return parentPath ? `${parentPath}/${name}` : name;
+	}
+
+	function filterSuggestions(
+		names: Array<{ name: string }>,
+		parentPath: string,
+		prefix: string
+	): PathSuggestion[] {
+		const normalizedPrefix = prefix.toLocaleLowerCase();
+
+		return names
+			.filter((item) => item.name.toLocaleLowerCase().startsWith(normalizedPrefix))
+			.map((item) => ({
+				path: buildSuggestionPath(parentPath, item.name)
+			}));
+	}
+
+	function rootSuggestions(prefix: string): PathSuggestion[] {
+		return filterSuggestions(roots, '', prefix);
+	}
+
+	async function fetchChildSuggestions(
+		parentPath: string,
+		prefix: string
+	): Promise<PathSuggestion[]> {
+		const source = parseRemotePath(parentPath);
+		if (source.kind === 'remote' && !source.path)
+			return roots
+				.filter(
+					(root) =>
+						root.name.startsWith(parentPath + '/') &&
+						root.name
+							.slice(parentPath.length + 1)
+							.toLocaleLowerCase()
+							.startsWith(prefix.toLocaleLowerCase())
+				)
+				.map((root) => ({ path: root.name }));
+		const response = await listDirectory(parentPath);
+		const directories = suggestedDirectories(response.items, prefix, includeHiddenSuggestions);
+
+		return filterSuggestions(directories, parentPath, prefix);
+	}
+
+	async function loadSuggestions(value: string): Promise<void> {
+		const requestId = ++suggestionRequestId;
+		const { parentPath, prefix } = getSuggestionParts(value);
+
+		isLoadingSuggestions = true;
+
+		try {
+			const nextSuggestions = parentPath
+				? await fetchChildSuggestions(parentPath, prefix)
+				: await rootSuggestions(prefix);
+
+			if (requestId !== suggestionRequestId) return;
+
+			suggestions = nextSuggestions;
+			activeSuggestionIndex = 0;
+			suggestionSelectedByKeyboard = false;
+			resetSuggestionScroll();
+		} catch {
+			if (requestId !== suggestionRequestId) return;
+			suggestions = [];
+			activeSuggestionIndex = 0;
+			suggestionSelectedByKeyboard = false;
+			resetSuggestionScroll();
+		} finally {
+			if (requestId === suggestionRequestId) {
+				isLoadingSuggestions = false;
+			}
+		}
+	}
+
+	function queueSuggestions(): void {
+		clearSuggestionTimer();
+
+		if (!isEditingPath) return;
+
+		const value = pathDraft;
+		suggestionTimer = setTimeout(() => {
+			suggestionTimer = undefined;
+			void loadSuggestions(value);
+		}, 120);
+	}
+
+	async function beginPathEdit(): Promise<void> {
+		if (isEditingPath) return;
+
+		isEditingPath = true;
+		pathDraft = displayPath(currentPath);
+		pathSelectionStart = 0;
+		pathSelectionEnd = pathDraft.length;
+		suggestions = [];
+		activeSuggestionIndex = 0;
+		suggestionSelectedByKeyboard = false;
+		queueSuggestions();
+
+		await tick();
+
+		pathInputEl?.focus();
+		pathInputEl?.select();
+		syncPathSelection();
+	}
+
+	function cancelPathEdit(): void {
+		onClose();
+		clearSuggestionTimer();
+		clearBlurTimer();
+
+		isEditingPath = false;
+		pathDraft = '';
+		pathSelectionStart = 0;
+		pathSelectionEnd = 0;
+		suggestions = [];
+		activeSuggestionIndex = 0;
+		suggestionSelectedByKeyboard = false;
+		isLoadingSuggestions = false;
+		suggestionRequestId++;
+	}
+
+	function commitPath(value: string = pathDraft): void {
+		const nextPath = normalizeNavigablePath(value);
+		try {
+			parseRemotePath(nextPath);
+		} catch {
+			toastStore.error('Choose a remote mount or folder from Locations');
+			return;
+		}
+		cancelPathEdit();
+
+		if (nextPath !== currentPath) {
+			onNavigate?.(nextPath);
+		}
+	}
+
+	function completePath(value: string): void {
+		pathDraft = `${displayPath(value)}/`;
+		activeSuggestionIndex = 0;
+		suggestionSelectedByKeyboard = false;
+		queueSuggestions();
+
+		void tick().then(() => {
+			const cursorPosition = pathDraft.length;
+			pathInputEl?.focus();
+			pathInputEl?.setSelectionRange(cursorPosition, cursorPosition);
+			syncPathSelection();
+		});
+	}
+
+	function handlePathInput(event: Event & { currentTarget: HTMLInputElement }): void {
+		pathDraft = event.currentTarget.value;
+		activeSuggestionIndex = 0;
+		suggestionSelectedByKeyboard = false;
+		queueSuggestions();
+
+		void tick().then(syncPathSelection);
+	}
+
+	function handlePathInputFocus(): void {
+		clearBlurTimer();
+
+		syncPathSelection();
+	}
+
+	function handlePathInputBlur(): void {
+		clearBlurTimer();
+		blurTimer = setTimeout(() => {
+			blurTimer = undefined;
+			if (isEditingPath) {
+				cancelPathEdit();
+			}
+		}, 120);
+	}
+
+	function handlePathSubmit(event: SubmitEvent): void {
+		event.preventDefault();
+
+		const shouldUseSuggestion =
+			Boolean(activeSuggestion) &&
+			(suggestionSelectedByKeyboard || (pathDraft.length > 0 && !pathDraft.endsWith('/')));
+
+		commitPath(shouldUseSuggestion ? activeSuggestion?.path : pathDraft);
+	}
+
+	function isCaretAtEnd(): boolean {
+		return (
+			pathInputEl?.selectionStart === pathDraft.length &&
+			pathInputEl?.selectionEnd === pathDraft.length
+		);
+	}
+
+	function handlePathKeydown(event: KeyboardEvent): void {
+		switch (event.key) {
+			case 'Escape':
+				event.preventDefault();
+				cancelPathEdit();
+				break;
+
+			case 'ArrowDown':
+				if (suggestions.length === 0) return;
+				event.preventDefault();
+				activeSuggestionIndex = (activeSuggestionIndex + 1) % suggestions.length;
+				suggestionSelectedByKeyboard = true;
+				queueActiveSuggestionScroll();
+				break;
+
+			case 'ArrowUp':
+				if (suggestions.length === 0) return;
+				event.preventDefault();
+				activeSuggestionIndex =
+					(activeSuggestionIndex - 1 + suggestions.length) % suggestions.length;
+				suggestionSelectedByKeyboard = true;
+				queueActiveSuggestionScroll();
+				break;
+
+			case 'Tab':
+				if (!activeSuggestion) return;
+				event.preventDefault();
+				completePath(activeSuggestion.path);
+				break;
+
+			case 'ArrowRight':
+				if (!activeSuggestion || !completionSuffix || !isCaretAtEnd()) return;
+				event.preventDefault();
+				completePath(activeSuggestion.path);
+				break;
+		}
+	}
+
+	function handleSuggestionPointerDown(event: PointerEvent, suggestion: PathSuggestion): void {
+		event.preventDefault();
+		commitPath(suggestion.path);
+	}
+
+	function clearSuggestionTimer(): void {
+		if (!suggestionTimer) return;
+
+		clearTimeout(suggestionTimer);
+		suggestionTimer = undefined;
+	}
+
+	function clearBlurTimer(): void {
+		if (!blurTimer) return;
+
+		clearTimeout(blurTimer);
+		blurTimer = undefined;
+	}
+</script>
+
+<div
+	class="relative flex min-w-0 flex-1 cursor-text items-center gap-1.5 rounded border border-border-primary bg-surface-secondary px-2 py-1 focus-within:border-border-focus"
+	role="group"
+	aria-label="Location editor"
+>
+	<button
+		type="button"
+		class="flex h-4.5 w-4.5 shrink-0 cursor-pointer items-center justify-center border-none bg-transparent text-text-secondary hover:text-text-primary"
+		onclick={(event) => {
+			event.stopPropagation();
+			handleRootClick();
+		}}
+		title="Go to root"
+	>
+		<Home size={14} />
+	</button>
+	<div class="relative flex min-w-0 flex-1 items-center">
+		<form class="relative h-5 w-full" onsubmit={handlePathSubmit}>
+			<div
+				class="pointer-events-none absolute inset-0 flex min-w-0 items-center overflow-hidden text-[13px] whitespace-nowrap"
+				aria-hidden="true"
+			>
+				{#if pathDraft.length === 0}
+					<span class="text-text-muted">Type a location</span>
+				{:else}
+					<div class="flex min-w-0 items-center overflow-hidden">
+						{#each draftDisplayParts as part, index (`path-part-${index}-${part.text}-${part.selected}-${part.caret}`)}
+							{#if part.caret}
+								<span class="inline-block h-3.5 w-px shrink-0 animate-pulse bg-accent"></span>
+							{:else}
+								<span
+									class="min-w-0 truncate rounded-sm {part.selected
+										? 'bg-accent px-0.5 text-white'
+										: 'text-text-primary'}"
+								>
+									{part.text}
+								</span>
+							{/if}
+						{/each}
+						{#if completionDisplayText}
+							<span class="min-w-0 truncate text-text-muted">{completionDisplayText}</span>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			<!-- Keep a real input for keyboard editing while rendering the path as custom breadcrumbs. -->
+			<input
+				bind:this={pathInputEl}
+				type="text"
+				value={pathDraft}
+				oninput={handlePathInput}
+				onkeydown={handlePathKeydown}
+				onkeyup={syncPathSelection}
+				onclick={syncPathSelection}
+				onselect={syncPathSelection}
+				onpointerup={syncPathSelection}
+				onfocus={handlePathInputFocus}
+				onblur={handlePathInputBlur}
+				class="absolute inset-0 z-10 h-full w-full cursor-text border-none bg-transparent p-0 text-[13px] text-transparent caret-transparent outline-none selection:bg-transparent"
+				placeholder="Type a location"
+				autocomplete="off"
+				autocapitalize="off"
+				spellcheck="false"
+				aria-label="Location"
+				role="combobox"
+				aria-autocomplete="list"
+				aria-expanded={showSuggestionPopup}
+				aria-controls={showSuggestionPopup ? suggestionListId : undefined}
+				aria-activedescendant={activeSuggestionOptionId}
+			/>
+		</form>
+
+		{#if showSuggestionPopup}
+			<div
+				id={suggestionListId}
+				bind:this={suggestionListEl}
+				role="listbox"
+				aria-label="Location suggestions"
+				class="absolute top-full right-0 left-0 z-[200] mt-1 max-h-64 overflow-auto rounded border border-border-primary bg-[#202020] py-1 shadow-2xl ring-1 ring-black/40"
+			>
+				{#if isLoadingSuggestions && suggestions.length === 0}
+					<div class="flex items-center gap-2 px-3 py-2 text-xs text-text-secondary">
+						<Loader2 size={14} class="animate-spin" />
+						<span>Finding folders...</span>
+					</div>
+				{/if}
+
+				{#each suggestions as suggestion, index (suggestion.path)}
+					<button
+						type="button"
+						id={`${suggestionListId}-${index}`}
+						data-suggestion-index={index}
+						role="option"
+						aria-selected={index === activeSuggestionIndex}
+						class="flex w-full items-center gap-2 border-none px-3 py-1.5 text-left text-[13px] {index ===
+						activeSuggestionIndex
+							? 'bg-accent-muted text-white'
+							: 'bg-transparent text-text-primary hover:bg-[#2b2b2b]'}"
+						onpointerdown={(event) => handleSuggestionPointerDown(event, suggestion)}
+						onmouseenter={() => {
+							activeSuggestionIndex = index;
+						}}
+					>
+						<Folder size={14} class="shrink-0 text-folder" />
+						<span class="min-w-0 flex-1 truncate">{displayPath(suggestion.path)}</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</div>
+</div>
