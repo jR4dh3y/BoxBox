@@ -7,6 +7,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   symlink,
   writeFile,
@@ -72,7 +73,7 @@ for (const appImage of [false, true]) {
       );
       const persistent = appImage
         ? join(root, "BoxBox.AppImage")
-        : join(appdir, "BoxBox/bin/launcher");
+        : join(appdir, "AppRun");
       if (appImage) await symlink(join(appdir, "AppRun"), persistent);
       const env = {
         ...process.env,
@@ -87,6 +88,7 @@ for (const appImage of [false, true]) {
         APPIMAGE: appImage ? persistent : "",
         TMPDIR: root,
       };
+      await mkdir(env.XDG_RUNTIME_DIR, { mode: 0o700 });
       const run = spawnSync(join(appdir, "AppRun"), ["--enable-chooser"], {
         env,
         encoding: "utf8",
@@ -101,6 +103,28 @@ for (const appImage of [false, true]) {
       );
       assert.ok(service.includes(`Exec="${persistent}" --portal`), service);
       assert.ok(!service.includes("boxbox-appimage."), service);
+      await writeFile(join(resources, "version.json"), JSON.stringify({
+        identifier: "io.boxbox.desktop", channel: "stable",
+      }));
+      const originalBuild = JSON.stringify({ chromiumFlags: { "disable-gpu": false } });
+      await writeFile(join(resources, "build.json"), originalBuild, { mode: 0o444 });
+      const preferences = join(root, "data/io.boxbox.desktop/stable/desktop");
+      await mkdir(preferences, { recursive: true });
+      await writeFile(join(preferences, "preferences.json"), JSON.stringify({ hardwareAcceleration: false }));
+      await writeFile(join(bin, "electrobun-launcher"), `#!/bin/sh
+set -eu
+test "$1" = --portal
+test "$BOXBOX_HARDWARE_ACCELERATION" = false
+cat "$(dirname "$0")/../Resources/build.json"
+`, { mode: 0o755 });
+      // Exercise the installed service command after the registration runtime is gone.
+      const activation = spawnSync(persistent, ["--portal"], { env, encoding: "utf8" });
+      assert.equal(activation.status, 0, activation.stderr);
+      assert.deepEqual(JSON.parse(activation.stdout), {
+        chromiumFlags: { "disable-gpu": true, "disable-gpu-compositing": true },
+      });
+      assert.equal(await readFile(join(resources, "build.json"), "utf8"), originalBuild);
+      assert.ok(!(await readdir(root)).some((name) => name.startsWith("boxbox-appimage.")));
     } finally {
       await rm(root, { recursive: true, force: true });
     }

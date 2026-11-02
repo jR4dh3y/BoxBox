@@ -34,7 +34,15 @@
 		aria-labelledby="chooser-title"
 		class="flex h-dvh flex-col bg-surface-primary text-[13px] text-text-primary"
 	>
-		<h1 id="chooser-title" class="sr-only">{chooser.request?.title || 'Choose a file'}</h1>
+		<h1
+			id="chooser-title"
+			class="shrink-0 border-b border-border-secondary px-4 py-2 text-sm font-medium"
+		>
+			{chooser.request?.title || 'Choose a file'}
+			{#if chooser.request?.appId}
+				<span class="ml-2 text-xs text-text-secondary">{chooser.request.appId}</span>
+			{/if}
+		</h1>
 		<div class="flex min-h-0 flex-1">
 			<nav
 				aria-label="Places"

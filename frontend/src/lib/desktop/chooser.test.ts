@@ -47,6 +47,21 @@ test('MIME picker shows content-detected extensionless files and excludes other 
 	);
 });
 
+test('MIME picker keeps unknown types visible after unavailable content probes', () => {
+	const chooser = imageChooser();
+	const entry = chooser.items[0];
+	assert.ok(entry);
+	chooser.items.push({ ...entry, name: 'unknown', path: 'home/unknown', mimeType: '' });
+	for (const value of ['image/png', 'image/*']) {
+		assert.ok(chooser.request);
+		chooser.request.filters[0].rules[0].value = value;
+		assert.deepEqual(
+			chooser.visible.map((item) => item.name),
+			['logo', 'unknown']
+		);
+	}
+});
+
 test('folder search matches names without case and composes with MIME, hidden and directory filters', () => {
 	const chooser = imageChooser();
 	const entry = chooser.items[0];
@@ -177,11 +192,13 @@ test('remote saves and folder grants cannot submit a non-local destination', asy
 	await chooser.accept();
 	assert.equal(chooser.busy, false);
 	assert.equal(chooser.done, false);
+	assert.equal(chooser.error, '');
 	chooser.request.directory = false;
 	chooser.request.kind = 'save';
 	assert.equal(chooser.remoteUnavailable, true);
 	await chooser.accept();
 	assert.equal(chooser.done, false);
+	assert.equal(chooser.error, '');
 });
 
 test('up from a remote drive returns to Other locations', () => {

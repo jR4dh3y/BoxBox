@@ -103,6 +103,7 @@ export class FileChooser {
 					filter.rules.some((rule) => {
 						if (rule.kind === 1)
 							return (
+								!item.mimeType ||
 								item.mimeType?.split(';')[0] === rule.value ||
 								(rule.value.endsWith('/*') && item.mimeType?.startsWith(rule.value.slice(0, -1)))
 							);
