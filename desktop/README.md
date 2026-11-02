@@ -173,7 +173,8 @@ remove them manually when no longer needed. Edits to these copies do not sync.
 Remote save destinations and remote folder grants are unavailable because BoxBox
 does not provide a writable local filesystem projection. Use a local folder for
 those requests. Remote filenames containing percent characters follow the existing
-cross-server transfer restriction.
+cross-server transfer restriction and are omitted from remote chooser listings;
+other files in the same folder remain available.
 
 Cancel, portal Request.Close and closing the chooser window cancel the request.
 Saving returns a destination URI; BoxBox never writes the application's contents.

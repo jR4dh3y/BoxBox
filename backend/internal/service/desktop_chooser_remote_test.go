@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"io"
 	"net/http"
@@ -161,5 +163,153 @@ func TestChooserRemoteCancelStopsDownloadAndCleansPartialFiles(t *testing.T) {
 	entries, _ := os.ReadDir(cache)
 	if len(entries) != 0 {
 		t.Fatal("cancelled files retained")
+	}
+}
+
+func TestChooserRemoteProbeFailureKeepsSiblingsAndRevalidatesContent(t *testing.T) {
+	for _, status := range []int{404, 500, 200} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			servers, server, _ := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.Contains(r.URL.Path, "/files/list/"):
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(model.FileList{Items: []model.FileInfo{{Name: "unreadable"}, {Name: "logo"}}})
+				case strings.HasSuffix(r.URL.Path, "/unreadable"):
+					if status == 200 {
+						w.Header().Set("Content-Length", "100")
+						io.WriteString(w, "partial")
+					} else {
+						w.WriteHeader(status)
+					}
+				case r.Header.Get("Range") != "":
+					w.Write([]byte("\x89PNG\r\n\x1a\n"))
+				default:
+					io.WriteString(w, "content changed since listing")
+				}
+			})
+			chooser, _ := chooserFixture(t)
+			defer chooser.Close()
+			cache := t.TempDir()
+			chooser.ConfigureServers(servers, cache)
+			request, _ := chooser.Begin(ChooserRequest{Kind: "open", Filters: []ChooserFilter{{Rules: []ChooserRule{{Kind: 1, Value: "image/png"}}}}})
+			reference := "@remote/" + server.ID + "/photos"
+			list, err := chooser.Directory(context.Background(), request.ID, reference)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(list.Items) != 2 || list.Items[0].MimeType != "" || list.Items[1].MimeType != "image/png" {
+				t.Fatalf("listing %#v", list)
+			}
+			if err := chooser.Select(context.Background(), request.ID, ChooserSelection{Paths: []string{reference + "/logo"}}); !errors.Is(err, ErrInvalidOperation) {
+				t.Fatalf("content mismatch accepted: %v", err)
+			}
+			entries, err := os.ReadDir(cache)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("failed import retained files: %v %v", entries, err)
+			}
+		})
+	}
+}
+
+func TestChooserRemotePercentNamesDoNotHideSiblings(t *testing.T) {
+	servers, server, _ := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/files/list/") {
+			t.Errorf("unsupported name requested: %s", r.URL.Path)
+			w.WriteHeader(404)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(model.FileList{Items: []model.FileInfo{{Name: "100%.txt"}, {Name: "%2e%2e"}, {Name: "readable.txt"}}})
+	})
+	chooser, _ := chooserFixture(t)
+	defer chooser.Close()
+	chooser.ConfigureServers(servers, t.TempDir())
+	request, _ := chooser.Begin(ChooserRequest{Kind: "open"})
+	reference := "@remote/" + server.ID + "/photos"
+	list, err := chooser.Directory(context.Background(), request.ID, reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 1 || list.Items[0].Path != reference+"/readable.txt" {
+		t.Fatalf("listing %#v", list)
+	}
+	if err := chooser.Select(context.Background(), request.ID, ChooserSelection{Paths: []string{reference + "/100%.txt"}}); err == nil {
+		t.Fatal("percent import accepted")
+	}
+}
+
+func TestChooserRemoteRejectsMalformedListingNames(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "../secret", "/absolute", "sub/file", `sub\file`, "bad\x00name", "@remote"} {
+		t.Run(name, func(t *testing.T) {
+			servers, server, _ := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(model.FileList{Items: []model.FileInfo{{Name: name}, {Name: "safe.txt"}}})
+			})
+			chooser, _ := chooserFixture(t)
+			defer chooser.Close()
+			chooser.ConfigureServers(servers, t.TempDir())
+			request, _ := chooser.Begin(ChooserRequest{Kind: "open"})
+			if _, err := chooser.Directory(context.Background(), request.ID, "@remote/"+server.ID+"/photos"); !errors.Is(err, ErrRemoteUnavailable) {
+				t.Fatalf("malformed name accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestChooserRemoteProbePreservesCancellationAndAuthentication(t *testing.T) {
+	for _, status := range []int{401, 403, 0} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			servers, server, _ := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				if strings.Contains(r.URL.Path, "/files/list/") {
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(model.FileList{Items: []model.FileInfo{{Name: "logo"}}})
+					return
+				}
+				if status == 0 {
+					cancel()
+					<-r.Context().Done()
+					return
+				}
+				w.WriteHeader(status)
+			})
+			chooser, _ := chooserFixture(t)
+			defer chooser.Close()
+			chooser.ConfigureServers(servers, t.TempDir())
+			request, _ := chooser.Begin(ChooserRequest{Kind: "open", Filters: []ChooserFilter{{Rules: []ChooserRule{{Kind: 1, Value: "image/png"}}}}})
+			_, err := chooser.Directory(ctx, request.ID, "@remote/"+server.ID+"/photos")
+			expected := ErrRemoteAuthRequired
+			if status == 0 {
+				expected = context.Canceled
+			}
+			if !errors.Is(err, expected) {
+				t.Fatalf("got %v, want %v", err, expected)
+			}
+		})
+	}
+}
+
+func TestChooserRemoteListingFailureStillSurfaces(t *testing.T) {
+	for _, status := range []int{401, 403, 500} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			servers, server, _ := gatewayFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				io.WriteString(w, `{}`)
+			})
+			chooser, _ := chooserFixture(t)
+			defer chooser.Close()
+			chooser.ConfigureServers(servers, t.TempDir())
+			request, _ := chooser.Begin(ChooserRequest{Kind: "open"})
+			_, err := chooser.Directory(context.Background(), request.ID, "@remote/"+server.ID+"/photos")
+			expected := ErrRemoteAuthRequired
+			if status == 500 {
+				expected = ErrRemoteUnavailable
+			}
+			if !errors.Is(err, expected) {
+				t.Fatalf("got %v, want %v", err, expected)
+			}
+		})
 	}
 }

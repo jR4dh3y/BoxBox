@@ -403,7 +403,7 @@ func (c *DesktopChooser) Directory(ctx context.Context, id, path string) (*model
 		}
 		return c.remoteDirectory(ctx, remote, request, path)
 	}
-	listing, err := NewFileService(c.fs, FileServiceConfig{MountPoints: c.mounts.list()}).List(ctx, path)
+	listing, err := NewFileService(c.fs, FileServiceConfig{MountPoints: c.mounts.list(), DirectoryEntryLimit: -1}).List(ctx, path)
 	if err != nil {
 		return nil, err
 	}

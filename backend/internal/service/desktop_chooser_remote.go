@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -110,8 +111,13 @@ func (c *DesktopChooser) remoteDirectory(ctx context.Context, remote *chooserRem
 			needsTypes = needsTypes || rule.Kind == 1
 		}
 	}
+	items := list.Items[:0]
 	for index := range list.Items {
 		item := &list.Items[index]
+		// Percent names cannot be addressed safely by the shared virtual-path API.
+		if strings.Contains(item.Name, "%") {
+			continue
+		}
 		if !validTransferChild(item.Name) || item.Size < 0 {
 			return nil, ErrRemoteUnavailable
 		}
@@ -120,16 +126,23 @@ func (c *DesktopChooser) remoteDirectory(ctx context.Context, remote *chooserRem
 			child := ref
 			child.path += "/" + item.Name
 			content, err := remote.get(ctx, child, "/stream/download/", http.Header{"Range": {"bytes=0-511"}})
-			if err != nil {
+			if err == nil {
+				data, readErr := io.ReadAll(io.LimitReader(content.Body, 512))
+				content.Body.Close()
+				if readErr == nil {
+					item.MimeType = strings.Split(http.DetectContentType(data), ";")[0]
+				}
+			}
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			// Failed content probes leave metadata usable; gateway errors still surface.
+			if err != nil && !errors.Is(err, ErrPathNotFound) && !errors.Is(err, ErrRemoteUnavailable) {
 				return nil, err
 			}
-			data, readErr := io.ReadAll(io.LimitReader(content.Body, 512))
-			content.Body.Close()
-			if readErr != nil {
-				return nil, ErrRemoteUnavailable
-			}
-			item.MimeType = strings.Split(http.DetectContentType(data), ";")[0]
 		}
+		items = append(items, *item)
 	}
+	list.Items = items
 	return &list, nil
 }

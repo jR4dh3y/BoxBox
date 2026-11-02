@@ -2,8 +2,12 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -35,5 +39,33 @@ func TestDesktopChooserMalformedSelectionRemainsPending(t *testing.T) {
 	}
 	if got := <-result; got.Code != 1 {
 		t.Fatal(got)
+	}
+}
+
+func TestDesktopChooserDirectoryAboveDefaultLimit(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 10_001; i++ {
+		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("file-%05d.txt", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	chooser := service.NewDesktopChooser(filesystem.NewOsFS(), []model.MountPoint{{Name: "home", Path: root}})
+	defer chooser.Close()
+	request, _ := chooser.Begin(service.ChooserRequest{Kind: "open"})
+	router := chi.NewRouter()
+	RegisterDesktopChooser(router, chooser)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/chooser/"+request.ID+"/directory?path=home", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", response.Code, response.Body.String())
+	}
+	var listing struct {
+		Items []model.FileInfo `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &listing); err != nil {
+		t.Fatal(err)
+	}
+	if len(listing.Items) != 10_001 {
+		t.Fatalf("got %d entries", len(listing.Items))
 	}
 }
