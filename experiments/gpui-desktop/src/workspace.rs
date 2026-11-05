@@ -1,7 +1,7 @@
 //! Root view: tabs of panes plus the drive data shared by the sidebar and This PC.
 //! Mirrors `lib/components/desktop/BrowseWorkspace.svelte`.
 
-use std::sync::Arc;
+use std::{fs, path::PathBuf, sync::Arc};
 
 use gpui::{
     actions, div, prelude::*, px, relative, App, Context, FocusHandle, KeyBinding, SharedString,
@@ -9,7 +9,8 @@ use gpui::{
 };
 
 use crate::api::{Api, DriveStats, MountPoint};
-use crate::pane::Pane;
+use crate::pane::{Pane, ViewMode};
+use crate::sort::{Sort, SortDir, SortField};
 use crate::theme::{c, SURFACE_PRIMARY, TEXT_PRIMARY};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -20,16 +21,17 @@ pub(crate) enum SettingsSection {
     Connections,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub(crate) struct Preferences {
     pub show_hidden_files: bool,
     pub show_file_extensions: bool,
     pub confirm_delete: bool,
     pub preview_on_single_click: bool,
     pub selection_checkboxes: bool,
-    pub default_sort: &'static str,
-    pub default_sort_direction: &'static str,
-    pub default_view: &'static str,
+    pub default_sort: String,
+    pub default_sort_direction: String,
+    pub default_view: String,
     pub hardware_acceleration: bool,
     pub compact_rows: bool,
     pub wallpaper_tint: bool,
@@ -44,13 +46,41 @@ impl Default for Preferences {
             confirm_delete: true,
             preview_on_single_click: false,
             selection_checkboxes: true,
-            default_sort: "Name",
-            default_sort_direction: "Ascending",
-            default_view: "List",
+            default_sort: "Name".into(),
+            default_sort_direction: "Ascending".into(),
+            default_view: "List".into(),
             hardware_acceleration: true,
             compact_rows: false,
             wallpaper_tint: false,
             frosted_glass: false,
+        }
+    }
+}
+
+impl Preferences {
+    fn path() -> PathBuf {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("boxbox-gpui")
+            .join("settings.json")
+    }
+
+    pub(crate) fn load() -> Self {
+        fs::read(Self::path())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn save(&self) {
+        let path = Self::path();
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(bytes) = serde_json::to_vec_pretty(self) {
+            let _ = fs::write(path, bytes);
         }
     }
 }
@@ -121,9 +151,16 @@ impl Workspace {
     ) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);
+        let preferences = Preferences::load();
         let mut workspace = Self {
             api: Arc::new(api),
-            tabs: vec![Pane::new(0, initial_path)],
+            tabs: vec![Pane::new(
+                0,
+                initial_path,
+                preferences.show_hidden_files,
+                preference_sort(&preferences),
+                preference_view(&preferences),
+            )],
             active_tab: 0,
             next_pane_id: 1,
             roots: Vec::new(),
@@ -132,7 +169,7 @@ impl Workspace {
             focus_handle,
             settings_open: false,
             settings_section: SettingsSection::General,
-            preferences: Preferences::default(),
+            preferences,
         };
         workspace.load_drives(cx);
         workspace.load_active(cx);
@@ -198,6 +235,20 @@ impl Workspace {
         .detach();
     }
 
+    fn apply_preferences(&mut self, cx: &mut Context<Self>) {
+        let sort = preference_sort(&self.preferences);
+        let view = preference_view(&self.preferences);
+        let show_hidden_files = self.preferences.show_hidden_files;
+        let hidden_changed = self
+            .pane_mut()
+            .apply_preferences(show_hidden_files, sort, view);
+        self.preferences.save();
+        if hidden_changed {
+            self.load_active(cx);
+        }
+        cx.notify();
+    }
+
     pub(crate) fn navigate(&mut self, path: String, cx: &mut Context<Self>) {
         if self.pane_mut().navigate(path) {
             self.load_active(cx);
@@ -229,7 +280,13 @@ impl Workspace {
     }
 
     pub(crate) fn new_tab(&mut self, _: &NewTab, _: &mut Window, cx: &mut Context<Self>) {
-        self.tabs.push(Pane::new(self.next_pane_id, String::new()));
+        self.tabs.push(Pane::new(
+            self.next_pane_id,
+            String::new(),
+            self.preferences.show_hidden_files,
+            preference_sort(&self.preferences),
+            preference_view(&self.preferences),
+        ));
         self.next_pane_id += 1;
         self.active_tab = self.tabs.len() - 1;
         cx.notify();
@@ -276,9 +333,36 @@ impl Workspace {
         cx.notify();
     }
 
+    pub(crate) fn commit_preferences(&mut self, cx: &mut Context<Self>) {
+        self.apply_preferences(cx);
+    }
+
     pub(crate) fn select_settings_section(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
         self.settings_section = section;
         cx.notify();
+    }
+}
+
+fn preference_sort(preferences: &Preferences) -> Sort {
+    let field = match preferences.default_sort.as_str() {
+        "Size" => SortField::Size,
+        "Date modified" => SortField::Modified,
+        "Type" => SortField::Type,
+        _ => SortField::Name,
+    };
+    let dir = if preferences.default_sort_direction == "Descending" {
+        SortDir::Desc
+    } else {
+        SortDir::Asc
+    };
+    Sort { field, dir }
+}
+
+fn preference_view(preferences: &Preferences) -> ViewMode {
+    if preferences.default_view == "Grid" {
+        ViewMode::Grid
+    } else {
+        ViewMode::List
     }
 }
 

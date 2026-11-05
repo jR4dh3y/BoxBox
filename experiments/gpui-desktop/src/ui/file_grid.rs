@@ -14,8 +14,18 @@ const GAP: f32 = 12.;
 const PADDING: f32 = 12.;
 
 /// `columnsFor` in `virtualWindow.ts`.
-fn columns_for(width: f32) -> usize {
-    (((width + GAP) / (TILE_WIDTH + GAP)).floor() as usize).max(1)
+fn columns_for_with(width: f32, tile_width: f32, gap: f32) -> usize {
+    (((width + gap) / (tile_width + gap)).floor() as usize).max(1)
+}
+
+fn display_name(name: &str, is_dir: bool, show_extensions: bool) -> String {
+    if is_dir || show_extensions {
+        return name.to_string();
+    }
+    name.rsplit_once('.')
+        .filter(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
+        .map(|(stem, _)| stem.to_string())
+        .unwrap_or_else(|| name.to_string())
 }
 
 impl Workspace {
@@ -25,6 +35,11 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let pane = self.pane();
+        let compact = self.preferences.compact_rows;
+        let tile_width = if compact { 96. } else { TILE_WIDTH };
+        let row_height = if compact { 136. } else { ROW_HEIGHT };
+        let gap = if compact { 8. } else { GAP };
+        let padding = if compact { 8. } else { PADDING };
         if pane.items.is_empty() && matches!(pane.listing, Listing::Loaded) {
             return div()
                 .size_full()
@@ -42,8 +57,8 @@ impl Workspace {
                 )
                 .into_any_element();
         }
-        let width = f32::from(window.viewport_size().width) - SIDEBAR_WIDTH - PADDING * 2.;
-        let columns = columns_for(width);
+        let width = f32::from(window.viewport_size().width) - SIDEBAR_WIDTH - padding * 2.;
+        let columns = columns_for_with(width, tile_width, gap);
         let rows = pane.items.len().div_ceil(columns);
         div()
             .size_full()
@@ -60,13 +75,13 @@ impl Workspace {
                                 // uniform_list needs equal rows, so the container's top padding
                                 // is folded into every row instead of only the first.
                                 div()
-                                    .h(px(ROW_HEIGHT))
-                                    .px(px(PADDING))
-                                    .pt(px(PADDING))
+                                    .h(px(row_height))
+                                    .px(px(padding))
+                                    .pt(px(padding))
                                     .flex()
                                     .items_start()
-                                    .gap(px(GAP))
-                                    .children((start..end).map(|index| this.render_tile(index, cx)))
+                                    .gap(px(gap))
+                                    .children((start..end).map(|index| this.render_tile(index, compact, tile_width, cx)))
                             })
                             .collect::<Vec<_>>()
                     }),
@@ -77,19 +92,26 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn render_tile(&self, index: usize, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_tile(
+        &self,
+        index: usize,
+        compact: bool,
+        tile_width: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let pane = self.pane();
         let item = &pane.items[index];
         let selected = pane.is_selected(&item.path);
         let active = pane.active == Some(index);
         let (path, is_dir) = (item.path.clone(), item.is_dir);
+        let name = display_name(&item.name, is_dir, self.preferences.show_file_extensions);
         crate::drag_out::draggable(
             div().id(("tile", index)),
             index,
             cx.entity().downgrade(),
             self.api.clone(),
         )
-        .w(px(TILE_WIDTH))
+        .w(px(tile_width))
         .flex_none()
         .flex()
         .flex_col()
@@ -112,7 +134,7 @@ impl Workspace {
         })
         .child(
             div()
-                .h(px(80.))
+                .h(px(if compact { 56. } else { 80. }))
                 .w_full()
                 .flex_none()
                 .flex()
@@ -139,11 +161,11 @@ impl Workspace {
                     div()
                         .w_full()
                         .text_center()
-                        .text_size(px(13.))
-                        .line_height(px(16.))
+                        .text_size(px(if compact { 12. } else { 13. }))
+                        .line_height(px(if compact { 14. } else { 16. }))
                         .line_clamp(2)
                         .text_color(c(if item.is_dir { FOLDER } else { TEXT_PRIMARY }))
-                        .child(item.name.clone()),
+                        .child(name),
                 )
                 .child(
                     div()

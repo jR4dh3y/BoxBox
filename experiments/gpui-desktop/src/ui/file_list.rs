@@ -71,7 +71,7 @@ impl Workspace {
         div()
             .flex()
             .flex_none()
-            .h(px(32.))
+            .h(px(if self.preferences.compact_rows { 28. } else { 32. }))
             .bg(c(SURFACE_SECONDARY))
             .border_b_1()
             .border_color(c(BORDER_PRIMARY))
@@ -120,6 +120,8 @@ impl Workspace {
         let shown = Columns::for_window(window);
         let pane = self.pane();
         let count = pane.items.len();
+        let compact = self.preferences.compact_rows;
+        let row_height = if compact { 28. } else { ROW_HEIGHT };
         let empty = count == 0 && matches!(pane.listing, Listing::Loaded);
         div()
             .size_full()
@@ -151,7 +153,7 @@ impl Workspace {
                         count,
                         cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                             range
-                                .map(|index| this.render_row(index, shown, cx))
+                                .map(|index| this.render_row(index, shown, compact, row_height, cx))
                                 .collect::<Vec<_>>()
                         }),
                     )
@@ -161,7 +163,14 @@ impl Workspace {
             })
     }
 
-    fn render_row(&self, index: usize, shown: Columns, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_row(
+        &self,
+        index: usize,
+        shown: Columns,
+        compact: bool,
+        row_height: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let pane = self.pane();
         let item = &pane.items[index];
         let selected = pane.is_selected(&item.path);
@@ -174,6 +183,7 @@ impl Workspace {
         let name_color = c(if item.is_dir { FOLDER } else { TEXT_PRIMARY });
         let icon_color = c(if item.is_dir { FOLDER } else { TEXT_SECONDARY });
         let (path, is_dir) = (item.path.clone(), item.is_dir);
+        let name = display_name(&item.name, is_dir, self.preferences.show_file_extensions);
 
         crate::drag_out::draggable(
             div().id(("row", index)),
@@ -184,11 +194,11 @@ impl Workspace {
         .relative()
         .w_full()
         .flex()
-        .h(px(ROW_HEIGHT))
+        .h(px(row_height))
         .border_b_1()
         .border_color(c(BORDER_SECONDARY))
-        .text_size(px(13.))
-        .line_height(px(20.))
+        .text_size(px(if compact { 12. } else { 13. }))
+        .line_height(px(if compact { 18. } else { 20. }))
         .cursor_default()
         .map(|row| match (selected, active) {
             (true, _) => row
@@ -227,7 +237,7 @@ impl Workspace {
                         .min_w_0()
                         .truncate()
                         .text_color(name_color)
-                        .child(item.name.clone()),
+                        .child(name),
                 ),
         )
         .when(shown.kind, |row| {
@@ -279,6 +289,16 @@ impl Workspace {
         self.pane_mut().click(index, event.modifiers());
         cx.notify();
     }
+}
+
+fn display_name(name: &str, is_dir: bool, show_extensions: bool) -> String {
+    if is_dir || show_extensions {
+        return name.to_string();
+    }
+    name.rsplit_once('.')
+        .filter(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
+        .map(|(stem, _)| stem.to_string())
+        .unwrap_or_else(|| name.to_string())
 }
 
 #[cfg(test)]

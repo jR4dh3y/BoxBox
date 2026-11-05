@@ -82,7 +82,7 @@ impl Workspace {
     fn cycle_button(
         &self,
         id: &'static str,
-        label: &'static str,
+        label: String,
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Workspace, &mut Context<Workspace>) + 'static,
     ) -> impl IntoElement {
@@ -115,61 +115,61 @@ impl Workspace {
             "Show hidden files",
             self.toggle("setting-hidden", p.show_hidden_files, cx, |this, cx| {
                 this.preferences.show_hidden_files = !this.preferences.show_hidden_files;
-                cx.notify();
+                this.commit_preferences(cx);
             }),
         ));
         content = content.child(self.setting_row(
             "Show file extensions",
             self.toggle("setting-extensions", p.show_file_extensions, cx, |this, cx| {
                 this.preferences.show_file_extensions = !this.preferences.show_file_extensions;
-                cx.notify();
+                this.commit_preferences(cx);
             }),
         ));
         content = content.child(self.setting_row(
             "Confirm before delete",
             self.toggle("setting-confirm-delete", p.confirm_delete, cx, |this, cx| {
                 this.preferences.confirm_delete = !this.preferences.confirm_delete;
-                cx.notify();
+                this.commit_preferences(cx);
             }),
         ));
         content = content.child(self.setting_row(
             "Preview on single click",
             self.toggle("setting-preview", p.preview_on_single_click, cx, |this, cx| {
                 this.preferences.preview_on_single_click = !this.preferences.preview_on_single_click;
-                cx.notify();
+                this.commit_preferences(cx);
             }),
         ));
         content = content.child(self.setting_row(
             "Selection checkboxes",
             self.toggle("setting-checkboxes", p.selection_checkboxes, cx, |this, cx| {
                 this.preferences.selection_checkboxes = !this.preferences.selection_checkboxes;
-                cx.notify();
+                this.commit_preferences(cx);
             }),
         ));
         content = content.child(self.setting_row(
             "Default sort",
-            self.cycle_button("setting-sort", p.default_sort, cx, |this, cx| {
-                this.preferences.default_sort = match this.preferences.default_sort {
+            self.cycle_button("setting-sort", p.default_sort.clone(), cx, |this, cx| {
+                this.preferences.default_sort = match this.preferences.default_sort.as_str() {
                     "Name" => "Size",
                     "Size" => "Date modified",
                     "Date modified" => "Type",
                     _ => "Name",
-                };
-                cx.notify();
+                }.into();
+                this.commit_preferences(cx);
             }),
         ));
         content = content.child(self.setting_row(
             "Default sort direction",
-            self.cycle_button("setting-sort-direction", p.default_sort_direction, cx, |this, cx| {
-                this.preferences.default_sort_direction = if this.preferences.default_sort_direction == "Ascending" { "Descending" } else { "Ascending" };
-                cx.notify();
+            self.cycle_button("setting-sort-direction", p.default_sort_direction.clone(), cx, |this, cx| {
+                this.preferences.default_sort_direction = if this.preferences.default_sort_direction == "Ascending" { "Descending" } else { "Ascending" }.into();
+                this.commit_preferences(cx);
             }),
         ));
         content.child(self.setting_row(
             "Default view",
-            self.cycle_button("setting-view", p.default_view, cx, |this, cx| {
-                this.preferences.default_view = if this.preferences.default_view == "List" { "Grid" } else { "List" };
-                cx.notify();
+            self.cycle_button("setting-view", p.default_view.clone(), cx, |this, cx| {
+                this.preferences.default_view = if this.preferences.default_view == "List" { "Grid" } else { "List" }.into();
+                this.commit_preferences(cx);
             }),
         ))
     }
@@ -184,7 +184,7 @@ impl Workspace {
                 "Hardware acceleration",
                 self.toggle("setting-hardware", p.hardware_acceleration, cx, |this, cx| {
                     this.preferences.hardware_acceleration = !this.preferences.hardware_acceleration;
-                    cx.notify();
+                    this.commit_preferences(cx);
                 }),
             ))
             .child(
@@ -198,21 +198,21 @@ impl Workspace {
                 "Compact rows",
                 self.toggle("setting-compact", p.compact_rows, cx, |this, cx| {
                     this.preferences.compact_rows = !this.preferences.compact_rows;
-                    cx.notify();
+                    this.commit_preferences(cx);
                 }),
             ))
             .child(self.setting_row(
                 "Tint components from wallpaper",
                 self.toggle("setting-wallpaper-tint", p.wallpaper_tint, cx, |this, cx| {
                     this.preferences.wallpaper_tint = !this.preferences.wallpaper_tint;
-                    cx.notify();
+                    this.commit_preferences(cx);
                 }),
             ))
             .child(self.setting_row(
                 "Frosted glass",
                 self.toggle("setting-frosted", p.frosted_glass, cx, |this, cx| {
                     this.preferences.frosted_glass = !this.preferences.frosted_glass;
-                    cx.notify();
+                    this.commit_preferences(cx);
                 }),
             ))
             .child(

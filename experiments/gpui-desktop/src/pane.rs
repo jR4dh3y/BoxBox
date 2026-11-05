@@ -33,6 +33,7 @@ pub struct Pane {
     pub items: Vec<FileInfo>,
     pub sort: Sort,
     pub view_mode: ViewMode,
+    pub show_hidden_files: bool,
     pub drive_view_mode: ViewMode,
     pub selected: HashSet<String>,
     anchor: Option<usize>,
@@ -44,7 +45,13 @@ pub struct Pane {
 }
 
 impl Pane {
-    pub fn new(id: usize, path: String) -> Self {
+    pub fn new(
+        id: usize,
+        path: String,
+        show_hidden_files: bool,
+        sort: Sort,
+        view_mode: ViewMode,
+    ) -> Self {
         Self {
             id,
             listing: if path.is_empty() {
@@ -56,8 +63,9 @@ impl Pane {
             back: Vec::new(),
             forward: Vec::new(),
             items: Vec::new(),
-            sort: Sort::default(),
-            view_mode: ViewMode::List,
+            sort,
+            view_mode,
+            show_hidden_files,
             drive_view_mode: ViewMode::Grid,
             selected: HashSet::new(),
             anchor: None,
@@ -136,10 +144,9 @@ impl Pane {
                         .map(|item| item.path.clone())
                 };
                 let (anchor, active) = (path_at(self.anchor), path_at(self.active));
-                // settings.showHiddenFiles defaults to false.
                 self.items = items
                     .into_iter()
-                    .filter(|item| !item.name.starts_with('.'))
+                    .filter(|item| self.show_hidden_files || !item.name.starts_with('.'))
                     .collect();
                 sort_files(&mut self.items, self.sort);
                 let paths: HashSet<&str> =
@@ -155,6 +162,19 @@ impl Pane {
 
     fn index_of(&self, path: &str) -> Option<usize> {
         self.items.iter().position(|item| item.path == path)
+    }
+
+    pub fn apply_preferences(
+        &mut self,
+        show_hidden_files: bool,
+        sort: Sort,
+        view_mode: ViewMode,
+    ) -> bool {
+        let hidden_changed = self.show_hidden_files != show_hidden_files;
+        self.show_hidden_files = show_hidden_files;
+        self.set_sort(sort);
+        self.set_view_mode(view_mode);
+        hidden_changed
     }
 
     pub fn set_sort(&mut self, sort: Sort) {
@@ -268,7 +288,7 @@ mod tests {
 
     #[test]
     fn history_and_selection() {
-        let mut pane = Pane::new(0, String::new());
+        let mut pane = Pane::new(0, String::new(), false, Sort::default(), ViewMode::List);
         assert!(pane.navigate("d".into()));
         pane.finish_load(Ok(vec![file("a"), file("b"), file("c"), file(".h")]));
         assert_eq!(pane.items.len(), 3);
@@ -302,7 +322,7 @@ mod tests {
             shift: true,
             ..Default::default()
         };
-        let mut pane = Pane::new(0, "d".into());
+        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
         pane.finish_load(Ok(["a", "b", "c", "d", "e"].map(file).to_vec()));
         pane.click(4, Modifiers::default());
         pane.finish_load(Ok(vec![file("a"), file("b")]));
@@ -319,7 +339,7 @@ mod tests {
 
     #[test]
     fn drag_carries_selection_or_single_item() {
-        let mut pane = Pane::new(0, "d".into());
+        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
         pane.finish_load(Ok(["a", "b", "c"].map(file).to_vec()));
         pane.click(0, Modifiers::default());
         pane.click(
@@ -337,7 +357,7 @@ mod tests {
 
     #[test]
     fn every_load_invalidates_older_requests() {
-        let mut pane = Pane::new(0, "d".into());
+        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
         let pending = pane.begin_load();
         pane.go_back();
         assert!(pane.navigate(String::new()));
