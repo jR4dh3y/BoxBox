@@ -189,8 +189,10 @@ impl Workspace {
         let icon_color = c(if item.is_dir { FOLDER } else { TEXT_SECONDARY });
         let (path, is_dir) = (item.path.clone(), item.is_dir);
 
+        let drop_dest = item.is_dir.then(|| item.path.clone());
         crate::drag_out::draggable(
             div().id(("row", index)),
+            pane_id,
             index,
             cx.entity().downgrade(),
             self.api.clone(),
@@ -282,6 +284,25 @@ impl Workspace {
                 this.open_item_menu(index, event.position, cx);
             }),
         )
+        .when_some(drop_dest, |target, dest| {
+            let external = dest.clone();
+            target
+                .drag_over::<crate::drag_out::DraggedItem>(|style, _, _, _| {
+                    style.bg(c(SELECTION_HOVER))
+                })
+                .on_drop(cx.listener(
+                    move |this, dragged: &crate::drag_out::DraggedItem, window, cx| {
+                        cx.stop_propagation();
+                        this.drop_dragged(dragged, dest.clone(), window, cx);
+                    },
+                ))
+                .on_drop(
+                    cx.listener(move |this, paths: &gpui::ExternalPaths, _, cx| {
+                        cx.stop_propagation();
+                        this.drop_external(paths, external.clone(), cx);
+                    }),
+                )
+        })
     }
 
     /// Shared by list rows and grid tiles: select on click, open folders on double-click.

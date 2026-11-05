@@ -126,29 +126,45 @@ impl Workspace {
             .then(|| self.clipboard.contents.clone())
             .flatten();
         let fallback = self.clipboard.contents.clone();
-        let list_dest = dest.clone();
         self.background(
             move |api| {
                 // Prefer the OS clipboard, so files copied in other apps paste here too.
-                let contents = match local {
-                    Some(contents) => contents,
-                    None => match api.clipboard() {
-                        Ok(contents) => contents,
-                        Err(error) => fallback.ok_or(error)?,
-                    },
-                };
+                match local {
+                    Some(contents) => Ok(contents),
+                    None => api.clipboard().or_else(|error| fallback.ok_or(error)),
+                }
+            },
+            move |this, result, cx| match result {
+                Ok(contents) if contents.items.is_empty() => {
+                    this.toast(ToastKind::Info, "The clipboard has no files to paste", cx)
+                }
+                Ok(contents) => this.transfer(contents.operation, contents.items, dest, cx),
+                Err(error) => this.error(&error, cx),
+            },
+            cx,
+        );
+    }
+
+    /// Plans against the destination's names; conflicts ask Skip or Keep both first.
+    pub(crate) fn transfer(
+        &mut self,
+        op: ClipOp,
+        items: Vec<ClipItem>,
+        dest: String,
+        cx: &mut Context<Self>,
+    ) {
+        let list_dest = dest.clone();
+        self.background(
+            move |api| {
                 let existing: Vec<String> = api
                     .list(&list_dest)?
                     .into_iter()
                     .map(|item| item.name)
                     .collect();
-                Ok((contents.operation, plan(&contents.items, &existing)?))
+                plan(&items, &existing)
             },
             move |this, result, cx| match result {
-                Ok((_, planned)) if planned.is_empty() => {
-                    this.toast(ToastKind::Info, "The clipboard has no files to paste", cx)
-                }
-                Ok((op, planned)) if planned.iter().any(|item| item.keep_both.is_some()) => {
+                Ok(planned) if planned.iter().any(|item| item.keep_both.is_some()) => {
                     let choices = vec![false; planned.len()];
                     this.dialog = Some(Dialog::Conflict {
                         op,
@@ -158,7 +174,7 @@ impl Workspace {
                     });
                     cx.notify();
                 }
-                Ok((op, planned)) => this.submit_paste(op, dest, planned, cx),
+                Ok(planned) => this.submit_paste(op, dest, planned, cx),
                 Err(error) => this.error(&error, cx),
             },
             cx,

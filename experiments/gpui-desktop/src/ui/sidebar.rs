@@ -78,6 +78,22 @@ impl Workspace {
                 alpha(if active { WHITE } else { TEXT_PRIMARY }, 0.8),
             ))
             .child(div().flex_1().min_w_0().truncate().child(item.name))
+            .when(!path.is_empty(), |item| {
+                let (dest, external) = (path.clone(), path.clone());
+                item.drag_over::<crate::drag_out::DraggedItem>(|style, _, _, _| {
+                    style.bg(c(SURFACE_SECONDARY))
+                })
+                .on_drop(cx.listener(
+                    move |this, dragged: &crate::drag_out::DraggedItem, window, cx| {
+                        this.drop_dragged(dragged, dest.clone(), window, cx)
+                    },
+                ))
+                .on_drop(cx.listener(
+                    move |this, paths: &gpui::ExternalPaths, _, cx| {
+                        this.drop_external(paths, external.clone(), cx)
+                    },
+                ))
+            })
             .on_click(cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx)))
             .into_any_element()
     }

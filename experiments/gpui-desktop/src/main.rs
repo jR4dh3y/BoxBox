@@ -7,6 +7,7 @@ mod clipboard;
 mod context_menu;
 mod desktop;
 mod dialogs;
+mod dnd;
 mod drag_out;
 mod format;
 mod jobs;

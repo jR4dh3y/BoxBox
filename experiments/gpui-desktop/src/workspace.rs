@@ -466,6 +466,18 @@ impl Workspace {
                     .capture_any_mouse_down(
                         cx.listener(move |this, _, _, cx| this.focus_pane(id, cx)),
                     )
+                    .on_drop(cx.listener(
+                        move |this, dragged: &crate::drag_out::DraggedItem, window, cx| {
+                            let dest = this.view(id).path.clone();
+                            this.drop_dragged(dragged, dest, window, cx);
+                        },
+                    ))
+                    .on_drop(
+                        cx.listener(move |this, paths: &gpui::ExternalPaths, _, cx| {
+                            let dest = this.view(id).path.clone();
+                            this.drop_external(paths, dest, cx);
+                        }),
+                    )
                     .child(self.render_browser(id, window, cx))
                     .when(split && focused, |pane| {
                         pane.child(

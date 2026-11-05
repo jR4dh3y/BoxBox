@@ -177,6 +177,10 @@ impl Workspace {
         let mut finished = false;
         for job in jobs {
             let was_active = self.jobs.jobs.get(&job.id).is_none_or(Job::is_active);
+            // A create response can arrive after the stream already reported the job finished.
+            if !was_active && job.is_active() {
+                continue;
+            }
             if !self.jobs.jobs.contains_key(&job.id) {
                 // A snapshot replays history; only list jobs still running.
                 if snapshot && !job.is_active() {

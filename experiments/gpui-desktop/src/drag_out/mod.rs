@@ -15,8 +15,12 @@ use crate::api::{Api, FileInfo};
 use crate::theme::*;
 use crate::workspace::Workspace;
 
-/// The in-window drag value: the index of the row or tile, resolved to items when a drag starts.
-pub struct DraggedItem(pub usize);
+/// The in-window drag value: the pane and index of the row or tile; resolved to items when a
+/// drag starts and again on drop.
+pub struct DraggedItem {
+    pub pane: usize,
+    pub index: usize,
+}
 
 pub struct DragPreview {
     label: SharedString,
@@ -40,16 +44,22 @@ impl Render for DragPreview {
 /// Makes the item at `index` draggable within the window and out to other apps.
 pub fn draggable<E: StatefulInteractiveElement>(
     element: E,
+    pane: usize,
     index: usize,
     workspace: WeakEntity<Workspace>,
     api: Arc<Api>,
 ) -> E {
     element.on_drag(
-        DraggedItem(index),
+        DraggedItem { pane, index },
         move |item: &DraggedItem, _, _: &mut Window, cx: &mut App| -> Entity<DragPreview> {
             let files = workspace
                 .upgrade()
-                .map(|workspace| workspace.read(cx).pane().drag_items(item.0))
+                .and_then(|workspace| {
+                    workspace
+                        .read(cx)
+                        .pane_by_id(item.pane)
+                        .map(|pane| pane.drag_items(item.index))
+                })
                 .unwrap_or_default();
             let label = match files.as_slice() {
                 [item] => item.name.clone(),
