@@ -42,6 +42,8 @@ pub struct Pane {
     /// Selected once the next listing arrives, e.g. a newly created item.
     pub pending_select: Option<String>,
     pub show_hidden: bool,
+    /// Active search (two or more characters): the listing shows its results instead.
+    pub query: String,
     pub list_scroll: UniformListScrollHandle,
     pub grid_scroll: UniformListScrollHandle,
 }
@@ -68,6 +70,7 @@ impl Pane {
             generation: 0,
             pending_select: None,
             show_hidden: false,
+            query: String::new(),
             list_scroll: UniformListScrollHandle::new(),
             grid_scroll: UniformListScrollHandle::new(),
         }
@@ -115,6 +118,7 @@ impl Pane {
     }
 
     fn reset(&mut self) {
+        self.query.clear();
         self.items.clear();
         self.clear_selection();
         self.listing = if self.path.is_empty() {

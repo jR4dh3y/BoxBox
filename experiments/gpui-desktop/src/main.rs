@@ -14,12 +14,14 @@ mod notifications;
 mod ops;
 mod pane;
 mod preferences;
+mod search;
 mod server;
 mod sort;
 mod sse;
 mod theme;
 mod ui;
 mod undo;
+mod watch;
 mod workspace;
 
 use std::process::Command;

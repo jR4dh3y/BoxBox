@@ -305,7 +305,7 @@ impl Workspace {
             }
             MenuAction::OpenInNewTab => {
                 if let Some(root) = target {
-                    self.open_tab(root, cx);
+                    self.open_tab(root, window, cx);
                 }
             }
         }

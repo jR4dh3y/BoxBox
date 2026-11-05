@@ -31,7 +31,8 @@ actions!(
         Undo,
         Copy,
         Cut,
-        Paste
+        Paste,
+        FocusSearch
     ]
 );
 
@@ -56,6 +57,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-c", Copy, context),
         KeyBinding::new("ctrl-x", Cut, context),
         KeyBinding::new("ctrl-v", Paste, context),
+        KeyBinding::new("ctrl-f", FocusSearch, context),
     ]);
 }
 
@@ -80,6 +82,8 @@ pub struct Workspace {
     pub(crate) jobs: crate::jobs::Jobs,
     pub(crate) context_menu: Option<crate::context_menu::ContextMenu>,
     pub(crate) app_icons: crate::desktop::AppIcons,
+    pub(crate) search_fields: std::collections::HashMap<usize, crate::search::SearchField>,
+    pub(crate) watches: std::collections::HashMap<usize, crate::watch::Watch>,
     pub(crate) tabs: Vec<Pane>,
     pub(crate) active_tab: usize,
     next_pane_id: usize,
@@ -109,6 +113,8 @@ impl Workspace {
             jobs: Default::default(),
             context_menu: None,
             app_icons: Default::default(),
+            search_fields: Default::default(),
+            watches: Default::default(),
             tabs: vec![Pane::new(0, initial_path)],
             active_tab: 0,
             next_pane_id: 1,
@@ -117,6 +123,8 @@ impl Workspace {
             fonts,
             focus_handle,
         };
+        let field = workspace.search_field(0, window, cx);
+        workspace.search_fields.insert(0, field);
         workspace.load_drives(cx);
         workspace.watch_jobs(cx);
         workspace.load_preferences(cx);
@@ -154,26 +162,49 @@ impl Workspace {
         .detach();
     }
 
-    fn load_active(&mut self, cx: &mut Context<Self>) {
-        let pane = self.pane_mut();
+    pub(crate) fn load_active(&mut self, cx: &mut Context<Self>) {
+        let id = self.pane().id;
+        self.load_pane(id, cx);
+    }
+
+    pub(crate) fn pane_by_id(&self, id: usize) -> Option<&Pane> {
+        self.tabs.iter().find(|pane| pane.id == id)
+    }
+
+    pub(crate) fn pane_by_id_mut(&mut self, id: usize) -> Option<&mut Pane> {
+        self.tabs.iter_mut().find(|pane| pane.id == id)
+    }
+
+    /// Lists the pane's folder, or runs its search; stale responses are dropped by generation.
+    pub(crate) fn load_pane(&mut self, pane_id: usize, cx: &mut Context<Self>) {
+        let Some(pane) = self.pane_by_id_mut(pane_id) else {
+            return;
+        };
         // Bump first so a folder request still in flight cannot land on This PC.
         let generation = pane.begin_load();
-        if pane.is_at_root() {
+        let (path, query) = (pane.path.clone(), pane.query.clone());
+        if path.is_empty() {
+            self.watches.remove(&pane_id);
             return;
         }
-        let (pane_id, path) = (pane.id, pane.path.clone());
+        self.ensure_watch(pane_id, cx);
         let api = self.api.clone();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { api.list(&path) })
+                .spawn(async move {
+                    if query.is_empty() {
+                        api.list(&path)
+                    } else {
+                        api.search(&path, &query)
+                    }
+                })
                 .await;
             this.update(cx, |this, cx| {
-                let current = this
-                    .tabs
-                    .iter_mut()
-                    .find(|pane| pane.id == pane_id && pane.generation == generation);
-                if let Some(pane) = current {
+                if let Some(pane) = this
+                    .pane_by_id_mut(pane_id)
+                    .filter(|pane| pane.generation == generation)
+                {
                     pane.finish_load(result);
                     cx.notify();
                 }
@@ -199,15 +230,22 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(crate) fn new_pane(&mut self, path: String) -> Pane {
+    pub(crate) fn new_pane(
+        &mut self,
+        path: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Pane {
         let mut pane = Pane::new(self.next_pane_id, path);
         self.next_pane_id += 1;
         pane.show_hidden = self.preferences.show_hidden;
+        let field = self.search_field(pane.id, window, cx);
+        self.search_fields.insert(pane.id, field);
         pane
     }
 
-    pub(crate) fn open_tab(&mut self, path: String, cx: &mut Context<Self>) {
-        let pane = self.new_pane(path);
+    pub(crate) fn open_tab(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
+        let pane = self.new_pane(path, window, cx);
         self.tabs.push(pane);
         self.active_tab = self.tabs.len() - 1;
         self.load_active(cx);
@@ -230,6 +268,8 @@ impl Workspace {
 
     pub(crate) fn navigate(&mut self, path: String, cx: &mut Context<Self>) {
         if self.pane_mut().navigate(path) {
+            let id = self.pane().id;
+            self.clear_search_text(id, cx);
             self.load_active(cx);
         }
         cx.notify();
@@ -237,6 +277,8 @@ impl Workspace {
 
     pub(crate) fn back(&mut self, _: &Back, _: &mut Window, cx: &mut Context<Self>) {
         if self.pane_mut().go_back() {
+            let id = self.pane().id;
+            self.clear_search_text(id, cx);
             self.load_active(cx);
             cx.notify();
         }
@@ -244,6 +286,8 @@ impl Workspace {
 
     pub(crate) fn forward(&mut self, _: &Forward, _: &mut Window, cx: &mut Context<Self>) {
         if self.pane_mut().go_forward() {
+            let id = self.pane().id;
+            self.clear_search_text(id, cx);
             self.load_active(cx);
             cx.notify();
         }
@@ -253,15 +297,17 @@ impl Workspace {
         self.reload(cx);
     }
 
-    pub(crate) fn new_tab(&mut self, _: &NewTab, _: &mut Window, cx: &mut Context<Self>) {
-        self.open_tab(String::new(), cx);
+    pub(crate) fn new_tab(&mut self, _: &NewTab, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_tab(String::new(), window, cx);
     }
 
     pub(crate) fn close_tab_at(&mut self, index: usize, cx: &mut Context<Self>) {
         if self.tabs.len() <= 1 {
             return;
         }
-        self.tabs.remove(index);
+        let removed = self.tabs.remove(index);
+        self.search_fields.remove(&removed.id);
+        self.watches.remove(&removed.id);
         if self.active_tab > index || self.active_tab >= self.tabs.len() {
             self.active_tab = self.active_tab.saturating_sub(1);
         }
@@ -320,6 +366,9 @@ impl Render for Workspace {
                 this.copy_selection(crate::clipboard::ClipOp::Cut, cx)
             }))
             .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))
+            .on_action(
+                cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)),
+            )
             .relative()
             .size_full()
             .flex()

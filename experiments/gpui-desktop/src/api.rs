@@ -216,6 +216,20 @@ impl Api {
         Ok(())
     }
 
+    /// Recursive name search; results carry full paths.
+    pub fn search(&self, path: &str, query: &str) -> Result<Vec<FileInfo>> {
+        #[derive(Deserialize)]
+        struct Results {
+            results: Vec<FileInfo>,
+        }
+        let endpoint = format!(
+            "/search?path={}&q={}",
+            encode_query(path),
+            encode_query(query)
+        );
+        Ok(self.get::<Results>(&endpoint)?.results)
+    }
+
     pub fn clipboard(&self) -> Result<crate::clipboard::ClipContents> {
         self.get("/desktop/clipboard")
     }

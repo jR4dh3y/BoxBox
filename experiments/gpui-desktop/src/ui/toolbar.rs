@@ -145,40 +145,6 @@ impl Workspace {
             .child(content)
     }
 
-    /// Static stand-in for the search field: same box, icon and placeholder.
-    fn render_search(&self, toolbar_width: f32) -> impl IntoElement {
-        // `w-28 @lg:w-48 @3xl:w-64 @5xl:w-96` against the toolbar's container width.
-        let width = match toolbar_width {
-            w if w >= 1024. => 384.,
-            w if w >= 768. => 256.,
-            w if w >= 512. => 192.,
-            _ => 112.,
-        };
-        div()
-            .w(px(width))
-            .flex_shrink()
-            .min_w(px(112.))
-            .h(px(28.))
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .pl(px(12.))
-            .rounded(px(4.))
-            .border_1()
-            .border_color(c(BORDER_PRIMARY))
-            .bg(c(SURFACE_SECONDARY))
-            .text_sm_tw()
-            .text_color(c(TEXT_MUTED))
-            .overflow_hidden()
-            .child(icon("search", 16., c(TEXT_MUTED)))
-            .child(
-                div()
-                    .pl(px(6.))
-                    .truncate()
-                    .child("Search files and folders..."),
-            )
-    }
-
     pub(crate) fn render_toolbar(
         &self,
         window: &mut Window,
@@ -216,7 +182,7 @@ impl Workspace {
             )
             .child(self.render_path_bar(cx))
             .when(!pane.is_at_root(), |toolbar| {
-                toolbar.child(self.render_search(toolbar_width))
+                toolbar.child(self.render_search(toolbar_width, cx))
             })
             .child(
                 div()
