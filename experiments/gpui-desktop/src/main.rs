@@ -19,6 +19,7 @@ mod server;
 mod sort;
 mod sse;
 mod theme;
+mod trash;
 mod ui;
 mod undo;
 mod watch;

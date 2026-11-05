@@ -201,8 +201,14 @@ impl Workspace {
                     .text_13()
                     .cursor_pointer()
                     .hover(|style| style.bg(c(SURFACE_SECONDARY)))
+                    .when(current == crate::trash::TRASH_PATH, |row| {
+                        row.text_color(c(WHITE))
+                    })
                     .child(icon("trash-2", 16., c(TEXT_PRIMARY)))
-                    .child("Trash"),
+                    .child("Trash")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.navigate(crate::trash::TRASH_PATH.to_string(), cx)
+                    })),
             )
             .child(
                 section().child(section_header("Favorites")).child(

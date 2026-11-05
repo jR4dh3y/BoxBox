@@ -35,6 +35,7 @@ impl Workspace {
         let path = &self.pane().path;
         let mount = path.split('/').next().unwrap_or_default();
         !path.is_empty()
+            && !path.starts_with('@')
             && !self
                 .roots
                 .iter()

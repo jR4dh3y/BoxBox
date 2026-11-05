@@ -84,6 +84,7 @@ pub struct Workspace {
     pub(crate) app_icons: crate::desktop::AppIcons,
     pub(crate) search_fields: std::collections::HashMap<usize, crate::search::SearchField>,
     pub(crate) watches: std::collections::HashMap<usize, crate::watch::Watch>,
+    pub(crate) trash: crate::trash::TrashState,
     pub(crate) tabs: Vec<Pane>,
     pub(crate) active_tab: usize,
     next_pane_id: usize,
@@ -115,6 +116,7 @@ impl Workspace {
             app_icons: Default::default(),
             search_fields: Default::default(),
             watches: Default::default(),
+            trash: Default::default(),
             tabs: vec![Pane::new(0, initial_path)],
             active_tab: 0,
             next_pane_id: 1,
@@ -183,8 +185,12 @@ impl Workspace {
         // Bump first so a folder request still in flight cannot land on This PC.
         let generation = pane.begin_load();
         let (path, query) = (pane.path.clone(), pane.query.clone());
-        if path.is_empty() {
+        if path.is_empty() || path == crate::trash::TRASH_PATH {
             self.watches.remove(&pane_id);
+            if path == crate::trash::TRASH_PATH {
+                self.trash.confirming = false;
+                self.load_trash(cx);
+            }
             return;
         }
         self.ensure_watch(pane_id, cx);

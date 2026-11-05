@@ -44,7 +44,7 @@ impl Workspace {
         crumbs
     }
 
-    fn nav_button(
+    pub(crate) fn nav_button(
         &self,
         id: &'static str,
         glyph: &'static str,
@@ -145,6 +145,24 @@ impl Workspace {
             .child(content)
     }
 
+    pub(crate) fn render_history_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let pane = self.pane();
+        div()
+            .flex()
+            .flex_none()
+            .gap(px(2.))
+            .child(
+                self.nav_button("back", "chevron-left", 18., pane.can_go_back())
+                    .on_click(cx.listener(|this, _, window, cx| this.back(&Back, window, cx))),
+            )
+            .child(
+                self.nav_button("forward", "chevron-right", 18., pane.can_go_forward())
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.forward(&Forward, window, cx)),
+                    ),
+            )
+    }
+
     pub(crate) fn render_toolbar(
         &self,
         window: &mut Window,
@@ -162,24 +180,7 @@ impl Workspace {
             .bg(c(SURFACE_PRIMARY))
             .px(px(12.))
             .py(px(6.))
-            .child(
-                div()
-                    .flex()
-                    .flex_none()
-                    .gap(px(2.))
-                    .child(
-                        self.nav_button("back", "chevron-left", 18., pane.can_go_back())
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.back(&Back, window, cx)),
-                            ),
-                    )
-                    .child(
-                        self.nav_button("forward", "chevron-right", 18., pane.can_go_forward())
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.forward(&Forward, window, cx)
-                            })),
-                    ),
-            )
+            .child(self.render_history_buttons(cx))
             .child(self.render_path_bar(cx))
             .when(!pane.is_at_root(), |toolbar| {
                 toolbar.child(self.render_search(toolbar_width, cx))

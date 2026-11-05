@@ -11,6 +11,7 @@ impl Workspace {
         let closable = self.tabs.len() > 1;
         let tabs = self.tabs.iter().enumerate().map(|(index, pane)| {
             let title = match pane.path.rsplit('/').next() {
+                _ if pane.path == crate::trash::TRASH_PATH => "Trash".to_string(),
                 Some(name) if !name.is_empty() => name.to_string(),
                 _ => "This PC".to_string(),
             };

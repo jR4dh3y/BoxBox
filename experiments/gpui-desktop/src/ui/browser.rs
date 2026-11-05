@@ -8,12 +8,11 @@ use crate::theme::*;
 use crate::workspace::{Load, Workspace};
 
 impl Workspace {
-    pub(crate) fn render_browser(
-        &self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    pub(crate) fn render_browser(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let pane = self.pane();
+        if pane.path == crate::trash::TRASH_PATH {
+            return self.render_trash(window, cx);
+        }
         let stale_error = match &pane.listing {
             Listing::Failed(error) if !pane.items.is_empty() => Some(error.clone()),
             _ => None,
@@ -109,5 +108,6 @@ impl Workspace {
                     .child(content),
             )
             .child(self.render_status_bar(cx))
+            .into_any_element()
     }
 }
