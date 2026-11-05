@@ -1,0 +1,7 @@
+cargo:rustc-check-cfg=cfg(dot_out)
+cargo:rustc-check-cfg=cfg(glsl_out)
+cargo:rustc-check-cfg=cfg(hlsl_out)
+cargo:rustc-check-cfg=cfg(msl_out)
+cargo:rustc-check-cfg=cfg(spv_out)
+cargo:rustc-cfg=spv_out
+cargo:rustc-check-cfg=cfg(wgsl_out)
