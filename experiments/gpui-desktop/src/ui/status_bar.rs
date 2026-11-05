@@ -9,8 +9,12 @@ use crate::theme::*;
 use crate::workspace::{Load, Workspace};
 
 impl Workspace {
-    pub(crate) fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let pane = self.pane();
+    pub(crate) fn render_status_bar(
+        &self,
+        pane_id: usize,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let pane = self.view(pane_id);
         let item_count = if pane.is_at_root() {
             match &self.drives {
                 Load::Loaded(drives) => drives.len(),

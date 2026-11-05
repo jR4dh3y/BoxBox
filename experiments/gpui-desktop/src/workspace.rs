@@ -32,7 +32,12 @@ actions!(
         Copy,
         Cut,
         Paste,
-        FocusSearch
+        FocusSearch,
+        ToggleSplit,
+        NextTab,
+        PreviousTab,
+        GoUp,
+        ToggleHidden
     ]
 );
 
@@ -58,7 +63,27 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-x", Cut, context),
         KeyBinding::new("ctrl-v", Paste, context),
         KeyBinding::new("ctrl-f", FocusSearch, context),
+        KeyBinding::new("f3", ToggleSplit, context),
+        KeyBinding::new("ctrl-tab", NextTab, context),
+        KeyBinding::new("ctrl-shift-tab", PreviousTab, context),
+        KeyBinding::new("alt-up", GoUp, context),
+        KeyBinding::new("ctrl-h", ToggleHidden, context),
     ]);
+}
+
+/// A tab shows one pane, or two side by side after F3 (`browse/tabs.svelte.ts`).
+pub struct Tab {
+    pub panes: Vec<Pane>,
+    pub focused: usize,
+}
+
+impl Tab {
+    fn new(pane: Pane) -> Self {
+        Self {
+            panes: vec![pane],
+            focused: 0,
+        }
+    }
 }
 
 pub enum Load<T> {
@@ -85,7 +110,7 @@ pub struct Workspace {
     pub(crate) search_fields: std::collections::HashMap<usize, crate::search::SearchField>,
     pub(crate) watches: std::collections::HashMap<usize, crate::watch::Watch>,
     pub(crate) trash: crate::trash::TrashState,
-    pub(crate) tabs: Vec<Pane>,
+    pub(crate) tabs: Vec<Tab>,
     pub(crate) active_tab: usize,
     next_pane_id: usize,
     pub(crate) roots: Vec<MountPoint>,
@@ -117,7 +142,7 @@ impl Workspace {
             search_fields: Default::default(),
             watches: Default::default(),
             trash: Default::default(),
-            tabs: vec![Pane::new(0, initial_path)],
+            tabs: vec![Tab::new(Pane::new(0, initial_path))],
             active_tab: 0,
             next_pane_id: 1,
             roots: Vec::new(),
@@ -134,12 +159,73 @@ impl Workspace {
         workspace
     }
 
+    /// The focused pane of the active tab: the target of actions and shortcuts.
     pub(crate) fn pane(&self) -> &Pane {
-        &self.tabs[self.active_tab]
+        let tab = &self.tabs[self.active_tab];
+        &tab.panes[tab.focused]
     }
 
     pub(crate) fn pane_mut(&mut self) -> &mut Pane {
-        &mut self.tabs[self.active_tab]
+        let tab = &mut self.tabs[self.active_tab];
+        &mut tab.panes[tab.focused]
+    }
+
+    /// Width of one pane: the window minus the sidebar, shared by split panes.
+    pub(crate) fn pane_width(&self, window: &Window) -> f32 {
+        let panes = self.tabs[self.active_tab].panes.len().max(1) as f32;
+        (f32::from(window.viewport_size().width) - crate::ui::SIDEBAR_WIDTH) / panes
+    }
+
+    /// The pane a render pass draws; falls back to the focused one.
+    pub(crate) fn view(&self, id: usize) -> &Pane {
+        self.pane_by_id(id).unwrap_or_else(|| self.pane())
+    }
+
+    pub(crate) fn focus_pane(&mut self, id: usize, cx: &mut Context<Self>) {
+        let tab = &mut self.tabs[self.active_tab];
+        if let Some(index) = tab.panes.iter().position(|pane| pane.id == id) {
+            if tab.focused != index {
+                tab.focused = index;
+                cx.notify();
+            }
+        }
+    }
+
+    /// F3: split off a right pane at the same folder, or close it and keep the left one.
+    fn toggle_split(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let tab = &mut self.tabs[self.active_tab];
+        if tab.panes.len() > 1 {
+            let closed: Vec<Pane> = tab.panes.drain(1..).collect();
+            tab.focused = 0;
+            for pane in closed {
+                self.search_fields.remove(&pane.id);
+                self.watches.remove(&pane.id);
+            }
+        } else {
+            let path = tab.panes[0].path.clone();
+            let pane = self.new_pane(path, window, cx);
+            let tab = &mut self.tabs[self.active_tab];
+            tab.panes.push(pane);
+            tab.focused = 1;
+            self.reload(cx);
+        }
+        cx.notify();
+    }
+
+    fn cycle_tab(&mut self, step: isize, cx: &mut Context<Self>) {
+        let count = self.tabs.len() as isize;
+        self.active_tab = (self.active_tab as isize + step).rem_euclid(count) as usize;
+        cx.notify();
+    }
+
+    fn go_up(&mut self, cx: &mut Context<Self>) {
+        let path = self.pane().path.clone();
+        if !path.is_empty() && !path.starts_with('@') {
+            let parent = path
+                .rsplit_once('/')
+                .map_or(String::new(), |(parent, _)| parent.to_string());
+            self.navigate(parent, cx);
+        }
     }
 
     /// Roots feed the sidebar and breadcrumbs; stats feed the This PC cards.
@@ -170,11 +256,17 @@ impl Workspace {
     }
 
     pub(crate) fn pane_by_id(&self, id: usize) -> Option<&Pane> {
-        self.tabs.iter().find(|pane| pane.id == id)
+        self.tabs
+            .iter()
+            .flat_map(|tab| &tab.panes)
+            .find(|pane| pane.id == id)
     }
 
     pub(crate) fn pane_by_id_mut(&mut self, id: usize) -> Option<&mut Pane> {
-        self.tabs.iter_mut().find(|pane| pane.id == id)
+        self.tabs
+            .iter_mut()
+            .flat_map(|tab| &mut tab.panes)
+            .find(|pane| pane.id == id)
     }
 
     /// Lists the pane's folder, or runs its search; stale responses are dropped by generation.
@@ -227,7 +319,7 @@ impl Workspace {
     ) {
         let hidden_changed = preferences.show_hidden != self.preferences.show_hidden;
         self.preferences = preferences;
-        for pane in &mut self.tabs {
+        for pane in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
             pane.show_hidden = self.preferences.show_hidden;
         }
         if hidden_changed {
@@ -252,7 +344,7 @@ impl Workspace {
 
     pub(crate) fn open_tab(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
         let pane = self.new_pane(path, window, cx);
-        self.tabs.push(pane);
+        self.tabs.push(Tab::new(pane));
         self.active_tab = self.tabs.len() - 1;
         self.load_active(cx);
         cx.notify();
@@ -312,8 +404,10 @@ impl Workspace {
             return;
         }
         let removed = self.tabs.remove(index);
-        self.search_fields.remove(&removed.id);
-        self.watches.remove(&removed.id);
+        for pane in removed.panes {
+            self.search_fields.remove(&pane.id);
+            self.watches.remove(&pane.id);
+        }
         if self.active_tab > index || self.active_tab >= self.tabs.len() {
             self.active_tab = self.active_tab.saturating_sub(1);
         }
@@ -337,6 +431,52 @@ impl Workspace {
     fn clear_selection(&mut self, _: &ClearSelection, _: &mut Window, cx: &mut Context<Self>) {
         self.pane_mut().clear_selection();
         cx.notify();
+    }
+}
+
+impl Workspace {
+    fn render_panes(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let tab = &self.tabs[self.active_tab];
+        let split = tab.panes.len() > 1;
+        let ids: Vec<(usize, bool)> = tab
+            .panes
+            .iter()
+            .enumerate()
+            .map(|(index, pane)| (pane.id, index == tab.focused))
+            .collect();
+        div()
+            .flex()
+            .flex_1()
+            .min_h_0()
+            .min_w_0()
+            .children(ids.into_iter().enumerate().map(|(index, (id, focused))| {
+                // A distinct id keeps each pane's rows and lists apart in GPUI's element state.
+                div()
+                    .id(("pane", id))
+                    .relative()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .when(index > 0, |pane| {
+                        pane.border_l_1()
+                            .border_color(c(crate::theme::BORDER_SECONDARY))
+                    })
+                    // Focus the pane before any row or button handler runs.
+                    .capture_any_mouse_down(
+                        cx.listener(move |this, _, _, cx| this.focus_pane(id, cx)),
+                    )
+                    .child(self.render_browser(id, window, cx))
+                    .when(split && focused, |pane| {
+                        pane.child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .border_1()
+                                .border_color(crate::theme::alpha(crate::theme::ACCENT, 0.4)),
+                        )
+                    })
+            }))
     }
 }
 
@@ -375,6 +515,15 @@ impl Render for Workspace {
             .on_action(
                 cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &ToggleSplit, window, cx| this.toggle_split(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &NextTab, _, cx| this.cycle_tab(1, cx)))
+            .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.cycle_tab(-1, cx)))
+            .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
+            .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| {
+                this.update_preferences(|prefs| prefs.show_hidden = !prefs.show_hidden, cx)
+            }))
             .relative()
             .size_full()
             .flex()
@@ -393,7 +542,7 @@ impl Render for Workspace {
                     .min_w_0()
                     .min_h_0()
                     .child(self.render_tabs(cx))
-                    .child(self.render_browser(window, cx)),
+                    .child(self.render_panes(window, cx)),
             )
             .child(
                 div()

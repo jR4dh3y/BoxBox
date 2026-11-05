@@ -8,10 +8,15 @@ use crate::theme::*;
 use crate::workspace::{Load, Workspace};
 
 impl Workspace {
-    pub(crate) fn render_browser(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let pane = self.pane();
+    pub(crate) fn render_browser(
+        &self,
+        pane_id: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let pane = self.view(pane_id);
         if pane.path == crate::trash::TRASH_PATH {
-            return self.render_trash(window, cx);
+            return self.render_trash(pane_id, window, cx);
         }
         let stale_error = match &pane.listing {
             Listing::Failed(error) if !pane.items.is_empty() => Some(error.clone()),
@@ -71,8 +76,12 @@ impl Workspace {
                         })),
                 )
                 .into_any_element(),
-            (_, ViewMode::List) => self.render_file_list(window, cx).into_any_element(),
-            (_, ViewMode::Grid) => self.render_file_grid(window, cx).into_any_element(),
+            (_, ViewMode::List) => self
+                .render_file_list(pane_id, window, cx)
+                .into_any_element(),
+            (_, ViewMode::Grid) => self
+                .render_file_grid(pane_id, window, cx)
+                .into_any_element(),
         };
 
         div()
@@ -82,7 +91,7 @@ impl Workspace {
             .min_h_0()
             .min_w_0()
             .bg(c(SURFACE_PRIMARY))
-            .child(self.render_toolbar(window, cx))
+            .child(self.render_toolbar(pane_id, window, cx))
             .when_some(stale_error, |browser, error| {
                 browser.child(
                     div()
@@ -107,7 +116,7 @@ impl Workspace {
                     .overflow_hidden()
                     .child(content),
             )
-            .child(self.render_status_bar(cx))
+            .child(self.render_status_bar(pane_id, cx))
             .into_any_element()
     }
 }

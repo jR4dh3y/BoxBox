@@ -111,6 +111,7 @@ impl Workspace {
 
     pub(crate) fn render_search(
         &self,
+        pane_id: usize,
         toolbar_width: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -121,7 +122,6 @@ impl Workspace {
             w if w >= 512. => 192.,
             _ => 112.,
         };
-        let pane_id = self.pane().id;
         let field = self.search_fields.get(&pane_id);
         let has_text = field.is_some_and(|field| !field.input.read(cx).text().is_empty());
         div()

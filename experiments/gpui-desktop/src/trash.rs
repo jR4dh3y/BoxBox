@@ -144,7 +144,12 @@ impl Workspace {
         );
     }
 
-    pub(crate) fn render_trash(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_trash(
+        &self,
+        pane_id: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let trash = &self.trash;
         let selected = trash.selected.as_ref().and_then(|id| match &trash.items {
             Load::Loaded(items) => items.iter().find(|item| &item.id == id),
@@ -165,7 +170,7 @@ impl Workspace {
             .py(px(6.))
             .border_b_1()
             .border_color(c(BORDER_SECONDARY))
-            .child(self.render_history_buttons(cx))
+            .child(self.render_history_buttons(pane_id, cx))
             .child(
                 div()
                     .flex_1()
@@ -265,7 +270,7 @@ impl Workspace {
                         None => cell.flex_1().min_w_0(),
                     }
                 };
-                let width = f32::from(window.viewport_size().width) - crate::ui::SIDEBAR_WIDTH;
+                let width = self.pane_width(window);
                 div()
                     .id("trash-items")
                     .size_full()

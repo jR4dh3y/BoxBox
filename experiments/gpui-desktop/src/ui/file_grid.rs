@@ -2,7 +2,7 @@
 
 use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, Window};
 
-use super::{thin_icon, TextScale, SIDEBAR_WIDTH};
+use super::{thin_icon, TextScale};
 use crate::format::{file_icon, file_size};
 use crate::pane::Listing;
 use crate::theme::*;
@@ -21,10 +21,11 @@ fn columns_for(width: f32) -> usize {
 impl Workspace {
     pub(crate) fn render_file_grid(
         &self,
+        pane_id: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let pane = self.pane();
+        let pane = self.view(pane_id);
         if pane.items.is_empty() && matches!(pane.listing, Listing::Loaded) {
             return div()
                 .size_full()
@@ -42,7 +43,7 @@ impl Workspace {
                 )
                 .into_any_element();
         }
-        let width = f32::from(window.viewport_size().width) - SIDEBAR_WIDTH - PADDING * 2.;
+        let width = self.pane_width(window) - PADDING * 2.;
         let columns = columns_for(width);
         let rows = pane.items.len().div_ceil(columns);
         div()
@@ -62,7 +63,7 @@ impl Workspace {
                         range
                             .map(|row| {
                                 let start = row * columns;
-                                let end = (start + columns).min(this.pane().items.len());
+                                let end = (start + columns).min(this.view(pane_id).items.len());
                                 // uniform_list needs equal rows, so the container's top padding
                                 // is folded into every row instead of only the first.
                                 div()
@@ -72,7 +73,10 @@ impl Workspace {
                                     .flex()
                                     .items_start()
                                     .gap(px(GAP))
-                                    .children((start..end).map(|index| this.render_tile(index, cx)))
+                                    .children(
+                                        (start..end)
+                                            .map(|index| this.render_tile(pane_id, index, cx)),
+                                    )
                             })
                             .collect::<Vec<_>>()
                     }),
@@ -83,8 +87,13 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn render_tile(&self, index: usize, cx: &mut Context<Self>) -> impl IntoElement {
-        let pane = self.pane();
+    fn render_tile(
+        &self,
+        pane_id: usize,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let pane = self.view(pane_id);
         let item = &pane.items[index];
         let selected = pane.is_selected(&item.path);
         let active = pane.active == Some(index);

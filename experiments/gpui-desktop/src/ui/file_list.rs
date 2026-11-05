@@ -2,7 +2,7 @@
 
 use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, FontWeight};
 
-use super::{icon, TextScale, SIDEBAR_WIDTH};
+use super::{icon, TextScale};
 use crate::format::{file_date, file_icon, file_size, type_description};
 use crate::pane::Listing;
 use crate::sort::{SortDir, SortField};
@@ -30,10 +30,6 @@ impl Columns {
             kind: spare >= MODIFIED_WIDTH + TYPE_WIDTH,
         }
     }
-
-    fn for_window(window: &gpui::Window) -> Self {
-        Self::for_width(f32::from(window.viewport_size().width) - SIDEBAR_WIDTH)
-    }
 }
 
 /// Fixed-width column, or the flexible Name column when `width` is None.
@@ -51,8 +47,13 @@ fn column(width: Option<f32>) -> gpui::Div {
 }
 
 impl Workspace {
-    fn render_header(&self, shown: Columns, cx: &mut Context<Self>) -> impl IntoElement {
-        let sort = self.pane().sort;
+    fn render_header(
+        &self,
+        pane_id: usize,
+        shown: Columns,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let sort = self.view(pane_id).sort;
         let columns = [
             (SortField::Name, "Name", None, false, true),
             (SortField::Type, "Type", Some(TYPE_WIDTH), false, shown.kind),
@@ -105,7 +106,7 @@ impl Workspace {
                         ),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        let next = this.pane().sort.toggled(field);
+                        let next = this.view(pane_id).sort.toggled(field);
                         this.pane_mut().set_sort(next);
                         cx.notify();
                     }))
@@ -114,11 +115,12 @@ impl Workspace {
 
     pub(crate) fn render_file_list(
         &self,
+        pane_id: usize,
         window: &gpui::Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let shown = Columns::for_window(window);
-        let pane = self.pane();
+        let shown = Columns::for_width(self.pane_width(window));
+        let pane = self.view(pane_id);
         let count = pane.items.len();
         let empty = count == 0 && matches!(pane.listing, Listing::Loaded);
         div()
@@ -132,7 +134,7 @@ impl Workspace {
                     this.open_background_menu(event.position, cx)
                 }),
             )
-            .child(self.render_header(shown, cx))
+            .child(self.render_header(pane_id, shown, cx))
             .when(empty, |list| {
                 list.child(
                     div()
@@ -157,7 +159,7 @@ impl Workspace {
                         count,
                         cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                             range
-                                .map(|index| this.render_row(index, shown, cx))
+                                .map(|index| this.render_row(pane_id, index, shown, cx))
                                 .collect::<Vec<_>>()
                         }),
                     )
@@ -167,8 +169,14 @@ impl Workspace {
             })
     }
 
-    fn render_row(&self, index: usize, shown: Columns, cx: &mut Context<Self>) -> impl IntoElement {
-        let pane = self.pane();
+    fn render_row(
+        &self,
+        pane_id: usize,
+        index: usize,
+        shown: Columns,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let pane = self.view(pane_id);
         let item = &pane.items[index];
         let selected = pane.is_selected(&item.path);
         let active = pane.active == Some(index);

@@ -9,7 +9,8 @@ use crate::workspace::{NewTab, Workspace};
 impl Workspace {
     pub(crate) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let closable = self.tabs.len() > 1;
-        let tabs = self.tabs.iter().enumerate().map(|(index, pane)| {
+        let tabs = self.tabs.iter().enumerate().map(|(index, tab)| {
+            let pane = &tab.panes[0];
             let title = match pane.path.rsplit('/').next() {
                 _ if pane.path == crate::trash::TRASH_PATH => "Trash".to_string(),
                 Some(name) if !name.is_empty() => name.to_string(),

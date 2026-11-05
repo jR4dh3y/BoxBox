@@ -2,7 +2,7 @@
 
 use gpui::{div, prelude::*, px, AnyElement, Context, Window};
 
-use super::{icon, TextScale, SIDEBAR_WIDTH};
+use super::{icon, TextScale};
 use crate::theme::*;
 use crate::workspace::{Back, Forward, Refresh, Workspace};
 
@@ -13,8 +13,8 @@ struct Crumb {
 
 impl Workspace {
     /// Root label, then the path below it, like `EditablePathBar`'s breadcrumbs.
-    fn breadcrumbs(&self) -> Vec<Crumb> {
-        let path = &self.pane().path;
+    fn breadcrumbs(&self, pane_id: usize) -> Vec<Crumb> {
+        let path = &self.view(pane_id).path;
         let root = self
             .roots
             .iter()
@@ -75,8 +75,8 @@ impl Workspace {
             ))
     }
 
-    fn render_path_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let crumbs = self.breadcrumbs();
+    fn render_path_bar(&self, pane_id: usize, cx: &mut Context<Self>) -> impl IntoElement {
+        let crumbs = self.breadcrumbs(pane_id);
         let last = crumbs.len().saturating_sub(1);
         let content: AnyElement = if crumbs.is_empty() {
             div()
@@ -145,8 +145,12 @@ impl Workspace {
             .child(content)
     }
 
-    pub(crate) fn render_history_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let pane = self.pane();
+    pub(crate) fn render_history_buttons(
+        &self,
+        pane_id: usize,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let pane = self.view(pane_id);
         div()
             .flex()
             .flex_none()
@@ -165,11 +169,12 @@ impl Workspace {
 
     pub(crate) fn render_toolbar(
         &self,
+        pane_id: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let pane = self.pane();
-        let toolbar_width = f32::from(window.viewport_size().width) - SIDEBAR_WIDTH;
+        let pane = self.view(pane_id);
+        let toolbar_width = self.pane_width(window);
         div()
             .flex_none()
             .flex()
@@ -180,10 +185,10 @@ impl Workspace {
             .bg(c(SURFACE_PRIMARY))
             .px(px(12.))
             .py(px(6.))
-            .child(self.render_history_buttons(cx))
-            .child(self.render_path_bar(cx))
+            .child(self.render_history_buttons(pane_id, cx))
+            .child(self.render_path_bar(pane_id, cx))
             .when(!pane.is_at_root(), |toolbar| {
-                toolbar.child(self.render_search(toolbar_width, cx))
+                toolbar.child(self.render_search(pane_id, toolbar_width, cx))
             })
             .child(
                 div()
