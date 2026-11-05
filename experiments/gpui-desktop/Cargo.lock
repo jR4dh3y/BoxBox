@@ -717,6 +717,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "env_logger",
+ "futures",
  "gpui",
  "log",
  "serde",

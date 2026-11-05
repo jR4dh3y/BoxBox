@@ -62,9 +62,6 @@ impl Workspace {
 
     pub(crate) fn render_toasts(&self, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .absolute()
-            .right(px(16.))
-            .bottom(px(40.))
             .flex()
             .flex_col()
             .gap(px(8.))

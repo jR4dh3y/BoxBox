@@ -216,6 +216,26 @@ impl Api {
         Ok(())
     }
 
+    pub fn clipboard(&self) -> Result<crate::clipboard::ClipContents> {
+        self.get("/desktop/clipboard")
+    }
+
+    pub fn set_clipboard(&self, operation: &str, paths: &[String]) -> Result<()> {
+        let body = serde_json::json!({ "operation": operation, "paths": paths });
+        self.send("POST", "/desktop/clipboard", Some(body))?;
+        Ok(())
+    }
+
+    pub fn create_job(&self, kind: &str, source: &str, dest: &str) -> Result<crate::jobs::Job> {
+        let body = serde_json::json!({ "type": kind, "sourcePath": source, "destPath": dest });
+        Ok(self.send("POST", "/jobs", Some(body))?.into_json()?)
+    }
+
+    /// A long-lived response body, e.g. an event stream; no read timeout applies.
+    pub fn stream(&self, endpoint: &str) -> Result<Box<dyn std::io::Read + Send>> {
+        Ok(self.send("GET", endpoint, None)?.into_reader())
+    }
+
     fn get<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
         self.call(endpoint)?
             .into_json()

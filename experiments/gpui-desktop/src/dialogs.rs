@@ -27,6 +27,12 @@ pub enum Dialog {
         to_trash: bool,
     },
     Properties(FileInfo),
+    Conflict {
+        op: crate::clipboard::ClipOp,
+        dest: String,
+        planned: Vec<crate::clipboard::Planned>,
+        keep_both: Vec<bool>,
+    },
 }
 
 /// The name without its extension, which rename and new-file dialogs preselect.
@@ -168,6 +174,17 @@ impl Workspace {
                 }
             }
             Some(Dialog::Delete { items, to_trash }) => self.delete_items(items, to_trash, cx),
+            Some(Dialog::Conflict {
+                op,
+                dest,
+                planned,
+                keep_both,
+            }) => {
+                let planned = crate::clipboard::resolve(planned, &keep_both);
+                if !planned.is_empty() {
+                    self.submit_paste(op, dest, planned, cx);
+                }
+            }
             Some(Dialog::Properties(_)) | None => {}
         }
         self.close_dialog(window, cx);
@@ -261,6 +278,12 @@ impl Workspace {
                     )
                     .into_any_element()
                 }
+                Dialog::Conflict {
+                    op,
+                    dest,
+                    planned,
+                    keep_both,
+                } => self.render_conflict(*op, dest, planned, keep_both, cx, on_close),
                 Dialog::Properties(item) => {
                     let location = item
                         .path

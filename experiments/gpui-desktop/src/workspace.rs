@@ -28,7 +28,10 @@ actions!(
         MoveToTrash,
         DeletePermanently,
         Properties,
-        Undo
+        Undo,
+        Copy,
+        Cut,
+        Paste
     ]
 );
 
@@ -50,6 +53,9 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-delete", DeletePermanently, context),
         KeyBinding::new("alt-enter", Properties, context),
         KeyBinding::new("ctrl-z", Undo, context),
+        KeyBinding::new("ctrl-c", Copy, context),
+        KeyBinding::new("ctrl-x", Cut, context),
+        KeyBinding::new("ctrl-v", Paste, context),
     ]);
 }
 
@@ -70,6 +76,8 @@ pub struct Workspace {
     pub(crate) toasts: crate::notifications::Toasts,
     pub(crate) undo: Option<crate::undo::Undo>,
     pub(crate) preferences: crate::preferences::Preferences,
+    pub(crate) clipboard: crate::clipboard::Clipboard,
+    pub(crate) jobs: crate::jobs::Jobs,
     pub(crate) tabs: Vec<Pane>,
     pub(crate) active_tab: usize,
     next_pane_id: usize,
@@ -95,6 +103,8 @@ impl Workspace {
             toasts: Default::default(),
             undo: None,
             preferences: Default::default(),
+            clipboard: Default::default(),
+            jobs: Default::default(),
             tabs: vec![Pane::new(0, initial_path)],
             active_tab: 0,
             next_pane_id: 1,
@@ -104,6 +114,7 @@ impl Workspace {
             focus_handle,
         };
         workspace.load_drives(cx);
+        workspace.watch_jobs(cx);
         workspace.load_active(cx);
         workspace
     }
@@ -269,6 +280,13 @@ impl Render for Workspace {
             )
             .on_action(cx.listener(|this, _: &Properties, _, cx| this.open_properties(cx)))
             .on_action(cx.listener(Self::undo))
+            .on_action(cx.listener(|this, _: &Copy, _, cx| {
+                this.copy_selection(crate::clipboard::ClipOp::Copy, cx)
+            }))
+            .on_action(cx.listener(|this, _: &Cut, _, cx| {
+                this.copy_selection(crate::clipboard::ClipOp::Cut, cx)
+            }))
+            .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))
             .relative()
             .size_full()
             .flex()
@@ -289,7 +307,18 @@ impl Render for Workspace {
                     .child(self.render_tabs(cx))
                     .child(self.render_browser(window, cx)),
             )
-            .child(self.render_toasts(cx))
+            .child(
+                div()
+                    .absolute()
+                    .right(px(16.))
+                    .bottom(px(40.))
+                    .flex()
+                    .flex_col()
+                    .items_end()
+                    .gap(px(8.))
+                    .children(self.render_jobs(cx))
+                    .child(self.render_toasts(cx)),
+            )
             .children(self.render_dialog(cx))
     }
 }

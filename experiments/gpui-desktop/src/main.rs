@@ -3,15 +3,18 @@
 
 mod api;
 mod assets;
+mod clipboard;
 mod dialogs;
 mod drag_out;
 mod format;
+mod jobs;
 mod notifications;
 mod ops;
 mod pane;
 mod preferences;
 mod server;
 mod sort;
+mod sse;
 mod theme;
 mod ui;
 mod undo;

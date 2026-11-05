@@ -20,10 +20,7 @@ impl Workspace {
         let Some(undo) = self.undo.take() else {
             return;
         };
-        let message = match &undo {
-            Undo::Rename { .. } => "Rename undone",
-            Undo::Trash(_) => "Restored from Trash",
-        };
+        let message = "Operation undone";
         self.background(
             move |api| match undo {
                 Undo::Rename { from, to } => api.rename(&to, &from),
