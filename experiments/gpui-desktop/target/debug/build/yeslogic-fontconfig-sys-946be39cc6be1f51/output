@@ -1,0 +1,1 @@
+cargo:rerun-if-env-changed=RUST_FONTCONFIG_DLOPEN
