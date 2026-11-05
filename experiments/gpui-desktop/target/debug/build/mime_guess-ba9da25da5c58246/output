@@ -1,0 +1,1 @@
+cargo:rustc-env=MIME_TYPES_GENERATED_PATH=/tmp/hoplite/workspace/experiments/gpui-desktop/target/debug/build/mime_guess-ba9da25da5c58246/out/mime_types_generated.rs
