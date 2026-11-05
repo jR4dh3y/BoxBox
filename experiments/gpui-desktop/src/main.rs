@@ -11,6 +11,7 @@ mod dialogs;
 mod dnd;
 mod drag_out;
 mod format;
+mod instance;
 mod jobs;
 mod location;
 mod media;
@@ -54,6 +55,15 @@ fn fontconfig_family(pattern: &str, fallback: &str) -> SharedString {
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    let initial_path = std::env::args().nth(1).unwrap_or_default();
+    let launches = match instance::claim(&initial_path) {
+        Ok(instance::Instance::Forwarded) => return,
+        Ok(instance::Instance::Primary(launches)) => Some(launches),
+        Err(error) => {
+            log::warn!("single-instance socket unavailable: {error:#}");
+            None
+        }
+    };
     // `BOXBOX_URL` attaches to a running server; otherwise start the private desktop server.
     let (api, local) = match std::env::var("BOXBOX_URL")
         .ok()
@@ -81,7 +91,6 @@ fn main() {
             }
         }
     };
-    let initial_path = std::env::args().nth(1).unwrap_or_default();
     let fonts = Fonts {
         sans: fontconfig_family("sans-serif", ".SystemUIFont"),
         mono: fontconfig_family("monospace", "monospace"),
@@ -106,7 +115,15 @@ fn main() {
                     window_decorations: Some(WindowDecorations::Server),
                     ..Default::default()
                 },
-                |window, cx| cx.new(|cx| Workspace::new(api, fonts, initial_path, window, cx)),
+                |window, cx| {
+                    cx.new(|cx| {
+                        let mut workspace = Workspace::new(api, fonts, initial_path, window, cx);
+                        if let Some(launches) = launches {
+                            workspace.accept_launches(launches, window, cx);
+                        }
+                        workspace
+                    })
+                },
             )
             .expect("failed to open the BoxBox window");
             cx.activate(true);

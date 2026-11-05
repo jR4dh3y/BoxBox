@@ -273,6 +273,27 @@ impl Workspace {
         .detach();
     }
 
+    /// Launches forwarded by later processes open as new tabs and raise the window.
+    pub(crate) fn accept_launches(
+        &mut self,
+        mut launches: futures::channel::mpsc::UnboundedReceiver<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn_in(window, async move |this, cx| {
+            while let Some(path) = futures::StreamExt::next(&mut launches).await {
+                let opened = this.update_in(cx, |this, window, cx| {
+                    this.open_tab(path, window, cx);
+                    window.activate_window();
+                });
+                if opened.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
     pub(crate) fn load_active(&mut self, cx: &mut Context<Self>) {
         let id = self.pane().id;
         self.load_pane(id, cx);

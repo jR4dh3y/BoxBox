@@ -194,7 +194,10 @@ mod tests {
             dated("zz.txt", false, "2026-04-01T00:00:00Z"),
         ];
         sort_files(&mut items, Sort::default());
-        assert_eq!(names(&items), ["dir", "zz.txt", "a.txt", "b.txt", "old.txt"]);
+        assert_eq!(
+            names(&items),
+            ["dir", "zz.txt", "a.txt", "b.txt", "old.txt"]
+        );
     }
 
     #[test]
