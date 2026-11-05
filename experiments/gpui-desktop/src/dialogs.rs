@@ -28,6 +28,7 @@ pub enum Dialog {
     },
     Properties(FileInfo),
     OpenWith(crate::desktop::OpenWith),
+    Settings,
     Conflict {
         op: crate::clipboard::ClipOp,
         dest: String,
@@ -191,7 +192,7 @@ impl Workspace {
                 self.confirm_open_with(cx);
                 return;
             }
-            Some(Dialog::Properties(_)) | None => {}
+            Some(Dialog::Properties(_) | Dialog::Settings) | None => {}
         }
         self.close_dialog(window, cx);
     }
@@ -285,6 +286,7 @@ impl Workspace {
                     .into_any_element()
                 }
                 Dialog::OpenWith(dialog) => self.render_open_with(dialog, cx, on_close),
+                Dialog::Settings => self.render_settings(cx, on_close),
                 Dialog::Conflict {
                     op,
                     dest,

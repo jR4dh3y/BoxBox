@@ -51,40 +51,40 @@ impl Sort {
     }
 }
 
-/// Hidden entries last; folders first for name/type; then value or name, in `dir`.
+/// PR #211's `sortFiles`: folders lead every sort. Size and time ties use ascending natural
+/// names, then paths, so search results and repeated reads have a deterministic order.
 pub fn sort_files(items: &mut [FileInfo], sort: Sort) {
-    let key = |item: &FileInfo| -> f64 {
+    let key = |item: &FileInfo| -> i64 {
         match sort.field {
-            SortField::Size => item.size as f64,
+            SortField::Size => item.size as i64,
             SortField::Modified => DateTime::parse_from_rfc3339(&item.mod_time)
-                .map(|date| date.timestamp_millis() as f64)
-                .unwrap_or(0.0),
-            SortField::Name | SortField::Type => f64::from(u8::from(!item.is_dir)),
+                .map(|date| date.timestamp_millis())
+                .unwrap_or(0),
+            SortField::Name | SortField::Type => 0,
         }
     };
     let by_value = matches!(sort.field, SortField::Size | SortField::Modified);
+    let direction = |ordering: Ordering| match sort.dir {
+        SortDir::Asc => ordering,
+        SortDir::Desc => ordering.reverse(),
+    };
     items.sort_by(|left, right| {
-        let (left_hidden, right_hidden) = (left.name.starts_with('.'), right.name.starts_with('.'));
-        if left_hidden != right_hidden {
-            return if left_hidden {
-                Ordering::Greater
-            } else {
+        if left.is_dir != right.is_dir {
+            return if left.is_dir {
                 Ordering::Less
+            } else {
+                Ordering::Greater
             };
         }
-        let (lv, rv) = (key(left), key(right));
-        if !by_value && lv != rv {
-            return lv.total_cmp(&rv);
+        if by_value {
+            let value = key(left).cmp(&key(right));
+            if value != Ordering::Equal {
+                return direction(value);
+            }
         }
-        let comparison = if by_value && lv != rv {
-            lv.total_cmp(&rv)
-        } else {
-            natural_cmp(&left.name, &right.name)
-        };
-        match sort.dir {
-            SortDir::Asc => comparison,
-            SortDir::Desc => comparison.reverse(),
-        }
+        let names = natural_cmp(&left.name, &right.name).then_with(|| left.name.cmp(&right.name));
+        let names = if by_value { names } else { direction(names) };
+        names.then_with(|| natural_cmp(&left.path, &right.path))
     });
 }
 
@@ -139,8 +139,19 @@ mod tests {
         }
     }
 
+    fn dated(name: &str, is_dir: bool, time: &str) -> FileInfo {
+        FileInfo {
+            mod_time: time.into(),
+            ..file(name, is_dir, 0)
+        }
+    }
+
+    fn names(items: &[FileInfo]) -> Vec<&str> {
+        items.iter().map(|item| item.name.as_str()).collect()
+    }
+
     #[test]
-    fn folders_first_hidden_last_numeric_names() {
+    fn folders_lead_and_names_are_natural() {
         let mut items = vec![
             file("b10.txt", false, 1),
             file(".hidden", true, 0),
@@ -148,9 +159,40 @@ mod tests {
             file("Zeta", true, 0),
             file("alpha", true, 0),
         ];
+        sort_files(
+            &mut items,
+            Sort {
+                field: SortField::Name,
+                dir: SortDir::Asc,
+            },
+        );
+        assert_eq!(
+            names(&items),
+            [".hidden", "alpha", "Zeta", "b2.txt", "b10.txt"]
+        );
+        sort_files(
+            &mut items,
+            Sort {
+                field: SortField::Name,
+                dir: SortDir::Desc,
+            },
+        );
+        assert_eq!(
+            names(&items),
+            ["Zeta", "alpha", ".hidden", "b10.txt", "b2.txt"]
+        );
+    }
+
+    #[test]
+    fn default_sort_is_newest_first_with_name_ties() {
+        let mut items = vec![
+            dated("old.txt", false, "2026-01-01T00:00:00Z"),
+            dated("b.txt", false, "2026-03-01T00:00:00Z"),
+            dated("a.txt", false, "2026-03-01T00:00:00Z"),
+            dated("dir", true, "2020-01-01T00:00:00Z"),
+        ];
         sort_files(&mut items, Sort::default());
-        let names: Vec<_> = items.iter().map(|item| item.name.as_str()).collect();
-        assert_eq!(names, ["alpha", "Zeta", "b2.txt", "b10.txt", ".hidden"]);
+        assert_eq!(names(&items), ["dir", "a.txt", "b.txt", "old.txt"]);
     }
 
     #[test]

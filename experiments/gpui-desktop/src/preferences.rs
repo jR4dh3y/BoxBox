@@ -58,8 +58,9 @@ impl Default for Preferences {
             show_hidden: false,
             show_extensions: true,
             confirm_delete: true,
-            default_sort_by: SortBy::Name,
-            default_sort_dir: SortDirPref::Asc,
+            // PR #211: newest modified first.
+            default_sort_by: SortBy::ModTime,
+            default_sort_dir: SortDirPref::Desc,
             default_view_mode: ViewPref::List,
             preview_on_single_click: false,
             selection_checkboxes: false,
@@ -72,6 +73,29 @@ impl Default for Preferences {
 }
 
 impl Preferences {
+    pub fn default_sort(&self) -> crate::sort::Sort {
+        use crate::sort::{Sort, SortDir, SortField};
+        let field = match self.default_sort_by {
+            SortBy::Name => SortField::Name,
+            SortBy::Size => SortField::Size,
+            SortBy::ModTime => SortField::Modified,
+            SortBy::Type => SortField::Type,
+        };
+        let dir = if self.default_sort_dir == SortDirPref::Asc {
+            SortDir::Asc
+        } else {
+            SortDir::Desc
+        };
+        Sort { field, dir }
+    }
+
+    pub fn default_view(&self) -> crate::pane::ViewMode {
+        match self.default_view_mode {
+            ViewPref::List => crate::pane::ViewMode::List,
+            ViewPref::Grid => crate::pane::ViewMode::Grid,
+        }
+    }
+
     pub fn is_favorite(&self, path: &str) -> bool {
         self.favorite_folders
             .iter()
@@ -91,6 +115,6 @@ mod tests {
         assert!(prefs.is_favorite("home/Docs"));
         let round = serde_json::to_value(&prefs).unwrap();
         assert_eq!(round["accentColor"], "#ff0000");
-        assert_eq!(round["defaultSortBy"], "name");
+        assert_eq!(round["defaultSortBy"], "modTime");
     }
 }

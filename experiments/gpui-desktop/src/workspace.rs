@@ -318,9 +318,19 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let hidden_changed = preferences.show_hidden != self.preferences.show_hidden;
+        let defaults_changed = preferences.default_sort() != self.preferences.default_sort()
+            || preferences.default_view() != self.preferences.default_view();
         self.preferences = preferences;
+        let (sort, view) = (
+            self.preferences.default_sort(),
+            self.preferences.default_view(),
+        );
         for pane in self.tabs.iter_mut().flat_map(|tab| &mut tab.panes) {
             pane.show_hidden = self.preferences.show_hidden;
+            if defaults_changed {
+                pane.set_sort(sort);
+                pane.view_mode = view;
+            }
         }
         if hidden_changed {
             self.reload(cx);
@@ -337,6 +347,8 @@ impl Workspace {
         let mut pane = Pane::new(self.next_pane_id, path);
         self.next_pane_id += 1;
         pane.show_hidden = self.preferences.show_hidden;
+        pane.set_sort(self.preferences.default_sort());
+        pane.view_mode = self.preferences.default_view();
         let field = self.search_field(pane.id, window, cx);
         self.search_fields.insert(pane.id, field);
         pane

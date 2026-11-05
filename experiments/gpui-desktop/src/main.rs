@@ -17,6 +17,7 @@ mod pane;
 mod preferences;
 mod search;
 mod server;
+mod settings;
 mod sort;
 mod sse;
 mod theme;

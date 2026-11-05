@@ -243,7 +243,14 @@ impl Workspace {
                         .min_w_0()
                         .truncate()
                         .text_color(name_color)
-                        .child(item.name.clone()),
+                        .child(
+                            crate::settings::display_name(
+                                &item.name,
+                                item.is_dir,
+                                self.preferences.show_extensions,
+                            )
+                            .to_string(),
+                        ),
                 ),
         )
         .when(shown.kind, |row| {

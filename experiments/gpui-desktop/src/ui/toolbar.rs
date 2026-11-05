@@ -203,7 +203,10 @@ impl Workspace {
                                 this.refresh(&Refresh, window, cx)
                             })),
                     )
-                    .child(self.nav_button("settings", "settings", 16., true)),
+                    .child(
+                        self.nav_button("settings", "settings", 16., true)
+                            .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
+                    ),
             )
     }
 }

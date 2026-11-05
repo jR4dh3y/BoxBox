@@ -160,7 +160,14 @@ impl Workspace {
                         .line_height(px(16.))
                         .line_clamp(2)
                         .text_color(c(if item.is_dir { FOLDER } else { TEXT_PRIMARY }))
-                        .child(item.name.clone()),
+                        .child(
+                            crate::settings::display_name(
+                                &item.name,
+                                item.is_dir,
+                                self.preferences.show_extensions,
+                            )
+                            .to_string(),
+                        ),
                 )
                 .child(
                     div()
