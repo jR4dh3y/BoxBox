@@ -23,6 +23,15 @@ struct FileList {
     items: Vec<FileInfo>,
 }
 
+/// `GET /search`: the server echoes the request so a response can be matched to it.
+#[derive(Debug, Deserialize)]
+struct SearchResponse {
+    path: String,
+    query: String,
+    results: Vec<FileInfo>,
+    count: usize,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RootKind {
@@ -113,6 +122,16 @@ impl Api {
         parse_directory(self.get::<FileList>(&format!("/files/list/{}", encode_path(path)))?)
     }
 
+    /// Recursive, case-insensitive name search below `path`. Results carry full virtual paths.
+    pub fn search(&self, path: &str, query: &str) -> Result<Vec<FileInfo>> {
+        let endpoint = format!(
+            "/search?path={}&q={}",
+            encode_component(path),
+            encode_component(query)
+        );
+        parse_search(self.get::<SearchResponse>(&endpoint)?, path, query)
+    }
+
     /// Saves a file, or a folder as the server's ZIP archive (like the web download), into `dir`.
     pub fn download(&self, item: &FileInfo, dir: &Path) -> Result<PathBuf> {
         let (endpoint, name) = if item.is_dir {
@@ -175,6 +194,37 @@ fn parse_directory(listing: FileList) -> Result<Vec<FileInfo>> {
         .collect()
 }
 
+/// Unlike a listing, search entries arrive with their own path, which must stay below the
+/// folder that was searched.
+fn parse_search(response: SearchResponse, path: &str, query: &str) -> Result<Vec<FileInfo>> {
+    anyhow::ensure!(
+        response.path == path && response.query == query,
+        "search response does not match the request"
+    );
+    anyhow::ensure!(
+        response.count == response.results.len(),
+        "invalid search response"
+    );
+    let prefix = format!("{}/", path.trim_end_matches('/'));
+    response
+        .results
+        .into_iter()
+        .map(|item| {
+            let name_valid =
+                !matches!(item.name.as_str(), "" | "." | "..") && !item.name.contains(['/', '\0']);
+            let path_valid = item.path.starts_with(&prefix)
+                && item.path.ends_with(&format!("/{}", item.name))
+                && !item.path.split('/').any(|segment| segment == "..");
+            anyhow::ensure!(
+                name_valid && path_valid,
+                "invalid search result {:?}",
+                item.path
+            );
+            Ok(item)
+        })
+        .collect()
+}
+
 fn server_message(body: &str) -> Option<String> {
     #[derive(Deserialize)]
     struct ErrorBody {
@@ -188,28 +238,30 @@ fn server_message(body: &str) -> Option<String> {
 /// `encodeRoutePath`: each segment percent-encoded like `encodeURIComponent`.
 fn encode_path(path: &str) -> String {
     path.split('/')
-        .map(|segment| {
-            segment
-                .bytes()
-                .map(|byte| match byte {
-                    b'A'..=b'Z'
-                    | b'a'..=b'z'
-                    | b'0'..=b'9'
-                    | b'-'
-                    | b'_'
-                    | b'.'
-                    | b'!'
-                    | b'~'
-                    | b'*'
-                    | b'\''
-                    | b'('
-                    | b')' => (byte as char).to_string(),
-                    _ => format!("%{byte:02X}"),
-                })
-                .collect::<String>()
-        })
+        .map(encode_component)
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// `encodeURIComponent`, which also serves query-string values.
+fn encode_component(text: &str) -> String {
+    text.bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'!'
+            | b'~'
+            | b'*'
+            | b'\''
+            | b'('
+            | b')' => (byte as char).to_string(),
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -262,5 +314,66 @@ mod tests {
             "media/My%20Photos/%C3%A9t%C3%A9%20%231%3F.txt"
         );
         assert_eq!(encode_path("a/(b)!~*'"), "a/(b)!~*'");
+    }
+
+    fn found(path: &str, name: &str) -> FileInfo {
+        FileInfo {
+            path: path.into(),
+            ..entry(name)
+        }
+    }
+
+    fn response(results: Vec<FileInfo>) -> SearchResponse {
+        SearchResponse {
+            path: "media".into(),
+            query: "cat".into(),
+            count: results.len(),
+            results,
+        }
+    }
+
+    #[test]
+    fn parses_the_search_contract() {
+        let body = r#"{"path":"media","query":"cat","count":1,"results":[
+            {"name":"cat.png","path":"media/pets/cat.png","size":5,"isDir":false,
+             "modTime":"2026-01-01T00:00:00Z","permissions":"-rw-r--r--","mimeType":"image/png"}]}"#;
+        let parsed: SearchResponse = serde_json::from_str(body).unwrap();
+        let items = parse_search(parsed, "media", "cat").unwrap();
+        assert_eq!(items[0].path, "media/pets/cat.png");
+        assert_eq!(items[0].size, 5);
+    }
+
+    #[test]
+    fn keeps_results_below_the_searched_folder() {
+        let ok = response(vec![found("media/a/cat.txt", "cat.txt")]);
+        assert_eq!(parse_search(ok, "media", "cat").unwrap().len(), 1);
+
+        for (path, name) in [
+            ("", "cat.txt"),
+            ("other/cat.txt", "cat.txt"),
+            ("media-x/cat.txt", "cat.txt"),
+            ("media/../cat.txt", "cat.txt"),
+            ("media/dog.txt", "cat.txt"),
+            ("media/cat.txt", "../cat.txt"),
+            ("media/a/b", "a/b"),
+        ] {
+            let bad = response(vec![found(path, name)]);
+            assert!(parse_search(bad, "media", "cat").is_err(), "{path} {name}");
+        }
+    }
+
+    #[test]
+    fn rejects_a_response_for_another_request() {
+        let ok = || response(vec![found("media/cat", "cat")]);
+        assert!(parse_search(ok(), "media", "dog").is_err());
+        assert!(parse_search(ok(), "music", "cat").is_err());
+        let mut miscounted = ok();
+        miscounted.count = 2;
+        assert!(parse_search(miscounted, "media", "cat").is_err());
+    }
+
+    #[test]
+    fn query_values_escape_separators() {
+        assert_eq!(encode_component("a b&c=d/é"), "a%20b%26c%3Dd%2F%C3%A9");
     }
 }

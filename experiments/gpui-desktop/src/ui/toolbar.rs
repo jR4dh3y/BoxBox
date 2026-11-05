@@ -1,8 +1,15 @@
 //! `Toolbar.svelte` with `EditablePathBar.svelte` and the compact `SearchBar.svelte`.
 
-use gpui::{div, prelude::*, px, AnyElement, Context, Window};
+use std::time::Duration;
+
+use gpui::{
+    div, percentage, prelude::*, px, Animation, AnimationExt as _, AnyElement, Context,
+    MouseButton, Transformation, Window,
+};
 
 use super::{icon, TextScale, SIDEBAR_WIDTH};
+use crate::pane::Search;
+use crate::search;
 use crate::theme::*;
 use crate::workspace::{Back, Forward, OpenSettings, Refresh, Workspace};
 
@@ -145,8 +152,14 @@ impl Workspace {
             .child(content)
     }
 
-    /// Static stand-in for the search field: same box, icon and placeholder.
-    fn render_search(&self, toolbar_width: f32) -> impl IntoElement {
+    /// `SearchBar.svelte` (compact): a focusable field fed by key-down events, so text goes in
+    /// at the end only and there is no IME or caret movement.
+    fn render_search(
+        &self,
+        toolbar_width: f32,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         // `w-28 @lg:w-48 @3xl:w-64 @5xl:w-96` against the toolbar's container width.
         let width = match toolbar_width {
             w if w >= 1024. => 384.,
@@ -154,7 +167,37 @@ impl Workspace {
             w if w >= 512. => 192.,
             _ => 112.,
         };
+        let pane = self.pane();
+        let focused = self.search_focus.is_focused(window);
+        let input = &pane.search_input;
+        // Icon, clear button and padding take about 70px; 14px text averages 7px a character.
+        let max_chars = ((width - 70.) / 7.0_f32).max(4.) as usize;
+        let shown = search::visible_tail(input, max_chars);
+        let loading = matches!(pane.search, Search::Loading);
+        let glyph: AnyElement = if loading {
+            icon("refresh-cw", 16., c(ACCENT))
+                .with_animation(
+                    "search-spinner",
+                    Animation::new(Duration::from_secs(1)).repeat(),
+                    |svg, delta| svg.with_transformation(Transformation::rotate(percentage(delta))),
+                )
+                .into_any_element()
+        } else {
+            icon("search", 16., c(TEXT_MUTED)).into_any_element()
+        };
         div()
+            .id("search")
+            .key_context("SearchInput")
+            .track_focus(&self.search_focus)
+            .on_key_down(cx.listener(Self::search_key_down))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    window.focus(&this.search_focus);
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
             .w(px(width))
             .flex_shrink()
             .min_w(px(112.))
@@ -162,21 +205,49 @@ impl Workspace {
             .flex()
             .items_center()
             .gap(px(8.))
-            .pl(px(12.))
+            .px(px(12.))
             .rounded(px(4.))
             .border_1()
-            .border_color(c(BORDER_PRIMARY))
+            .border_color(c(if focused { ACCENT } else { BORDER_PRIMARY }))
             .bg(c(SURFACE_SECONDARY))
             .text_sm_tw()
-            .text_color(c(TEXT_MUTED))
+            .cursor_text()
             .overflow_hidden()
-            .child(icon("search", 16., c(TEXT_MUTED)))
+            .child(glyph)
             .child(
                 div()
-                    .pl(px(6.))
-                    .truncate()
-                    .child("Search files and folders..."),
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .whitespace_nowrap()
+                    .overflow_hidden()
+                    .when(input.is_empty(), |field| {
+                        field
+                            .text_color(c(TEXT_MUTED))
+                            .child(div().truncate().child("Search files and folders..."))
+                    })
+                    .when(!input.is_empty(), |field| {
+                        field.text_color(c(TEXT_PRIMARY)).child(shown)
+                    })
+                    .when(focused, |field| {
+                        field.child(div().w(px(1.)).h(px(14.)).flex_none().bg(c(TEXT_PRIMARY)))
+                    }),
             )
+            .when(!input.is_empty(), |field| {
+                field.child(
+                    div()
+                        .id("search-clear")
+                        .flex_none()
+                        .cursor_pointer()
+                        .child(icon("x", 14., c(TEXT_MUTED)))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.clear_search_input(cx);
+                            window.focus(&this.search_focus);
+                        })),
+                )
+            })
     }
 
     pub(crate) fn render_toolbar(
@@ -215,9 +286,7 @@ impl Workspace {
                     ),
             )
             .child(self.render_path_bar(cx))
-            .when(!pane.is_at_root(), |toolbar| {
-                toolbar.child(self.render_search(toolbar_width))
-            })
+            .children((!pane.is_at_root()).then(|| self.render_search(toolbar_width, window, cx)))
             .child(
                 div()
                     .flex()

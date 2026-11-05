@@ -4,7 +4,6 @@ use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, Window};
 
 use super::{thin_icon, TextScale, SIDEBAR_WIDTH};
 use crate::format::{file_icon, file_size};
-use crate::pane::Listing;
 use crate::theme::*;
 use crate::workspace::Workspace;
 
@@ -40,7 +39,7 @@ impl Workspace {
         let row_height = if compact { 136. } else { ROW_HEIGHT };
         let gap = if compact { 8. } else { GAP };
         let padding = if compact { 8. } else { PADDING };
-        if pane.items.is_empty() && matches!(pane.listing, Listing::Loaded) {
+        if let Some((glyph, message)) = pane.placeholder() {
             return div()
                 .size_full()
                 .flex()
@@ -48,13 +47,8 @@ impl Workspace {
                 .items_center()
                 .justify_center()
                 .gap(px(8.))
-                .child(super::icon("folder-open", 32., alpha(TEXT_MUTED, 0.5)))
-                .child(
-                    div()
-                        .text_13()
-                        .text_color(c(TEXT_MUTED))
-                        .child("This folder is empty"),
-                )
+                .child(super::icon(glyph, 32., alpha(TEXT_MUTED, 0.5)))
+                .child(div().text_13().text_color(c(TEXT_MUTED)).child(message))
                 .into_any_element();
         }
         let width = f32::from(window.viewport_size().width) - SIDEBAR_WIDTH - padding * 2.;

@@ -15,7 +15,9 @@ impl Workspace {
     ) -> impl IntoElement {
         let pane = self.pane();
         let stale_error = match &pane.listing {
-            Listing::Failed(error) if !pane.items.is_empty() => Some(error.clone()),
+            Listing::Failed(error) if !pane.items.is_empty() && !pane.is_searching() => {
+                Some(error.clone())
+            }
             _ => None,
         };
         let content: AnyElement = match (&pane.listing, pane.current_view_mode()) {
@@ -47,7 +49,7 @@ impl Workspace {
                         .into_any_element(),
                 },
             },
-            (Listing::Failed(error), _) if pane.items.is_empty() => div()
+            (Listing::Failed(error), _) if pane.items.is_empty() && !pane.is_searching() => div()
                 .size_full()
                 .flex()
                 .items_center()

@@ -1,15 +1,16 @@
 //! Root view: tabs of panes plus the drive data shared by the sidebar and This PC.
 //! Mirrors `lib/components/desktop/BrowseWorkspace.svelte`.
 
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 
 use gpui::{
-    actions, div, prelude::*, px, relative, App, Context, FocusHandle, KeyBinding, SharedString,
-    Window,
+    actions, div, prelude::*, px, relative, App, Context, FocusHandle, KeyBinding, KeyDownEvent,
+    NoAction, SharedString, Window,
 };
 
 use crate::api::{Api, DriveStats, MountPoint};
 use crate::pane::{Pane, ViewMode};
+use crate::search;
 use crate::sort::{Sort, SortDir, SortField};
 use crate::theme::{c, SURFACE_PRIMARY, TEXT_PRIMARY};
 
@@ -96,7 +97,12 @@ actions!(
         SelectAll,
         ClearSelection,
         OpenSettings,
-        CloseSettings
+        CloseSettings,
+        FocusSearch,
+        SearchBackspace,
+        SearchSubmit,
+        SearchEscape,
+        SearchPaste
     ]
 );
 
@@ -113,6 +119,13 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-a", SelectAll, context),
         KeyBinding::new("escape", ClearSelection, context),
         KeyBinding::new("ctrl-,", OpenSettings, context),
+        KeyBinding::new("ctrl-f", FocusSearch, context),
+        // The search field owns these keys while it has focus.
+        KeyBinding::new("backspace", SearchBackspace, Some("SearchInput")),
+        KeyBinding::new("enter", SearchSubmit, Some("SearchInput")),
+        KeyBinding::new("escape", SearchEscape, Some("SearchInput")),
+        KeyBinding::new("ctrl-v", SearchPaste, Some("SearchInput")),
+        KeyBinding::new("ctrl-a", NoAction, Some("SearchInput")),
     ]);
 }
 
@@ -136,6 +149,7 @@ pub struct Workspace {
     pub(crate) drives: Load<Vec<DriveStats>>,
     pub(crate) fonts: Fonts,
     focus_handle: FocusHandle,
+    pub(crate) search_focus: FocusHandle,
     pub(crate) settings_open: bool,
     pub(crate) settings_section: SettingsSection,
     pub(crate) preferences: Preferences,
@@ -167,6 +181,7 @@ impl Workspace {
             drives: Load::Loading,
             fonts,
             focus_handle,
+            search_focus: cx.focus_handle(),
             settings_open: false,
             settings_section: SettingsSection::General,
             preferences,
@@ -245,6 +260,7 @@ impl Workspace {
         self.preferences.save();
         if hidden_changed {
             self.load_active(cx);
+            self.schedule_search(Duration::ZERO, cx);
         }
         cx.notify();
     }
@@ -275,6 +291,7 @@ impl Workspace {
             self.load_drives(cx);
         } else {
             self.load_active(cx);
+            self.schedule_search(Duration::ZERO, cx);
         }
         cx.notify();
     }
@@ -310,6 +327,118 @@ impl Workspace {
     pub(crate) fn activate_tab(&mut self, index: usize, cx: &mut Context<Self>) {
         self.active_tab = index;
         cx.notify();
+    }
+
+    /// Sends the active tab's search after `delay`, unless the input or folder changes first.
+    fn schedule_search(&mut self, delay: Duration, cx: &mut Context<Self>) {
+        let pane = self.pane();
+        if search::active_query(&pane.search_input).is_none() {
+            return;
+        }
+        let (pane_id, revision) = (pane.id, pane.search_generation);
+        cx.spawn(async move |this, cx| {
+            if !delay.is_zero() {
+                cx.background_executor().timer(delay).await;
+            }
+            this.update(cx, |this, cx| {
+                let current = this
+                    .tabs
+                    .iter()
+                    .any(|pane| pane.id == pane_id && pane.search_generation == revision);
+                if current {
+                    this.run_search(pane_id, cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn run_search(&mut self, pane_id: usize, cx: &mut Context<Self>) {
+        let Some(pane) = self.tabs.iter_mut().find(|pane| pane.id == pane_id) else {
+            return;
+        };
+        let Some((generation, query)) = pane.begin_search() else {
+            return;
+        };
+        let path = pane.path.clone();
+        let api = self.api.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { api.search(&path, &query) })
+                .await;
+            this.update(cx, |this, cx| {
+                let current = this
+                    .tabs
+                    .iter_mut()
+                    .find(|pane| pane.id == pane_id && pane.search_generation == generation);
+                if let Some(pane) = current {
+                    pane.finish_search(result);
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Edits the search text; a request follows after the debounce.
+    fn edit_search(&mut self, edit: impl FnOnce(&mut String) -> bool, cx: &mut Context<Self>) {
+        let mut input = self.pane().search_input.clone();
+        if edit(&mut input) && self.pane_mut().set_search_input(input) {
+            self.schedule_search(search::DEBOUNCE, cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn clear_search_input(&mut self, cx: &mut Context<Self>) {
+        self.pane_mut().clear_search();
+        cx.notify();
+    }
+
+    fn focus_search(&mut self, _: &FocusSearch, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.pane().is_at_root() {
+            window.focus(&self.search_focus);
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn search_key_down(
+        &mut self,
+        event: &KeyDownEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let keystroke = &event.keystroke;
+        if keystroke.modifiers.control || keystroke.modifiers.platform {
+            return;
+        }
+        if let Some(text) = keystroke.key_char.clone() {
+            self.edit_search(|input| search::insert_text(input, &text), cx);
+        }
+    }
+
+    fn search_backspace(&mut self, _: &SearchBackspace, _: &mut Window, cx: &mut Context<Self>) {
+        self.edit_search(search::backspace, cx);
+    }
+
+    fn search_paste(&mut self, _: &SearchPaste, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return;
+        };
+        self.edit_search(|input| search::insert_text(input, &text), cx);
+    }
+
+    /// Enter searches now instead of waiting for the debounce.
+    fn search_submit(&mut self, _: &SearchSubmit, _: &mut Window, cx: &mut Context<Self>) {
+        self.schedule_search(Duration::ZERO, cx);
+    }
+
+    fn search_escape(&mut self, _: &SearchEscape, window: &mut Window, cx: &mut Context<Self>) {
+        self.clear_search_input(cx);
+        window.focus(&self.focus_handle);
     }
 
     fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
@@ -380,6 +509,20 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::clear_selection))
             .on_action(cx.listener(Self::open_settings))
             .on_action(cx.listener(Self::close_settings))
+            .on_action(cx.listener(Self::focus_search))
+            .on_action(cx.listener(Self::search_backspace))
+            .on_action(cx.listener(Self::search_paste))
+            .on_action(cx.listener(Self::search_submit))
+            .on_action(cx.listener(Self::search_escape))
+            // The search field stops its own clicks, so any other click leaves it.
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _, window, _| {
+                    if this.search_focus.is_focused(window) {
+                        window.focus(&this.focus_handle);
+                    }
+                }),
+            )
             .size_full()
             .flex()
             .bg(c(SURFACE_PRIMARY))

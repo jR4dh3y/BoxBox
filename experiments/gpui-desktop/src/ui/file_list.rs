@@ -4,7 +4,6 @@ use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, FontWeight};
 
 use super::{icon, TextScale, SIDEBAR_WIDTH};
 use crate::format::{file_date, file_icon, file_size, type_description};
-use crate::pane::Listing;
 use crate::sort::{SortDir, SortField};
 use crate::theme::*;
 use crate::workspace::Workspace;
@@ -122,14 +121,15 @@ impl Workspace {
         let count = pane.items.len();
         let compact = self.preferences.compact_rows;
         let row_height = if compact { 28. } else { ROW_HEIGHT };
-        let empty = count == 0 && matches!(pane.listing, Listing::Loaded);
+        let placeholder = pane.placeholder();
+        let empty = placeholder.is_some();
         div()
             .size_full()
             .flex()
             .flex_col()
             .bg(c(SURFACE_PRIMARY))
             .child(self.render_header(shown, cx))
-            .when(empty, |list| {
+            .when_some(placeholder, |list, (glyph, message)| {
                 list.child(
                     div()
                         .flex()
@@ -137,13 +137,8 @@ impl Workspace {
                         .items_center()
                         .gap(px(8.))
                         .py(px(48.))
-                        .child(icon("folder-open", 32., alpha(TEXT_MUTED, 0.5)))
-                        .child(
-                            div()
-                                .text_13()
-                                .text_color(c(TEXT_MUTED))
-                                .child("This folder is empty"),
-                        ),
+                        .child(icon(glyph, 32., alpha(TEXT_MUTED, 0.5)))
+                        .child(div().text_13().text_color(c(TEXT_MUTED)).child(message)),
                 )
             })
             .when(!empty, |list| {

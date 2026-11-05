@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use gpui::{Modifiers, UniformListScrollHandle};
 
 use crate::api::FileInfo;
+use crate::search;
 use crate::sort::{sort_files, Sort};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,6 +23,14 @@ pub enum Listing {
     Failed(String),
 }
 
+/// Whether `Pane::items` hold the folder or the results of a name search below it.
+pub enum Search {
+    Off,
+    Loading,
+    Done,
+    Failed(String),
+}
+
 pub struct Pane {
     pub id: usize,
     /// Virtual path; "" is This PC.
@@ -29,8 +38,13 @@ pub struct Pane {
     back: Vec<String>,
     forward: Vec<String>,
     pub listing: Listing,
-    /// Visible entries in display order (hidden files removed, then sorted).
+    /// Visible entries in display order (hidden files removed, then sorted): the folder, or the
+    /// search results while a search is on.
     pub items: Vec<FileInfo>,
+    pub search_input: String,
+    pub search: Search,
+    /// The folder's entries while `items` hold search results.
+    folder_items: Vec<FileInfo>,
     pub sort: Sort,
     pub view_mode: ViewMode,
     pub show_hidden_files: bool,
@@ -40,6 +54,8 @@ pub struct Pane {
     pub active: Option<usize>,
     /// Bumped per request, so a late response for an old folder is ignored.
     pub generation: u64,
+    /// Bumped per input change and request, so a late search response is ignored.
+    pub search_generation: u64,
     pub list_scroll: UniformListScrollHandle,
     pub grid_scroll: UniformListScrollHandle,
 }
@@ -63,6 +79,9 @@ impl Pane {
             back: Vec::new(),
             forward: Vec::new(),
             items: Vec::new(),
+            search_input: String::new(),
+            search: Search::Off,
+            folder_items: Vec::new(),
             sort,
             view_mode,
             show_hidden_files,
@@ -71,6 +90,7 @@ impl Pane {
             anchor: None,
             active: None,
             generation: 0,
+            search_generation: 0,
             list_scroll: UniformListScrollHandle::new(),
             grid_scroll: UniformListScrollHandle::new(),
         }
@@ -119,6 +139,11 @@ impl Pane {
 
     fn reset(&mut self) {
         self.items.clear();
+        self.folder_items.clear();
+        self.search_input.clear();
+        self.search = Search::Off;
+        // Invalidates a search still in flight for the old folder.
+        self.search_generation += 1;
         self.clear_selection();
         self.listing = if self.path.is_empty() {
             Listing::Root
@@ -138,25 +163,123 @@ impl Pane {
     pub fn finish_load(&mut self, result: anyhow::Result<Vec<FileInfo>>) {
         match result {
             Ok(items) => {
-                let path_at = |index: Option<usize>| -> Option<String> {
-                    index
-                        .and_then(|i| self.items.get(i))
-                        .map(|item| item.path.clone())
-                };
-                let (anchor, active) = (path_at(self.anchor), path_at(self.active));
-                self.items = items
-                    .into_iter()
-                    .filter(|item| self.show_hidden_files || !item.name.starts_with('.'))
-                    .collect();
-                sort_files(&mut self.items, self.sort);
-                let paths: HashSet<&str> =
-                    self.items.iter().map(|item| item.path.as_str()).collect();
-                self.selected.retain(|path| paths.contains(path.as_str()));
-                self.anchor = anchor.and_then(|path| self.index_of(&path));
-                self.active = active.and_then(|path| self.index_of(&path));
+                let items = self.visible(items);
+                if self.is_searching() {
+                    self.folder_items = items;
+                } else {
+                    self.replace_items(items);
+                }
                 self.listing = Listing::Loaded;
             }
             Err(error) => self.listing = Listing::Failed(format!("{error:#}")),
+        }
+    }
+
+    fn visible(&self, items: Vec<FileInfo>) -> Vec<FileInfo> {
+        let mut items: Vec<FileInfo> = items
+            .into_iter()
+            .filter(|item| self.show_hidden_files || !item.name.starts_with('.'))
+            .collect();
+        sort_files(&mut items, self.sort);
+        items
+    }
+
+    /// Swaps in new entries, keeping the selection, anchor and active row by path.
+    fn replace_items(&mut self, items: Vec<FileInfo>) {
+        let path_at = |index: Option<usize>| -> Option<String> {
+            index
+                .and_then(|i| self.items.get(i))
+                .map(|item| item.path.clone())
+        };
+        let (anchor, active) = (path_at(self.anchor), path_at(self.active));
+        self.items = items;
+        let paths: HashSet<&str> = self.items.iter().map(|item| item.path.as_str()).collect();
+        self.selected.retain(|path| paths.contains(path.as_str()));
+        self.anchor = anchor.and_then(|path| self.index_of(&path));
+        self.active = active.and_then(|path| self.index_of(&path));
+    }
+
+    pub fn is_searching(&self) -> bool {
+        !matches!(self.search, Search::Off)
+    }
+
+    /// Applies new field text. Returns whether a (debounced) request should follow.
+    pub fn set_search_input(&mut self, input: String) -> bool {
+        if input == self.search_input {
+            return false;
+        }
+        self.search_input = input;
+        // Whatever search was pending or running is for the old text.
+        self.search_generation += 1;
+        if search::active_query(&self.search_input).is_some() {
+            if !self.is_searching() {
+                self.folder_items = std::mem::take(&mut self.items);
+                self.clear_selection();
+            }
+            self.search = Search::Loading;
+            true
+        } else {
+            self.end_search();
+            false
+        }
+    }
+
+    pub fn clear_search(&mut self) {
+        self.search_input.clear();
+        self.search_generation += 1;
+        self.end_search();
+    }
+
+    fn end_search(&mut self) {
+        if self.is_searching() {
+            self.search = Search::Off;
+            self.items = std::mem::take(&mut self.folder_items);
+            self.clear_selection();
+        }
+    }
+
+    /// The query and request generation for a search about to be sent.
+    pub fn begin_search(&mut self) -> Option<(u64, String)> {
+        let query = search::active_query(&self.search_input)?.to_string();
+        self.search_generation += 1;
+        self.search = Search::Loading;
+        Some((self.search_generation, query))
+    }
+
+    pub fn finish_search(&mut self, result: anyhow::Result<Vec<FileInfo>>) {
+        match result {
+            Ok(items) => {
+                let items = self.visible(items);
+                self.replace_items(items);
+                self.search = Search::Done;
+            }
+            Err(error) => {
+                self.items.clear();
+                self.clear_selection();
+                self.search = Search::Failed(format!("{error:#}"));
+            }
+        }
+    }
+
+    /// What replaces an empty list: an icon and its message.
+    pub fn placeholder(&self) -> Option<(&'static str, String)> {
+        if !self.items.is_empty() {
+            return None;
+        }
+        match &self.search {
+            Search::Off if matches!(self.listing, Listing::Loaded) => {
+                Some(("folder-open", "This folder is empty".into()))
+            }
+            Search::Off => None,
+            Search::Loading => Some(("search", "Searching...".into())),
+            Search::Done => Some((
+                "search",
+                format!(
+                    "No matches for \"{}\" in this folder",
+                    search::active_query(&self.search_input).unwrap_or_default()
+                ),
+            )),
+            Search::Failed(error) => Some(("search", error.clone())),
         }
     }
 
@@ -180,6 +303,7 @@ impl Pane {
     pub fn set_sort(&mut self, sort: Sort) {
         self.sort = sort;
         sort_files(&mut self.items, sort);
+        sort_files(&mut self.folder_items, sort);
         self.anchor = None;
         self.active = None;
     }
@@ -363,5 +487,135 @@ mod tests {
         assert!(pane.navigate(String::new()));
         assert_ne!(pane.begin_load(), pending);
         assert!(matches!(pane.listing, Listing::Root));
+    }
+
+    fn hit(path: &str) -> FileInfo {
+        let name = path.rsplit('/').next().unwrap();
+        FileInfo {
+            path: path.into(),
+            ..file(name)
+        }
+    }
+
+    fn pane_in_folder() -> Pane {
+        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
+        pane.finish_load(Ok(["a", "b"].map(file).to_vec()));
+        pane
+    }
+
+    fn names(pane: &Pane) -> Vec<&str> {
+        pane.items.iter().map(|item| item.name.as_str()).collect()
+    }
+
+    #[test]
+    fn one_character_does_not_search() {
+        let mut pane = pane_in_folder();
+        assert!(!pane.set_search_input("a".into()));
+        assert!(!pane.is_searching());
+        assert!(pane.begin_search().is_none());
+        assert_eq!(names(&pane), ["a", "b"]);
+    }
+
+    #[test]
+    fn results_replace_the_folder_and_clearing_restores_it() {
+        let mut pane = pane_in_folder();
+        pane.click(0, Modifiers::default());
+        assert!(pane.set_search_input(" ca ".into()));
+        assert!(pane.items.is_empty() && pane.selected.is_empty());
+        assert_eq!(pane.placeholder().unwrap().1, "Searching...");
+
+        let (generation, query) = pane.begin_search().unwrap();
+        assert_eq!(query, "ca");
+        assert_eq!(generation, pane.search_generation);
+        pane.finish_search(Ok(vec![hit("d/x/cat"), hit("d/y/car")]));
+        assert_eq!(names(&pane), ["car", "cat"]);
+        assert!(pane.placeholder().is_none());
+        // Results carry their own paths, so nested hits stay selectable.
+        pane.click(1, Modifiers::default());
+        assert!(pane.is_selected("d/x/cat"));
+
+        pane.clear_search();
+        assert!(!pane.is_searching() && pane.search_input.is_empty());
+        assert_eq!(names(&pane), ["a", "b"]);
+        assert!(pane.selected.is_empty());
+    }
+
+    #[test]
+    fn shortening_the_text_below_the_minimum_leaves_search() {
+        let mut pane = pane_in_folder();
+        pane.set_search_input("ab".into());
+        pane.begin_search();
+        pane.finish_search(Ok(vec![hit("d/ab")]));
+        assert!(!pane.set_search_input("a".into()));
+        assert_eq!(names(&pane), ["a", "b"]);
+        assert!(matches!(pane.search, Search::Off));
+    }
+
+    #[test]
+    fn later_input_invalidates_the_request_in_flight() {
+        let mut pane = pane_in_folder();
+        pane.set_search_input("ca".into());
+        let (stale, _) = pane.begin_search().unwrap();
+        pane.set_search_input("cat".into());
+        assert_ne!(stale, pane.search_generation);
+        // The workspace drops responses whose generation no longer matches.
+        let (current, query) = pane.begin_search().unwrap();
+        assert_eq!(query, "cat");
+        assert_eq!(current, pane.search_generation);
+        assert!(matches!(pane.search, Search::Loading));
+    }
+
+    #[test]
+    fn empty_and_failed_searches_explain_themselves() {
+        let mut pane = pane_in_folder();
+        pane.set_search_input("zz".into());
+        pane.begin_search();
+        pane.finish_search(Ok(vec![]));
+        assert_eq!(
+            pane.placeholder().unwrap().1,
+            "No matches for \"zz\" in this folder"
+        );
+        pane.finish_search(Err(anyhow::anyhow!("Search path not found")));
+        assert_eq!(pane.placeholder().unwrap().1, "Search path not found");
+        assert!(pane.items.is_empty());
+    }
+
+    #[test]
+    fn results_follow_hidden_files_and_sort() {
+        let mut pane = pane_in_folder();
+        pane.set_search_input("ab".into());
+        pane.begin_search();
+        pane.finish_search(Ok(vec![hit("d/b/zab"), hit("d/.ab"), hit("d/aab")]));
+        assert_eq!(names(&pane), ["aab", "zab"]);
+        pane.set_sort(Sort {
+            field: crate::sort::SortField::Name,
+            dir: crate::sort::SortDir::Desc,
+        });
+        assert_eq!(names(&pane), ["zab", "aab"]);
+        pane.clear_search();
+        assert_eq!(names(&pane), ["b", "a"]);
+    }
+
+    #[test]
+    fn a_folder_reload_during_search_waits_behind_the_results() {
+        let mut pane = pane_in_folder();
+        pane.set_search_input("ab".into());
+        pane.begin_search();
+        pane.finish_search(Ok(vec![hit("d/ab")]));
+        pane.finish_load(Ok(vec![file("a"), file("b"), file("c")]));
+        assert_eq!(names(&pane), ["ab"]);
+        pane.clear_search();
+        assert_eq!(names(&pane), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn opening_another_folder_leaves_search() {
+        let mut pane = pane_in_folder();
+        pane.set_search_input("ab".into());
+        let (stale, _) = pane.begin_search().unwrap();
+        assert!(pane.navigate("e".into()));
+        assert!(!pane.is_searching() && pane.search_input.is_empty());
+        assert_ne!(stale, pane.search_generation);
+        assert!(pane.items.is_empty());
     }
 }
