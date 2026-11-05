@@ -203,6 +203,7 @@ impl Workspace {
                         .child(div().pb(px(8.)).children(place_rows)),
                 )
             })
+            .children(self.render_devices(cx))
             // The desktop shell passes onTrash, so the Trash entry is always shown.
             .child(
                 div()

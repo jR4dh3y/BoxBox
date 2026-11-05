@@ -240,6 +240,19 @@ impl Api {
         Ok(bytes)
     }
 
+    pub fn volumes(&self) -> Result<crate::devices::VolumeList> {
+        self.get("/desktop/volumes")
+    }
+
+    pub fn volume_action(&self, id: &str, action: &str) -> Result<()> {
+        self.send(
+            "POST",
+            &format!("/desktop/volumes/{}/{action}", encode_query(id)),
+            None,
+        )?;
+        Ok(())
+    }
+
     pub fn clipboard(&self) -> Result<crate::clipboard::ClipContents> {
         self.get("/desktop/clipboard")
     }

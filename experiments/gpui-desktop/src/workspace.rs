@@ -42,7 +42,9 @@ actions!(
         PreviewPrevious,
         PreviewNext,
         PreviewSelection,
-        OpenSelection
+        OpenSelection,
+        ShowShortcuts,
+        EditLocation
     ]
 );
 
@@ -74,6 +76,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("alt-up", GoUp, context),
         KeyBinding::new("ctrl-h", ToggleHidden, context),
         KeyBinding::new("space", PreviewSelection, context),
+        KeyBinding::new("f1", ShowShortcuts, context),
+        KeyBinding::new("ctrl-l", EditLocation, context),
         KeyBinding::new("enter", OpenSelection, context),
         KeyBinding::new("escape", ClosePreview, Some("Preview")),
         KeyBinding::new("left", PreviewPrevious, Some("Preview")),
@@ -122,6 +126,8 @@ pub struct Workspace {
     pub(crate) trash: crate::trash::TrashState,
     pub(crate) thumbs: crate::media::Thumbnails,
     pub(crate) preview: Option<crate::media::Preview>,
+    pub(crate) volumes: Vec<crate::devices::Volume>,
+    pub(crate) location: Option<crate::location::LocationEdit>,
     pub(crate) tabs: Vec<Tab>,
     pub(crate) active_tab: usize,
     next_pane_id: usize,
@@ -156,6 +162,8 @@ impl Workspace {
             trash: Default::default(),
             thumbs: Default::default(),
             preview: None,
+            volumes: Vec::new(),
+            location: None,
             tabs: vec![Tab::new(Pane::new(0, initial_path))],
             active_tab: 0,
             next_pane_id: 1,
@@ -169,6 +177,7 @@ impl Workspace {
         workspace.load_drives(cx);
         workspace.watch_jobs(cx);
         workspace.load_preferences(cx);
+        workspace.watch_volumes(cx);
         workspace.load_active(cx);
         workspace
     }
@@ -243,7 +252,7 @@ impl Workspace {
     }
 
     /// Roots feed the sidebar and breadcrumbs; stats feed the This PC cards.
-    fn load_drives(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn load_drives(&mut self, cx: &mut Context<Self>) {
         let api = self.api.clone();
         cx.spawn(async move |this, cx| {
             let result = cx
@@ -560,6 +569,13 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &NextTab, _, cx| this.cycle_tab(1, cx)))
             .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.cycle_tab(-1, cx)))
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
+            .on_action(cx.listener(|this, _: &ShowShortcuts, _, cx| {
+                this.dialog = Some(crate::dialogs::Dialog::Shortcuts);
+                cx.notify();
+            }))
+            .on_action(
+                cx.listener(|this, _: &EditLocation, window, cx| this.edit_location(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &PreviewSelection, window, cx| {
                 if let Some(item) = this
                     .pane()

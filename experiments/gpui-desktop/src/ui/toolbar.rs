@@ -110,9 +110,10 @@ impl Workspace {
                             .cursor_pointer()
                             .hover(|style| style.text_color(c(WHITE)).underline())
                             .child(crumb.label)
-                            .on_click(
-                                cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx)),
-                            ),
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.navigate(path.clone(), cx)
+                            })),
                     );
                 }
             }
@@ -142,7 +143,28 @@ impl Workspace {
                     .child(icon("home", 14., c(TEXT_SECONDARY)))
                     .on_click(cx.listener(|this, _, _, cx| this.navigate(String::new(), cx))),
             )
-            .child(content)
+            .map(
+                |bar| match self.location.as_ref().filter(|edit| edit.pane == pane_id) {
+                    Some(edit) => {
+                        bar.child(div().flex_1().min_w_0().text_13().child(edit.input.clone()))
+                    }
+                    None => bar.child(
+                        div()
+                            .id("location")
+                            .flex()
+                            .flex_1()
+                            .min_w_0()
+                            .cursor_text()
+                            .child(content)
+                            .on_click(cx.listener(|this, event: &gpui::ClickEvent, window, cx| {
+                                // Crumb clicks navigate; a click on empty bar space edits.
+                                if event.click_count() == 1 {
+                                    this.edit_location(window, cx);
+                                }
+                            })),
+                    ),
+                },
+            )
     }
 
     pub(crate) fn render_history_buttons(

@@ -26,11 +26,12 @@ pub struct Sort {
     pub dir: SortDir,
 }
 
+/// PR #211: newest first (folders still lead).
 impl Default for Sort {
     fn default() -> Self {
         Self {
-            field: SortField::Name,
-            dir: SortDir::Asc,
+            field: SortField::Modified,
+            dir: SortDir::Desc,
         }
     }
 }
@@ -190,9 +191,10 @@ mod tests {
             dated("b.txt", false, "2026-03-01T00:00:00Z"),
             dated("a.txt", false, "2026-03-01T00:00:00Z"),
             dated("dir", true, "2020-01-01T00:00:00Z"),
+            dated("zz.txt", false, "2026-04-01T00:00:00Z"),
         ];
         sort_files(&mut items, Sort::default());
-        assert_eq!(names(&items), ["dir", "a.txt", "b.txt", "old.txt"]);
+        assert_eq!(names(&items), ["dir", "zz.txt", "a.txt", "b.txt", "old.txt"]);
     }
 
     #[test]
