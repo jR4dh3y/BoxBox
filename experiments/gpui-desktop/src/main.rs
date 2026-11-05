@@ -55,7 +55,8 @@ fn fontconfig_family(pattern: &str, fallback: &str) -> SharedString {
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let initial_path = std::env::args().nth(1).unwrap_or_default();
+    // Like the Electrobun launcher, accept an absolute local path as well as a BoxBox path.
+    let initial_path = std::env::args().nth(1).map(|arg| location::parse_location(&arg)).unwrap_or_default();
     let launches = match instance::claim(&initial_path) {
         Ok(instance::Instance::Forwarded) => return,
         Ok(instance::Instance::Primary(launches)) => Some(launches),
