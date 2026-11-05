@@ -1,0 +1,1 @@
+{"rustc":11835527281324007204,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[1346940721418053984,"build_script_build",false,15744358448823681046]],"local":[{"RerunIfEnvChanged":{"var":"RUST_FONTCONFIG_DLOPEN","val":null}}],"rustflags":["-C","link-arg=-Wl,-rpath,/home/linuxbrew/.linuxbrew/lib"],"config":0,"compile_kind":0}
