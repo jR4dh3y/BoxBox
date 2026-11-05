@@ -230,6 +230,16 @@ impl Api {
         Ok(self.get::<Results>(&endpoint)?.results)
     }
 
+    /// A response body of at most `limit` bytes.
+    pub fn bytes(&self, endpoint: &str, limit: u64) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(
+            &mut std::io::Read::take(self.call(endpoint)?.into_reader(), limit),
+            &mut bytes,
+        )?;
+        Ok(bytes)
+    }
+
     pub fn clipboard(&self) -> Result<crate::clipboard::ClipContents> {
         self.get("/desktop/clipboard")
     }
@@ -399,7 +409,7 @@ pub fn encode_query(value: &str) -> String {
 }
 
 /// `encodeRoutePath`: each segment percent-encoded like `encodeURIComponent`.
-fn encode_path(path: &str) -> String {
+pub fn encode_path(path: &str) -> String {
     path.split('/')
         .map(|segment| {
             segment

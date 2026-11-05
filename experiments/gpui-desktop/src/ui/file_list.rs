@@ -281,8 +281,8 @@ impl Workspace {
                     .child(div().truncate().child(file_date(&item.mod_time))),
             )
         })
-        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-            this.activate_item(index, &path, is_dir, event, cx)
+        .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+            this.activate_item(index, &path, is_dir, event, window, cx)
         }))
         .on_mouse_down(
             gpui::MouseButton::Right,
@@ -319,6 +319,7 @@ impl Workspace {
         path: &str,
         is_dir: bool,
         event: &ClickEvent,
+        window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
         if event.click_count() >= 2 {
@@ -333,6 +334,14 @@ impl Workspace {
             return;
         }
         self.pane_mut().click(index, event.modifiers());
+        // "Preview on single click" previews files on a plain click.
+        let plain =
+            !(event.modifiers().shift || event.modifiers().control || event.modifiers().platform);
+        if plain && !is_dir && self.preferences.preview_on_single_click {
+            if let Some(item) = self.pane().items.get(index).cloned() {
+                self.open_preview(item, window, cx);
+            }
+        }
         cx.notify();
     }
 }

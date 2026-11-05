@@ -26,8 +26,6 @@ pub enum ClipOp {
 pub struct ClipItem {
     pub path: String,
     pub name: String,
-    #[serde(default)]
-    pub is_dir: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -94,7 +92,6 @@ impl Workspace {
             .map(|item| ClipItem {
                 path: item.path,
                 name: item.name,
-                is_dir: item.is_dir,
             })
             .collect();
         if items.is_empty() || (op == ClipOp::Cut && !self.can_write_here()) {
@@ -360,7 +357,6 @@ mod tests {
         ClipItem {
             path: format!("home/src/{name}"),
             name: name.into(),
-            is_dir: false,
         }
     }
 

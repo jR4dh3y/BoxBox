@@ -11,6 +11,7 @@ mod dnd;
 mod drag_out;
 mod format;
 mod jobs;
+mod media;
 mod notifications;
 mod ops;
 mod pane;

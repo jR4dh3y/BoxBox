@@ -11,6 +11,7 @@ use crate::workspace::Workspace;
 pub enum MenuAction {
     Open,
     OpenWith,
+    Preview,
     OpenTerminal,
     NewFile,
     NewFolder,
@@ -118,6 +119,13 @@ pub fn file_menu(context: &MenuContext) -> Vec<MenuEntry> {
                 "Open with…",
                 "app-window",
                 None,
+                false,
+            ));
+            entries.push(item(
+                MenuAction::Preview,
+                "Preview",
+                "eye",
+                Some("Space"),
                 false,
             ));
         }
@@ -267,6 +275,11 @@ impl Workspace {
             MenuAction::Open => {
                 if let Some(item) = selected.first() {
                     self.open_item(item.clone(), cx);
+                }
+            }
+            MenuAction::Preview => {
+                if let Some(item) = selected.first() {
+                    self.open_preview(item.clone(), window, cx);
                 }
             }
             MenuAction::OpenWith => {

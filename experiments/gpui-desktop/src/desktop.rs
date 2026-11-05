@@ -35,8 +35,6 @@ pub struct App {
 #[serde(rename_all = "camelCase")]
 pub struct Apps {
     #[serde(default)]
-    pub mime_type: String,
-    #[serde(default)]
     pub recommended: Vec<App>,
     #[serde(default)]
     pub other: Vec<App>,
@@ -494,7 +492,6 @@ mod tests {
     #[test]
     fn preselects_default_then_first_recommended() {
         let apps = Apps {
-            mime_type: "text/plain".into(),
             recommended: vec![app("gedit", false), app("kate", true)],
             other: vec![],
         };

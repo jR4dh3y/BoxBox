@@ -140,11 +140,18 @@ impl Workspace {
                 .border_1()
                 .border_color(c(BORDER_PRIMARY))
                 .bg(c(SURFACE_PRIMARY))
-                .child(thin_icon(
-                    file_icon(&item.name, item.is_dir),
-                    30.,
-                    c(if item.is_dir { FOLDER } else { TEXT_SECONDARY }),
-                )),
+                .map(|frame| match self.thumbnail(item) {
+                    Some(image) => frame.child(
+                        gpui::img(image)
+                            .size_full()
+                            .object_fit(gpui::ObjectFit::Cover),
+                    ),
+                    None => frame.child(thin_icon(
+                        file_icon(&item.name, item.is_dir),
+                        30.,
+                        c(if item.is_dir { FOLDER } else { TEXT_SECONDARY }),
+                    )),
+                }),
         )
         .child(
             div()
@@ -187,8 +194,8 @@ impl Workspace {
                         }),
                 ),
         )
-        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-            this.activate_item(index, &path, is_dir, event, cx)
+        .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+            this.activate_item(index, &path, is_dir, event, window, cx)
         }))
         .on_mouse_down(
             gpui::MouseButton::Right,

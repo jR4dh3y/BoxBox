@@ -37,7 +37,12 @@ actions!(
         NextTab,
         PreviousTab,
         GoUp,
-        ToggleHidden
+        ToggleHidden,
+        ClosePreview,
+        PreviewPrevious,
+        PreviewNext,
+        PreviewSelection,
+        OpenSelection
     ]
 );
 
@@ -68,6 +73,11 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-shift-tab", PreviousTab, context),
         KeyBinding::new("alt-up", GoUp, context),
         KeyBinding::new("ctrl-h", ToggleHidden, context),
+        KeyBinding::new("space", PreviewSelection, context),
+        KeyBinding::new("enter", OpenSelection, context),
+        KeyBinding::new("escape", ClosePreview, Some("Preview")),
+        KeyBinding::new("left", PreviewPrevious, Some("Preview")),
+        KeyBinding::new("right", PreviewNext, Some("Preview")),
     ]);
 }
 
@@ -110,6 +120,8 @@ pub struct Workspace {
     pub(crate) search_fields: std::collections::HashMap<usize, crate::search::SearchField>,
     pub(crate) watches: std::collections::HashMap<usize, crate::watch::Watch>,
     pub(crate) trash: crate::trash::TrashState,
+    pub(crate) thumbs: crate::media::Thumbnails,
+    pub(crate) preview: Option<crate::media::Preview>,
     pub(crate) tabs: Vec<Tab>,
     pub(crate) active_tab: usize,
     next_pane_id: usize,
@@ -142,6 +154,8 @@ impl Workspace {
             search_fields: Default::default(),
             watches: Default::default(),
             trash: Default::default(),
+            thumbs: Default::default(),
+            preview: None,
             tabs: vec![Tab::new(Pane::new(0, initial_path))],
             active_tab: 0,
             next_pane_id: 1,
@@ -304,6 +318,7 @@ impl Workspace {
                     .filter(|pane| pane.generation == generation)
                 {
                     pane.finish_load(result);
+                    this.request_thumbnails(pane_id, cx);
                     cx.notify();
                 }
             })
@@ -545,6 +560,21 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &NextTab, _, cx| this.cycle_tab(1, cx)))
             .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.cycle_tab(-1, cx)))
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
+            .on_action(cx.listener(|this, _: &PreviewSelection, window, cx| {
+                if let Some(item) = this
+                    .pane()
+                    .selected_items()
+                    .into_iter()
+                    .find(|item| !item.is_dir)
+                {
+                    this.open_preview(item, window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &OpenSelection, _, cx| {
+                if let [item] = this.pane().selected_items().as_slice() {
+                    this.open_item(item.clone(), cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| {
                 this.update_preferences(|prefs| prefs.show_hidden = !prefs.show_hidden, cx)
             }))
@@ -580,6 +610,7 @@ impl Render for Workspace {
                     .children(self.render_jobs(cx))
                     .child(self.render_toasts(cx)),
             )
+            .children(self.render_preview(cx))
             .children(self.render_context_menu(window, cx))
             .children(self.render_dialog(cx))
     }

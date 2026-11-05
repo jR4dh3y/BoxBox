@@ -58,6 +58,8 @@ impl Workspace {
                     ))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.pane_mut().set_view_mode(target);
+                        let id = this.pane().id;
+                        this.request_thumbnails(id, cx);
                         cx.notify();
                     }))
             };

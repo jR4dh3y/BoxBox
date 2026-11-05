@@ -36,7 +36,6 @@ pub fn local_paths(paths: &ExternalPaths) -> Vec<ClipItem> {
             (!relative.is_empty()).then(|| ClipItem {
                 path: format!("root/{relative}"),
                 name,
-                is_dir: path.is_dir(),
             })
         })
         .collect()
@@ -67,7 +66,6 @@ impl Workspace {
             .map(|item| ClipItem {
                 path: item.path,
                 name: item.name,
-                is_dir: item.is_dir,
             })
             .collect();
         let op = if window.modifiers().control {
@@ -104,7 +102,6 @@ mod tests {
         ClipItem {
             path: path.into(),
             name: path.rsplit('/').next().unwrap().into(),
-            is_dir: true,
         }
     }
 
