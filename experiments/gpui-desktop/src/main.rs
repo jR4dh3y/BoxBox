@@ -3,13 +3,18 @@
 
 mod api;
 mod assets;
+mod dialogs;
 mod drag_out;
 mod format;
+mod notifications;
+mod ops;
 mod pane;
+mod preferences;
 mod server;
 mod sort;
 mod theme;
 mod ui;
+mod undo;
 mod workspace;
 
 use std::process::Command;
@@ -73,6 +78,7 @@ fn main() {
         .with_assets(assets::Assets)
         .run(move |cx: &mut App| {
             workspace::bind_keys(cx);
+            ui::text_input::bind_keys(cx);
             let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
             cx.open_window(
                 WindowOptions {

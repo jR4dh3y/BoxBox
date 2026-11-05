@@ -135,6 +135,7 @@ mod tests {
             size,
             is_dir,
             mod_time: String::new(),
+            permissions: String::new(),
         }
     }
 

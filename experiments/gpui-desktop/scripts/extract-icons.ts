@@ -9,7 +9,12 @@ const ICONS = [
 	'Download', 'File', 'FileArchive', 'FileAudio', 'FileCode', 'FileImage', 'FileJson',
 	'FileSpreadsheet', 'FileText', 'FileVideo', 'Folder', 'FolderOpen', 'Globe', 'HardDrive',
 	'Home', 'Image', 'LayoutGrid', 'List', 'Monitor', 'Music', 'Palette', 'PanelLeft', 'Plus',
-	'RefreshCw', 'Search', 'Server', 'Settings', 'Star', 'Trash2', 'Video', 'X'
+	'RefreshCw', 'Search', 'Server', 'Settings', 'Star', 'Trash2', 'Video', 'X',
+	'Pencil', 'FolderPlus', 'FilePlus', 'Info', 'Undo2', 'Copy', 'Scissors', 'ClipboardPaste',
+	'ExternalLink', 'Terminal', 'CircleCheck', 'CircleAlert', 'TriangleAlert', 'Eye', 'EyeOff',
+	'AppWindow', 'RotateCcw', 'Usb', 'Power', 'Keyboard', 'Upload', 'Link', 'Check', 'ArrowUp',
+	'Loader', 'CircleHelp', 'Cloud', 'Unplug', 'Ellipsis', 'Save', 'ZoomIn', 'ZoomOut', 'StarOff',
+	'FolderInput', 'Ban', 'SquareCheck', 'Square'
 ];
 
 const root = join(import.meta.dir, '../../../frontend/node_modules/lucide-svelte/dist');

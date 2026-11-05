@@ -4,9 +4,11 @@ mod browser;
 mod drives;
 mod file_grid;
 mod file_list;
+pub mod modal;
 mod sidebar;
 mod status_bar;
 mod tabs;
+pub mod text_input;
 mod toolbar;
 
 use gpui::{px, svg, Rgba, Styled, Svg};

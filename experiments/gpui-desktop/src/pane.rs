@@ -39,6 +39,8 @@ pub struct Pane {
     pub active: Option<usize>,
     /// Bumped per request, so a late response for an old folder is ignored.
     pub generation: u64,
+    /// Selected once the next listing arrives, e.g. a newly created item.
+    pub pending_select: Option<String>,
     pub list_scroll: UniformListScrollHandle,
     pub grid_scroll: UniformListScrollHandle,
 }
@@ -63,6 +65,7 @@ impl Pane {
             anchor: None,
             active: None,
             generation: 0,
+            pending_select: None,
             list_scroll: UniformListScrollHandle::new(),
             grid_scroll: UniformListScrollHandle::new(),
         }
@@ -148,6 +151,11 @@ impl Pane {
                 self.anchor = anchor.and_then(|path| self.index_of(&path));
                 self.active = active.and_then(|path| self.index_of(&path));
                 self.listing = Listing::Loaded;
+                if let Some(path) = self.pending_select.take() {
+                    if self.index_of(&path).is_some() {
+                        self.select_path(&path);
+                    }
+                }
             }
             Err(error) => self.listing = Listing::Failed(format!("{error:#}")),
         }
@@ -232,6 +240,22 @@ impl Pane {
         }
     }
 
+    /// Selected items in display order.
+    pub fn selected_items(&self) -> Vec<FileInfo> {
+        self.items
+            .iter()
+            .filter(|item| self.is_selected(&item.path))
+            .cloned()
+            .collect()
+    }
+
+    pub fn select_path(&mut self, path: &str) {
+        self.selected.clear();
+        self.selected.insert(path.to_string());
+        self.anchor = self.items.iter().position(|item| item.path == path);
+        self.active = self.anchor;
+    }
+
     pub fn select_all(&mut self) {
         self.selected = self.items.iter().map(|item| item.path.clone()).collect();
     }
@@ -263,6 +287,7 @@ mod tests {
             size: 10,
             is_dir: false,
             mod_time: String::new(),
+            permissions: String::new(),
         }
     }
 

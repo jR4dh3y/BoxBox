@@ -15,6 +15,8 @@ pub struct FileInfo {
     pub size: u64,
     pub is_dir: bool,
     pub mod_time: String,
+    #[serde(default)]
+    pub permissions: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +37,8 @@ pub enum RootKind {
 pub struct MountPoint {
     pub name: String,
     pub label: Option<String>,
+    #[serde(default, rename = "readOnly")]
+    pub read_only: bool,
     #[serde(default, deserialize_with = "root_kind")]
     pub kind: RootKind,
 }
@@ -149,6 +153,69 @@ impl Api {
         Ok(target)
     }
 
+    /// `POST /files/<dir>`: never overwrites; 409 when the name exists.
+    pub fn create(&self, dir: &str, name: &str, directory: bool) -> Result<()> {
+        let kind = if directory { "directory" } else { "file" };
+        let body = serde_json::json!({ "name": name, "type": kind });
+        self.send("POST", &format!("/files/{}", encode_path(dir)), Some(body))?;
+        Ok(())
+    }
+
+    /// `PUT /files/<path>`: rename or move within one source.
+    pub fn rename(&self, path: &str, new_path: &str) -> Result<()> {
+        let body = serde_json::json!({ "newPath": new_path });
+        self.send("PUT", &format!("/files/{}", encode_path(path)), Some(body))?;
+        Ok(())
+    }
+
+    /// Permanent delete; folders need `confirm=true`.
+    pub fn delete(&self, path: &str) -> Result<()> {
+        self.send(
+            "DELETE",
+            &format!("/files/{}?confirm=true", encode_path(path)),
+            None,
+        )?;
+        Ok(())
+    }
+
+    pub fn trash(&self, path: &str) -> Result<TrashItem> {
+        #[derive(Deserialize)]
+        struct Trashed {
+            item: TrashItem,
+        }
+        let body = serde_json::json!({ "path": path });
+        Ok(self
+            .send("POST", "/desktop/trash", Some(body))?
+            .into_json::<Trashed>()?
+            .item)
+    }
+
+    pub fn trash_items(&self) -> Result<Vec<TrashItem>> {
+        #[derive(Deserialize)]
+        struct Listing {
+            items: Vec<TrashItem>,
+        }
+        Ok(self.get::<Listing>("/desktop/trash")?.items)
+    }
+
+    pub fn restore(&self, id: &str) -> Result<()> {
+        self.send(
+            "POST",
+            "/desktop/trash/restore",
+            Some(serde_json::json!({ "id": id })),
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_from_trash(&self, id: &str) -> Result<()> {
+        self.send(
+            "POST",
+            "/desktop/trash/delete",
+            Some(serde_json::json!({ "id": id })),
+        )?;
+        Ok(())
+    }
+
     fn get<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
         self.call(endpoint)?
             .into_json()
@@ -156,9 +223,22 @@ impl Api {
     }
 
     fn call(&self, endpoint: &str) -> Result<ureq::Response> {
+        self.send("GET", endpoint, None)
+    }
+
+    pub(crate) fn send(
+        &self,
+        method: &str,
+        endpoint: &str,
+        body: Option<serde_json::Value>,
+    ) -> Result<ureq::Response> {
         let url = format!("{}{endpoint}", self.base);
-        let request = self.authorize(self.agent.get(&url));
-        match request.call() {
+        let request = self.authorize(self.agent.request(method, &url));
+        let sent = match body {
+            Some(body) => request.send_json(body),
+            None => request.call(),
+        };
+        match sent {
             Ok(response) => Ok(response),
             Err(ureq::Error::Status(code, response)) => {
                 let body = response.into_string().unwrap_or_default();
@@ -189,6 +269,18 @@ fn parse_directory(listing: FileList) -> Result<Vec<FileInfo>> {
             })
         })
         .collect()
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashItem {
+    pub id: String,
+    pub name: String,
+    pub original_path: String,
+    pub deleted_at: String,
+    pub is_dir: bool,
+    #[serde(default)]
+    pub can_restore: bool,
 }
 
 fn server_message(body: &str) -> Option<String> {
@@ -239,6 +331,7 @@ mod tests {
             size: 12,
             is_dir: false,
             mod_time: String::new(),
+            permissions: String::new(),
         }
     }
 

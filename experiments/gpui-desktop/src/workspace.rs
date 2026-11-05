@@ -21,7 +21,14 @@ actions!(
         NewTab,
         CloseTab,
         SelectAll,
-        ClearSelection
+        ClearSelection,
+        NewFolder,
+        NewFile,
+        Rename,
+        MoveToTrash,
+        DeletePermanently,
+        Properties,
+        Undo
     ]
 );
 
@@ -37,6 +44,12 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-w", CloseTab, context),
         KeyBinding::new("ctrl-a", SelectAll, context),
         KeyBinding::new("escape", ClearSelection, context),
+        KeyBinding::new("ctrl-shift-n", NewFolder, context),
+        KeyBinding::new("f2", Rename, context),
+        KeyBinding::new("delete", MoveToTrash, context),
+        KeyBinding::new("shift-delete", DeletePermanently, context),
+        KeyBinding::new("alt-enter", Properties, context),
+        KeyBinding::new("ctrl-z", Undo, context),
     ]);
 }
 
@@ -53,13 +66,17 @@ pub struct Fonts {
 
 pub struct Workspace {
     pub(crate) api: Arc<Api>,
+    pub(crate) dialog: Option<crate::dialogs::Dialog>,
+    pub(crate) toasts: crate::notifications::Toasts,
+    pub(crate) undo: Option<crate::undo::Undo>,
+    pub(crate) preferences: crate::preferences::Preferences,
     pub(crate) tabs: Vec<Pane>,
     pub(crate) active_tab: usize,
     next_pane_id: usize,
     pub(crate) roots: Vec<MountPoint>,
     pub(crate) drives: Load<Vec<DriveStats>>,
     pub(crate) fonts: Fonts,
-    focus_handle: FocusHandle,
+    pub(crate) focus_handle: FocusHandle,
 }
 
 impl Workspace {
@@ -74,6 +91,10 @@ impl Workspace {
         window.focus(&focus_handle);
         let mut workspace = Self {
             api: Arc::new(api),
+            dialog: None,
+            toasts: Default::default(),
+            undo: None,
+            preferences: Default::default(),
             tabs: vec![Pane::new(0, initial_path)],
             active_tab: 0,
             next_pane_id: 1,
@@ -146,6 +167,20 @@ impl Workspace {
         .detach();
     }
 
+    pub(crate) fn reload(&mut self, cx: &mut Context<Self>) {
+        if self.pane().is_at_root() {
+            self.load_drives(cx);
+        } else {
+            self.load_active(cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn reload_and_select(&mut self, path: String, cx: &mut Context<Self>) {
+        self.pane_mut().pending_select = Some(path);
+        self.reload(cx);
+    }
+
     pub(crate) fn navigate(&mut self, path: String, cx: &mut Context<Self>) {
         if self.pane_mut().navigate(path) {
             self.load_active(cx);
@@ -168,12 +203,7 @@ impl Workspace {
     }
 
     pub(crate) fn refresh(&mut self, _: &Refresh, _: &mut Window, cx: &mut Context<Self>) {
-        if self.pane().is_at_root() {
-            self.load_drives(cx);
-        } else {
-            self.load_active(cx);
-        }
-        cx.notify();
+        self.reload(cx);
     }
 
     pub(crate) fn new_tab(&mut self, _: &NewTab, _: &mut Window, cx: &mut Context<Self>) {
@@ -226,6 +256,20 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::close_tab))
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(Self::clear_selection))
+            .on_action(
+                cx.listener(|this, _: &NewFolder, window, cx| this.open_create(true, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &NewFile, window, cx| this.open_create(false, window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &Rename, window, cx| this.open_rename(window, cx)))
+            .on_action(cx.listener(|this, _: &MoveToTrash, _, cx| this.open_delete(true, cx)))
+            .on_action(
+                cx.listener(|this, _: &DeletePermanently, _, cx| this.open_delete(false, cx)),
+            )
+            .on_action(cx.listener(|this, _: &Properties, _, cx| this.open_properties(cx)))
+            .on_action(cx.listener(Self::undo))
+            .relative()
             .size_full()
             .flex()
             .bg(c(SURFACE_PRIMARY))
@@ -245,5 +289,7 @@ impl Render for Workspace {
                     .child(self.render_tabs(cx))
                     .child(self.render_browser(window, cx)),
             )
+            .child(self.render_toasts(cx))
+            .children(self.render_dialog(cx))
     }
 }
