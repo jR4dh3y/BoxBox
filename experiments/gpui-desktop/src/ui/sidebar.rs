@@ -123,6 +123,46 @@ impl Workspace {
             place_rows.push(self.nav_item(format!("place-{index}").into(), item, active, cx));
         }
 
+        let favorites_empty = self.preferences.favorite_folders.is_empty();
+        let mut favorite_rows = Vec::new();
+        for (index, favorite) in self.preferences.favorite_folders.iter().enumerate() {
+            let active = is_active(&current, &favorite.path);
+            let path = favorite.path.clone();
+            let item = NavItem {
+                name: favorite.name.clone().into(),
+                path: favorite.path.clone(),
+                icon: "star",
+            };
+            favorite_rows.push(
+                div()
+                    .id(("favorite", index))
+                    .relative()
+                    .group("favorite")
+                    .child(self.nav_item(format!("favorite-item-{index}").into(), item, active, cx))
+                    .child(
+                        div()
+                            .id(("unpin", index))
+                            .absolute()
+                            .top(px(4.))
+                            .right(px(8.))
+                            .size(px(24.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(4.))
+                            .invisible()
+                            .group_hover("favorite", |style| style.visible())
+                            .hover(|style| style.bg(c(SURFACE_SECONDARY)))
+                            .child(icon("x", 14., c(TEXT_MUTED)))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.unpin(&path, cx);
+                            })),
+                    )
+                    .into_any_element(),
+            );
+        }
+
         div()
             .id("sidebar")
             .w(px(SIDEBAR_WIDTH))
@@ -166,14 +206,19 @@ impl Workspace {
             )
             .child(
                 section().child(section_header("Favorites")).child(
-                    div().pb(px(8.)).child(
-                        div()
-                            .px(px(20.))
-                            .py(px(8.))
-                            .text_xs_tw()
-                            .text_color(c(TEXT_MUTED))
-                            .child("No favorites yet"),
-                    ),
+                    div()
+                        .pb(px(8.))
+                        .children(favorite_rows)
+                        .when(favorites_empty, |list| {
+                            list.child(
+                                div()
+                                    .px(px(20.))
+                                    .py(px(8.))
+                                    .text_xs_tw()
+                                    .text_color(c(TEXT_MUTED))
+                                    .child("No favorites yet"),
+                            )
+                        }),
                 ),
             )
     }

@@ -126,6 +126,12 @@ impl Workspace {
             .flex()
             .flex_col()
             .bg(c(SURFACE_PRIMARY))
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    this.open_background_menu(event.position, cx)
+                }),
+            )
             .child(self.render_header(shown, cx))
             .when(empty, |list| {
                 list.child(
@@ -261,6 +267,13 @@ impl Workspace {
         .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
             this.activate_item(index, &path, is_dir, event, cx)
         }))
+        .on_mouse_down(
+            gpui::MouseButton::Right,
+            cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                this.open_item_menu(index, event.position, cx);
+            }),
+        )
     }
 
     /// Shared by list rows and grid tiles: select on click, open folders on double-click.
@@ -272,8 +285,15 @@ impl Workspace {
         event: &ClickEvent,
         cx: &mut Context<Self>,
     ) {
-        if event.click_count() >= 2 && is_dir {
-            self.navigate(path.to_string(), cx);
+        if event.click_count() >= 2 {
+            if let Some(item) = self
+                .pane()
+                .items
+                .get(index)
+                .filter(|item| item.path == path && item.is_dir == is_dir)
+            {
+                self.open_item(item.clone(), cx);
+            }
             return;
         }
         self.pane_mut().click(index, event.modifiers());

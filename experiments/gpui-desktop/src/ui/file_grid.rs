@@ -48,6 +48,12 @@ impl Workspace {
         div()
             .size_full()
             .bg(c(SURFACE_PRIMARY))
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    this.open_background_menu(event.position, cx)
+                }),
+            )
             .child(
                 uniform_list(
                     "file-grid",
@@ -166,5 +172,12 @@ impl Workspace {
         .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
             this.activate_item(index, &path, is_dir, event, cx)
         }))
+        .on_mouse_down(
+            gpui::MouseButton::Right,
+            cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                this.open_item_menu(index, event.position, cx);
+            }),
+        )
     }
 }

@@ -15,7 +15,12 @@ fn main() {
     for name in names {
         for variant in ["", "thin/"] {
             let file = dir.join(format!("{variant}{name}.svg"));
-            writeln!(out, "    (\"icons/{variant}{name}.svg\", include_bytes!({:?})),", file.display().to_string()).unwrap();
+            writeln!(
+                out,
+                "    (\"icons/{variant}{name}.svg\", include_bytes!({:?})),",
+                file.display().to_string()
+            )
+            .unwrap();
         }
     }
     out.push_str("];\n");

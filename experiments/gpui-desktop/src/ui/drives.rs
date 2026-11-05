@@ -203,7 +203,17 @@ impl Workspace {
                             .child(usage_text(drive.used_pct)),
                     ),
             )
-            .on_click(cx.listener(move |this, _, _, cx| this.navigate(name.clone(), cx)))
+            .on_click({
+                let name = name.clone();
+                cx.listener(move |this, _, _, cx| this.navigate(name.clone(), cx))
+            })
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_drive_menu(name.clone(), event.position, cx);
+                }),
+            )
     }
 
     pub(crate) fn render_drive_list(
@@ -363,11 +373,21 @@ impl Workspace {
                                 .child(usage_text(drive.used_pct)),
                         ),
                 )
-                .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
-                    if event.click_count() >= 2 {
-                        this.navigate(name.clone(), cx);
-                    }
-                }))
+                .on_click({
+                    let name = name.clone();
+                    cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                        if event.click_count() >= 2 {
+                            this.navigate(name.clone(), cx);
+                        }
+                    })
+                })
+                .on_mouse_down(
+                    gpui::MouseButton::Right,
+                    cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        this.open_drive_menu(name.clone(), event.position, cx);
+                    }),
+                )
         });
 
         div()

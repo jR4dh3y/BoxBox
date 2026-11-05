@@ -78,6 +78,8 @@ pub struct Workspace {
     pub(crate) preferences: crate::preferences::Preferences,
     pub(crate) clipboard: crate::clipboard::Clipboard,
     pub(crate) jobs: crate::jobs::Jobs,
+    pub(crate) context_menu: Option<crate::context_menu::ContextMenu>,
+    pub(crate) app_icons: crate::desktop::AppIcons,
     pub(crate) tabs: Vec<Pane>,
     pub(crate) active_tab: usize,
     next_pane_id: usize,
@@ -105,6 +107,8 @@ impl Workspace {
             preferences: Default::default(),
             clipboard: Default::default(),
             jobs: Default::default(),
+            context_menu: None,
+            app_icons: Default::default(),
             tabs: vec![Pane::new(0, initial_path)],
             active_tab: 0,
             next_pane_id: 1,
@@ -115,6 +119,7 @@ impl Workspace {
         };
         workspace.load_drives(cx);
         workspace.watch_jobs(cx);
+        workspace.load_preferences(cx);
         workspace.load_active(cx);
         workspace
     }
@@ -178,6 +183,37 @@ impl Workspace {
         .detach();
     }
 
+    pub(crate) fn apply_preferences(
+        &mut self,
+        preferences: crate::preferences::Preferences,
+        cx: &mut Context<Self>,
+    ) {
+        let hidden_changed = preferences.show_hidden != self.preferences.show_hidden;
+        self.preferences = preferences;
+        for pane in &mut self.tabs {
+            pane.show_hidden = self.preferences.show_hidden;
+        }
+        if hidden_changed {
+            self.reload(cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn new_pane(&mut self, path: String) -> Pane {
+        let mut pane = Pane::new(self.next_pane_id, path);
+        self.next_pane_id += 1;
+        pane.show_hidden = self.preferences.show_hidden;
+        pane
+    }
+
+    pub(crate) fn open_tab(&mut self, path: String, cx: &mut Context<Self>) {
+        let pane = self.new_pane(path);
+        self.tabs.push(pane);
+        self.active_tab = self.tabs.len() - 1;
+        self.load_active(cx);
+        cx.notify();
+    }
+
     pub(crate) fn reload(&mut self, cx: &mut Context<Self>) {
         if self.pane().is_at_root() {
             self.load_drives(cx);
@@ -218,10 +254,7 @@ impl Workspace {
     }
 
     pub(crate) fn new_tab(&mut self, _: &NewTab, _: &mut Window, cx: &mut Context<Self>) {
-        self.tabs.push(Pane::new(self.next_pane_id, String::new()));
-        self.next_pane_id += 1;
-        self.active_tab = self.tabs.len() - 1;
-        cx.notify();
+        self.open_tab(String::new(), cx);
     }
 
     pub(crate) fn close_tab_at(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -319,6 +352,7 @@ impl Render for Workspace {
                     .children(self.render_jobs(cx))
                     .child(self.render_toasts(cx)),
             )
+            .children(self.render_context_menu(window, cx))
             .children(self.render_dialog(cx))
     }
 }

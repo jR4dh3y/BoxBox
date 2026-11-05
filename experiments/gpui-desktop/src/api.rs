@@ -236,6 +236,72 @@ impl Api {
         Ok(self.send("GET", endpoint, None)?.into_reader())
     }
 
+    pub fn preferences(&self) -> Result<Option<crate::preferences::Preferences>> {
+        self.get("/desktop/preferences")
+    }
+
+    pub fn save_preferences(&self, preferences: &crate::preferences::Preferences) -> Result<()> {
+        self.send(
+            "PUT",
+            "/desktop/preferences",
+            Some(serde_json::to_value(preferences)?),
+        )?;
+        Ok(())
+    }
+
+    pub fn open(&self, path: &str) -> Result<()> {
+        self.send(
+            "POST",
+            "/desktop/open",
+            Some(serde_json::json!({ "path": path })),
+        )?;
+        Ok(())
+    }
+
+    pub fn terminal(&self, path: &str) -> Result<()> {
+        self.send(
+            "POST",
+            "/desktop/terminal",
+            Some(serde_json::json!({ "path": path })),
+        )?;
+        Ok(())
+    }
+
+    pub fn apps(&self, path: &str) -> Result<crate::desktop::Apps> {
+        self.get(&format!("/desktop/apps?path={}", encode_query(path)))
+    }
+
+    pub fn open_with(&self, path: &str, app: &str) -> Result<()> {
+        self.send(
+            "POST",
+            "/desktop/open-with",
+            Some(serde_json::json!({ "path": path, "appId": app })),
+        )?;
+        Ok(())
+    }
+
+    /// PR #211: sets the user's MIME default for the file's type.
+    pub fn set_default_app(&self, path: &str, app: &str) -> Result<()> {
+        self.send(
+            "POST",
+            "/desktop/apps/default",
+            Some(serde_json::json!({ "path": path, "appId": app })),
+        )?;
+        Ok(())
+    }
+
+    /// PR #211: the app's icon as PNG.
+    pub fn app_icon(&self, app: &str) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(
+            &mut self
+                .call(&format!("/desktop/apps/icon?appId={}", encode_query(app)))?
+                .into_reader(),
+            &mut bytes,
+        )?;
+        Ok(bytes)
+    }
+
     fn get<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
         self.call(endpoint)?
             .into_json()
@@ -311,6 +377,11 @@ fn server_message(body: &str) -> Option<String> {
     serde_json::from_str::<ErrorBody>(body)
         .ok()
         .map(|body| body.error)
+}
+
+/// `encodeURIComponent` for one query value.
+pub fn encode_query(value: &str) -> String {
+    encode_path(value).replace('/', "%2F")
 }
 
 /// `encodeRoutePath`: each segment percent-encoded like `encodeURIComponent`.

@@ -41,6 +41,7 @@ pub struct Pane {
     pub generation: u64,
     /// Selected once the next listing arrives, e.g. a newly created item.
     pub pending_select: Option<String>,
+    pub show_hidden: bool,
     pub list_scroll: UniformListScrollHandle,
     pub grid_scroll: UniformListScrollHandle,
 }
@@ -66,6 +67,7 @@ impl Pane {
             active: None,
             generation: 0,
             pending_select: None,
+            show_hidden: false,
             list_scroll: UniformListScrollHandle::new(),
             grid_scroll: UniformListScrollHandle::new(),
         }
@@ -139,10 +141,9 @@ impl Pane {
                         .map(|item| item.path.clone())
                 };
                 let (anchor, active) = (path_at(self.anchor), path_at(self.active));
-                // settings.showHiddenFiles defaults to false.
                 self.items = items
                     .into_iter()
-                    .filter(|item| !item.name.starts_with('.'))
+                    .filter(|item| self.show_hidden || !item.name.starts_with('.'))
                     .collect();
                 sort_files(&mut self.items, self.sort);
                 let paths: HashSet<&str> =

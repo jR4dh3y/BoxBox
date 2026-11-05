@@ -4,6 +4,8 @@
 mod api;
 mod assets;
 mod clipboard;
+mod context_menu;
+mod desktop;
 mod dialogs;
 mod drag_out;
 mod format;
