@@ -1,0 +1,227 @@
+//! Root view: tabs of panes plus the drive data shared by the sidebar and This PC.
+//! Mirrors `lib/components/desktop/BrowseWorkspace.svelte`.
+
+use std::sync::Arc;
+
+use gpui::{
+    actions, div, prelude::*, px, relative, App, Context, FocusHandle, KeyBinding, SharedString,
+    Window,
+};
+
+use crate::api::{Api, DriveStats, MountPoint};
+use crate::pane::Pane;
+use crate::theme::{c, SURFACE_PRIMARY, TEXT_PRIMARY};
+
+actions!(boxbox, [Back, Forward, Refresh, NewTab, CloseTab, SelectAll, ClearSelection]);
+
+pub fn bind_keys(cx: &mut App) {
+    let context = Some("BrowseWorkspace");
+    cx.bind_keys([
+        KeyBinding::new("alt-left", Back, context),
+        KeyBinding::new("backspace", Back, context),
+        KeyBinding::new("alt-right", Forward, context),
+        KeyBinding::new("f5", Refresh, context),
+        KeyBinding::new("ctrl-r", Refresh, context),
+        KeyBinding::new("ctrl-t", NewTab, context),
+        KeyBinding::new("ctrl-w", CloseTab, context),
+        KeyBinding::new("ctrl-a", SelectAll, context),
+        KeyBinding::new("escape", ClearSelection, context),
+    ]);
+}
+
+pub enum Load<T> {
+    Loading,
+    Loaded(T),
+    Failed(String),
+}
+
+pub struct Fonts {
+    pub sans: SharedString,
+    pub mono: SharedString,
+}
+
+pub struct Workspace {
+    pub(crate) api: Arc<Api>,
+    pub(crate) tabs: Vec<Pane>,
+    pub(crate) active_tab: usize,
+    next_pane_id: usize,
+    pub(crate) roots: Vec<MountPoint>,
+    pub(crate) drives: Load<Vec<DriveStats>>,
+    pub(crate) fonts: Fonts,
+    focus_handle: FocusHandle,
+}
+
+impl Workspace {
+    pub fn new(api: Api, fonts: Fonts, initial_path: String, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let focus_handle = cx.focus_handle();
+        window.focus(&focus_handle);
+        let mut workspace = Self {
+            api: Arc::new(api),
+            tabs: vec![Pane::new(0, initial_path)],
+            active_tab: 0,
+            next_pane_id: 1,
+            roots: Vec::new(),
+            drives: Load::Loading,
+            fonts,
+            focus_handle,
+        };
+        workspace.load_drives(cx);
+        workspace.load_active(cx);
+        workspace
+    }
+
+    pub(crate) fn pane(&self) -> &Pane {
+        &self.tabs[self.active_tab]
+    }
+
+    pub(crate) fn pane_mut(&mut self) -> &mut Pane {
+        &mut self.tabs[self.active_tab]
+    }
+
+    /// Roots feed the sidebar and breadcrumbs; stats feed the This PC cards.
+    fn load_drives(&mut self, cx: &mut Context<Self>) {
+        let api = self.api.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { (api.roots(), api.drives()) })
+                .await;
+            this.update(cx, |this, cx| {
+                let (roots, drives) = result;
+                this.roots = roots.unwrap_or_default();
+                this.drives = match drives {
+                    Ok(drives) => Load::Loaded(drives),
+                    Err(error) => Load::Failed(format!("{error:#}")),
+                };
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn load_active(&mut self, cx: &mut Context<Self>) {
+        let pane = self.pane_mut();
+        if pane.is_at_root() {
+            return;
+        }
+        let (pane_id, generation, path) = (pane.id, pane.begin_load(), pane.path.clone());
+        let api = self.api.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { api.list(&path) }).await;
+            this.update(cx, |this, cx| {
+                let current = this
+                    .tabs
+                    .iter_mut()
+                    .find(|pane| pane.id == pane_id && pane.generation == generation);
+                if let Some(pane) = current {
+                    pane.finish_load(result);
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub(crate) fn navigate(&mut self, path: String, cx: &mut Context<Self>) {
+        if self.pane_mut().navigate(path) {
+            self.load_active(cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn back(&mut self, _: &Back, _: &mut Window, cx: &mut Context<Self>) {
+        if self.pane_mut().go_back() {
+            self.load_active(cx);
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn forward(&mut self, _: &Forward, _: &mut Window, cx: &mut Context<Self>) {
+        if self.pane_mut().go_forward() {
+            self.load_active(cx);
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn refresh(&mut self, _: &Refresh, _: &mut Window, cx: &mut Context<Self>) {
+        if self.pane().is_at_root() {
+            self.load_drives(cx);
+        } else {
+            self.load_active(cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn new_tab(&mut self, _: &NewTab, _: &mut Window, cx: &mut Context<Self>) {
+        self.tabs.push(Pane::new(self.next_pane_id, String::new()));
+        self.next_pane_id += 1;
+        self.active_tab = self.tabs.len() - 1;
+        cx.notify();
+    }
+
+    pub(crate) fn close_tab_at(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        self.tabs.remove(index);
+        if self.active_tab > index || self.active_tab >= self.tabs.len() {
+            self.active_tab = self.active_tab.saturating_sub(1);
+        }
+        cx.notify();
+    }
+
+    fn close_tab(&mut self, _: &CloseTab, _: &mut Window, cx: &mut Context<Self>) {
+        self.close_tab_at(self.active_tab, cx);
+    }
+
+    pub(crate) fn activate_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.active_tab = index;
+        cx.notify();
+    }
+
+    fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
+        self.pane_mut().select_all();
+        cx.notify();
+    }
+
+    fn clear_selection(&mut self, _: &ClearSelection, _: &mut Window, cx: &mut Context<Self>) {
+        self.pane_mut().clear_selection();
+        cx.notify();
+    }
+}
+
+impl Render for Workspace {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .key_context("BrowseWorkspace")
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(Self::back))
+            .on_action(cx.listener(Self::forward))
+            .on_action(cx.listener(Self::refresh))
+            .on_action(cx.listener(Self::new_tab))
+            .on_action(cx.listener(Self::close_tab))
+            .on_action(cx.listener(Self::select_all))
+            .on_action(cx.listener(Self::clear_selection))
+            .size_full()
+            .flex()
+            .bg(c(SURFACE_PRIMARY))
+            .text_color(c(TEXT_PRIMARY))
+            .font_family(self.fonts.sans.clone())
+            // The page's body line-height; Tailwind sizes like text-xs override it.
+            .line_height(relative(1.5))
+            .text_size(px(16.))
+            .child(self.render_sidebar(cx))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .child(self.render_tabs(cx))
+                    .child(self.render_browser(window, cx)),
+            )
+    }
+}

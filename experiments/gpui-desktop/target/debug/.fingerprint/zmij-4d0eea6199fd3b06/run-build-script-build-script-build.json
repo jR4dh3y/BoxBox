@@ -1,0 +1,1 @@
+{"rustc":11835527281324007204,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[16226529040278277557,"build_script_build",false,1259322161196166856]],"local":[{"RerunIfChanged":{"output":"debug/build/zmij-4d0eea6199fd3b06/output","paths":["build.rs"]}}],"rustflags":["-C","link-arg=-Wl,-rpath,/home/linuxbrew/.linuxbrew/lib"],"config":0,"compile_kind":0}
