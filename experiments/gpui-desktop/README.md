@@ -41,18 +41,17 @@ Not implemented yet: the search input (it is drawn but inactive), thumbnails (ti
 
 ## Run
 
-Start a BoxBox server without authentication. `--dev` binds to 127.0.0.1.
+Like the Electrobun app, the client starts its own private BoxBox server. It writes a fresh config that mounts `/`, your home folder, and whichever standard home folders exist (Desktop, Downloads, Documents, Music, Pictures, Videos). It then launches `boxbox --desktop` with a random 64-character token and waits for the server to report its loopback address. Requests carry the token as the `boxbox_desktop` cookie. The server keeps its data in `$XDG_DATA_HOME/boxbox-gpui` and stops when the last window closes.
+
+The server binary is looked up next to the executable. `BOXBOX_SERVER_BIN` overrides that path during development:
 
 ```sh
-cd backend && go run ./cmd/server --dev -config /path/to/config.yaml
-```
-
-Then run the experiment. The default server is `BOXBOX_URL=http://127.0.0.1:8080`. `BOXBOX_TOKEN` sends a bearer token, and an optional argument opens a path such as `media/movies`.
-
-```sh
+go build -C backend -o ../dist/boxbox ./cmd/server
 cd experiments/gpui-desktop
-cargo run --release
+BOXBOX_SERVER_BIN=../../dist/boxbox cargo run --release
 ```
+
+To attach to a server that is already running, set `BOXBOX_URL` instead, and `BOXBOX_TOKEN` if that server needs a bearer token. An optional argument opens a path such as `media/movies`.
 
 On Linux, GPUI needs Vulkan and the development packages for xkbcommon, wayland, X11/xcb, fontconfig and freetype. On Debian/Ubuntu, install them with:
 

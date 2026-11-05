@@ -6,6 +6,7 @@ mod assets;
 mod drag_out;
 mod format;
 mod pane;
+mod server;
 mod sort;
 mod theme;
 mod ui;
@@ -18,7 +19,7 @@ use gpui::{
     WindowBounds, WindowDecorations, WindowOptions,
 };
 
-use crate::api::Api;
+use crate::api::{Api, Auth};
 use crate::workspace::{Fonts, Workspace};
 
 /// The browser resolves the CSS `sans-serif`/`monospace` stacks through fontconfig; do the same.
@@ -35,10 +36,33 @@ fn fontconfig_family(pattern: &str, fallback: &str) -> SharedString {
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let base = std::env::var("BOXBOX_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
-    let token = std::env::var("BOXBOX_TOKEN")
+    // `BOXBOX_URL` attaches to a running server; otherwise start the private desktop server.
+    let (api, local) = match std::env::var("BOXBOX_URL")
         .ok()
-        .filter(|token| !token.is_empty());
+        .filter(|url| !url.is_empty())
+    {
+        Some(url) => {
+            let auth = std::env::var("BOXBOX_TOKEN")
+                .ok()
+                .filter(|token| !token.is_empty())
+                .map_or(Auth::None, Auth::Bearer);
+            (Api::new(&url, auth), None)
+        }
+        None => {
+            let started = server::find_binary()
+                .and_then(|binary| server::LocalServer::start(&binary, &server::data_dir()));
+            match started {
+                Ok(local) => (
+                    Api::new(&local.origin, Auth::Desktop(local.token.clone())),
+                    Some(local),
+                ),
+                Err(error) => {
+                    eprintln!("BoxBox: {error:#}");
+                    std::process::exit(1);
+                }
+            }
+        }
+    };
     let initial_path = std::env::args().nth(1).unwrap_or_default();
     let fonts = Fonts {
         sans: fontconfig_family("sans-serif", ".SystemUIFont"),
@@ -63,13 +87,22 @@ fn main() {
                     window_decorations: Some(WindowDecorations::Server),
                     ..Default::default()
                 },
-                |window, cx| {
-                    cx.new(|cx| {
-                        Workspace::new(Api::new(&base, token), fonts, initial_path, window, cx)
-                    })
-                },
+                |window, cx| cx.new(|cx| Workspace::new(api, fonts, initial_path, window, cx)),
             )
             .expect("failed to open the BoxBox window");
             cx.activate(true);
+            // Closing the last window stops the private server, like the Electrobun app.
+            cx.on_window_closed(|cx| {
+                if cx.windows().is_empty() {
+                    cx.quit();
+                }
+            })
+            .detach();
+            let local = std::sync::Mutex::new(local);
+            cx.on_app_quit(move |_| {
+                drop(local.lock().ok().and_then(|mut local| local.take()));
+                async {}
+            })
+            .detach();
         });
 }

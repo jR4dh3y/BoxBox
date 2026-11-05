@@ -85,19 +85,38 @@ struct DriveStatsResponse {
     drives: Vec<DriveStats>,
 }
 
+/// How requests prove who they are.
+#[derive(Clone)]
+pub enum Auth {
+    None,
+    /// A server reached through `BOXBOX_URL` with an access token.
+    Bearer(String),
+    /// The private desktop server: its per-launch token, sent as the `boxbox_desktop` cookie.
+    Desktop(String),
+}
+
 pub struct Api {
     base: String,
     agent: ureq::Agent,
-    token: Option<String>,
+    auth: Auth,
 }
 
 impl Api {
-    /// `base` is the server origin, e.g. `http://127.0.0.1:8080`.
-    pub fn new(base: &str, token: Option<String>) -> Self {
+    /// `origin` is the server origin, e.g. `http://127.0.0.1:8080`.
+    pub fn new(origin: &str, auth: Auth) -> Self {
+        let origin = origin.trim_end_matches('/').to_string();
         Self {
-            base: format!("{}/api/v1", base.trim_end_matches('/')),
+            base: format!("{origin}/api/v1"),
             agent: ureq::AgentBuilder::new().build(),
-            token,
+            auth,
+        }
+    }
+
+    pub(crate) fn authorize(&self, request: ureq::Request) -> ureq::Request {
+        match &self.auth {
+            Auth::None => request,
+            Auth::Bearer(token) => request.set("Authorization", &format!("Bearer {token}")),
+            Auth::Desktop(token) => request.set("Cookie", &format!("boxbox_desktop={token}")),
         }
     }
 
@@ -138,10 +157,7 @@ impl Api {
 
     fn call(&self, endpoint: &str) -> Result<ureq::Response> {
         let url = format!("{}{endpoint}", self.base);
-        let mut request = self.agent.get(&url);
-        if let Some(token) = &self.token {
-            request = request.set("Authorization", &format!("Bearer {token}"));
-        }
+        let request = self.authorize(self.agent.get(&url));
         match request.call() {
             Ok(response) => Ok(response),
             Err(ureq::Error::Status(code, response)) => {
