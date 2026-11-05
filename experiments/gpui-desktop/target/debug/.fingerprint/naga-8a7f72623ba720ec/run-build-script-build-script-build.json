@@ -1,0 +1,1 @@
+{"rustc":11835527281324007204,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[8588622563673530609,"build_script_build",false,16880704678920677523]],"local":[{"Precalculated":"25.0.1"}],"rustflags":["-C","link-arg=-Wl,-rpath,/home/linuxbrew/.linuxbrew/lib"],"config":0,"compile_kind":0}
