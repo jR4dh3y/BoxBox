@@ -6,6 +6,7 @@ mod file_grid;
 mod file_list;
 mod sidebar;
 mod status_bar;
+mod settings;
 mod tabs;
 mod toolbar;
 

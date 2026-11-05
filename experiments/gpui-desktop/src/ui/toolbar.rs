@@ -4,7 +4,7 @@ use gpui::{div, prelude::*, px, AnyElement, Context, Window};
 
 use super::{icon, TextScale, SIDEBAR_WIDTH};
 use crate::theme::*;
-use crate::workspace::{Back, Forward, Refresh, Workspace};
+use crate::workspace::{Back, Forward, OpenSettings, Refresh, Workspace};
 
 struct Crumb {
     label: String,
@@ -231,7 +231,12 @@ impl Workspace {
                                 this.refresh(&Refresh, window, cx)
                             })),
                     )
-                    .child(self.nav_button("settings", "settings", 16., true)),
+                    .child(
+                        self.nav_button("settings", "settings", 16., true)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_settings(&OpenSettings, window, cx)
+                            })),
+                    ),
             )
     }
 }

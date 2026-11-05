@@ -58,6 +58,18 @@ On Linux, GPUI needs Vulkan and the development packages for xkbcommon, wayland,
 
 `sudo apt install libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan1 libx11-xcb-dev libxcb1-dev libfontconfig-dev libfreetype-dev`
 
+## Benchmark snapshot
+
+Measured locally on Linux on 2026-11-05, using the same BoxBox server workload and a warm installed desktop runtime. Startup is measured from process launch until the first browse API/page-ready event; memory is settled RSS after approximately three seconds.
+
+| Runtime | Startup | Settled RSS | Notes |
+| --- | ---: | ---: | --- |
+| GPUI | 177 ms | 113 MB | Native GPUI window plus bundled server |
+| MyGo/WebKitGTK | 303 ms | 227 MB | MyGo host, WebKitGTK and private server |
+| Electrobun/CEF | 413 ms | 705 MB | Production baseline, CEF helper process tree |
+
+Against the Electrobun baseline, GPUI was approximately 57% faster to first browse request and used 84% less settled memory. These are local point-in-time measurements, not a release performance guarantee; repeat them on the target hardware before making a shipping decision. The benchmark infographic is available as a T3 Canvas artifact in the development workspace.
+
 ## Tests
 
 ```sh

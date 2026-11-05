@@ -12,6 +12,49 @@ use crate::api::{Api, DriveStats, MountPoint};
 use crate::pane::Pane;
 use crate::theme::{c, SURFACE_PRIMARY, TEXT_PRIMARY};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SettingsSection {
+    General,
+    Appearance,
+    Links,
+    Connections,
+}
+
+#[derive(Clone)]
+pub(crate) struct Preferences {
+    pub show_hidden_files: bool,
+    pub show_file_extensions: bool,
+    pub confirm_delete: bool,
+    pub preview_on_single_click: bool,
+    pub selection_checkboxes: bool,
+    pub default_sort: &'static str,
+    pub default_sort_direction: &'static str,
+    pub default_view: &'static str,
+    pub hardware_acceleration: bool,
+    pub compact_rows: bool,
+    pub wallpaper_tint: bool,
+    pub frosted_glass: bool,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            show_hidden_files: false,
+            show_file_extensions: true,
+            confirm_delete: true,
+            preview_on_single_click: false,
+            selection_checkboxes: true,
+            default_sort: "Name",
+            default_sort_direction: "Ascending",
+            default_view: "List",
+            hardware_acceleration: true,
+            compact_rows: false,
+            wallpaper_tint: false,
+            frosted_glass: false,
+        }
+    }
+}
+
 actions!(
     boxbox,
     [
@@ -21,7 +64,9 @@ actions!(
         NewTab,
         CloseTab,
         SelectAll,
-        ClearSelection
+        ClearSelection,
+        OpenSettings,
+        CloseSettings
     ]
 );
 
@@ -37,6 +82,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-w", CloseTab, context),
         KeyBinding::new("ctrl-a", SelectAll, context),
         KeyBinding::new("escape", ClearSelection, context),
+        KeyBinding::new("ctrl-,", OpenSettings, context),
     ]);
 }
 
@@ -60,6 +106,9 @@ pub struct Workspace {
     pub(crate) drives: Load<Vec<DriveStats>>,
     pub(crate) fonts: Fonts,
     focus_handle: FocusHandle,
+    pub(crate) settings_open: bool,
+    pub(crate) settings_section: SettingsSection,
+    pub(crate) preferences: Preferences,
 }
 
 impl Workspace {
@@ -81,6 +130,9 @@ impl Workspace {
             drives: Load::Loading,
             fonts,
             focus_handle,
+            settings_open: false,
+            settings_section: SettingsSection::General,
+            preferences: Preferences::default(),
         };
         workspace.load_drives(cx);
         workspace.load_active(cx);
@@ -212,6 +264,22 @@ impl Workspace {
         self.pane_mut().clear_selection();
         cx.notify();
     }
+
+    pub(crate) fn open_settings(&mut self, _: &OpenSettings, _: &mut Window, cx: &mut Context<Self>) {
+        self.settings_open = true;
+        self.settings_section = SettingsSection::General;
+        cx.notify();
+    }
+
+    pub(crate) fn close_settings(&mut self, _: &CloseSettings, _: &mut Window, cx: &mut Context<Self>) {
+        self.settings_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn select_settings_section(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
+        self.settings_section = section;
+        cx.notify();
+    }
 }
 
 impl Render for Workspace {
@@ -226,6 +294,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::close_tab))
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(Self::clear_selection))
+            .on_action(cx.listener(Self::open_settings))
+            .on_action(cx.listener(Self::close_settings))
             .size_full()
             .flex()
             .bg(c(SURFACE_PRIMARY))
@@ -245,5 +315,6 @@ impl Render for Workspace {
                     .child(self.render_tabs(cx))
                     .child(self.render_browser(window, cx)),
             )
+            .when(self.settings_open, |root| root.child(self.render_settings(cx)))
     }
 }
