@@ -718,9 +718,11 @@ dependencies = [
  "chrono",
  "env_logger",
  "gpui",
+ "log",
  "serde",
  "serde_json",
  "ureq",
+ "x11rb",
 ]
 
 [[package]]

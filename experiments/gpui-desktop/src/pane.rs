@@ -218,6 +218,20 @@ impl Pane {
         self.active = Some(index);
     }
 
+    /// Dragging a selected item carries the whole selection; any other item goes alone.
+    pub fn drag_items(&self, index: usize) -> Vec<FileInfo> {
+        match self.items.get(index) {
+            Some(item) if self.is_selected(&item.path) => self
+                .items
+                .iter()
+                .filter(|item| self.is_selected(&item.path))
+                .cloned()
+                .collect(),
+            Some(item) => vec![item.clone()],
+            None => Vec::new(),
+        }
+    }
+
     pub fn select_all(&mut self) {
         self.selected = self.items.iter().map(|item| item.path.clone()).collect();
     }
@@ -301,6 +315,24 @@ mod tests {
         let mut selected: Vec<_> = pane.selected.iter().cloned().collect();
         selected.sort();
         assert_eq!(selected, ["d/b", "d/z"]);
+    }
+
+    #[test]
+    fn drag_carries_selection_or_single_item() {
+        let mut pane = Pane::new(0, "d".into());
+        pane.finish_load(Ok(["a", "b", "c"].map(file).to_vec()));
+        pane.click(0, Modifiers::default());
+        pane.click(
+            2,
+            Modifiers {
+                control: true,
+                ..Default::default()
+            },
+        );
+        let names =
+            |items: Vec<FileInfo>| items.into_iter().map(|item| item.name).collect::<Vec<_>>();
+        assert_eq!(names(pane.drag_items(2)), ["a", "c"]);
+        assert_eq!(names(pane.drag_items(1)), ["b"]);
     }
 
     #[test]

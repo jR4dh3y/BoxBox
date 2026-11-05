@@ -83,84 +83,88 @@ impl Workspace {
         let selected = pane.is_selected(&item.path);
         let active = pane.active == Some(index);
         let (path, is_dir) = (item.path.clone(), item.is_dir);
-        div()
-            .id(("tile", index))
-            .w(px(TILE_WIDTH))
-            .flex_none()
-            .flex()
-            .flex_col()
-            .min_w_0()
-            .rounded(px(4.))
-            .border_1()
-            .p(px(8.))
-            .cursor_default()
-            .map(|tile| match (selected, active) {
-                (true, _) => tile
-                    .border_color(alpha(ACCENT, 0.7))
-                    .bg(c(SELECTION))
-                    .hover(|style| style.bg(c(SELECTION_HOVER))),
-                (false, true) => tile
-                    .border_color(alpha(ACCENT, 0.))
-                    .bg(c(SURFACE_SECONDARY)),
-                (false, false) => tile
-                    .border_color(alpha(ACCENT, 0.))
-                    .hover(|style| style.bg(c(SURFACE_SECONDARY))),
-            })
-            .child(
-                div()
-                    .h(px(80.))
-                    .w_full()
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .overflow_hidden()
-                    .rounded(px(4.))
-                    .border_1()
-                    .border_color(c(BORDER_PRIMARY))
-                    .bg(c(SURFACE_PRIMARY))
-                    .child(thin_icon(
-                        file_icon(&item.name, item.is_dir),
-                        30.,
-                        c(if item.is_dir { FOLDER } else { TEXT_SECONDARY }),
-                    )),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .mt(px(6.))
-                    .min_w_0()
-                    .overflow_hidden()
-                    .child(
-                        div()
-                            .w_full()
-                            .text_center()
-                            .text_size(px(13.))
-                            .line_height(px(16.))
-                            .line_clamp(2)
-                            .text_color(c(if item.is_dir { FOLDER } else { TEXT_PRIMARY }))
-                            .child(item.name.clone()),
-                    )
-                    .child(
-                        div()
-                            .w_full()
-                            .mt(px(2.))
-                            // GPUI's ellipsis collapses centred text to "…", so clip instead.
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_center()
-                            .text_size(px(11.))
-                            .line_height(px(14.))
-                            .text_color(c(if selected { TEXT_PRIMARY } else { TEXT_MUTED }))
-                            .child(if item.is_dir {
-                                "—".into()
-                            } else {
-                                file_size(item.size)
-                            }),
-                    ),
-            )
-            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                this.activate_item(index, &path, is_dir, event, cx)
-            }))
+        crate::drag_out::draggable(
+            div().id(("tile", index)),
+            index,
+            cx.entity().downgrade(),
+            self.api.clone(),
+        )
+        .w(px(TILE_WIDTH))
+        .flex_none()
+        .flex()
+        .flex_col()
+        .min_w_0()
+        .rounded(px(4.))
+        .border_1()
+        .p(px(8.))
+        .cursor_default()
+        .map(|tile| match (selected, active) {
+            (true, _) => tile
+                .border_color(alpha(ACCENT, 0.7))
+                .bg(c(SELECTION))
+                .hover(|style| style.bg(c(SELECTION_HOVER))),
+            (false, true) => tile
+                .border_color(alpha(ACCENT, 0.))
+                .bg(c(SURFACE_SECONDARY)),
+            (false, false) => tile
+                .border_color(alpha(ACCENT, 0.))
+                .hover(|style| style.bg(c(SURFACE_SECONDARY))),
+        })
+        .child(
+            div()
+                .h(px(80.))
+                .w_full()
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .overflow_hidden()
+                .rounded(px(4.))
+                .border_1()
+                .border_color(c(BORDER_PRIMARY))
+                .bg(c(SURFACE_PRIMARY))
+                .child(thin_icon(
+                    file_icon(&item.name, item.is_dir),
+                    30.,
+                    c(if item.is_dir { FOLDER } else { TEXT_SECONDARY }),
+                )),
+        )
+        .child(
+            div()
+                .w_full()
+                .mt(px(6.))
+                .min_w_0()
+                .overflow_hidden()
+                .child(
+                    div()
+                        .w_full()
+                        .text_center()
+                        .text_size(px(13.))
+                        .line_height(px(16.))
+                        .line_clamp(2)
+                        .text_color(c(if item.is_dir { FOLDER } else { TEXT_PRIMARY }))
+                        .child(item.name.clone()),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .mt(px(2.))
+                        // GPUI's ellipsis collapses centred text to "…", so clip instead.
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_center()
+                        .text_size(px(11.))
+                        .line_height(px(14.))
+                        .text_color(c(if selected { TEXT_PRIMARY } else { TEXT_MUTED }))
+                        .child(if item.is_dir {
+                            "—".into()
+                        } else {
+                            file_size(item.size)
+                        }),
+                ),
+        )
+        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+            this.activate_item(index, &path, is_dir, event, cx)
+        }))
     }
 }

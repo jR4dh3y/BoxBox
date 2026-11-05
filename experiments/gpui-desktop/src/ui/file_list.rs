@@ -175,86 +175,92 @@ impl Workspace {
         let icon_color = c(if item.is_dir { FOLDER } else { TEXT_SECONDARY });
         let (path, is_dir) = (item.path.clone(), item.is_dir);
 
-        div()
-            .id(("row", index))
-            .relative()
-            .w_full()
-            .flex()
-            .h(px(ROW_HEIGHT))
-            .border_b_1()
-            .border_color(c(BORDER_SECONDARY))
-            .text_size(px(13.))
-            .line_height(px(20.))
-            .cursor_default()
-            .map(|row| match (selected, active) {
-                (true, _) => row
-                    .bg(c(SELECTION))
-                    .hover(|style| style.bg(c(SELECTION_HOVER))),
-                (false, true) => row.bg(c(SURFACE_SECONDARY)),
-                (false, false) => row.hover(|style| style.bg(c(SURFACE_SECONDARY))),
-            })
-            // shadow-[inset_2px_0_0_var(--color-accent)]
-            .when(active, |row| {
-                row.child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .top_0()
-                        .bottom_0()
-                        .w(px(2.))
-                        .bg(c(ACCENT)),
-                )
-            })
-            .child(
-                column(None)
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .size(px(20.))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(icon(file_icon(&item.name, item.is_dir), 16., icon_color)),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_color(name_color)
-                            .child(item.name.clone()),
-                    ),
+        crate::drag_out::draggable(
+            div().id(("row", index)),
+            index,
+            cx.entity().downgrade(),
+            self.api.clone(),
+        )
+        .relative()
+        .w_full()
+        .flex()
+        .h(px(ROW_HEIGHT))
+        .border_b_1()
+        .border_color(c(BORDER_SECONDARY))
+        .text_size(px(13.))
+        .line_height(px(20.))
+        .cursor_default()
+        .map(|row| match (selected, active) {
+            (true, _) => row
+                .bg(c(SELECTION))
+                .hover(|style| style.bg(c(SELECTION_HOVER))),
+            (false, true) => row.bg(c(SURFACE_SECONDARY)),
+            (false, false) => row.hover(|style| style.bg(c(SURFACE_SECONDARY))),
+        })
+        // shadow-[inset_2px_0_0_var(--color-accent)]
+        .when(active, |row| {
+            row.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .bottom_0()
+                    .w(px(2.))
+                    .bg(c(ACCENT)),
             )
-            .when(shown.kind, |row| {
-                row.child(column(Some(TYPE_WIDTH)).text_color(secondary).child(
-                    div().truncate().child(if item.is_dir {
+        })
+        .child(
+            column(None)
+                .gap(px(8.))
+                .child(
+                    div()
+                        .size(px(20.))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(icon(file_icon(&item.name, item.is_dir), 16., icon_color)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(name_color)
+                        .child(item.name.clone()),
+                ),
+        )
+        .when(shown.kind, |row| {
+            row.child(
+                column(Some(TYPE_WIDTH))
+                    .text_color(secondary)
+                    .child(div().truncate().child(if item.is_dir {
                         "Folder".into()
                     } else {
                         type_description(&item.name)
-                    }),
-                ))
-            })
-            .child(
-                column(Some(SIZE_WIDTH))
-                    .justify_end()
-                    .text_color(secondary)
-                    .child(div().truncate().child(if item.is_dir {
-                        "—".into()
-                    } else {
-                        file_size(item.size)
                     })),
             )
-            .when(shown.modified, |row| {
-                row.child(
-                    column(Some(MODIFIED_WIDTH))
-                        .text_color(secondary)
-                        .child(div().truncate().child(file_date(&item.mod_time))),
-                )
-            })
-            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                this.activate_item(index, &path, is_dir, event, cx)
-            }))
+        })
+        .child(
+            column(Some(SIZE_WIDTH))
+                .justify_end()
+                .text_color(secondary)
+                .child(div().truncate().child(if item.is_dir {
+                    "—".into()
+                } else {
+                    file_size(item.size)
+                })),
+        )
+        .when(shown.modified, |row| {
+            row.child(
+                column(Some(MODIFIED_WIDTH))
+                    .text_color(secondary)
+                    .child(div().truncate().child(file_date(&item.mod_time))),
+            )
+        })
+        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+            this.activate_item(index, &path, is_dir, event, cx)
+        }))
     }
 
     /// Shared by list rows and grid tiles: select on click, open folders on double-click.

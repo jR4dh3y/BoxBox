@@ -3,6 +3,7 @@
 
 mod api;
 mod assets;
+mod drag_out;
 mod format;
 mod pane;
 mod sort;

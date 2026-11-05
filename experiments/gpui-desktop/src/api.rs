@@ -1,5 +1,7 @@
 //! Typed client for the BoxBox HTTP API (`/api/v1`), mirroring `frontend/src/lib/api/files.ts`.
 
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context as _, Result};
 use serde::{de::DeserializeOwned, Deserialize};
 
@@ -111,16 +113,37 @@ impl Api {
         parse_directory(self.get::<FileList>(&format!("/files/list/{}", encode_path(path)))?)
     }
 
+    /// Saves a file, or a folder as the server's ZIP archive (like the web download), into `dir`.
+    pub fn download(&self, item: &FileInfo, dir: &Path) -> Result<PathBuf> {
+        let (endpoint, name) = if item.is_dir {
+            ("/stream/archive", format!("{}.zip", item.name))
+        } else {
+            ("/stream/download", item.name.clone())
+        };
+        let response = self.call(&format!("{endpoint}/{}", encode_path(&item.path)))?;
+        // `parse_directory` already rejected names that could leave `dir`.
+        let target = dir.join(name);
+        let mut file = std::fs::File::create(&target)
+            .with_context(|| format!("cannot create {}", target.display()))?;
+        std::io::copy(&mut response.into_reader(), &mut file)
+            .with_context(|| format!("cannot download {}", item.path))?;
+        Ok(target)
+    }
+
     fn get<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
+        self.call(endpoint)?
+            .into_json()
+            .with_context(|| format!("invalid JSON from {}{endpoint}", self.base))
+    }
+
+    fn call(&self, endpoint: &str) -> Result<ureq::Response> {
         let url = format!("{}{endpoint}", self.base);
         let mut request = self.agent.get(&url);
         if let Some(token) = &self.token {
             request = request.set("Authorization", &format!("Bearer {token}"));
         }
         match request.call() {
-            Ok(response) => response
-                .into_json()
-                .with_context(|| format!("invalid JSON from {url}")),
+            Ok(response) => Ok(response),
             Err(ureq::Error::Status(code, response)) => {
                 let body = response.into_string().unwrap_or_default();
                 anyhow::bail!(

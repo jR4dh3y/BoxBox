@@ -20,6 +20,14 @@ Icons are the frontend's own Lucide glyphs, extracted from `frontend/node_module
 
 Working behaviour: drive and folder navigation, back/forward history, breadcrumbs, tabs (open, close, switch), list/grid views, sortable columns, click/Ctrl/Shift selection with the status-bar summary, and refresh. Shortcuts: Alt+Left or Backspace (back), Alt+Right (forward), F5 or Ctrl+R (refresh), Ctrl+T or Ctrl+W (open or close a tab), Ctrl+A (select all), Esc (clear the selection).
 
+### Dragging files to other apps
+
+Drag a row or tile out of the window to drop it into another app, such as a file manager, browser, or editor. Dragging a selected item carries the whole selection. GPUI 0.2 can only receive drops from other apps, so `src/drag_out/` implements the X11 drag-and-drop protocol (XDND v5) itself, offering the files as `text/uri-list` with the copy action.
+
+The other app needs local files, so the dragged items are downloaded into `$TMPDIR/boxbox-gpui-drag/` once the pointer reaches another app's window. Folders arrive as the server's ZIP archive, the same as a folder download in the web UI. Large files are only handed over after they finish downloading. The staged copies are not deleted automatically.
+
+This only works on X11. Under a Wayland session GPUI uses its Wayland backend, and dragging out is not available there. Start the app with `WAYLAND_DISPLAY=` to run it through XWayland instead. macOS and Windows are not implemented. The existing Electrobun app cannot drag files out either.
+
 Not implemented yet: the search input (it is drawn but inactive), thumbnails (tiles show the file-type icon, like the web UI while loading), file operations, context menus, previews, uploads, settings, trash, split panes, wallpapers and accent colours, and the desktop app's private `--desktop` cookie session.
 
 ## Screenshots
