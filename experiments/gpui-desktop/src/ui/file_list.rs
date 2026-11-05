@@ -2,7 +2,7 @@
 
 use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, FontWeight};
 
-use super::{icon, TextScale};
+use super::{icon, TextScale, SIDEBAR_WIDTH};
 use crate::format::{file_date, file_icon, file_size, type_description};
 use crate::pane::Listing;
 use crate::sort::{SortDir, SortField};
@@ -13,6 +13,28 @@ pub const ROW_HEIGHT: f32 = 32.;
 const TYPE_WIDTH: f32 = 170.;
 const SIZE_WIDTH: f32 = 112.;
 const MODIFIED_WIDTH: f32 = 168.;
+const MIN_NAME_WIDTH: f32 = 200.;
+
+/// Secondary columns that fit beside a readable Name column; Type goes first, then Modified.
+#[derive(Clone, Copy)]
+pub(crate) struct Columns {
+    kind: bool,
+    modified: bool,
+}
+
+impl Columns {
+    pub(crate) fn for_width(width: f32) -> Self {
+        let spare = width - MIN_NAME_WIDTH - SIZE_WIDTH;
+        Self {
+            modified: spare >= MODIFIED_WIDTH,
+            kind: spare >= MODIFIED_WIDTH + TYPE_WIDTH,
+        }
+    }
+
+    fn for_window(window: &gpui::Window) -> Self {
+        Self::for_width(f32::from(window.viewport_size().width) - SIDEBAR_WIDTH)
+    }
+}
 
 /// Fixed-width column, or the flexible Name column when `width` is None.
 fn column(width: Option<f32>) -> gpui::Div {
@@ -29,14 +51,23 @@ fn column(width: Option<f32>) -> gpui::Div {
 }
 
 impl Workspace {
-    fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_header(&self, shown: Columns, cx: &mut Context<Self>) -> impl IntoElement {
         let sort = self.pane().sort;
         let columns = [
-            (SortField::Name, "Name", None, false),
-            (SortField::Type, "Type", Some(TYPE_WIDTH), false),
-            (SortField::Size, "Size", Some(SIZE_WIDTH), true),
-            (SortField::Modified, "Modified", Some(MODIFIED_WIDTH), false),
-        ];
+            (SortField::Name, "Name", None, false, true),
+            (SortField::Type, "Type", Some(TYPE_WIDTH), false, shown.kind),
+            (SortField::Size, "Size", Some(SIZE_WIDTH), true, true),
+            (
+                SortField::Modified,
+                "Modified",
+                Some(MODIFIED_WIDTH),
+                false,
+                shown.modified,
+            ),
+        ]
+        .into_iter()
+        .filter(|column| column.4)
+        .map(|(field, label, width, right, _)| (field, label, width, right));
         div()
             .flex()
             .flex_none()
@@ -47,7 +78,7 @@ impl Workspace {
             .text_size(px(13.))
             .line_height(px(20.))
             .font_weight(FontWeight::MEDIUM)
-            .children(columns.into_iter().map(|(field, label, width, right)| {
+            .children(columns.map(|(field, label, width, right)| {
                 let sorted = sort.field == field;
                 // `thSortedClass` loses to `thClass`'s text colour in the built CSS, so the web
                 // draws every header in text-secondary.
@@ -81,7 +112,12 @@ impl Workspace {
             }))
     }
 
-    pub(crate) fn render_file_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_file_list(
+        &self,
+        window: &gpui::Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let shown = Columns::for_window(window);
         let pane = self.pane();
         let count = pane.items.len();
         let empty = count == 0 && matches!(pane.listing, Listing::Loaded);
@@ -90,7 +126,7 @@ impl Workspace {
             .flex()
             .flex_col()
             .bg(c(SURFACE_PRIMARY))
-            .child(self.render_header(cx))
+            .child(self.render_header(shown, cx))
             .when(empty, |list| {
                 list.child(
                     div()
@@ -113,9 +149,9 @@ impl Workspace {
                     uniform_list(
                         "file-list",
                         count,
-                        cx.processor(|this, range: std::ops::Range<usize>, _window, cx| {
+                        cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                             range
-                                .map(|index| this.render_row(index, cx))
+                                .map(|index| this.render_row(index, shown, cx))
                                 .collect::<Vec<_>>()
                         }),
                     )
@@ -125,7 +161,7 @@ impl Workspace {
             })
     }
 
-    fn render_row(&self, index: usize, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_row(&self, index: usize, shown: Columns, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = self.pane();
         let item = &pane.items[index];
         let selected = pane.is_selected(&item.path);
@@ -190,15 +226,15 @@ impl Workspace {
                             .child(item.name.clone()),
                     ),
             )
-            .child(
-                column(Some(TYPE_WIDTH))
-                    .text_color(secondary)
-                    .child(div().truncate().child(if item.is_dir {
+            .when(shown.kind, |row| {
+                row.child(column(Some(TYPE_WIDTH)).text_color(secondary).child(
+                    div().truncate().child(if item.is_dir {
                         "Folder".into()
                     } else {
                         type_description(&item.name)
-                    })),
-            )
+                    }),
+                ))
+            })
             .child(
                 column(Some(SIZE_WIDTH))
                     .justify_end()
@@ -209,11 +245,13 @@ impl Workspace {
                         file_size(item.size)
                     })),
             )
-            .child(
-                column(Some(MODIFIED_WIDTH))
-                    .text_color(secondary)
-                    .child(div().truncate().child(file_date(&item.mod_time))),
-            )
+            .when(shown.modified, |row| {
+                row.child(
+                    column(Some(MODIFIED_WIDTH))
+                        .text_color(secondary)
+                        .child(div().truncate().child(file_date(&item.mod_time))),
+                )
+            })
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                 this.activate_item(index, &path, is_dir, event, cx)
             }))
@@ -234,5 +272,21 @@ impl Workspace {
         }
         self.pane_mut().click(index, event.modifiers());
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Columns;
+
+    #[test]
+    fn narrow_widths_drop_type_then_modified() {
+        let at = |width| {
+            let columns = Columns::for_width(width);
+            (columns.kind, columns.modified)
+        };
+        assert_eq!(at(1060.), (true, true));
+        assert_eq!(at(420.), (false, false));
+        assert_eq!(at(500.), (false, true));
     }
 }

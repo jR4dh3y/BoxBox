@@ -119,10 +119,12 @@ impl Workspace {
 
     fn load_active(&mut self, cx: &mut Context<Self>) {
         let pane = self.pane_mut();
+        // Bump first so a folder request still in flight cannot land on This PC.
+        let generation = pane.begin_load();
         if pane.is_at_root() {
             return;
         }
-        let (pane_id, generation, path) = (pane.id, pane.begin_load(), pane.path.clone());
+        let (pane_id, path) = (pane.id, pane.path.clone());
         let api = self.api.clone();
         cx.spawn(async move |this, cx| {
             let result = cx

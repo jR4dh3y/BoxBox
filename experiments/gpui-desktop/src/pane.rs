@@ -130,6 +130,12 @@ impl Pane {
     pub fn finish_load(&mut self, result: anyhow::Result<Vec<FileInfo>>) {
         match result {
             Ok(items) => {
+                let path_at = |index: Option<usize>| -> Option<String> {
+                    index
+                        .and_then(|i| self.items.get(i))
+                        .map(|item| item.path.clone())
+                };
+                let (anchor, active) = (path_at(self.anchor), path_at(self.active));
                 // settings.showHiddenFiles defaults to false.
                 self.items = items
                     .into_iter()
@@ -139,10 +145,16 @@ impl Pane {
                 let paths: HashSet<&str> =
                     self.items.iter().map(|item| item.path.as_str()).collect();
                 self.selected.retain(|path| paths.contains(path.as_str()));
+                self.anchor = anchor.and_then(|path| self.index_of(&path));
+                self.active = active.and_then(|path| self.index_of(&path));
                 self.listing = Listing::Loaded;
             }
             Err(error) => self.listing = Listing::Failed(format!("{error:#}")),
         }
+    }
+
+    fn index_of(&self, path: &str) -> Option<usize> {
+        self.items.iter().position(|item| item.path == path)
     }
 
     pub fn set_sort(&mut self, sort: Sort) {
@@ -179,7 +191,10 @@ impl Pane {
         };
         let path = item.path.clone();
         if modifiers.shift {
-            let anchor = self.anchor.unwrap_or(index);
+            let anchor = self
+                .anchor
+                .filter(|&a| a < self.items.len())
+                .unwrap_or(index);
             let (start, end) = if anchor <= index {
                 (anchor, index)
             } else {
@@ -265,5 +280,36 @@ mod tests {
         assert!(pane.is_at_root() && pane.selected.is_empty() && pane.can_go_forward());
         assert!(pane.go_forward());
         assert_eq!(pane.path, "d");
+    }
+
+    #[test]
+    fn refresh_keeps_anchor_by_path() {
+        let shift = Modifiers {
+            shift: true,
+            ..Default::default()
+        };
+        let mut pane = Pane::new(0, "d".into());
+        pane.finish_load(Ok(["a", "b", "c", "d", "e"].map(file).to_vec()));
+        pane.click(4, Modifiers::default());
+        pane.finish_load(Ok(vec![file("a"), file("b")]));
+        pane.click(1, shift);
+        assert_eq!(pane.selected.len(), 1);
+
+        pane.click(1, Modifiers::default());
+        pane.finish_load(Ok(vec![file("0"), file("a"), file("b"), file("z")]));
+        pane.click(3, shift);
+        let mut selected: Vec<_> = pane.selected.iter().cloned().collect();
+        selected.sort();
+        assert_eq!(selected, ["d/b", "d/z"]);
+    }
+
+    #[test]
+    fn every_load_invalidates_older_requests() {
+        let mut pane = Pane::new(0, "d".into());
+        let pending = pane.begin_load();
+        pane.go_back();
+        assert!(pane.navigate(String::new()));
+        assert_ne!(pane.begin_load(), pending);
+        assert!(matches!(pane.listing, Listing::Root));
     }
 }

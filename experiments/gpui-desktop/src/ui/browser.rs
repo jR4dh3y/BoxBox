@@ -14,6 +14,10 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let pane = self.pane();
+        let stale_error = match &pane.listing {
+            Listing::Failed(error) if !pane.items.is_empty() => Some(error.clone()),
+            _ => None,
+        };
         let content: AnyElement = match (&pane.listing, pane.current_view_mode()) {
             (Listing::Root, mode) => match &self.drives {
                 Load::Loading => div()
@@ -68,7 +72,7 @@ impl Workspace {
                         })),
                 )
                 .into_any_element(),
-            (_, ViewMode::List) => self.render_file_list(cx).into_any_element(),
+            (_, ViewMode::List) => self.render_file_list(window, cx).into_any_element(),
             (_, ViewMode::Grid) => self.render_file_grid(window, cx).into_any_element(),
         };
 
@@ -80,6 +84,20 @@ impl Workspace {
             .min_w_0()
             .bg(c(SURFACE_PRIMARY))
             .child(self.render_toolbar(window, cx))
+            .when_some(stale_error, |browser, error| {
+                browser.child(
+                    div()
+                        .flex_none()
+                        .px(px(12.))
+                        .py(px(6.))
+                        .border_b_1()
+                        .border_color(c(BORDER_PRIMARY))
+                        .bg(c(SURFACE_SECONDARY))
+                        .text_13()
+                        .text_color(c(TEXT_SECONDARY))
+                        .child(format!("Could not refresh: {error}")),
+                )
+            })
             .child(
                 div()
                     .relative()
