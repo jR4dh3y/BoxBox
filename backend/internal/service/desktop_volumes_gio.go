@@ -20,8 +20,8 @@ import (
 //	      can_unmount=1
 //	      can_eject=1
 //
-// Top-level volumes and mounts (those without a drive) are not removable
-// drives and are ignored here.
+// Top-level volumes and mounts (those without a drive) cannot be identified
+// and are ignored here.
 type gioVolumeListing struct {
 	drives []gioDrive
 }
@@ -223,14 +223,16 @@ func applyMountProperty(mount *gioMount, key, value string) {
 	}
 }
 
-func (listing gioVolumeListing) removableVolumes() []gioVolumeRef {
+// userVolumes returns the volumes GIO exposes to the user session: every volume
+// on a removable drive, plus volumes on fixed drives such as a second NTFS
+// partition. GVfs already hides system partitions (/, /home, /boot, swap,
+// recovery) on fixed drives, so whatever it lists there is a data volume the
+// user can browse, the same set file managers show under "Other Locations".
+func (listing gioVolumeListing) userVolumes() []gioVolumeRef {
 	var volumes []gioVolumeRef
 	for index := range listing.drives {
 		drive := &listing.drives[index]
-		if !drive.removable && !drive.mediaRemovable && !drive.canEject && drive.startStopType != "external" {
-			continue
-		}
-		if !drive.hasMedia && len(drive.volumes) == 0 {
+		if drive.isRemovable() && !drive.hasMedia && len(drive.volumes) == 0 {
 			continue
 		}
 		for volumeIndex := range drive.volumes {
@@ -238,4 +240,8 @@ func (listing gioVolumeListing) removableVolumes() []gioVolumeRef {
 		}
 	}
 	return volumes
+}
+
+func (d *gioDrive) isRemovable() bool {
+	return d.removable || d.mediaRemovable || d.canEject || d.startStopType == "external"
 }

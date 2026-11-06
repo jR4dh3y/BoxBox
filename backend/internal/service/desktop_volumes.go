@@ -35,7 +35,7 @@ const (
 	DesktopVolumeActionEject   DesktopVolumeAction = "eject"
 )
 
-// DesktopVolume is one removable volume reported by GIO. The ID is stable while
+// DesktopVolume is one user-visible volume (removable or internal) reported by GIO. The ID is stable while
 // the volume's UUID, device or drive identity stays the same; clients must send
 // it back instead of a device path.
 type DesktopVolume struct {
@@ -54,6 +54,7 @@ type DesktopVolume struct {
 	CanMount   bool   `json:"canMount"`
 	CanUnmount bool   `json:"canUnmount"`
 	CanEject   bool   `json:"canEject"`
+	Removable  bool   `json:"removable"`
 }
 
 // DesktopVolumesResponse always describes the current state. Available is false
@@ -366,7 +367,7 @@ func (s *desktopVolumesService) snapshot(ctx context.Context) (desktopVolumeSnap
 		response: DesktopVolumesResponse{Available: true, Volumes: []DesktopVolume{}},
 		volumes:  make(map[string]desktopVolumeTarget),
 	}
-	for _, found := range listing.removableVolumes() {
+	for _, found := range listing.userVolumes() {
 		volume, target := s.describeVolume(found)
 		if _, duplicate := snapshot.volumes[volume.ID]; duplicate {
 			continue
@@ -395,9 +396,13 @@ func (s *desktopVolumesService) describeVolume(found gioVolumeRef) (DesktopVolum
 		Device:    found.volume.ids["unix-device"],
 		UUID:      found.volume.uuid,
 		Mounted:   found.volume.mount != nil,
+		Removable: found.drive.isRemovable(),
 	}
 	if volume.Name == "" {
-		volume.Name = "Removable volume"
+		volume.Name = "Volume"
+		if volume.Removable {
+			volume.Name = "Removable volume"
+		}
 	}
 	if found.volume.mount != nil {
 		volume.MountURI = found.volume.mount.uri

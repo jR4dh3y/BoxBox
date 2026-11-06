@@ -14,7 +14,22 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 )
 
-const fixedDriveFixture = `Drive(0): KIOXIA-EXCERIA PLUS G3 SSD
+// systemDriveFixture is the boot NVMe as GVfs reports it: its system
+// partitions (/, /home, /boot) are hidden, so the drive lists no volumes.
+const systemDriveFixture = `Drive(0): KXG80ZNV512G KIOXIA
+  Type: GProxyDrive (GProxyVolumeMonitorUDisks2)
+  ids:
+   unix-device: '/dev/nvme0n1'
+  is_removable=0
+  is_media_removable=0
+  has_media=1
+  can_eject=0
+  start_stop_type=shutdown
+`
+
+// internalDataDriveFixture is a second NTFS partition on a fixed drive that
+// the user mounted under /run/media.
+const internalDataDriveFixture = `Drive(0): KIOXIA-EXCERIA PLUS G3 SSD
   Type: GProxyDrive (GProxyVolumeMonitorUDisks2)
   ids:
    unix-device: '/dev/nvme0n1'
@@ -37,7 +52,7 @@ const fixedDriveFixture = `Drive(0): KIOXIA-EXCERIA PLUS G3 SSD
       can_eject=0
 `
 
-const mountedUSBDriveFixture = fixedDriveFixture + `Drive(1): USB DISK 3.0
+const mountedUSBDriveFixture = systemDriveFixture + `Drive(1): USB DISK 3.0
   Type: GProxyDrive (GProxyVolumeMonitorUDisks2)
   ids:
    unix-device: '/dev/sdb'
@@ -60,7 +75,7 @@ const mountedUSBDriveFixture = fixedDriveFixture + `Drive(1): USB DISK 3.0
       can_eject=1
 `
 
-const unmountedUSBDriveFixture = fixedDriveFixture + `Drive(1): USB DISK 3.0
+const unmountedUSBDriveFixture = systemDriveFixture + `Drive(1): USB DISK 3.0
   Type: GProxyDrive (GProxyVolumeMonitorUDisks2)
   ids:
    unix-device: '/dev/sdb'
@@ -79,7 +94,7 @@ const unmountedUSBDriveFixture = fixedDriveFixture + `Drive(1): USB DISK 3.0
     can_eject=0
 `
 
-const emptyFixture = fixedDriveFixture
+const emptyFixture = systemDriveFixture
 
 type recordedVolumeCall struct {
 	name string
@@ -135,7 +150,7 @@ func firstVolume(t *testing.T, response DesktopVolumesResponse) DesktopVolume {
 
 func TestGioMountListFiltersRemovableDrives(t *testing.T) {
 	listing := parseGioMountList([]byte(mountedUSBDriveFixture))
-	volumes := listing.removableVolumes()
+	volumes := listing.userVolumes()
 	if len(volumes) != 1 {
 		t.Fatalf("removable volumes = %d, want 1", len(volumes))
 	}
@@ -417,10 +432,36 @@ func TestDesktopVolumesUnavailableWhenGioIsMissing(t *testing.T) {
 	}
 }
 
+func TestGioMountListIncludesInternalDataVolumes(t *testing.T) {
+	volumes := parseGioMountList([]byte(internalDataDriveFixture)).userVolumes()
+	if len(volumes) != 1 {
+		t.Fatalf("internal volumes = %d, want 1", len(volumes))
+	}
+	if volumes[0].drive.isRemovable() {
+		t.Fatal("fixed drive reported as removable")
+	}
+}
+
+func TestDesktopVolumesListDescribesMountedInternalVolume(t *testing.T) {
+	runner := &fakeVolumeRunner{listOutputs: [][]byte{[]byte(internalDataDriveFixture)}}
+	service := testDesktopVolumesService(runner, nil)
+	response, err := service.ListVolumes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := firstVolume(t, response)
+	if volume.Removable || !volume.Mounted || volume.CanEject || !volume.CanUnmount {
+		t.Fatalf("unexpected internal volume: %#v", volume)
+	}
+	if volume.MountPath != "/run/media/radhey/9646350B4634EE1D" || volume.Device != "/dev/nvme0n1p4" {
+		t.Fatalf("unexpected internal volume location: %#v", volume)
+	}
+}
+
 func TestDesktopVolumeIDStableWhenDriveOrderChanges(t *testing.T) {
-	first := parseGioMountList([]byte(mountedUSBDriveFixture)).removableVolumes()
+	first := parseGioMountList([]byte(mountedUSBDriveFixture)).userVolumes()
 	reordered := strings.Replace(mountedUSBDriveFixture, "Drive(1): USB DISK 3.0", "Drive(7): USB DISK 3.0", 1)
-	second := parseGioMountList([]byte(reordered)).removableVolumes()
+	second := parseGioMountList([]byte(reordered)).userVolumes()
 	if len(first) != 1 || len(second) != 1 {
 		t.Fatal("fixture must contain one removable volume")
 	}

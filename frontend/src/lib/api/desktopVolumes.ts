@@ -1,5 +1,5 @@
 /**
- * Removable-volume API for the local desktop app.
+ * Volume API (removable and internal data volumes) for the local desktop app.
  *
  * Volume IDs come from the backend's current GIO snapshot. Send them back
  * unchanged; device paths and mount URIs are never accepted from the client.
@@ -24,6 +24,7 @@ export interface DesktopVolume {
 	canMount: boolean;
 	canUnmount: boolean;
 	canEject: boolean;
+	removable: boolean;
 }
 
 export interface DesktopVolumesResponse {
@@ -53,7 +54,9 @@ function parseVolume(value: unknown): DesktopVolume {
 		freeBytes: optionalByteCount(volume.freeBytes, 'free size'),
 		canMount: boolean(volume.canMount, 'mount capability'),
 		canUnmount: boolean(volume.canUnmount, 'unmount capability'),
-		canEject: boolean(volume.canEject, 'eject capability')
+		canEject: boolean(volume.canEject, 'eject capability'),
+		// Older backends only reported removable volumes.
+		removable: volume.removable === undefined ? true : boolean(volume.removable, 'removable state')
 	};
 }
 
@@ -68,7 +71,7 @@ export function parseDesktopVolumesResponse(value: unknown): DesktopVolumesRespo
 	};
 }
 
-/** List mounted and mountable removable volumes. */
+/** List mounted and mountable volumes (removable and internal data volumes). */
 export async function listDesktopVolumes(signal?: AbortSignal): Promise<DesktopVolumesResponse> {
 	const response = await api.get<unknown>(DESKTOP_VOLUMES_ENDPOINT, undefined, signal);
 	return parseDesktopVolumesResponse(response);
