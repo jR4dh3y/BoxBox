@@ -13,6 +13,9 @@ const runtime = join(fixture, "runtime");
 await mkdir(runtime, { mode: 0o700 });
 const env = {
   ...process.env,
+  BOXBOX_DESKTOP_SMOKE: "1",
+  HOME: fixture,
+  GDK_BACKEND: "x11",
   XDG_DATA_HOME: join(fixture, "data"),
   XDG_CONFIG_HOME: join(fixture, "config"),
   XDG_CACHE_HOME: join(fixture, "cache"),
@@ -101,8 +104,9 @@ try {
   const owner = launch(launcher, firstFile);
   primary = owner;
   await until(
-    () => owner.output.includes(`/api/v1/files/list/root${firstDirectory}`),
-    "The native window did not render its launch folder",
+    () =>
+      owner.output.includes(`/api/v1/_desktop-painted/root${firstDirectory}`),
+    "The native window did not paint its launch folder",
     () => owner.output,
   );
   assert.equal(owner.child.exitCode, null);
@@ -135,8 +139,9 @@ try {
     forwarded.output,
   );
   await until(
-    () => owner.output.includes(`/api/v1/files/list/root${secondDirectory}`),
-    "The running window did not render the forwarded folder",
+    () =>
+      owner.output.includes(`/api/v1/_desktop-painted/root${secondDirectory}`),
+    "The running window did not paint the forwarded folder",
     () => owner.output,
   );
   assert.equal(owner.child.exitCode, null);
