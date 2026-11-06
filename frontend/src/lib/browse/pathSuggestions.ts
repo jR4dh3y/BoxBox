@@ -1,5 +1,5 @@
 import type { FileInfo } from '#lib/api/files.js';
-import { visibleByName } from './sortFiles';
+import { visibleByDefault } from './sortFiles';
 
 /** Child folders to suggest for `prefix`. A prefix starting with a dot asks for hidden folders. */
 export function suggestedDirectories(
@@ -7,7 +7,7 @@ export function suggestedDirectories(
 	prefix: string,
 	includeHidden: boolean
 ): FileInfo[] {
-	return visibleByName(
+	return visibleByDefault(
 		items.filter((item) => item.isDir),
 		includeHidden || prefix.startsWith('.')
 	);

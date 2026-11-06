@@ -16,8 +16,12 @@ function fail(stage: string, error: unknown): void {
 async function main(): Promise<void> {
   let request: InstanceRequest;
   try {
-    const target = parseLaunchTarget(launcherArguments(process.platform === "linux"));
-    request = launchRequest(target, process.env.BOXBOX_DESKTOP_URL);
+    const args = launcherArguments(process.platform === "linux");
+    const portal = args.length === 1 && args[0] === "--portal";
+    const target = portal ? undefined : parseLaunchTarget(args);
+    request = portal
+      ? { kind: "portal" }
+      : launchRequest(target, process.env.BOXBOX_DESKTOP_URL);
   } catch (error) {
     return fail("start", error);
   }

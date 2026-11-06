@@ -32,6 +32,9 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrThumbnailUnsupported, "No preview available for this file", model.ErrCodeValidationError, http.StatusUnsupportedMediaType},
 	{service.ErrThumbnailUnavailable, "Preview renderer unavailable", model.ErrCodeInternalError, http.StatusServiceUnavailable},
 
+	{service.ErrChooserClosed, "File chooser request is closed", model.ErrCodeNotFound, http.StatusGone},
+	{service.ErrChooserReplace, "A destination already exists. Confirm replacement.", model.ErrCodeConflict, http.StatusConflict},
+
 	// Path validation errors
 	{validator.ErrPathTraversal, "Invalid path", model.ErrCodeValidationError, http.StatusBadRequest},
 	{validator.ErrEmptyPath, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest},
@@ -112,6 +115,8 @@ func writeDesktopAppsError(w http.ResponseWriter, err error) {
 		writeError(w, "Could not open a terminal in that directory.", model.ErrCodeInternalError, http.StatusInternalServerError)
 	case errors.Is(err, service.ErrDesktopLaunchFailed):
 		writeError(w, "Could not launch the selected desktop application.", model.ErrCodeInternalError, http.StatusInternalServerError)
+	case errors.Is(err, service.ErrDesktopDefaultFailed):
+		writeError(w, "Could not set the default application. Check your desktop MIME association permissions and try again.", model.ErrCodeInternalError, http.StatusInternalServerError)
 	default:
 		HandleServiceError(w, err)
 	}

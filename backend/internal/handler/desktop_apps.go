@@ -32,10 +32,12 @@ func NewDesktopAppsHandler(apps service.DesktopApps) *DesktopAppsHandler {
 	return &DesktopAppsHandler{apps: apps}
 }
 
-// RegisterRoutes mounts /open, /apps, /open-with, and /terminal below /api/v1/desktop.
+// RegisterRoutes mounts local application discovery, icons, associations and launch actions.
 func (h *DesktopAppsHandler) RegisterRoutes(r chi.Router) {
 	r.Post("/open", h.Open)
 	r.Get("/apps", h.ListApps)
+	r.Get("/apps/icon", h.Icon)
+	r.Post("/apps/default", h.SetDefault)
 	r.Post("/open-with", h.OpenWith)
 	r.Post("/terminal", h.OpenTerminal)
 }
@@ -55,6 +57,26 @@ func (h *DesktopAppsHandler) ListApps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DesktopAppsHandler) OpenWith(w http.ResponseWriter, r *http.Request) {
+	h.runApplicationAction(w, r, h.apps.OpenWith)
+}
+
+func (h *DesktopAppsHandler) SetDefault(w http.ResponseWriter, r *http.Request) {
+	h.runApplicationAction(w, r, h.apps.SetDefault)
+}
+
+func (h *DesktopAppsHandler) Icon(w http.ResponseWriter, r *http.Request) {
+	icon, err := h.apps.Icon(r.Context(), r.URL.Query().Get("appId"))
+	if err != nil {
+		writeDesktopAppsError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "private, max-age=30")
+	_, _ = w.Write(icon.PNG)
+}
+
+func (h *DesktopAppsHandler) runApplicationAction(w http.ResponseWriter, r *http.Request, action func(context.Context, string, string) error) {
 	var request openWithRequest
 	if err := decodeJSONBody(w, r, &request); err != nil {
 		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
@@ -64,7 +86,7 @@ func (h *DesktopAppsHandler) OpenWith(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "Path and appId are required", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
 	}
-	if err := h.apps.OpenWith(r.Context(), request.Path, request.AppID); err != nil {
+	if err := action(r.Context(), request.Path, request.AppID); err != nil {
 		writeDesktopAppsError(w, err)
 		return
 	}
