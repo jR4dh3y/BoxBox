@@ -81,6 +81,11 @@ func TestDesktopBootstrapNavigationStaysLocal(t *testing.T) {
 	handler := desktopHandler(http.NotFoundHandler(), address, token)
 	for _, tc := range []struct{ next, want string }{
 		{"/browse?path=root%2Ftmp&select=root%2Ftmp%2Fexample.txt", "/browse?path=root%2Ftmp&select=root%2Ftmp%2Fexample.txt"},
+		{"/chooser?id=request-123", "/chooser?id=request-123"},
+		{"/%62rowse?path=root%2Ftmp", "/browse?path=root%2Ftmp"},
+		{"/chooser?id=one%0d%0aLocation%3A%20https%3A%2F%2Foutside.example", "/chooser?id=one%0D%0ALocation%3A+https%3A%2F%2Foutside.example"},
+		{"/browse/../outside", "/"},
+		{"/browse%2f%2foutside.example", "/"},
 		{"https://outside.example/browse", "/"},
 		{"//outside.example/browse", "/"},
 		{"/api/v1/desktop/open", "/"},

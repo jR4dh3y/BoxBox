@@ -1,5 +1,5 @@
 import { isRemotePath } from './remotePaths';
-import { api } from './client';
+import { api, buildUrl } from './client';
 import { array, boolean, ok, optionalString, record, string } from './parse';
 
 export interface DesktopApplication {
@@ -45,6 +45,19 @@ export async function listDesktopApps(
 export async function openDesktopWithApp(path: string, appId: string): Promise<void> {
 	if (isRemotePath(path)) throw new Error('Native applications require a file on this computer');
 	ok(await api.post<unknown>('/desktop/open-with', { path, appId }), 'open-with response');
+}
+
+/** The private desktop API resolves installed entry icons; host paths never become image URLs. */
+export function desktopAppIconUrl(appId: string): string {
+	return buildUrl('/desktop/apps/icon', { appId });
+}
+
+export async function setDesktopDefaultApp(path: string, appId: string): Promise<void> {
+	if (isRemotePath(path)) throw new Error('Native applications require a file on this computer');
+	ok(
+		await api.post<unknown>('/desktop/apps/default', { path, appId }),
+		'default application response'
+	);
 }
 
 export async function openDesktopTerminal(path: string): Promise<void> {

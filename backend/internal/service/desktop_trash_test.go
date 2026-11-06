@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -93,6 +94,47 @@ func TestDesktopTrashMoveListRestoreAndDelete(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(dataHome, "Trash", "files", "notes.txt")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("permanently deleted item still exists: %v", err)
+	}
+}
+
+func TestDesktopTrashDefaultOrder(t *testing.T) {
+	root := t.TempDir()
+	dataHome := filepath.Join(root, "data")
+	if err := os.Mkdir(dataHome, 0700); err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local)
+	trash := newTestDesktopTrash(t, dataHome, []model.MountPoint{{Name: "home", Path: root}}, []linuxMountInfo{{path: root, fstype: "ext4"}}, stamp)
+	for _, name := range []string{"old-folder", "new-folder", "file10.txt", "file2.txt", "newest.txt"} {
+		if strings.HasSuffix(name, "folder") {
+			if err := os.Mkdir(filepath.Join(root, name), 0700); err != nil {
+				t.Fatal(err)
+			}
+		} else if err := os.WriteFile(filepath.Join(root, name), []byte("test"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		modified := stamp
+		if name == "new-folder" || name == "newest.txt" {
+			modified = stamp.Add(time.Hour)
+		}
+		if err := os.Chtimes(filepath.Join(root, name), modified, modified); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := trash.Trash(context.Background(), "home/"+name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := trash.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, len(items))
+	for i, item := range items {
+		names[i] = item.Name
+	}
+	want := []string{"new-folder", "old-folder", "newest.txt", "file2.txt", "file10.txt"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("order = %v, want %v", names, want)
 	}
 }
 

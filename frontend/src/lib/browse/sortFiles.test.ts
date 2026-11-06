@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { FileInfo } from '#lib/api/files.js';
-import { sortFiles } from './sortFiles';
+import { sortFiles, visibleByDefault } from './sortFiles';
 import { suggestedDirectories } from './pathSuggestions';
 
 function entry(
@@ -12,77 +12,105 @@ function entry(
 }
 
 const names = (items: FileInfo[]) => items.map((item) => item.name);
-
 const folder = [
-	entry('b.txt', { size: 3, modTime: '2026-03-01T00:00:00Z' }),
-	entry('B.txt', { size: 1, modTime: '2026-01-01T00:00:00Z' }),
-	entry('10.txt', { size: 2, modTime: '2026-02-01T00:00:00Z' }),
-	entry('9.txt', { size: 2, modTime: '2026-04-01T00:00:00Z' }),
-	entry('.hidden', { size: 9 }),
-	entry('Zed', { isDir: true }),
-	entry('apps', { isDir: true }),
-	entry('.config', { isDir: true })
+	entry('file10.txt', { size: 10, modTime: '2026-06-01T00:00:00Z' }),
+	entry('.hidden', { size: 1, modTime: '2026-07-01T00:00:00Z' }),
+	entry('file2.txt', { size: 10, modTime: '2026-06-01T00:00:00Z' }),
+	entry('old-folder', { isDir: true, modTime: '2026-01-01T00:00:00Z' }),
+	entry('new-folder', { isDir: true, modTime: '2026-05-01T00:00:00Z' }),
+	entry('.config', { isDir: true, modTime: '2026-02-01T00:00:00Z' })
 ];
 
-test('names sort naturally, case only breaks ties, and folders come first', () => {
+test('default order puts folders first, newest first within each group, with natural name ties', () => {
+	assert.deepEqual(names(visibleByDefault(folder, true)), [
+		'new-folder',
+		'.config',
+		'old-folder',
+		'.hidden',
+		'file2.txt',
+		'file10.txt'
+	]);
+	assert.deepEqual(names(visibleByDefault(folder, false)), [
+		'new-folder',
+		'old-folder',
+		'file2.txt',
+		'file10.txt'
+	]);
+});
+
+test('folders lead all explicit sorts and directions, and hidden entries follow the same order', () => {
+	for (const field of ['name', 'type', 'modTime', 'size'] satisfies Parameters<
+		typeof sortFiles
+	>[1][]) {
+		for (const direction of ['asc', 'desc'] satisfies Parameters<typeof sortFiles>[2][]) {
+			const result = sortFiles(folder, field, direction);
+			assert.ok(result.slice(0, 3).every((item) => item.isDir));
+			assert.ok(result.slice(3).every((item) => !item.isDir));
+		}
+	}
 	assert.deepEqual(names(sortFiles(folder, 'name', 'asc')), [
-		'apps',
-		'Zed',
-		'9.txt',
-		'10.txt',
-		'b.txt',
-		'B.txt',
 		'.config',
+		'new-folder',
+		'old-folder',
+		'.hidden',
+		'file2.txt',
+		'file10.txt'
+	]);
+	assert.deepEqual(names(sortFiles(folder, 'name', 'desc')), [
+		'old-folder',
+		'new-folder',
+		'.config',
+		'file10.txt',
+		'file2.txt',
+		'.hidden'
+	]);
+	assert.deepEqual(names(sortFiles(folder, 'modTime', 'asc')), [
+		'old-folder',
+		'.config',
+		'new-folder',
+		'file2.txt',
+		'file10.txt',
+		'.hidden'
+	]);
+	assert.deepEqual(names(sortFiles(folder, 'size', 'desc')).slice(3), [
+		'file2.txt',
+		'file10.txt',
 		'.hidden'
 	]);
 });
 
-test('hidden entries stay last and folders stay first in both directions', () => {
-	const descending = names(sortFiles(folder, 'name', 'desc'));
-	assert.deepEqual(descending.slice(-2), ['.config', '.hidden']);
-	assert.deepEqual(descending.slice(0, 2), ['Zed', 'apps']);
-	assert.equal(descending[2], 'B.txt');
-});
-
-test('type sort puts folders first in both directions', () => {
-	assert.deepEqual(names(sortFiles(folder, 'type', 'asc')).slice(0, 2), ['apps', 'Zed']);
-	assert.deepEqual(names(sortFiles(folder, 'type', 'desc')), [
-		'Zed',
-		'apps',
-		'B.txt',
-		'b.txt',
-		'10.txt',
-		'9.txt',
+test('path suggestions use newest folders first, including hidden folders only when requested', () => {
+	assert.deepEqual(names(suggestedDirectories(folder, '', false)), ['new-folder', 'old-folder']);
+	assert.deepEqual(names(suggestedDirectories(folder, '.', false)), [
+		'new-folder',
 		'.config',
-		'.hidden'
+		'old-folder'
 	]);
 });
 
-test('size and date sort by value, with the name breaking ties', () => {
-	assert.deepEqual(names(sortFiles(folder, 'size', 'asc')).slice(0, 6), [
-		'apps',
-		'Zed',
-		'B.txt',
-		'9.txt',
-		'10.txt',
-		'b.txt'
-	]);
-	assert.deepEqual(names(sortFiles(folder, 'modTime', 'desc')).slice(0, 4), [
-		'9.txt',
-		'b.txt',
-		'10.txt',
-		'Zed'
+test('equal names in recursive searches use their full path as a deterministic tie-break', () => {
+	const items = [
+		{ ...entry('same.txt'), path: '@remote/id/media/folder10/same.txt' },
+		{ ...entry('same.txt'), path: '@remote/id/media/folder2/same.txt' }
+	];
+	assert.deepEqual(
+		sortFiles(items, 'modTime', 'desc').map((item) => item.path),
+		[items[1].path, items[0].path]
+	);
+});
+
+test('missing timestamps sort last and equal numeric names remain deterministic', () => {
+	const items = [entry('file2.txt'), entry('file02.txt'), entry('unknown', { modTime: 'invalid' })];
+	assert.deepEqual(names(visibleByDefault(items, true)), ['file02.txt', 'file2.txt', 'unknown']);
+	assert.deepEqual(names(visibleByDefault([...items].reverse(), true)), [
+		'file02.txt',
+		'file2.txt',
+		'unknown'
 	]);
 });
 
-test('sorting returns a copy and leaves the cached listing untouched', () => {
-	const before = names(folder);
-	sortFiles(folder, 'size', 'desc');
-	assert.deepEqual(names(folder), before);
-});
-
-test('path suggestions offer folders by name, and hidden ones only when asked', () => {
-	assert.deepEqual(names(suggestedDirectories(folder, '', false)), ['apps', 'Zed']);
-	assert.deepEqual(names(suggestedDirectories(folder, '.', false)), ['apps', 'Zed', '.config']);
-	assert.deepEqual(names(suggestedDirectories(folder, '', true)), ['apps', 'Zed', '.config']);
+test('sorting leaves the cached listing untouched', () => {
+	const before = [...folder];
+	visibleByDefault(folder, true);
+	assert.deepEqual(folder, before);
 });
