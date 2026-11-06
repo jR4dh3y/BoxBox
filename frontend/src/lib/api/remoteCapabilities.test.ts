@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { isNativePath, openDesktopFile, supportsServerTransfer } from './desktop';
-import { listDesktopApps, openDesktopTerminal, openDesktopWithApp } from './desktopApps';
+import {
+	listDesktopApps,
+	openDesktopTerminal,
+	openDesktopWithApp,
+	setDesktopDefaultApp
+} from './desktopApps';
 import { setDesktopClipboard } from './desktopClipboard';
 import { trashDesktopFile } from './desktopTrash';
 import { getFileContextMenuItems } from '../utils/fileContextMenu';
@@ -27,6 +32,7 @@ test('remote paths never reach native open, applications, terminal, trash or cli
 	await assert.rejects(openDesktopFile(remote));
 	await assert.rejects(listDesktopApps(remote));
 	await assert.rejects(openDesktopWithApp(remote, 'app'));
+	await assert.rejects(setDesktopDefaultApp(remote, 'app'));
 	await assert.rejects(openDesktopTerminal(remote));
 	await assert.rejects(trashDesktopFile(remote));
 	await assert.rejects(setDesktopClipboard([remote], 'copy'));
