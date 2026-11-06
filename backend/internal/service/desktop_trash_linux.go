@@ -15,6 +15,7 @@ import (
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
 	"golang.org/x/sys/unix"
 )
 
@@ -48,16 +49,27 @@ func (s *desktopTrashService) List(ctx context.Context) ([]DesktopTrashItem, err
 	if err != nil {
 		return nil, err
 	}
+	sort.Slice(entries, func(i, j int) bool {
+		left, right := entries[i], entries[j]
+		if left.item.IsDir != right.item.IsDir {
+			return left.item.IsDir
+		}
+		// Rename into Trash preserves mtime. Deletion time is separate metadata.
+		if left.stat.Mtim.Sec != right.stat.Mtim.Sec {
+			return left.stat.Mtim.Sec > right.stat.Mtim.Sec
+		}
+		if left.stat.Mtim.Nsec != right.stat.Mtim.Nsec {
+			return left.stat.Mtim.Nsec > right.stat.Mtim.Nsec
+		}
+		if comparison := fileutil.CompareNames(left.item.Name, right.item.Name); comparison != 0 {
+			return comparison < 0
+		}
+		return left.item.ID < right.item.ID
+	})
 	items := make([]DesktopTrashItem, len(entries))
 	for i, entry := range entries {
 		items[i] = entry.item
 	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].DeletedAt.Equal(items[j].DeletedAt) {
-			return items[i].Name < items[j].Name
-		}
-		return items[i].DeletedAt.After(items[j].DeletedAt)
-	})
 	return items, nil
 }
 
