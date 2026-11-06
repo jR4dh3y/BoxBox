@@ -3,6 +3,7 @@
  */
 
 import { isLocalDesktop } from '#lib/api/desktop.js';
+import { DEFAULT_SORT_BY, DEFAULT_SORT_DIR } from '#lib/browse/sortFiles.js';
 import type { DesktopPreferences } from '#lib/api/desktopPreferences.js';
 import { settingsStorage, storage } from '#lib/utils/storage.js';
 import {
@@ -55,8 +56,8 @@ const defaultSettings: UserSettings = {
 	showHiddenFiles: false,
 	showFileExtensions: true,
 	confirmDelete: true,
-	defaultSortBy: 'name',
-	defaultSortDir: 'asc',
+	defaultSortBy: DEFAULT_SORT_BY,
+	defaultSortDir: DEFAULT_SORT_DIR,
 	defaultViewMode: 'list',
 	accentColor: null,
 	accentColorSource: 'wallpaper',

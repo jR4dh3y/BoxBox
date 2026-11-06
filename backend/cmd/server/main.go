@@ -126,7 +126,9 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to listen")
 	}
 	if *desktopMode {
-		server.Handler = desktopHandler(desktopRoutes(server.Handler, cfg), listener.Addr().String(), token)
+		chooser, closeChooser := startDesktopChooser(ctx, cfg)
+		defer closeChooser()
+		server.Handler = desktopHandler(desktopRoutesWithChooser(server.Handler, cfg, chooser), listener.Addr().String(), token)
 	}
 	// Start HTTP server in background
 	go func() {

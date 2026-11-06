@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -150,6 +151,44 @@ func TestShareFolderListsNestedItemsAndKeepsPathsRelative(t *testing.T) {
 	content, err := io.ReadAll(file)
 	if err != nil || string(content) != "notes" {
 		t.Fatalf("nested file content = %q, err=%v", content, err)
+	}
+}
+
+func TestShareFolderDefaultOrder(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"old-folder", "new-folder"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"file10.txt", "file2.txt", ".hidden", "newest.txt"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("test"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for name, days := range map[string]int{"old-folder": 0, "new-folder": 2, "file10.txt": 3, "file2.txt": 3, ".hidden": 1, "newest.txt": 4} {
+		stamp := base.Add(time.Duration(days) * 24 * time.Hour)
+		if err := os.Chtimes(filepath.Join(root, name), stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shares := NewShareService(filesystem.NewOsFS(), ShareServiceConfig{DataDir: t.TempDir(), Mounts: func() []model.MountPoint { return []model.MountPoint{{Name: "media", Path: root}} }})
+	folder, err := shares.Create(context.Background(), "owner", "media", ShareSettings{Permissions: model.SharePermissions{View: true}}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := shares.ListForRecipient(context.Background(), folder.Token, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, len(listed.Items))
+	for i, item := range listed.Items {
+		names[i] = item.Name
+	}
+	want := []string{"new-folder", "old-folder", "newest.txt", "file2.txt", "file10.txt", ".hidden"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("order = %v, want %v", names, want)
 	}
 }
 
