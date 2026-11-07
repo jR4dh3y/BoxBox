@@ -43,6 +43,21 @@ describe('desktop volume response parsing', () => {
 		assert.deepEqual(parseDesktopVolumesResponse(response()), response());
 	});
 
+	test('preserves internal volumes and defaults legacy responses to removable', () => {
+		const internal = volume({ removable: false, canEject: false });
+		const legacy: Record<string, unknown> = { ...volume() };
+		delete legacy.removable;
+
+		assert.equal(
+			parseDesktopVolumesResponse({ available: true, volumes: [internal] }).volumes[0]?.removable,
+			false
+		);
+		assert.equal(
+			parseDesktopVolumesResponse({ available: true, volumes: [legacy] }).volumes[0]?.removable,
+			true
+		);
+	});
+
 	test('parses the unavailable handler body without masking its reason', () => {
 		const body: unknown = JSON.parse(
 			'{"available":false,"reason":"The gio command is not installed.","volumes":[]}'
