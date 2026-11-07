@@ -1,0 +1,148 @@
+//! BoxBox desktop browse UI in GPUI. An experiment: it talks to a running BoxBox server
+//! and reproduces the Svelte desktop/web layout pixel for pixel where GPUI allows.
+
+mod api;
+mod assets;
+mod clipboard;
+mod context_menu;
+mod desktop;
+mod devices;
+mod dialogs;
+mod dnd;
+mod drag_out;
+mod format;
+mod instance;
+mod jobs;
+mod location;
+mod media;
+mod notifications;
+mod ops;
+mod pane;
+mod preferences;
+mod search;
+mod server;
+mod settings;
+mod sort;
+mod sse;
+mod theme;
+mod trash;
+mod ui;
+mod undo;
+mod watch;
+mod workspace;
+
+use std::process::Command;
+
+use gpui::{
+    point, px, size, App, AppContext, Application, Bounds, SharedString, TitlebarOptions,
+    WindowBounds, WindowDecorations, WindowOptions,
+};
+
+use crate::api::{Api, Auth};
+use crate::workspace::{Fonts, Workspace};
+
+/// The browser resolves the CSS `sans-serif`/`monospace` stacks through fontconfig; do the same.
+fn fontconfig_family(pattern: &str, fallback: &str) -> SharedString {
+    Command::new("fc-match")
+        .args(["-f", "%{family[0]}", pattern])
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .filter(|family| !family.trim().is_empty())
+        .map(|family| SharedString::from(family.trim().to_string()))
+        .unwrap_or_else(|| SharedString::from(fallback.to_string()))
+}
+
+fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    // Like the Electrobun launcher, accept an absolute local path as well as a BoxBox path.
+    let initial_path = std::env::args()
+        .nth(1)
+        .map(|arg| location::parse_location(&arg))
+        .unwrap_or_default();
+    let launches = match instance::claim(&initial_path) {
+        Ok(instance::Instance::Forwarded) => return,
+        Ok(instance::Instance::Primary(launches)) => Some(launches),
+        Err(error) => {
+            log::warn!("single-instance socket unavailable: {error:#}");
+            None
+        }
+    };
+    // `BOXBOX_URL` attaches to a running server; otherwise start the private desktop server.
+    let (api, local) = match std::env::var("BOXBOX_URL")
+        .ok()
+        .filter(|url| !url.is_empty())
+    {
+        Some(url) => {
+            let auth = std::env::var("BOXBOX_TOKEN")
+                .ok()
+                .filter(|token| !token.is_empty())
+                .map_or(Auth::None, Auth::Bearer);
+            (Api::new(&url, auth), None)
+        }
+        None => {
+            let started = server::find_binary()
+                .and_then(|binary| server::LocalServer::start(&binary, &server::data_dir()));
+            match started {
+                Ok(local) => (
+                    Api::new(&local.origin, Auth::Desktop(local.token.clone())),
+                    Some(local),
+                ),
+                Err(error) => {
+                    eprintln!("BoxBox: {error:#}");
+                    std::process::exit(1);
+                }
+            }
+        }
+    };
+    let fonts = Fonts {
+        sans: fontconfig_family("sans-serif", ".SystemUIFont"),
+        mono: fontconfig_family("monospace", "monospace"),
+    };
+
+    Application::new()
+        .with_assets(assets::Assets)
+        .run(move |cx: &mut App| {
+            workspace::bind_keys(cx);
+            ui::text_input::bind_keys(cx);
+            let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("BoxBox".into()),
+                        appears_transparent: false,
+                        traffic_light_position: Some(point(px(9.), px(9.))),
+                    }),
+                    app_id: Some("boxbox-gpui".into()),
+                    window_min_size: Some(size(px(640.), px(400.))),
+                    window_decorations: Some(WindowDecorations::Server),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    cx.new(|cx| {
+                        let mut workspace = Workspace::new(api, fonts, initial_path, window, cx);
+                        if let Some(launches) = launches {
+                            workspace.accept_launches(launches, window, cx);
+                        }
+                        workspace
+                    })
+                },
+            )
+            .expect("failed to open the BoxBox window");
+            cx.activate(true);
+            // Closing the last window stops the private server, like the Electrobun app.
+            cx.on_window_closed(|cx| {
+                if cx.windows().is_empty() {
+                    cx.quit();
+                }
+            })
+            .detach();
+            let local = std::sync::Mutex::new(local);
+            cx.on_app_quit(move |_| {
+                drop(local.lock().ok().and_then(|mut local| local.take()));
+                async {}
+            })
+            .detach();
+        });
+}
