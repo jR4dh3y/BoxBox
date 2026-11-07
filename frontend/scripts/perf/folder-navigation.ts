@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Browser } from 'playwright';
 
@@ -13,11 +13,11 @@ export async function verifyFolderNavigation(
 	const navigationRoot = join(mount, 'FolderNavigation');
 	for (const folder of ['ScrollA', 'ScrollB']) {
 		mkdirSync(join(navigationRoot, folder), { recursive: true });
-		for (let i = 0; i < 500; i++)
-			writeFileSync(
-				join(navigationRoot, folder, `File-${String(i).padStart(4, '0')}.txt`),
-				'fixture'
-			);
+		for (let i = 0; i < 500; i++) {
+			const file = join(navigationRoot, folder, `File-${String(i).padStart(4, '0')}.txt`);
+			writeFileSync(file, 'fixture');
+			utimesSync(file, 1_700_000_000, 1_700_000_000);
+		}
 	}
 	const context = await browser.newContext();
 	try {
