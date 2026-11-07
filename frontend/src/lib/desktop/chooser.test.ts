@@ -139,7 +139,8 @@ const removable: DesktopVolume = {
 	readOnly: false,
 	canMount: true,
 	canUnmount: false,
-	canEject: false
+	canEject: false,
+	removable: true
 };
 
 test('mounting in Other locations opens the fresh backend browse path', async () => {
