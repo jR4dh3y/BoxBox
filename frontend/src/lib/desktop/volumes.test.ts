@@ -13,6 +13,7 @@ function volume(overrides: Partial<DesktopVolume> = {}): DesktopVolume {
 		canMount: false,
 		canUnmount: true,
 		canEject: true,
+		removable: true,
 		...overrides
 	};
 }

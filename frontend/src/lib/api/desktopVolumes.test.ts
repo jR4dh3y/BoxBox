@@ -23,6 +23,7 @@ function volume(overrides: Partial<DesktopVolume> = {}): DesktopVolume {
 		canMount: false,
 		canUnmount: true,
 		canEject: true,
+		removable: true,
 		...overrides
 	};
 }
@@ -40,6 +41,21 @@ describe('desktop volume response parsing', () => {
 		});
 		assert.deepEqual(parsed, { available: false, reason: 'GIO is not installed.', volumes: [] });
 		assert.deepEqual(parseDesktopVolumesResponse(response()), response());
+	});
+
+	test('preserves internal volumes and defaults legacy responses to removable', () => {
+		const internal = volume({ removable: false, canEject: false });
+		const legacy: Record<string, unknown> = { ...volume() };
+		delete legacy.removable;
+
+		assert.equal(
+			parseDesktopVolumesResponse({ available: true, volumes: [internal] }).volumes[0]?.removable,
+			false
+		);
+		assert.equal(
+			parseDesktopVolumesResponse({ available: true, volumes: [legacy] }).volumes[0]?.removable,
+			true
+		);
 	});
 
 	test('parses the unavailable handler body without masking its reason', () => {
