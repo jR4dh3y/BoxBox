@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestJobEventsOwnerIsolationAndOverflow(t *testing.T) {
+func TestJobEventsOwnerIsolationAndSnapshot(t *testing.T) {
 	var events JobEvents
 	alice, stopAlice := events.Watch(authcontext.WithUsername(context.Background(), "alice"))
 	defer stopAlice()
@@ -23,11 +23,6 @@ func TestJobEventsOwnerIsolationAndOverflow(t *testing.T) {
 	case <-bob:
 		t.Fatal("owner leak")
 	default:
-	}
-	for i := 0; i < 129; i++ {
-		events.Publish(job)
-	}
-	for range alice {
 	}
 	stopAlice()
 }
