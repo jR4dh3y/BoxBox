@@ -5,6 +5,7 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
 	"testing"
+	"time"
 )
 
 func TestJobEventsOwnerIsolationAndSnapshot(t *testing.T) {
@@ -23,6 +24,22 @@ func TestJobEventsOwnerIsolationAndSnapshot(t *testing.T) {
 	case <-bob:
 		t.Fatal("owner leak")
 	default:
+	}
+	for i := 0; i < 129; i++ {
+		events.Publish(job)
+	}
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
+drain:
+	for {
+		select {
+		case _, ok := <-alice:
+			if !ok {
+				break drain
+			}
+		case <-timeout.C:
+			t.Fatal("overflowed subscriber channel did not close")
+		}
 	}
 	stopAlice()
 }
