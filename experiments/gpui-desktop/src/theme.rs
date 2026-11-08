@@ -12,13 +12,10 @@ pub const TEXT_PRIMARY: u32 = 0xe0e0e0;
 pub const TEXT_SECONDARY: u32 = 0xa6a6a6;
 pub const TEXT_MUTED: u32 = 0x8c8c8c;
 pub const TEXT_DISABLED: u32 = 0x444444;
-pub const ACCENT: u32 = 0x4a9eff;
 pub const INFO: u32 = 0x4a9eff;
 pub const DANGER: u32 = 0xdc3545;
 pub const WARNING: u32 = 0xf39c12;
 pub const FOLDER: u32 = 0xe8c36a;
-pub const SELECTION: u32 = 0x2d4a6f;
-pub const SELECTION_HOVER: u32 = 0x345580;
 pub const WHITE: u32 = 0xffffff;
 
 pub fn c(hex: u32) -> Rgba {

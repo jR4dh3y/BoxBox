@@ -4,7 +4,7 @@ use gpui::{div, prelude::*, px, Context};
 
 use super::{icon, TextScale};
 use crate::theme::*;
-use crate::workspace::{NewTab, Workspace};
+use crate::workspace::{NewTab, ToggleSplit, Workspace};
 
 impl Workspace {
     pub(crate) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -57,6 +57,7 @@ impl Workspace {
             .overflow_x_scroll()
             .border_b_1()
             .border_color(c(BORDER_SECONDARY))
+            .bg(self.shell_background())
             .px(px(8.))
             .children(tabs)
             .child(
@@ -69,9 +70,13 @@ impl Workspace {
             )
             .child(
                 div()
+                    .id("toggle-split")
+                    .debug_selector(|| "toggle-split".into())
                     .ml_auto()
                     .p(px(4.))
-                    .child(icon("columns-2", 14., c(TEXT_SECONDARY))),
+                    .cursor_pointer()
+                    .child(icon("columns-2", 14., c(TEXT_SECONDARY)))
+                    .on_click(cx.listener(|this, _, window, cx| this.toggle_split(&ToggleSplit, window, cx))),
             )
     }
 }

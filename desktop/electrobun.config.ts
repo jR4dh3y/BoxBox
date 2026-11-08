@@ -24,13 +24,9 @@ export default {
       "resources/native": "native",
     },
     linux: {
-      bundleCEF: true,
-      defaultRenderer: "cef",
-      // Electrobun defaults to software rendering for VM compatibility.
-      chromiumFlags: {
-        "disable-gpu": false,
-        "disable-gpu-compositing": false,
-      },
+      // Use the system GTK WebKit renderer for the Linux test install.
+      bundleCEF: false,
+      defaultRenderer: "native",
     },
     mac: { bundleCEF: true, defaultRenderer: "cef" },
     win: { bundleCEF: true, defaultRenderer: "cef" },

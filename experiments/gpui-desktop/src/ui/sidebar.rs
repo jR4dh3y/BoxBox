@@ -83,14 +83,19 @@ impl Workspace {
     }
 
     pub(crate) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let current = self.pane().path.clone();
+        let pane = self.pane();
+        let current = pane.path.clone();
+        let roots: &[crate::api::MountPoint] = match &pane.roots {
+            crate::pane::Load::Loaded(roots) => roots,
+            _ => &[],
+        };
         let drives = std::iter::once(NavItem {
             name: "This PC".into(),
             path: String::new(),
             icon: "server",
         })
         .chain(
-            self.roots
+            roots
                 .iter()
                 .filter(|root| root.kind != RootKind::Place)
                 .map(|root| NavItem {
@@ -100,8 +105,7 @@ impl Workspace {
                 }),
         )
         .collect::<Vec<_>>();
-        let places = self
-            .roots
+        let places = roots
             .iter()
             .filter(|root| root.kind == RootKind::Place)
             .map(|root| NavItem {
@@ -134,7 +138,7 @@ impl Workspace {
             .overflow_y_scroll()
             .border_r_1()
             .border_color(c(BORDER_SECONDARY))
-            .bg(c(SURFACE_PRIMARY))
+            .bg(self.shell_background())
             .child(
                 section()
                     .child(section_header("Drives"))
@@ -147,33 +151,83 @@ impl Workspace {
                         .child(div().pb(px(8.)).children(place_rows)),
                 )
             })
-            // The desktop shell passes onTrash, so the Trash entry is always shown.
-            .child(
-                div()
-                    .id("trash")
-                    .w_full()
-                    .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .py(px(6.))
-                    .pl(px(20.))
-                    .pr(px(12.))
-                    .text_13()
-                    .cursor_pointer()
-                    .hover(|style| style.bg(c(SURFACE_SECONDARY)))
-                    .child(icon("trash-2", 16., c(TEXT_PRIMARY)))
-                    .child("Trash"),
-            )
+            .when(pane.api.is_local(), |sidebar| {
+                sidebar.child(
+                    div()
+                        .id("trash").debug_selector(|| "sidebar-trash".into())
+                        .w_full()
+                        .flex()
+                        .items_center()
+                        .gap(px(10.))
+                        .py(px(6.))
+                        .pl(px(20.))
+                        .pr(px(12.))
+                        .text_13()
+                        .cursor_pointer()
+                        .text_color(c(if self.trash_open { WHITE } else { TEXT_PRIMARY }))
+                        .hover(|style| style.bg(c(SURFACE_SECONDARY)))
+                        .child(icon(
+                            "trash-2",
+                            16.,
+                            c(if self.trash_open { WHITE } else { TEXT_PRIMARY }),
+                        ))
+                        .child("Trash")
+                        .on_click(cx.listener(|this, _, _, cx| this.open_trash(cx))),
+                )
+            })
             .child(
                 section().child(section_header("Favorites")).child(
-                    div().pb(px(8.)).child(
-                        div()
-                            .px(px(20.))
-                            .py(px(8.))
-                            .text_xs_tw()
-                            .text_color(c(TEXT_MUTED))
-                            .child("No favorites yet"),
-                    ),
+                    div()
+                        .pb(px(8.))
+                        .children(self.favorites.entries.iter().enumerate().map(|(index, favorite)| {
+                            let name = favorite.name.clone();
+                            let provider = favorite.provider.clone();
+                            div()
+                                .id(SharedString::from(format!("favorite-{index}")))
+                                .w_full()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .py(px(6.))
+                                .pl(px(20.))
+                                .pr(px(8.))
+                                .text_13()
+                                .cursor_pointer()
+                                .text_color(c(TEXT_PRIMARY))
+                                .hover(|style| style.bg(c(SURFACE_SECONDARY)))
+                                .child(icon(
+                                    match provider {
+                                        crate::workspace::favorites::FavoriteProvider::Local => "folder",
+                                        crate::workspace::favorites::FavoriteProvider::Remote(_) => "cloud",
+                                    },
+                                    16.,
+                                    c(TEXT_SECONDARY),
+                                ))
+                                .child(div().flex_1().min_w_0().truncate().child(name))
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("favorite-remove-{index}")))
+                                        .px(px(4.))
+                                        .text_color(c(TEXT_MUTED))
+                                        .hover(|style| style.text_color(c(DANGER)))
+                                        .child("×")
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            cx.stop_propagation();
+                                            this.remove_favorite(index, cx)
+                                        })),
+                                )
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.open_favorite(index, cx)
+                                }))
+                        }))
+                        .when(self.favorites.entries.is_empty(), |favorites| {
+                            favorites
+                                .px(px(20.))
+                                .py(px(8.))
+                                .text_xs_tw()
+                                .text_color(c(TEXT_MUTED))
+                                .child("No favorites yet")
+                        }),
                 ),
             )
     }

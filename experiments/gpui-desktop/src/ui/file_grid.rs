@@ -2,9 +2,10 @@
 
 use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, Window};
 
-use super::{thin_icon, TextScale, SIDEBAR_WIDTH};
+use super::{thin_icon, TextScale};
 use crate::format::{file_icon, file_size};
 use crate::theme::*;
+use crate::workspace::operations::PaneTarget;
 use crate::workspace::Workspace;
 
 const TILE_WIDTH: f32 = 112.;
@@ -30,10 +31,11 @@ fn display_name(name: &str, is_dir: bool, show_extensions: bool) -> String {
 impl Workspace {
     pub(crate) fn render_file_grid(
         &self,
+        target: PaneTarget,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let pane = self.pane();
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
         let compact = self.preferences.compact_rows;
         let tile_width = if compact { 96. } else { TILE_WIDTH };
         let row_height = if compact { 136. } else { ROW_HEIGHT };
@@ -51,12 +53,12 @@ impl Workspace {
                 .child(div().text_13().text_color(c(TEXT_MUTED)).child(message))
                 .into_any_element();
         }
-        let width = f32::from(window.viewport_size().width) - SIDEBAR_WIDTH - padding * 2.;
+        let width = self.browser_width(window) - padding * 2.;
         let columns = columns_for_with(width, tile_width, gap);
         let rows = pane.items.len().div_ceil(columns);
         div()
             .size_full()
-            .bg(c(SURFACE_PRIMARY))
+            .bg(self.file_background())
             .child(
                 uniform_list(
                     "file-grid",
@@ -65,7 +67,7 @@ impl Workspace {
                         range
                             .map(|row| {
                                 let start = row * columns;
-                                let end = (start + columns).min(this.pane().items.len());
+                                let end = (start + columns).min(this.pane_by_id(target.0).map_or(0, |pane| pane.items.len()));
                                 // uniform_list needs equal rows, so the container's top padding
                                 // is folded into every row instead of only the first.
                                 div()
@@ -75,7 +77,11 @@ impl Workspace {
                                     .flex()
                                     .items_start()
                                     .gap(px(gap))
-                                    .children((start..end).map(|index| this.render_tile(index, compact, tile_width, cx)))
+                                    .children((start..end).filter_map(|index| {
+                                        let item = this.pane_by_id(target.0)?.items.get(index)?.clone();
+                                        this.request_thumbnail(target, item, cx);
+                                        Some(this.render_tile(target, index, compact, tile_width, cx))
+                                    }))
                             })
                             .collect::<Vec<_>>()
                     }),
@@ -88,12 +94,14 @@ impl Workspace {
 
     fn render_tile(
         &self,
+        target: PaneTarget,
         index: usize,
         compact: bool,
         tile_width: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let pane = self.pane();
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
+        let target = crate::workspace::operations::PaneTarget(pane.id);
         let item = &pane.items[index];
         let selected = pane.is_selected(&item.path);
         let active = pane.active == Some(index);
@@ -103,7 +111,7 @@ impl Workspace {
             div().id(("tile", index)),
             index,
             cx.entity().downgrade(),
-            self.api.clone(),
+            pane.api.clone(),
         )
         .w(px(tile_width))
         .flex_none()
@@ -116,16 +124,25 @@ impl Workspace {
         .cursor_default()
         .map(|tile| match (selected, active) {
             (true, _) => tile
-                .border_color(alpha(ACCENT, 0.7))
-                .bg(c(SELECTION))
-                .hover(|style| style.bg(c(SELECTION_HOVER))),
+                .border_color(alpha(self.accent_hex(), 0.7))
+                .bg(self.selection_color(false))
+                .hover({ let color = self.selection_color(true); move |style| style.bg(color) }),
             (false, true) => tile
-                .border_color(alpha(ACCENT, 0.))
+                .border_color(alpha(self.accent_hex(), 0.))
                 .bg(c(SURFACE_SECONDARY)),
             (false, false) => tile
-                .border_color(alpha(ACCENT, 0.))
+                .border_color(alpha(self.accent_hex(), 0.))
                 .hover(|style| style.bg(c(SURFACE_SECONDARY))),
         })
+        .when(self.preferences.selection_checkboxes, |element| element.child(
+            div().id(("selection-checkbox", index)).size(px(18.)).flex_none().rounded(px(3.)).border_1()
+                .border_color(c(BORDER_PRIMARY)).text_xs_tw().child(if selected { "✓" } else { "" })
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.active_pane = target;
+                    this.pane_mut().click(index, gpui::Modifiers { control: true, ..Default::default() });
+                    cx.stop_propagation(); cx.notify();
+                }))
+        ))
         .child(
             div()
                 .h(px(if compact { 56. } else { 80. }))
@@ -138,12 +155,11 @@ impl Workspace {
                 .rounded(px(4.))
                 .border_1()
                 .border_color(c(BORDER_PRIMARY))
-                .bg(c(SURFACE_PRIMARY))
-                .child(thin_icon(
-                    file_icon(&item.name, item.is_dir),
-                    30.,
-                    c(if item.is_dir { FOLDER } else { TEXT_SECONDARY }),
-                )),
+                .bg(self.file_background())
+                .map(|slot| match self.thumbnail(&pane.api, item) {
+                    Some(image) => slot.child(gpui::img(image).size_full().object_fit(gpui::ObjectFit::Contain)),
+                    None => slot.child(thin_icon(file_icon(&item.name, item.is_dir), 30., c(if item.is_dir { FOLDER } else { TEXT_SECONDARY }))),
+                }),
         )
         .child(
             div()
@@ -179,8 +195,13 @@ impl Workspace {
                         }),
                 ),
         )
-        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-            this.activate_item(index, &path, is_dir, event, cx)
+        .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+            this.show_item_context_menu(target, index, event.position, cx);
+            cx.stop_propagation();
+        }))
+        .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+            this.active_pane = target;
+            this.activate_list_item(index, &path, is_dir, event, window, cx)
         }))
     }
 }

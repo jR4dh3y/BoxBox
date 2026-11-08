@@ -1,6 +1,6 @@
 # BoxBox Desktop
 
-Linux desktop client using Electrobun 2.0.4, Bun and bundled Chromium (CEF). It shares the Svelte frontend and Go API with the self-hosted edition.
+Linux desktop client using Electrobun 2.0.4, Bun and system GTK WebKit. It shares the Svelte frontend and Go API with the self-hosted edition.
 
 For a published package, use [Downloads](https://boxbox.radhey.dev/download/) and the [desktop installation guide](../docs/desktop.md). The original desktop archive supports Linux x86_64; ARM64 server archives do not contain a desktop app. The separate AppImage workflow adds native x86_64 and ARM64 desktop packages.
 
@@ -12,11 +12,11 @@ bun install --cwd desktop --frozen-lockfile
 bun run dev:desktop
 ```
 
-Go, Bun, Rust 1.88 or newer, `xdg-open`, GIO, GTK 3, WebKitGTK 4.1, Ayatana AppIndicator and librsvg must be installed. Native file clipboard support uses `wl-clipboard` on Wayland or `xclip` on X11. Publishing interoperable cut/copy formats also needs Python 3 with PyGObject and GTK 4; when unavailable, copy can use URI-list fallback and cut reports the missing capability. Install FFmpeg and Poppler (`ffmpeg` and `poppler-utils` on Debian/Ubuntu) for video/audio previews and PDF first pages. These optional media tools are discovered at runtime; missing tools leave the file icon. Electrobun downloads its pinned native SDK, Bun runtime and CEF on the first build. Its Linux native wrapper still links WebKitGTK even when CEF is selected; the app explicitly requires and renders with CEF.
+Go, Bun, Rust 1.88 or newer, `xdg-open`, GIO, GTK 3, WebKitGTK 4.1, Ayatana AppIndicator and librsvg must be installed. Native file clipboard support uses `wl-clipboard` on Wayland or `xclip` on X11. Publishing interoperable cut/copy formats also needs Python 3 with PyGObject and GTK 4; when unavailable, copy can use URI-list fallback and cut reports the missing capability. Install FFmpeg and Poppler (`ffmpeg` and `poppler-utils` on Debian/Ubuntu) for video/audio previews and PDF first pages. These optional media tools are discovered at runtime; missing tools leave the file icon. Electrobun downloads its pinned native SDK and Bun runtime on the first build; this Linux test bundle uses the system WebKitGTK renderer and does not bundle CEF.
 
-Linux builds allow CEF to use GPU compositing and rasterization. BoxBox removes Electrobun's default `disable-gpu` and `disable-gpu-compositing` flags; those defaults force wallpaper blur and hover repaints onto the CPU. Chromium still decides which graphics features the driver supports.
+The Linux test bundle uses WebKitGTK's native compositing path. The CEF hardware-acceleration preference remains available to CEF builds, but it is not consulted by this WebKit bundle.
 
-Appearance → Hardware acceleration is available only in the desktop app. The choice is saved per app/channel and takes effect after fully closing and reopening BoxBox. The launcher applies it to the SDK startup configuration before CEF loads; changing modes requires a writable bundle directory, as created by the desktop installer.
+Appearance → Hardware acceleration is available only in CEF desktop builds. The choice is saved per app/channel and takes effect after fully closing and reopening BoxBox.
 
 Appearance → Tint components from wallpaper colours cards, menus, dialogs and controls using the sampled wallpaper hue. It is independent of the accent colour, preserves status colours, and is saved on this client. Removing the wallpaper restores neutral surfaces. Scrollbars follow the surface theme without replacing native scrolling.
 
@@ -33,7 +33,7 @@ bun run --cwd desktop scripts/native-smoke.ts # requires a graphical Linux sessi
 
 The stable release wrapper is `desktop/build/stable-linux-x64/BoxBox/bin/launcher`; distributable files are in `desktop/artifacts/`. Generated SDKs and binaries are ignored by Git. Linux is the supported application target; macOS and Windows integration is not implemented.
 
-The installed runtime checks for an existing BoxBox process before initializing CEF. Opening another folder or deployment forwards it to that process and opens a new tab, preserving existing tabs and split panes. Concurrent launches use a kernel-held guard, which is released if the launcher exits or crashes. Closing the last window stops the local backend and exits the app.
+The installed runtime checks for an existing BoxBox process before initializing WebKitGTK. Opening another folder or deployment forwards it to that process and opens a new tab, preserving existing tabs and split panes. Concurrent launches use a kernel-held guard, which is released if the launcher exits or crashes. Closing the last window stops the local backend and exits the app.
 
 ## Local files
 

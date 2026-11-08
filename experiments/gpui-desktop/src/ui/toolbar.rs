@@ -7,11 +7,12 @@ use gpui::{
     MouseButton, Transformation, Window,
 };
 
-use super::{icon, TextScale, SIDEBAR_WIDTH};
+use super::{icon, TextScale};
 use crate::pane::Search;
 use crate::search;
 use crate::theme::*;
-use crate::workspace::{Back, Forward, OpenSettings, Refresh, Workspace};
+use crate::workspace::operations::PaneTarget;
+use crate::workspace::{Back, CreateFolder, Forward, OpenSettings, Refresh, Workspace};
 
 struct Crumb {
     label: String,
@@ -20,12 +21,15 @@ struct Crumb {
 
 impl Workspace {
     /// Root label, then the path below it, like `EditablePathBar`'s breadcrumbs.
-    fn breadcrumbs(&self) -> Vec<Crumb> {
-        let path = &self.pane().path;
-        let root = self
-            .roots
-            .iter()
-            .find(|root| path == &root.name || path.starts_with(&format!("{}/", root.name)));
+    fn breadcrumbs(&self, target: PaneTarget) -> Vec<Crumb> {
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
+        let path = &pane.path;
+        let root = match &pane.roots {
+            crate::pane::Load::Loaded(roots) => roots
+                .iter()
+                .find(|root| path == &root.name || path.starts_with(&format!("{}/", root.name))),
+            _ => None,
+        };
         let (mut crumbs, rest, mut prefix) = match root {
             Some(root) => (
                 vec![Crumb {
@@ -82,8 +86,16 @@ impl Workspace {
             ))
     }
 
-    fn render_path_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let crumbs = self.breadcrumbs();
+    fn render_path_bar(&self, target: PaneTarget, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(editor) = self.location_editor.as_ref().filter(|editor| editor.target_id == target.0) {
+            let (before, selected, after) = editor.input.display_parts();
+            return div().id("location-input").key_context("LocationInput").track_focus(&self.location_focus)
+                .on_key_down(cx.listener(|this, event, _, cx| this.operation_key_down(event, cx)))
+                .flex_1().min_w_0().px(px(8.)).py(px(4.)).border_1().border_color(c(self.accent_hex()))
+                .child(before.to_owned()).when_some(selected.map(str::to_owned), |input, selected| input.child(div().bg(c(self.accent_hex())).child(selected)))
+                .child(after.to_owned()).into_any_element();
+        }
+        let crumbs = self.breadcrumbs(target);
         let last = crumbs.len().saturating_sub(1);
         let content: AnyElement = if crumbs.is_empty() {
             div()
@@ -134,7 +146,7 @@ impl Workspace {
             .rounded(px(4.))
             .border_1()
             .border_color(c(BORDER_PRIMARY))
-            .bg(c(SURFACE_SECONDARY))
+            .bg(self.chrome_background())
             .px(px(8.))
             .py(px(4.))
             .child(
@@ -149,13 +161,14 @@ impl Workspace {
                     .child(icon("home", 14., c(TEXT_SECONDARY)))
                     .on_click(cx.listener(|this, _, _, cx| this.navigate(String::new(), cx))),
             )
-            .child(content)
+            .child(content).into_any_element()
     }
 
     /// `SearchBar.svelte` (compact): a focusable field fed by key-down events, so text goes in
     /// at the end only and there is no IME or caret movement.
     fn render_search(
         &self,
+        target: PaneTarget,
         toolbar_width: f32,
         window: &Window,
         cx: &mut Context<Self>,
@@ -167,7 +180,7 @@ impl Workspace {
             w if w >= 512. => 192.,
             _ => 112.,
         };
-        let pane = self.pane();
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
         let focused = self.search_focus.is_focused(window);
         let input = &pane.search_input;
         // Icon, clear button and padding take about 70px; 14px text averages 7px a character.
@@ -175,7 +188,7 @@ impl Workspace {
         let shown = search::visible_tail(input, max_chars);
         let loading = matches!(pane.search, Search::Loading);
         let glyph: AnyElement = if loading {
-            icon("refresh-cw", 16., c(ACCENT))
+            icon("refresh-cw", 16., c(self.accent_hex()))
                 .with_animation(
                     "search-spinner",
                     Animation::new(Duration::from_secs(1)).repeat(),
@@ -208,8 +221,8 @@ impl Workspace {
             .px(px(12.))
             .rounded(px(4.))
             .border_1()
-            .border_color(c(if focused { ACCENT } else { BORDER_PRIMARY }))
-            .bg(c(SURFACE_SECONDARY))
+            .border_color(c(if focused { self.accent_hex() } else { BORDER_PRIMARY }))
+            .bg(self.chrome_background())
             .text_sm_tw()
             .cursor_text()
             .overflow_hidden()
@@ -252,11 +265,12 @@ impl Workspace {
 
     pub(crate) fn render_toolbar(
         &self,
+        target: PaneTarget,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let pane = self.pane();
-        let toolbar_width = f32::from(window.viewport_size().width) - SIDEBAR_WIDTH;
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
+        let toolbar_width = self.browser_width(window);
         div()
             .flex_none()
             .flex()
@@ -264,7 +278,7 @@ impl Workspace {
             .gap(px(8.))
             .border_b_1()
             .border_color(c(BORDER_SECONDARY))
-            .bg(c(SURFACE_PRIMARY))
+            .bg(self.chrome_background())
             .px(px(12.))
             .py(px(6.))
             .child(
@@ -285,27 +299,33 @@ impl Workspace {
                             })),
                     ),
             )
-            .child(self.render_path_bar(cx))
-            .children((!pane.is_at_root()).then(|| self.render_search(toolbar_width, window, cx)))
+            .child(self.render_path_bar(target, cx))
+            .children((!pane.is_at_root()).then(|| self.render_search(target, toolbar_width, window, cx)))
             .child(
                 div()
                     .flex()
                     .flex_none()
                     .gap(px(4.))
                     // At This PC nothing can be created, so the add button is disabled.
-                    .child(self.nav_button("add", "plus", 16., !pane.is_at_root()))
+                    .child(
+                        self.nav_button("add", "plus", 16., !pane.is_at_root())
+                            .when(!pane.is_at_root(), |button| {
+                                button.on_click(cx.listener(|this, _, window, cx| {
+                                    this.create_folder(&CreateFolder, window, cx)
+                                }))
+                            }),
+                    )
                     .child(
                         self.nav_button("refresh", "refresh-cw", 16., true)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.refresh(&Refresh, window, cx)
                             })),
                     )
-                    .child(
-                        self.nav_button("settings", "settings", 16., true)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.open_settings(&OpenSettings, window, cx)
-                            })),
-                    ),
+                    .child(self.nav_button("settings", "settings", 16., true).on_click(
+                        cx.listener(|this, _, window, cx| {
+                            this.open_settings(&OpenSettings, window, cx)
+                        }),
+                    )),
             )
     }
 }

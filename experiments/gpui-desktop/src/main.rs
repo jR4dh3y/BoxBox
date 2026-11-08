@@ -1,16 +1,18 @@
-//! BoxBox desktop browse UI in GPUI. An experiment: it talks to a running BoxBox server
-//! and reproduces the Svelte desktop/web layout pixel for pixel where GPUI allows.
+//! Native BoxBox desktop with direct local filesystem access and remote HTTP connections.
 
 mod api;
 mod assets;
 mod drag_out;
 mod format;
+mod local;
+mod media;
 mod pane;
 mod search;
 mod sort;
 mod theme;
 mod ui;
 mod workspace;
+mod settings_state;
 
 use std::process::Command;
 
@@ -35,11 +37,36 @@ fn fontconfig_family(pattern: &str, fallback: &str) -> SharedString {
 }
 
 fn main() {
+    // GPUI 0.2.2 can retain an old frame on Niri's native Wayland backend.
+    // Prefer the verified XWayland path when available; keep an explicit Wayland opt-in.
+    #[cfg(target_os = "linux")]
+    if (std::env::var_os("NIRI_SOCKET").is_some()
+        || std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|desktop| desktop.split(':').any(|name| name.eq_ignore_ascii_case("niri"))))
+        && std::env::var_os("DISPLAY").is_some_and(|display| !display.is_empty())
+        && std::env::var_os("BOXBOX_NATIVE_WAYLAND").is_none()
+    {
+        std::env::remove_var("WAYLAND_DISPLAY");
+    }
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let base = std::env::var("BOXBOX_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
     let token = std::env::var("BOXBOX_TOKEN")
         .ok()
         .filter(|token| !token.is_empty());
+    let api = match std::env::var("BOXBOX_URL") {
+        Ok(base) => Ok(Api::new(&base, token)),
+        Err(std::env::VarError::NotPresent) => match std::env::var_os("BOXBOX_ROOT") {
+            Some(root) => Api::local_with_root(root.into()),
+            None => Api::local(),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            eprintln!("BOXBOX_URL must be valid UTF-8");
+            std::process::exit(1);
+        }
+    }
+    .unwrap_or_else(|error| {
+        eprintln!("Could not open local files: {error:#}");
+        std::process::exit(1);
+    });
     let initial_path = std::env::args().nth(1).unwrap_or_default();
     let fonts = Fonts {
         sans: fontconfig_family("sans-serif", ".SystemUIFont"),
@@ -66,7 +93,7 @@ fn main() {
                 },
                 |window, cx| {
                     cx.new(|cx| {
-                        Workspace::new(Api::new(&base, token), fonts, initial_path, window, cx)
+                        Workspace::new(api, fonts, initial_path, window, cx)
                     })
                 },
             )

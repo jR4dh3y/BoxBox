@@ -1,6 +1,6 @@
 # BoxBox GPUI desktop (experiment)
 
-A native Rust rebuild of the BoxBox desktop browse UI with [GPUI](https://gpui.rs) 0.2.2, Zed's GPU UI framework. It reproduces the Svelte desktop/web layout and talks to a running BoxBox server over the same `/api/v1` endpoints. It does not replace `desktop/`.
+A native Rust rebuild of the BoxBox desktop browse UI with [GPUI](https://gpui.rs) 0.2.2. Local files use Rust directly; remote connections use the Go server's `/api/v1` endpoints. The recreation is unfinished and does not replace `desktop/`.
 
 ## What it reproduces
 
@@ -18,17 +18,17 @@ A native Rust rebuild of the BoxBox desktop browse UI with [GPUI](https://gpui.r
 
 Icons are the frontend's own Lucide glyphs, extracted from `frontend/node_modules/lucide-svelte` into `assets/icons/` by `scripts/extract-icons.ts`. Fonts resolve through fontconfig, as the browser resolves the CSS `sans-serif` and `monospace` stacks.
 
-Working behaviour: drive and folder navigation, back/forward history, breadcrumbs, tabs (open, close, switch), list/grid views, sortable columns, click/Ctrl/Shift selection with the status-bar summary, and refresh. Shortcuts: Alt+Left or Backspace (back), Alt+Right (forward), F5 or Ctrl+R (refresh), Ctrl+T or Ctrl+W (open or close a tab), Ctrl+A (select all), Esc (clear the selection).
+Browse behavior includes drive/folder navigation, history, breadcrumbs, tabs, list/grid views, sorting, selection, refresh, search and settings. A rendered GPUI workflow verifies local and remote create/edit/rename/copy/delete, local Trash restore, folder favorites, remote share creation/revocation and wallpaper persistence. Both split panes render. Native chooser interaction, full preview/transfer behavior and exact visual parity remain open; see [the parity ledger](surface-ledger.md).
 
 ### Dragging files to other apps
 
 Drag a row or tile out of the window to drop it into another app, such as a file manager, browser, or editor. Dragging a selected item carries the whole selection. GPUI 0.2 can only receive drops from other apps, so `src/drag_out/` implements the X11 drag-and-drop protocol (XDND v5) itself, offering the files as `text/uri-list` with the copy action.
 
-The other app needs local files, so the dragged items are downloaded into `$TMPDIR/boxbox-gpui-drag/` once the pointer reaches another app's window. Folders arrive as the server's ZIP archive, the same as a folder download in the web UI. Large files are only handed over after they finish downloading. The staged copies are not deleted automatically.
+Local files are handed to other apps by their real filesystem paths. Remote files are staged into `$TMPDIR/boxbox-gpui-drag/`. Folders arrive as the server's ZIP archive. The staged copies are not deleted automatically.
 
-This only works on X11. Under a Wayland session GPUI uses its Wayland backend, and dragging out is not available there. Start the app with `WAYLAND_DISPLAY=` to run it through XWayland instead. macOS and Windows are not implemented. The existing Electrobun app cannot drag files out either.
+This only works on X11. On Niri, the app prefers XWayland when DISPLAY exists because the native Wayland renderer retained stale frames on the development host. `BOXBOX_NATIVE_WAYLAND=1` opts back into native Wayland. On other compositors, start with `WAYLAND_DISPLAY=` to select XWayland. macOS and Windows are not implemented. The existing Electrobun app cannot drag files out either.
 
-Not implemented yet: the search input (it is drawn but inactive), thumbnails (tiles show the file-type icon, like the web UI while loading), file operations, context menus, previews, uploads, settings, trash, split panes, wallpapers and accent colours, and the desktop app's private `--desktop` cookie session.
+The current GPUI build still lacks the private `--desktop` cookie/session behavior and a full Rust replacement for the Go self-hosted server. Search has a keyboard-driven field, typed API client, debounce, cancellation and result-state handling. Settings opens as a native modal and persists browse preferences. Native thumbnails use the existing Rust renderer. The surface ledger records runtime evidence and remaining direct-interaction checks.
 
 ## Screenshots
 
@@ -41,17 +41,13 @@ Not implemented yet: the search input (it is drawn but inactive), thumbnails (ti
 
 ## Run
 
-Start a BoxBox server without authentication. `--dev` binds to 127.0.0.1.
-
-```sh
-cd backend && go run ./cmd/server --dev -config /path/to/config.yaml
-```
-
-Then run the experiment. The default server is `BOXBOX_URL=http://127.0.0.1:8080`. `BOXBOX_TOKEN` sends a bearer token, and an optional argument opens a path such as `media/movies`.
+With no `BOXBOX_URL`, GPUI opens local files directly in Rust. Set `BOXBOX_ROOT` to use an isolated local root for a fixture. To connect to a self-hosted server, set `BOXBOX_URL`; set `BOXBOX_TOKEN` when the server requires a bearer token.
 
 ```sh
 cd experiments/gpui-desktop
 cargo run --release
+BOXBOX_ROOT=/tmp/boxbox-fixture cargo run --release home
+BOXBOX_URL=http://127.0.0.1:8080 BOXBOX_TOKEN=... cargo run --release media/movies
 ```
 
 On Linux, GPUI needs Vulkan and the development packages for xkbcommon, wayland, X11/xcb, fontconfig and freetype. On Debian/Ubuntu, install them with:
@@ -76,7 +72,15 @@ Against the Electrobun baseline, GPUI was approximately 57% faster to first brow
 cargo test
 ```
 
-These test the ported formatting, sorting, selection and history logic.
+These test formatting, sorting, selection/history and a rendered GPUI filesystem workflow. The workflow automatically isolates its settings:
+
+```sh
+cargo test
+# Build backend/cmd/server first, then run the same controls over HTTP:
+BOXBOX_PARITY_SERVER=/absolute/path/to/server cargo test desktop_workflow
+```
+
+The workflow uses a temporary filesystem and, in remote mode, its own loopback Go process. The GPUI test platform cannot open a native file chooser, so wallpaper installation is invoked directly and subsequent settings controls are clicked.
 
 ## Regenerating icons
 

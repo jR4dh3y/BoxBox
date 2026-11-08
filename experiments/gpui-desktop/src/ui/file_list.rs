@@ -2,10 +2,11 @@
 
 use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, FontWeight};
 
-use super::{icon, TextScale, SIDEBAR_WIDTH};
+use super::{icon, TextScale};
 use crate::format::{file_date, file_icon, file_size, type_description};
 use crate::sort::{SortDir, SortField};
 use crate::theme::*;
+use crate::workspace::operations::PaneTarget;
 use crate::workspace::Workspace;
 
 pub const ROW_HEIGHT: f32 = 32.;
@@ -30,9 +31,7 @@ impl Columns {
         }
     }
 
-    fn for_window(window: &gpui::Window) -> Self {
-        Self::for_width(f32::from(window.viewport_size().width) - SIDEBAR_WIDTH)
-    }
+
 }
 
 /// Fixed-width column, or the flexible Name column when `width` is None.
@@ -50,8 +49,8 @@ fn column(width: Option<f32>) -> gpui::Div {
 }
 
 impl Workspace {
-    fn render_header(&self, shown: Columns, cx: &mut Context<Self>) -> impl IntoElement {
-        let sort = self.pane().sort;
+    fn render_header(&self, target: PaneTarget, shown: Columns, cx: &mut Context<Self>) -> impl IntoElement {
+        let sort = self.pane_by_id(target.0).unwrap_or_else(|| self.pane()).sort;
         let columns = [
             (SortField::Name, "Name", None, false, true),
             (SortField::Type, "Type", Some(TYPE_WIDTH), false, shown.kind),
@@ -113,11 +112,12 @@ impl Workspace {
 
     pub(crate) fn render_file_list(
         &self,
+        target: PaneTarget,
         window: &gpui::Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let shown = Columns::for_window(window);
-        let pane = self.pane();
+        let shown = Columns::for_width(self.browser_width(window));
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
         let count = pane.items.len();
         let compact = self.preferences.compact_rows;
         let row_height = if compact { 28. } else { ROW_HEIGHT };
@@ -127,8 +127,8 @@ impl Workspace {
             .size_full()
             .flex()
             .flex_col()
-            .bg(c(SURFACE_PRIMARY))
-            .child(self.render_header(shown, cx))
+            .bg(self.file_background())
+            .child(self.render_header(target, shown, cx))
             .when_some(placeholder, |list, (glyph, message)| {
                 list.child(
                     div()
@@ -148,7 +148,11 @@ impl Workspace {
                         count,
                         cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                             range
-                                .map(|index| this.render_row(index, shown, compact, row_height, cx))
+                                .filter_map(|index| {
+                                    let item = this.pane_by_id(target.0)?.items.get(index)?.clone();
+                                    this.request_thumbnail(target, item, cx);
+                                    Some(this.render_row(target, index, shown, compact, row_height, cx))
+                                })
                                 .collect::<Vec<_>>()
                         }),
                     )
@@ -160,13 +164,15 @@ impl Workspace {
 
     fn render_row(
         &self,
+        target: PaneTarget,
         index: usize,
         shown: Columns,
         compact: bool,
         row_height: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let pane = self.pane();
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
+        let target = crate::workspace::operations::PaneTarget(pane.id);
         let item = &pane.items[index];
         let selected = pane.is_selected(&item.path);
         let active = pane.active == Some(index);
@@ -181,10 +187,10 @@ impl Workspace {
         let name = display_name(&item.name, is_dir, self.preferences.show_file_extensions);
 
         crate::drag_out::draggable(
-            div().id(("row", index)),
+            div().id(("row", index)).debug_selector(|| format!("row-{}-{index}", target.0)),
             index,
             cx.entity().downgrade(),
-            self.api.clone(),
+            pane.api.clone(),
         )
         .relative()
         .w_full()
@@ -197,8 +203,8 @@ impl Workspace {
         .cursor_default()
         .map(|row| match (selected, active) {
             (true, _) => row
-                .bg(c(SELECTION))
-                .hover(|style| style.bg(c(SELECTION_HOVER))),
+                .bg(self.selection_color(false))
+                .hover({ let color = self.selection_color(true); move |style| style.bg(color) }),
             (false, true) => row.bg(c(SURFACE_SECONDARY)),
             (false, false) => row.hover(|style| style.bg(c(SURFACE_SECONDARY))),
         })
@@ -211,9 +217,18 @@ impl Workspace {
                     .top_0()
                     .bottom_0()
                     .w(px(2.))
-                    .bg(c(ACCENT)),
+                    .bg(c(self.accent_hex())),
             )
         })
+        .when(self.preferences.selection_checkboxes, |element| element.child(
+            div().id(("selection-checkbox", index)).size(px(18.)).flex_none().rounded(px(3.)).border_1()
+                .border_color(c(BORDER_PRIMARY)).text_xs_tw().child(if selected { "✓" } else { "" })
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.active_pane = target;
+                    this.pane_mut().click(index, gpui::Modifiers { control: true, ..Default::default() });
+                    cx.stop_propagation(); cx.notify();
+                }))
+        ))
         .child(
             column(None)
                 .gap(px(8.))
@@ -224,7 +239,10 @@ impl Workspace {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .child(icon(file_icon(&item.name, item.is_dir), 16., icon_color)),
+                        .map(|slot| match self.thumbnail(&pane.api, item) {
+                            Some(image) => slot.child(gpui::img(image).size_full().object_fit(gpui::ObjectFit::Contain)),
+                            None => slot.child(icon(file_icon(&item.name, item.is_dir), 16., icon_color)),
+                        }),
                 )
                 .child(
                     div()
@@ -263,25 +281,39 @@ impl Workspace {
                     .child(div().truncate().child(file_date(&item.mod_time))),
             )
         })
-        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-            this.activate_item(index, &path, is_dir, event, cx)
+        .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+            this.show_item_context_menu(target, index, event.position, cx);
+            cx.stop_propagation();
+        }))
+        .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+            this.active_pane = target;
+            this.activate_list_item(index, &path, is_dir, event, window, cx)
         }))
     }
 
     /// Shared by list rows and grid tiles: select on click, open folders on double-click.
-    pub(crate) fn activate_item(
+    pub(crate) fn activate_list_item(
         &mut self,
         index: usize,
         path: &str,
         is_dir: bool,
         event: &ClickEvent,
+        window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
-        if event.click_count() >= 2 && is_dir {
-            self.navigate(path.to_string(), cx);
+        if event.click_count() >= 2 {
+            if is_dir { self.navigate(path.to_string(), cx); }
+            else if let Some(item) = self.pane().items.get(index).cloned() {
+                self.activate_item(self.active_pane, item, window, cx);
+            }
             return;
         }
         self.pane_mut().click(index, event.modifiers());
+        if !is_dir && self.preferences.preview_on_single_click && !event.modifiers().control && !event.modifiers().shift {
+            if let Some(item) = self.pane().items.get(index).cloned() {
+                self.preview_item(self.active_pane, item, window, cx);
+            }
+        }
         cx.notify();
     }
 }

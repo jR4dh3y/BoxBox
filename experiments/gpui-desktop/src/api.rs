@@ -1,9 +1,14 @@
-//! Typed client for the BoxBox HTTP API (`/api/v1`), mirroring `frontend/src/lib/api/files.ts`.
+//! File-manager operations backed by a native filesystem or a remote BoxBox HTTP server.
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context as _, Result};
-use serde::{de::DeserializeOwned, Deserialize};
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+
+use crate::local::LocalFiles;
+
+mod http;
+use http::RemoteApi;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +68,50 @@ fn root_kind<'de, D: serde::Deserializer<'de>>(de: D) -> Result<RootKind, D::Err
     })
 }
 
+fn deserialize_expiry<'de, D: serde::Deserializer<'de>>(
+    de: D,
+) -> Result<Option<String>, D::Error> {
+    let raw = Option::<String>::deserialize(de)?;
+    Ok(raw.filter(|value| !value.is_empty()))
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashItem {
+    pub id: String,
+    pub name: String,
+    pub original_path: String,
+    pub deleted_at: String,
+    pub is_dir: bool,
+    pub can_restore: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharePermissions {
+    pub view: bool,
+    pub download: bool,
+    pub upload: bool,
+    pub delete: bool,
+    pub manage: bool,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareSummary {
+    pub id: String,
+    pub token: String,
+    pub url: String,
+    pub file_name: String,
+    pub path: String,
+    pub permissions: SharePermissions,
+    pub max_upload_bytes: i64,
+    pub is_folder: bool,
+    pub created_at: String,
+    #[serde(default, deserialize_with = "deserialize_expiry")]
+    pub expires_at: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DriveStats {
@@ -94,86 +143,237 @@ struct DriveStatsResponse {
     drives: Vec<DriveStats>,
 }
 
+enum Provider {
+    Local(LocalFiles),
+    Remote(RemoteApi),
+}
+
 pub struct Api {
-    base: String,
-    agent: ureq::Agent,
-    token: Option<String>,
+    provider: Provider,
 }
 
 impl Api {
     /// `base` is the server origin, e.g. `http://127.0.0.1:8080`.
+    ///
+    /// This always constructs a remote provider, including when the URL is invalid.
     pub fn new(base: &str, token: Option<String>) -> Self {
         Self {
-            base: format!("{}/api/v1", base.trim_end_matches('/')),
-            agent: ureq::AgentBuilder::new().build(),
-            token,
+            provider: Provider::Remote(RemoteApi::new(base, token)),
+        }
+    }
+
+    pub fn local() -> Result<Self> {
+        Ok(Self {
+            provider: Provider::Local(LocalFiles::new()?),
+        })
+    }
+
+    pub fn local_with_root(root: PathBuf) -> Result<Self> {
+        Ok(Self {
+            provider: Provider::Local(LocalFiles::with_root(root)?),
+        })
+    }
+
+    pub fn is_local(&self) -> bool {
+        matches!(&self.provider, Provider::Local(_))
+    }
+
+    /// The configured, credential-free server base URL; local mode has no server URL.
+    pub fn server_url(&self) -> Option<&str> {
+        match &self.provider {
+            Provider::Local(_) => None,
+            Provider::Remote(remote) => remote.server_url(),
+        }
+    }
+
+    /// Resolve a virtual local path. Remote paths are owned by the server.
+    pub fn local_path(&self, path: &str) -> Result<Option<PathBuf>> {
+        match &self.provider {
+            Provider::Local(local) => local.local_path(path).map(Some),
+            Provider::Remote(_) => Ok(None),
         }
     }
 
     pub fn roots(&self) -> Result<Vec<MountPoint>> {
-        Ok(self.get::<RootsResponse>("/files/")?.roots)
+        match &self.provider {
+            Provider::Local(local) => local.roots(),
+            Provider::Remote(remote) => remote.roots(),
+        }
     }
 
     pub fn drives(&self) -> Result<Vec<DriveStats>> {
-        Ok(self.get::<DriveStatsResponse>("/files/stats")?.drives)
+        match &self.provider {
+            Provider::Local(local) => local.drives(),
+            Provider::Remote(remote) => remote.drives(),
+        }
+    }
+
+    pub fn trash(&self) -> Result<Vec<TrashItem>> {
+        match &self.provider {
+            Provider::Local(local) => local.trash(),
+            Provider::Remote(_) => anyhow::bail!("Trash is available only in local mode"),
+        }
+    }
+
+    pub fn move_to_trash(&self, path: &str) -> Result<TrashItem> {
+        match &self.provider {
+            Provider::Local(local) => local.move_to_trash(path),
+            Provider::Remote(_) => anyhow::bail!("Trash is available only in local mode"),
+        }
+    }
+
+    pub fn restore_trash(&self, id: &str) -> Result<()> {
+        match &self.provider {
+            Provider::Local(local) => local.restore_trash(id),
+            Provider::Remote(_) => anyhow::bail!("Trash is available only in local mode"),
+        }
+    }
+
+    pub fn delete_trash(&self, id: &str) -> Result<()> {
+        match &self.provider {
+            Provider::Local(local) => local.delete_trash(id),
+            Provider::Remote(_) => anyhow::bail!("Trash is available only in local mode"),
+        }
     }
 
     pub fn list(&self, path: &str) -> Result<Vec<FileInfo>> {
-        parse_directory(self.get::<FileList>(&format!("/files/list/{}", encode_path(path)))?)
-    }
-
-    /// Recursive, case-insensitive name search below `path`. Results carry full virtual paths.
-    pub fn search(&self, path: &str, query: &str) -> Result<Vec<FileInfo>> {
-        let endpoint = format!(
-            "/search?path={}&q={}",
-            encode_component(path),
-            encode_component(query)
-        );
-        parse_search(self.get::<SearchResponse>(&endpoint)?, path, query)
-    }
-
-    /// Saves a file, or a folder as the server's ZIP archive (like the web download), into `dir`.
-    pub fn download(&self, item: &FileInfo, dir: &Path) -> Result<PathBuf> {
-        let (endpoint, name) = if item.is_dir {
-            ("/stream/archive", format!("{}.zip", item.name))
-        } else {
-            ("/stream/download", item.name.clone())
-        };
-        let response = self.call(&format!("{endpoint}/{}", encode_path(&item.path)))?;
-        // `parse_directory` already rejected names that could leave `dir`.
-        let target = dir.join(name);
-        let mut file = std::fs::File::create(&target)
-            .with_context(|| format!("cannot create {}", target.display()))?;
-        std::io::copy(&mut response.into_reader(), &mut file)
-            .with_context(|| format!("cannot download {}", item.path))?;
-        Ok(target)
-    }
-
-    fn get<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
-        self.call(endpoint)?
-            .into_json()
-            .with_context(|| format!("invalid JSON from {}{endpoint}", self.base))
-    }
-
-    fn call(&self, endpoint: &str) -> Result<ureq::Response> {
-        let url = format!("{}{endpoint}", self.base);
-        let mut request = self.agent.get(&url);
-        if let Some(token) = &self.token {
-            request = request.set("Authorization", &format!("Bearer {token}"));
+        match &self.provider {
+            Provider::Local(local) => local.list(path),
+            Provider::Remote(remote) => remote.list(path),
         }
-        match request.call() {
-            Ok(response) => Ok(response),
-            Err(ureq::Error::Status(code, response)) => {
-                let body = response.into_string().unwrap_or_default();
-                anyhow::bail!(
-                    "{}",
-                    server_message(&body).unwrap_or(format!("HTTP {code}"))
-                )
+    }
+
+    pub fn search(&self, path: &str, query: &str) -> Result<Vec<FileInfo>> {
+        match &self.provider {
+            Provider::Local(local) => local.search(path, query),
+            Provider::Remote(remote) => remote.search(path, query),
+        }
+    }
+
+    pub fn create_directory(&self, parent: &str, name: &str) -> Result<FileInfo> {
+        match &self.provider {
+            Provider::Local(local) => local.create_directory(parent, name),
+            Provider::Remote(remote) => remote.create_directory(parent, name),
+        }
+    }
+
+    pub fn create_file(&self, parent: &str, name: &str, content: &str) -> Result<FileInfo> {
+        match &self.provider {
+            Provider::Local(local) => local.create_file(parent, name, content),
+            Provider::Remote(remote) => remote.create_file(parent, name, content),
+        }
+    }
+
+    pub fn rename(&self, old_path: &str, new_path: &str) -> Result<FileInfo> {
+        match &self.provider {
+            Provider::Local(local) => local.rename(old_path, new_path),
+            Provider::Remote(remote) => remote.rename(old_path, new_path),
+        }
+    }
+
+    pub fn delete(&self, path: &str, confirm: bool) -> Result<()> {
+        match &self.provider {
+            Provider::Local(local) => local.delete(path, confirm),
+            Provider::Remote(remote) => remote.delete(path, confirm),
+        }
+    }
+
+    pub fn download(&self, item: &FileInfo, dir: &Path) -> Result<PathBuf> {
+        match &self.provider {
+            Provider::Local(local) => local.download(item, dir),
+            Provider::Remote(remote) => remote.download(item, dir),
+        }
+    }
+
+    pub fn read_text(&self, path: &str, max_bytes: usize) -> Result<String> {
+        match &self.provider {
+            Provider::Local(local) => local.read_text(path, max_bytes),
+            Provider::Remote(remote) => remote.read_text(path, max_bytes),
+        }
+    }
+
+    pub fn save_text(&self, path: &str, content: &str) -> Result<FileInfo> {
+        match &self.provider {
+            Provider::Local(local) => local.save_text(path, content),
+            Provider::Remote(remote) => remote.save_text(path, content),
+        }
+    }
+
+    /// Copies `source` to the exact virtual destination path, including its new name.
+    pub fn copy(&self, source: &str, destination: &str) -> Result<()> {
+        match &self.provider {
+            Provider::Local(local) => local.copy(source, destination),
+            Provider::Remote(remote) => remote.copy(source, destination),
+        }
+    }
+
+    pub fn import_file(&self, source: &Path, parent: &str) -> Result<FileInfo> {
+        match &self.provider {
+            Provider::Local(local) => local.import_file(source, parent),
+            Provider::Remote(remote) => remote.import_file(source, parent),
+        }
+    }
+
+    pub fn thumbnail(&self, path: &str, width: u32, height: u32) -> Result<Vec<u8>> {
+        match &self.provider {
+            Provider::Local(local) => {
+                let path = local.local_path(path)?;
+                boxbox_thumbnail::thumbnail_path(&path, width, height)
+                    .map_err(anyhow::Error::new)
             }
-            Err(error) => Err(error).with_context(|| format!("cannot reach {url}")),
+            Provider::Remote(remote) => remote.thumbnail(path, width, height),
+        }
+    }
+
+    pub fn list_shares(&self) -> Result<Vec<ShareSummary>> {
+        match &self.provider {
+            Provider::Local(_) => {
+                anyhow::bail!("Public sharing requires a BoxBox server")
+            }
+            Provider::Remote(remote) => remote.list_shares(),
+        }
+    }
+
+    pub fn create_share(
+        &self,
+        path: &str,
+        permissions: SharePermissions,
+        expires_in_seconds: Option<i64>,
+    ) -> Result<ShareSummary> {
+        match &self.provider {
+            Provider::Local(_) => {
+                anyhow::bail!("Public sharing requires a BoxBox server")
+            }
+            Provider::Remote(remote) => {
+                remote.create_share(path, permissions, expires_in_seconds)
+            }
+        }
+    }
+
+    pub fn update_share(
+        &self,
+        id: &str,
+        permissions: SharePermissions,
+        max_upload_bytes: Option<i64>,
+    ) -> Result<ShareSummary> {
+        match &self.provider {
+            Provider::Local(_) => {
+                anyhow::bail!("Public sharing requires a BoxBox server")
+            }
+            Provider::Remote(remote) => remote.update_share(id, permissions, max_upload_bytes),
+        }
+    }
+
+    pub fn revoke_share(&self, id: &str) -> Result<()> {
+        match &self.provider {
+            Provider::Local(_) => {
+                anyhow::bail!("Public sharing requires a BoxBox server")
+            }
+            Provider::Remote(remote) => remote.revoke_share(id),
         }
     }
 }
+
 
 /// `parseDirectory`: entries carry only names under the shared parent path, so a name that
 /// could escape or nest under that path is rejected.

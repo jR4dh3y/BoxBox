@@ -84,8 +84,17 @@ fn start(files: Vec<FileInfo>, api: Arc<Api>, cx: &App) {
     );
 }
 
-/// Other apps need local files, so the dragged items are downloaded to a fresh temp folder.
+/// Remote files are staged for other apps; local files keep their original filesystem paths.
 fn stage(api: &Api, files: &[FileInfo]) -> Result<Vec<PathBuf>> {
+    if api.is_local() {
+        return files
+            .iter()
+            .map(|item| {
+                api.local_path(&item.path)?
+                    .context("local file has no filesystem path")
+            })
+            .collect();
+    }
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let dir = std::env::temp_dir()
         .join("boxbox-gpui-drag")

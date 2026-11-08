@@ -7,13 +7,19 @@ description = "Experiment: the BoxBox desktop browse UI rebuilt with GPUI"
 
 [dependencies]
 anyhow = "1"
+boxbox-thumbnail = { version = "0.1.0", path = "../../desktop/native" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
 gpui = "0.2.2"
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "ico", "qoi"] }
+libc = "=0.2.189"
 log = "0.4"
+material-colors = "0.4.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 ureq = { version = "2", features = ["json"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = "0.13"
@@ -23,3 +29,6 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[dev-dependencies]
+gpui = { version = "0.2.2", features = ["test-support"] }

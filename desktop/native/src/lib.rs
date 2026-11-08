@@ -8,6 +8,97 @@ use std::{
     panic::catch_unwind,
 };
 
+#[derive(Debug)]
+pub enum ThumbnailError {
+    UnsupportedFormat,
+    InvalidInput,
+    LimitExceeded,
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for ThumbnailError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedFormat => formatter.write_str("unsupported thumbnail format"),
+            Self::InvalidInput => formatter.write_str("invalid thumbnail input"),
+            Self::LimitExceeded => formatter.write_str("thumbnail input exceeds size limits"),
+            Self::Io(error) => write!(formatter, "thumbnail I/O error: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for ThumbnailError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<RenderError> for ThumbnailError {
+    fn from(error: RenderError) -> Self {
+        match error {
+            RenderError::Invalid => Self::InvalidInput,
+            RenderError::Limit => Self::LimitExceeded,
+        }
+    }
+}
+
+/// Renders a local image, video, audio file, or PDF as bounded PNG thumbnail bytes.
+pub fn thumbnail_path(
+    path: &std::path::Path,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, ThumbnailError> {
+    use std::os::fd::AsRawFd;
+
+    if !(16..=512).contains(&width) || !(16..=512).contains(&height) {
+        return Err(ThumbnailError::InvalidInput);
+    }
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let kind = match extension.as_str() {
+        "bmp" | "gif" | "ico" | "jpg" | "jpeg" | "png" | "qoi" | "tif" | "tiff" | "webp" => 0,
+        "mp4" | "m4v" | "mov" | "mkv" | "webm" | "avi" | "mpeg" | "mpg" | "ts" | "m2ts"
+        | "flv" => 1,
+        "mp3" | "wav" | "flac" | "aac" | "ac3" | "aiff" | "ape" | "wv" | "amr" | "ogg"
+        | "oga" | "opus" | "m4a" | "wma" => 2,
+        "pdf" => 3,
+        _ => return Err(ThumbnailError::UnsupportedFormat),
+    };
+    let file = File::open(path).map_err(ThumbnailError::Io)?;
+    let metadata = file.metadata().map_err(ThumbnailError::Io)?;
+    if !metadata.is_file() {
+        return Err(ThumbnailError::InvalidInput);
+    }
+    if kind == 0 {
+        if metadata.len() > MAX_SOURCE_BYTES {
+            return Err(ThumbnailError::LimitExceeded);
+        }
+        return render::render_png(BufReader::new(file), width, height)
+            .map_err(ThumbnailError::from);
+    }
+    let fd = u32::try_from(file.as_raw_fd()).map_err(|_| ThumbnailError::InvalidInput)?;
+    let frame = media::frame(kind, fd, width, height).map_err(ThumbnailError::from)?;
+    render::render_png(Cursor::new(frame), width, height).map_err(ThumbnailError::from)
+}
+
+/// Decodes bounded remote thumbnail bytes and normalizes them to PNG.
+pub fn thumbnail_bytes(
+    bytes: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, ThumbnailError> {
+    if bytes.len() as u64 > MAX_SOURCE_BYTES {
+        return Err(ThumbnailError::LimitExceeded);
+    }
+    render::render_png(Cursor::new(bytes), width, height).map_err(ThumbnailError::from)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn boxbox_thumbnail_abi() -> u32 {
     1

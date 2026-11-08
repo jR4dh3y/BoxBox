@@ -4,9 +4,11 @@ mod browser;
 mod drives;
 mod file_grid;
 mod file_list;
+mod operations;
+mod overlays;
+mod settings;
 mod sidebar;
 mod status_bar;
-mod settings;
 mod tabs;
 mod toolbar;
 

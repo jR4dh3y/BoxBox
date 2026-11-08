@@ -6,6 +6,17 @@ export function hardwareAccelerationEnabled(): boolean {
   return process.env.BOXBOX_HARDWARE_ACCELERATION !== "false";
 }
 
+/** Returns whether the installed bundle initializes CEF before app code. */
+export async function buildUsesCef(resources: string): Promise<boolean> {
+  const build: unknown = JSON.parse(await readFile(join(resources, "build.json"), "utf8"));
+  if (typeof build !== "object" || build === null || Array.isArray(build) ||
+      !("defaultRenderer" in build) ||
+      (build.defaultRenderer !== "cef" && build.defaultRenderer !== "native")) {
+    throw new Error("Invalid desktop renderer metadata");
+  }
+  return build.defaultRenderer === "cef";
+}
+
 /** Reads the same app/channel preference file as Electrobun, without loading CEF. */
 export async function readHardwareAcceleration(
   resources: string,
@@ -36,7 +47,7 @@ export async function readHardwareAcceleration(
   }
 }
 
-/** The SDK reads build.json before creating CEF; apply the saved choice under the launch guard. */
+/** Apply the saved CEF rendering choice under the launch guard. */
 export async function configureRendering(resources: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
   const enabled = await readHardwareAcceleration(resources, env);
   const path = join(resources, "build.json");

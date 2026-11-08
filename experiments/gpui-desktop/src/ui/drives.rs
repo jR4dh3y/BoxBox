@@ -2,7 +2,7 @@
 
 use gpui::{div, prelude::*, px, AlignItems, Context, FontWeight, Window};
 
-use super::{icon, TextScale, SIDEBAR_WIDTH};
+use super::{icon, TextScale};
 use crate::api::DriveStats;
 use crate::format::file_size;
 use crate::theme::*;
@@ -54,7 +54,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let width = f32::from(window.viewport_size().width) - SIDEBAR_WIDTH;
+        let width = self.browser_width(window);
         // `@min-[49rem]:grid-cols-2 @min-[74rem]:grid-cols-3`
         let columns = if width >= 1184. {
             3
@@ -102,7 +102,7 @@ impl Workspace {
             .bg(c(SURFACE_SECONDARY))
             .p(px(16.))
             .cursor_pointer()
-            .hover(|style| style.border_color(c(ACCENT)).bg(c(SURFACE_TERTIARY)))
+            .hover({ let color = c(self.accent_hex()); move |style| style.border_color(color).bg(c(SURFACE_TERTIARY)) })
             .child(
                 div()
                     .size(px(88.))
@@ -212,7 +212,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let width = f32::from(window.viewport_size().width) - SIDEBAR_WIDTH;
+        let width = self.browser_width(window);
         // Container breakpoints @sm (24rem) and @3xl (48rem) choose the columns.
         let wide = width >= 768.;
         let medium = width >= 384.;

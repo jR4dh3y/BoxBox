@@ -5,9 +5,16 @@ use std::collections::HashSet;
 
 use gpui::{Modifiers, UniformListScrollHandle};
 
-use crate::api::FileInfo;
+use crate::api::{Api, DriveStats, FileInfo, MountPoint};
 use crate::search;
 use crate::sort::{sort_files, Sort};
+
+pub enum Load<T> {
+    Loading,
+    Loaded(T),
+    Failed(String),
+}
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewMode {
@@ -35,6 +42,10 @@ pub struct Pane {
     pub id: usize,
     /// Virtual path; "" is This PC.
     pub path: String,
+    /// Provider identity and operations for this pane; another pane may use another provider.
+    pub(crate) api: std::sync::Arc<Api>,
+    pub(crate) roots: Load<Vec<MountPoint>>,
+    pub(crate) drives: Load<Vec<DriveStats>>,
     back: Vec<String>,
     forward: Vec<String>,
     pub listing: Listing,
@@ -68,6 +79,24 @@ impl Pane {
         sort: Sort,
         view_mode: ViewMode,
     ) -> Self {
+        Self::with_api(
+            id,
+            path,
+            std::sync::Arc::new(Api::local().expect("local API initialization failed")),
+            show_hidden_files,
+            sort,
+            view_mode,
+        )
+    }
+
+    pub(crate) fn with_api(
+        id: usize,
+        path: String,
+        api: std::sync::Arc<Api>,
+        show_hidden_files: bool,
+        sort: Sort,
+        view_mode: ViewMode,
+    ) -> Self {
         Self {
             id,
             listing: if path.is_empty() {
@@ -76,6 +105,9 @@ impl Pane {
                 Listing::Loading
             },
             path,
+            api,
+            roots: Load::Loading,
+            drives: Load::Loading,
             back: Vec::new(),
             forward: Vec::new(),
             items: Vec::new(),
@@ -328,6 +360,36 @@ impl Pane {
         self.selected.contains(path)
     }
 
+    /// Moves the active row and updates selection; Shift extends from the current anchor.
+    pub fn move_selection(&mut self, delta: isize, extend: bool) -> Option<usize> {
+        if self.items.is_empty() {
+            return None;
+        }
+        let next = match self.active {
+            Some(index) => (index as isize + delta).clamp(0, self.items.len() as isize - 1),
+            None if delta < 0 => self.items.len() as isize - 1,
+            None => 0,
+        } as usize;
+        if extend {
+            let anchor = self.anchor.filter(|&index| index < self.items.len()).unwrap_or(next);
+            let (start, end) = if anchor <= next { (anchor, next) } else { (next, anchor) };
+            self.selected.clear();
+            self.selected
+                .extend(self.items[start..=end].iter().map(|item| item.path.clone()));
+            self.anchor = Some(anchor);
+        } else {
+            self.selected.clear();
+            self.selected.insert(self.items[next].path.clone());
+            self.anchor = Some(next);
+        }
+        self.active = Some(next);
+        Some(next)
+    }
+
+    pub fn active_item(&self) -> Option<FileInfo> {
+        self.active.and_then(|index| self.items.get(index)).cloned()
+    }
+
     /// Click selection: plain replaces, Ctrl toggles, Shift extends from the anchor.
     pub fn click(&mut self, index: usize, modifiers: Modifiers) {
         let Some(item) = self.items.get(index) else {
@@ -363,6 +425,14 @@ impl Pane {
     }
 
     /// Dragging a selected item carries the whole selection; any other item goes alone.
+    pub fn selected_items(&self) -> Vec<FileInfo> {
+        self.items
+            .iter()
+            .filter(|item| self.selected.contains(&item.path))
+            .cloned()
+            .collect()
+    }
+
     pub fn drag_items(&self, index: usize) -> Vec<FileInfo> {
         match self.items.get(index) {
             Some(item) if self.is_selected(&item.path) => self

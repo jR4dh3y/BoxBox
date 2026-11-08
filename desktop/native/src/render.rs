@@ -2,7 +2,8 @@ use std::io::{BufRead, Seek};
 
 use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer, images::Image};
 use image::{
-    ExtendedColorType, ImageDecoder, ImageError, ImageReader, Limits, codecs::jpeg::JpegEncoder,
+    codecs::{jpeg::JpegEncoder, png::PngEncoder},
+    ExtendedColorType, ImageDecoder, ImageEncoder, ImageError, ImageReader, Limits,
 };
 
 pub const MAX_SOURCE_BYTES: u64 = 64 << 20;
@@ -31,11 +32,11 @@ pub fn fit(width: u32, height: u32, max_width: u32, max_height: u32) -> (u32, u3
     }
 }
 
-pub fn render<R: BufRead + Seek>(
+fn resized_rgb<R: BufRead + Seek>(
     source: R,
     width: u32,
     height: u32,
-) -> Result<Vec<u8>, RenderError> {
+) -> Result<(Vec<u8>, u32, u32), RenderError> {
     if !(16..=512).contains(&width) || !(16..=512).contains(&height) {
         return Err(RenderError::Invalid);
     }
@@ -83,9 +84,31 @@ pub fn render<R: BufRead + Seek>(
             .map_err(|_| RenderError::Invalid)?;
         target.into_vec()
     };
+    Ok((rgb, target_width, target_height))
+}
+
+pub fn render<R: BufRead + Seek>(
+    source: R,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, RenderError> {
+    let (rgb, width, height) = resized_rgb(source, width, height)?;
     let mut output = Vec::new();
     JpegEncoder::new_with_quality(&mut output, 82)
-        .encode(&rgb, target_width, target_height, ExtendedColorType::Rgb8)
+        .encode(&rgb, width, height, ExtendedColorType::Rgb8)
+        .map_err(image_error)?;
+    Ok(output)
+}
+
+pub fn render_png<R: BufRead + Seek>(
+    source: R,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, RenderError> {
+    let (rgb, width, height) = resized_rgb(source, width, height)?;
+    let mut output = Vec::new();
+    PngEncoder::new(&mut output)
+        .write_image(&rgb, width, height, ExtendedColorType::Rgb8)
         .map_err(image_error)?;
     Ok(output)
 }

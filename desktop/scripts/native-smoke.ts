@@ -79,7 +79,7 @@ let secondary: ReturnType<typeof launch> | undefined;
 try {
   const launcher =
     process.argv[2] ?? (await installDesktopIntegration({ env })).launcher;
-  // Exercise startup with a rendering preference that requires writable metadata.
+  // The WebKitGTK bundle does not rewrite CEF rendering metadata.
   const preferences = join(
     env.XDG_DATA_HOME,
     "io.boxbox.desktop/stable/desktop",
@@ -106,7 +106,7 @@ try {
     () => owner.output,
   );
   assert.equal(owner.child.exitCode, null);
-  assert.ok(owner.output.includes("CEF EVENT LOOP STARTED"));
+  assert.equal(owner.output.includes("CEF EVENT LOOP STARTED"), false);
   assert.ok(
     owner.applicationPid,
     "The native launcher reported an application PID",
@@ -115,9 +115,10 @@ try {
     `/proc/${owner.applicationPid}/environ`,
     "utf8",
   );
-  assert.ok(
-    environment.split("\0").includes("BOXBOX_HARDWARE_ACCELERATION=false"),
-    "The saved rendering preference reaches the running application",
+  assert.equal(
+    environment.split("\0").some((value) => value.startsWith("BOXBOX_HARDWARE_ACCELERATION=")),
+    false,
+    "The WebKitGTK application does not receive CEF-only rendering flags",
   );
 
   const forwarded = launch(launcher, secondFile);
@@ -149,7 +150,7 @@ try {
   await owner.drained;
   assert.ok(owner.output.includes("Server shutdown complete"), owner.output);
   console.log(
-    "Native smoke passed: isolated runtime install, CEF folder launch, second-launch handoff without CEF, backend shutdown.",
+    "Native smoke passed: isolated runtime install, WebKitGTK folder launch, second-launch handoff, backend shutdown.",
   );
 } finally {
   for (const running of [primary, secondary]) {

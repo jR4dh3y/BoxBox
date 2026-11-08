@@ -6,13 +6,14 @@ use super::{icon, TextScale};
 use crate::format::file_size;
 use crate::pane::ViewMode;
 use crate::theme::*;
+use crate::workspace::operations::PaneTarget;
 use crate::workspace::{Load, Workspace};
 
 impl Workspace {
-    pub(crate) fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let pane = self.pane();
+    pub(crate) fn render_status_bar(&self, target: PaneTarget, cx: &mut Context<Self>) -> impl IntoElement {
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
         let item_count = if pane.is_at_root() {
-            match &self.drives {
+            match &pane.drives {
                 Load::Loaded(drives) => drives.len(),
                 _ => 0,
             }
@@ -65,7 +66,7 @@ impl Workspace {
             .justify_between()
             .border_t_1()
             .border_color(c(BORDER_SECONDARY))
-            .bg(c(SURFACE_PRIMARY))
+            .bg(self.chrome_background())
             .px(px(12.))
             .py(px(4.))
             .text_xs_tw()

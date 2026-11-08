@@ -46,8 +46,9 @@ export class DesktopApp {
 
   async start(request: InstanceRequest): Promise<void> {
     const build = await this.#sdk.BuildConfig.get();
-    if (!build.availableRenderers.includes("cef")) {
-      throw new Error("BoxBox Desktop requires a CEF build");
+    const renderer = build.defaultRenderer;
+    if (!build.availableRenderers.includes(renderer)) {
+      throw new Error(`BoxBox Desktop build is missing its ${renderer} renderer`);
     }
     const primary =
       request.kind === "remote"
@@ -71,7 +72,7 @@ export class DesktopApp {
         error,
       );
     });
-    // Electrobun begins native/CEF shutdown synchronously from this call.
+    // Electrobun begins native renderer shutdown synchronously from this call.
     this.#sdk.Utils.quit(code);
   }
 
@@ -125,22 +126,25 @@ export class DesktopApp {
       return existing;
     }
 
+    const renderer = (await this.#sdk.BuildConfig.get()).defaultRenderer;
     const window = new this.#sdk.BrowserWindow({
       title: "BoxBox",
       url: localBootstrapURL(server.url, target),
-      renderer: "cef",
+      renderer,
       sandbox: true,
       allowedProtocols: { views: false, appData: false },
       frame: BROWSER_FRAME,
     });
     this.#localWindowId = window.id;
     window.webview.on("dom-ready", () => {
-      window.webview.executeJavascript(`
-        if (location.origin === ${JSON.stringify(new URL(server.url).origin)} &&
-            document.querySelector('meta[name="boxbox-desktop"]')) {
-          document.documentElement.dataset.hardwareAcceleration = '${hardwareAccelerationEnabled()}';
-        }
-      `);
+      if (renderer === "cef") {
+        window.webview.executeJavascript(`
+          if (location.origin === ${JSON.stringify(new URL(server.url).origin)} &&
+              document.querySelector('meta[name="boxbox-desktop"]')) {
+            document.documentElement.dataset.hardwareAcceleration = '${hardwareAccelerationEnabled()}';
+          }
+        `);
+      }
       this.#localReady = true;
       this.#deliverTargets(window, server.url);
     });
