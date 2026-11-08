@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -58,7 +59,7 @@ func (s *testAuthService) validateToken(tokenString string, expectedType service
 	})
 
 	if err != nil {
-		if err == jwt.ErrTokenExpired {
+		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, service.ErrTokenExpired
 		}
 		return nil, service.ErrInvalidToken
@@ -157,15 +158,16 @@ func TestAuthenticationEnforcement(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	for _, test := range []struct {
-		name   string
-		header string
-		want   int
+		name     string
+		header   string
+		want     int
+		wantBody string
 	}{
 		{name: "missing", want: http.StatusUnauthorized},
 		{name: "wrong scheme", header: "Basic credentials", want: http.StatusUnauthorized},
 		{name: "empty bearer", header: "Bearer ", want: http.StatusUnauthorized},
 		{name: "malformed", header: "Bearer not.a.jwt", want: http.StatusUnauthorized},
-		{name: "expired", header: "Bearer " + expired, want: http.StatusUnauthorized},
+		{name: "expired", header: "Bearer " + expired, want: http.StatusUnauthorized, wantBody: `{"error":"Token expired","code":"UNAUTHORIZED"}`},
 		{name: "wrong secret", header: "Bearer " + wrongSecret, want: http.StatusUnauthorized},
 		{name: "valid", header: "Bearer " + valid, want: http.StatusOK},
 	} {
@@ -178,6 +180,9 @@ func TestAuthenticationEnforcement(t *testing.T) {
 			handler.ServeHTTP(recorder, request)
 			if recorder.Code != test.want {
 				t.Fatalf("status = %d, want %d", recorder.Code, test.want)
+			}
+			if test.wantBody != "" && recorder.Body.String() != test.wantBody {
+				t.Errorf("body = %q, want %q", recorder.Body.String(), test.wantBody)
 			}
 		})
 	}

@@ -1,6 +1,7 @@
 // Package handler provides HTTP handlers for the BoxBox API.
-// Focused HTTP tests for streaming and upload boundaries.
 package handler
+
+// Focused HTTP tests for streaming and upload boundaries.
 
 import (
 	"bytes"
