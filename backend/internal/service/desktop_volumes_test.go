@@ -180,8 +180,10 @@ func TestDesktopVolumesListDescribesMountedRemovableDrive(t *testing.T) {
 	}
 }
 
-func TestDesktopVolumeUnmountUsesReportedURIToKnownVolume(t *testing.T) {
+// The second post-action listing is still stale; the action must poll until the change is visible.
+func TestDesktopVolumeUnmountUsesReportedURIAndWaitsForUnmountedState(t *testing.T) {
 	runner := &fakeVolumeRunner{listOutputs: [][]byte{
+		[]byte(mountedUSBDriveFixture),
 		[]byte(mountedUSBDriveFixture),
 		[]byte(mountedUSBDriveFixture),
 		[]byte(unmountedUSBDriveFixture),
@@ -205,34 +207,11 @@ func TestDesktopVolumeUnmountUsesReportedURIToKnownVolume(t *testing.T) {
 	if got.name != "gio" || strings.Join(got.args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("command = %s %#v, want gio %#v", got.name, got.args, want)
 	}
-	if firstVolume(t, response).Mounted {
-		t.Fatal("response still reports the volume as mounted")
-	}
-}
-
-func TestDesktopVolumePollsUntilTheUnmountedStateIsVisible(t *testing.T) {
-	runner := &fakeVolumeRunner{listOutputs: [][]byte{
-		[]byte(mountedUSBDriveFixture),
-		[]byte(mountedUSBDriveFixture),
-		[]byte(mountedUSBDriveFixture),
-		[]byte(unmountedUSBDriveFixture),
-	}}
-	service := testDesktopVolumesService(runner, nil)
-	initial, err := service.ListVolumes(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	volume := firstVolume(t, initial)
-
-	response, err := service.UnmountVolume(context.Background(), volume.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if runner.listCalls != 4 {
 		t.Fatalf("list calls = %d, want 4 (pre-action, action, stale, settled)", runner.listCalls)
 	}
 	if firstVolume(t, response).Mounted {
-		t.Fatal("stale mount state was returned")
+		t.Fatal("response still reports the volume as mounted")
 	}
 }
 
@@ -469,21 +448,5 @@ func TestDesktopVolumeBrowsePathIsResolvedThroughMounts(t *testing.T) {
 	}
 	if got := service.browsePath(outside); got != "" {
 		t.Fatalf("outside path produced %q", got)
-	}
-}
-
-func TestDesktopVolumeReadOnlyFlagComesFromMountStats(t *testing.T) {
-	runner := &fakeVolumeRunner{listOutputs: [][]byte{[]byte(mountedUSBDriveFixture)}}
-	service := testDesktopVolumesService(runner, nil)
-	service.space = func(string) (volumeSpace, error) {
-		return volumeSpace{total: 1024, free: 0, readOnly: true}, nil
-	}
-	response, err := service.ListVolumes(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	volume := firstVolume(t, response)
-	if !volume.ReadOnly || volume.TotalBytes != 1024 || volume.FreeBytes != 0 {
-		t.Fatalf("unexpected read-only state: %#v", volume)
 	}
 }

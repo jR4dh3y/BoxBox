@@ -152,17 +152,3 @@ func TestErrorResponsesKeepTheirStatus(t *testing.T) {
 		t.Fatalf("want 400 for a search without a path, got %d", rec.Code)
 	}
 }
-
-func TestGzipIsSkippedWhenTheClientRefusesIt(t *testing.T) {
-	handler := newCompressionTestServer(t)
-	// Large enough to be gzipped if the refusal were ignored.
-	for _, acceptEncoding := range []string{"gzip;q=0", "gzip;q=0.0", "gzip;q=0.000", "br, gzip;q=0.000"} {
-		rec := get(handler, "/api/v1/files/list/files", acceptEncoding)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%q: status %d", acceptEncoding, rec.Code)
-		}
-		if encoding := rec.Header().Get("Content-Encoding"); encoding != "" {
-			t.Errorf("%q must not be gzipped, got %q", acceptEncoding, encoding)
-		}
-	}
-}

@@ -1,5 +1,7 @@
 # Test pruning comparison and completion record
 
+The later `second-pass.md` supersedes the blanket retention of low-confidence candidates below and records the additional 480-line reduction. Other decisions here describe the first implementation pass.
+
 Reference: https://git.cafe/pingdotgg/t3code/pull/22557
 BoxBox PR: https://github.com/jR4dh3y/BoxBox/pull/228
 Reviewed head: 44975185750e5f433031a3699942fbb70387a566 plus the local patch.

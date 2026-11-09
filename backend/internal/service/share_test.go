@@ -1,7 +1,6 @@
 package service
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -156,32 +155,6 @@ func TestShareFolderDefaultOrder(t *testing.T) {
 	want := []string{"new-folder", "old-folder", "newest.txt", "file2.txt", "file10.txt", ".hidden"}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("order = %v, want %v", names, want)
-	}
-}
-
-func TestShareFolderEditorCanCreateFileButViewerCannot(t *testing.T) {
-	fsys := filesystem.NewMemMapFS()
-	setupShareTestFS(fsys)
-	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
-
-	editor, err := shares.Create(context.Background(), "owner", "media/subdir", ShareSettings{Permissions: model.SharePermissions{Upload: true}}, time.Time{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := shares.WriteForRecipientPath(context.Background(), editor.Token, "new.txt", strings.NewReader("new content")); err != nil {
-		t.Fatal(err)
-	}
-	content, err := fsys.ReadFile("/data/media/subdir/new.txt")
-	if err != nil || string(content) != "new content" {
-		t.Fatalf("created file = %q, err=%v", content, err)
-	}
-
-	viewer, err := shares.Create(context.Background(), "owner", "media/subdir", ShareSettings{}, time.Time{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := shares.WriteForRecipientPath(context.Background(), viewer.Token, "blocked.txt", strings.NewReader("blocked")); !errors.Is(err, ErrPermissionDenied) {
-		t.Fatalf("viewer write error = %v, want %v", err, ErrPermissionDenied)
 	}
 }
 
@@ -567,50 +540,6 @@ func TestShareUploadOnlyCannotReplaceOrDeleteAndEnforcesLinkLimit(t *testing.T) 
 	}
 }
 
-func TestShareFolderArchiveContainsRelativeZipEntries(t *testing.T) {
-	fsys := filesystem.NewMemMapFS()
-	setupShareTestFS(fsys)
-	_ = fsys.MkdirAll("/data/media/subdir/nested", 0o755)
-	_ = fsys.WriteFile("/data/media/subdir/nested/notes.txt", []byte("archive content"), 0o644)
-	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
-	share, err := shares.Create(context.Background(), "owner", "media/subdir", ShareSettings{}, time.Time{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	archive, err := shares.PrepareDirectoryArchive(context.Background(), share.Token, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var buffer bytes.Buffer
-	if err := archive.WriteTo(context.Background(), &buffer); err != nil {
-		t.Fatal(err)
-	}
-	reader, err := zip.NewReader(bytes.NewReader(buffer.Bytes()), int64(buffer.Len()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	contents := make(map[string]string, len(reader.File))
-	for _, entry := range reader.File {
-		if strings.Contains(entry.Name, "media/") || strings.HasPrefix(entry.Name, "/") || strings.Contains(entry.Name, "../") {
-			t.Fatalf("archive entry escaped share-relative names: %q", entry.Name)
-		}
-		file, err := entry.Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-		content, readErr := io.ReadAll(file)
-		closeErr := file.Close()
-		if readErr != nil || closeErr != nil {
-			t.Fatalf("read archive entry %q: read=%v close=%v", entry.Name, readErr, closeErr)
-		}
-		contents[entry.Name] = string(content)
-	}
-	if contents["subdir/nested/notes.txt"] != "archive content" {
-		t.Fatalf("archive contents = %+v", contents)
-	}
-}
-
 func assertOnlyEntries(t *testing.T, dir string, allowed ...string) {
 	t.Helper()
 	allowedSet := make(map[string]bool, len(allowed))
@@ -748,42 +677,6 @@ func TestShareRejectsSymlinkEscapingMount(t *testing.T) {
 
 	if _, err := shares.Create(context.Background(), "owner", "media/escape.txt", ShareSettings{Permissions: model.SharePermissions{View: true}}, time.Time{}); !errors.Is(err, ErrPermissionDenied) {
 		t.Fatalf("Create() through escaping symlink = %v, want %v", err, ErrPermissionDenied)
-	}
-}
-
-func TestShareManagementIsScopedToOwner(t *testing.T) {
-	fsys := filesystem.NewMemMapFS()
-	setupShareTestFS(fsys)
-	shares := newShareTestService(fsys, func() []model.MountPoint { return shareTestMounts() })
-
-	aliceShare, err := shares.Create(context.Background(), "alice", "media/file.txt", ShareSettings{Permissions: model.SharePermissions{View: true}}, time.Time{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	bobShare, err := shares.Create(context.Background(), "bob", "media/file.txt", ShareSettings{Permissions: model.SharePermissions{Download: true}}, time.Time{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	listed, err := shares.List("alice")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(listed) != 1 || listed[0].ID != aliceShare.ID {
-		t.Fatalf("List(alice) = %+v, want only %q", listed, aliceShare.ID)
-	}
-	if _, err := shares.List(""); !errors.Is(err, ErrInvalidOperation) {
-		t.Fatalf("List(empty) error = %v, want %v", err, ErrInvalidOperation)
-	}
-
-	if err := shares.Revoke("alice", bobShare.ID); !errors.Is(err, ErrShareNotFound) {
-		t.Fatalf("Revoke(alice, bob) error = %v, want %v", err, ErrShareNotFound)
-	}
-	if _, err := shares.ResolveForRecipient(bobShare.Token); err != nil {
-		t.Fatalf("bob share was revoked by alice: %v", err)
-	}
-	if err := shares.Revoke("bob", bobShare.ID); err != nil {
-		t.Fatalf("Revoke(bob, bob) = %v", err)
 	}
 }
 

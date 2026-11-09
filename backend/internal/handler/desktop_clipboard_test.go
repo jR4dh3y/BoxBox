@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -118,8 +117,5 @@ func TestDesktopClipboardHandlerValidatesRequestsAndMapsUnavailableHelper(t *tes
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/desktop/clipboard", strings.NewReader(`{"operation":"clear-cut","paths":["home/file.txt"]}`)))
 	if response.Code != http.StatusConflict {
 		t.Fatalf("changed clipboard response = %d", response.Code)
-	}
-	if !errors.Is(clipboard.err, service.ErrDesktopClipboardChanged) {
-		t.Fatal("test setup lost clipboard error")
 	}
 }

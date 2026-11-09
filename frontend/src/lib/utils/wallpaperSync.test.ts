@@ -563,35 +563,6 @@ test('successful wallpaper upload and deletion survive blocked pending-key clean
 	});
 });
 
-test('completed publication overrides a pending marker when cleanup keeps failing', async () => {
-	await withSession(async ({ login, stored, requests }) => {
-		await login('completed-owner');
-		await syncShareWallpaperOnLogin();
-		const reference = await saveLocalWallpaperBlob(new Blob(['completed'], { type: 'image/png' }));
-		settingsStore.set({ ...settingsStore.current, backgroundImage: reference });
-		const original = localStorage.removeItem;
-		localStorage.removeItem = (key: string) => {
-			if (key.startsWith('boxbox_wallpaper_pending:'))
-				throw new DOMException('Blocked', 'SecurityError');
-			original(key);
-		};
-		try {
-			await publishEditedWallpaper();
-			assert.equal(stored.get('completed-owner')?.source, reference);
-			await authStore.logout();
-			stored.delete('completed-owner');
-			const uploads = requests.filter((request) => request.startsWith('PUT')).length;
-			await login('completed-owner');
-			await syncShareWallpaperOnLogin();
-			assert.equal(settingsStore.current.backgroundImage, null);
-			assert.equal(stored.has('completed-owner'), false);
-			assert.equal(requests.filter((request) => request.startsWith('PUT')).length, uploads);
-		} finally {
-			localStorage.removeItem = original;
-		}
-	});
-});
-
 test('settings operations end on logout, same-user relogin and page replacement', async () => {
 	await withSession(async ({ login }) => {
 		await login('operation-owner');

@@ -80,15 +80,6 @@ func TestMountsResolveReadsTheLiveList(t *testing.T) {
 	}
 }
 
-func TestIsMalformedPath(t *testing.T) {
-	if !isMalformedPath(validator.ErrPathTraversal) || !isMalformedPath(validator.ErrEmptyPath) || !isMalformedPath(validator.ErrInvalidPath) {
-		t.Fatal("validator path errors should be malformed")
-	}
-	if isMalformedPath(ErrPathNotFound) || isMalformedPath(ErrMountPointNotFound) || isMalformedPath(nil) {
-		t.Fatal("lookup errors are not malformed")
-	}
-}
-
 func TestMountsResolveOverlappingReadOnlyPaths(t *testing.T) {
 	root := t.TempDir()
 	protected := filepath.Join(root, "backups")

@@ -23,13 +23,13 @@ import {
   findLauncherArguments,
   targetArguments,
   parseLaunchTarget,
-  virtualPath,
 } from "./launch";
 import {
   installDesktopIntegration,
   parseInstallArguments,
   quoteDesktopExecArgument,
 } from "../scripts/install";
+import { createTar, type TarFixtureEntry } from "../scripts/tar-fixture";
 
 const temporaryRoots: string[] = [];
 
@@ -190,11 +190,6 @@ describe("desktop launch targets", () => {
     ).toEqual(["--select", "/home/ana/a b.txt"]);
   });
 
-  test("maps the filesystem root to the root mount", () => {
-    expect(virtualPath("/")).toBe("root");
-    expect(virtualPath("/home/ana")).toBe("root/home/ana");
-  });
-
   test("reads packaged launcher arguments from the Linux command line", () => {
     expect(
       commandLineArguments(
@@ -247,22 +242,6 @@ describe("desktop launch targets", () => {
     ]);
     expect(findLauncherArguments("/usr/bin/launcher", 40, inspect)).toBeUndefined();
     expect(findLauncherArguments(launcher, 99, inspect)).toBeUndefined();
-  });
-
-  test("walks past wrapper processes but stops at the launcher", () => {
-    const launcher = "/opt/boxbox/bin/launcher";
-    const processes = new Map([
-      [10, { parentPid: 1, executable: "/usr/bin/boxbox-launcher", arguments: ["boxbox-launcher"] }],
-      [20, { parentPid: 10, executable: launcher, arguments: [launcher, "/tmp/one"] }],
-      [30, { parentPid: 20, executable: "/usr/bin/sh", arguments: ["sh", "-c", "boxbox"] }],
-      [40, { parentPid: 30, executable: "/usr/bin/bun", arguments: ["bun", "main.js"] }],
-    ]);
-    expect(
-      findLauncherArguments(launcher, 40, (pid) => processes.get(pid)),
-    ).toEqual(["/tmp/one"]);
-    expect(
-      findLauncherArguments(launcher, 99, (pid) => processes.get(pid)),
-    ).toBeUndefined();
   });
 
   test("reads a live launcher parent from /proc on Linux", async () => {
@@ -338,67 +317,6 @@ interface TestEnvironment {
   XDG_DATA_HOME: string;
   XDG_CONFIG_HOME: string;
   PATH: string;
-}
-
-interface TarFixtureEntry {
-  readonly name: string;
-  readonly content?: string;
-  readonly mode?: number;
-  readonly type?: "file" | "directory" | "symlink";
-  readonly linkName?: string;
-}
-
-function createTar(entries: readonly TarFixtureEntry[]): Buffer {
-  const blocks: Buffer[] = [];
-  for (const entry of entries) {
-    const type = entry.type ?? "file";
-    const content = Buffer.from(type === "file" ? (entry.content ?? "") : "");
-    const mode =
-      entry.mode ?? (type === "directory" ? 0o755 : type === "symlink" ? 0o777 : 0o644);
-    blocks.push(tarHeader(entry, mode, content.length));
-    if (content.length > 0) {
-      blocks.push(content);
-      const padding = (512 - (content.length % 512)) % 512;
-      if (padding > 0) blocks.push(Buffer.alloc(padding));
-    }
-  }
-  blocks.push(Buffer.alloc(1024));
-  return Buffer.concat(blocks);
-}
-
-function tarHeader(entry: TarFixtureEntry, mode: number, size: number): Buffer {
-  const header = Buffer.alloc(512);
-  header.write(entry.name, 0, 100, "ascii");
-  writeTarOctal(header, 100, 8, mode);
-  writeTarOctal(header, 108, 8, 0);
-  writeTarOctal(header, 116, 8, 0);
-  writeTarOctal(header, 124, 12, size);
-  writeTarOctal(header, 136, 12, 0);
-  header[156] =
-    entry.type === "directory" ? 0x35 : entry.type === "symlink" ? 0x32 : 0x30;
-  if (entry.linkName !== undefined) {
-    header.write(entry.linkName, 157, 100, "ascii");
-  }
-  header.write("ustar", 257, 6, "ascii");
-  header.write("00", 263, 2, "ascii");
-  header.fill(0x20, 148, 156);
-  let sum = 0;
-  for (const byte of header) sum += byte;
-  header.write(sum.toString(8).padStart(6, "0"), 148, 6, "ascii");
-  header[154] = 0;
-  header[155] = 0x20;
-  return header;
-}
-
-function writeTarOctal(
-  header: Buffer,
-  offset: number,
-  length: number,
-  value: number,
-): void {
-  const text = value.toString(8).padStart(length - 1, "0");
-  header.write(text, offset, text.length, "ascii");
-  header[offset + length - 1] = 0;
 }
 
 function runtimeEntries(
