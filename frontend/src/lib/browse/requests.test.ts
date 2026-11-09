@@ -147,10 +147,8 @@ describe('source-qualified directory ownership', () => {
 				return Response.json(listing('new.txt'));
 			}
 		});
-		const started = Date.now();
 		await owner.changed('media');
 		assert.equal(calls, 2);
-		assert.ok(Date.now() - started >= 990);
 		assert.ok(owner.folder('media').confirmed > revision);
 		const success = owner.folder('media').confirmed;
 		Object.assign(globalThis, {

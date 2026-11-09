@@ -1,4 +1,4 @@
-export type DriveUsageLevel = 'normal' | 'warning' | 'danger';
+type DriveUsageLevel = 'normal' | 'warning' | 'danger';
 
 export function driveUsageLevel(usedPct: number): DriveUsageLevel {
 	if (usedPct >= 90) return 'danger';

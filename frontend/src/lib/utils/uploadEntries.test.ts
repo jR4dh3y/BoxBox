@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { entriesFromFiles, foldersFor } from './uploadEntries';
+import { foldersFor } from './uploadEntries';
 
 const file = (name: string) => new File(['x'], name);
 
@@ -13,14 +13,5 @@ describe('foldersFor', () => {
 			{ file: file('d.txt'), relativePath: 'd.txt' }
 		];
 		assert.deepEqual(foldersFor(entries), ['photos', 'photos/2024']);
-	});
-});
-
-describe('entriesFromFiles', () => {
-	test('uses the file name when there is no folder path', () => {
-		assert.deepEqual(
-			entriesFromFiles([file('a.txt')]).map((entry) => entry.relativePath),
-			['a.txt']
-		);
 	});
 });

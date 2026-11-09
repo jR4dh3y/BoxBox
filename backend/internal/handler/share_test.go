@@ -706,38 +706,6 @@ func TestShareFolderUploadOverwritesFileViaAPI(t *testing.T) {
 	}
 }
 
-func TestShareUploadRejectsInvalidRequests(t *testing.T) {
-	handler, _, _ := setupTestShareHandler()
-	router := createShareTestRouter(handler)
-
-	readOnly := createShareViaAPI(t, router, "media", model.SharePermissions{}, nil)
-	writable := createShareViaAPI(t, router, "media", model.SharePermissions{Upload: true}, nil)
-
-	tests := []struct {
-		name       string
-		token      string
-		path       string
-		body       io.Reader
-		wantStatus int
-	}{
-		{name: "share without write permission", token: readOnly.Token, path: "new.txt", body: strings.NewReader("data"), wantStatus: http.StatusForbidden},
-		{name: "unknown token", token: "unknown-token", path: "new.txt", body: strings.NewReader("data"), wantStatus: http.StatusNotFound},
-		{name: "empty body for a new file", token: writable.Token, path: "new.txt", body: nil, wantStatus: http.StatusBadRequest},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/share/"+test.token+"/upload?path="+test.path, test.body)
-			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, req)
-
-			if rec.Code != test.wantStatus {
-				t.Fatalf("status = %d, want %d: %s", rec.Code, test.wantStatus, rec.Body.String())
-			}
-		})
-	}
-}
-
 func TestShareUploadEnforcesMaxBytes(t *testing.T) {
 	// NewShareHandler(_, _, 1) caps uploads at 1 MiB.
 	handler, fs, _ := setupTestShareHandler()

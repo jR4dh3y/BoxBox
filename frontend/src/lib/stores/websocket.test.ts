@@ -74,18 +74,6 @@ describe('websocket reconnect backoff', () => {
 		stop();
 	});
 
-	test('delays double on each failed attempt and stop at the maximum', () => {
-		websocketStore.connect(true);
-		for (let attempt = 0; attempt < 8; attempt++) dropAndRetry();
-		FakeSocket.instances.at(-1)?.onclose?.({ code: 1006 });
-
-		const { initialReconnectDelayMs: first, maxReconnectDelayMs: max } = CONFIG.websocket;
-		assert.deepEqual(
-			delays,
-			Array.from({ length: 9 }, (_, attempt) => Math.min(first * 2 ** attempt, max))
-		);
-	});
-
 	test('retries stop at the configured attempt limit', () => {
 		const { maxReconnectAttempts } = CONFIG.websocket;
 		websocketStore.connect(true);

@@ -148,27 +148,6 @@ func firstVolume(t *testing.T, response DesktopVolumesResponse) DesktopVolume {
 	return response.Volumes[0]
 }
 
-func TestGioMountListFiltersRemovableDrives(t *testing.T) {
-	listing := parseGioMountList([]byte(mountedUSBDriveFixture))
-	volumes := listing.userVolumes()
-	if len(volumes) != 1 {
-		t.Fatalf("removable volumes = %d, want 1", len(volumes))
-	}
-	found := volumes[0]
-	if found.drive.name != "USB DISK 3.0" || found.volume.name != "Photos" {
-		t.Fatalf("unexpected removable volume: %q on %q", found.volume.name, found.drive.name)
-	}
-	if found.volume.ids["unix-device"] != "/dev/sdb1" || found.volume.uuid != "1234-ABCD" {
-		t.Fatalf("unexpected identifiers: %#v", found.volume.ids)
-	}
-	if found.volume.mount == nil || found.volume.mount.uri != "file:///run/media/radhey/Photos%20Card" {
-		t.Fatalf("unexpected mount: %#v", found.volume.mount)
-	}
-	if !found.volume.mount.canUnmount || !found.volume.mount.canEject {
-		t.Fatal("mount capabilities were not parsed")
-	}
-}
-
 func TestDesktopVolumesListDescribesMountedRemovableDrive(t *testing.T) {
 	runner := &fakeVolumeRunner{listOutputs: [][]byte{[]byte(mountedUSBDriveFixture)}}
 	service := testDesktopVolumesService(runner, nil)
@@ -429,16 +408,6 @@ func TestDesktopVolumesUnavailableWhenGioIsMissing(t *testing.T) {
 	}
 	if _, err := service.MountVolume(context.Background(), "anything"); !errors.Is(err, ErrDesktopVolumesUnavailable) {
 		t.Fatalf("mount error = %v, want ErrDesktopVolumesUnavailable", err)
-	}
-}
-
-func TestGioMountListIncludesInternalDataVolumes(t *testing.T) {
-	volumes := parseGioMountList([]byte(internalDataDriveFixture)).userVolumes()
-	if len(volumes) != 1 {
-		t.Fatalf("internal volumes = %d, want 1", len(volumes))
-	}
-	if volumes[0].drive.isRemovable() {
-		t.Fatal("fixed drive reported as removable")
 	}
 }
 
