@@ -3,7 +3,8 @@ import Layout from '../layouts/Layout.astro';
 import SiteNav from '../components/SiteNav.astro';
 import HeroActions from '../components/HeroActions.astro';
 import AppInterfaceDemo from '../components/AppInterfaceDemo.astro';
-import ProductTour from '../components/ProductTour.astro';
+import Screens from '../components/Screens.astro';
+import Features from '../components/Features.astro';
 import Quickstart from '../components/Quickstart.astro';
 import ReleaseBanner from '../components/ReleaseBanner.astro';
 import SiteFooter from '../components/SiteFooter.astro';
@@ -16,7 +17,7 @@ import SiteFooter from '../components/SiteFooter.astro';
 <section class="relative z-10 overflow-hidden px-5 pt-10 pb-16 md:px-8 md:pt-20">
   <div class="mx-auto max-w-7xl">
     <h1 class="hero-title font-display animate-fade-in-up font-extrabold text-white" style="animation-delay: 100ms;">
-      The file manager your <span class="hero-rename"><span id="hero-rename-word" aria-hidden="true">homelab</span><span class="sr-only">homelab, NAS, or server</span></span> deserves.
+      The file manager <br class="md:hidden" />your <br class="hidden md:block" /><span class="hero-rename"><span id="hero-rename-word" aria-hidden="true">homelab</span><span class="sr-only">homelab, NAS, or server</span></span> <br class="md:hidden" />deserves.
     </h1>
 
     <div class="mt-10 grid gap-8 md:mt-14 md:grid-cols-[1fr_auto] md:items-end md:gap-16">
@@ -34,7 +35,9 @@ import SiteFooter from '../components/SiteFooter.astro';
   </div>
 </section>
 
-<ProductTour />
+<Screens />
+
+<Features />
 
 <Quickstart />
 </main>
@@ -44,42 +47,44 @@ import SiteFooter from '../components/SiteFooter.astro';
 </Layout>
 
 <script>
-  // Cycles the renamed word the way a rename works: select all, then type
-  // over it. "homelab" is the longest word, so the headline never reflows.
+  // Renames the boxed word in place: select it, replace it at once, and let
+  // the box settle to the new width.
   const word = document.getElementById('hero-rename-word');
   const names = ['homelab', 'NAS', 'server'];
 
-  async function rename(target: HTMLElement) {
+  async function cycle(target: HTMLElement, box: HTMLElement) {
     const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+    const timing = { duration: 520, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' };
     for (let index = 1; ; index = (index + 1) % names.length) {
-      await wait(2600);
+      await wait(2800);
       target.toggleAttribute('data-selected', true);
-      await wait(700);
+      await wait(420);
+      const from = box.getBoundingClientRect().width;
+      target.textContent = names[index];
       target.toggleAttribute('data-selected', false);
-      target.textContent = '';
-      for (const letter of names[index]) {
-        await wait(95);
-        target.textContent += letter;
-      }
+      const to = box.getBoundingClientRect().width;
+      box.animate({ width: [`${from}px`, `${to}px`] }, timing);
+      target.animate({ opacity: [0, 1], filter: ['blur(0.12em)', 'blur(0)'] }, timing);
     }
   }
 
-  if (word && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) void rename(word);
+  const box = word?.parentElement;
+  if (word && box && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) void cycle(word, box);
 </script>
 
 <style>
   .hero-title {
-    max-width: 15ch;
     font-size: clamp(2.75rem, 8.4vw, 6rem);
     line-height: 0.98;
     letter-spacing: -0.035em;
   }
 
   /* The word is drawn as a filename mid-rename: boxed, caret at the end, and
-     selected just before it is typed over. */
+     selected just before it is replaced. */
   .hero-rename {
     display: inline-block;
-    min-width: 1.1em;
+    box-sizing: border-box;
+    white-space: nowrap;
     margin: 0 -0.04em;
     padding: 0 0.1em 0.06em;
     border: 0.035em solid var(--color-accent);
@@ -90,6 +95,7 @@ import SiteFooter from '../components/SiteFooter.astro';
   }
 
   #hero-rename-word {
+    display: inline-block;
     border-radius: 0.04em;
     transition: background-color 120ms ease, color 120ms ease;
   }

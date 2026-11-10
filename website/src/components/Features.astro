@@ -1,0 +1,24 @@
+---
+const features = [
+  { name: 'Drives and places', detail: 'Browse configured and discovered drives together. Keep Downloads, Pictures, and other folder shortcuts in their own Places section.' },
+  { name: 'Folder uploads', detail: 'Choose a folder or drag one in. Nested file paths stay intact, and large files upload in resumable chunks with progress for each file.' },
+  { name: 'Preview and edit', detail: 'Open images, audio, video, PDFs, and documents without downloading them. Edit text and code in Monaco, the editor behind VS Code.' },
+  { id: 'sharing', name: 'File and folder sharing', detail: 'One link for a file or folder. Set upload and delete permissions, choose an expiry, and let recipients browse or download a ZIP.' },
+  { name: 'Background jobs', detail: 'Copy, move, and delete run in the background. Progress and file changes sync live over WebSocket.' },
+  { name: 'Yours to configure', detail: 'Read-only mounts, multiple users, rate limits, and allowed origins. Your files stay on your server.' }
+];
+---
+
+<section class="relative z-10 border-t border-white/5 bg-[#0d0d0d] px-5 py-20 md:px-8 md:py-28">
+  <div class="mx-auto max-w-7xl">
+    <h2 class="font-display text-3xl font-bold tracking-[-0.02em] text-white md:text-4xl">What it does</h2>
+    <dl class="mt-8 grid gap-x-12 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+      {features.map((feature) => (
+        <div id={feature.id} class="scroll-mt-10 border-t border-border-primary pt-5">
+          <dt class="text-[17px] font-semibold text-white">{feature.name}</dt>
+          <dd class="mt-2 max-w-[42ch] text-[15px] leading-relaxed text-text-secondary">{feature.detail}</dd>
+        </div>
+      ))}
+    </dl>
+  </div>
+</section>
