@@ -1,0 +1,43 @@
+---
+// The two ways to get BoxBox, drawn as boxes like the hero word.
+import { ArrowRight, Download } from '@lucide/astro';
+---
+
+<div class="flex flex-wrap gap-3">
+  <a href="/docs/quickstart/" class="box-button box-button-primary">
+    Get started <ArrowRight class="h-5 w-5" aria-hidden="true" />
+  </a>
+  <a href="/download/#desktop" class="box-button">
+    <Download class="h-5 w-5" aria-hidden="true" /> Download for Linux
+  </a>
+</div>
+
+<style>
+  .box-button {
+    display: inline-flex;
+    min-height: 3.25rem;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0 1.25rem;
+    border: 2px solid var(--color-accent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    color: var(--color-accent);
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+  }
+
+  .box-button:hover,
+  .box-button-primary {
+    background: var(--color-accent);
+    color: #0d0d0d;
+  }
+
+  .box-button-primary:hover {
+    border-color: #fff;
+    background: #fff;
+  }
+</style>

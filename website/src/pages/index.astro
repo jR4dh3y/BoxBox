@@ -1,11 +1,10 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import SiteNav from '../components/SiteNav.astro';
-import HeroActions from '../components/HeroActions.astro';
+import GetBoxBox from '../components/GetBoxBox.astro';
+import Closing from '../components/Closing.astro';
 import AppInterfaceDemo from '../components/AppInterfaceDemo.astro';
-import Screens from '../components/Screens.astro';
-import Features from '../components/Features.astro';
-import Quickstart from '../components/Quickstart.astro';
+import Walkthrough from '../components/Walkthrough.astro';
 import ReleaseBanner from '../components/ReleaseBanner.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 ---
@@ -17,15 +16,15 @@ import SiteFooter from '../components/SiteFooter.astro';
 <section class="relative z-10 overflow-hidden px-5 pt-10 pb-16 md:px-8 md:pt-20">
   <div class="mx-auto max-w-7xl">
     <h1 class="hero-title font-display animate-fade-in-up font-extrabold text-white" style="animation-delay: 100ms;">
-      The file manager <br class="md:hidden" />your <br class="hidden md:block" /><span class="hero-rename"><span id="hero-rename-word" aria-hidden="true">homelab</span><span class="sr-only">homelab, NAS, or server</span></span> <br class="md:hidden" />deserves.
+      The file manager <br class="md:hidden" />your <br class="hidden md:block" /><span class="word-box hero-rename"><span id="hero-rename-window"><span id="hero-rename-word" aria-hidden="true">homelab</span></span><span class="sr-only">homelab, NAS, or server</span></span> <br class="md:hidden" />deserves.
     </h1>
 
-    <div class="mt-10 grid gap-8 md:mt-14 md:grid-cols-[1fr_auto] md:items-end md:gap-16">
+    <div class="mt-8 flex flex-col gap-8 md:mt-10 lg:flex-row lg:items-end lg:justify-between lg:gap-12">
       <p class="animate-fade-in-up max-w-xl text-lg leading-relaxed text-text-secondary md:text-xl" style="animation-delay: 200ms;">
         Browse your server like local folders. Upload whole directories, edit code, and share files or folders with the access you choose.
       </p>
-      <div class="animate-fade-in-up" style="animation-delay: 300ms;">
-        <HeroActions />
+      <div class="animate-fade-in-up shrink-0" style="animation-delay: 300ms;">
+        <GetBoxBox />
       </div>
     </div>
   </div>
@@ -35,11 +34,13 @@ import SiteFooter from '../components/SiteFooter.astro';
   </div>
 </section>
 
-<Screens />
-
-<Features />
-
-<Quickstart />
+<section id="features" class="relative z-10 scroll-mt-8 bg-[#0d0d0d] px-5 pt-10 pb-24 md:px-8 md:pt-16 md:pb-36">
+  <h2 class="sr-only">What BoxBox does and how to run it</h2>
+  <div class="mx-auto flex max-w-7xl flex-col gap-24 md:gap-36">
+    <Walkthrough />
+    <Closing />
+  </div>
+</section>
 </main>
 
 <SiteFooter />
@@ -47,29 +48,34 @@ import SiteFooter from '../components/SiteFooter.astro';
 </Layout>
 
 <script>
-  // Renames the boxed word in place: select it, replace it at once, and let
-  // the box settle to the new width.
+  // The next name slides up into the box, like a list scrolling one row, and
+  // the box follows its width.
+  const frame = document.getElementById('hero-rename-window');
   const word = document.getElementById('hero-rename-word');
   const names = ['homelab', 'NAS', 'server'];
 
-  async function cycle(target: HTMLElement, box: HTMLElement) {
-    const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-    const timing = { duration: 520, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' };
-    for (let index = 1; ; index = (index + 1) % names.length) {
-      await wait(2800);
-      target.toggleAttribute('data-selected', true);
-      await wait(420);
-      const from = box.getBoundingClientRect().width;
-      target.textContent = names[index];
-      target.toggleAttribute('data-selected', false);
-      const to = box.getBoundingClientRect().width;
-      box.animate({ width: [`${from}px`, `${to}px`] }, timing);
-      target.animate({ opacity: [0, 1], filter: ['blur(0.12em)', 'blur(0)'] }, timing);
-    }
+  function slideTo(view: HTMLElement, target: HTMLElement, next: string) {
+    const timing = { duration: 700, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' };
+    const from = view.getBoundingClientRect().width;
+    const leaving = document.createElement('span');
+    leaving.textContent = target.textContent;
+    leaving.setAttribute('aria-hidden', 'true');
+    leaving.style.cssText = 'position:absolute;left:0;top:0';
+    view.append(leaving);
+    target.textContent = next;
+    const to = target.getBoundingClientRect().width;
+    view.animate({ width: [`${from}px`, `${to}px`] }, timing);
+    target.animate({ transform: ['translateY(110%)', 'translateY(0)'] }, timing);
+    leaving.animate({ transform: ['translateY(0)', 'translateY(-110%)'] }, timing).finished.then(() => leaving.remove());
   }
 
-  const box = word?.parentElement;
-  if (word && box && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) void cycle(word, box);
+  if (frame && word && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    let index = 0;
+    window.setInterval(() => {
+      index = (index + 1) % names.length;
+      slideTo(frame, word, names[index]);
+    }, 3000);
+  }
 </script>
 
 <style>
@@ -79,44 +85,14 @@ import SiteFooter from '../components/SiteFooter.astro';
     letter-spacing: -0.035em;
   }
 
-  /* The word is drawn as a filename mid-rename: boxed, caret at the end, and
-     selected just before it is replaced. */
-  .hero-rename {
+  /* Clips the sliding names above and below, but not at the sides where a
+     letter can overhang. overflow: hidden would also move the baseline. */
+  #hero-rename-window {
+    position: relative;
     display: inline-block;
-    box-sizing: border-box;
-    white-space: nowrap;
-    margin: 0 -0.04em;
-    padding: 0 0.1em 0.06em;
-    border: 0.035em solid var(--color-accent);
-    border-radius: 0.1em;
-    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
-    color: var(--color-accent);
-    line-height: 1;
+    line-height: 1.1;
+    clip-path: inset(0 -0.15em);
   }
 
-  #hero-rename-word {
-    display: inline-block;
-    border-radius: 0.04em;
-    transition: background-color 120ms ease, color 120ms ease;
-  }
-
-  #hero-rename-word[data-selected] {
-    background: var(--color-accent-solid);
-    color: #fff;
-  }
-
-  .hero-rename::after {
-    content: '';
-    display: inline-block;
-    width: 0.045em;
-    height: 0.78em;
-    margin-left: 0.05em;
-    vertical-align: -0.04em;
-    background: currentColor;
-    animation: rename-caret 1.1s steps(1) infinite;
-  }
-
-  @keyframes rename-caret {
-    50% { opacity: 0; }
-  }
+  #hero-rename-word { display: inline-block; }
 </style>

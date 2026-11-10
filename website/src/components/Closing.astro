@@ -1,0 +1,110 @@
+---
+// The page ends with hero-sized type and a taped-up note from the author, in
+// the same handwriting as the doodle in the nav.
+import GetBoxBox from './GetBoxBox.astro';
+---
+
+<div class="closing">
+  <div>
+    <h2 class="font-display">Go give your server a file manager.</h2>
+    <div class="mt-10"><GetBoxBox /></div>
+  </div>
+
+  <div class="closing-note-wall">
+    <figure class="closing-note">
+      <blockquote>
+        <p>I built this for my own homelab.</p>
+        <p>It's free and open source, so now it's yours too.</p>
+        <p>Found a bug? Tell me.</p>
+      </blockquote>
+      <figcaption>— jR4dh3y</figcaption>
+    </figure>
+  </div>
+</div>
+
+<style>
+  .closing h2 {
+    max-width: 11ch;
+    font-size: clamp(2.75rem, 8.4vw, 6rem);
+    font-weight: 800;
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+    color: #fff;
+  }
+
+  /* A note held to the page by one strip of tape. The tape belongs to the
+     wall and stays still; the sheet hangs from it. */
+  .closing-note-wall {
+    position: relative;
+    width: min(100%, 22rem);
+    margin: 4rem 0 0 0.5rem;
+    perspective: 1000px;
+  }
+
+  .closing-note-wall::after {
+    content: '';
+    position: absolute;
+    top: -0.85rem;
+    left: 50%;
+    width: 6.5rem;
+    height: 1.8rem;
+    background: rgb(255 255 255 / 0.3);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+    backdrop-filter: blur(1.5px);
+    transform: translateX(-50%) rotate(-2deg);
+  }
+
+  .closing-note {
+    display: flex;
+    aspect-ratio: 1;
+    flex-direction: column;
+    padding: 2.75rem 2rem 1.75rem;
+    background: var(--color-folder);
+    color: #1c1608;
+    font-family: 'Caveat', cursive;
+    font-size: 1.9rem;
+    font-weight: 700;
+    line-height: 1.15;
+    box-shadow: 0 16px 22px -14px rgb(0 0 0 / 0.85);
+    transform: rotate(2.5deg);
+    transform-origin: center 0.2rem;
+    transition: transform 700ms cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 700ms ease;
+  }
+
+  /* Touch it and it swings from the tape like a hanging sheet, each swing
+     smaller than the last, then rests with its loose end lifted off the page. */
+  .closing-note-wall:hover .closing-note {
+    box-shadow: 0 30px 34px -18px rgb(0 0 0 / 0.7);
+    transform: rotate(0deg) rotateX(9deg);
+    animation: note-swing 1400ms ease-out;
+  }
+
+  @keyframes note-swing {
+    0% { transform: rotate(2.5deg); }
+    18% { transform: rotate(-4.5deg) rotateX(9deg); }
+    38% { transform: rotate(3deg) rotateX(9deg); }
+    58% { transform: rotate(-1.8deg) rotateX(9deg); }
+    78% { transform: rotate(0.8deg) rotateX(9deg); }
+    100% { transform: rotate(0deg) rotateX(9deg); }
+  }
+
+  .closing-note p + p { margin-top: 0.7rem; }
+
+  .closing-note figcaption {
+    margin-top: auto;
+    text-align: right;
+    font-size: 2.1rem;
+  }
+
+  @media (min-width: 1024px) {
+    .closing {
+      display: grid;
+      width: 100%;
+      grid-template-columns: minmax(0, 1fr) 22rem;
+      align-items: center;
+      gap: 4rem;
+    }
+
+    .closing-note-wall { width: 100%; margin: 0; }
+  }
+</style>

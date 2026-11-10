@@ -9,8 +9,65 @@ import { GitFork } from '@lucide/astro';
   <nav aria-label="Primary" class="flex items-center gap-1 text-sm font-medium text-text-secondary">
     <a href="#features" class="hidden min-h-11 items-center rounded px-3 transition-colors hover:text-white sm:inline-flex">Features</a>
     <a href="/docs/" class="inline-flex min-h-11 items-center rounded px-3 transition-colors hover:text-white">Docs</a>
-    <a href="https://github.com/jR4dh3y/BoxBox" target="_blank" rel="noopener" class="inline-flex min-h-11 items-center gap-2 rounded px-3 transition-colors hover:text-white">
-      <GitFork class="h-4 w-4" aria-hidden="true" /> GitHub
-    </a>
+    <span class="relative">
+      <a href="https://github.com/jR4dh3y/BoxBox" target="_blank" rel="noopener" class="inline-flex min-h-11 items-center gap-2 rounded px-3 transition-colors hover:text-white">
+        <GitFork class="h-4 w-4" aria-hidden="true" /> GitHub
+      </a>
+      <span class="star-doodle" aria-hidden="true">
+        <svg class="star-doodle-arrow" width="40" height="42" viewBox="0 0 40 42" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path pathLength="1" d="M31 40c3-11 0-23-15-32" />
+          <path class="star-doodle-head" pathLength="1" d="M15 21c0-5 0-9 1-13 4 1 8 2 12 2" />
+        </svg>
+        <span class="star-doodle-text">
+          give me a star
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3.2l2.5 5.6 6.1.5-4.7 4 1.6 6-5.5-3.3-5.3 3.4 1.4-6.1-4.7-3.9 6.1-.6z" />
+          </svg>
+        </span>
+      </span>
+    </span>
   </nav>
 </header>
+
+<style>
+  /* A handwritten note under the GitHub link, on its right side. */
+  .star-doodle {
+    position: absolute;
+    top: calc(100% - 0.35rem);
+    right: -1.25rem;
+    display: none;
+    flex-direction: column;
+    align-items: flex-end;
+    color: var(--color-folder);
+    pointer-events: none;
+  }
+
+  .star-doodle-arrow { margin-right: 2.4rem; }
+
+  .star-doodle-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-family: 'Caveat', cursive;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    transform: rotate(-4deg);
+  }
+
+  .star-doodle-arrow path {
+    stroke-dasharray: 1;
+    animation: doodle-draw 700ms ease-out 900ms backwards;
+  }
+
+  .star-doodle-arrow .star-doodle-head { animation-delay: 1500ms; animation-duration: 300ms; }
+
+  @keyframes doodle-draw {
+    from { stroke-dashoffset: 1; }
+  }
+
+  @media (min-width: 768px) {
+    .star-doodle { display: flex; }
+  }
+</style>
