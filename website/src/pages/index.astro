@@ -1,53 +1,116 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import FeaturesBento from '../components/FeaturesBento.astro';
+import SiteNav from '../components/SiteNav.astro';
+import HeroActions from '../components/HeroActions.astro';
 import AppInterfaceDemo from '../components/AppInterfaceDemo.astro';
+import ProductTour from '../components/ProductTour.astro';
+import Quickstart from '../components/Quickstart.astro';
 import ReleaseBanner from '../components/ReleaseBanner.astro';
 import SiteFooter from '../components/SiteFooter.astro';
-
-import {
-  CirclePlay,
-  GitFork,
-  Download
-} from '@lucide/astro';
 ---
 <Layout title="BoxBox | Self-hosted File Manager & Linux Desktop" description="Manage local files with the Linux desktop app, or self-host BoxBox to browse and share your server files. Pair both in one workspace.">
 <ReleaseBanner />
-<section class="relative min-h-screen flex flex-col items-center justify-start pt-20 pb-20 px-4 text-center overflow-hidden z-10">
+<SiteNav />
 
-  <h1 class="text-5xl md:text-7xl lg:text-8xl font-black mb-6 max-w-5xl mx-auto tracking-tight leading-tight animate-fade-in-up text-white" style="animation-delay: 200ms;">
-    The file manager your <span class="text-accent">homelab</span> deserves.
-  </h1>
+<main>
+<section class="relative z-10 overflow-hidden px-5 pt-10 pb-16 md:px-8 md:pt-20">
+  <div class="mx-auto max-w-7xl">
+    <h1 class="hero-title font-display animate-fade-in-up font-extrabold text-white" style="animation-delay: 100ms;">
+      The file manager your <span class="hero-rename"><span id="hero-rename-word" aria-hidden="true">homelab</span><span class="sr-only">homelab, NAS, or server</span></span> deserves.
+    </h1>
 
-  <p class="text-lg md:text-2xl text-text-secondary max-w-3xl mx-auto mb-12 font-medium leading-relaxed animate-fade-in-up" style="animation-delay: 300ms;">
-    Browse your server like local folders. Upload whole directories, edit code, and share files or folders with the access you choose.
-  </p>
-
-  <div id="desktop" class="mb-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm animate-fade-in-up" style="animation-delay: 350ms;">
-    <p class="text-text-secondary">Now available as a Linux desktop app.</p>
-    <a href="/download/#desktop" class="inline-flex min-h-11 items-center gap-2 font-semibold text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
-      <Download class="h-4 w-4" /> Download for Linux
-    </a>
+    <div class="mt-10 grid gap-8 md:mt-14 md:grid-cols-[1fr_auto] md:items-end md:gap-16">
+      <p class="animate-fade-in-up max-w-xl text-lg leading-relaxed text-text-secondary md:text-xl" style="animation-delay: 200ms;">
+        Browse your server like local folders. Upload whole directories, edit code, and share files or folders with the access you choose.
+      </p>
+      <div class="animate-fade-in-up" style="animation-delay: 300ms;">
+        <HeroActions />
+      </div>
+    </div>
   </div>
 
-  <div class="flex flex-wrap items-center justify-center gap-4 animate-fade-in-up" style="animation-delay: 400ms;">
-    <a href="/docs/quickstart/" class="bg-accent-solid hover:bg-accent-solid-hover text-white font-semibold text-lg px-8 py-4 rounded-lg flex items-center gap-2 transition-all">
-      <CirclePlay class="w-5 h-5" />
-      Get started
-    </a>
-    <a href="https://github.com/jR4dh3y/BoxBox" target="_blank" class="glass-panel text-text-primary hover:text-white font-semibold text-lg px-8 py-4 rounded-lg flex items-center gap-2 transition-all">
-      <GitFork class="w-5 h-5" />
-      GitHub
-    </a>
+  <div class="flex justify-center">
+    <AppInterfaceDemo />
   </div>
-
-  <AppInterfaceDemo />
 </section>
 
-<!-- Features Section -->
-<FeaturesBento />
+<ProductTour />
 
-<!-- Footer -->
+<Quickstart />
+</main>
+
 <SiteFooter />
 
 </Layout>
+
+<script>
+  // Cycles the renamed word the way a rename works: select all, then type
+  // over it. "homelab" is the longest word, so the headline never reflows.
+  const word = document.getElementById('hero-rename-word');
+  const names = ['homelab', 'NAS', 'server'];
+
+  async function rename(target: HTMLElement) {
+    const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+    for (let index = 1; ; index = (index + 1) % names.length) {
+      await wait(2600);
+      target.toggleAttribute('data-selected', true);
+      await wait(700);
+      target.toggleAttribute('data-selected', false);
+      target.textContent = '';
+      for (const letter of names[index]) {
+        await wait(95);
+        target.textContent += letter;
+      }
+    }
+  }
+
+  if (word && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) void rename(word);
+</script>
+
+<style>
+  .hero-title {
+    max-width: 15ch;
+    font-size: clamp(2.75rem, 8.4vw, 6rem);
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+  }
+
+  /* The word is drawn as a filename mid-rename: boxed, caret at the end, and
+     selected just before it is typed over. */
+  .hero-rename {
+    display: inline-block;
+    min-width: 1.1em;
+    margin: 0 -0.04em;
+    padding: 0 0.1em 0.06em;
+    border: 0.035em solid var(--color-accent);
+    border-radius: 0.1em;
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    color: var(--color-accent);
+    line-height: 1;
+  }
+
+  #hero-rename-word {
+    border-radius: 0.04em;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+
+  #hero-rename-word[data-selected] {
+    background: var(--color-accent-solid);
+    color: #fff;
+  }
+
+  .hero-rename::after {
+    content: '';
+    display: inline-block;
+    width: 0.045em;
+    height: 0.78em;
+    margin-left: 0.05em;
+    vertical-align: -0.04em;
+    background: currentColor;
+    animation: rename-caret 1.1s steps(1) infinite;
+  }
+
+  @keyframes rename-caret {
+    50% { opacity: 0; }
+  }
+</style>

@@ -1,0 +1,82 @@
+---
+// The closing line is the promo video's sign-off; the commands are the
+// quick start from docs/quickstart.md.
+import { ArrowRight } from '@lucide/astro';
+
+const commands = `mkdir -p boxbox
+cd boxbox
+
+curl -fsSLO https://raw.githubusercontent.com/jR4dh3y/BoxBox/master/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/jR4dh3y/BoxBox/master/.env.example
+mkdir -p backend
+curl -fsSL https://raw.githubusercontent.com/jR4dh3y/BoxBox/master/backend/config.yaml -o backend/config.yaml
+
+cp .env.example .env
+$EDITOR .env
+
+docker compose pull
+docker compose up -d`;
+---
+
+<section class="relative z-10 border-t border-white/5 bg-[#0d0d0d] px-5 py-24 md:px-8 md:py-36">
+  <div class="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[5fr_6fr] lg:gap-20">
+    <div>
+      <h2 class="scp-title font-display font-extrabold text-white">good luck going back to <span class="scp-word text-accent">scp.</span></h2>
+      <p class="mt-8 max-w-md text-lg leading-relaxed text-text-secondary">
+        Free, open source, and MIT licensed. Set your secrets in <code class="text-text-primary" style="font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">.env</code>, then open <code class="text-text-primary" style="font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">localhost:8080</code>.
+      </p>
+      <a href="/docs/quickstart/" class="mt-8 inline-flex min-h-12 items-center gap-2 rounded-lg bg-accent-solid px-6 font-semibold text-white transition-colors hover:bg-accent-solid-hover">
+        Read the quick start <ArrowRight class="h-5 w-5" aria-hidden="true" />
+      </a>
+    </div>
+
+    <div class="min-w-0 overflow-hidden rounded-[14px] border border-border-secondary bg-[#111]">
+      <div class="flex h-11 items-center justify-between border-b border-border-secondary pl-4 pr-1.5 text-[13px] text-text-secondary">
+        <span style="font-family: 'JetBrains Mono', monospace;">zsh — ~/boxbox</span>
+        <button type="button" id="quickstart-copy" class="h-8 rounded px-3 font-medium text-text-primary transition-colors hover:bg-surface-elevated">Copy</button>
+      </div>
+      <pre id="quickstart-commands" class="mock-scrollbar overflow-x-auto p-5 text-[13px] leading-7 text-text-primary" style="font-family: 'JetBrains Mono', monospace;">{commands}</pre>
+    </div>
+  </div>
+</section>
+
+<script>
+  const copyButton = document.getElementById('quickstart-copy');
+  const commandBlock = document.getElementById('quickstart-commands');
+
+  if (copyButton && commandBlock) {
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(commandBlock.textContent ?? '');
+        copyButton.textContent = 'Copied';
+      } catch {
+        copyButton.textContent = 'Select and copy';
+      }
+      window.setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
+    });
+  }
+</script>
+
+<style>
+  .scp-title {
+    max-width: 11ch;
+    font-size: clamp(2.75rem, 7.4vw, 5.75rem);
+    line-height: 0.92;
+    letter-spacing: -0.04em;
+  }
+
+  .scp-word::after {
+    content: '';
+    display: inline-block;
+    width: 0.07em;
+    height: 0.74em;
+    margin-left: 0.08em;
+    vertical-align: -0.03em;
+    background: currentColor;
+    animation: scp-caret 1.1s steps(1) infinite;
+  }
+
+  @keyframes scp-caret {
+    50% { opacity: 0; }
+  }
+</style>

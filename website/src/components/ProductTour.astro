@@ -1,0 +1,61 @@
+---
+import { ArrowUpRight } from '@lucide/astro';
+import Scene from './Scene.astro';
+
+const shots = '/media/screens';
+
+const rest = [
+  ['Uploads', 'Choose a folder or drag one in. Nested file paths stay intact, and large files upload in resumable chunks with progress for each file.'],
+  ['Background jobs', 'Copy, move, and delete run in the background. Progress and file changes sync live over WebSocket.'],
+  ['Search', 'Find files and folders by name inside any directory.'],
+  ['Access', 'Read-only mounts, multiple users, rate limits, and allowed origins, all set in one config file.'],
+  ['Deploy', 'Docker Compose, or a single binary with the frontend built in. Your files stay on your server.']
+];
+---
+
+<section id="features" class="relative z-10 scroll-mt-8 overflow-x-clip border-t border-white/5 bg-[#0d0d0d] px-5 pt-24 pb-28 md:px-8 md:pt-36 md:pb-40">
+  <div class="mx-auto flex max-w-7xl flex-col gap-28 md:gap-44">
+    <Scene size="wide" src={`${shots}/browse.webp`} width={1600} height={1000} alt="BoxBox browsing a Pictures folder in grid view, with drives and places in the sidebar" lead="all in your" accent="browser.">
+      Browse configured and discovered drives together. Keep Downloads, Pictures, and other folder shortcuts in their own Places section.
+    </Scene>
+
+    <div class="grid gap-28 md:grid-cols-2 md:gap-12 lg:gap-20">
+      <Scene tilt="left" src={`${shots}/editor.webp`} width={1340} height={908} alt="docker-compose.yml open in the BoxBox code editor" lead="edit" accent="it.">
+        Edit config files and code directly in the browser with Monaco, the editor behind VS Code. Syntax highlighting, minimap, and find/replace included.
+      </Scene>
+      <div class="md:mt-40">
+        <Scene tilt="right" src={`${shots}/preview.webp`} width={1340} height={908} alt="sunset.jpg open in the BoxBox image preview" lead="preview" accent="it.">
+          Play video and audio straight from your server. Preview files in your browser without downloading them first.
+        </Scene>
+      </div>
+    </div>
+
+    <div class="grid gap-28 md:grid-cols-[5fr_7fr] md:items-start md:gap-12 lg:gap-20">
+      <div class="md:mt-28">
+        <Scene id="sharing" tilt="left" src={`${shots}/share-modal.webp`} width={1000} height={678} alt="Share dialog for a folder, with access level and expiry" lead="get a" accent="link.">
+          One link for a file or folder. Set upload and delete permissions, and choose an expiry.
+        </Scene>
+      </div>
+      <Scene tilt="right" src={`${shots}/share-page.webp`} width={1600} height={1000} alt="Public share page showing a shared folder with an image preview" lead="no login" accent="needed.">
+        Recipients browse, preview, and download a ZIP without an account. They even see your wallpaper.
+      </Scene>
+    </div>
+
+    <Scene id="desktop" size="wide" tilt="right" src={`${shots}/desktop.webp`} width={1440} height={960} alt="BoxBox Desktop showing local and paired-server drives" lead="now on your" accent="desktop.">
+      A Linux app for x86_64. Browse local files without a server, or pair it with your BoxBox server.
+      <a href="/download/#desktop" class="mt-3 flex min-h-11 w-fit items-center gap-1.5 font-semibold text-accent hover:underline">Download for Linux <ArrowUpRight class="h-4 w-4" aria-hidden="true" /></a>
+    </Scene>
+
+    <div class="grid gap-10 md:grid-cols-[2fr_3fr] md:gap-16">
+      <h2 class="font-display text-5xl font-extrabold leading-[0.92] tracking-[-0.04em] text-white md:text-7xl">and the <span class="text-accent">rest.</span></h2>
+      <dl class="border-t border-border-primary">
+        {rest.map(([term, detail]) => (
+          <div class="grid gap-1 border-b border-border-primary py-5 sm:grid-cols-[11rem_1fr] sm:gap-6">
+            <dt class="font-semibold text-white">{term}</dt>
+            <dd class="leading-relaxed text-text-secondary">{detail}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  </div>
+</section>

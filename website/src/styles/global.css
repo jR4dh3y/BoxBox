@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 @theme {
+	--font-display: 'Bricolage Grotesque', sans-serif;
+
 	/* Surface colors (backgrounds) */
 	--color-surface-primary: #1e1e1e;
 	--color-surface-secondary: #252525;
