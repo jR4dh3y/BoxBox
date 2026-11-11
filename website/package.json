@@ -16,7 +16,7 @@
     "@lucide/astro": "^1.66.0",
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.4.4",
-    "entities": "^8.0.0",
+    "entities": "^9.0.0",
     "marked": "^18.1.2",
     "sanitize-html": "^2.18.1",
     "shiki": "^4.5.0",
