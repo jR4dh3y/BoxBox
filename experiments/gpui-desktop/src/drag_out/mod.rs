@@ -1,6 +1,8 @@
 //! Dragging files out to other apps. GPUI 0.2 only receives external drops, so the source side
-//! talks to the platform directly. Only X11 is implemented.
+//! talks to the platform directly: XDND on X11, `wl_data_device` on Wayland.
 
+#[cfg(target_os = "linux")]
+mod wayland;
 #[cfg(target_os = "linux")]
 mod x11;
 
@@ -9,11 +11,17 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result};
-use gpui::{div, prelude::*, px, App, Context, Entity, SharedString, WeakEntity, Window};
+use gpui::{
+    div, point, prelude::*, px, App, Bounds, Context, DragMoveEvent, Entity, Global, SharedString,
+    WeakEntity, Window,
+};
 
 use crate::api::{Api, FileInfo};
 use crate::theme::*;
 use crate::workspace::Workspace;
+
+/// Resolves the dragged items to real paths. It can download, so it never runs on the UI thread.
+pub type Prepare = Box<dyn FnOnce() -> Result<Vec<PathBuf>> + Send>;
 
 /// The in-window drag value: the index of the row or tile, resolved to items when a drag starts.
 pub struct DraggedItem(pub usize);
@@ -55,9 +63,7 @@ pub fn draggable<E: StatefulInteractiveElement>(
                 [item] => item.name.clone(),
                 items => format!("{} items", items.len()),
             };
-            if !files.is_empty() {
-                start(files, api.clone(), cx);
-            }
+            start(files, api.clone(), cx);
             cx.new(|_| DragPreview {
                 label: label.into(),
             })
@@ -65,23 +71,92 @@ pub fn draggable<E: StatefulInteractiveElement>(
     )
 }
 
-fn start(files: Vec<FileInfo>, api: Arc<Api>, cx: &App) {
+fn start(files: Vec<FileInfo>, api: Arc<Api>, cx: &mut App) {
     #[cfg(target_os = "linux")]
-    if cx.compositor_name() == "X11" {
-        log::info!("dragging {} item(s) out over X11", files.len());
-        std::thread::spawn(move || {
-            let prepare = Box::new(move || stage(&api, &files));
-            if let Err(error) = x11::drag(prepare) {
-                log::warn!("drag to another app failed: {error:#}");
-            }
-        });
+    if let Some(drag) = wayland_drag(cx) {
+        drag.pending = None;
+    }
+    if files.is_empty() {
         return;
     }
-    let _ = (files, api);
-    log::info!(
-        "dragging to other apps is not implemented on {}",
-        cx.compositor_name()
-    );
+    let prepare: Prepare = Box::new(move || stage(&api, &files));
+    #[cfg(target_os = "linux")]
+    match cx.compositor_name() {
+        "X11" => {
+            std::thread::spawn(move || {
+                if let Err(error) = x11::drag(prepare) {
+                    log::warn!("drag to another app failed: {error:#}");
+                }
+            });
+        }
+        // Held until the pointer leaves the window; see `moved`.
+        "Wayland" => {
+            if let Some(drag) = wayland_drag(cx) {
+                drag.pending = Some(prepare);
+            }
+        }
+        name => log::info!("dragging to other apps is not implemented on {name}"),
+    }
+    #[cfg(not(target_os = "linux"))]
+    drop(prepare);
+}
+
+/// The Wayland drag source of this app, and the drag that has not left the window yet.
+#[cfg(target_os = "linux")]
+struct WaylandDrag {
+    source: wayland::Source,
+    pending: Option<Prepare>,
+}
+
+#[cfg(target_os = "linux")]
+impl Global for WaylandDrag {}
+
+#[cfg(target_os = "linux")]
+fn wayland_drag(cx: &mut App) -> Option<&mut WaylandDrag> {
+    cx.has_global::<WaylandDrag>()
+        .then(|| cx.global_mut::<WaylandDrag>())
+}
+
+/// Call once the window exists. On Wayland this starts listening for the pointer presses a drag
+/// has to name.
+pub fn init(window: &Window, cx: &mut App) {
+    #[cfg(target_os = "linux")]
+    if cx.compositor_name() == "Wayland" {
+        match wayland::Source::connect(window) {
+            Ok(source) => cx.set_global(WaylandDrag {
+                source,
+                pending: None,
+            }),
+            Err(error) => log::warn!("dragging to other apps is unavailable: {error:#}"),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (window, cx);
+}
+
+/// Wayland keeps sending the pointer to the pressed window while the button is held, so a drag
+/// stays in the window until it is handed to the compositor. That happens when it crosses the
+/// window edge, and it ends the in-window drag: GPUI never sees the button come up.
+pub fn moved(event: &DragMoveEvent<DraggedItem>, window: &mut Window, cx: &mut App) {
+    #[cfg(target_os = "linux")]
+    {
+        let viewport = Bounds::new(point(px(0.), px(0.)), window.viewport_size());
+        if viewport.contains(&event.event.position) {
+            return;
+        }
+        let Some(drag) = wayland_drag(cx) else {
+            return;
+        };
+        let Some(prepare) = drag.pending.take() else {
+            return;
+        };
+        if let Err(error) = drag.source.start(window, wayland::Payload::new(prepare)) {
+            log::warn!("drag to another app failed: {error:#}");
+        }
+        cx.stop_active_drag(window);
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (event, window, cx);
 }
 
 /// Remote files are staged for other apps; local files keep their original filesystem paths.

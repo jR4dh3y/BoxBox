@@ -1163,6 +1163,7 @@ impl Render for Workspace {
         div()
             .key_context("BrowseWorkspace")
             .track_focus(&self.focus_handle)
+            .on_drag_move(crate::drag_out::moved)
             .on_action(cx.listener(Self::back))
             .on_action(cx.listener(Self::forward))
             .on_action(cx.listener(Self::refresh))

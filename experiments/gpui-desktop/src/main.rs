@@ -129,6 +129,7 @@ fn main() {
                     ..Default::default()
                 },
                 |window, cx| {
+                    drag_out::init(window, cx);
                     cx.new(|cx| {
                         let mut workspace = Workspace::new(api, fonts, initial_path, window, cx);
                         if let Some(launches) = launches {

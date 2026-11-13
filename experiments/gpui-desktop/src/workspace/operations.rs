@@ -997,7 +997,21 @@ impl Workspace {
             self.set_operation_error("Choose a destination folder before importing.", cx);
             return;
         }
-        self.import_paths_to(api, parent, paths, cx);
+        // A drop can come from this folder, in this window or another file manager's.
+        cx.spawn(async move |this, cx| {
+            let (resolver, folder) = (api.clone(), parent.clone());
+            let paths = cx
+                .background_executor()
+                .spawn(async move {
+                    match resolver.local_path(&folder) {
+                        Ok(Some(folder)) => outside_folder(&folder, paths),
+                        _ => paths,
+                    }
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| this.import_paths_to(api, parent, paths, cx));
+        })
+        .detach();
     }
 
     fn import_paths_to(
@@ -1728,6 +1742,14 @@ fn transfer_between_providers(
     Ok(())
 }
 
+/// Drops the paths that already sit directly in `folder`: dropping a file where it is does nothing.
+fn outside_folder(folder: &Path, paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    paths
+        .into_iter()
+        .filter(|path| path.parent() != Some(folder))
+        .collect()
+}
+
 fn import_paths_into(api: &Arc<Api>, paths: &[PathBuf], parent: &str) -> anyhow::Result<()> {
     let existing = api.list(parent)?;
     let mut names: HashSet<String> = existing.into_iter().map(|item| item.name).collect();
@@ -1845,6 +1867,15 @@ fn open_terminal(directory: &Path) -> anyhow::Result<()> {
 #[cfg(test)]
 mod transfer_tests {
     use super::*;
+
+    #[test]
+    fn a_drop_skips_files_already_in_the_folder() {
+        let paths = ["/a/b/here.txt", "/a/other/there.txt", "/a/b/sub/deep.txt"].map(PathBuf::from);
+        assert_eq!(
+            outside_folder(Path::new("/a/b"), paths.to_vec()),
+            [PathBuf::from("/a/other/there.txt"), PathBuf::from("/a/b/sub/deep.txt")]
+        );
+    }
 
     #[test]
     fn keep_both_names_count_past_taken_copies() {

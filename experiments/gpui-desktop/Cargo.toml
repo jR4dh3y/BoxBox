@@ -26,6 +26,9 @@ zbus = { version = "5.19", default-features = false, features = ["async-io", "bl
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+raw-window-handle = "0.6"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-client = "0.31"
 x11rb = "0.13"
 
 [profile.dev]

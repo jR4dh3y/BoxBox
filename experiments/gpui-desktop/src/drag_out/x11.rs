@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use super::Prepare;
 use anyhow::{anyhow, bail, Context as _, Result};
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
@@ -42,8 +43,6 @@ x11rb::atom_manager! {
         URI_LIST: b"text/uri-list",
     }
 }
-
-pub type Prepare = Box<dyn FnOnce() -> Result<Vec<PathBuf>> + Send>;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Target {
