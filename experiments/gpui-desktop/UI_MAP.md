@@ -14,6 +14,34 @@ Two GPUI lines split at `492ecc7` and both need folding in:
 Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 "Claimed" means the PR text says so and the code was not run.
 
+## Still to do
+
+Open work, from the tables below and from a code audit against master `d1bc979`.
+Full line-by-line audits of the Electrobun app and of Thunar are in `audit/`.
+
+- Tabs and status bar on shared components.
+- Phone and network mounts (MTP, SMB), and unlocking encrypted volumes.
+- Shared freedesktop thumbnails.
+- Location suggestions (`PathEditor.svelte`).
+- Previous/next in the preview.
+- Selecting the item for "Show in folder".
+- System file picker through the xdg portal (`FileChooser.svelte`).
+- Dragging inside the app: onto a folder or the other pane moves, Ctrl+Drag copies.
+- Dropping from other apps onto a folder row or tile, not only the pane.
+- Drive context menu: Rename and Reset Name, with stored drive names.
+- Shift+Delete deletes permanently outside Trash.
+- Keys: Home, End, PageUp, PageDown, Ctrl+Arrow moves focus, Ctrl+Space toggles,
+  Shift+Left/Right extends in the grid, and type-ahead. List them in F1.
+- Alt+Enter on several items summarises count, folders and size.
+- Rename in place instead of a dialog.
+- Zoom in the image preview.
+- Folder load errors through `LoadError` with Retry.
+- A delayed spinner for slow folder loads.
+- Test the wallpaper picker.
+- Collapse the sidebar on narrow windows.
+- Native Wayland on Niri (XWayland now shows stale frames).
+- Later: Servers page and device pairing.
+
 ## Shell and layout
 
 | Svelte | Role | Native scope | PR | Local |
