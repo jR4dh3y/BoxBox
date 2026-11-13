@@ -9,6 +9,7 @@ mod drag_out;
 mod format;
 mod local;
 mod media;
+mod open_with;
 mod os_clipboard;
 mod pane;
 mod persist;

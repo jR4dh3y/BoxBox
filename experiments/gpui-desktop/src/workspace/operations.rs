@@ -1261,6 +1261,13 @@ impl Workspace {
         let _ = window;
     }
 
+    pub(crate) fn context_open_with(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((target, items)) = self.context_selection() else { return };
+        let [item] = items.as_slice() else { return };
+        self.active_pane = target;
+        self.open_with_dialog(item.clone(), window, cx);
+    }
+
     pub(crate) fn context_create_folder(
         &mut self,
         window: &mut Window,

@@ -20,6 +20,7 @@ use crate::settings_state::{DesktopSettings, SettingsPanelState};
 pub(crate) mod favorites;
 mod devices;
 mod notifications;
+pub(crate) mod open_with;
 mod watching;
 pub(crate) mod operations;
 pub(crate) mod preview;
@@ -213,6 +214,8 @@ pub struct Workspace {
     pub(crate) dialog_error: Option<String>,
     pub(crate) notices: notifications::Notices,
     pub(crate) devices: devices::Devices,
+    pub(crate) open_with: Option<open_with::OpenWith>,
+    pub(crate) open_with_search: Entity<TextField>,
     pub(crate) settings_focus: FocusHandle,
     pub(crate) dialog_field: Entity<TextField>,
     pub(crate) location_editor: Option<LocationEditor>,
@@ -267,6 +270,7 @@ impl Workspace {
         let dialog_field = cx.new(|cx| TextField::new("", cx));
         let location_field = cx.new(|cx| TextField::new("Type a location", cx));
         let accent_field = cx.new(|cx| TextField::new("#4a9eff", cx));
+        let open_with_search = cx.new(|cx| TextField::new("Search applications", cx));
         let settings_fields = [
             cx.new(|cx| TextField::new("", cx)),
             cx.new(|cx| TextField::new("https://files.example.com", cx)),
@@ -301,6 +305,8 @@ impl Workspace {
             dialog_error: None,
             notices: Default::default(),
             devices: Default::default(),
+            open_with: None,
+            open_with_search: open_with_search.clone(),
             settings_focus: cx.focus_handle(),
             dialog_field: dialog_field.clone(),
             location_editor: None,
@@ -309,6 +315,7 @@ impl Workspace {
                 cx.subscribe_in(&dialog_field, window, |this, _, event, window, cx| this.on_dialog_field(event, window, cx)),
                 cx.subscribe_in(&location_field, window, |this, _, event, window, cx| this.on_location_field(event, window, cx)),
                 cx.subscribe_in(&accent_field, window, |this, _, event, _, cx| this.on_accent_field(event, cx)),
+                cx.subscribe_in(&open_with_search, window, |this, _, event, window, cx| this.on_open_with_search(event, window, cx)),
             ]
             .into_iter()
             .chain(settings_subscriptions)
@@ -1176,6 +1183,7 @@ impl Render for Workspace {
             .when(self.context_menu.is_some(), |root| root.child(self.render_context_menu(cx)))
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
             .child(self.render_notices(cx))
+            .when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)))
             .when(self.operation_dialog.is_some(), |root| {
                 root.child(self.render_operation_dialog(window, cx))
             })

@@ -56,6 +56,9 @@ impl Workspace {
             if single_folder && local {
                 entries.push(self.menu_item("context-terminal", "Open in Terminal", "info", |this, _, cx| this.context_open_terminal(cx), cx));
             }
+            if single_file && local {
+                entries.push(self.menu_item("context-open-with", "Open with…", "info", |this, window, cx| this.context_open_with(window, cx), cx));
+            }
             if single_file {
                 entries.push(self.menu_item("context-preview", "Preview", "info", |this, window, cx| this.context_preview(window, cx), cx));
             }

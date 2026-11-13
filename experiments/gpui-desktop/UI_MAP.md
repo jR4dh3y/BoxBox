@@ -40,7 +40,7 @@ Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 | `FileThumbnail.svelte` | unused on master | — | — | — |
 | `DrivesView.svelte`, `DriveList.svelte`, `DriveRow.svelte`, `DriveCard.svelte` | This PC | keep | ✓ `ui/drives.rs` | ✓ `ui/drives.rs` |
 | `DriveContextMenu.svelte` | drive menu | keep | ✓ `context_menu.rs` | ◐ `ui/overlays.rs` |
-| `FileContextMenu.svelte`, `ui/ContextMenu.svelte` | file and empty-space menus | keep | ✓ `context_menu.rs` | ✓ `ui/overlays.rs` on `ContextMenu`, items as in `fileContextMenu.ts`; no “Open with…” yet |
+| `FileContextMenu.svelte`, `ui/ContextMenu.svelte` | file and empty-space menus | keep | ✓ `context_menu.rs` | ✓ `ui/overlays.rs` on `ContextMenu`, items as in `fileContextMenu.ts` |
 | `BrowseDialogs.svelte` | create, rename, delete, properties | keep | ✓ `dialogs.rs` | ◐ create, rename, properties on `Modal`; delete asks with the system prompt |
 | `ui/InlineRename.svelte` | rename in place | keep | ◐ dialog instead | ◐ dialog instead |
 | `KeyboardShortcutsDialog.svelte` | F1 shortcuts | keep | ✓ claimed | ✗ |
