@@ -35,6 +35,8 @@ impl Workspace {
                 if item_count == 1 { "" } else { "s" }
             )
         };
+        // A running operation's label takes the place of the counts, as file managers do.
+        let text = self.operation_status.message().map(str::to_owned).unwrap_or(text);
         let mode = pane.current_view_mode();
         let toggle =
             |id: &'static str, glyph: &'static str, target: ViewMode, cx: &mut Context<Self>| {

@@ -12,7 +12,7 @@ impl Workspace {
             return div().into_any_element();
         };
         let busy = self.operation_status.is_busy();
-        let error = self.operation_status.is_error().then(|| self.operation_status.message().unwrap_or_default().to_string());
+        let error = self.dialog_error.clone();
         let field = self.dialog_field.clone();
         let focused = field.read(cx).is_focused(window);
         div()

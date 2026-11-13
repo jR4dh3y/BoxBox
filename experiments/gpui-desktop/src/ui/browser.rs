@@ -112,27 +112,6 @@ impl Workspace {
             .when(!self.trash_open, |browser| {
                 browser.child(self.render_toolbar(target, window, cx))
             })
-            .when_some(
-                self.operation_status.message().map(str::to_owned),
-                |browser, message| {
-                    browser.child(
-                        div()
-                            .flex_none()
-                            .px(px(12.))
-                            .py(px(6.))
-                            .border_b_1()
-                            .border_color(c(BORDER_PRIMARY))
-                            .bg(c(SURFACE_SECONDARY))
-                            .text_13()
-                            .text_color(c(if self.operation_status.is_error() {
-                                DANGER
-                            } else {
-                                TEXT_SECONDARY
-                            }))
-                            .child(message),
-                    )
-                },
-            )
             .when_some(stale_error, |browser, error| {
                 browser.child(
                     div()

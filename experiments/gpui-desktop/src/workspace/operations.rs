@@ -68,13 +68,12 @@ impl OperationDialog {
     }
 }
 
+/// Whether an operation is running. Its outcome is shown as a notice (`report`).
 #[derive(Default)]
 pub(crate) enum OperationStatus {
     #[default]
     Idle,
     Running(String),
-    Error(String),
-    Success(String),
 }
 
 impl OperationStatus {
@@ -85,12 +84,8 @@ impl OperationStatus {
     pub fn message(&self) -> Option<&str> {
         match self {
             Self::Idle => None,
-            Self::Running(message) | Self::Error(message) | Self::Success(message) => Some(message),
+            Self::Running(message) => Some(message),
         }
-    }
-
-    pub fn is_error(&self) -> bool {
-        matches!(self, Self::Error(_))
     }
 }
 
@@ -127,11 +122,7 @@ impl Workspace {
         if self.mutation_generation != generation {
             return;
         }
-        self.operation_status = match result {
-            Ok(message) => OperationStatus::Success(message),
-            Err(error) => OperationStatus::Error(format!("{error:#}")),
-        };
-        cx.notify();
+        self.report(result.map_err(|error| format!("{error:#}")), cx);
     }
 
     pub(crate) fn set_operation_error(
@@ -139,8 +130,7 @@ impl Workspace {
         message: impl Into<String>,
         cx: &mut Context<Self>,
     ) {
-        self.operation_status = OperationStatus::Error(message.into());
-        cx.notify();
+        self.report(Err(message.into()), cx);
     }
 
     fn operation_target(&self, target: PaneTarget) -> Option<(&Pane, Arc<Api>, String)> {
@@ -225,6 +215,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.operation_dialog = Some(dialog);
+        self.dialog_error = None;
         self.context_menu = None;
         let text = text.to_string();
         self.dialog_field.update(cx, |field, cx| field.set_text(text, selection, cx));
@@ -281,7 +272,8 @@ impl Workspace {
             || input.chars().any(|ch| matches!(ch, '/' | '\\' | '\0'))
         {
             self.operation_dialog = Some(dialog);
-            self.set_operation_error("Enter a valid file or folder name.", cx);
+            self.dialog_error = Some("Enter a valid file or folder name.".into());
+            cx.notify();
             return;
         }
         let (target_id, parent, kind, path) = match dialog {
@@ -469,10 +461,10 @@ impl Workspace {
                 })
                 .collect(),
         });
-        self.operation_status = OperationStatus::Success(match mode {
+        self.report(Ok(match mode {
             ClipboardMode::Copy => "Items copied".into(),
             ClipboardMode::Cut => "Items marked to move".into(),
-        });
+        }), cx);
         self.context_menu = None;
         cx.notify();
     }
@@ -572,9 +564,7 @@ impl Workspace {
                 }
                 this.finish_operation(generation, result, cx);
                 if this.pane_by_id(target.0).is_none() {
-                    this.operation_status = OperationStatus::Error(
-                        "The destination pane was closed during the transfer.".into(),
-                    );
+                    this.report(Err("The destination pane was closed during the transfer.".into()), cx);
                 }
             });
         })
@@ -702,9 +692,7 @@ impl Workspace {
                     this.load_trash(refresh_api, cx);
                 }
                 if this.pane_by_id(target.0).is_none() && result.is_ok() {
-                    this.operation_status = OperationStatus::Error(
-                        "The source pane was closed during deletion.".into(),
-                    );
+                    this.report(Err("The source pane was closed during deletion.".into()), cx);
                     cx.notify();
                 } else {
                     this.finish_operation(generation, result, cx);

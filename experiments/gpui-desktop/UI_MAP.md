@@ -69,7 +69,7 @@ freedesktop thumbnailers and shared cache (`~/.cache/thumbnails`).
 | `desktop/OpenWithDialog.svelte`, `desktop/ApplicationIcon.svelte` | Open With, set default | keep | ✓ `desktop.rs` | ✗ |
 | `desktop/DesktopUndoShortcut.svelte` | Ctrl+Z | keep | ✓ `undo.rs` | ✗ |
 | `desktop/FileChooser.svelte`, `desktop/ChooserLocations.svelte`, `routes/chooser/+page.svelte` | system file picker | keep (portal) | ✗ | ✗ |
-| `Notifications.svelte`, `ui/Toast.svelte` | toasts | keep | ✓ `notifications.rs` | ◐ settings notices |
+| `Notifications.svelte`, `ui/Toast.svelte` | toasts | keep | ✓ `notifications.rs` | ✓ `workspace/notifications.rs`, `ui/notifications.rs` on `Toast` |
 
 ## Remote BoxBox servers: a later network location
 
@@ -97,7 +97,7 @@ freedesktop thumbnailers and shared cache (`~/.cache/thumbnails`).
 | `ui/Modal.svelte`, `ui/Button.svelte` | keep | ✓ `ui/modal.rs` | ◐ `components/modal.rs`, `components/button.rs`; dialogs not moved yet |
 | `ui/Select.svelte`, `ui/Toggle.svelte` | keep | ✓ `segmented`, `toggle` | ◐ `components/select.rs`, `components/toggle.rs`; settings not moved yet |
 | `ui/ProgressBar.svelte`, `ui/Spinner.svelte` | keep | ◐ in `jobs.rs` | ◐ `components/progress_bar.rs`; no spinner |
-| `ui/ContextMenu.svelte`, `ui/Toast.svelte` | keep | ✓ | ✓ `components/context_menu.rs` used by menus; ◐ `components/toast.rs` not used yet |
+| `ui/ContextMenu.svelte`, `ui/Toast.svelte` | keep | ✓ | ✓ `components/context_menu.rs`, `components/toast.rs` |
 
 ## Shared components
 
@@ -121,7 +121,7 @@ the web app renders the same manifest at `/dev/gallery` (dev server only).
 | `ProgressBar` | `ui/ProgressBar.svelte` | ✓ | not yet |
 | `ContextMenu`, `MenuItem` | `ui/ContextMenu.svelte` | ✓ | ✓ file menu, **+** menu |
 | `Modal` | `ui/Modal.svelte` | ✓ | ✓ dialogs, properties, preview |
-| `Toast` | `ui/Toast.svelte` | ✓ | not yet |
+| `Toast` | `ui/Toast.svelte` | ✓ | ✓ notices |
 | `FileListHeader`, `FileRow` | `FileList.svelte` | full-window shot | ✓ `ui/file_list.rs` |
 | `SidebarSection`, `NavItem` | `Sidebar.svelte` | full-window shot | ✓ `ui/sidebar.rs` |
 | `FileTile`, `GridMetrics` | `FileGrid.svelte` | full-window shot | ✓ `ui/file_grid.rs` |

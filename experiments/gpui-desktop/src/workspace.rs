@@ -18,6 +18,7 @@ use crate::theme::{c, SURFACE_PRIMARY, TEXT_PRIMARY};
 use crate::settings_state::{DesktopSettings, SettingsPanelState};
 
 pub(crate) mod favorites;
+mod notifications;
 mod watching;
 pub(crate) mod operations;
 pub(crate) mod preview;
@@ -217,6 +218,9 @@ pub struct Workspace {
     pub(crate) settings_panel: SettingsPanelState,
     pub(crate) operation_status: OperationStatus,
     pub(crate) operation_dialog: Option<OperationDialog>,
+    /// Why the name in the dialog was refused.
+    pub(crate) dialog_error: Option<String>,
+    pub(crate) notices: notifications::Notices,
     pub(crate) settings_focus: FocusHandle,
     pub(crate) dialog_field: Entity<TextField>,
     pub(crate) location_editor: Option<LocationEditor>,
@@ -281,6 +285,8 @@ impl Workspace {
             settings_panel: SettingsPanelState::default(),
             operation_status: OperationStatus::Idle,
             operation_dialog: None,
+            dialog_error: None,
+            notices: Default::default(),
             settings_focus: cx.focus_handle(),
             dialog_field: dialog_field.clone(),
             location_editor: None,
@@ -502,16 +508,16 @@ impl Workspace {
                 return;
             }
         };
-        self.persist(&crate::persist::FAVORITES, bytes, cx, move |this, result, _| match result {
+        self.persist(&crate::persist::FAVORITES, bytes, cx, move |this, result, cx| match result {
             Ok(()) => {
                 this.favorites_error = None;
                 if let Some(message) = success {
-                    this.operation_status = OperationStatus::Success(message.into());
+                    this.report(Ok(message.into()), cx);
                 }
             }
             Err(error) => {
                 if success.is_some() {
-                    this.operation_status = OperationStatus::Error(error.clone());
+                    this.report(Err(error.clone()), cx);
                 }
                 this.favorites_error = Some(error);
             }
@@ -595,12 +601,12 @@ impl Workspace {
             }
         }
         match self.preferences.encode() {
-            Ok(bytes) => self.persist(&crate::persist::PREFERENCES, bytes, cx, |this, result, _| {
+            Ok(bytes) => self.persist(&crate::persist::PREFERENCES, bytes, cx, |this, result, cx| {
                 if let Err(error) = result {
-                    this.operation_status = OperationStatus::Error(format!("Could not save preferences: {error}"));
+                    this.report(Err(format!("Could not save preferences: {error}")), cx);
                 }
             }),
-            Err(error) => self.operation_status = OperationStatus::Error(format!("Could not save preferences: {error}")),
+            Err(error) => self.report(Err(format!("Could not save preferences: {error}")), cx),
         }
         for target in resorted {
             self.resort(target, cx);
@@ -678,9 +684,7 @@ impl Workspace {
     pub(crate) fn open_trash(&mut self, cx: &mut Context<Self>) {
         let api = self.active_api();
         if !api.is_local() {
-            self.operation_status =
-                OperationStatus::Error("Trash is available only for local storage".into());
-            cx.notify();
+            self.report(Err("Trash is available only for local storage".into()), cx);
             return;
         }
         self.trash_open = true;
@@ -705,12 +709,10 @@ impl Workspace {
                 .await;
             this.update(cx, |this, cx| {
                 if this.mutation_generation == token {
-                    this.operation_status = match &result {
-                        Ok(()) => OperationStatus::Success("Restored from Trash".into()),
-                        Err(error) => OperationStatus::Error(format!(
-                            "Could not restore item: {error:#}"
-                        )),
-                    };
+                    this.report(match &result {
+                        Ok(()) => Ok("Restored from Trash".into()),
+                        Err(error) => Err(format!("Could not restore item: {error:#}")),
+                    }, cx);
                     this.trash_error = result
                         .as_ref()
                         .err()
@@ -741,12 +743,10 @@ impl Workspace {
                 .await;
             this.update(cx, |this, cx| {
                 if this.mutation_generation == token {
-                    this.operation_status = match &result {
-                        Ok(()) => OperationStatus::Success("Deleted permanently".into()),
-                        Err(error) => OperationStatus::Error(format!(
-                            "Could not permanently delete item: {error:#}"
-                        )),
-                    };
+                    this.report(match &result {
+                        Ok(()) => Ok("Deleted permanently".into()),
+                        Err(error) => Err(format!("Could not permanently delete item: {error:#}")),
+                    }, cx);
                     this.trash_error = result.as_ref().err().map(|error| {
                         format!("Could not permanently delete item: {error:#}")
                     });
@@ -1162,6 +1162,7 @@ impl Render for Workspace {
             .when(self.preview.is_some(), |root| root.child(self.render_preview(cx)))
             .when(self.context_menu.is_some(), |root| root.child(self.render_context_menu(cx)))
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
+            .child(self.render_notices(cx))
             .when(self.operation_dialog.is_some(), |root| {
                 root.child(self.render_operation_dialog(window, cx))
             })

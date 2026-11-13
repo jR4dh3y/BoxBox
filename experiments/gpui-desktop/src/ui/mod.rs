@@ -4,6 +4,7 @@ mod browser;
 mod drives;
 mod file_grid;
 mod file_list;
+mod notifications;
 mod operations;
 mod overlays;
 mod settings;
