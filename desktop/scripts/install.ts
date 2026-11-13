@@ -1,3 +1,5 @@
+import { quoteDesktopExecArgument } from "../src/desktop-entry";
+export { quoteDesktopExecArgument } from "../src/desktop-entry";
 import desktopTemplate from "../assets/boxbox.desktop" with { type: "text" };
 import iconSource from "../../frontend/static/logo-boxbox-3d.svg" with { type: "text" };
 import { spawnSync } from "node:child_process";
@@ -145,20 +147,6 @@ export async function installDesktopIntegration(
   }
 
   return { appDirectory, launcher, desktopFile, iconFile };
-}
-
-/** Quotes one argument for a Desktop Entry Exec line. */
-export function quoteDesktopExecArgument(value: string): string {
-  if (value.length === 0) {
-    throw new Error("Desktop entry arguments cannot be empty");
-  }
-  if (/[\u0000-\u001f\u007f]/.test(value)) {
-    throw new Error("Desktop entry arguments cannot contain control characters");
-  }
-  const escaped = value
-    .replaceAll("%", "%%")
-    .replace(/[\\"`$]/g, "\\$&");
-  return `"${escaped}"`;
 }
 
 export function parseInstallArguments(
@@ -358,6 +346,7 @@ async function stageExpandedBundle(
   await cp(directory, stagedApp, {
     recursive: true,
     preserveTimestamps: true,
+    verbatimSymlinks: true,
   });
   await requireRuntime(stagedApp, false);
   return stagedApp;

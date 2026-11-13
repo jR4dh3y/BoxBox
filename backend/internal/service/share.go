@@ -501,7 +501,10 @@ func (s *shareService) ListForRecipient(ctx context.Context, token string, relat
 		if items[i].IsDir != items[j].IsDir {
 			return items[i].IsDir
 		}
-		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+		if !items[i].ModTime.Equal(items[j].ModTime) {
+			return items[i].ModTime.After(items[j].ModTime)
+		}
+		return fileutil.CompareNames(items[i].Name, items[j].Name) < 0
 	})
 	return &model.ShareDirectoryResponse{Path: cleanPath, Items: items}, nil
 }

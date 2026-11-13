@@ -26,8 +26,11 @@ function parseServer(value: unknown): DesktopServer {
 	};
 }
 
-export async function listDesktopServers(): Promise<DesktopServer[]> {
-	const result = record(await api.get<unknown>('/desktop/servers'), 'server list');
+export async function listDesktopServers(signal?: AbortSignal): Promise<DesktopServer[]> {
+	const result = record(
+		await api.get<unknown>('/desktop/servers', undefined, signal),
+		'server list'
+	);
 	return array(result.servers, 'servers').map(parseServer);
 }
 

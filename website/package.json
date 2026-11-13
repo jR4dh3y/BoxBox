@@ -12,12 +12,12 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/vercel": "^11.0.16",
-    "@lucide/astro": "^1.61.0",
+    "@astrojs/vercel": "^11.0.17",
+    "@lucide/astro": "^1.66.0",
     "@tailwindcss/vite": "^4.3.3",
-    "astro": "^7.4.2",
+    "astro": "^7.4.4",
     "entities": "^8.0.0",
-    "marked": "^18.1.1",
+    "marked": "^18.1.2",
     "sanitize-html": "^2.18.1",
     "shiki": "^4.5.0",
     "tailwindcss": "^4.3.3"

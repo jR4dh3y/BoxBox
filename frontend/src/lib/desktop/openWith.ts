@@ -30,3 +30,22 @@ export function visibleOpenWithChoice(choices: OpenWithChoices, selected: string
 		? selected
 		: '';
 }
+
+/** Keep a confirmed association visible even if the following application launch fails. */
+export function withDefaultApplication(
+	apps: DesktopAppsResponse,
+	appId: string
+): DesktopAppsResponse {
+	const selected = [...apps.recommended, ...apps.other].find((app) => app.id === appId);
+	if (!selected) return apps;
+	return {
+		...apps,
+		recommended: [
+			{ ...selected, isDefault: true },
+			...apps.recommended
+				.filter((app) => app.id !== appId)
+				.map((app) => ({ ...app, isDefault: false }))
+		],
+		other: apps.other.filter((app) => app.id !== appId).map((app) => ({ ...app, isDefault: false }))
+	};
+}

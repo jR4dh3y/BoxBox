@@ -31,7 +31,9 @@
 	const isPublicRoute = $derived(publicRoutes.some((route) => page.url.pathname.startsWith(route)));
 	// Full-bleed pages render without the standard page chrome
 	const isFullBleedPage = $derived(
-		page.url.pathname.startsWith('/browse') || page.url.pathname.startsWith('/s/')
+		page.url.pathname.startsWith('/browse') ||
+			page.url.pathname.startsWith('/chooser') ||
+			page.url.pathname.startsWith('/s/')
 	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
 	// Share pages show the share owner's wallpaper, never the visitor's own.

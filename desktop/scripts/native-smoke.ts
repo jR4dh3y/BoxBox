@@ -13,6 +13,9 @@ const runtime = join(fixture, "runtime");
 await mkdir(runtime, { mode: 0o700 });
 const env = {
   ...process.env,
+  BOXBOX_DESKTOP_SMOKE: "1",
+  HOME: fixture,
+  GDK_BACKEND: "x11",
   XDG_DATA_HOME: join(fixture, "data"),
   XDG_CONFIG_HOME: join(fixture, "config"),
   XDG_CACHE_HOME: join(fixture, "cache"),
@@ -79,7 +82,7 @@ let secondary: ReturnType<typeof launch> | undefined;
 try {
   const launcher =
     process.argv[2] ?? (await installDesktopIntegration({ env })).launcher;
-  // The WebKitGTK bundle does not rewrite CEF rendering metadata.
+  // Exercise startup with a rendering preference that requires writable metadata.
   const preferences = join(
     env.XDG_DATA_HOME,
     "io.boxbox.desktop/stable/desktop",
@@ -101,12 +104,13 @@ try {
   const owner = launch(launcher, firstFile);
   primary = owner;
   await until(
-    () => owner.output.includes(`/api/v1/files/list/root${firstDirectory}`),
-    "The native window did not render its launch folder",
+    () =>
+      owner.output.includes(`/api/v1/_desktop-painted/root${firstDirectory}`),
+    "The native window did not paint its launch folder",
     () => owner.output,
   );
   assert.equal(owner.child.exitCode, null);
-  assert.equal(owner.output.includes("CEF EVENT LOOP STARTED"), false);
+  assert.ok(owner.output.includes("CEF EVENT LOOP STARTED"));
   assert.ok(
     owner.applicationPid,
     "The native launcher reported an application PID",
@@ -115,10 +119,9 @@ try {
     `/proc/${owner.applicationPid}/environ`,
     "utf8",
   );
-  assert.equal(
-    environment.split("\0").some((value) => value.startsWith("BOXBOX_HARDWARE_ACCELERATION=")),
-    false,
-    "The WebKitGTK application does not receive CEF-only rendering flags",
+  assert.ok(
+    environment.split("\0").includes("BOXBOX_HARDWARE_ACCELERATION=false"),
+    "The saved rendering preference reaches the running application",
   );
 
   const forwarded = launch(launcher, secondFile);
@@ -136,8 +139,9 @@ try {
     forwarded.output,
   );
   await until(
-    () => owner.output.includes(`/api/v1/files/list/root${secondDirectory}`),
-    "The running window did not render the forwarded folder",
+    () =>
+      owner.output.includes(`/api/v1/_desktop-painted/root${secondDirectory}`),
+    "The running window did not paint the forwarded folder",
     () => owner.output,
   );
   assert.equal(owner.child.exitCode, null);
@@ -150,7 +154,7 @@ try {
   await owner.drained;
   assert.ok(owner.output.includes("Server shutdown complete"), owner.output);
   console.log(
-    "Native smoke passed: isolated runtime install, WebKitGTK folder launch, second-launch handoff, backend shutdown.",
+    "Native smoke passed: isolated runtime install, CEF folder launch, second-launch handoff without CEF, backend shutdown.",
   );
 } finally {
   for (const running of [primary, secondary]) {
