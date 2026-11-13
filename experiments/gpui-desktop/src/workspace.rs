@@ -262,6 +262,7 @@ impl Workspace {
         window.focus(&focus_handle);
         let preferences = Preferences::load();
         let api = Arc::new(api);
+        let initial_path = launch_path(&api, &initial_path);
         let initial_pane = Pane::with_api(
             0,
             initial_path,
@@ -350,6 +351,23 @@ impl Workspace {
         workspace.start_directory_watches(cx);
         workspace.start_device_watch(cx);
         workspace
+    }
+
+    /// Later launches each open a tab and raise the window.
+    pub(crate) fn receive_launches(&mut self, launches: async_channel::Receiver<String>, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            while let Ok(argument) = launches.recv().await {
+                let opened = this.update_in(cx, |this, window, cx| {
+                    let path = launch_path(&this.active_api(), &argument);
+                    this.open_tab(path, cx);
+                    window.activate_window();
+                });
+                if opened.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     pub(crate) fn browser_width(&self, window: &Window) -> f32 {
@@ -800,12 +818,17 @@ impl Workspace {
 
 
     pub(crate) fn new_tab(&mut self, _: &NewTab, _: &mut Window, cx: &mut Context<Self>) {
+        self.open_tab(String::new(), cx);
+    }
+
+    /// Opens a new tab at a virtual path, on the active provider.
+    pub(crate) fn open_tab(&mut self, path: String, cx: &mut Context<Self>) {
         let api = self.active_api();
         let id = self.next_pane_id;
         self.next_pane_id += 1;
         self.tabs.push(Pane::with_api(
             id,
-            String::new(),
+            path,
             api,
             self.preferences.show_hidden_files,
             preference_sort(&self.preferences),
@@ -1084,6 +1107,19 @@ impl Workspace {
         self.settings_section = section;
         cx.notify();
     }
+}
+
+/// A launch argument as a virtual path: virtual paths pass through; real paths and
+/// `file://` URIs map onto a local mount, and a file opens its folder.
+pub(crate) fn launch_path(api: &Api, argument: &str) -> String {
+    let real = match argument.strip_prefix("file://") {
+        Some(_) => crate::os_clipboard::path_from_uri(argument),
+        None if argument.starts_with('/') => Some(std::path::PathBuf::from(argument)),
+        None => return argument.trim_matches('/').to_string(),
+    };
+    let Some(real) = real else { return String::new() };
+    let folder = if real.is_dir() { real } else { real.parent().map(std::path::Path::to_path_buf).unwrap_or(real) };
+    api.virtual_path(&folder).unwrap_or_default()
 }
 
 fn preference_sort(preferences: &Preferences) -> Sort {

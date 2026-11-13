@@ -5,6 +5,7 @@ mod assets;
 mod components;
 mod devices;
 mod gallery;
+mod instance;
 mod drag_out;
 mod format;
 mod local;
@@ -83,6 +84,15 @@ fn main() {
         run_gallery(fonts.sans);
         return;
     }
+    // A second launch opens its location in the running window instead.
+    let launches = match instance::claim(&initial_path) {
+        Ok(instance::Instance::Forwarded) => return,
+        Ok(instance::Instance::Primary(launches)) => Some(launches),
+        Err(error) => {
+            log::warn!("Running without single-instance handoff: {error:#}");
+            None
+        }
+    };
 
     Application::new()
         .with_assets(assets::Assets)
@@ -105,7 +115,11 @@ fn main() {
                 },
                 |window, cx| {
                     cx.new(|cx| {
-                        Workspace::new(api, fonts, initial_path, window, cx)
+                        let mut workspace = Workspace::new(api, fonts, initial_path, window, cx);
+                        if let Some(launches) = launches {
+                            workspace.receive_launches(launches, window, cx);
+                        }
+                        workspace
                     })
                 },
             )

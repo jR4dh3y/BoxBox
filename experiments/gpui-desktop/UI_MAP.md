@@ -145,7 +145,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 
 | Behaviour | PR | Local |
 |---|---|---|
-| Single instance, launch opens a tab | ✓ `instance.rs` | ✗ |
+| Single instance, launch opens a tab | ✓ `instance.rs` | ✓ `instance.rs` (from PR #226); real paths and `file://` URIs open their folder |
 | Live folder refresh | ✓ `watch.rs` (server stream) | ✓ `workspace/watching.rs` (inotify) |
 | Drag out | ◐ X11 only | ◐ X11 only |
 | Drop in from other apps | ✓ `dnd.rs` | ◐ |

@@ -46,7 +46,7 @@ fn file_uri(path: &Path) -> String {
     uri
 }
 
-fn path_from_uri(uri: &str) -> Option<PathBuf> {
+pub fn path_from_uri(uri: &str) -> Option<PathBuf> {
     use std::os::unix::ffi::OsStringExt;
     let rest = uri.trim().strip_prefix("file://")?;
     // `file://host/path`: only the local host is ours.
