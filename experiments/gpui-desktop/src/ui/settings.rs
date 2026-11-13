@@ -1,27 +1,33 @@
 //! Settings modal for the GPUI desktop experiment.
 
 use gpui::{
-    div, prelude::*, px, AnyElement, ClipboardItem, Context, KeyDownEvent, MouseButton,
-    PathPromptOptions, Window,
+    div, prelude::*, px, AnyElement, App, ClipboardItem, Context, MouseButton, PathPromptOptions, Window,
 };
 
-use super::{icon, TextScale};
+use super::TextScale;
+use crate::components::{
+    InputEvent, TextField,
+    settings_rows, Button, ButtonSize, ButtonVariant, Input, Modal, ModalSize, SettingsRow, SettingsTab, Toggle,
+};
+use crate::pane::ViewMode;
+use crate::sort::{SortDir, SortField};
 use crate::api::{Api, SharePermissions, ShareSummary};
 use crate::settings_state::{
-    validate_connection, AccentColor, ConnectionField, DesktopSettings, SavedConnection,
-    SettingsDialog, ShareExpiry, ShareField, ShareListState, WallpaperFit,
+    validate_connection, AccentColor, DesktopSettings, SavedConnection, SettingsDialog, ShareExpiry,
+    ShareListState, WallpaperFit,
 };
 use crate::theme::*;
 use crate::workspace::{Preferences, SettingsSection, Workspace};
 
+/// Which settings text field a dialog input uses.
 #[derive(Clone, Copy)]
-enum SettingsInput {
-    AccentColor,
-    ConnectionName,
-    ConnectionUrl,
-    ConnectionToken,
-    SharePath,
-    ShareUploadLimit,
+pub(crate) enum SettingsField {
+    /// A connection's name, a share path or an upload limit.
+    First,
+    /// A connection's URL.
+    Second,
+    /// A bearer token, masked.
+    Token,
 }
 
 #[derive(Clone, Copy)]
@@ -55,308 +61,217 @@ impl Workspace {
         }).detach();
     }
 
-    fn settings_tab(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        section: SettingsSection,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let active = self.settings_section == section;
-        div()
-            .id(id)
-            .debug_selector(|| id.to_string())
-            .w_full()
-            .rounded(px(4.))
-            .px(px(10.))
-            .py(px(7.))
-            .text_13()
-            .cursor_pointer()
-            .text_color(c(if active { WHITE } else { TEXT_SECONDARY }))
-            .when(active, |item| item.bg(self.selection_color(false)))
-            .when(!active, |item| {
-                item.hover(|style| style.bg(c(SURFACE_ELEVATED)).text_color(c(TEXT_PRIMARY)))
-            })
-            .child(label)
-            .on_click(cx.listener(move |this, _, _, cx| {
+    fn settings_tab(&self, id: &'static str, label: &'static str, section: SettingsSection, cx: &mut Context<Self>) -> SettingsTab {
+        SettingsTab::new(id, label, self.selection_color(false)).active(self.settings_section == section).on_click(cx.listener(
+            move |this, _, _, cx| {
                 this.select_settings_section(section, cx);
                 if section == SettingsSection::Links {
                     this.load_shares(cx);
                 }
-            }))
+            },
+        ))
     }
 
-    fn setting_row(
-        &self,
-        label: &'static str,
-        value: impl IntoElement,
-    ) -> impl IntoElement {
-        div()
-            .w_full()
-            .min_h(px(40.))
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(px(18.))
-            .border_b_1()
-            .border_color(c(BORDER_SECONDARY))
-            .child(div().text_13().text_color(c(TEXT_PRIMARY)).child(label))
-            .child(value)
+    /// A toggle for one boolean preference.
+    fn preference_toggle(&self, id: &'static str, checked: bool, field: fn(&mut Preferences) -> &mut bool, cx: &mut Context<Self>) -> Toggle {
+        let workspace = cx.entity().downgrade();
+        Toggle::new(id, checked).on_change(move |value, _, _, cx| {
+            workspace
+                .update(cx, |this, cx| {
+                    *field(&mut this.preferences) = value;
+                    this.commit_preferences(cx);
+                })
+                .ok();
+        })
     }
 
-    fn toggle(
-        &self,
-        id: &'static str,
-        checked: bool,
-        cx: &mut Context<Self>,
-        on_click: impl Fn(&mut Workspace, &mut Context<Workspace>) + 'static,
-    ) -> impl IntoElement {
-        div()
-            .id(id)
-            .debug_selector(|| id.to_string())
-            .w(px(38.))
-            .h(px(22.))
-            .rounded(px(12.))
-            .flex()
-            .items_center()
-            .px(px(3.))
-            .cursor_pointer()
-            .bg(c(if checked { self.accent_hex() } else { SURFACE_ELEVATED }))
-            .child(
-                div()
-                    .size(px(16.))
-                    .rounded(px(9.))
-                    .bg(c(WHITE))
-                    .when(checked, |knob| knob.ml(px(16.))),
-            )
-            .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
-    }
-
-    fn cycle_button(
-        &self,
-        id: &'static str,
-        label: String,
-        cx: &mut Context<Self>,
-        on_click: impl Fn(&mut Workspace, &mut Context<Workspace>) + 'static,
-    ) -> impl IntoElement {
-        div()
-            .id(id)
-            .debug_selector(|| id.to_string())
-            .min_w(px(118.))
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(px(8.))
-            .rounded(px(4.))
-            .border_1()
-            .border_color(c(BORDER_PRIMARY))
-            .bg(c(SURFACE_SECONDARY))
-            .px(px(9.))
-            .py(px(5.))
-            .text_13()
-            .text_color(c(TEXT_PRIMARY))
-            .cursor_pointer()
-            .hover(|style| style.bg(c(SURFACE_ELEVATED)))
-            .child(label)
-            .child(icon("chevron-down", 14., c(TEXT_SECONDARY)))
-            .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
+    /// Applies the accent field as it is typed, once it holds a colour.
+    pub(crate) fn on_accent_field(&mut self, event: &InputEvent, cx: &mut Context<Self>) {
+        if !matches!(event, InputEvent::Changed | InputEvent::Submit) {
+            return;
+        }
+        let text = self.accent_field.read(cx).text().to_string();
+        match parse_hex_color(&text) {
+            Some(color) => {
+                self.accent_invalid = false;
+                self.desktop_settings.custom_accent = Some(color);
+                self.desktop_settings.accent_from_wallpaper = false;
+                self.save_desktop_settings(cx);
+            }
+            None => self.accent_invalid = !text.trim().is_empty(),
+        }
+        cx.notify();
     }
 
     fn render_general_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = &self.preferences;
-        let mut content = div().flex().flex_col().w_full();
-        content = content.child(self.setting_row(
-            "Show hidden files",
-            self.toggle("setting-hidden", p.show_hidden_files, cx, |this, cx| {
-                this.preferences.show_hidden_files = !this.preferences.show_hidden_files;
+        settings_rows(vec![
+            SettingsRow::new("Show hidden files")
+                .control(self.preference_toggle("setting-hidden", p.show_hidden_files, |p| &mut p.show_hidden_files, cx)),
+            SettingsRow::new("Show file extensions")
+                .control(self.preference_toggle("setting-extensions", p.show_file_extensions, |p| &mut p.show_file_extensions, cx)),
+            SettingsRow::new("Confirm before delete")
+                .control(self.preference_toggle("setting-confirm-delete", p.confirm_delete, |p| &mut p.confirm_delete, cx)),
+            SettingsRow::new("Preview on single click")
+                .control(self.preference_toggle("setting-preview", p.preview_on_single_click, |p| &mut p.preview_on_single_click, cx)),
+            SettingsRow::new("Selection checkboxes")
+                .control(self.preference_toggle("setting-checkboxes", p.selection_checkboxes, |p| &mut p.selection_checkboxes, cx)),
+            // Selects are w-40.
+            SettingsRow::new("Default sort").control(self.select("setting-sort", p.default_sort, &SortField::OPTIONS, 160., cx, |this, value, cx| {
+                this.preferences.default_sort = value;
                 this.commit_preferences(cx);
-            }),
-        ));
-        content = content.child(self.setting_row(
-            "Show file extensions",
-            self.toggle("setting-extensions", p.show_file_extensions, cx, |this, cx| {
-                this.preferences.show_file_extensions = !this.preferences.show_file_extensions;
+            })),
+            SettingsRow::new("Default sort direction").control(self.select(
+                "setting-sort-direction",
+                p.default_sort_direction,
+                &SortDir::OPTIONS,
+                160.,
+                cx,
+                |this, value, cx| {
+                    this.preferences.default_sort_direction = value;
+                    this.commit_preferences(cx);
+                },
+            )),
+            SettingsRow::new("Default view").control(self.select("setting-view", p.default_view, &ViewMode::OPTIONS, 160., cx, |this, value, cx| {
+                this.preferences.default_view = value;
                 this.commit_preferences(cx);
-            }),
-        ));
-        content = content.child(self.setting_row(
-            "Confirm before delete",
-            self.toggle("setting-confirm-delete", p.confirm_delete, cx, |this, cx| {
-                this.preferences.confirm_delete = !this.preferences.confirm_delete;
-                this.commit_preferences(cx);
-            }),
-        ));
-        content = content.child(self.setting_row(
-            "Preview on single click",
-            self.toggle("setting-preview", p.preview_on_single_click, cx, |this, cx| {
-                this.preferences.preview_on_single_click = !this.preferences.preview_on_single_click;
-                this.commit_preferences(cx);
-            }),
-        ));
-        content = content.child(self.setting_row(
-            "Selection checkboxes",
-            self.toggle("setting-checkboxes", p.selection_checkboxes, cx, |this, cx| {
-                this.preferences.selection_checkboxes = !this.preferences.selection_checkboxes;
-                this.commit_preferences(cx);
-            }),
-        ));
-        content = content.child(self.setting_row(
-            "Default sort",
-            self.cycle_button("setting-sort", p.default_sort.clone(), cx, |this, cx| {
-                this.preferences.default_sort = match this.preferences.default_sort.as_str() {
-                    "Name" => "Size",
-                    "Size" => "Date modified",
-                    "Date modified" => "Type",
-                    _ => "Name",
-                }.into();
-                this.commit_preferences(cx);
-            }),
-        ));
-        content = content.child(self.setting_row(
-            "Default sort direction",
-            self.cycle_button("setting-sort-direction", p.default_sort_direction.clone(), cx, |this, cx| {
-                this.preferences.default_sort_direction = if this.preferences.default_sort_direction == "Ascending" { "Descending" } else { "Ascending" }.into();
-                this.commit_preferences(cx);
-            }),
-        ));
-        content.child(self.setting_row(
-            "Default view",
-            self.cycle_button("setting-view", p.default_view.clone(), cx, |this, cx| {
-                this.preferences.default_view = if this.preferences.default_view == "List" { "Grid" } else { "List" }.into();
-                this.commit_preferences(cx);
-            }),
-        ))
+            })),
+        ])
     }
 
-    fn render_appearance_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_appearance_settings(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        const ACCENT_SOURCES: [(bool, &str); 2] = [(true, "From wallpaper"), (false, "Custom")];
         let preferences = &self.preferences;
-        let wallpaper_path = self
-            .desktop_settings
-            .wallpaper
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "No wallpaper selected".to_string());
-        let mut wallpaper_controls = div()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .child(self.settings_button(
-                "wallpaper-choose".to_string(),
-                "Choose…".to_string(),
-                true,
-                cx,
-                |this, cx| this.choose_wallpaper(cx),
-            ));
-        if self.desktop_settings.wallpaper.is_some() {
-            wallpaper_controls = wallpaper_controls.child(self.settings_button(
-                "wallpaper-remove".to_string(),
-                "Remove".to_string(),
-                true,
-                cx,
-                |this, cx| {
-                    this.desktop_settings.wallpaper = None;
-                    this.reload_wallpaper(cx);
-                    this.save_desktop_settings(cx);
-                },
-            ));
-        }
-
-        div()
-            .flex()
-            .flex_col()
-            .w_full()
-            .child(self.setting_row("Wallpaper", wallpaper_controls))
-            .child(
-                div()
-                    .py(px(5.))
-                    .text_xs_tw()
-                    .text_color(c(TEXT_MUTED))
-                    .child(wallpaper_path),
-            )
-            .child(self.setting_row(
-                "Wallpaper scaling",
-                self.cycle_button(
-                    "setting-wallpaper-fit",
-                    self.desktop_settings.wallpaper_fit.label().to_string(),
-                    cx,
-                    |this, cx| {
-                        let current = this.desktop_settings.wallpaper_fit;
-                        let current_index = WallpaperFit::ALL
-                            .iter()
-                            .position(|fit| *fit == current)
-                            .unwrap_or(0);
-                        this.desktop_settings.wallpaper_fit =
-                            WallpaperFit::ALL[(current_index + 1) % WallpaperFit::ALL.len()];
-                        this.save_desktop_settings(cx);
-                    },
-                ),
-            ))
-            .child(self.setting_row("Accent color source", self.cycle_button("accent-source", if self.desktop_settings.accent_from_wallpaper { "From wallpaper" } else { "Custom" }.into(), cx, |this, cx| {
-                this.desktop_settings.accent_from_wallpaper = !this.desktop_settings.accent_from_wallpaper;
+        let settings = &self.desktop_settings;
+        let has_wallpaper = settings.wallpaper.is_some();
+        let wallpaper_label =
+            settings.wallpaper.as_ref().and_then(|path| path.file_name()).map(|name| name.to_string_lossy().into_owned());
+        let mut rows = vec![SettingsRow::new("Accent color").control(self.select(
+            "accent-source",
+            settings.accent_from_wallpaper,
+            &ACCENT_SOURCES,
+            176.,
+            cx,
+            |this, from_wallpaper, cx| {
+                this.desktop_settings.accent_from_wallpaper = from_wallpaper;
                 this.save_desktop_settings(cx);
-            })))
-            .child(self.setting_row("Custom color", self.settings_button("accent-custom".into(), format!("#{:06x}", self.accent_hex()), true, cx, |this, cx| {
-                this.settings_panel.dialog = Some(SettingsDialog::EditAccent { color: String::new() }); cx.notify();
-            })))
-            .child(self.setting_row(
-                "Accent color",
+            },
+        ))];
+        let accent_note = settings.accent_from_wallpaper.then(|| match &self.wallpaper {
+            _ if !has_wallpaper => Some("Choose a wallpaper first".to_string()),
+            crate::workspace::appearance::WallpaperState::Ready { accent: Some(_), .. } => None,
+            crate::workspace::appearance::WallpaperState::Ready { accent: None, .. } => Some(format!(
+                "No usable color; using {}",
+                if settings.custom_accent.is_some() { "your custom color" } else { "default blue" }
+            )),
+            _ => Some("Matching wallpaper…".to_string()),
+        }).flatten();
+        if !settings.accent_from_wallpaper {
+            let field = self.accent_field.clone();
+            let focused = field.read(cx).is_focused(window);
+            rows.push(SettingsRow::new("Custom color").control(
+                // A swatch, the hex field (w-24) and Default.
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(5.))
-                    .children(AccentColor::ALL.into_iter().enumerate().map(|(index, accent)| {
-                        let selected = self.desktop_settings.accent == accent;
+                    .gap(px(8.))
+                    .child(div().size(px(20.)).rounded(px(4.)).border_1().border_color(c(BORDER_PRIMARY)).bg(c(self.accent_hex())))
+                    .child(
                         div()
-                            .id(("accent", index))
-                            .rounded(px(4.))
-                            .border_1()
-                            .border_color(c(if selected {
-                                WHITE
-                            } else {
-                                BORDER_PRIMARY
-                            }))
-                            .bg(c(accent.hex()))
-                            .px(px(7.))
-                            .py(px(4.))
-                            .text_xs_tw()
-                            .text_color(c(WHITE))
-                            .cursor_pointer()
-                            .child(accent.label())
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.desktop_settings.accent = accent;
+                            .id("accent-color-input")
+                            .debug_selector(|| "accent-color-input".into())
+                            .w(px(96.))
+                            .child(Input::new("").placeholder("#4a9eff").focused(focused).invalid(self.accent_invalid).editor(field)),
+                    )
+                    .child(
+                        Button::new("accent-default")
+                            .label("Default")
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Sm)
+                            .disabled(settings.custom_accent.is_none())
+                            .on_click(cx.listener(|this, _, _, cx| {
                                 this.desktop_settings.custom_accent = None;
-                                this.desktop_settings.accent_from_wallpaper = false;
+                                this.desktop_settings.accent = AccentColor::default();
+                                this.accent_field.update(cx, |field, cx| field.set_text("", 0..0, cx));
+                                this.accent_invalid = false;
                                 this.save_desktop_settings(cx);
-                            }))
-                    })),
-            ))
-            .when_some(match &self.wallpaper {
-                crate::workspace::appearance::WallpaperState::Failed(error) => Some(error.clone()),
-                _ => None,
-            }, |panel, error| panel.child(div().text_color(c(DANGER)).child(error)))
-            .child(self.setting_row("Tint components from wallpaper", self.toggle("setting-tint", preferences.wallpaper_tint, cx, |this, cx| {
-                this.preferences.wallpaper_tint = !this.preferences.wallpaper_tint;
-                this.commit_preferences(cx);
-            })))
-            .child(self.setting_row("Frosted glass", self.toggle("setting-frost", preferences.frosted_glass, cx, |this, cx| {
-                this.preferences.frosted_glass = !this.preferences.frosted_glass;
-                this.commit_preferences(cx);
-            })))
-            .child(self.setting_row(
-                "Hardware acceleration",
-                div()
-                    .max_w(px(280.))
-                    .text_13()
-                    .text_color(c(TEXT_SECONDARY))
-                    .child("GPUI uses GPU rendering; this build has no hardware-acceleration switch."),
-            ))
-            .child(self.setting_row(
-                "Compact rows",
-                self.toggle("setting-compact", preferences.compact_rows, cx, |this, cx| {
-                    this.preferences.compact_rows = !this.preferences.compact_rows;
-                    this.commit_preferences(cx);
+                            })),
+                    ),
+            ));
+        }
+        rows.push(SettingsRow::new("Compact rows").control(self.preference_toggle(
+            "setting-compact",
+            preferences.compact_rows,
+            |p| &mut p.compact_rows,
+            cx,
+        )));
+        rows.push(SettingsRow::new("Wallpaper").control(
+            div()
+                .flex()
+                .min_w_0()
+                .items_center()
+                .gap(px(8.))
+                .when_some(wallpaper_label, |row, label| {
+                    row.child(div().max_w(px(144.)).truncate().text_xs_tw().text_color(c(TEXT_SECONDARY)).child(label))
+                })
+                .child(
+                    Button::new("wallpaper-choose")
+                        .label(if has_wallpaper { "Change" } else { "Choose" })
+                        .variant(ButtonVariant::Secondary)
+                        .size(ButtonSize::Sm)
+                        .on_click(cx.listener(|this, _, _, cx| this.choose_wallpaper(cx))),
+                )
+                .when(has_wallpaper, |row| {
+                    row.child(
+                        Button::new("wallpaper-remove")
+                            .label("Remove")
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Sm)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.desktop_settings.wallpaper = None;
+                                this.reload_wallpaper(cx);
+                                this.save_desktop_settings(cx);
+                            })),
+                    )
                 }),
-            ))
+        ));
+        if has_wallpaper {
+            rows.push(SettingsRow::new("Wallpaper fit").control(self.select(
+                "setting-wallpaper-fit",
+                settings.wallpaper_fit,
+                &WallpaperFit::OPTIONS,
+                160.,
+                cx,
+                |this, fit, cx| {
+                    this.desktop_settings.wallpaper_fit = fit;
+                    this.save_desktop_settings(cx);
+                },
+            )));
+            rows.push(SettingsRow::new("Tint components from wallpaper").control(self.preference_toggle(
+                "setting-tint",
+                preferences.wallpaper_tint,
+                |p| &mut p.wallpaper_tint,
+                cx,
+            )));
+            rows.push(SettingsRow::new("Frosted glass").control(self.preference_toggle(
+                "setting-frost",
+                preferences.frosted_glass,
+                |p| &mut p.frosted_glass,
+                cx,
+            )));
+        }
+        let failure = match &self.wallpaper {
+            crate::workspace::appearance::WallpaperState::Failed(error) => Some(error.clone()),
+            _ => None,
+        };
+        div()
+            .flex()
+            .flex_col()
+            .child(settings_rows(rows.drain(..1).collect()))
+            // The wallpaper accent's state sits under its select, as on the web.
+            .when_some(accent_note, |panel, note| panel.child(div().py(px(8.)).text_xs_tw().text_color(c(TEXT_SECONDARY)).child(note)))
+            .child(div().border_t_1().border_color(c(BORDER_SECONDARY)).child(settings_rows(rows)))
+            .when_some(failure, |panel, error| panel.child(div().py(px(8.)).text_xs_tw().text_color(c(DANGER)).child(error)))
     }
 
     fn settings_button(
@@ -367,197 +282,66 @@ impl Workspace {
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Workspace, &mut Context<Workspace>) + 'static,
     ) -> impl IntoElement {
-        div()
-            .debug_selector(|| id.clone())
-            .id(gpui::SharedString::from(id))
-            .rounded(px(4.))
-            .border_1()
-            .border_color(c(BORDER_PRIMARY))
-            .bg(c(SURFACE_SECONDARY))
-            .px(px(9.))
-            .py(px(5.))
-            .text_13()
-            .text_color(c(if enabled { TEXT_PRIMARY } else { TEXT_DISABLED }))
-            .when(enabled, |button| {
-                button
-                    .cursor_pointer()
-                    .hover(|style| style.bg(c(SURFACE_ELEVATED)))
-            })
-            .child(label)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                if enabled {
-                    on_click(this, cx);
-                }
-            }))
+        let selector = id.clone();
+        div().debug_selector(move || selector).child(
+            Button::new(gpui::SharedString::from(id))
+                .label(label)
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Sm)
+                .disabled(!enabled)
+                .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx))),
+        )
     }
 
-    fn settings_text_field(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        value: &str,
-        placeholder: &'static str,
-        masked: bool,
-        field: SettingsInput,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let shown = if masked {
-            "•".repeat(value.chars().count())
-        } else {
-            value.to_string()
-        };
-        let has_value = !value.is_empty();
-        let focused = self.settings_input_focused(field);
+    pub(crate) fn settings_field(&self, field: SettingsField) -> &gpui::Entity<TextField> {
+        match field {
+            SettingsField::First => &self.settings_fields[0],
+            SettingsField::Second => &self.settings_fields[1],
+            SettingsField::Token => &self.settings_fields[2],
+        }
+    }
+
+    /// Opens a settings dialog with its fields' starting text, focusing the first.
+    fn open_settings_dialog(&mut self, dialog: SettingsDialog, texts: &[(SettingsField, String)], cx: &mut Context<Self>) {
+        self.settings_panel.error = None;
+        self.settings_panel.dialog = Some(dialog);
+        for (field, text) in texts {
+            let (text, end) = (text.clone(), text.len());
+            self.settings_field(*field).clone().update(cx, |field, cx| field.set_text(text, end..end, cx));
+        }
+        self.pending_field_focus = texts.first().map(|(field, _)| *field);
+        cx.notify();
+    }
+
+    /// The new-share dialog, starting from `path`.
+    pub(crate) fn open_create_share(&mut self, path: String, cx: &mut Context<Self>) {
+        let permissions = SharePermissions { view: true, download: true, ..Default::default() };
+        self.open_settings_dialog(
+            SettingsDialog::CreateShare { permissions, expires: ShareExpiry::default() },
+            &[(SettingsField::First, path)],
+            cx,
+        );
+    }
+
+    /// A labelled field (`text-xs` label over the input).
+    fn settings_text_field(&self, id: &'static str, label: &'static str, field: SettingsField, window: &Window, cx: &App) -> impl IntoElement {
+        let entity = self.settings_field(field).clone();
+        let focused = entity.read(cx).is_focused(window);
         div()
             .flex()
             .flex_col()
             .gap(px(4.))
             .child(div().text_xs_tw().text_color(c(TEXT_SECONDARY)).child(label))
-            .child(
-                div()
-                    .id(id)
-            .debug_selector(|| id.to_string())
-                    .w_full()
-                    .min_h(px(34.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(4.))
-                    .border_1()
-                    .border_color(c(if focused { self.accent_hex() } else { BORDER_PRIMARY }))
-                    .bg(c(SURFACE_SECONDARY))
-                    .px(px(10.))
-                    .text_13()
-                    .text_color(c(if has_value { TEXT_PRIMARY } else { TEXT_MUTED }))
-                    .cursor_text()
-                    .child(if has_value {
-                        shown
-                    } else {
-                        placeholder.to_string()
-                    })
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, window, cx| {
-                            this.focus_settings_input(field);
-                            window.focus(&this.settings_focus);
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
-                    ),
-            )
+            .child(div().id(id).debug_selector(move || id.to_string()).child(Input::new("").focused(focused).editor(entity)))
     }
 
-    fn settings_input_focused(&self, field: SettingsInput) -> bool {
-        match (&self.settings_panel.dialog, field) {
-            (Some(SettingsDialog::EditAccent { .. }), SettingsInput::AccentColor) => true,
-            (
-                Some(SettingsDialog::EditConnection { focused, .. }),
-                SettingsInput::ConnectionName,
-            ) => *focused == ConnectionField::Name,
-            (
-                Some(SettingsDialog::EditConnection { focused, .. }),
-                SettingsInput::ConnectionUrl,
-            ) => *focused == ConnectionField::Url,
-            (
-                Some(SettingsDialog::ConnectSaved { focused, .. }),
-                SettingsInput::ConnectionToken,
-            ) => *focused == ConnectionField::Token,
-            (Some(SettingsDialog::CreateShare { focused, .. }), SettingsInput::SharePath) => {
-                *focused == ShareField::Path
-            }
-            (
-                Some(SettingsDialog::EditShare { focused, .. }),
-                SettingsInput::ShareUploadLimit,
-            ) => *focused == ShareField::UploadLimit,
-            _ => false,
+    /// Enter submits and Escape cancels the open settings dialog.
+    pub(crate) fn on_settings_field(&mut self, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            InputEvent::Submit => self.submit_settings_dialog(cx),
+            InputEvent::Cancel => self.cancel_settings_dialog(window, cx),
+            InputEvent::Changed => {}
         }
-    }
-
-    fn focus_settings_input(&mut self, field: SettingsInput) {
-        self.settings_panel.input_selected = false;
-        match (&mut self.settings_panel.dialog, field) {
-            (
-                Some(SettingsDialog::EditConnection { focused, .. }),
-                SettingsInput::ConnectionName,
-            ) => *focused = ConnectionField::Name,
-            (
-                Some(SettingsDialog::EditConnection { focused, .. }),
-                SettingsInput::ConnectionUrl,
-            ) => *focused = ConnectionField::Url,
-            (
-                Some(SettingsDialog::ConnectSaved { focused, .. }),
-                SettingsInput::ConnectionToken,
-            ) => *focused = ConnectionField::Token,
-            (Some(SettingsDialog::CreateShare { focused, .. }), SettingsInput::SharePath) => {
-                *focused = ShareField::Path
-            }
-            (
-                Some(SettingsDialog::EditShare { focused, .. }),
-                SettingsInput::ShareUploadLimit,
-            ) => *focused = ShareField::UploadLimit,
-            _ => {}
-        }
-    }
-
-    fn active_settings_input(&mut self) -> Option<&mut String> {
-        match self.settings_panel.dialog.as_mut()? {
-            SettingsDialog::EditAccent { color } => Some(color),
-            SettingsDialog::EditConnection { name, url, focused, .. } => match focused {
-                ConnectionField::Name => Some(name), ConnectionField::Url => Some(url), ConnectionField::Token => None,
-            },
-            SettingsDialog::ConnectSaved { token, .. } => Some(token),
-            SettingsDialog::CreateShare { path, .. } => Some(path),
-            SettingsDialog::EditShare { max_upload_bytes, .. } => Some(max_upload_bytes),
-            _ => None,
-        }
-    }
-
-    fn edit_settings_input(&mut self, value: &str) {
-        let selected = std::mem::take(&mut self.settings_panel.input_selected);
-        if let Some(input) = self.active_settings_input() {
-            if selected { input.clear(); }
-            input.extend(value.chars().filter(|character| !character.is_control()));
-        }
-    }
-
-    fn backspace_settings_input(&mut self) {
-        let selected = std::mem::take(&mut self.settings_panel.input_selected);
-        if let Some(input) = self.active_settings_input() {
-            if selected { input.clear(); } else { input.pop(); }
-        }
-    }
-
-    fn settings_key_down(
-        &mut self,
-        event: &KeyDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let keystroke = &event.keystroke;
-        if keystroke.modifiers.control || keystroke.modifiers.platform {
-            if keystroke.key.eq_ignore_ascii_case("v") {
-                if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                    self.edit_settings_input(&text);
-                    cx.notify();
-                }
-            }
-            cx.stop_propagation();
-            return;
-        }
-        match keystroke.key.as_str() {
-            "backspace" => {
-                self.backspace_settings_input();
-                cx.notify();
-            }
-            "enter" => self.submit_settings_dialog(cx),
-            "escape" => self.cancel_settings_dialog(window, cx),
-            _ => {
-                if let Some(text) = &keystroke.key_char {
-                    self.edit_settings_input(text);
-                    cx.notify();
-                }
-            }
-        }
-        cx.stop_propagation();
     }
 
     fn cancel_settings_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -753,14 +537,11 @@ impl Workspace {
                         true,
                         cx,
                         |this, cx| {
-                            this.settings_panel.error = None;
-                            this.settings_panel.dialog = Some(SettingsDialog::EditConnection {
-                                index: None,
-                                name: String::new(),
-                                url: String::new(),
-                                focused: ConnectionField::Name,
-                            });
-                            cx.notify();
+                            this.open_settings_dialog(
+                                SettingsDialog::EditConnection { index: None },
+                                &[(SettingsField::First, String::new()), (SettingsField::Second, String::new())],
+                                cx,
+                            );
                         },
                     )),
             )
@@ -791,27 +572,15 @@ impl Workspace {
         let Some(connection) = self.desktop_settings.connections.get(index) else {
             return;
         };
-        self.settings_panel.error = None;
-        self.settings_panel.dialog = Some(SettingsDialog::EditConnection {
-            index: Some(index),
-            name: connection.name.clone(),
-            url: connection.url.clone(),
-            focused: ConnectionField::Name,
-        });
-        cx.notify();
+        let texts = [(SettingsField::First, connection.name.clone()), (SettingsField::Second, connection.url.clone())];
+        self.open_settings_dialog(SettingsDialog::EditConnection { index: Some(index) }, &texts, cx);
     }
 
     fn connect_saved_connection(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(connection) = self.desktop_settings.connections.get(index).cloned() else {
             return;
         };
-        self.settings_panel.error = None;
-        self.settings_panel.dialog = Some(SettingsDialog::ConnectSaved {
-            connection,
-            token: String::new(),
-            focused: ConnectionField::Token,
-        });
-        cx.notify();
+        self.open_settings_dialog(SettingsDialog::ConnectSaved { connection }, &[(SettingsField::Token, String::new())], cx);
     }
 
     fn confirm_remove_connection(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -837,24 +606,14 @@ impl Workspace {
         cx.notify();
     }
 
-    fn save_saved_connection(
-        &mut self,
-        index: Option<usize>,
-        name: String,
-        url: String,
-        focused: ConnectionField,
-        cx: &mut Context<Self>,
-    ) {
+    fn save_saved_connection(&mut self, index: Option<usize>, cx: &mut Context<Self>) {
+        let name = self.settings_field(SettingsField::First).read(cx).text().to_string();
+        let url = self.settings_field(SettingsField::Second).read(cx).text().to_string();
         let connection = match validate_connection(&name, &url) {
             Ok(connection) => connection,
             Err(error) => {
                 self.settings_panel.error = Some(error);
-                self.settings_panel.dialog = Some(SettingsDialog::EditConnection {
-                    index,
-                    name,
-                    url,
-                    focused,
-                });
+                self.settings_panel.dialog = Some(SettingsDialog::EditConnection { index });
                 cx.notify();
                 return;
             }
@@ -867,12 +626,7 @@ impl Workspace {
         ) {
             self.settings_panel.error =
                 Some("A saved connection already uses that name.".into());
-            self.settings_panel.dialog = Some(SettingsDialog::EditConnection {
-                index,
-                name,
-                url,
-                focused,
-            });
+            self.settings_panel.dialog = Some(SettingsDialog::EditConnection { index });
             cx.notify();
             return;
         }
@@ -882,12 +636,7 @@ impl Workspace {
                 let Some(existing) = self.desktop_settings.connections.get(index) else {
                     self.settings_panel.error =
                         Some("That saved connection no longer exists.".into());
-                    self.settings_panel.dialog = Some(SettingsDialog::EditConnection {
-                        index: Some(index),
-                        name,
-                        url,
-                        focused,
-                    });
+                    self.settings_panel.dialog = Some(SettingsDialog::EditConnection { index: Some(index) });
                     cx.notify();
                     return;
                 };
@@ -903,37 +652,16 @@ impl Workspace {
 
     fn submit_settings_dialog(&mut self, cx: &mut Context<Self>) {
         match self.settings_panel.dialog.as_ref() {
-            Some(SettingsDialog::EditAccent { color }) => {
-                let hex = color.trim().strip_prefix('#').unwrap_or(color.trim());
-                if hex.len() != 6 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-                    self.settings_panel.error = Some("Enter a six-digit hex color, such as #4a9eff.".into());
-                    cx.notify(); return;
-                }
-                if let Ok(value) = u32::from_str_radix(hex, 16) {
-                    self.desktop_settings.custom_accent = Some(value);
-                    self.desktop_settings.accent_from_wallpaper = false;
-                    self.settings_panel.dialog = None;
-                    self.save_desktop_settings(cx);
-                }
-            },
             Some(SettingsDialog::EditConnection { .. }) => {
-                if let Some(SettingsDialog::EditConnection {
-                    index,
-                    name,
-                    url,
-                    focused,
-                }) = self.settings_panel.dialog.take()
-                {
-                    self.save_saved_connection(index, name, url, focused, cx);
+                if let Some(SettingsDialog::EditConnection { index }) = self.settings_panel.dialog.take() {
+                    self.save_saved_connection(index, cx);
                 }
             }
             Some(SettingsDialog::ConnectSaved { .. }) => {
-                if let Some(SettingsDialog::ConnectSaved {
-                    connection,
-                    token,
-                    ..
-                }) = self.settings_panel.dialog.take()
-                {
+                if let Some(SettingsDialog::ConnectSaved { connection }) = self.settings_panel.dialog.take() {
+                    let token = self.settings_field(SettingsField::Token).read(cx).text().to_string();
+                    // The token is never kept once used.
+                    self.settings_field(SettingsField::Token).clone().update(cx, |field, cx| field.set_text("", 0..0, cx));
                     self.open_saved_connection(connection, token, cx);
                 }
             }
@@ -1106,23 +834,7 @@ impl Workspace {
                                 "Create share".to_string(),
                                 !self.settings_panel.busy,
                                 cx,
-                                |this, cx| {
-                                    this.settings_panel.error = None;
-                                    this.settings_panel.dialog =
-                                        Some(SettingsDialog::CreateShare {
-                                            path: String::new(),
-                                            permissions: SharePermissions {
-                                                view: true,
-                                                download: true,
-                                                upload: false,
-                                                delete: false,
-                                                manage: false,
-                                            },
-                                            expires: ShareExpiry::default(),
-                                            focused: ShareField::Path,
-                                        });
-                                    cx.notify();
-                                },
+                                |this, cx| this.open_create_share(String::new(), cx),
                             )),
                     ),
             )
@@ -1339,20 +1051,11 @@ impl Workspace {
     ) {
         permissions.view = true;
         permissions.download = true;
-        let focused = if permissions.upload {
-            ShareField::UploadLimit
-        } else {
-            ShareField::Path
-        };
-        self.settings_panel.dialog = Some(SettingsDialog::EditShare {
-            id: id.to_string(),
-            label: label.to_string(),
-            permissions,
-            max_upload_bytes: max_upload_bytes.to_string(),
-            focused,
-        });
-        self.settings_panel.error = None;
-        cx.notify();
+        self.open_settings_dialog(
+            SettingsDialog::EditShare { id: id.to_string(), label: label.to_string(), permissions },
+            &[(SettingsField::First, max_upload_bytes.to_string())],
+            cx,
+        );
     }
 
     fn confirm_revoke_share(&mut self, id: &str, label: &str, cx: &mut Context<Self>) {
@@ -1396,16 +1099,6 @@ impl Workspace {
         }
         permissions.view = true;
         permissions.download = true;
-        if let Some(SettingsDialog::EditShare {
-            permissions,
-            focused,
-            ..
-        }) = &mut self.settings_panel.dialog
-        {
-            if !permissions.upload {
-                *focused = ShareField::Path;
-            }
-        }
         cx.notify();
     }
 
@@ -1416,13 +1109,11 @@ impl Workspace {
         checked: bool,
         field: SharePermissionField,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        self.setting_row(
-            label,
-            self.toggle(id, checked, cx, move |this, cx| {
-                this.toggle_share_permission(field, cx);
-            }),
-        )
+    ) -> SettingsRow {
+        let workspace = cx.entity().downgrade();
+        SettingsRow::new(label).control(Toggle::new(id, checked).on_change(move |_, _, _, cx| {
+            workspace.update(cx, |this, cx| this.toggle_share_permission(field, cx)).ok();
+        }))
     }
 
     fn run_share_mutation(
@@ -1478,24 +1169,13 @@ impl Workspace {
     }
 
     fn create_share(&mut self, cx: &mut Context<Self>) {
-        let Some(SettingsDialog::CreateShare {
-            path,
-            mut permissions,
-            expires,
-            focused,
-        }) = self.settings_panel.dialog.take()
-        else {
+        let Some(SettingsDialog::CreateShare { mut permissions, expires }) = self.settings_panel.dialog.take() else {
             return;
         };
-        let path = path.trim().to_string();
+        let path = self.settings_field(SettingsField::First).read(cx).text().trim().to_string();
         if path.is_empty() || path.contains('\0') {
             self.settings_panel.error = Some("Enter a valid file or folder path.".into());
-            self.settings_panel.dialog = Some(SettingsDialog::CreateShare {
-                path,
-                permissions,
-                expires,
-                focused,
-            });
+            self.settings_panel.dialog = Some(SettingsDialog::CreateShare { permissions, expires });
             cx.notify();
             return;
         }
@@ -1509,12 +1189,7 @@ impl Workspace {
             permissions.manage = false;
         }
         let Some((api, server, request)) = self.start_share_mutation() else {
-            self.settings_panel.dialog = Some(SettingsDialog::CreateShare {
-                path,
-                permissions,
-                expires,
-                focused,
-            });
+            self.settings_panel.dialog = Some(SettingsDialog::CreateShare { permissions, expires });
             cx.notify();
             return;
         };
@@ -1534,17 +1209,10 @@ impl Workspace {
     }
 
     fn save_share_permissions(&mut self, cx: &mut Context<Self>) {
-        let Some(SettingsDialog::EditShare {
-            id,
-            label,
-            mut permissions,
-            max_upload_bytes,
-            focused,
-        }) = self.settings_panel.dialog.take()
-        else {
+        let Some(SettingsDialog::EditShare { id, label, mut permissions }) = self.settings_panel.dialog.take() else {
             return;
         };
-        let raw_upload_limit = max_upload_bytes.clone();
+        let max_upload_bytes = self.settings_field(SettingsField::First).read(cx).text().to_string();
         permissions.view = true;
         permissions.download = true;
         if !permissions.upload {
@@ -1560,13 +1228,7 @@ impl Workspace {
                 _ => {
                     self.settings_panel.error =
                         Some("Upload limit must be a positive number of bytes.".into());
-                    self.settings_panel.dialog = Some(SettingsDialog::EditShare {
-                        id,
-                        label,
-                        permissions,
-                        max_upload_bytes,
-                        focused: ShareField::UploadLimit,
-                    });
+                    self.settings_panel.dialog = Some(SettingsDialog::EditShare { id, label, permissions });
                     cx.notify();
                     return;
                 }
@@ -1575,13 +1237,7 @@ impl Workspace {
             None
         };
         let Some((api, server, request)) = self.start_share_mutation() else {
-            self.settings_panel.dialog = Some(SettingsDialog::EditShare {
-                id,
-                label,
-                permissions,
-                max_upload_bytes: raw_upload_limit,
-                focused,
-            });
+            self.settings_panel.dialog = Some(SettingsDialog::EditShare { id, label, permissions });
             cx.notify();
             return;
         };
@@ -1618,491 +1274,222 @@ impl Workspace {
             cx,
         );
     }
-    fn render_settings_dialog(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_settings_dialog(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(dialog) = &self.settings_panel.dialog else {
             return div().into_any_element();
         };
-
+        let busy = self.settings_panel.busy;
+        let hint = |text: &'static str| div().text_xs_tw().text_color(c(TEXT_MUTED)).child(text);
+        let confirm = |id: &'static str, label: &'static str, enabled: bool, variant: ButtonVariant, cx: &mut Context<Self>| {
+            Button::new(id)
+                .label(label)
+                .variant(variant)
+                .disabled(!enabled)
+                .on_click(cx.listener(|this, _, _, cx| this.submit_settings_dialog(cx)))
+                .into_any_element()
+        };
         let (title, body, confirm): (&'static str, AnyElement, AnyElement) = match dialog {
-            SettingsDialog::EditAccent { color } => (
-                "Custom accent color",
-                self.settings_text_field("accent-color-input", "Hex color", color, "#4a9eff", false, SettingsInput::AccentColor, cx).into_any_element(),
-                self.settings_button("accent-save".into(), "Apply".into(), true, cx, |this, cx| this.submit_settings_dialog(cx)).into_any_element(),
-            ),
-            SettingsDialog::EditConnection {
-                index,
-                name,
-                url,
-                ..
-            } => {
-                let title = if index.is_some() {
-                    "Edit server connection"
-                } else {
-                    "Add server connection"
-                };
-                let body = div()
+            SettingsDialog::EditConnection { index } => (
+                if index.is_some() { "Edit server connection" } else { "Add server connection" },
+                div()
                     .flex()
                     .flex_col()
                     .gap(px(10.))
-                    .child(self.settings_text_field(
-                        "settings-connection-name",
-                        "Name",
-                        name,
-                        "Server name",
-                        false,
-                        SettingsInput::ConnectionName,
-                        cx,
-                    ))
-                    .child(self.settings_text_field(
-                        "settings-connection-url",
-                        "Server URL",
-                        url,
-                        "https://files.example.com",
-                        false,
-                        SettingsInput::ConnectionUrl,
-                        cx,
-                    ))
-                    .child(
-                        div()
-                            .text_xs_tw()
-                            .text_color(c(TEXT_MUTED))
-                            .child("Use http:// or https://. Credentials, query strings, and fragments are not allowed."),
-                    )
-                    .child(
-                        div()
-                            .text_xs_tw()
-                            .text_color(c(TEXT_MUTED))
-                            .child("Enter saves · Escape cancels · Ctrl/⌘+V pastes"),
-                    )
-                    .into_any_element();
-                let confirm = self.settings_button(
-                    "settings-connection-save".to_string(),
-                    "Save".to_string(),
-                    true,
-                    cx,
-                    |this, cx| this.submit_settings_dialog(cx),
-                );
-                (title, body, confirm.into_any_element())
-            }
-            SettingsDialog::ConnectSaved {
-                connection,
-                token,
-                ..
-            } => {
-                let body = div()
+                    .child(self.settings_text_field("settings-connection-name", "Name", SettingsField::First, window, cx))
+                    .child(self.settings_text_field("settings-connection-url", "Server URL", SettingsField::Second, window, cx))
+                    .child(hint("Use http:// or https://. Credentials, query strings, and fragments are not allowed."))
+                    .into_any_element(),
+                confirm("settings-connection-save", "Save", true, ButtonVariant::Primary, cx),
+            ),
+            SettingsDialog::ConnectSaved { connection } => (
+                "Open server connection",
+                div()
                     .flex()
                     .flex_col()
-                    .gap(px(9.))
-                    .child(
-                        div()
-                            .text_13()
-                            .text_color(c(TEXT_PRIMARY))
-                            .child(connection.name.clone()),
-                    )
-                    .child(
-                        div()
-                            .text_xs_tw()
-                            .text_color(c(TEXT_MUTED))
-                            .child(connection.url.clone()),
-                    )
-                    .child(self.settings_text_field(
-                        "settings-connection-token",
-                        "Bearer token (optional)",
-                        token,
-                        "Paste token; it will not be saved",
-                        true,
-                        SettingsInput::ConnectionToken,
-                        cx,
-                    ))
-                    .child(
-                        div()
-                            .text_xs_tw()
-                            .text_color(c(TEXT_MUTED))
-                            .child("Enter opens this server · Escape cancels · Ctrl/⌘+V pastes"),
-                    )
-                    .into_any_element();
-                let confirm = self.settings_button(
-                    "settings-connection-open".to_string(),
-                    "Open".to_string(),
-                    true,
-                    cx,
-                    |this, cx| this.submit_settings_dialog(cx),
-                );
-                ("Open server connection", body, confirm.into_any_element())
-            }
-            SettingsDialog::RemoveConnection { index, name } => {
-                let body = div()
+                    .gap(px(8.))
+                    .child(div().text_13().text_color(c(TEXT_PRIMARY)).child(connection.name.clone()))
+                    .child(div().text_xs_tw().text_color(c(TEXT_MUTED)).child(connection.url.clone()))
+                    .child(self.settings_text_field("settings-connection-token", "Bearer token (optional)", SettingsField::Token, window, cx))
+                    .into_any_element(),
+                confirm("settings-connection-open", "Open", true, ButtonVariant::Primary, cx),
+            ),
+            SettingsDialog::RemoveConnection { name, .. } => (
+                "Remove server connection",
+                div()
                     .text_13()
                     .text_color(c(TEXT_SECONDARY))
                     .child(format!("Remove the saved connection “{name}”? Its open tabs are not affected."))
-                    .into_any_element();
-                let index = *index;
-                let confirm = self.settings_button(
-                    "settings-connection-confirm-remove".to_string(),
-                    "Remove".to_string(),
-                    true,
-                    cx,
-                    move |this, cx| this.remove_saved_connection(index, cx),
-                );
-                ("Remove server connection", body, confirm.into_any_element())
-            }
-            SettingsDialog::CreateShare {
-                path,
-                permissions,
-                expires,
-                ..
-            } => {
-                let current_expiry = *expires;
-                let body = div()
+                    .into_any_element(),
+                confirm("settings-connection-confirm-remove", "Remove", true, ButtonVariant::Danger, cx),
+            ),
+            SettingsDialog::CreateShare { permissions, expires } => (
+                "Create shared link",
+                div()
                     .flex()
                     .flex_col()
                     .gap(px(8.))
-                    .child(self.settings_text_field(
-                        "settings-share-path",
-                        "File or folder path",
-                        path,
-                        "Example: Documents/report.pdf",
-                        false,
-                        SettingsInput::SharePath,
-                        cx,
-                    ))
-                    .child(
-                        div()
-                            .text_xs_tw()
-                            .text_color(c(TEXT_MUTED))
-                            .child("View and download are always included. Upload permissions apply to folders."),
-                    )
-                    .child(self.share_permission_row(
-                        "share-create-upload",
-                        "Allow uploads",
-                        permissions.upload,
-                        SharePermissionField::Upload,
-                        cx,
-                    ))
-                    .child(self.share_permission_row(
-                        "share-create-delete",
-                        "Allow deleting uploaded files",
-                        permissions.delete,
-                        SharePermissionField::Delete,
-                        cx,
-                    ))
-                    .child(self.share_permission_row(
-                        "share-create-manage",
-                        "Full access",
-                        permissions.manage,
-                        SharePermissionField::Manage,
-                        cx,
-                    ))
-                    .child(self.setting_row(
-                        "Link expiry",
-                        self.cycle_button(
-                            "share-create-expiry",
-                            current_expiry.label().to_string(),
+                    .child(self.settings_text_field("settings-share-path", "File or folder path", SettingsField::First, window, cx))
+                    .child(hint("View and download are always included. Upload permissions apply to folders."))
+                    .child(settings_rows(vec![
+                        self.share_permission_row("share-create-upload", "Allow uploads", permissions.upload, SharePermissionField::Upload, cx),
+                        self.share_permission_row(
+                            "share-create-delete",
+                            "Allow deleting uploaded files",
+                            permissions.delete,
+                            SharePermissionField::Delete,
                             cx,
-                            |this, cx| {
-                                if let Some(SettingsDialog::CreateShare { expires, .. }) =
-                                    &mut this.settings_panel.dialog
-                                {
-                                    let index = ShareExpiry::ALL
-                                        .iter()
-                                        .position(|expiry| expiry == expires)
-                                        .unwrap_or(0);
-                                    *expires = ShareExpiry::ALL
-                                        [(index + 1) % ShareExpiry::ALL.len()];
+                        ),
+                        self.share_permission_row("share-create-manage", "Full access", permissions.manage, SharePermissionField::Manage, cx),
+                        SettingsRow::new("Link expiry").control(self.select(
+                            "share-create-expiry",
+                            *expires,
+                            &ShareExpiry::OPTIONS,
+                            160.,
+                            cx,
+                            |this, value, cx| {
+                                if let Some(SettingsDialog::CreateShare { expires, .. }) = &mut this.settings_panel.dialog {
+                                    *expires = value;
                                 }
                                 cx.notify();
                             },
-                        ),
-                    ))
-                    .child(
-                        div()
-                            .text_xs_tw()
-                            .text_color(c(TEXT_MUTED))
-                            .child("Enter creates the link · Escape cancels · Ctrl/⌘+V pastes"),
-                    )
-                    .into_any_element();
-                let confirm = self.settings_button(
-                    "settings-share-create-confirm".to_string(),
-                    "Create link".to_string(),
-                    !self.settings_panel.busy,
-                    cx,
-                    |this, cx| this.create_share(cx),
-                );
-                ("Create shared link", body, confirm.into_any_element())
-            }
-            SettingsDialog::EditShare {
-                label,
-                permissions,
-                max_upload_bytes,
-                ..
-            } => {
-                let body = div()
+                        )),
+                    ]))
+                    .into_any_element(),
+                confirm("settings-share-create-confirm", "Create link", !busy, ButtonVariant::Primary, cx),
+            ),
+            SettingsDialog::EditShare { label, permissions, .. } => (
+                "Edit shared-link permissions",
+                div()
                     .flex()
                     .flex_col()
                     .gap(px(8.))
-                    .child(
-                        div()
-                            .text_13()
-                            .text_color(c(TEXT_PRIMARY))
-                            .child(label.clone()),
-                    )
-                    .child(
-                        div()
-                            .text_xs_tw()
-                            .text_color(c(TEXT_MUTED))
-                            .child("View and download are always included. Expiry is fixed after creation."),
-                    )
-                    .child(self.share_permission_row(
-                        "share-edit-upload",
-                        "Allow uploads",
-                        permissions.upload,
-                        SharePermissionField::Upload,
-                        cx,
-                    ))
-                    .child(self.share_permission_row(
-                        "share-edit-delete",
-                        "Allow deleting uploaded files",
-                        permissions.delete,
-                        SharePermissionField::Delete,
-                        cx,
-                    ))
-                    .child(self.share_permission_row(
-                        "share-edit-manage",
-                        "Full access",
-                        permissions.manage,
-                        SharePermissionField::Manage,
-                        cx,
-                    ))
+                    .child(div().text_13().text_color(c(TEXT_PRIMARY)).child(label.clone()))
+                    .child(hint("View and download are always included. Expiry is fixed after creation."))
+                    .child(settings_rows(vec![
+                        self.share_permission_row("share-edit-upload", "Allow uploads", permissions.upload, SharePermissionField::Upload, cx),
+                        self.share_permission_row(
+                            "share-edit-delete",
+                            "Allow deleting uploaded files",
+                            permissions.delete,
+                            SharePermissionField::Delete,
+                            cx,
+                        ),
+                        self.share_permission_row("share-edit-manage", "Full access", permissions.manage, SharePermissionField::Manage, cx),
+                    ]))
                     .when(permissions.upload, |body| {
                         body.child(self.settings_text_field(
                             "settings-share-upload-limit",
                             "Maximum upload per file (bytes)",
-                            max_upload_bytes,
-                            "e.g. 104857600",
-                            false,
-                            SettingsInput::ShareUploadLimit,
+                            SettingsField::First,
+                            window,
                             cx,
                         ))
-                        .child(
-                            div()
-                                .text_xs_tw()
-                                .text_color(c(TEXT_MUTED))
-                                .child("Leave blank to keep the server's current limit."),
-                        )
+                        .child(hint("Leave blank to keep the server's current limit."))
                     })
-                    .into_any_element();
-                let confirm = self.settings_button(
-                    "settings-share-save-permissions".to_string(),
-                    "Save permissions".to_string(),
-                    !self.settings_panel.busy,
-                    cx,
-                    |this, cx| this.save_share_permissions(cx),
-                );
-                ("Edit shared-link permissions", body, confirm.into_any_element())
-            }
-            SettingsDialog::RevokeShare { label, .. } => {
-                let body = div()
+                    .into_any_element(),
+                confirm("settings-share-save-permissions", "Save permissions", !busy, ButtonVariant::Primary, cx),
+            ),
+            SettingsDialog::RevokeShare { label, .. } => (
+                "Revoke shared link",
+                div()
                     .text_13()
                     .text_color(c(TEXT_SECONDARY))
                     .child(format!("Revoke the link for “{label}”? Anyone using it will lose access."))
-                    .into_any_element();
-                let confirm = self.settings_button(
-                    "settings-share-revoke-confirm".to_string(),
-                    "Revoke link".to_string(),
-                    !self.settings_panel.busy,
-                    cx,
-                    |this, cx| this.revoke_share(cx),
-                );
-                ("Revoke shared link", body, confirm.into_any_element())
-            }
+                    .into_any_element(),
+                confirm("settings-share-revoke-confirm", "Revoke link", !busy, ButtonVariant::Danger, cx),
+            ),
         };
-
         div()
             .id("settings-dialog-overlay")
             .absolute()
-            .top_0()
-            .left_0()
-            .right_0()
-            .bottom_0()
-            .key_context("SettingsInput")
-            .track_focus(&self.settings_focus)
-            .on_key_down(cx.listener(Self::settings_key_down))
-            .on_action(cx.listener(|this, _: &crate::workspace::SettingsSubmit, _, cx| this.submit_settings_dialog(cx)))
-            .on_action(cx.listener(|this, _: &crate::workspace::SettingsCancel, window, cx| this.cancel_settings_dialog(window, cx)))
-            .on_action(cx.listener(|this, _: &crate::workspace::SettingsBackspace, _, cx| { this.backspace_settings_input(); cx.notify(); }))
-            .on_action(cx.listener(|this, _: &crate::workspace::SettingsSelectAll, _, cx| { this.settings_panel.input_selected = true; cx.notify(); }))
-            .on_action(cx.listener(|this, _: &crate::workspace::SettingsPaste, _, cx| {
-                if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) { this.edit_settings_input(&text); cx.notify(); }
-            }))
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(alpha(0x000000, 0.55))
+            .inset_0()
+            .key_context("SettingsDialog")
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
-                div()
-                    .id("settings-dialog")
-                    .w(px(440.))
-                    .max_w(px(640.))
-                    .max_h(px(540.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(12.))
-                    .rounded(px(8.))
-                    .border_1()
-                    .border_color(c(BORDER_PRIMARY))
-                    .bg(c(SURFACE_PRIMARY))
-                    .shadow_lg()
-                    .p(px(18.))
-                    .child(
-                        div()
-                            .text_sm_tw()
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(c(TEXT_PRIMARY))
-                            .child(title),
+                Modal::new()
+                    .title(title)
+                    .on_close(cx.listener(|this, _, window, cx| this.cancel_settings_dialog(window, cx)))
+                    .body(div().flex().flex_col().gap(px(10.)).child(body).child(self.render_settings_notices()))
+                    .footer(
+                        Button::new("settings-dialog-cancel")
+                            .label("Cancel")
+                            .variant(ButtonVariant::Secondary)
+                            .on_click(cx.listener(|this, _, window, cx| this.cancel_settings_dialog(window, cx))),
                     )
-                    .child(
-                        div()
-                            .id("settings-dialog-body")
-                            .flex_1()
-                            .min_h_0()
-                            .overflow_y_scroll()
-                            .flex()
-                            .flex_col()
-                            .gap(px(10.))
-                            .child(body)
-                            .child(self.render_settings_notices()),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .justify_end()
-                            .gap(px(8.))
-                            .child(self.settings_button(
-                                "settings-dialog-cancel".to_string(),
-                                "Cancel".to_string(),
-                                true,
-                                cx,
-                                |this, cx| {
-                                    this.settings_panel.dialog = None;
-                                    this.settings_panel.error = None;
-                                    cx.notify();
-                                },
-                            ))
-                            .child(confirm),
-                    ),
+                    .footer(confirm),
             )
             .into_any_element()
     }
-    pub(crate) fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
+
+    /// `SettingsModal.svelte`: a 26rem body with the section nav on the left.
+    pub(crate) fn render_settings(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let content: AnyElement = match self.settings_section {
             SettingsSection::General => self.render_general_settings(cx).into_any_element(),
-            SettingsSection::Appearance => self.render_appearance_settings(cx).into_any_element(),
+            SettingsSection::Appearance => self.render_appearance_settings(window, cx).into_any_element(),
             SettingsSection::Links => self.render_share_management(cx).into_any_element(),
             SettingsSection::Connections => self.render_connections(cx).into_any_element(),
         };
-
+        // nav: w-40 flex-col gap-0.5 border-r p-2, with Reset to defaults at the foot
+        let nav = div()
+            .w(px(160.))
+            .flex_none()
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .border_r_1()
+            .border_color(c(BORDER_SECONDARY))
+            .p(px(8.))
+            .child(self.settings_tab("settings-general", "General", SettingsSection::General, cx))
+            .child(self.settings_tab("settings-appearance", "Appearance", SettingsSection::Appearance, cx))
+            .child(self.settings_tab("settings-links", "Shared links", SettingsSection::Links, cx))
+            .child(self.settings_tab("settings-connections", "Connections", SettingsSection::Connections, cx))
+            .child(div().flex_1())
+            .child(
+                SettingsTab::new("settings-reset-button", "Reset to defaults", self.selection_color(false))
+                    .quiet()
+                    .on_click(cx.listener(|this, _, window, cx| this.confirm_reset_preferences(window, cx))),
+            );
+        let body = div()
+            .flex()
+            .h(px(416.))
+            .child(nav)
+            .child(
+                // flex-1 overflow-y-auto px-5 py-2
+                div()
+                    .id("settings-content")
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .px(px(20.))
+                    .py(px(8.))
+                    .child(content)
+                    .child(self.render_settings_notices()),
+            );
         div()
             .id("settings-overlay")
             .when(self.settings_panel.dialog.is_none(), |panel| panel.track_focus(&self.settings_focus).key_context("SettingsPanel"))
             .absolute()
-            .top_0()
-            .left_0()
-            .right_0()
-            .bottom_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(alpha(0x000000, 0.58))
+            .inset_0()
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
-                div()
-                    .id("settings-modal")
-                    .w(px(720.))
-                    .max_w(gpui::relative(0.95))
-                    .h(px(520.))
-                    .max_h(gpui::relative(0.9))
-                    .flex()
-                    .flex_col()
-                    .rounded(px(8.))
-                    .border_1()
-                    .border_color(c(BORDER_PRIMARY))
-                    .bg(c(SURFACE_PRIMARY))
-                    .shadow_lg()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .border_b_1()
-                            .border_color(c(BORDER_SECONDARY))
-                            .px(px(18.))
-                            .py(px(13.))
-                            .child(div().text_sm_tw().font_weight(gpui::FontWeight::SEMIBOLD).child("Settings"))
-                            .child(
-                                div()
-                                    .id("close-settings")
-                                    .debug_selector(|| "close-settings".into())
-                                    .size(px(28.))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded(px(4.))
-                                    .cursor_pointer()
-                                    .hover(|style| style.bg(c(SURFACE_ELEVATED)))
-                                    .child(icon("x", 16., c(TEXT_SECONDARY)))
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.close_settings(&crate::workspace::CloseSettings, window, cx);
-                                    })),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .min_h_0()
-                            .child(
-                                div()
-                                    .w(px(156.))
-                                    .flex_none()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(3.))
-                                    .border_r_1()
-                                    .border_color(c(BORDER_SECONDARY))
-                                    .p(px(10.))
-                                    .child(self.settings_tab("settings-general", "General", SettingsSection::General, cx))
-                                    .child(self.settings_tab("settings-appearance", "Appearance", SettingsSection::Appearance, cx))
-                                    .child(self.settings_tab("settings-links", "Shared links", SettingsSection::Links, cx))
-                                    .child(self.settings_tab("settings-connections", "Connections", SettingsSection::Connections, cx))
-                                    .child(
-                                        div()
-                                            .id("settings-reset")
-                                            .flex_1()
-                                            .child(
-                                                div()
-                                                    .id("settings-reset-button")
-                                                    .debug_selector(|| "settings-reset-button".into())
-                                                    .child("Reset to defaults")
-                                                    .on_click(cx.listener(|this, _, window, cx| {
-                                                        this.confirm_reset_preferences(window, cx);
-                                                    })),
-                                            ),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .id("settings-content")
-                                    .flex_1()
-                                    .min_w_0()
-                                    .min_h_0()
-                                    .overflow_y_scroll()
-                                    .p(px(20.))
-                                    .child(content)
-                                    .child(self.render_settings_notices()),
-                    ),
+                Modal::new()
+                    .title("Settings")
+                    .size(ModalSize::Xl)
+                    .padded(false)
+                    .close_selector("close-settings")
+                    .on_close(cx.listener(|this, _, window, cx| this.close_settings(&crate::workspace::CloseSettings, window, cx)))
+                    .body(body),
             )
-            )
-            .child(self.render_settings_dialog(cx))
+            .child(self.render_settings_dialog(window, cx))
     }
+}
+
+/// `#4a9eff` or `4a9eff`.
+fn parse_hex_color(text: &str) -> Option<u32> {
+    let hex = text.trim();
+    let hex = hex.strip_prefix('#').unwrap_or(hex);
+    (hex.len() == 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())).then(|| u32::from_str_radix(hex, 16).ok()).flatten()
 }
 
 fn absolute_share_url(server: &str, share_url: &str) -> Option<String> {

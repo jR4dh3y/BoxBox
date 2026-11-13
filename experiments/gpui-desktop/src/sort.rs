@@ -6,18 +6,32 @@ use chrono::DateTime;
 
 use crate::api::FileInfo;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Serialised with the settings file's labels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SortField {
     Name,
     Type,
     Size,
+    #[serde(rename = "Date modified")]
     Modified,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SortDir {
+    #[serde(rename = "Ascending")]
     Asc,
+    #[serde(rename = "Descending")]
     Desc,
+}
+
+impl SortField {
+    /// `SORT_BY_OPTIONS` in `settings/options.ts`.
+    pub const OPTIONS: [(Self, &'static str); 4] =
+        [(Self::Name, "Name"), (Self::Size, "Size"), (Self::Modified, "Date modified"), (Self::Type, "Type")];
+}
+
+impl SortDir {
+    pub const OPTIONS: [(Self, &'static str); 2] = [(Self::Asc, "Ascending"), (Self::Desc, "Descending")];
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

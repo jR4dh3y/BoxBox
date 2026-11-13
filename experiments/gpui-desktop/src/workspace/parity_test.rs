@@ -136,8 +136,10 @@ fn desktop_workflow(cx: &mut TestAppContext) {
         let row = cx.debug_bounds("row-0-0").unwrap();
         cx.simulate_mouse_down(row.center(), MouseButton::Right, Modifiers::default());
         click(cx, "context-share");
-        view.read_with(cx, |workspace, _| assert!(matches!(&workspace.settings_panel.dialog,
-            Some(crate::settings_state::SettingsDialog::CreateShare { path, .. }) if path == "home/dest/renamed.txt")));
+        view.read_with(cx, |workspace, app| {
+            assert!(matches!(&workspace.settings_panel.dialog, Some(crate::settings_state::SettingsDialog::CreateShare { .. })));
+            assert_eq!(workspace.settings_field(crate::ui::SettingsField::First).read(app).text(), "home/dest/renamed.txt");
+        });
         click(cx, "settings-share-create-confirm");
         cx.run_until_parked();
         view.read_with(cx, |workspace, _| {
@@ -175,16 +177,15 @@ fn desktop_workflow(cx: &mut TestAppContext) {
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert!(workspace.has_wallpaper()));
     assert!(DesktopSettings::load().wallpaper.is_some(), "wallpaper choice must survive restart");
-    click(cx, "accent-custom");
+    // Accent: switch the source to Custom, then type a colour into the field.
+    click(cx, "accent-source");
+    click(cx, "accent-source-1");
     click(cx, "accent-color-input");
-    cx.simulate_keystrokes("1 2 a b c d enter");
-    view.read_with(cx, |workspace, _| {
-        if let Some(crate::settings_state::SettingsDialog::EditAccent { color }) = &workspace.settings_panel.dialog {
-            panic!("accent dialog did not submit: color={color:?}, error={:?}", workspace.settings_panel.error);
-        }
-        assert_eq!(workspace.accent_hex(), 0x12abcd);
-    });
+    cx.simulate_keystrokes("1 2 a b c d");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.accent_hex(), 0x12abcd));
     click(cx, "setting-wallpaper-fit");
+    click(cx, "setting-wallpaper-fit-1");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.desktop_settings.wallpaper_fit, crate::settings_state::WallpaperFit::Fit));
     click(cx, "setting-frost");
     click(cx, "setting-tint");
     view.read_with(cx, |workspace, _| {

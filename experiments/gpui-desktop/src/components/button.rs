@@ -98,6 +98,10 @@ impl RenderOnce for Button {
         };
         let enabled = !self.disabled;
         let base = div()
+            .debug_selector({
+                let id = self.id.to_string();
+                move || id
+            })
             .id(self.id)
             .flex()
             .flex_none()

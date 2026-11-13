@@ -83,7 +83,7 @@ freedesktop thumbnailers and shared cache (`~/.cache/thumbnails`).
 
 | Svelte | Role | Native scope | PR | Local |
 |---|---|---|---|---|
-| `settings/SettingsModal.svelte`, `settings/SettingsRow.svelte` | settings frame | keep | ✓ `settings.rs` | ✓ `ui/settings.rs` |
+| `settings/SettingsModal.svelte`, `settings/SettingsRow.svelte` | settings frame | keep | ✓ `settings.rs` | ✓ `ui/settings.rs` on `Modal`, `SettingsTab`, `SettingsRow` |
 | `settings/GeneralSettings.svelte` | browse preferences | keep | ✓ `settings.rs`, `preferences.rs` | ✓ `settings_state.rs` |
 | `settings/AppearanceSettings.svelte` | accent, wallpaper, fit, frost, tint | keep | ✗ | ✓ `workspace/appearance.rs`, `workspace/palette.rs` |
 | `settings/wallpaper/WallpaperPickerModal.svelte` | wallpaper picker | keep (native chooser) | ✗ | ◐ chooser untested |
@@ -93,9 +93,9 @@ freedesktop thumbnailers and shared cache (`~/.cache/thumbnails`).
 
 | Svelte | Native scope | PR | Local |
 |---|---|---|---|
-| `ui/Input.svelte` | real text input with selection, IME and clipboard | ✓ `ui/text_input.rs` | ✓ `components/input.rs` frame + `components/text_field.rs` (from PR #226, scrolls to the caret); settings fields still custom |
+| `ui/Input.svelte` | real text input with selection, IME and clipboard | ✓ `ui/text_input.rs` | ✓ `components/input.rs` frame + `components/text_field.rs` (from PR #226, scrolls to the caret, masks tokens), used by every field |
 | `ui/Modal.svelte`, `ui/Button.svelte` | keep | ✓ `ui/modal.rs` | ◐ `components/modal.rs`, `components/button.rs`; dialogs not moved yet |
-| `ui/Select.svelte`, `ui/Toggle.svelte` | keep | ✓ `segmented`, `toggle` | ◐ `components/select.rs`, `components/toggle.rs`; settings not moved yet |
+| `ui/Select.svelte`, `ui/Toggle.svelte` | keep | ✓ `segmented`, `toggle` | ✓ `components/select.rs` with an option menu (`ui/select_menu.rs`), `components/toggle.rs` |
 | `ui/ProgressBar.svelte`, `ui/Spinner.svelte` | keep | ◐ in `jobs.rs` | ◐ `components/progress_bar.rs`; no spinner |
 | `ui/ContextMenu.svelte`, `ui/Toast.svelte` | keep | ✓ | ✓ `components/context_menu.rs`, `components/toast.rs` |
 
@@ -116,8 +116,8 @@ the web app renders the same manifest at `/dev/gallery` (dev server only).
 |---|---|---|---|
 | `Button` | `ui/Button.svelte` | ✓ 8 variants and sizes | ✓ name dialog |
 | `Input`, `TextField` | `ui/Input.svelte` | ✓ | ✓ name dialog |
-| `Toggle` | `ui/Toggle.svelte` | ✓ (disabled knob is an exception: GPUI has no group opacity) | not yet |
-| `Select` | `ui/Select.svelte` | ✓ | not yet |
+| `Toggle` | `ui/Toggle.svelte` | ✓ (disabled knob is an exception: GPUI has no group opacity) | ✓ settings |
+| `Select` | `ui/Select.svelte` | ✓ | ✓ settings |
 | `ProgressBar` | `ui/ProgressBar.svelte` | ✓ | not yet |
 | `ContextMenu`, `MenuItem` | `ui/ContextMenu.svelte` | ✓ | ✓ file menu, **+** menu |
 | `Modal` | `ui/Modal.svelte` | ✓ | ✓ dialogs, properties, preview |
@@ -125,6 +125,7 @@ the web app renders the same manifest at `/dev/gallery` (dev server only).
 | `FileListHeader`, `FileRow` | `FileList.svelte` | full-window shot | ✓ `ui/file_list.rs` |
 | `SidebarSection`, `NavItem` | `Sidebar.svelte` | full-window shot | ✓ `ui/sidebar.rs` |
 | `FileTile`, `GridMetrics` | `FileGrid.svelte` | full-window shot | ✓ `ui/file_grid.rs` |
+| `SettingsRow`, `SettingsTab` | `settings/SettingsRow.svelte`, `SettingsModal.svelte` | full-window shot (0.6% of the modal differs) | ✓ `ui/settings.rs` |
 
 Next: tabs, toolbar, status bar and drive cards, then move
 dialogs, menus, settings and notices onto the primitives above.

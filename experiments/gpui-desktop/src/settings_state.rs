@@ -25,17 +25,14 @@ pub(crate) enum WallpaperFit {
 }
 
 impl WallpaperFit {
-    pub(crate) const ALL: [Self; 5] = [Self::Fill, Self::Fit, Self::Stretch, Self::Center, Self::Tile];
-
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Fit => "Contain",
-            Self::Fill => "Cover",
-            Self::Stretch => "Stretch",
-            Self::Center => "Center",
-            Self::Tile => "Tile",
-        }
-    }
+    /// `WALLPAPER_DISPLAY_OPTIONS` in `utils/wallpaper.ts`.
+    pub(crate) const OPTIONS: [(Self, &'static str); 5] = [
+        (Self::Fill, "Crop to fill"),
+        (Self::Fit, "Fit on screen"),
+        (Self::Stretch, "Stretch"),
+        (Self::Center, "Center"),
+        (Self::Tile, "Tile"),
+    ];
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,24 +47,6 @@ pub(crate) enum AccentColor {
 }
 
 impl AccentColor {
-    pub(crate) const ALL: [Self; 5] = [
-        Self::Blue,
-        Self::Purple,
-        Self::Green,
-        Self::Orange,
-        Self::Rose,
-    ];
-
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Blue => "Blue",
-            Self::Purple => "Purple",
-            Self::Green => "Green",
-            Self::Orange => "Orange",
-            Self::Rose => "Rose",
-        }
-    }
-
     pub(crate) const fn hex(self) -> u32 {
         match self {
             Self::Blue => 0x4a9eff,
@@ -176,19 +155,6 @@ impl DesktopSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ConnectionField {
-    Name,
-    Url,
-    Token,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ShareField {
-    Path,
-    UploadLimit,
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum ShareExpiry {
     #[default]
@@ -199,16 +165,9 @@ pub(crate) enum ShareExpiry {
 }
 
 impl ShareExpiry {
-    pub(crate) const ALL: [Self; 4] = [Self::Never, Self::OneDay, Self::OneWeek, Self::OneMonth];
 
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Never => "Never",
-            Self::OneDay => "1 day",
-            Self::OneWeek => "7 days",
-            Self::OneMonth => "30 days",
-        }
-    }
+    pub(crate) const OPTIONS: [(Self, &'static str); 4] =
+        [(Self::Never, "Never"), (Self::OneDay, "1 day"), (Self::OneWeek, "7 days"), (Self::OneMonth, "30 days")];
 
     pub(crate) const fn seconds(self) -> Option<i64> {
         match self {
@@ -220,40 +179,15 @@ impl ShareExpiry {
     }
 }
 
+/// The open settings dialog. Its text lives in the workspace's settings fields:
+/// name and URL, the token field, or the first field for a share path or upload limit.
 pub(crate) enum SettingsDialog {
-    EditAccent { color: String },
-    EditConnection {
-        index: Option<usize>,
-        name: String,
-        url: String,
-        focused: ConnectionField,
-    },
-    ConnectSaved {
-        connection: SavedConnection,
-        token: String,
-        focused: ConnectionField,
-    },
-    RemoveConnection {
-        index: usize,
-        name: String,
-    },
-    CreateShare {
-        path: String,
-        permissions: SharePermissions,
-        expires: ShareExpiry,
-        focused: ShareField,
-    },
-    EditShare {
-        id: String,
-        label: String,
-        permissions: SharePermissions,
-        max_upload_bytes: String,
-        focused: ShareField,
-    },
-    RevokeShare {
-        id: String,
-        label: String,
-    },
+    EditConnection { index: Option<usize> },
+    ConnectSaved { connection: SavedConnection },
+    RemoveConnection { index: usize, name: String },
+    CreateShare { permissions: SharePermissions, expires: ShareExpiry },
+    EditShare { id: String, label: String, permissions: SharePermissions },
+    RevokeShare { id: String, label: String },
 }
 
 pub(crate) enum ShareListState {
@@ -287,7 +221,6 @@ pub(crate) struct SettingsPanelState {
     pub(crate) error: Option<String>,
     pub(crate) notice: Option<String>,
     pub(crate) share_request: u64,
-    pub(crate) input_selected: bool,
 }
 
 impl Default for SettingsPanelState {
@@ -299,7 +232,6 @@ impl Default for SettingsPanelState {
             error: None,
             notice: None,
             share_request: 0,
-            input_selected: false,
         }
     }
 }
@@ -428,7 +360,6 @@ fn valid_host(host: &str) -> bool {
     }
     found_label
 }
-
 
 /// Keep wallpaper bytes in app storage so moving the selected source cannot break startup.
 pub(crate) fn store_wallpaper(bytes: &[u8], digest: &str) -> Result<PathBuf, String> {

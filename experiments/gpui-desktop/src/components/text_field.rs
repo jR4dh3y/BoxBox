@@ -15,6 +15,8 @@ use unicode_segmentation::*;
 
 use crate::theme::*;
 
+const BULLET: char = '•';
+
 pub fn bind_keys(cx: &mut App) {
     let context = Some("TextField");
     cx.bind_keys([
@@ -76,6 +78,8 @@ pub struct TextField {
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
+    /// Shows bullets instead of the text, for secrets. Copy and cut are off.
+    masked: bool,
     /// How far the line is scrolled left to keep the caret visible.
     scroll_x: Pixels,
 }
@@ -102,7 +106,26 @@ impl TextField {
             last_bounds: None,
             is_selecting: false,
             scroll_x: px(0.),
+            masked: false,
         }
+    }
+
+    pub fn masked(mut self) -> Self {
+        self.masked = true;
+        self
+    }
+
+    /// A byte offset in the text as one in the drawn line, which differs while masked.
+    fn to_display(&self, offset: usize) -> usize {
+        if self.masked { self.content[..offset].chars().count() * BULLET.len_utf8() } else { offset }
+    }
+
+    fn from_display(&self, index: usize) -> usize {
+        if !self.masked {
+            return index;
+        }
+        let chars = index / BULLET.len_utf8();
+        self.content.char_indices().nth(chars).map_or(self.content.len(), |(offset, _)| offset)
     }
 
     pub fn focus(&self, window: &mut Window) {
@@ -254,14 +277,14 @@ impl TextField {
     }
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
-        if !self.selected_range.is_empty() {
+        if !self.selected_range.is_empty() && !self.masked {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
             ));
         }
     }
     fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.selected_range.is_empty() {
+        if !self.selected_range.is_empty() && !self.masked {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
             ));
@@ -297,7 +320,7 @@ impl TextField {
         if position.y > bounds.bottom() {
             return self.content.len();
         }
-        line.closest_index_for_x(position.x - bounds.left() + self.scroll_x)
+        self.from_display(line.closest_index_for_x(position.x - bounds.left() + self.scroll_x))
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -501,11 +524,11 @@ impl EntityInputHandler for TextField {
         let range = self.range_from_utf16(&range_utf16);
         Some(Bounds::from_corners(
             point(
-                bounds.left() - self.scroll_x + last_layout.x_for_index(range.start),
+                bounds.left() - self.scroll_x + last_layout.x_for_index(self.to_display(range.start)),
                 bounds.top(),
             ),
             point(
-                bounds.left() - self.scroll_x + last_layout.x_for_index(range.end),
+                bounds.left() - self.scroll_x + last_layout.x_for_index(self.to_display(range.end)),
                 bounds.bottom(),
             ),
         ))
@@ -520,7 +543,7 @@ impl EntityInputHandler for TextField {
         let line_point = self.last_bounds?.localize(&point)?;
         let last_layout = self.last_layout.as_ref()?;
 
-        let utf8_index = last_layout.index_for_x(point.x - line_point.x + self.scroll_x)?;
+        let utf8_index = self.from_display(last_layout.index_for_x(point.x - line_point.x + self.scroll_x)?);
         Some(self.offset_to_utf16(utf8_index))
     }
 }
@@ -584,8 +607,11 @@ impl Element for TextElement {
         let cursor = input.cursor_offset();
         let style = window.text_style();
 
+        let content_is_placeholder = content.is_empty();
         let (display_text, text_color) = if content.is_empty() {
             (input.placeholder.clone(), c(TEXT_MUTED).into())
+        } else if input.masked {
+            (BULLET.to_string().repeat(content.chars().count()).into(), style.color)
         } else {
             (content, style.color)
         };
@@ -598,7 +624,8 @@ impl Element for TextElement {
             underline: None,
             strikethrough: None,
         };
-        let runs = if let Some(marked_range) = input.marked_range.as_ref() {
+        // Composition is underlined in plain text only; masked runs would not line up.
+        let runs = if let Some(marked_range) = input.marked_range.as_ref().filter(|_| !input.masked && !content_is_placeholder) {
             vec![
                 TextRun {
                     len: marked_range.start,
@@ -631,7 +658,7 @@ impl Element for TextElement {
             .shape_line(display_text, font_size, &runs, None);
 
         // Scroll just enough to keep the caret inside the field.
-        let cursor_pos = line.x_for_index(cursor);
+        let cursor_pos = line.x_for_index(input.to_display(cursor));
         let width = bounds.size.width;
         let mut scroll_x = input.scroll_x;
         if cursor_pos - scroll_x > width - px(1.) {
@@ -657,9 +684,9 @@ impl Element for TextElement {
             (
                 Some(fill(
                     Bounds::from_corners(
-                        point(left + line.x_for_index(selected_range.start), bounds.top()),
+                        point(left + line.x_for_index(input.to_display(selected_range.start)), bounds.top()),
                         point(
-                            left + line.x_for_index(selected_range.end),
+                            left + line.x_for_index(input.to_display(selected_range.end)),
                             bounds.bottom(),
                         ),
                     ),

@@ -1163,15 +1163,8 @@ impl Workspace {
         self.context_menu = None;
         self.settings_open = true;
         self.settings_section = SettingsSection::Links;
-        self.settings_panel.dialog = Some(crate::settings_state::SettingsDialog::CreateShare {
-            path,
-            permissions: crate::api::SharePermissions { view: true, download: true, ..Default::default() },
-            expires: crate::settings_state::ShareExpiry::default(),
-            focused: crate::settings_state::ShareField::Path,
-        });
-        self.settings_panel.error = None;
-        self.settings_focus.focus(window);
-        cx.notify();
+        self.open_create_share(path, cx);
+        let _ = window;
     }
 
     pub(crate) fn context_create_folder(

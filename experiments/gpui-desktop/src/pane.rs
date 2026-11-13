@@ -49,10 +49,14 @@ pub enum Load<T> {
 }
 
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ViewMode {
     List,
     Grid,
+}
+
+impl ViewMode {
+    pub const OPTIONS: [(Self, &'static str); 2] = [(Self::List, "List"), (Self::Grid, "Grid")];
 }
 
 pub enum Listing {

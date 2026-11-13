@@ -12,12 +12,13 @@ pub struct Input {
     placeholder: SharedString,
     disabled: bool,
     focused: bool,
+    invalid: bool,
     editor: Option<AnyElement>,
 }
 
 impl Input {
     pub fn new(value: impl Into<SharedString>) -> Self {
-        Self { value: value.into(), placeholder: SharedString::default(), disabled: false, focused: false, editor: None }
+        Self { value: value.into(), placeholder: SharedString::default(), disabled: false, focused: false, invalid: false, editor: None }
     }
 
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
@@ -33,6 +34,12 @@ impl Input {
     /// `focus:border-border-focus`
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// `border-danger`, for a value that will not be accepted.
+    pub fn invalid(mut self, invalid: bool) -> Self {
+        self.invalid = invalid;
         self
     }
 
@@ -58,7 +65,7 @@ impl RenderOnce for Input {
             .overflow_hidden()
             .rounded(px(ROUNDED))
             .border_1()
-            .border_color(c(if self.focused { BORDER_FOCUS } else { BORDER_PRIMARY }))
+            .border_color(c(if self.invalid { DANGER } else if self.focused { BORDER_FOCUS } else { BORDER_PRIMARY }))
             .bg(c(SURFACE_PRIMARY))
             .px(px(12.))
             .type_13()

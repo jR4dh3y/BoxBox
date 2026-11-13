@@ -36,6 +36,10 @@ impl RenderOnce for Toggle {
         let checked = self.checked;
         // relative h-5 w-10 rounded-full; knob: absolute top-0.5 left-0.5 h-4 w-4, translate-x-5 when on
         div()
+            .debug_selector({
+                let id = self.id.to_string();
+                move || id
+            })
             .id(self.id)
             .relative()
             .flex_none()

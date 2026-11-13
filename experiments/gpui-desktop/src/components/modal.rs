@@ -26,11 +26,12 @@ pub struct Modal {
     body: Vec<AnyElement>,
     footer: Vec<AnyElement>,
     on_close: Option<CloseHandler>,
+    close_selector: Option<&'static str>,
 }
 
 impl Modal {
     pub fn new() -> Self {
-        Self { title: None, size: ModalSize::Md, padded: true, body: Vec::new(), footer: Vec::new(), on_close: None }
+        Self { title: None, size: ModalSize::Md, padded: true, body: Vec::new(), footer: Vec::new(), on_close: None, close_selector: None }
     }
 
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
@@ -38,14 +39,12 @@ impl Modal {
         self
     }
 
-    #[allow(dead_code)]
     pub fn size(mut self, size: ModalSize) -> Self {
         self.size = size;
         self
     }
 
     /// Content that manages its own spacing, like a two-pane layout, sets this false.
-    #[allow(dead_code)]
     pub fn padded(mut self, padded: bool) -> Self {
         self.padded = padded;
         self
@@ -58,6 +57,12 @@ impl Modal {
 
     pub fn footer(mut self, element: impl IntoElement) -> Self {
         self.footer.push(element.into_any_element());
+        self
+    }
+
+    /// A test selector for the close button.
+    pub fn close_selector(mut self, selector: &'static str) -> Self {
+        self.close_selector = Some(selector);
         self
     }
 
@@ -85,6 +90,7 @@ impl RenderOnce for Modal {
             .cursor_pointer()
             .hover(|style| style.bg(c(SURFACE_ELEVATED)).text_color(c(TEXT_PRIMARY)))
             .child(icon("x", 16., c(TEXT_SECONDARY)))
+            .when_some(self.close_selector, |el, selector| el.debug_selector(move || selector.to_string()))
             .when_some(self.on_close, |el, handler| el.on_click(handler));
         // fixed inset-0 flex items-center justify-center bg-black/55
         div()

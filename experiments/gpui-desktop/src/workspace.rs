@@ -49,9 +49,9 @@ pub(crate) struct Preferences {
     pub confirm_delete: bool,
     pub preview_on_single_click: bool,
     pub selection_checkboxes: bool,
-    pub default_sort: String,
-    pub default_sort_direction: String,
-    pub default_view: String,
+    pub default_sort: SortField,
+    pub default_sort_direction: SortDir,
+    pub default_view: ViewMode,
     pub hardware_acceleration: bool,
     pub compact_rows: bool,
     pub wallpaper_tint: bool,
@@ -67,9 +67,9 @@ impl Default for Preferences {
             preview_on_single_click: false,
             selection_checkboxes: true,
             // `DEFAULT_SORT_BY` and `DEFAULT_SORT_DIR` in sortFiles.ts.
-            default_sort: "Date modified".into(),
-            default_sort_direction: "Descending".into(),
-            default_view: "List".into(),
+            default_sort: SortField::Modified,
+            default_sort_direction: SortDir::Desc,
+            default_view: ViewMode::List,
             hardware_acceleration: true,
             compact_rows: false,
             wallpaper_tint: false,
@@ -130,11 +130,6 @@ actions!(
         ToggleSplit,
         AddFavorite,
         OperationEscape,
-        SettingsSubmit,
-        SettingsCancel,
-        SettingsBackspace,
-        SettingsPaste,
-        SettingsSelectAll
     ]
 );
 
@@ -179,12 +174,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-shift-5", ToggleSplit, context),
         KeyBinding::new("ctrl-b", AddFavorite, context),
         KeyBinding::new("escape", OperationEscape, Some("PreviewInput")),
-        KeyBinding::new("enter", SettingsSubmit, Some("SettingsInput")),
-        KeyBinding::new("escape", SettingsCancel, Some("SettingsInput")),
         KeyBinding::new("escape", CloseSettings, Some("SettingsPanel")),
-        KeyBinding::new("backspace", SettingsBackspace, Some("SettingsInput")),
-        KeyBinding::new("ctrl-v", SettingsPaste, Some("SettingsInput")),
-        KeyBinding::new("ctrl-a", SettingsSelectAll, Some("SettingsInput")),
     ]);
 }
 
@@ -230,6 +220,15 @@ pub struct Workspace {
     pub(crate) context_menu: Option<ContextMenuState>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
+    /// The select whose option list is open.
+    pub(crate) open_select: Option<&'static str>,
+    pub(crate) accent_field: Entity<TextField>,
+    /// The settings dialogs' fields: first, second and the masked token.
+    pub(crate) settings_fields: [Entity<TextField>; 3],
+    /// A settings field to focus on the next render, once a dialog opens.
+    pub(crate) pending_field_focus: Option<crate::ui::SettingsField>,
+    /// The accent field holds text that is not a colour.
+    pub(crate) accent_invalid: bool,
     pub(crate) preview: Option<PreviewState>,
     pub(crate) preview_focus: FocusHandle,
     pub(crate) properties: Option<PropertiesState>,
@@ -263,6 +262,16 @@ impl Workspace {
         );
         let dialog_field = cx.new(|cx| TextField::new("", cx));
         let location_field = cx.new(|cx| TextField::new("Type a location", cx));
+        let accent_field = cx.new(|cx| TextField::new("#4a9eff", cx));
+        let settings_fields = [
+            cx.new(|cx| TextField::new("", cx)),
+            cx.new(|cx| TextField::new("https://files.example.com", cx)),
+            cx.new(|cx| TextField::new("Paste token; it will not be saved", cx).masked()),
+        ];
+        let settings_subscriptions = settings_fields
+            .iter()
+            .map(|field| cx.subscribe_in(field, window, |this, _, event, window, cx| this.on_settings_field(event, window, cx)))
+            .collect::<Vec<_>>();
         let mut workspace = Self {
             directory_watches: watching::DirectoryWatches::default(),
             tabs: vec![initial_pane],
@@ -294,10 +303,19 @@ impl Workspace {
             _subscriptions: vec![
                 cx.subscribe_in(&dialog_field, window, |this, _, event, window, cx| this.on_dialog_field(event, window, cx)),
                 cx.subscribe_in(&location_field, window, |this, _, event, window, cx| this.on_location_field(event, window, cx)),
-            ],
+                cx.subscribe_in(&accent_field, window, |this, _, event, _, cx| this.on_accent_field(event, cx)),
+            ]
+            .into_iter()
+            .chain(settings_subscriptions)
+            .collect(),
             file_clipboard: None,
             context_menu: None,
             add_menu: None,
+            open_select: None,
+            accent_field: accent_field.clone(),
+            settings_fields: settings_fields.clone(),
+            pending_field_focus: None,
+            accent_invalid: false,
             preview: None,
             preview_focus: cx.focus_handle(),
             properties: None,
@@ -1047,31 +1065,19 @@ impl Workspace {
 }
 
 fn preference_sort(preferences: &Preferences) -> Sort {
-    let field = match preferences.default_sort.as_str() {
-        "Size" => SortField::Size,
-        "Date modified" => SortField::Modified,
-        "Type" => SortField::Type,
-        _ => SortField::Name,
-    };
-    let dir = if preferences.default_sort_direction == "Descending" {
-        SortDir::Desc
-    } else {
-        SortDir::Asc
-    };
-    Sort { field, dir }
+    Sort { field: preferences.default_sort, dir: preferences.default_sort_direction }
 }
 
 fn preference_view(preferences: &Preferences) -> ViewMode {
-    if preferences.default_view == "Grid" {
-        ViewMode::Grid
-    } else {
-        ViewMode::List
-    }
+    preferences.default_view
 }
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_search_fields(window, cx);
+        if let Some(field) = self.pending_field_focus.take() {
+            self.settings_field(field).read(cx).focus(window);
+        }
         let primary = PaneTarget(self.tabs[self.active_tab].id);
         let mut browsers = div().flex().flex_1().min_h_0().min_w_0()
             .child(self.render_browser(primary, window, cx));
@@ -1157,7 +1163,7 @@ impl Render for Workspace {
                     .child(browsers),
             )
             .when(self.settings_open, |root| {
-                root.child(self.render_settings(cx))
+                root.child(self.render_settings(window, cx))
             })
             .when(self.preview.is_some(), |root| root.child(self.render_preview(cx)))
             .when(self.context_menu.is_some(), |root| root.child(self.render_context_menu(cx)))
