@@ -21,6 +21,7 @@ serde_json = "1"
 sha2 = "0.10"
 unicode-segmentation = "1"
 ureq = { version = "2", features = ["json"] }
+wl-clipboard-rs = "0.9"
 zbus = { version = "5.19", default-features = false, features = ["async-io", "blocking-api"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 

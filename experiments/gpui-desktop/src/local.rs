@@ -264,6 +264,13 @@ impl LocalFiles {
     }
 
     /// Resolve an existing virtual path to a canonical native path for previews and thumbnails.
+    /// One entry's details, as a listing of its folder would give them.
+    pub fn stat(&self, path: &str) -> Result<FileInfo> {
+        let (mount, real) = self.resolve_entry(path)?;
+        let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
+        self.info_for_path(mount, parent, &real).with_context(|| format!("cannot inspect {path}"))
+    }
+
     /// The virtual path for a real one, under the mount that holds it most closely.
     pub fn virtual_path(&self, real: &Path) -> Option<String> {
         let mount = self.mounts.iter().filter(|mount| real.starts_with(&mount.path)).max_by_key(|mount| mount.path.components().count())?;

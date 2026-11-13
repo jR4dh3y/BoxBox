@@ -187,6 +187,14 @@ impl Api {
     }
 
     /// Resolve a virtual local path. Remote paths are owned by the server.
+    /// One local entry's details. Remote providers are reached by listing instead.
+    pub fn stat(&self, path: &str) -> Result<FileInfo> {
+        match &self.provider {
+            Provider::Local(local) => local.stat(path),
+            Provider::Remote(_) => anyhow::bail!("{path} is not on this computer"),
+        }
+    }
+
     /// The virtual path of a real local path, for a local provider that can reach it.
     pub fn virtual_path(&self, real: &std::path::Path) -> Option<String> {
         match &self.provider {

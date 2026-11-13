@@ -219,6 +219,8 @@ pub struct Workspace {
     pub(crate) location_field: Entity<TextField>,
     _subscriptions: Vec<Subscription>,
     pub(crate) file_clipboard: Option<FileClipboard>,
+    /// What this app last put on the system clipboard, to tell it from other apps' copies.
+    pub(crate) published_files: Option<crate::os_clipboard::Files>,
     pub(crate) context_menu: Option<ContextMenuState>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
@@ -312,6 +314,7 @@ impl Workspace {
             .chain(settings_subscriptions)
             .collect(),
             file_clipboard: None,
+            published_files: None,
             context_menu: None,
             add_menu: None,
             open_select: None,

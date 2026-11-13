@@ -149,7 +149,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Live folder refresh | ✓ `watch.rs` (server stream) | ✓ `workspace/watching.rs` (inotify) |
 | Drag out | ◐ X11 only | ◐ X11 only |
 | Drop in from other apps | ✓ `dnd.rs` | ◐ |
-| OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✗ internal only |
+| OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✓ `os_clipboard.rs`: owns the Wayland clipboard via data-control (not GNOME); `xclip` on X11 |
 | Removable volumes: mount, eject | ✓ `devices.rs` (server) | ✓ `devices.rs`: UDisks2 over D-Bus (`zbus`), live; GVfs mounts (MTP, network) and LUKS unlock not yet |
 | Wayland rendering | ◐ untested | ◐ falls back to XWayland on Niri (stale frames); GPUI 0.2.2 panics if a new keyboard sends modifiers before its keymap (`wayland/client.rs:1267`), seen with a `wtype` virtual keyboard |
 | Keyboard focus movement, type-ahead | ✗ | ◐ arrow selection |

@@ -12,6 +12,7 @@ use std::{
 use anyhow::{anyhow, bail, Context as _};
 use gpui::{Context, PromptLevel, Window};
 
+use crate::os_clipboard;
 use crate::api::{Api, FileInfo};
 use super::preview::ThumbnailKey;
 use super::*;
@@ -451,6 +452,9 @@ impl Workspace {
             self.set_operation_error("Select at least one item first.", cx);
             return;
         }
+        if api.is_local() {
+            self.publish_files(api.clone(), &items, mode, cx);
+        }
         self.file_clipboard = Some(FileClipboard {
             mode,
             entries: items
@@ -469,12 +473,102 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(crate) fn paste_into(
-        &mut self,
-        target: PaneTarget,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    /// Puts local items on the system clipboard, so other apps can paste them.
+    fn publish_files(&mut self, api: Arc<Api>, items: &[FileInfo], mode: ClipboardMode, cx: &mut Context<Self>) {
+        let virtual_paths: Vec<String> = items.iter().map(|item| item.path.clone()).collect();
+        let op = match mode {
+            ClipboardMode::Copy => os_clipboard::FileOp::Copy,
+            ClipboardMode::Cut => os_clipboard::FileOp::Cut,
+        };
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let paths = virtual_paths
+                        .iter()
+                        .map(|path| api.local_path(path)?.with_context(|| format!("{path} is not on this computer")))
+                        .collect::<anyhow::Result<Vec<_>>>()?;
+                    let files = os_clipboard::Files { op, paths };
+                    os_clipboard::publish(&files)?;
+                    Ok::<_, anyhow::Error>(files)
+                })
+                .await;
+            this.update(cx, |this, _| match result {
+                Ok(files) => this.published_files = Some(files),
+                // Copy and paste inside BoxBox still work.
+                Err(error) => log::warn!("Files were not put on the system clipboard: {error:#}"),
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Pastes what another app copied when the system clipboard holds its files;
+    /// otherwise BoxBox's own clipboard.
+    pub(crate) fn paste_into(&mut self, target: PaneTarget, window: &mut Window, cx: &mut Context<Self>) {
+        if self.operation_status.is_busy() {
+            return;
+        }
+        let window_handle = window.window_handle();
+        cx.spawn(async move |this, cx| {
+            let system = cx.background_executor().spawn(async move { os_clipboard::read() }).await;
+            cx.update_window(window_handle, |_, window, cx| {
+                this.update(cx, |this, cx| match system {
+                    Ok(Some(files)) if this.published_files.as_ref() != Some(&files) => this.paste_system_files(target, files, cx),
+                    Ok(_) => this.paste_in_app(target, window, cx),
+                    Err(error) => {
+                        log::warn!("Could not read the system clipboard: {error:#}");
+                        this.paste_in_app(target, window, cx)
+                    }
+                })
+                .ok();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Files another app copied. Paths this provider can reach go through the normal
+    /// transfer, so a cut moves them; anything else is copied in.
+    fn paste_system_files(&mut self, target: PaneTarget, files: os_clipboard::Files, cx: &mut Context<Self>) {
+        let Some((_, destination, parent)) = self.operation_target(target) else {
+            return;
+        };
+        if parent.is_empty() {
+            self.set_operation_error("Choose a destination folder before pasting.", cx);
+            return;
+        }
+        let reachable: Option<Vec<String>> = files.paths.iter().map(|path| destination.virtual_path(path)).collect();
+        let Some(virtual_paths) = reachable else {
+            self.import_paths_to(destination, parent, files.paths, cx);
+            return;
+        };
+        let mode = match files.op {
+            os_clipboard::FileOp::Copy => ClipboardMode::Copy,
+            os_clipboard::FileOp::Cut => ClipboardMode::Cut,
+        };
+        let count = virtual_paths.len();
+        let api = destination.clone();
+        cx.spawn(async move |this, cx| {
+            let entries = cx
+                .background_executor()
+                .spawn(async move {
+                    virtual_paths
+                        .iter()
+                        .map(|path| api.stat(path).map(|item| ClipboardEntry { api: api.clone(), item }))
+                        .collect::<anyhow::Result<Vec<_>>>()
+                })
+                .await;
+            this.update(cx, |this, cx| match entries {
+                Ok(entries) => this.run_paste(target, FileClipboard { mode, entries }, destination, parent, count, cx),
+                Err(error) => this.report(Err(format!("Could not paste: {error:#}")), cx),
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn paste_in_app(&mut self, target: PaneTarget, window: &mut Window, cx: &mut Context<Self>) {
         if self.operation_status.is_busy() {
             return;
         }
