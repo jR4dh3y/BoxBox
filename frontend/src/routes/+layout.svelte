@@ -6,6 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	const dev = import.meta.env.DEV;
 	import { browseRequests } from '#lib/browse/requests.svelte.js';
 	import { Spinner, Button } from '#lib/components/ui/index.js';
 	import { AlertTriangle, X } from 'lucide-svelte';
@@ -26,14 +27,15 @@
 	let initialized = $state(false);
 	let authWasActive = false;
 
-	// Public routes that don't require authentication
-	const publicRoutes = ['/login', '/s/'];
+	// Public routes that don't require authentication. /dev/ holds development-only pages.
+	const publicRoutes = dev ? ['/login', '/s/', '/dev/'] : ['/login', '/s/'];
 	const isPublicRoute = $derived(publicRoutes.some((route) => page.url.pathname.startsWith(route)));
 	// Full-bleed pages render without the standard page chrome
 	const isFullBleedPage = $derived(
 		page.url.pathname.startsWith('/browse') ||
 			page.url.pathname.startsWith('/chooser') ||
-			page.url.pathname.startsWith('/s/')
+			page.url.pathname.startsWith('/s/') ||
+			(dev && page.url.pathname.startsWith('/dev/'))
 	);
 	const isLoginPage = $derived(page.url.pathname.startsWith('/login'));
 	// Share pages show the share owner's wallpaper, never the visitor's own.

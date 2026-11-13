@@ -1,60 +1,12 @@
-//! Lucide icons extracted from the frontend's lucide-svelte by `scripts/extract-icons.ts`.
+//! Lucide icons extracted from the frontend's lucide-svelte by `scripts/extract-icons.ts`;
+//! `build.rs` embeds every file in `assets/icons`.
 
 use std::borrow::Cow;
 
 use anyhow::Result;
 use gpui::{AssetSource, SharedString};
 
-macro_rules! icons {
-    ($($name:literal),* $(,)?) => {
-        const ICONS: &[(&str, &[u8])] = &[
-            $(
-                (concat!("icons/", $name, ".svg"), include_bytes!(concat!("../assets/icons/", $name, ".svg"))),
-                (concat!("icons/thin/", $name, ".svg"), include_bytes!(concat!("../assets/icons/thin/", $name, ".svg"))),
-            )*
-        ];
-    };
-}
-
-icons!(
-    "arrow-up-from-line",
-    "chevron-down",
-    "chevron-left",
-    "chevron-right",
-    "chevron-up",
-    "columns-2",
-    "download",
-    "file",
-    "file-archive",
-    "file-audio",
-    "file-code",
-    "file-image",
-    "file-json",
-    "file-spreadsheet",
-    "file-text",
-    "file-video",
-    "folder",
-    "folder-open",
-    "globe",
-    "hard-drive",
-    "home",
-    "image",
-    "layout-grid",
-    "list",
-    "monitor",
-    "music",
-    "palette",
-    "panel-left",
-    "plus",
-    "refresh-cw",
-    "search",
-    "server",
-    "settings",
-    "star",
-    "trash-2",
-    "video",
-    "x",
-);
+include!(concat!(env!("OUT_DIR"), "/icons.rs"));
 
 pub struct Assets;
 

@@ -2,6 +2,8 @@
 
 mod api;
 mod assets;
+mod components;
+mod gallery;
 mod drag_out;
 mod format;
 mod local;
@@ -73,6 +75,11 @@ fn main() {
         mono: fontconfig_family("monospace", "monospace"),
     };
 
+    if std::env::args().nth(1).as_deref() == Some("--gallery") {
+        run_gallery(fonts.sans);
+        return;
+    }
+
     Application::new()
         .with_assets(assets::Assets)
         .run(move |cx: &mut App| {
@@ -100,4 +107,23 @@ fn main() {
             .expect("failed to open the BoxBox window");
             cx.activate(true);
         });
+}
+
+/// The component gallery, at the manifest's size, for comparison with the web app.
+fn run_gallery(font: SharedString) {
+    let manifest = gallery::manifest();
+    Application::new().with_assets(assets::Assets).run(move |cx: &mut App| {
+        let bounds = Bounds::centered(None, size(px(manifest.width), px(manifest.height)), cx);
+        cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                app_id: Some("boxbox-gallery".into()),
+                window_decorations: Some(WindowDecorations::Server),
+                ..Default::default()
+            },
+            |_, cx| cx.new(|_| gallery::Gallery::new(font)),
+        )
+        .expect("failed to open the gallery window");
+        cx.activate(true);
+    });
 }

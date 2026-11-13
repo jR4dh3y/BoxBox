@@ -9,7 +9,9 @@ const ICONS = [
 	'Download', 'File', 'FileArchive', 'FileAudio', 'FileCode', 'FileImage', 'FileJson',
 	'FileSpreadsheet', 'FileText', 'FileVideo', 'Folder', 'FolderOpen', 'Globe', 'HardDrive',
 	'Home', 'Image', 'LayoutGrid', 'List', 'Monitor', 'Music', 'Palette', 'PanelLeft', 'Plus',
-	'RefreshCw', 'Search', 'Server', 'Settings', 'Star', 'Trash2', 'Video', 'X'
+	'RefreshCw', 'Search', 'Server', 'Settings', 'Star', 'Trash2', 'Video', 'X',
+	'AlertTriangle', 'AppWindow', 'CheckCircle', 'ClipboardPaste', 'Copy', 'ExternalLink', 'Info',
+	'Check', 'Pencil', 'Scissors', 'XCircle'
 ];
 
 const root = join(import.meta.dir, '../../../frontend/node_modules/lucide-svelte/dist');
@@ -28,7 +30,11 @@ function resolveSvelte(file: string): string {
 }
 
 const kebab = (name: string) =>
-	name.replace(/([a-z])([A-Z0-9])/g, '$1-$2').replace(/([0-9])([A-Z])/g, '$1-$2').toLowerCase();
+	name
+		.replace(/([a-z])([A-Z0-9])/g, '$1-$2')
+		.replace(/([A-Z])([A-Z][a-z])/g, '$1-$2')
+		.replace(/([0-9])([A-Z])/g, '$1-$2')
+		.toLowerCase();
 
 for (const name of ICONS) {
 	const pattern = new RegExp(`default as ${name} \\} from ['"](.+?)['"]`);
