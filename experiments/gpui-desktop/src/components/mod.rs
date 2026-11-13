@@ -6,6 +6,7 @@
 
 mod button;
 mod context_menu;
+mod drive_card;
 mod file_grid;
 mod file_list;
 mod input;
@@ -19,6 +20,7 @@ mod toast;
 mod toggle;
 
 pub use button::{Button, ButtonSize, ButtonVariant};
+pub use drive_card::{usage_bar, usage_text, DriveCard};
 pub use context_menu::{ContextMenu, MenuItem};
 pub use file_grid::{FileTile, GridMetrics};
 pub use file_list::{FileListHeader, FileRow, Selection};

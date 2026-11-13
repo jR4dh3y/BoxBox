@@ -38,7 +38,7 @@ Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 | `FileList.svelte` | list view | keep | ✓ `ui/file_list.rs` | ✓ `components/file_list.rs` (`FileListHeader`, `FileRow`) |
 | `FileGrid.svelte` | grid with thumbnails | keep | ✓ `ui/file_grid.rs` | ✓ `components/file_grid.rs` (`FileTile`, `GridMetrics`) |
 | `FileThumbnail.svelte` | unused on master | — | — | — |
-| `DrivesView.svelte`, `DriveList.svelte`, `DriveRow.svelte`, `DriveCard.svelte` | This PC | keep | ✓ `ui/drives.rs` | ✓ `ui/drives.rs` |
+| `DrivesView.svelte`, `DriveList.svelte`, `DriveRow.svelte`, `DriveCard.svelte` | This PC | keep | ✓ `ui/drives.rs` | ✓ `components/drive_card.rs` (`DriveCard`, usage bar on `ProgressBar`); list rows still in `ui/drives.rs` |
 | `DriveContextMenu.svelte` | drive menu | keep | ✓ `context_menu.rs` | ◐ `ui/overlays.rs` |
 | `FileContextMenu.svelte`, `ui/ContextMenu.svelte` | file and empty-space menus | keep | ✓ `context_menu.rs` | ✓ `ui/overlays.rs` on `ContextMenu`, items as in `fileContextMenu.ts` |
 | `BrowseDialogs.svelte` | create, rename, delete, properties | keep | ✓ `dialogs.rs` | ✓ create, rename, delete and properties on `Modal`; every confirmation uses `workspace/confirm.rs` |
@@ -125,6 +125,7 @@ the web app renders the same manifest at `/dev/gallery` (dev server only).
 | `FileListHeader`, `FileRow` | `FileList.svelte` | full-window shot | ✓ `ui/file_list.rs` |
 | `SidebarSection`, `NavItem` | `Sidebar.svelte` | full-window shot | ✓ `ui/sidebar.rs` |
 | `FileTile`, `GridMetrics` | `FileGrid.svelte` | full-window shot | ✓ `ui/file_grid.rs` |
+| `DriveCard` | `DriveCard.svelte` | full-window shot (0.1% differs: label and live sizes) | ✓ `ui/drives.rs` |
 | `SettingsRow`, `SettingsTab` | `settings/SettingsRow.svelte`, `SettingsModal.svelte` | full-window shot (0.6% of the modal differs) | ✓ `ui/settings.rs` |
 
 Next: tabs, toolbar, status bar and drive cards, then move

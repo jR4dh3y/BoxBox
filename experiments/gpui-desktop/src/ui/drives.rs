@@ -1,51 +1,13 @@
 //! This PC: `DriveCard.svelte` cards or the `DriveList.svelte` table.
 
-use gpui::{div, prelude::*, px, AlignItems, Context, FontWeight, Window};
+use gpui::{div, prelude::*, px, Context, FontWeight, Window};
 
 use super::{icon, TextScale};
+use crate::components::{usage_bar, usage_text, DriveCard};
 use crate::api::DriveStats;
 use crate::format::file_size;
 use crate::theme::*;
 use crate::workspace::Workspace;
-
-/// `driveUsageLevel` → (bar colour, text colour).
-fn usage_colors(used_pct: f64) -> (u32, u32) {
-    if used_pct >= 90. {
-        (DANGER, DANGER)
-    } else if used_pct >= 75. {
-        (WARNING, WARNING)
-    } else {
-        (INFO, TEXT_MUTED)
-    }
-}
-
-/// `ProgressBar size="sm"`.
-fn usage_bar(used_pct: f64) -> impl IntoElement {
-    let (bar, _) = usage_colors(used_pct);
-    div()
-        .flex_1()
-        .h(px(4.))
-        .rounded_full()
-        .overflow_hidden()
-        .bg(c(SURFACE_ELEVATED))
-        .child(
-            div()
-                .h_full()
-                .rounded_full()
-                .bg(c(bar))
-                .w(gpui::relative((used_pct / 100.).clamp(0., 1.) as f32)),
-        )
-}
-
-fn usage_text(used_pct: f64) -> impl IntoElement {
-    let (_, text) = usage_colors(used_pct);
-    div()
-        .flex_none()
-        .text_11()
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(c(text))
-        .child(format!("{used_pct:.1}%"))
-}
 
 impl Workspace {
     pub(crate) fn render_drive_cards(
@@ -54,8 +16,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let width = self.browser_width(window);
-        // `@min-[49rem]:grid-cols-2 @min-[74rem]:grid-cols-3`
+        // `@min-[49rem]:grid-cols-2 @min-[74rem]:grid-cols-3`, against the content box inside p-6.
+        let width = self.browser_width(window) - 48.;
         let columns = if width >= 1184. {
             3
         } else if width >= 784. {
@@ -67,7 +29,9 @@ impl Workspace {
         for (row_index, chunk) in drives.chunks(columns).enumerate() {
             let mut row = div().flex().gap(px(16.));
             for (offset, drive) in chunk.iter().enumerate() {
-                row = row.child(self.render_drive_card(row_index * columns + offset, drive, cx));
+                // Taffy floors a flex item's base size at its padding and border, so a padded
+                // card would outgrow an empty column; a bare cell keeps columns equal, as grid does.
+                row = row.child(div().flex_1().flex_basis(px(0.)).min_w_0().flex().child(self.render_drive_card(row_index * columns + offset, drive, cx)));
             }
             for _ in chunk.len()..columns {
                 row = row.child(div().flex_1().flex_basis(px(0.)));
@@ -82,127 +46,9 @@ impl Workspace {
             .child(div().flex().flex_col().gap(px(16.)).children(rows))
     }
 
-    fn render_drive_card(
-        &self,
-        index: usize,
-        drive: &DriveStats,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn render_drive_card(&self, index: usize, drive: &DriveStats, cx: &mut Context<Self>) -> impl IntoElement {
         let name = drive.name.clone();
-        div()
-            .id(("drive-card", index))
-            .flex_1()
-            .flex_basis(px(0.))
-            .min_w_0()
-            .flex()
-            .gap(px(12.))
-            .rounded(px(8.))
-            .border_1()
-            .border_color(c(BORDER_PRIMARY))
-            .bg(c(SURFACE_SECONDARY))
-            .p(px(16.))
-            .cursor_pointer()
-            .hover({ let color = c(self.accent_hex()); move |style| style.border_color(color).bg(c(SURFACE_TERTIARY)) })
-            .child(
-                div()
-                    .size(px(88.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .map(|mut icon_box| {
-                        icon_box.style().align_self = Some(AlignItems::Center);
-                        icon_box
-                    })
-                    .rounded(px(4.))
-                    .bg(c(SURFACE_ELEVATED))
-                    .child(icon("hard-drive", 22., c(TEXT_SECONDARY))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .flex()
-                            .items_start()
-                            .gap(px(8.))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .text_sm_tw()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(drive.display_name().to_string()),
-                            )
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .rounded(px(4.))
-                                    .bg(c(SURFACE_ELEVATED))
-                                    .px(px(8.))
-                                    .py(px(2.))
-                                    .text_xs_tw()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .whitespace_nowrap()
-                                    .text_color(c(TEXT_SECONDARY))
-                                    .child(file_size(drive.total_bytes)),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .text_xs_tw()
-                            .text_color(c(TEXT_MUTED))
-                            .child(format!(
-                                "{} used · {} free",
-                                file_size(drive.used_bytes),
-                                file_size(drive.free_bytes)
-                            ))
-                            .when(drive.read_only, |line| {
-                                line.child(
-                                    div().ml(px(4.)).text_color(c(WARNING)).child("· Read-only"),
-                                )
-                            }),
-                    )
-                    .when_some(
-                        drive.device.clone().filter(|device| !device.is_empty()),
-                        |info, device| {
-                            info.child(
-                                div()
-                                    .flex()
-                                    .min_w_0()
-                                    .overflow_hidden()
-                                    .whitespace_nowrap()
-                                    .text_11()
-                                    .text_color(c(TEXT_MUTED))
-                                    .child(div().font_family(self.fonts.mono.clone()).child(device))
-                                    .when_some(
-                                        drive.fs_type.clone().filter(|fs| !fs.is_empty()),
-                                        |line, fs| {
-                                            line.child(
-                                                div()
-                                                    .text_color(c(TEXT_SECONDARY))
-                                                    .child(format!("\u{a0}· {fs}")),
-                                            )
-                                        },
-                                    ),
-                            )
-                        },
-                    )
-                    .child(
-                        div()
-                            .mt(px(2.))
-                            .flex()
-                            .items_center()
-                            .gap(px(12.))
-                            .child(usage_bar(drive.used_pct))
-                            .child(usage_text(drive.used_pct)),
-                    ),
-            )
+        DriveCard::new(("drive-card", index), drive.clone(), c(self.accent_hex()), self.fonts.mono.clone())
             .on_click(cx.listener(move |this, _, _, cx| this.navigate(name.clone(), cx)))
     }
 
