@@ -1,236 +1,121 @@
-// Command boxbox-mygo is a no-CEF desktop host prototype for BoxBox.
+// Command boxbox-mygo is the BoxBox desktop app on the system WebKitGTK.
 //
-// It deliberately keeps the existing authenticated local HTTP server and
-// Svelte frontend. MyGo supplies only the native window and WebKitGTK webview.
+// It runs the private BoxBox server on loopback and shows its Svelte frontend
+// in MyGo windows; see README.md.
 package main
 
 import (
-	"bufio"
-	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
+	"context"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"log"
-	"net"
-	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strings"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/egoist/mygo"
 )
 
-type desktopServer struct {
-	cmd       *exec.Cmd
-	stdin     io.WriteCloser
-	working   string
-	bootstrap string
-	stopOnce  sync.Once
-}
-
-func newDesktopServer(binary, dataDir string) (*desktopServer, error) {
-	working, err := os.MkdirTemp("", "boxbox-mygo-")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		_ = os.RemoveAll(working)
-		return nil, err
-	}
-
-	var tokenBytes [32]byte
-	if _, err := rand.Read(tokenBytes[:]); err != nil {
-		_ = os.RemoveAll(working)
-		return nil, err
-	}
-	token := hex.EncodeToString(tokenBytes[:])
-	home, err := os.UserHomeDir()
-	if err != nil {
-		_ = os.RemoveAll(working)
-		return nil, err
-	}
-
-	mounts := []map[string]any{{"name": "root", "path": "/", "read_only": false}, {"name": "home", "path": home, "read_only": false}}
-	for _, name := range []string{"Desktop", "Downloads", "Documents", "Music", "Pictures", "Videos"} {
-		path := filepath.Join(home, name)
-		if _, err := os.Stat(path); err == nil {
-			mounts = append(mounts, map[string]any{"name": strings.ToLower(name), "path": path, "read_only": false})
-		}
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		_ = os.RemoveAll(working)
-		return nil, err
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
-
-	config := map[string]any{
-		"port":             port,
-		"host":             "127.0.0.1",
-		"data_dir":         dataDir,
-		"allow_root_mount": true,
-		"mount_points":     mounts,
-	}
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		_ = os.RemoveAll(working)
-		return nil, err
-	}
-	configPath := filepath.Join(working, "config.json")
-	if err := os.WriteFile(configPath, configBytes, 0o600); err != nil {
-		_ = os.RemoveAll(working)
-		return nil, err
-	}
-
-	env := make([]string, 0, len(os.Environ())+1)
-	for _, value := range os.Environ() {
-		key := strings.SplitN(value, "=", 2)[0]
-		if strings.HasPrefix(key, "BOXBOX_") || strings.HasPrefix(key, "FM_") || key == "CONFIG_PATH" {
-			continue
-		}
-		env = append(env, value)
-	}
-	env = append(env, "BOXBOX_DESKTOP_TOKEN="+token)
-
-	cmd := exec.Command(binary, "--desktop", "--config", configPath)
-	cmd.Dir = working
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Env = env
-	cmd.Stderr = os.Stderr
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		_ = os.RemoveAll(working)
-		return nil, err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		_ = os.RemoveAll(working)
-		return nil, err
-	}
-	if err := cmd.Start(); err != nil {
-		_ = os.RemoveAll(working)
-		return nil, err
-	}
-
-	line, err := bufio.NewReader(stdout).ReadString('\n')
-	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		_ = os.RemoveAll(working)
-		return nil, fmt.Errorf("server exited before readiness: %w", err)
-	}
-	var ready struct {
-		URL string `json:"url"`
-	}
-	if err := json.Unmarshal([]byte(line), &ready); err != nil || ready.URL == "" {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		_ = os.RemoveAll(working)
-		return nil, fmt.Errorf("invalid server readiness message %q", strings.TrimSpace(line))
-	}
-
-	bootstrap := ready.URL + "/_desktop?" + url.Values{"token": {token}, "next": {"/browse"}}.Encode()
-	readyURL, err := url.Parse(ready.URL)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		_ = os.RemoveAll(working)
-		return nil, fmt.Errorf("invalid server URL %q: %w", ready.URL, err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		connection, dialErr := net.DialTimeout("tcp", readyURL.Host, 100*time.Millisecond)
-		if dialErr == nil {
-			_ = connection.Close()
-			break
-		}
-		if time.Now().After(deadline) {
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
-			_ = os.RemoveAll(working)
-			return nil, fmt.Errorf("desktop server did not accept connections: %w", dialErr)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return &desktopServer{cmd: cmd, stdin: stdin, working: working, bootstrap: bootstrap}, nil
-}
-
-func (s *desktopServer) stop() {
-	if s == nil {
-		return
-	}
-	s.stopOnce.Do(func() {
-		if s.cmd == nil || s.cmd.Process == nil {
-			return
-		}
-		if s.cmd.ProcessState == nil {
-			_ = syscall.Kill(-s.cmd.Process.Pid, syscall.SIGTERM)
-		}
-		_ = s.stdin.Close()
-		_ = s.cmd.Wait()
-		_ = os.RemoveAll(s.working)
-	})
-}
-
 func main() {
-	serverBinary := flag.String("server", "../dist/boxbox", "path to the built BoxBox server")
-	dataDir := flag.String("data-dir", "", "desktop data directory")
-	flag.Parse()
+	if err := run(); err != nil {
+		log.Printf("BoxBox: %v", err)
+		os.Exit(1)
+	}
+}
 
-	if *dataDir == "" {
-		configDir, err := os.UserConfigDir()
-		if err != nil {
-			log.Fatal(err)
+func run() error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	opts, err := parseLaunch(os.Args[1:], cwd, os.Getenv("BOXBOX_DESKTOP_URL"))
+	if err != nil {
+		return err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if opts.chooser != "" {
+		// An AppImage runs from a temporary mount; the image itself persists.
+		launcher := exe
+		if image := os.Getenv("APPIMAGE"); filepath.IsAbs(image) {
+			launcher = image
 		}
-		*dataDir = filepath.Join(configDir, "boxbox")
+		path, err := installChooserPortal(launcher, opts.chooser == "enable", os.Getenv)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Updated FileChooser routing in %s. Log in again to apply.\n", path)
+		return nil
 	}
-	binary, err := filepath.Abs(*serverBinary)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if _, err := os.Stat(binary); err != nil {
-		log.Fatalf("server binary %s: %v; build it with 'bun run build:single'", binary, err)
-	}
-
-	server, err := newDesktopServer(binary, *dataDir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer server.stop()
-	log.Printf("BoxBox MyGo server: %s", server.bootstrap)
 
 	mygo.App.SetName("BoxBox")
-	mygo.App.OnBeforeQuit(func(_ *mygo.QuitEvent) {
-		log.Print("BoxBox MyGo quitting")
+	// A later launch hands its command line to this one and exits; the
+	// remote URL in its environment travels as an argument.
+	if remote := os.Getenv("BOXBOX_DESKTOP_URL"); remote != "" {
+		os.Args = append(os.Args, "--remote", remote)
+	}
+	if !mygo.App.RequestSingleInstanceLock() {
+		return nil
+	}
+
+	dataDir := opts.dataDir
+	if dataDir == "" {
+		config, err := os.UserConfigDir()
+		if err != nil {
+			return err
+		}
+		dataDir = filepath.Join(config, "boxbox")
+	}
+	server, err := startServer(serverBinary(exe, opts.server), dataDir, thumbnailCommand(exe))
+	if err != nil {
+		return err
+	}
+	defer server.stop()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	drag := &gtkDrag{}
+	mygo.Bind(&DesktopDrag{server: server, drag: drag})
+	accelerated := hardwareAcceleration(dataDir)
+	mygo.App.SetDMABUFRenderer(renderer(accelerated))
+	app := newDesktopApp(ctx, server, drag, accelerated)
+
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
+		cancel()
 		server.stop()
 	})
-	mygo.App.WhenReady(func() {
-		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:           "BoxBox",
-			URL:             server.bootstrap,
-			Width:           1280,
-			Height:          800,
-			MinWidth:        640,
-			MinHeight:       420,
-			StateKey:        "main",
-			BackgroundColor: "light-dark(#ffffff, #181818)",
-		})
-		win.Page().OnDidFinishLoad(func() { log.Printf("BoxBox WebKit page loaded: %s", win.Page().URL()) })
-		win.Page().OnDidFailLoad(func(err *mygo.LoadError) {
-			log.Printf("BoxBox WebKit page failed: %v", err)
-		})
-		win.OnClosed(func() { log.Print("BoxBox MyGo window closed") })
+	mygo.App.OnSecondInstance(func(args []string, workingDir string) {
+		opts, err := parseLaunch(args, workingDir, "")
+		if err != nil {
+			log.Printf("Ignored a launch: %v", err)
+			return
+		}
+		app.handle(opts.request)
 	})
-
+	mygo.App.WhenReady(func() {
+		app.handle(opts.request)
+		go app.watchChoosers()
+	})
+	go func() {
+		select {
+		case <-server.ready:
+		case <-server.exited:
+		case <-time.After(30 * time.Second):
+			log.Print("The local BoxBox server did not start in time")
+			mygo.App.Quit()
+			return
+		}
+		select {
+		case <-server.exited:
+			log.Print("The local BoxBox server exited")
+			mygo.App.Quit()
+		case <-server.stopping:
+		}
+	}()
 	stopSignal := make(chan os.Signal, 1)
 	signal.Notify(stopSignal, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -238,7 +123,35 @@ func main() {
 		mygo.App.Quit()
 	}()
 	if err := mygo.App.Run(); err != nil && !errors.Is(err, syscall.EINTR) {
-		log.Fatal(err)
+		return err
 	}
-	log.Print("BoxBox MyGo event loop ended")
+	return nil
+}
+
+// serverBinary is the --server flag, the server beside this executable in a
+// bundle, or the repository's build for development.
+func serverBinary(exe, flag string) string {
+	if flag != "" {
+		return flag
+	}
+	if bundled := filepath.Join(filepath.Dir(exe), "boxbox-server"); isFile(bundled) {
+		return bundled
+	}
+	return filepath.Join(filepath.Dir(exe), "../dist/boxbox")
+}
+
+// thumbnailCommand is the media thumbnail worker beside this executable, or
+// nil, which leaves the server's built-in image thumbnails.
+func thumbnailCommand(exe string) []string {
+	dir := filepath.Dir(exe)
+	worker, library := filepath.Join(dir, "boxbox-thumbnail"), filepath.Join(dir, "libboxbox_thumbnail.so")
+	if !isFile(worker) || !isFile(library) {
+		return nil
+	}
+	return []string{worker, library}
+}
+
+func isFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
