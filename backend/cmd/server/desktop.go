@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,6 +31,27 @@ func desktopThumbnails(files service.FileStreamer) (service.ThumbnailService, er
 		return nil, fmt.Errorf("invalid desktop thumbnail command")
 	}
 	return service.NewThumbnailServiceWithRenderer(files, service.NewDesktopThumbnailRenderer(command)), nil
+}
+
+// desktopListener is the loopback socket a desktop host opened and passed
+// as descriptor 3 with BOXBOX_DESKTOP_LISTEN_FD=3, so it knows the origin and
+// can load the page while this server starts. Without it, the server binds.
+func desktopListener(addr string) (net.Listener, error) {
+	if os.Getenv("BOXBOX_DESKTOP_LISTEN_FD") != "3" {
+		return net.Listen("tcp", addr)
+	}
+	file := os.NewFile(3, "desktop-listener")
+	defer file.Close()
+	listener, err := net.FileListener(file)
+	if err != nil {
+		return nil, fmt.Errorf("inherited desktop listener: %w", err)
+	}
+	tcp, ok := listener.Addr().(*net.TCPAddr)
+	if !ok || !tcp.IP.Equal(net.IPv4(127, 0, 0, 1)) {
+		listener.Close()
+		return nil, fmt.Errorf("inherited desktop listener must be on 127.0.0.1, not %s", listener.Addr())
+	}
+	return listener, nil
 }
 
 func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {
