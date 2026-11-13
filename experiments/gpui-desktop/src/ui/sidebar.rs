@@ -109,6 +109,7 @@ impl Workspace {
             .bg(self.shell_background())
             .child(self.section("Drives", cx).children(drives))
             .when(!places.is_empty(), |sidebar| sidebar.child(self.section("Places", cx).children(places)))
+            .when(pane.api.is_local() && !self.devices.volumes.is_empty(), |sidebar| sidebar.child(self.render_devices(cx)))
             .when(pane.api.is_local(), |sidebar| {
                 sidebar.child(
                     div().debug_selector(|| "sidebar-trash".into()).child(
@@ -123,6 +124,46 @@ impl Workspace {
                 // px-5 py-2 text-xs text-text-muted
                 section.child(div().px(px(20.)).py(px(8.)).text_xs_tw().text_color(c(TEXT_MUTED)).child("No favorites yet"))
             }))
+    }
+}
+
+impl Workspace {
+    /// `Sidebar.svelte`'s Devices: a plain label, then each volume with an eject
+    /// button when it is mounted or removable.
+    fn render_devices(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let busy = self.devices.busy;
+        SidebarSection::new("devices", "Devices").children(self.devices.volumes.iter().enumerate().map(|(index, volume)| {
+            let (open, eject) = (volume.clone(), volume.clone());
+            let removable = volume.ejectable || volume.mount_point.is_some();
+            div()
+                .flex()
+                .items_center()
+                .pr(px(8.))
+                .child(
+                    div().flex_1().min_w_0().child(
+                        components::NavItem::new(SharedString::from(format!("volume-{index}")), volume.name.clone(), "hard-drive")
+                            .dim_icon(false)
+                            .disabled(busy)
+                            .on_click(cx.listener(move |this, _, _, cx| this.open_volume(open.clone(), cx))),
+                    ),
+                )
+                .when(removable, |row| {
+                    row.child(
+                        div()
+                            .id(SharedString::from(format!("volume-eject-{index}")))
+                            .flex_none()
+                            .p(px(4.))
+                            .rounded(px(4.))
+                            .when(!busy, |button| {
+                                button
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(c(SURFACE_SECONDARY)))
+                                    .on_click(cx.listener(move |this, _, _, cx| this.eject_volume(eject.clone(), cx)))
+                            })
+                            .child(crate::ui::icon("arrow-up-from-line", 14., c(TEXT_SECONDARY))),
+                    )
+                })
+        }))
     }
 }
 

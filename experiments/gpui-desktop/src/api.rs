@@ -187,6 +187,14 @@ impl Api {
     }
 
     /// Resolve a virtual local path. Remote paths are owned by the server.
+    /// The virtual path of a real local path, for a local provider that can reach it.
+    pub fn virtual_path(&self, real: &std::path::Path) -> Option<String> {
+        match &self.provider {
+            Provider::Local(local) => local.virtual_path(real),
+            Provider::Remote(_) => None,
+        }
+    }
+
     pub fn local_path(&self, path: &str) -> Result<Option<PathBuf>> {
         match &self.provider {
             Provider::Local(local) => local.local_path(path).map(Some),

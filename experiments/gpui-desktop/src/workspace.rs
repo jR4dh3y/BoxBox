@@ -18,6 +18,7 @@ use crate::theme::{c, SURFACE_PRIMARY, TEXT_PRIMARY};
 use crate::settings_state::{DesktopSettings, SettingsPanelState};
 
 pub(crate) mod favorites;
+mod devices;
 mod notifications;
 mod watching;
 pub(crate) mod operations;
@@ -211,6 +212,7 @@ pub struct Workspace {
     /// Why the name in the dialog was refused.
     pub(crate) dialog_error: Option<String>,
     pub(crate) notices: notifications::Notices,
+    pub(crate) devices: devices::Devices,
     pub(crate) settings_focus: FocusHandle,
     pub(crate) dialog_field: Entity<TextField>,
     pub(crate) location_editor: Option<LocationEditor>,
@@ -296,6 +298,7 @@ impl Workspace {
             operation_dialog: None,
             dialog_error: None,
             notices: Default::default(),
+            devices: Default::default(),
             settings_focus: cx.focus_handle(),
             dialog_field: dialog_field.clone(),
             location_editor: None,
@@ -330,6 +333,7 @@ impl Workspace {
         workspace.load_drives(PaneTarget(0), cx);
         workspace.load_pane(PaneTarget(0), cx);
         workspace.start_directory_watches(cx);
+        workspace.start_device_watch(cx);
         workspace
     }
 

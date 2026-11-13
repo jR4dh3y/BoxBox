@@ -264,6 +264,18 @@ impl LocalFiles {
     }
 
     /// Resolve an existing virtual path to a canonical native path for previews and thumbnails.
+    /// The virtual path for a real one, under the mount that holds it most closely.
+    pub fn virtual_path(&self, real: &Path) -> Option<String> {
+        let mount = self.mounts.iter().filter(|mount| real.starts_with(&mount.path)).max_by_key(|mount| mount.path.components().count())?;
+        let relative = real.strip_prefix(&mount.path).ok()?;
+        let mut path = mount.point.name.clone();
+        for part in relative.components() {
+            path.push('/');
+            path.push_str(&part.as_os_str().to_string_lossy());
+        }
+        Some(path)
+    }
+
     pub fn local_path(&self, path: &str) -> Result<PathBuf> {
         let (mount, candidate) = self.candidate_path(path)?;
         let resolved = fs::canonicalize(&candidate)

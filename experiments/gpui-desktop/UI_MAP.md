@@ -27,7 +27,7 @@ Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 | `PathEditor.svelte` | location suggestions | keep | ✗ | ✗ |
 | `SearchBar.svelte` | search field | keep | ✓ `search.rs` | ✓ `TextField` per pane |
 | `AddMenu.svelte` | **+** menu: new file, folder, upload | keep (upload → copy in) | ◐ context menu only | ✓ `ui/toolbar.rs` on `ContextMenu`; local folders say “Copy files here…” |
-| `Sidebar.svelte` | drives, places, Trash, favorites | keep | ✓ `ui/sidebar.rs`, `devices.rs` | ✓ `components/sidebar.rs` (`SidebarSection`, `NavItem`); no Devices yet |
+| `Sidebar.svelte` | drives, places, devices, Trash, favorites | keep | ✓ `ui/sidebar.rs`, `devices.rs` | ✓ `components/sidebar.rs` (`SidebarSection`, `NavItem`), Devices from UDisks2 |
 | `StatusBar.svelte` | counts, selection size, view switch | keep | ✓ `ui/status_bar.rs` | ✓ `ui/status_bar.rs` |
 | `LoadError.svelte` | folder load failure | keep | ◐ inline text | ◐ inline text |
 
@@ -150,7 +150,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Drag out | ◐ X11 only | ◐ X11 only |
 | Drop in from other apps | ✓ `dnd.rs` | ◐ |
 | OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✗ internal only |
-| Removable volumes: mount, eject | ✓ `devices.rs` (server) | ✗ |
+| Removable volumes: mount, eject | ✓ `devices.rs` (server) | ✓ `devices.rs`: UDisks2 over D-Bus (`zbus`), live; GVfs mounts (MTP, network) and LUKS unlock not yet |
 | Wayland rendering | ◐ untested | ◐ falls back to XWayland on Niri (stale frames); GPUI 0.2.2 panics if a new keyboard sends modifiers before its keymap (`wayland/client.rs:1267`), seen with a `wtype` virtual keyboard |
 | Keyboard focus movement, type-ahead | ✗ | ◐ arrow selection |
 

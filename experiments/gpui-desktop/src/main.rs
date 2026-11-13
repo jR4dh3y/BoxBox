@@ -3,6 +3,7 @@
 mod api;
 mod assets;
 mod components;
+mod devices;
 mod gallery;
 mod drag_out;
 mod format;

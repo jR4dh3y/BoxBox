@@ -743,6 +743,7 @@ name = "boxbox-gpui"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "async-channel 2.5.0",
  "boxbox-thumbnail",
  "chrono",
  "env_logger",
@@ -757,6 +758,7 @@ dependencies = [
  "unicode-segmentation",
  "ureq",
  "x11rb",
+ "zbus",
  "zip",
 ]
 
