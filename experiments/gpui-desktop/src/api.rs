@@ -292,13 +292,6 @@ impl Api {
         }
     }
 
-    pub fn save_text(&self, path: &str, content: &str) -> Result<FileInfo> {
-        match &self.provider {
-            Provider::Local(local) => local.save_text(path, content),
-            Provider::Remote(remote) => remote.save_text(path, content),
-        }
-    }
-
     /// Copies `source` to the exact virtual destination path, including its new name.
     pub fn copy(&self, source: &str, destination: &str) -> Result<()> {
         match &self.provider {
@@ -373,7 +366,6 @@ impl Api {
         }
     }
 }
-
 
 /// `parseDirectory`: entries carry only names under the shared parent path, so a name that
 /// could escape or nest under that path is rejected.

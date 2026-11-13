@@ -4,13 +4,14 @@
 use std::{collections::HashMap, fs, sync::Arc, time::Duration};
 
 use gpui::{
-    actions, div, prelude::*, px, relative, App, Context, FocusHandle, KeyBinding, KeyDownEvent,
-    NoAction, SharedString, Window,
+    actions, div, prelude::*, px, relative, App, Context, Entity, FocusHandle, KeyBinding,
+    SharedString, Subscription, Window,
 };
 
 use crate::api::{Api, TrashItem};
 use crate::pane::{Pane, ViewMode};
 pub use crate::pane::Load;
+use crate::components::{InputEvent, TextField};
 use crate::search;
 use crate::sort::{Sort, SortDir, SortField};
 use crate::theme::{c, SURFACE_PRIMARY, TEXT_PRIMARY};
@@ -108,10 +109,6 @@ actions!(
         OpenSettings,
         CloseSettings,
         FocusSearch,
-        SearchBackspace,
-        SearchSubmit,
-        SearchEscape,
-        SearchPaste,
         CreateFolder,
         CreateFile,
         RenameSelected,
@@ -131,17 +128,7 @@ actions!(
         FocusLocation,
         ToggleSplit,
         AddFavorite,
-        OperationBackspace,
-        OperationDelete,
-        OperationSelectAll,
-        OperationPaste,
-        OperationLeft,
-        OperationRight,
-        OperationHome,
-        OperationEnd,
-        OperationSubmit,
         OperationEscape,
-        SavePreview,
         SettingsSubmit,
         SettingsCancel,
         SettingsBackspace,
@@ -190,36 +177,6 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("space", PreviewActive, context),
         KeyBinding::new("ctrl-shift-5", ToggleSplit, context),
         KeyBinding::new("ctrl-b", AddFavorite, context),
-        KeyBinding::new("backspace", OperationBackspace, Some("OperationInput")),
-        KeyBinding::new("delete", OperationDelete, Some("OperationInput")),
-        KeyBinding::new("ctrl-a", OperationSelectAll, Some("OperationInput")),
-        KeyBinding::new("ctrl-v", OperationPaste, Some("OperationInput")),
-        KeyBinding::new("left", OperationLeft, Some("OperationInput")),
-        KeyBinding::new("right", OperationRight, Some("OperationInput")),
-        KeyBinding::new("home", OperationHome, Some("OperationInput")),
-        KeyBinding::new("end", OperationEnd, Some("OperationInput")),
-        KeyBinding::new("enter", OperationSubmit, Some("OperationInput")),
-        KeyBinding::new("escape", OperationEscape, Some("OperationInput")),
-        KeyBinding::new("backspace", OperationBackspace, Some("LocationInput")),
-        KeyBinding::new("delete", OperationDelete, Some("LocationInput")),
-        KeyBinding::new("ctrl-a", OperationSelectAll, Some("LocationInput")),
-        KeyBinding::new("ctrl-v", OperationPaste, Some("LocationInput")),
-        KeyBinding::new("left", OperationLeft, Some("LocationInput")),
-        KeyBinding::new("right", OperationRight, Some("LocationInput")),
-        KeyBinding::new("home", OperationHome, Some("LocationInput")),
-        KeyBinding::new("end", OperationEnd, Some("LocationInput")),
-        KeyBinding::new("enter", OperationSubmit, Some("LocationInput")),
-        KeyBinding::new("escape", OperationEscape, Some("LocationInput")),
-        KeyBinding::new("backspace", OperationBackspace, Some("PreviewInput")),
-        KeyBinding::new("delete", OperationDelete, Some("PreviewInput")),
-        KeyBinding::new("ctrl-a", OperationSelectAll, Some("PreviewInput")),
-        KeyBinding::new("ctrl-v", OperationPaste, Some("PreviewInput")),
-        KeyBinding::new("left", OperationLeft, Some("PreviewInput")),
-        KeyBinding::new("right", OperationRight, Some("PreviewInput")),
-        KeyBinding::new("home", OperationHome, Some("PreviewInput")),
-        KeyBinding::new("end", OperationEnd, Some("PreviewInput")),
-        KeyBinding::new("enter", OperationSubmit, Some("PreviewInput")),
-        KeyBinding::new("ctrl-s", SavePreview, Some("PreviewInput")),
         KeyBinding::new("escape", OperationEscape, Some("PreviewInput")),
         KeyBinding::new("enter", SettingsSubmit, Some("SettingsInput")),
         KeyBinding::new("escape", SettingsCancel, Some("SettingsInput")),
@@ -227,11 +184,6 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("backspace", SettingsBackspace, Some("SettingsInput")),
         KeyBinding::new("ctrl-v", SettingsPaste, Some("SettingsInput")),
         KeyBinding::new("ctrl-a", SettingsSelectAll, Some("SettingsInput")),
-        KeyBinding::new("backspace", SearchBackspace, Some("SearchInput")),
-        KeyBinding::new("enter", SearchSubmit, Some("SearchInput")),
-        KeyBinding::new("escape", SearchEscape, Some("SearchInput")),
-        KeyBinding::new("ctrl-v", SearchPaste, Some("SearchInput")),
-        KeyBinding::new("ctrl-a", NoAction, Some("SearchInput")),
     ]);
 }
 
@@ -256,7 +208,8 @@ pub struct Workspace {
     trash_provider: Option<Arc<Api>>,
     pub(crate) fonts: Fonts,
     pub(crate) focus_handle: FocusHandle,
-    pub(crate) search_focus: FocusHandle,
+    /// One search field per pane, as each pane's toolbar has one.
+    pub(crate) search_fields: HashMap<usize, (Entity<TextField>, Subscription)>,
     pub(crate) settings_open: bool,
     pub(crate) settings_section: SettingsSection,
     pub(crate) preferences: Preferences,
@@ -264,11 +217,15 @@ pub struct Workspace {
     pub(crate) settings_panel: SettingsPanelState,
     pub(crate) operation_status: OperationStatus,
     pub(crate) operation_dialog: Option<OperationDialog>,
-    pub(crate) operation_focus: FocusHandle,
+    pub(crate) settings_focus: FocusHandle,
+    pub(crate) dialog_field: Entity<TextField>,
     pub(crate) location_editor: Option<LocationEditor>,
-    pub(crate) location_focus: FocusHandle,
+    pub(crate) location_field: Entity<TextField>,
+    _subscriptions: Vec<Subscription>,
     pub(crate) file_clipboard: Option<FileClipboard>,
     pub(crate) context_menu: Option<ContextMenuState>,
+    /// The pane whose toolbar "+" menu is open.
+    pub(crate) add_menu: Option<PaneTarget>,
     pub(crate) preview: Option<PreviewState>,
     pub(crate) preview_focus: FocusHandle,
     pub(crate) properties: Option<PropertiesState>,
@@ -300,6 +257,8 @@ impl Workspace {
             preference_sort(&preferences),
             preference_view(&preferences),
         );
+        let dialog_field = cx.new(|cx| TextField::new("", cx));
+        let location_field = cx.new(|cx| TextField::new("Type a location", cx));
         let mut workspace = Self {
             directory_watches: watching::DirectoryWatches::default(),
             tabs: vec![initial_pane],
@@ -314,7 +273,7 @@ impl Workspace {
             trash_provider: None,
             fonts,
             focus_handle,
-            search_focus: cx.focus_handle(),
+            search_fields: HashMap::new(),
             settings_open: false,
             settings_section: SettingsSection::General,
             preferences,
@@ -322,11 +281,17 @@ impl Workspace {
             settings_panel: SettingsPanelState::default(),
             operation_status: OperationStatus::Idle,
             operation_dialog: None,
-            operation_focus: cx.focus_handle(),
+            settings_focus: cx.focus_handle(),
+            dialog_field: dialog_field.clone(),
             location_editor: None,
-            location_focus: cx.focus_handle(),
+            location_field: location_field.clone(),
+            _subscriptions: vec![
+                cx.subscribe_in(&dialog_field, window, |this, _, event, window, cx| this.on_dialog_field(event, window, cx)),
+                cx.subscribe_in(&location_field, window, |this, _, event, window, cx| this.on_location_field(event, window, cx)),
+            ],
             file_clipboard: None,
             context_menu: None,
+            add_menu: None,
             preview: None,
             preview_focus: cx.focus_handle(),
             properties: None,
@@ -876,10 +841,6 @@ impl Workspace {
         .detach();
     }
 
-    fn schedule_search(&mut self, delay: Duration, cx: &mut Context<Self>) {
-        self.schedule_search_for(self.active_pane.0, delay, cx);
-    }
-
     fn run_search(&mut self, pane_id: usize, cx: &mut Context<Self>) {
         let Some(pane) = self.pane_mut_by_id(pane_id) else {
             return;
@@ -911,61 +872,62 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Edits the search text; a request follows after the debounce.
-    fn edit_search(&mut self, edit: impl FnOnce(&mut String) -> bool, cx: &mut Context<Self>) {
-        let mut input = self.pane().search_input.clone();
-        if edit(&mut input) && self.pane_mut().set_search_input(input) {
-            self.schedule_search(search::DEBOUNCE, cx);
+    /// Creates a search field for each new pane and drops those of closed panes.
+    pub(crate) fn sync_search_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let ids = self.all_pane_ids();
+        self.search_fields.retain(|id, _| ids.contains(id));
+        for id in ids {
+            if self.search_fields.contains_key(&id) {
+                continue;
+            }
+            let field = cx.new(|cx| TextField::new("Search files and folders...", cx));
+            let subscription =
+                cx.subscribe_in(&field, window, move |this, _, event, window, cx| this.on_search_field(id, event, window, cx));
+            self.search_fields.insert(id, (field, subscription));
+        }
+        // Navigation clears a pane's search, so the field follows the pane.
+        for (id, (field, _)) in &self.search_fields {
+            let Some(pane) = self.pane_by_id(*id) else { continue };
+            if field.read(cx).text() != pane.search_input {
+                let text = pane.search_input.clone();
+                let end = text.len();
+                field.update(cx, |field, cx| field.set_text(text, end..end, cx));
+            }
+        }
+    }
+
+    fn on_search_field(&mut self, pane_id: usize, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((field, _)) = self.search_fields.get(&pane_id) else { return };
+        match event {
+            InputEvent::Changed => {
+                let text = field.read(cx).text().to_string();
+                if self.pane_mut_by_id(pane_id).is_some_and(|pane| pane.set_search_input(text)) {
+                    self.schedule_search_for(pane_id, search::DEBOUNCE, cx);
+                }
+            }
+            // Enter searches now instead of waiting for the debounce.
+            InputEvent::Submit => self.schedule_search_for(pane_id, Duration::ZERO, cx),
+            InputEvent::Cancel => {
+                if let Some(pane) = self.pane_mut_by_id(pane_id) {
+                    pane.clear_search();
+                }
+                window.focus(&self.focus_handle);
+            }
         }
         cx.notify();
     }
 
-    pub(crate) fn clear_search_input(&mut self, cx: &mut Context<Self>) {
-        self.pane_mut().clear_search();
-        cx.notify();
+    pub(crate) fn search_field(&self, pane_id: usize) -> Option<&Entity<TextField>> {
+        self.search_fields.get(&pane_id).map(|(field, _)| field)
     }
 
     fn focus_search(&mut self, _: &FocusSearch, window: &mut Window, cx: &mut Context<Self>) {
         if !self.pane().is_at_root() {
-            window.focus(&self.search_focus);
+            if let Some(field) = self.search_field(self.active_pane.0) {
+                field.read(cx).focus(window);
+            }
             cx.notify();
         }
-    }
-
-    pub(crate) fn search_key_down(
-        &mut self,
-        event: &KeyDownEvent,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let keystroke = &event.keystroke;
-        if keystroke.modifiers.control || keystroke.modifiers.platform {
-            return;
-        }
-        if let Some(text) = keystroke.key_char.clone() {
-            self.edit_search(|input| search::insert_text(input, &text), cx);
-        }
-    }
-
-    fn search_backspace(&mut self, _: &SearchBackspace, _: &mut Window, cx: &mut Context<Self>) {
-        self.edit_search(search::backspace, cx);
-    }
-
-    fn search_paste(&mut self, _: &SearchPaste, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
-            return;
-        };
-        self.edit_search(|input| search::insert_text(input, &text), cx);
-    }
-
-    /// Enter searches now instead of waiting for the debounce.
-    fn search_submit(&mut self, _: &SearchSubmit, _: &mut Window, cx: &mut Context<Self>) {
-        self.schedule_search(Duration::ZERO, cx);
-    }
-
-    fn search_escape(&mut self, _: &SearchEscape, window: &mut Window, cx: &mut Context<Self>) {
-        self.clear_search_input(cx);
-        window.focus(&self.focus_handle);
     }
 
     fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
@@ -1054,7 +1016,7 @@ impl Workspace {
     ) {
         self.settings_open = true;
         self.settings_section = SettingsSection::General;
-        self.operation_focus.focus(window);
+        self.settings_focus.focus(window);
         cx.notify();
     }
 
@@ -1109,6 +1071,7 @@ fn preference_view(preferences: &Preferences) -> ViewMode {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_search_fields(window, cx);
         let primary = PaneTarget(self.tabs[self.active_tab].id);
         let mut browsers = div().flex().flex_1().min_h_0().min_w_0()
             .child(self.render_browser(primary, window, cx));
@@ -1151,10 +1114,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::open_settings))
             .on_action(cx.listener(Self::close_settings))
             .on_action(cx.listener(Self::focus_search))
-            .on_action(cx.listener(Self::search_backspace))
-            .on_action(cx.listener(Self::search_paste))
-            .on_action(cx.listener(Self::search_submit))
-            .on_action(cx.listener(Self::search_escape))
             .on_action(cx.listener(Self::create_folder))
             .on_action(cx.listener(Self::create_file))
             .on_action(cx.listener(Self::rename_selected))
@@ -1174,26 +1133,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::focus_location))
             .on_action(cx.listener(Self::toggle_split))
             .on_action(cx.listener(Self::add_favorite))
-            .on_action(cx.listener(Self::operation_backspace))
-            .on_action(cx.listener(Self::operation_submit))
             .on_action(cx.listener(Self::operation_escape))
-            .on_action(cx.listener(Self::operation_delete))
-            .on_action(cx.listener(Self::operation_select_all))
-            .on_action(cx.listener(Self::operation_paste))
-            .on_action(cx.listener(Self::operation_left))
-            .on_action(cx.listener(Self::operation_right))
-            .on_action(cx.listener(Self::operation_home))
-            .on_action(cx.listener(Self::operation_end))
-            .on_action(cx.listener(Self::save_preview))
-            // The search field stops its own clicks, so any other click leaves it.
-            .on_mouse_down(
-                gpui::MouseButton::Left,
-                cx.listener(|this, _, window, _| {
-                    if this.search_focus.is_focused(window) {
-                        window.focus(&this.focus_handle);
-                    }
-                }),
-            )
             .relative()
             .size_full()
             .flex()
@@ -1223,7 +1163,7 @@ impl Render for Workspace {
             .when(self.context_menu.is_some(), |root| root.child(self.render_context_menu(cx)))
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
             .when(self.operation_dialog.is_some(), |root| {
-                root.child(self.render_operation_dialog(cx))
+                root.child(self.render_operation_dialog(window, cx))
             })
     }
 }

@@ -23,10 +23,10 @@ Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 | `desktop/BrowseWorkspace.svelte` | tabs, split panes | keep | ✓ `ui/tabs.rs`, `workspace.rs` | ✓ same |
 | `BrowseBrowser.svelte` | one pane: toolbar, view, drops, keys | keep | ✓ `ui/browser.rs` | ✓ `ui/browser.rs` |
 | `Toolbar.svelte` | back/forward, location, search, actions | keep | ✓ `ui/toolbar.rs` | ✓ `ui/toolbar.rs` |
-| `EditablePathBar.svelte` | breadcrumbs ↔ text location | keep | ✓ `location.rs`, `ui/text_input.rs` | ◐ `render_path_bar`, custom field |
+| `EditablePathBar.svelte` | breadcrumbs ↔ text location | keep | ✓ `location.rs`, `ui/text_input.rs` | ✓ `render_path_bar` with `TextField` |
 | `PathEditor.svelte` | location suggestions | keep | ✗ | ✗ |
-| `SearchBar.svelte` | search field | keep | ✓ `search.rs` | ✓ `search.rs` |
-| `AddMenu.svelte` | **+** menu: new file, folder, upload | keep (upload → copy in) | ◐ context menu only | ◐ context menu only |
+| `SearchBar.svelte` | search field | keep | ✓ `search.rs` | ✓ `TextField` per pane |
+| `AddMenu.svelte` | **+** menu: new file, folder, upload | keep (upload → copy in) | ◐ context menu only | ✓ `ui/toolbar.rs` on `ContextMenu`; local folders say “Copy files here…” |
 | `Sidebar.svelte` | drives, places, Trash, favorites | keep | ✓ `ui/sidebar.rs`, `devices.rs` | ✓ `components/sidebar.rs` (`SidebarSection`, `NavItem`); no Devices yet |
 | `StatusBar.svelte` | counts, selection size, view switch | keep | ✓ `ui/status_bar.rs` | ✓ `ui/status_bar.rs` |
 | `LoadError.svelte` | folder load failure | keep | ◐ inline text | ◐ inline text |
@@ -40,8 +40,8 @@ Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 | `FileThumbnail.svelte` | unused on master | — | — | — |
 | `DrivesView.svelte`, `DriveList.svelte`, `DriveRow.svelte`, `DriveCard.svelte` | This PC | keep | ✓ `ui/drives.rs` | ✓ `ui/drives.rs` |
 | `DriveContextMenu.svelte` | drive menu | keep | ✓ `context_menu.rs` | ◐ `ui/overlays.rs` |
-| `FileContextMenu.svelte`, `ui/ContextMenu.svelte` | file and empty-space menus | keep | ✓ `context_menu.rs` | ✓ `ui/overlays.rs` |
-| `BrowseDialogs.svelte` | create, rename, delete, properties | keep | ✓ `dialogs.rs` | ✓ `ui/operations.rs`, `ui/overlays.rs` |
+| `FileContextMenu.svelte`, `ui/ContextMenu.svelte` | file and empty-space menus | keep | ✓ `context_menu.rs` | ✓ `ui/overlays.rs` on `ContextMenu`, items as in `fileContextMenu.ts`; no “Open with…” yet |
+| `BrowseDialogs.svelte` | create, rename, delete, properties | keep | ✓ `dialogs.rs` | ◐ create, rename, properties on `Modal`; delete asks with the system prompt |
 | `ui/InlineRename.svelte` | rename in place | keep | ◐ dialog instead | ◐ dialog instead |
 | `KeyboardShortcutsDialog.svelte` | F1 shortcuts | keep | ✓ claimed | ✗ |
 
@@ -49,9 +49,9 @@ Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 
 | Svelte | Role | Native scope | PR | Local |
 |---|---|---|---|---|
-| `FilePreview.svelte` | preview frame, ←/→ stepping | keep, read-only | ✓ claimed | ◐ `ui/overlays.rs` |
+| `FilePreview.svelte` | preview frame, ←/→ stepping | keep, read-only | ✓ claimed | ◐ `ui/overlays.rs` on `Modal`, read-only; no stepping |
 | `preview/ImagePreview.svelte` | image with zoom | keep | ✓ claimed | ◐ no zoom |
-| `preview/CodePreview.svelte` | text and code | keep, read-only | ✓ claimed | ◐ edits without IME |
+| `preview/CodePreview.svelte` | text and code | keep, read-only | ✓ claimed | ✓ read-only text |
 | `preview/PdfPreview.svelte` | PDF | first page only | ✓ claimed | ◐ thumbnail |
 | `preview/VideoPreview.svelte`, `preview/AudioPreview.svelte` | playback | — native app | — | — |
 | `preview/OfficePreview.svelte`, `preview/NotebookPreview.svelte` | documents | — native app | — | — |
@@ -93,11 +93,11 @@ freedesktop thumbnailers and shared cache (`~/.cache/thumbnails`).
 
 | Svelte | Native scope | PR | Local |
 |---|---|---|---|
-| `ui/Input.svelte` | real text input with selection, IME and clipboard | ✓ `ui/text_input.rs` | ◐ `components/input.rs` frame; editing still custom, no IME |
+| `ui/Input.svelte` | real text input with selection, IME and clipboard | ✓ `ui/text_input.rs` | ✓ `components/input.rs` frame + `components/text_field.rs` (from PR #226, scrolls to the caret); settings fields still custom |
 | `ui/Modal.svelte`, `ui/Button.svelte` | keep | ✓ `ui/modal.rs` | ◐ `components/modal.rs`, `components/button.rs`; dialogs not moved yet |
 | `ui/Select.svelte`, `ui/Toggle.svelte` | keep | ✓ `segmented`, `toggle` | ◐ `components/select.rs`, `components/toggle.rs`; settings not moved yet |
 | `ui/ProgressBar.svelte`, `ui/Spinner.svelte` | keep | ◐ in `jobs.rs` | ◐ `components/progress_bar.rs`; no spinner |
-| `ui/ContextMenu.svelte`, `ui/Toast.svelte` | keep | ✓ | ◐ `components/context_menu.rs`, `components/toast.rs`; views not moved yet |
+| `ui/ContextMenu.svelte`, `ui/Toast.svelte` | keep | ✓ | ✓ `components/context_menu.rs` used by menus; ◐ `components/toast.rs` not used yet |
 
 ## Shared components
 
@@ -114,13 +114,13 @@ the web app renders the same manifest at `/dev/gallery` (dev server only).
 
 | Component | Svelte | Gallery | Used by views |
 |---|---|---|---|
-| `Button` | `ui/Button.svelte` | ✓ 8 variants and sizes | not yet |
-| `Input` | `ui/Input.svelte` | ✓ | not yet |
+| `Button` | `ui/Button.svelte` | ✓ 8 variants and sizes | ✓ name dialog |
+| `Input`, `TextField` | `ui/Input.svelte` | ✓ | ✓ name dialog |
 | `Toggle` | `ui/Toggle.svelte` | ✓ (disabled knob is an exception: GPUI has no group opacity) | not yet |
 | `Select` | `ui/Select.svelte` | ✓ | not yet |
 | `ProgressBar` | `ui/ProgressBar.svelte` | ✓ | not yet |
-| `ContextMenu`, `MenuItem` | `ui/ContextMenu.svelte` | ✓ | not yet |
-| `Modal` | `ui/Modal.svelte` | ✓ | not yet |
+| `ContextMenu`, `MenuItem` | `ui/ContextMenu.svelte` | ✓ | ✓ file menu, **+** menu |
+| `Modal` | `ui/Modal.svelte` | ✓ | ✓ dialogs, properties, preview |
 | `Toast` | `ui/Toast.svelte` | ✓ | not yet |
 | `FileListHeader`, `FileRow` | `FileList.svelte` | full-window shot | ✓ `ui/file_list.rs` |
 | `SidebarSection`, `NavItem` | `Sidebar.svelte` | full-window shot | ✓ `ui/sidebar.rs` |
@@ -150,7 +150,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Drop in from other apps | ✓ `dnd.rs` | ◐ |
 | OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✗ internal only |
 | Removable volumes: mount, eject | ✓ `devices.rs` (server) | ✗ |
-| Wayland rendering | ◐ untested | ◐ falls back to XWayland on Niri (stale frames) |
+| Wayland rendering | ◐ untested | ◐ falls back to XWayland on Niri (stale frames); GPUI 0.2.2 panics if a new keyboard sends modifiers before its keymap (`wayland/client.rs:1267`), seen with a `wtype` virtual keyboard |
 | Keyboard focus movement, type-ahead | ✗ | ◐ arrow selection |
 
 ## Joining the two lines

@@ -438,7 +438,7 @@ impl Workspace {
                         MouseButton::Left,
                         cx.listener(move |this, _, window, cx| {
                             this.focus_settings_input(field);
-                            window.focus(&this.operation_focus);
+                            window.focus(&this.settings_focus);
                             cx.stop_propagation();
                             cx.notify();
                         }),
@@ -1925,7 +1925,7 @@ impl Workspace {
             .right_0()
             .bottom_0()
             .key_context("SettingsInput")
-            .track_focus(&self.operation_focus)
+            .track_focus(&self.settings_focus)
             .on_key_down(cx.listener(Self::settings_key_down))
             .on_action(cx.listener(|this, _: &crate::workspace::SettingsSubmit, _, cx| this.submit_settings_dialog(cx)))
             .on_action(cx.listener(|this, _: &crate::workspace::SettingsCancel, window, cx| this.cancel_settings_dialog(window, cx)))
@@ -2003,7 +2003,7 @@ impl Workspace {
 
         div()
             .id("settings-overlay")
-            .when(self.settings_panel.dialog.is_none(), |panel| panel.track_focus(&self.operation_focus).key_context("SettingsPanel"))
+            .when(self.settings_panel.dialog.is_none(), |panel| panel.track_focus(&self.settings_focus).key_context("SettingsPanel"))
             .absolute()
             .top_0()
             .left_0()

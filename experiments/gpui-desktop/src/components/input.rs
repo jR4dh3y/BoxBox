@@ -65,7 +65,7 @@ impl RenderOnce for Input {
             .whitespace_nowrap()
             .when(self.disabled, |el| el.opacity(0.5))
             .map(|el| match self.editor {
-                Some(editor) => el.child(editor),
+                Some(editor) => el.text_color(c(TEXT_PRIMARY)).child(editor),
                 None if empty => el.text_color(c(TEXT_MUTED)).child(self.placeholder),
                 None => el.text_color(c(TEXT_PRIMARY)).child(self.value),
             })

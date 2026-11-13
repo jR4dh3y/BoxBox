@@ -7,7 +7,7 @@ mod trash;
 use std::collections::{HashSet, VecDeque};
 use std::ffi::CString;
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::SystemTime;
 
@@ -305,27 +305,6 @@ impl LocalFiles {
             .read_to_end(&mut contents)?;
         ensure!(contents.len() <= max_bytes, "{path} exceeds the text size limit");
         String::from_utf8(contents).with_context(|| format!("{path} is not UTF-8 text"))
-    }
-
-    /// Replace an existing regular text file; symlinks and directories are not followed.
-    pub fn save_text(&self, path: &str, content: &str) -> Result<FileInfo> {
-        let (mount, entry) = self.resolve_entry(path)?;
-        let metadata = fs::symlink_metadata(&entry)
-            .with_context(|| format!("cannot inspect {path}"))?;
-        ensure!(metadata.is_file(), "{path} is not a regular file");
-        self.ensure_mutable_target(&entry, false)?;
-        let mut options = OpenOptions::new();
-        options.write(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt as _;
-            options.custom_flags(libc::O_NOFOLLOW);
-        }
-        let mut file = options.open(&entry).with_context(|| format!("cannot write {path}"))?;
-        file.write_all(content.as_bytes())
-            .with_context(|| format!("cannot write {path}"))?;
-        file.flush()?;
-        self.info_for_path(mount, parent_of_virtual(path), &entry)
     }
 
     pub fn create_file(&self, parent: &str, name: &str, content: &str) -> Result<FileInfo> {

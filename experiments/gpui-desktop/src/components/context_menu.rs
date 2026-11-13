@@ -60,9 +60,14 @@ impl MenuItem {
             Self::Separator => div().mx(px(8.)).my(px(4.)).h(px(1.)).bg(c(BORDER_SECONDARY)).into_any_element(),
             // flex w-full items-center gap-3 px-3 py-2 text-[13px]
             Self::Action { id, label, icon: glyph, shortcut, disabled, on_select } => div()
+                .debug_selector({
+                    let id = id.to_string();
+                    move || id
+                })
                 .id(id)
+                // No w-full: a percentage of the content-sized panel resolves to the row's own
+                // width, so rows stretch in the column instead and shortcuts line up.
                 .flex()
-                .w_full()
                 .items_center()
                 .gap(px(12.))
                 .px(px(12.))

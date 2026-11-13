@@ -57,14 +57,6 @@ pub fn read_text_preview(api: &Api, item: &FileInfo) -> Result<String> {
         .with_context(|| format!("cannot read text preview for {}", item.path))
 }
 
-/// Save a complete text value to the local file or through the remote provider.
-pub fn save_text(api: &Api, item: &FileInfo, content: &str) -> Result<()> {
-    ensure_file(item)?;
-    api.save_text(&item.path, content)
-        .with_context(|| format!("cannot save {}", item.path))?;
-    Ok(())
-}
-
 /// Return a PNG thumbnail, rendering local files natively and requesting remote thumbnails directly.
 pub fn thumbnail(api: &Api, item: &FileInfo, width: u32, height: u32) -> Result<Vec<u8>> {
     ensure_file(item)?;

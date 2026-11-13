@@ -3,16 +3,16 @@
 use std::time::Duration;
 
 use gpui::{
-    div, percentage, prelude::*, px, Animation, AnimationExt as _, AnyElement, Context,
-    MouseButton, Transformation, Window,
+    anchored, deferred, div, percentage, point, prelude::*, px, AnchoredPositionMode, Animation,
+    AnimationExt as _, AnyElement, Context, Transformation, Window,
 };
 
 use super::{icon, TextScale};
 use crate::pane::Search;
-use crate::search;
 use crate::theme::*;
 use crate::workspace::operations::PaneTarget;
-use crate::workspace::{Back, CreateFolder, Forward, OpenSettings, Refresh, Workspace};
+use crate::components::{ContextMenu, MenuItem};
+use crate::workspace::{Back, CreateFile, CreateFolder, Forward, OpenSettings, Refresh, Workspace};
 
 struct Crumb {
     label: String,
@@ -87,13 +87,23 @@ impl Workspace {
     }
 
     fn render_path_bar(&self, target: PaneTarget, cx: &mut Context<Self>) -> impl IntoElement {
-        if let Some(editor) = self.location_editor.as_ref().filter(|editor| editor.target_id == target.0) {
-            let (before, selected, after) = editor.input.display_parts();
-            return div().id("location-input").key_context("LocationInput").track_focus(&self.location_focus)
-                .on_key_down(cx.listener(|this, event, _, cx| this.operation_key_down(event, cx)))
-                .flex_1().min_w_0().px(px(8.)).py(px(4.)).border_1().border_color(c(self.accent_hex()))
-                .child(before.to_owned()).when_some(selected.map(str::to_owned), |input, selected| input.child(div().bg(c(self.accent_hex())).child(selected)))
-                .child(after.to_owned()).into_any_element();
+        if self.location_editor.as_ref().is_some_and(|editor| editor.target_id == target.0) {
+            // The same box as the breadcrumbs, holding the text field.
+            return div()
+                .flex()
+                .flex_1()
+                .min_w_0()
+                .items_center()
+                .rounded(px(4.))
+                .border_1()
+                .border_color(c(BORDER_FOCUS))
+                .bg(self.chrome_background())
+                .px(px(8.))
+                .py(px(4.))
+                .text_13()
+                .text_color(c(TEXT_PRIMARY))
+                .child(self.location_field.clone())
+                .into_any_element();
         }
         let crumbs = self.breadcrumbs(target);
         let last = crumbs.len().saturating_sub(1);
@@ -164,15 +174,9 @@ impl Workspace {
             .child(content).into_any_element()
     }
 
-    /// `SearchBar.svelte` (compact): a focusable field fed by key-down events, so text goes in
-    /// at the end only and there is no IME or caret movement.
-    fn render_search(
-        &self,
-        target: PaneTarget,
-        toolbar_width: f32,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    /// `SearchBar.svelte` (compact): the pane's text field with a search icon, or a
+    /// spinner while a search runs, and a clear button.
+    fn render_search(&self, target: PaneTarget, toolbar_width: f32, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         // `w-28 @lg:w-48 @3xl:w-64 @5xl:w-96` against the toolbar's container width.
         let width = match toolbar_width {
             w if w >= 1024. => 384.,
@@ -181,11 +185,8 @@ impl Workspace {
             _ => 112.,
         };
         let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
-        let focused = self.search_focus.is_focused(window);
-        let input = &pane.search_input;
-        // Icon, clear button and padding take about 70px; 14px text averages 7px a character.
-        let max_chars = ((width - 70.) / 7.0_f32).max(4.) as usize;
-        let shown = search::visible_tail(input, max_chars);
+        let field = self.search_field(target.0).cloned();
+        let focused = field.as_ref().is_some_and(|field| field.read(cx).is_focused(window));
         let loading = matches!(pane.search, Search::Loading);
         let glyph: AnyElement = if loading {
             icon("refresh-cw", 16., c(self.accent_hex()))
@@ -200,17 +201,6 @@ impl Workspace {
         };
         div()
             .id("search")
-            .key_context("SearchInput")
-            .track_focus(&self.search_focus)
-            .on_key_down(cx.listener(Self::search_key_down))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _, window, cx| {
-                    window.focus(&this.search_focus);
-                    cx.stop_propagation();
-                    cx.notify();
-                }),
-            )
             .w(px(width))
             .flex_shrink()
             .min_w(px(112.))
@@ -223,46 +213,68 @@ impl Workspace {
             .pr(px(12.))
             .rounded(px(4.))
             .border_1()
-            .border_color(c(if focused { self.accent_hex() } else { BORDER_PRIMARY }))
+            .border_color(c(if focused { BORDER_FOCUS } else { BORDER_PRIMARY }))
             .bg(self.chrome_background())
             .text_sm_tw()
-            .cursor_text()
+            .text_color(c(TEXT_PRIMARY))
             .overflow_hidden()
             .child(glyph)
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_w_0()
-                    .items_center()
-                    .whitespace_nowrap()
-                    .overflow_hidden()
-                    .when(input.is_empty(), |field| {
-                        field
-                            .text_color(c(TEXT_MUTED))
-                            .child(div().truncate().child("Search files and folders..."))
-                    })
-                    .when(!input.is_empty(), |field| {
-                        field.text_color(c(TEXT_PRIMARY)).child(shown)
-                    })
-                    .when(focused, |field| {
-                        field.child(div().w(px(1.)).h(px(14.)).flex_none().bg(c(TEXT_PRIMARY)))
-                    }),
-            )
-            .when(!input.is_empty(), |field| {
-                field.child(
+            .when_some(field, |row, field| row.child(field))
+            .when(!pane.search_input.is_empty(), |row| {
+                row.child(
                     div()
                         .id("search-clear")
                         .flex_none()
                         .cursor_pointer()
                         .child(icon("x", 14., c(TEXT_MUTED)))
-                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.clear_search_input(cx);
-                            window.focus(&this.search_focus);
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            if let Some(pane) = this.pane_mut_by_id(target.0) {
+                                pane.clear_search();
+                            }
+                            if let Some(field) = this.search_field(target.0) {
+                                field.read(cx).focus(window);
+                            }
+                            cx.notify();
                         })),
                 )
             })
+    }
+
+    /// `AddMenu.svelte`: under the "+" button, everything that puts something new here.
+    /// Local folders copy files in; a server connection uploads them.
+    fn render_add_menu(&self, target: PaneTarget, cx: &mut Context<Self>) -> impl IntoElement {
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
+        let can_create = !pane.is_at_root() && !self.operation_status.is_busy();
+        let local = pane.api.is_local();
+        let item = |id: &'static str, label: &'static str, icon: &'static str, run: fn(&mut Workspace, PaneTarget, &mut Window, &mut Context<Workspace>), cx: &mut Context<Self>| {
+            MenuItem::action(id, label).icon(icon).disabled(!can_create).on_select(cx.listener(move |this, _, window, cx| {
+                this.add_menu = None;
+                this.active_pane = target;
+                run(this, target, window, cx);
+                cx.notify();
+            }))
+        };
+        let items = vec![
+            item("add-folder", "New folder", "folder-plus", |this, _, window, cx| this.create_folder(&CreateFolder, window, cx), cx),
+            item("add-file", "New file", "file-plus", |this, _, window, cx| this.create_file(&CreateFile, window, cx), cx),
+            MenuItem::Separator,
+            item("add-files", if local { "Copy files here…" } else { "Upload files" }, "download", |this, target, _, cx| this.import_with_picker(target, false, cx), cx),
+            item("add-folders", if local { "Copy folder here…" } else { "Upload folder" }, "folder-open", |this, target, _, cx| this.import_with_picker(target, true, cx), cx),
+        ];
+        // AddMenu sits 4px under the button's left edge.
+        deferred(
+            anchored().position_mode(AnchoredPositionMode::Local).position(point(px(0.), px(32.))).snap_to_window().child(
+                div()
+                    .id("add-menu")
+                    .occlude()
+                    .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                        this.add_menu = None;
+                        cx.notify();
+                    }))
+                    .child(ContextMenu::new(items)),
+            ),
+        )
+        .with_priority(1)
     }
 
     pub(crate) fn render_toolbar(
@@ -310,12 +322,15 @@ impl Workspace {
                     .gap(px(4.))
                     // At This PC nothing can be created, so the add button is disabled.
                     .child(
-                        self.nav_button("add", "plus", 16., !pane.is_at_root())
-                            .when(!pane.is_at_root(), |button| {
-                                button.on_click(cx.listener(|this, _, window, cx| {
-                                    this.create_folder(&CreateFolder, window, cx)
+                        div()
+                            .relative()
+                            .child(self.nav_button("add", "plus", 16., !pane.is_at_root()).when(!pane.is_at_root(), |button| {
+                                button.on_click(cx.listener(move |this, _, _, cx| {
+                                    this.add_menu = if this.add_menu == Some(target) { None } else { Some(target) };
+                                    cx.notify();
                                 }))
-                            }),
+                            }))
+                            .when(self.add_menu == Some(target), |slot| slot.child(self.render_add_menu(target, cx))),
                     )
                     .child(
                         self.nav_button("refresh", "refresh-cw", 16., true)

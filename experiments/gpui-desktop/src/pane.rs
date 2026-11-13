@@ -106,6 +106,7 @@ pub struct Pane {
 }
 
 impl Pane {
+    #[cfg(test)]
     pub fn new(
         id: usize,
         path: String,

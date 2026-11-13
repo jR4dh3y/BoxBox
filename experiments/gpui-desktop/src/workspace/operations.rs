@@ -1,7 +1,6 @@
 use std::{
     collections::HashSet,
     fs,
-    ops::Range,
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -39,189 +38,34 @@ pub(crate) struct FileClipboard {
 }
 
 pub(crate) enum OperationDialog {
-    CreateFolder {
-        target_id: usize,
-        parent: String,
-        input: TextBuffer,
-    },
-    CreateFile {
-        target_id: usize,
-        parent: String,
-        input: TextBuffer,
-    },
-    Rename {
-        target_id: usize,
-        path: String,
-        input: TextBuffer,
-    },
+    CreateFolder { target_id: usize, parent: String },
+    CreateFile { target_id: usize, parent: String },
+    Rename { target_id: usize, path: String },
 }
 
 impl OperationDialog {
-    pub fn input(&self) -> &TextBuffer {
-        match self {
-            Self::CreateFolder { input, .. }
-            | Self::CreateFile { input, .. }
-            | Self::Rename { input, .. } => input,
-        }
-    }
-
-    pub fn input_mut(&mut self) -> &mut TextBuffer {
-        match self {
-            Self::CreateFolder { input, .. }
-            | Self::CreateFile { input, .. }
-            | Self::Rename { input, .. } => input,
-        }
-    }
-
     pub fn title(&self) -> &'static str {
         match self {
             Self::CreateFolder { .. } => "New folder",
             Self::CreateFile { .. } => "New file",
-            Self::Rename { .. } => "Rename item",
+            Self::Rename { .. } => "Rename",
         }
     }
 
     pub fn placeholder(&self) -> &'static str {
         match self {
-            Self::CreateFolder { .. } => "Folder name",
-            Self::CreateFile { .. } => "File name",
-            Self::Rename { .. } => "Item name",
-        }
-    }
-}
-
-#[derive(Clone, Default)]
-pub(crate) struct TextBuffer {
-    value: String,
-    cursor: usize,
-    anchor: Option<usize>,
-}
-
-impl TextBuffer {
-    pub fn new(value: impl Into<String>) -> Self {
-        let value = value.into();
-        let cursor = value.len();
-        Self { value, cursor, anchor: None }
-    }
-
-    pub fn value(&self) -> &str {
-        &self.value
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.value.is_empty()
-    }
-
-    pub fn select_all(&mut self) {
-        self.anchor = Some(0);
-        self.cursor = self.value.len();
-    }
-
-    pub fn insert(&mut self, text: &str) -> bool {
-        let text: String = text.chars().filter(|ch| !ch.is_control()).collect();
-        if text.is_empty() {
-            return false;
-        }
-        self.insert_text(&text)
-    }
-
-    pub fn insert_text(&mut self, text: &str) -> bool {
-        if text.is_empty() { return false; }
-        let range = self.selection_range().unwrap_or(self.cursor..self.cursor);
-        self.value.replace_range(range.clone(), text);
-        self.cursor = range.start + text.len();
-        self.anchor = None;
-        true
-    }
-
-    pub fn backspace(&mut self) -> bool {
-        if let Some(range) = self.selection_range() {
-            self.value.replace_range(range.clone(), "");
-            self.cursor = range.start;
-            self.anchor = None;
-            return true;
-        }
-        let Some((start, _)) = self.value[..self.cursor].char_indices().next_back() else {
-            return false;
-        };
-        self.value.replace_range(start..self.cursor, "");
-        self.cursor = start;
-        true
-    }
-
-    pub fn delete_forward(&mut self) -> bool {
-        if let Some(range) = self.selection_range() {
-            self.value.replace_range(range.clone(), "");
-            self.cursor = range.start;
-            self.anchor = None;
-            return true;
-        }
-        let Some((_, ch)) = self.value[self.cursor..].char_indices().next() else {
-            return false;
-        };
-        let end = self.cursor + ch.len_utf8();
-        self.value.replace_range(self.cursor..end, "");
-        true
-    }
-
-    pub fn move_cursor(&mut self, direction: CursorDirection, extend: bool) {
-        if !extend {
-            if let Some(range) = self.selection_range() {
-                self.cursor = match direction {
-                    CursorDirection::Left => range.start,
-                    CursorDirection::Right => range.end,
-                    CursorDirection::Start => 0,
-                    CursorDirection::End => self.value.len(),
-                };
-                self.anchor = None;
-                return;
-            }
-        }
-        let next = match direction {
-            CursorDirection::Left => self.value[..self.cursor]
-                .char_indices()
-                .next_back()
-                .map(|(index, _)| index)
-                .unwrap_or(0),
-            CursorDirection::Right => self.value[self.cursor..]
-                .char_indices()
-                .nth(1)
-                .map(|(offset, _)| self.cursor + offset)
-                .unwrap_or(self.value.len()),
-            CursorDirection::Start => 0,
-            CursorDirection::End => self.value.len(),
-        };
-        if extend {
-            self.anchor.get_or_insert(self.cursor);
-        } else {
-            self.anchor = None;
-        }
-        self.cursor = next;
-    }
-
-    pub fn display_parts(&self) -> (&str, Option<&str>, &str) {
-        match self.selection_range() {
-            Some(range) => (
-                &self.value[..range.start],
-                Some(&self.value[range.clone()]),
-                &self.value[range.end..],
-            ),
-            None => (&self.value[..self.cursor], None, &self.value[self.cursor..]),
+            Self::CreateFolder { .. } => "New folder",
+            Self::CreateFile { .. } => "untitled.txt",
+            Self::Rename { .. } => "",
         }
     }
 
-    fn selection_range(&self) -> Option<Range<usize>> {
-        let anchor = self.anchor?;
-        (anchor != self.cursor).then(|| anchor.min(self.cursor)..anchor.max(self.cursor))
+    pub fn confirm_label(&self) -> &'static str {
+        match self {
+            Self::CreateFolder { .. } | Self::CreateFile { .. } => "Create",
+            Self::Rename { .. } => "Rename",
+        }
     }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum CursorDirection {
-    Left,
-    Right,
-    Start,
-    End,
 }
 
 #[derive(Default)]
@@ -260,7 +104,6 @@ pub(crate) struct ContextMenuState {
 #[derive(Clone)]
 pub(crate) struct LocationEditor {
     pub target_id: usize,
-    pub input: TextBuffer,
 }
 
 #[derive(Clone)]
@@ -319,14 +162,7 @@ impl Workspace {
             self.set_operation_error("Choose a folder before creating a new folder.", cx);
             return;
         }
-        self.operation_dialog = Some(OperationDialog::CreateFolder {
-            target_id: pane.id,
-            parent: pane.path.clone(),
-            input: TextBuffer::default(),
-        });
-        self.context_menu = None;
-        self.operation_focus.focus(window);
-        cx.notify();
+        self.open_dialog(OperationDialog::CreateFolder { target_id: pane.id, parent: pane.path.clone() }, "", 0..0, window, cx);
     }
 
     pub(crate) fn create_file(
@@ -343,14 +179,7 @@ impl Workspace {
             self.set_operation_error("Choose a folder before creating a new file.", cx);
             return;
         }
-        self.operation_dialog = Some(OperationDialog::CreateFile {
-            target_id: pane.id,
-            parent: pane.path.clone(),
-            input: TextBuffer::default(),
-        });
-        self.context_menu = None;
-        self.operation_focus.focus(window);
-        cx.notify();
+        self.open_dialog(OperationDialog::CreateFile { target_id: pane.id, parent: pane.path.clone() }, "", 0..0, window, cx);
     }
 
     pub(crate) fn rename_selected(
@@ -378,235 +207,74 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.operation_dialog = Some(OperationDialog::Rename {
-            target_id,
-            path: item.path,
-            input: TextBuffer::new(item.name),
-        });
-        self.context_menu = None;
-        self.operation_focus.focus(window);
-        cx.notify();
-    }
-    pub(crate) fn operation_key_down(
-        &mut self,
-        event: &gpui::KeyDownEvent,
-        cx: &mut Context<Self>,
-    ) {
-
-        if event.keystroke.modifiers.control
-            || event.keystroke.modifiers.platform
-            || event.keystroke.modifiers.alt
-        {
-            return;
-        }
-        if self.operation_status.is_busy() {
-            return;
-        }
-        if let Some(dialog) = self.operation_dialog.as_mut() {
-            if let Some(text) = &event.keystroke.key_char {
-                dialog.input_mut().insert(text);
-                cx.notify();
-            }
-        } else if let Some(editor) = self.location_editor.as_mut() {
-            if let Some(text) = &event.keystroke.key_char {
-                editor.input.insert(text);
-                cx.notify();
-            }
-        } else if let Some(preview) = self.preview.as_mut() {
-            if let PreviewContent::Text { buffer, dirty } = &mut preview.content {
-                if let Some(text) = &event.keystroke.key_char {
-                    *dirty |= buffer.insert_text(text);
-                    cx.notify();
-                }
-            }
-        }
-    }
-
-    pub(crate) fn operation_backspace(
-        &mut self,
-        _: &OperationBackspace,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let changed = if let Some(dialog) = self.operation_dialog.as_mut() {
-            dialog.input_mut().backspace()
-        } else if let Some(editor) = self.location_editor.as_mut() {
-            editor.input.backspace()
-        } else if let Some(preview) = self.preview.as_mut() {
-            if let PreviewContent::Text { buffer, dirty } = &mut preview.content {
-                let changed = buffer.backspace();
-                *dirty |= changed;
-                changed
-            } else {
-                false
-            }
-        } else {
-            false
+        // Select the name without its extension, as file managers do.
+        let stem = match item.name.rfind('.') {
+            Some(dot) if dot > 0 && !item.is_dir => dot,
+            _ => item.name.len(),
         };
-        if changed {
-            cx.notify();
-        }
+        let name = item.name.clone();
+        self.open_dialog(OperationDialog::Rename { target_id, path: item.path }, &name, 0..stem, window, cx);
     }
 
-    pub(crate) fn operation_delete(
+    fn open_dialog(
         &mut self,
-        _: &OperationDelete,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let changed = if let Some(dialog) = self.operation_dialog.as_mut() {
-            dialog.input_mut().delete_forward()
-        } else if let Some(editor) = self.location_editor.as_mut() {
-            editor.input.delete_forward()
-        } else if let Some(preview) = self.preview.as_mut() {
-            if let PreviewContent::Text { buffer, dirty } = &mut preview.content {
-                let changed = buffer.delete_forward();
-                *dirty |= changed;
-                changed
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-        if changed {
-            cx.notify();
-        }
-    }
-
-    pub(crate) fn operation_select_all(
-        &mut self,
-        _: &OperationSelectAll,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let buffer = if let Some(dialog) = self.operation_dialog.as_mut() {
-            Some(dialog.input_mut())
-        } else if let Some(editor) = self.location_editor.as_mut() {
-            Some(&mut editor.input)
-        } else if let Some(preview) = self.preview.as_mut() {
-            match &mut preview.content {
-                PreviewContent::Text { buffer, .. } => Some(buffer),
-                _ => None,
-            }
-        } else {
-            None
-        };
-        if let Some(buffer) = buffer {
-            buffer.select_all();
-            cx.notify();
-        }
-    }
-
-    pub(crate) fn operation_paste(
-        &mut self,
-        _: &OperationPaste,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
-            return;
-        };
-        let changed = if let Some(dialog) = self.operation_dialog.as_mut() {
-            dialog.input_mut().insert(&text)
-        } else if let Some(editor) = self.location_editor.as_mut() {
-            editor.input.insert(&text)
-        } else if let Some(preview) = self.preview.as_mut() {
-            if let PreviewContent::Text { buffer, dirty } = &mut preview.content {
-                let changed = buffer.insert_text(&text);
-                *dirty |= changed;
-                changed
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-        if changed {
-            cx.notify();
-        }
-    }
-
-    pub(crate) fn operation_left(
-        &mut self,
-        _: &OperationLeft,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.move_operation_cursor(CursorDirection::Left, false, cx);
-    }
-
-    pub(crate) fn operation_right(
-        &mut self,
-        _: &OperationRight,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.move_operation_cursor(CursorDirection::Right, false, cx);
-    }
-
-    pub(crate) fn operation_home(
-        &mut self,
-        _: &OperationHome,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.move_operation_cursor(CursorDirection::Start, false, cx);
-    }
-
-    pub(crate) fn operation_end(
-        &mut self,
-        _: &OperationEnd,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.move_operation_cursor(CursorDirection::End, false, cx);
-    }
-
-    fn move_operation_cursor(
-        &mut self,
-        direction: CursorDirection,
-        extend: bool,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(dialog) = self.operation_dialog.as_mut() {
-            dialog.input_mut().move_cursor(direction, extend);
-            cx.notify();
-        } else if let Some(editor) = self.location_editor.as_mut() {
-            editor.input.move_cursor(direction, extend);
-            cx.notify();
-        } else if let Some(preview) = self.preview.as_mut() {
-            if let PreviewContent::Text { buffer, .. } = &mut preview.content {
-                buffer.move_cursor(direction, extend);
-                cx.notify();
-            }
-        }
-    }
-
-    pub(crate) fn operation_submit(
-        &mut self,
-        _: &OperationSubmit,
+        dialog: OperationDialog,
+        text: &str,
+        selection: std::ops::Range<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.operation_dialog.is_some() {
-            self.submit_operation_dialog(cx);
-            if self.operation_dialog.is_none() { self.focus_handle.focus(window); }
-        } else if self.location_editor.is_some() {
-            self.submit_location(window, cx);
-            if self.operation_status.is_busy() { self.focus_handle.focus(window); }
-        } else if let Some(preview) = self.preview.as_mut() {
-            if let PreviewContent::Text { buffer, dirty } = &mut preview.content {
-                *dirty |= buffer.insert_text("\n"); cx.notify();
+        self.operation_dialog = Some(dialog);
+        self.context_menu = None;
+        let text = text.to_string();
+        self.dialog_field.update(cx, |field, cx| field.set_text(text, selection, cx));
+        self.dialog_field.read(cx).focus(window);
+        cx.notify();
+    }
+
+    /// Enter and Escape in the dialog's name field.
+    pub(crate) fn on_dialog_field(&mut self, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            InputEvent::Submit => {
+                self.submit_operation_dialog(cx);
+                if self.operation_dialog.is_none() {
+                    self.focus_handle.focus(window);
+                }
             }
+            InputEvent::Cancel => self.close_dialog(window, cx),
+            InputEvent::Changed => {}
         }
     }
 
+    pub(crate) fn close_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.operation_dialog.take().is_some() {
+            self.focus_handle.focus(window);
+            cx.notify();
+        }
+    }
+
+    /// Enter and Escape in the location field.
+    pub(crate) fn on_location_field(&mut self, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            InputEvent::Submit => {
+                self.submit_location(window, cx);
+                if self.operation_status.is_busy() {
+                    self.focus_handle.focus(window);
+                }
+            }
+            InputEvent::Cancel => {
+                self.location_editor = None;
+                self.focus_handle.focus(window);
+                cx.notify();
+            }
+            InputEvent::Changed => {}
+        }
+    }
     fn submit_operation_dialog(&mut self, cx: &mut Context<Self>) {
         let Some(dialog) = self.operation_dialog.take() else {
             return;
         };
-        let input = dialog.input().value().trim().to_string();
+        let input = self.dialog_field.read(cx).text().trim().to_string();
         if input.is_empty()
             || input == "."
             || input == ".."
@@ -683,21 +351,11 @@ impl Workspace {
         if self.operation_status.is_busy() {
             return;
         }
-        if self.operation_dialog.take().is_some() {
-            self.focus_handle.focus(window);
-        } else if self.location_editor.take().is_some() {
-            self.focus_handle.focus(window);
-        } else if let Some(preview) = self.preview.take() {
-            if matches!(preview.content, PreviewContent::Text { dirty: true, .. }) {
-                self.preview = Some(preview);
-                self.set_operation_error("Save or cancel your text preview before closing.", cx);
-                return;
-            }
-            self.focus_handle.focus(window);
-        } else {
+        // Close the topmost thing: a dialog, the location field, the preview, then a menu.
+        if self.operation_dialog.take().is_none() && self.location_editor.take().is_none() && self.preview.take().is_none() {
             self.context_menu = None;
-            self.focus_handle.focus(window);
         }
+        self.focus_handle.focus(window);
         cx.notify();
     }
 
@@ -709,10 +367,11 @@ impl Workspace {
     ) {
         let pane = self.pane();
         let target_id = pane.id;
-        let mut input = TextBuffer::new(pane.path.clone());
-        input.select_all();
-        self.location_editor = Some(LocationEditor { target_id, input });
-        self.location_focus.focus(window);
+        let path = pane.path.clone();
+        let length = path.len();
+        self.location_editor = Some(LocationEditor { target_id });
+        self.location_field.update(cx, |field, cx| field.set_text(path, 0..length, cx));
+        self.location_field.read(cx).focus(window);
         cx.notify();
     }
 
@@ -720,7 +379,7 @@ impl Workspace {
         let Some(editor) = self.location_editor.as_ref() else {
             return;
         };
-        let path = editor.input.value().trim().to_string();
+        let path = self.location_field.read(cx).text().trim().to_string();
         let target = PaneTarget(editor.target_id);
         if path.contains('\0') || path.split('/').any(|part| part == "..") {
             self.set_operation_error("Enter a valid provider path.", cx);
@@ -1388,16 +1047,6 @@ impl Workspace {
             .map(|menu| (PaneTarget(menu.target_id), menu.items.clone()))
     }
 
-    pub(crate) fn context_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((target, items)) = self.context_selection() else {
-            return;
-        };
-        self.context_menu = None;
-        if let Some(item) = items.into_iter().next() {
-            self.activate_item(target, item, window, cx);
-        }
-    }
-
     pub(crate) fn context_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some((target, items)) = self.context_selection() else {
             return;
@@ -1533,7 +1182,7 @@ impl Workspace {
             focused: crate::settings_state::ShareField::Path,
         });
         self.settings_panel.error = None;
-        self.operation_focus.focus(window);
+        self.settings_focus.focus(window);
         cx.notify();
     }
 
@@ -1561,12 +1210,6 @@ impl Workspace {
             self.active_pane = target;
         }
         self.create_file(&CreateFile, window, cx);
-    }
-
-    pub(crate) fn context_import_files(&mut self, cx: &mut Context<Self>) {
-        let target = self.context_menu.as_ref().map(|menu| PaneTarget(menu.target_id));
-        self.context_menu = None;
-        self.import_with_picker(target.unwrap_or(self.active_pane), false, cx);
     }
 
     pub(crate) fn context_open_terminal(&mut self, cx: &mut Context<Self>) {
@@ -1687,10 +1330,7 @@ impl Workspace {
                                 && Arc::ptr_eq(&preview.api, &api)
                         }) {
                             preview.content = match result {
-                                Ok(text) => PreviewContent::Text {
-                                    buffer: TextBuffer::new(text),
-                                    dirty: false,
-                                },
+                                Ok(text) => PreviewContent::Text(text.into()),
                                 Err(error) => PreviewContent::Failed(format!("{error:#}")),
                             };
                         }
@@ -1727,55 +1367,6 @@ impl Workspace {
             })
             .detach();
         }
-    }
-
-
-    pub(crate) fn save_preview(
-        &mut self,
-        _: &SavePreview,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(preview) = self.preview.as_ref() else {
-            return;
-        };
-        let PreviewContent::Text { buffer, dirty } = &preview.content else {
-            return;
-        };
-        if !dirty {
-            return;
-        }
-        let target_id = preview.target_id;
-        let api = preview.api.clone();
-        let item = preview.item.clone();
-        let path = item.path.clone();
-        let content = buffer.value().to_string();
-        let refresh_api = api.clone();
-        let generation = self.begin_operation(format!("Saving {}…", item.name));
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { crate::media::save_text(&api, &item, &content) })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                if result.is_ok() {
-                    if let Some(preview) = this.preview.as_mut().filter(|preview| {
-                        preview.target_id == target_id && preview.item.path == path
-                    }) {
-                        if let PreviewContent::Text { dirty, .. } = &mut preview.content {
-                            *dirty = false;
-                        }
-                    }
-                }
-                this.refresh_provider(refresh_api, cx);
-                this.finish_operation(
-                    generation,
-                    result.map(|_| "Text file saved".into()),
-                    cx,
-                );
-            });
-        })
-        .detach();
     }
 
     pub(crate) fn request_thumbnail(

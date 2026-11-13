@@ -72,6 +72,7 @@ fn desktop_workflow(cx: &mut TestAppContext) {
     let (api, server) = fixture_api(&fixture);
     let local = api.is_local();
     cx.update(bind_keys);
+    cx.update(crate::components::text_field_bind_keys);
     let (view, cx) = cx.add_window_view(|window, cx| Workspace::new(api, Fonts {
         sans: "sans-serif".into(), mono: "monospace".into(),
     }, "home".into(), window, cx));
@@ -105,15 +106,17 @@ fn desktop_workflow(cx: &mut TestAppContext) {
         cx.run_until_parked();
         view.read_with(cx, |workspace, _| assert!(!workspace.pane().items.iter().any(|item| item.name == "outside.txt"), "external removal must refresh the listing"));
     }
+    // Previews are read-only; editing belongs to the file's own app.
+    fs::write(fixture.join("port/note.txt"), "hello").unwrap();
     let row = cx.debug_bounds("row-0-0").expect("created file must render a row");
     cx.simulate_mouse_down(row.center(), MouseButton::Right, Modifiers::default());
     assert!(cx.debug_bounds("file-context-menu").is_some(), "right click must render the menu");
     click(cx, "context-preview");
     cx.run_until_parked();
-    view.read_with(cx, |workspace, _| assert!(workspace.preview.is_some(), "Space must open a visible preview"));
-    cx.simulate_keystrokes("h e l l o ctrl-s");
-    cx.run_until_parked();
-    assert_eq!(fs::read_to_string(fixture.join("port/note.txt")).unwrap(), "hello");
+    view.read_with(cx, |workspace, _| {
+        let preview = workspace.preview.as_ref().expect("the menu must open a preview");
+        assert!(matches!(&preview.content, crate::workspace::preview::PreviewContent::Text(text) if text.as_ref() == "hello"));
+    });
     cx.simulate_keystrokes("escape f3");
     view.read_with(cx, |workspace, _| assert_eq!(workspace.split_panes.len(), 1));
     assert!(cx.debug_bounds("browser-pane-0").is_some());

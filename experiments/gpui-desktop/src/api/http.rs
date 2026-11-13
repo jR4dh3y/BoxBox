@@ -166,12 +166,6 @@ impl RemoteApi {
         String::from_utf8(bytes).context("text preview is not valid UTF-8")
     }
 
-    pub(super) fn save_text(&self, path: &str, content: &str) -> Result<FileInfo> {
-        validate_remote_path(path)?;
-        let endpoint = format!("/files/{}", encode_path(path));
-        self.mutate_json("PATCH", &endpoint, json!({ "content": content }))
-    }
-
     pub(super) fn thumbnail(&self, path: &str, width: u32, height: u32) -> Result<Vec<u8>> {
         validate_remote_path(path)?;
         let endpoint = format!(

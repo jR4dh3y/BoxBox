@@ -90,7 +90,8 @@ impl Workspace {
             .debug_selector(|| format!("browser-pane-{}", target.0))
             .capture_any_mouse_down(cx.listener(move |this, _, window, cx| {
                 this.active_pane = target;
-                if !this.search_focus.is_focused(window) { this.focus_handle.focus(window); }
+                // A text field clicked here takes focus back in the bubble phase.
+                this.focus_handle.focus(window);
                 cx.notify();
             }))
             .on_drop(cx.listener(move |this, paths: &gpui::ExternalPaths, _, cx| {

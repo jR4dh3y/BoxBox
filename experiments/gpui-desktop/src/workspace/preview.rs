@@ -4,7 +4,7 @@ use gpui::{Image, ImageFormat};
 
 use crate::{api::{Api, FileInfo}, format::extension};
 
-use super::{favorites::FavoriteProvider, operations::TextBuffer};
+use super::favorites::FavoriteProvider;
 
 const THUMBNAIL_CACHE_CAPACITY: usize = 96;
 
@@ -89,7 +89,8 @@ impl ThumbnailCache {
 
 pub(crate) enum PreviewContent {
     Loading,
-    Text { buffer: TextBuffer, dirty: bool },
+    /// Read-only: editing belongs to the file's own app.
+    Text(gpui::SharedString),
     Image(Arc<Image>),
     Failed(String),
 }

@@ -18,6 +18,7 @@ material-colors = "0.4.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+unicode-segmentation = "1"
 ureq = { version = "2", features = ["json"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 

@@ -11,7 +11,7 @@ const ICONS = [
 	'Home', 'Image', 'LayoutGrid', 'List', 'Monitor', 'Music', 'Palette', 'PanelLeft', 'Plus',
 	'RefreshCw', 'Search', 'Server', 'Settings', 'Star', 'Trash2', 'Video', 'X',
 	'AlertTriangle', 'AppWindow', 'CheckCircle', 'ClipboardPaste', 'Copy', 'ExternalLink', 'Info',
-	'Check', 'Pencil', 'Scissors', 'XCircle'
+	'Check', 'Pencil', 'Scissors', 'XCircle', 'FilePlus', 'FolderPlus', 'Pin', 'PinOff', 'Share2'
 ];
 
 const root = join(import.meta.dir, '../../../frontend/node_modules/lucide-svelte/dist');
