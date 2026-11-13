@@ -509,16 +509,21 @@ impl Workspace {
         }
         let path = pane.path.clone();
         let api = pane.api.clone();
+        let view = pane.view();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { (api.list(&path), api.local_path(&path).ok().flatten()) })
+                .spawn(async move {
+                    let items = api.list(&path).map(|items| crate::pane::arrange(items, view));
+                    (items, api.local_path(&path).ok().flatten())
+                })
                 .await;
             this.update(cx, |this, cx| {
                 if let Some(pane) = this.pane_mut_by_id(target.0) {
                     if pane.generation == generation {
-                        pane.finish_load(result.0);
+                        let stale = pane.finish_load(result.0, view);
                         if let Some(path) = result.1 { this.directory_watches.watch(target.0, path); }
+                        if stale { this.resort(target, cx); }
                         cx.notify();
                     }
                 }
@@ -526,6 +531,38 @@ impl Workspace {
             .ok();
         })
         .detach();
+    }
+
+    /// Sorts a pane's entries in the background after its sort changed.
+    pub(crate) fn resort(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
+        let Some(job) = self.pane_by_id(target.0).map(Pane::sort_job) else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            let (job, (items, folder_items)) = cx
+                .background_executor()
+                .spawn(async move {
+                    let sorted = job.run();
+                    (job, sorted)
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                if this.pane_mut_by_id(target.0).is_some_and(|pane| pane.apply_sort(&job, items, folder_items)) {
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Changes one pane's sort from its column headers.
+    pub(crate) fn set_pane_sort(&mut self, target: PaneTarget, sort: crate::sort::Sort, cx: &mut Context<Self>) {
+        if let Some(pane) = self.pane_mut_by_id(target.0) {
+            pane.set_sort(sort);
+            self.resort(target, cx);
+            cx.notify();
+        }
     }
 
     fn all_pane_ids(&self) -> Vec<usize> {
@@ -563,8 +600,12 @@ impl Workspace {
         let show_hidden_files = self.preferences.show_hidden_files;
         let ids = self.all_pane_ids();
         let mut hidden_changed = false;
+        let mut resorted = Vec::new();
         for id in &ids {
             if let Some(pane) = self.pane_mut_by_id(*id) {
+                if pane.sort != sort {
+                    resorted.push(PaneTarget(*id));
+                }
                 hidden_changed |= pane.apply_preferences(show_hidden_files, sort, view);
             }
         }
@@ -572,6 +613,9 @@ impl Workspace {
             self.operation_status = OperationStatus::Error(format!(
                 "Could not save preferences: {error}"
             ));
+        }
+        for target in resorted {
+            self.resort(target, cx);
         }
         if hidden_changed {
             for id in ids {
@@ -822,15 +866,18 @@ impl Workspace {
         };
         let path = pane.path.clone();
         let api = pane.api.clone();
+        let view = pane.view();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { api.search(&path, &query) })
+                .spawn(async move { api.search(&path, &query).map(|items| crate::pane::arrange(items, view)) })
                 .await;
             this.update(cx, |this, cx| {
                 if let Some(pane) = this.pane_mut_by_id(pane_id) {
                     if pane.search_generation == generation {
-                        pane.finish_search(result);
+                        if pane.finish_search(result, view) {
+                            this.resort(PaneTarget(pane_id), cx);
+                        }
                         cx.notify();
                     }
                 }

@@ -2,12 +2,45 @@
 //! Mirrors `lib/browse/location.svelte.ts` and `selection.svelte.ts`.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use gpui::{Modifiers, UniformListScrollHandle};
 
 use crate::api::{Api, DriveStats, FileInfo, MountPoint};
 use crate::search;
 use crate::sort::{sort_files, Sort};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct View {
+    pub sort: Sort,
+    pub show_hidden_files: bool,
+}
+
+/// Drops hidden entries unless shown, then sorts. Runs off the UI thread.
+pub fn arrange(items: Vec<FileInfo>, view: View) -> Vec<FileInfo> {
+    let mut items: Vec<FileInfo> =
+        items.into_iter().filter(|item| view.show_hidden_files || !item.name.starts_with('.')).collect();
+    sort_files(&mut items, view.sort);
+    items
+}
+
+pub struct SortJob {
+    items: Arc<Vec<FileInfo>>,
+    folder_items: Arc<Vec<FileInfo>>,
+    pub sort: Sort,
+}
+
+impl SortJob {
+    /// Sorted copies of both lists.
+    pub fn run(&self) -> (Vec<FileInfo>, Vec<FileInfo>) {
+        let sorted = |items: &Vec<FileInfo>| {
+            let mut items = items.clone();
+            sort_files(&mut items, self.sort);
+            items
+        };
+        (sorted(&self.items), sorted(&self.folder_items))
+    }
+}
 
 pub enum Load<T> {
     Loading,
@@ -50,12 +83,13 @@ pub struct Pane {
     forward: Vec<String>,
     pub listing: Listing,
     /// Visible entries in display order (hidden files removed, then sorted): the folder, or the
-    /// search results while a search is on.
-    pub items: Vec<FileInfo>,
+    /// search results while a search is on. Shared, so sorting can run on a
+    /// background thread without copying on the UI thread.
+    pub items: Arc<Vec<FileInfo>>,
     pub search_input: String,
     pub search: Search,
     /// The folder's entries while `items` hold search results.
-    folder_items: Vec<FileInfo>,
+    folder_items: Arc<Vec<FileInfo>>,
     pub sort: Sort,
     pub view_mode: ViewMode,
     pub show_hidden_files: bool,
@@ -110,10 +144,10 @@ impl Pane {
             drives: Load::Loading,
             back: Vec::new(),
             forward: Vec::new(),
-            items: Vec::new(),
+            items: Arc::default(),
             search_input: String::new(),
             search: Search::Off,
-            folder_items: Vec::new(),
+            folder_items: Arc::default(),
             sort,
             view_mode,
             show_hidden_files,
@@ -170,8 +204,8 @@ impl Pane {
     }
 
     fn reset(&mut self) {
-        self.items.clear();
-        self.folder_items.clear();
+        self.items = Arc::default();
+        self.folder_items = Arc::default();
         self.search_input.clear();
         self.search = Search::Off;
         // Invalidates a search still in flight for the old folder.
@@ -192,28 +226,44 @@ impl Pane {
         self.generation
     }
 
-    pub fn finish_load(&mut self, result: anyhow::Result<Vec<FileInfo>>) {
+    /// Takes entries `arrange`d off the UI thread. Returns whether the view changed while
+    /// they were prepared, so the caller should sort again.
+    pub fn finish_load(&mut self, result: anyhow::Result<Vec<FileInfo>>, view: View) -> bool {
         match result {
             Ok(items) => {
-                let items = self.visible(items);
                 if self.is_searching() {
-                    self.folder_items = items;
+                    self.folder_items = Arc::new(items);
                 } else {
                     self.replace_items(items);
                 }
                 self.listing = Listing::Loaded;
+                view != self.view()
             }
-            Err(error) => self.listing = Listing::Failed(format!("{error:#}")),
+            Err(error) => {
+                self.listing = Listing::Failed(format!("{error:#}"));
+                false
+            }
         }
     }
 
-    fn visible(&self, items: Vec<FileInfo>) -> Vec<FileInfo> {
-        let mut items: Vec<FileInfo> = items
-            .into_iter()
-            .filter(|item| self.show_hidden_files || !item.name.starts_with('.'))
-            .collect();
-        sort_files(&mut items, self.sort);
-        items
+    /// What `arrange` needs, read on the UI thread before work is sent off it.
+    pub fn view(&self) -> View {
+        View { sort: self.sort, show_hidden_files: self.show_hidden_files }
+    }
+
+    /// The current entries and how to sort them, for `apply_sort`.
+    pub fn sort_job(&self) -> SortJob {
+        SortJob { items: self.items.clone(), folder_items: self.folder_items.clone(), sort: self.sort }
+    }
+
+    /// Applies a finished `SortJob` unless the entries or the sort changed meanwhile.
+    pub fn apply_sort(&mut self, job: &SortJob, items: Vec<FileInfo>, folder_items: Vec<FileInfo>) -> bool {
+        if !Arc::ptr_eq(&job.items, &self.items) || !Arc::ptr_eq(&job.folder_items, &self.folder_items) || job.sort != self.sort {
+            return false;
+        }
+        self.items = Arc::new(items);
+        self.folder_items = Arc::new(folder_items);
+        true
     }
 
     /// Swaps in new entries, keeping the selection, anchor and active row by path.
@@ -224,9 +274,11 @@ impl Pane {
                 .map(|item| item.path.clone())
         };
         let (anchor, active) = (path_at(self.anchor), path_at(self.active));
-        self.items = items;
-        let paths: HashSet<&str> = self.items.iter().map(|item| item.path.as_str()).collect();
-        self.selected.retain(|path| paths.contains(path.as_str()));
+        self.items = Arc::new(items);
+        if !self.selected.is_empty() {
+            let paths: HashSet<&str> = self.items.iter().map(|item| item.path.as_str()).collect();
+            self.selected.retain(|path| paths.contains(path.as_str()));
+        }
         self.anchor = anchor.and_then(|path| self.index_of(&path));
         self.active = active.and_then(|path| self.index_of(&path));
     }
@@ -278,17 +330,19 @@ impl Pane {
         Some((self.search_generation, query))
     }
 
-    pub fn finish_search(&mut self, result: anyhow::Result<Vec<FileInfo>>) {
+    /// Like `finish_load`, for search results.
+    pub fn finish_search(&mut self, result: anyhow::Result<Vec<FileInfo>>, view: View) -> bool {
         match result {
             Ok(items) => {
-                let items = self.visible(items);
                 self.replace_items(items);
                 self.search = Search::Done;
+                view != self.view()
             }
             Err(error) => {
-                self.items.clear();
+                self.items = Arc::default();
                 self.clear_selection();
                 self.search = Search::Failed(format!("{error:#}"));
+                false
             }
         }
     }
@@ -332,10 +386,9 @@ impl Pane {
         hidden_changed
     }
 
+    /// Records the sort; the workspace re-sorts the entries off the UI thread.
     pub fn set_sort(&mut self, sort: Sort) {
         self.sort = sort;
-        sort_files(&mut self.items, sort);
-        sort_files(&mut self.folder_items, sort);
         self.anchor = None;
         self.active = None;
     }
@@ -470,6 +523,34 @@ impl Pane {
 mod tests {
     use super::*;
 
+    /// What the workspace does: arrange off the UI thread, then apply.
+    fn load(pane: &mut Pane, items: Vec<FileInfo>) {
+        let view = pane.view();
+        assert!(!pane.finish_load(Ok(arrange(items, view)), view));
+    }
+
+    fn found(pane: &mut Pane, items: Vec<FileInfo>) {
+        let view = pane.view();
+        assert!(!pane.finish_search(Ok(arrange(items, view)), view));
+    }
+
+    #[test]
+    fn a_sort_is_dropped_when_entries_change_first() {
+        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
+        load(&mut pane, ["b", "a"].map(file).to_vec());
+        pane.set_sort(Sort { field: crate::sort::SortField::Name, dir: crate::sort::SortDir::Asc });
+        let job = pane.sort_job();
+        let (items, folder_items) = job.run();
+        load(&mut pane, ["c", "a"].map(file).to_vec());
+        assert!(!pane.apply_sort(&job, items, folder_items));
+
+        let job = pane.sort_job();
+        let (items, folder_items) = job.run();
+        assert!(pane.apply_sort(&job, items, folder_items));
+        let names: Vec<_> = pane.items.iter().map(|item| item.name.as_str()).collect();
+        assert_eq!(names, ["a", "c"]);
+    }
+
     fn file(name: &str) -> FileInfo {
         FileInfo {
             name: name.into(),
@@ -484,7 +565,7 @@ mod tests {
     fn history_and_selection() {
         let mut pane = Pane::new(0, String::new(), false, Sort::default(), ViewMode::List);
         assert!(pane.navigate("d".into()));
-        pane.finish_load(Ok(vec![file("a"), file("b"), file("c"), file(".h")]));
+        load(&mut pane, vec![file("a"), file("b"), file("c"), file(".h")]);
         assert_eq!(pane.items.len(), 3);
         pane.click(0, Modifiers::default());
         pane.click(
@@ -517,14 +598,14 @@ mod tests {
             ..Default::default()
         };
         let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
-        pane.finish_load(Ok(["a", "b", "c", "d", "e"].map(file).to_vec()));
+        load(&mut pane, ["a", "b", "c", "d", "e"].map(file).to_vec());
         pane.click(4, Modifiers::default());
-        pane.finish_load(Ok(vec![file("a"), file("b")]));
+        load(&mut pane, vec![file("a"), file("b")]);
         pane.click(1, shift);
         assert_eq!(pane.selected.len(), 1);
 
         pane.click(1, Modifiers::default());
-        pane.finish_load(Ok(vec![file("0"), file("a"), file("b"), file("z")]));
+        load(&mut pane, vec![file("0"), file("a"), file("b"), file("z")]);
         pane.click(3, shift);
         let mut selected: Vec<_> = pane.selected.iter().cloned().collect();
         selected.sort();
@@ -534,7 +615,7 @@ mod tests {
     #[test]
     fn drag_carries_selection_or_single_item() {
         let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
-        pane.finish_load(Ok(["a", "b", "c"].map(file).to_vec()));
+        load(&mut pane, ["a", "b", "c"].map(file).to_vec());
         pane.click(0, Modifiers::default());
         pane.click(
             2,
@@ -569,7 +650,7 @@ mod tests {
 
     fn pane_in_folder() -> Pane {
         let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
-        pane.finish_load(Ok(["a", "b"].map(file).to_vec()));
+        load(&mut pane, ["a", "b"].map(file).to_vec());
         pane
     }
 
@@ -597,7 +678,7 @@ mod tests {
         let (generation, query) = pane.begin_search().unwrap();
         assert_eq!(query, "ca");
         assert_eq!(generation, pane.search_generation);
-        pane.finish_search(Ok(vec![hit("d/x/cat"), hit("d/y/car")]));
+        found(&mut pane, vec![hit("d/x/cat"), hit("d/y/car")]);
         assert_eq!(names(&pane), ["car", "cat"]);
         assert!(pane.placeholder().is_none());
         // Results carry their own paths, so nested hits stay selectable.
@@ -615,7 +696,7 @@ mod tests {
         let mut pane = pane_in_folder();
         pane.set_search_input("ab".into());
         pane.begin_search();
-        pane.finish_search(Ok(vec![hit("d/ab")]));
+        found(&mut pane, vec![hit("d/ab")]);
         assert!(!pane.set_search_input("a".into()));
         assert_eq!(names(&pane), ["a", "b"]);
         assert!(matches!(pane.search, Search::Off));
@@ -640,12 +721,12 @@ mod tests {
         let mut pane = pane_in_folder();
         pane.set_search_input("zz".into());
         pane.begin_search();
-        pane.finish_search(Ok(vec![]));
+        found(&mut pane, vec![]);
         assert_eq!(
             pane.placeholder().unwrap().1,
             "No matches for \"zz\" in this folder"
         );
-        pane.finish_search(Err(anyhow::anyhow!("Search path not found")));
+        pane.finish_search(Err(anyhow::anyhow!("Search path not found")), pane.view());
         assert_eq!(pane.placeholder().unwrap().1, "Search path not found");
         assert!(pane.items.is_empty());
     }
@@ -655,12 +736,15 @@ mod tests {
         let mut pane = pane_in_folder();
         pane.set_search_input("ab".into());
         pane.begin_search();
-        pane.finish_search(Ok(vec![hit("d/b/zab"), hit("d/.ab"), hit("d/aab")]));
+        found(&mut pane, vec![hit("d/b/zab"), hit("d/.ab"), hit("d/aab")]);
         assert_eq!(names(&pane), ["aab", "zab"]);
         pane.set_sort(Sort {
             field: crate::sort::SortField::Name,
             dir: crate::sort::SortDir::Desc,
         });
+        let job = pane.sort_job();
+        let (items, folder_items) = job.run();
+        assert!(pane.apply_sort(&job, items, folder_items));
         assert_eq!(names(&pane), ["zab", "aab"]);
         pane.clear_search();
         assert_eq!(names(&pane), ["b", "a"]);
@@ -671,8 +755,8 @@ mod tests {
         let mut pane = pane_in_folder();
         pane.set_search_input("ab".into());
         pane.begin_search();
-        pane.finish_search(Ok(vec![hit("d/ab")]));
-        pane.finish_load(Ok(vec![file("a"), file("b"), file("c")]));
+        found(&mut pane, vec![hit("d/ab")]);
+        load(&mut pane, vec![file("a"), file("b"), file("c")]);
         assert_eq!(names(&pane), ["ab"]);
         pane.clear_search();
         assert_eq!(names(&pane), ["a", "b", "c"]);

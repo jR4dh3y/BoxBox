@@ -27,8 +27,7 @@ impl Workspace {
                     let _ = workspace.update(cx, |this, cx| {
                         this.active_pane = target;
                         let next = this.pane().sort.toggled(field);
-                        this.pane_mut().set_sort(next);
-                        cx.notify();
+                        this.set_pane_sort(target, next, cx);
                     });
                 }
             }))
