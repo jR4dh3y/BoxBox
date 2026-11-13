@@ -12,6 +12,7 @@ mod operations;
 mod overlays;
 mod select_menu;
 mod settings;
+mod shortcuts;
 pub(crate) use settings::SettingsField;
 mod sidebar;
 mod status_bar;

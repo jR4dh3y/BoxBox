@@ -43,7 +43,7 @@ Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 | `FileContextMenu.svelte`, `ui/ContextMenu.svelte` | file and empty-space menus | keep | ✓ `context_menu.rs` | ✓ `ui/overlays.rs` on `ContextMenu`, items as in `fileContextMenu.ts` |
 | `BrowseDialogs.svelte` | create, rename, delete, properties | keep | ✓ `dialogs.rs` | ✓ create, rename, delete and properties on `Modal`; every confirmation uses `workspace/confirm.rs` |
 | `ui/InlineRename.svelte` | rename in place | keep | ◐ dialog instead | ◐ dialog instead |
-| `KeyboardShortcutsDialog.svelte` | F1 shortcuts | keep | ✓ claimed | ✗ |
+| `KeyboardShortcutsDialog.svelte` | F1 shortcuts | keep | ✓ claimed | ✓ `ui/shortcuts.rs`, listing the keys this app binds |
 
 ## Previews: a quick look only; everything else opens in its app
 

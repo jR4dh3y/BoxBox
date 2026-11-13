@@ -134,6 +134,7 @@ actions!(
         ToggleSplit,
         AddFavorite,
         Undo,
+        ShowShortcuts,
         OperationEscape,
     ]
 );
@@ -178,6 +179,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("space", PreviewActive, context),
         KeyBinding::new("ctrl-shift-5", ToggleSplit, context),
         KeyBinding::new("ctrl-b", AddFavorite, context),
+        KeyBinding::new("f1", ShowShortcuts, context),
         // A text field keeps Ctrl+Z to itself, as the web shortcut skips inputs.
         KeyBinding::new("ctrl-z", Undo, Some("BrowseWorkspace && !TextField")),
         KeyBinding::new("escape", OperationEscape, Some("PreviewInput")),
@@ -233,6 +235,7 @@ pub struct Workspace {
     pub(crate) confirm: Option<confirm::Confirm>,
     /// The last move to Trash or rename, for Ctrl+Z.
     pub(crate) last_undo: Option<undo::Undo>,
+    pub(crate) shortcuts_open: bool,
     pub(crate) context_menu: Option<ContextMenuState>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
@@ -335,6 +338,7 @@ impl Workspace {
             transfer_conflicts: None,
             confirm: None,
             last_undo: None,
+            shortcuts_open: false,
             context_menu: None,
             add_menu: None,
             open_select: None,
@@ -1006,6 +1010,7 @@ impl Workspace {
         // Escape closes the topmost dialog first, as the web Modal does.
         if self.confirm.is_some() { self.answer(false, cx); }
         else if self.transfer_conflicts.take().is_some() {}
+        else if self.shortcuts_open { self.shortcuts_open = false; }
         else if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
         else if self.properties.take().is_some() || self.context_menu.take().is_some() {}
         else if self.preview.is_some() { self.operation_escape(&OperationEscape, window, cx); return; }
@@ -1205,6 +1210,10 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::toggle_split))
             .on_action(cx.listener(Self::add_favorite))
             .on_action(cx.listener(Self::undo))
+            .on_action(cx.listener(|this, _: &ShowShortcuts, _, cx| {
+                this.shortcuts_open = true;
+                cx.notify();
+            }))
             .on_action(cx.listener(Self::operation_escape))
             .relative()
             .size_full()
@@ -1238,6 +1247,7 @@ impl Render for Workspace {
             .when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)))
             .when(self.transfer_conflicts.is_some(), |root| root.child(self.render_conflicts(cx)))
             .when(self.confirm.is_some(), |root| root.child(self.render_confirm(cx)))
+            .when(self.shortcuts_open, |root| root.child(self.render_shortcuts(cx)))
             .when(self.operation_dialog.is_some(), |root| {
                 root.child(self.render_operation_dialog(window, cx))
             })
