@@ -11,8 +11,9 @@
 	} from '#lib/browse/fileDrag.js';
 	import type { FileInfo } from '#lib/api/files.js';
 	import { getThumbnailUrl } from '#lib/api/files.js';
+	import { supportsThumbnailFile } from '#lib/utils/thumbnail.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
-	import { getFileTypeDescription, getFileIcon, getPreviewType } from '#lib/utils/fileTypes.js';
+	import { getFileTypeDescription, getFileIcon } from '#lib/utils/fileTypes.js';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { untrack } from 'svelte';
 	import { Spinner } from '#lib/components/ui/index.js';
@@ -287,7 +288,7 @@
 	}
 
 	function handleBackgroundContextMenu(event: MouseEvent) {
-		const target = event.target instanceof HTMLElement ? event.target : null;
+		const target = event.target instanceof Element ? event.target : null;
 		if (target?.closest('[data-file-item="true"]')) return;
 
 		event.preventDefault();
@@ -408,10 +409,7 @@
 						{@const typeDescription = item.isDir ? 'Folder' : getFileTypeDescription(item.name)}
 						{@const sizeDescription = item.isDir ? '' : formatFileSize(item.size)}
 						{@const modifiedDescription = formatFileDate(item.modTime)}
-						{@const showThumbnail =
-							!item.isDir &&
-							getPreviewType(item.name) === 'image' &&
-							!thumbnailErrors.has(item.path)}
+						{@const showThumbnail = supportsThumbnailFile(item) && !thumbnailErrors.has(item.path)}
 						{@const detailText = sizeDescription}
 						<!-- A div, because the selection checkbox cannot sit inside a button. The grid owns the keys. -->
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
