@@ -217,8 +217,10 @@ impl Workspace {
             .h(px(28.))
             .flex()
             .items_center()
-            .gap(px(8.))
-            .px(px(12.))
+            // The icon sits at left-3 of the outer box and the text at pl-10 inside the border.
+            .gap(px(13.))
+            .pl(px(11.))
+            .pr(px(12.))
             .rounded(px(4.))
             .border_1()
             .border_color(c(if focused { self.accent_hex() } else { BORDER_PRIMARY }))

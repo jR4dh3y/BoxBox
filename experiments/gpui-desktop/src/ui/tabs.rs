@@ -47,19 +47,18 @@ impl Workspace {
                 })
         });
 
+        // Taffy drops `gap` in a row with an auto margin, so a spacer stands in for `ml-auto`.
         div()
-            .id("tabs")
             .h(px(32.))
             .flex_none()
             .flex()
             .items_center()
             .gap(px(4.))
-            .overflow_x_scroll()
             .border_b_1()
             .border_color(c(BORDER_SECONDARY))
             .bg(self.shell_background())
             .px(px(8.))
-            .children(tabs)
+            .child(div().id("tabs").flex().items_center().gap(px(4.)).min_w_0().overflow_x_scroll().children(tabs))
             .child(
                 div()
                     .id("new-tab")
@@ -68,11 +67,11 @@ impl Workspace {
                     .child(icon("plus", 14., c(TEXT_SECONDARY)))
                     .on_click(cx.listener(|this, _, window, cx| this.new_tab(&NewTab, window, cx))),
             )
+            .child(div().flex_1())
             .child(
                 div()
                     .id("toggle-split")
                     .debug_selector(|| "toggle-split".into())
-                    .ml_auto()
                     .p(px(4.))
                     .cursor_pointer()
                     .child(icon("columns-2", 14., c(TEXT_SECONDARY)))

@@ -1,9 +1,10 @@
 //! `lib/components/Sidebar.svelte`: Drives, Places, Trash and Favorites.
 
-use gpui::{div, prelude::*, px, AnyElement, Context, FontWeight, SharedString};
+use gpui::{div, prelude::*, px, Context, SharedString};
 
-use super::{icon, TextScale, SIDEBAR_WIDTH};
+use super::{TextScale, SIDEBAR_WIDTH};
 use crate::api::RootKind;
+use crate::components::{self, SidebarSection};
 use crate::theme::*;
 use crate::workspace::Workspace;
 
@@ -33,53 +34,25 @@ fn is_active(current: &str, path: &str) -> bool {
     current == path || current.starts_with(&format!("{path}/"))
 }
 
-fn section_header(title: &'static str) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(6.))
-        .px(px(12.))
-        .py(px(10.))
-        .text_11()
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(c(TEXT_SECONDARY))
-        .hover(|style| style.text_color(c(TEXT_PRIMARY)))
-        .child(icon("chevron-down", 14., c(TEXT_SECONDARY)))
-        .child(title.to_uppercase())
-}
-
 impl Workspace {
-    fn nav_item(
-        &self,
-        id: SharedString,
-        item: NavItem,
-        active: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    /// A collapsible section whose fold state lives on the workspace.
+    fn section(&self, title: &'static str, cx: &mut Context<Self>) -> SidebarSection {
+        SidebarSection::new(SharedString::from(format!("section-{title}")), title).collapsible(
+            self.collapsed_sections.contains(title),
+            cx.listener(move |this, _, _, cx| {
+                if !this.collapsed_sections.remove(title) {
+                    this.collapsed_sections.insert(title);
+                }
+                cx.notify();
+            }),
+        )
+    }
+
+    fn nav_item(&self, id: String, item: NavItem, current: &str, cx: &mut Context<Self>) -> impl IntoElement {
         let path = item.path;
-        div()
-            .id(id)
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(px(10.))
-            .py(px(6.))
-            .pl(px(20.))
-            .pr(px(12.))
-            .text_13()
-            .cursor_pointer()
-            // `navItemActiveClass` adds bg-selection, but the built CSS lets the base
-            // bg-transparent win, so only the white text shows. Match what renders.
-            .text_color(c(if active { WHITE } else { TEXT_PRIMARY }))
-            .hover(|style| style.bg(c(SURFACE_SECONDARY)))
-            .child(icon(
-                item.icon,
-                16.,
-                alpha(if active { WHITE } else { TEXT_PRIMARY }, 0.8),
-            ))
-            .child(div().flex_1().min_w_0().truncate().child(item.name))
+        components::NavItem::new(SharedString::from(id), item.name, item.icon)
+            .active(is_active(current, &path))
             .on_click(cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx)))
-            .into_any_element()
     }
 
     pub(crate) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -89,22 +62,15 @@ impl Workspace {
             crate::pane::Load::Loaded(roots) => roots,
             _ => &[],
         };
-        let drives = std::iter::once(NavItem {
-            name: "This PC".into(),
-            path: String::new(),
-            icon: "server",
-        })
-        .chain(
-            roots
-                .iter()
-                .filter(|root| root.kind != RootKind::Place)
-                .map(|root| NavItem {
-                    name: root.display_name().to_string().into(),
-                    path: root.name.clone(),
-                    icon: "hard-drive",
-                }),
-        )
-        .collect::<Vec<_>>();
+        let drives = std::iter::once(NavItem { name: "This PC".into(), path: String::new(), icon: "server" })
+            .chain(roots.iter().filter(|root| root.kind != RootKind::Place).map(|root| NavItem {
+                name: root.display_name().to_string().into(),
+                path: root.name.clone(),
+                icon: "hard-drive",
+            }))
+            .enumerate()
+            .map(|(index, item)| self.nav_item(format!("drive-{index}"), item, &current, cx))
+            .collect::<Vec<_>>();
         let places = roots
             .iter()
             .filter(|root| root.kind == RootKind::Place)
@@ -113,19 +79,21 @@ impl Workspace {
                 path: root.name.clone(),
                 icon: place_icon(&root.name),
             })
+            .enumerate()
+            .map(|(index, item)| self.nav_item(format!("place-{index}"), item, &current, cx))
             .collect::<Vec<_>>();
-
-        let section = || div().border_b_1().border_color(c(BORDER_SECONDARY));
-        let mut drive_rows = Vec::new();
-        for (index, item) in drives.into_iter().enumerate() {
-            let active = is_active(&current, &item.path);
-            drive_rows.push(self.nav_item(format!("drive-{index}").into(), item, active, cx));
-        }
-        let mut place_rows = Vec::new();
-        for (index, item) in places.into_iter().enumerate() {
-            let active = is_active(&current, &item.path);
-            place_rows.push(self.nav_item(format!("place-{index}").into(), item, active, cx));
-        }
+        let favorites = self
+            .favorites
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(index, favorite)| {
+                components::NavItem::new(SharedString::from(format!("favorite-{index}")), favorite.name.clone(), "star")
+                    .trailing("x", format!("Unpin {}", favorite.name), cx.listener(move |this, _, _, cx| this.remove_favorite(index, cx)))
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_favorite(index, cx)))
+            })
+            .collect::<Vec<_>>();
+        let no_favorites = favorites.is_empty();
 
         div()
             .id("sidebar")
@@ -139,97 +107,22 @@ impl Workspace {
             .border_r_1()
             .border_color(c(BORDER_SECONDARY))
             .bg(self.shell_background())
-            .child(
-                section()
-                    .child(section_header("Drives"))
-                    .child(div().pb(px(8.)).children(drive_rows)),
-            )
-            .when(!place_rows.is_empty(), |sidebar| {
-                sidebar.child(
-                    section()
-                        .child(section_header("Places"))
-                        .child(div().pb(px(8.)).children(place_rows)),
-                )
-            })
+            .child(self.section("Drives", cx).children(drives))
+            .when(!places.is_empty(), |sidebar| sidebar.child(self.section("Places", cx).children(places)))
             .when(pane.api.is_local(), |sidebar| {
                 sidebar.child(
-                    div()
-                        .id("trash").debug_selector(|| "sidebar-trash".into())
-                        .w_full()
-                        .flex()
-                        .items_center()
-                        .gap(px(10.))
-                        .py(px(6.))
-                        .pl(px(20.))
-                        .pr(px(12.))
-                        .text_13()
-                        .cursor_pointer()
-                        .text_color(c(if self.trash_open { WHITE } else { TEXT_PRIMARY }))
-                        .hover(|style| style.bg(c(SURFACE_SECONDARY)))
-                        .child(icon(
-                            "trash-2",
-                            16.,
-                            c(if self.trash_open { WHITE } else { TEXT_PRIMARY }),
-                        ))
-                        .child("Trash")
-                        .on_click(cx.listener(|this, _, _, cx| this.open_trash(cx))),
+                    div().debug_selector(|| "sidebar-trash".into()).child(
+                        components::NavItem::new("trash", "Trash", "trash-2")
+                            .dim_icon(false)
+                            .active(self.trash_open)
+                            .on_click(cx.listener(|this, _, _, cx| this.open_trash(cx))),
+                    ),
                 )
             })
-            .child(
-                section().child(section_header("Favorites")).child(
-                    div()
-                        .pb(px(8.))
-                        .children(self.favorites.entries.iter().enumerate().map(|(index, favorite)| {
-                            let name = favorite.name.clone();
-                            let provider = favorite.provider.clone();
-                            div()
-                                .id(SharedString::from(format!("favorite-{index}")))
-                                .w_full()
-                                .flex()
-                                .items_center()
-                                .gap(px(8.))
-                                .py(px(6.))
-                                .pl(px(20.))
-                                .pr(px(8.))
-                                .text_13()
-                                .cursor_pointer()
-                                .text_color(c(TEXT_PRIMARY))
-                                .hover(|style| style.bg(c(SURFACE_SECONDARY)))
-                                .child(icon(
-                                    match provider {
-                                        crate::workspace::favorites::FavoriteProvider::Local => "folder",
-                                        crate::workspace::favorites::FavoriteProvider::Remote(_) => "cloud",
-                                    },
-                                    16.,
-                                    c(TEXT_SECONDARY),
-                                ))
-                                .child(div().flex_1().min_w_0().truncate().child(name))
-                                .child(
-                                    div()
-                                        .id(SharedString::from(format!("favorite-remove-{index}")))
-                                        .px(px(4.))
-                                        .text_color(c(TEXT_MUTED))
-                                        .hover(|style| style.text_color(c(DANGER)))
-                                        .child("×")
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            cx.stop_propagation();
-                                            this.remove_favorite(index, cx)
-                                        })),
-                                )
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.open_favorite(index, cx)
-                                }))
-                        }))
-                        .when(self.favorites.entries.is_empty(), |favorites| {
-                            favorites
-                                .px(px(20.))
-                                .py(px(8.))
-                                .text_xs_tw()
-                                .text_color(c(TEXT_MUTED))
-                                .child("No favorites yet")
-                        }),
-                ),
-            )
+            .child(self.section("Favorites", cx).children(favorites).when(no_favorites, |section| {
+                // px-5 py-2 text-xs text-text-muted
+                section.child(div().px(px(20.)).py(px(8.)).text_xs_tw().text_color(c(TEXT_MUTED)).child("No favorites yet"))
+            }))
     }
 }
 

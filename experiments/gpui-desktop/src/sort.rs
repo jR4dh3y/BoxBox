@@ -26,11 +26,12 @@ pub struct Sort {
     pub dir: SortDir,
 }
 
+/// `DEFAULT_SORT_BY` and `DEFAULT_SORT_DIR`: newest first.
 impl Default for Sort {
     fn default() -> Self {
         Self {
-            field: SortField::Name,
-            dir: SortDir::Asc,
+            field: SortField::Modified,
+            dir: SortDir::Desc,
         }
     }
 }
@@ -51,40 +52,37 @@ impl Sort {
     }
 }
 
-/// Hidden entries last; folders first for name/type; then value or name, in `dir`.
+/// Folders lead every sort. Size and time sort by value, and their ties by
+/// ascending natural name; name and type sort by name in `dir`. Paths break
+/// remaining ties, so repeated reads keep one order.
 pub fn sort_files(items: &mut [FileInfo], sort: Sort) {
-    let key = |item: &FileInfo| -> f64 {
+    let by_value = matches!(sort.field, SortField::Size | SortField::Modified);
+    let value = |item: &FileInfo| -> f64 {
         match sort.field {
             SortField::Size => item.size as f64,
             SortField::Modified => DateTime::parse_from_rfc3339(&item.mod_time)
                 .map(|date| date.timestamp_millis() as f64)
                 .unwrap_or(0.0),
-            SortField::Name | SortField::Type => f64::from(u8::from(!item.is_dir)),
+            SortField::Name | SortField::Type => 0.0,
         }
     };
-    let by_value = matches!(sort.field, SortField::Size | SortField::Modified);
+    let directed = |ordering: Ordering| match sort.dir {
+        SortDir::Asc => ordering,
+        SortDir::Desc => ordering.reverse(),
+    };
     items.sort_by(|left, right| {
-        let (left_hidden, right_hidden) = (left.name.starts_with('.'), right.name.starts_with('.'));
-        if left_hidden != right_hidden {
-            return if left_hidden {
-                Ordering::Greater
-            } else {
-                Ordering::Less
-            };
+        if left.is_dir != right.is_dir {
+            return if left.is_dir { Ordering::Less } else { Ordering::Greater };
         }
-        let (lv, rv) = (key(left), key(right));
-        if !by_value && lv != rv {
-            return lv.total_cmp(&rv);
+        if by_value {
+            let ordering = value(left).total_cmp(&value(right));
+            if ordering != Ordering::Equal {
+                return directed(ordering);
+            }
         }
-        let comparison = if by_value && lv != rv {
-            lv.total_cmp(&rv)
-        } else {
-            natural_cmp(&left.name, &right.name)
-        };
-        match sort.dir {
-            SortDir::Asc => comparison,
-            SortDir::Desc => comparison.reverse(),
-        }
+        let names = natural_cmp(&left.name, &right.name);
+        let names = if by_value { names } else { directed(names) };
+        names.then_with(|| natural_cmp(&left.path, &right.path))
     });
 }
 
@@ -138,8 +136,16 @@ mod tests {
         }
     }
 
+    fn name_asc() -> Sort {
+        Sort { field: SortField::Name, dir: SortDir::Asc }
+    }
+
+    fn names(items: &[FileInfo]) -> Vec<&str> {
+        items.iter().map(|item| item.name.as_str()).collect()
+    }
+
     #[test]
-    fn folders_first_hidden_last_numeric_names() {
+    fn folders_lead_and_numbers_compare_by_value() {
         let mut items = vec![
             file("b10.txt", false, 1),
             file(".hidden", true, 0),
@@ -147,9 +153,20 @@ mod tests {
             file("Zeta", true, 0),
             file("alpha", true, 0),
         ];
-        sort_files(&mut items, Sort::default());
-        let names: Vec<_> = items.iter().map(|item| item.name.as_str()).collect();
-        assert_eq!(names, ["alpha", "Zeta", "b2.txt", "b10.txt", ".hidden"]);
+        sort_files(&mut items, name_asc());
+        assert_eq!(names(&items), [".hidden", "alpha", "Zeta", "b2.txt", "b10.txt"]);
+    }
+
+    #[test]
+    fn folders_lead_descending_sorts_and_ties_stay_ascending() {
+        let mut items = vec![file("b", false, 5), file("a", false, 5), file("dir", true, 0), file("c", false, 9)];
+        sort_files(&mut items, Sort { field: SortField::Size, dir: SortDir::Desc });
+        assert_eq!(names(&items), ["dir", "c", "a", "b"]);
+    }
+
+    #[test]
+    fn the_default_is_newest_first() {
+        assert_eq!(Sort::default(), Sort { field: SortField::Modified, dir: SortDir::Desc });
     }
 
     #[test]

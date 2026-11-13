@@ -64,8 +64,9 @@ impl Default for Preferences {
             confirm_delete: true,
             preview_on_single_click: false,
             selection_checkboxes: true,
-            default_sort: "Name".into(),
-            default_sort_direction: "Ascending".into(),
+            // `DEFAULT_SORT_BY` and `DEFAULT_SORT_DIR` in sortFiles.ts.
+            default_sort: "Date modified".into(),
+            default_sort_direction: "Descending".into(),
             default_view: "List".into(),
             hardware_acceleration: true,
             compact_rows: false,
@@ -280,6 +281,8 @@ pub struct Workspace {
     next_pane_id: usize,
     pub(crate) trash: Load<Vec<TrashItem>>,
     pub(crate) trash_open: bool,
+    /// Sidebar sections the user folded, by title.
+    pub(crate) collapsed_sections: std::collections::HashSet<&'static str>,
     pub(crate) trash_error: Option<String>,
     trash_provider: Option<Arc<Api>>,
     pub(crate) fonts: Fonts,
@@ -337,6 +340,7 @@ impl Workspace {
             next_pane_id: 1,
             trash: Load::Loading,
             trash_open: false,
+            collapsed_sections: Default::default(),
             trash_error: None,
             trash_provider: None,
             fonts,

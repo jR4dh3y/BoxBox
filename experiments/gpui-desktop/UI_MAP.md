@@ -27,7 +27,7 @@ Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 | `PathEditor.svelte` | location suggestions | keep | ✗ | ✗ |
 | `SearchBar.svelte` | search field | keep | ✓ `search.rs` | ✓ `search.rs` |
 | `AddMenu.svelte` | **+** menu: new file, folder, upload | keep (upload → copy in) | ◐ context menu only | ◐ context menu only |
-| `Sidebar.svelte` | drives, places, Trash, favorites | keep | ✓ `ui/sidebar.rs`, `devices.rs` | ✓ `ui/sidebar.rs`, `workspace/favorites.rs` |
+| `Sidebar.svelte` | drives, places, Trash, favorites | keep | ✓ `ui/sidebar.rs`, `devices.rs` | ✓ `components/sidebar.rs` (`SidebarSection`, `NavItem`); no Devices yet |
 | `StatusBar.svelte` | counts, selection size, view switch | keep | ✓ `ui/status_bar.rs` | ✓ `ui/status_bar.rs` |
 | `LoadError.svelte` | folder load failure | keep | ◐ inline text | ◐ inline text |
 
@@ -35,7 +35,7 @@ Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 
 | Svelte | Role | Native scope | PR | Local |
 |---|---|---|---|---|
-| `FileList.svelte` | list view | keep | ✓ `ui/file_list.rs` | ✓ `ui/file_list.rs` |
+| `FileList.svelte` | list view | keep | ✓ `ui/file_list.rs` | ✓ `components/file_list.rs` (`FileListHeader`, `FileRow`) |
 | `FileGrid.svelte` | grid with thumbnails | keep | ✓ `ui/file_grid.rs` | ✓ `ui/file_grid.rs` |
 | `FileThumbnail.svelte` | unused on master | — | — | — |
 | `DrivesView.svelte`, `DriveList.svelte`, `DriveRow.svelte`, `DriveCard.svelte` | This PC | keep | ✓ `ui/drives.rs` | ✓ `ui/drives.rs` |
@@ -93,10 +93,44 @@ freedesktop thumbnailers and shared cache (`~/.cache/thumbnails`).
 
 | Svelte | Native scope | PR | Local |
 |---|---|---|---|
-| `ui/Input.svelte` | real text input with selection, IME and clipboard | ✓ `ui/text_input.rs` | ◐ custom key handling, no IME |
-| `ui/Modal.svelte`, `ui/Button.svelte` | keep | ✓ `ui/modal.rs` | ✓ inline in `ui/settings.rs` |
-| `ui/Select.svelte`, `ui/Toggle.svelte` | keep | ✓ `segmented`, `toggle` | ✓ `cycle_button`, `toggle` |
-| `ui/ProgressBar.svelte`, `ui/Spinner.svelte` | keep | ◐ in `jobs.rs` | ◐ drive usage bar |
+| `ui/Input.svelte` | real text input with selection, IME and clipboard | ✓ `ui/text_input.rs` | ◐ `components/input.rs` frame; editing still custom, no IME |
+| `ui/Modal.svelte`, `ui/Button.svelte` | keep | ✓ `ui/modal.rs` | ◐ `components/modal.rs`, `components/button.rs`; dialogs not moved yet |
+| `ui/Select.svelte`, `ui/Toggle.svelte` | keep | ✓ `segmented`, `toggle` | ◐ `components/select.rs`, `components/toggle.rs`; settings not moved yet |
+| `ui/ProgressBar.svelte`, `ui/Spinner.svelte` | keep | ◐ in `jobs.rs` | ◐ `components/progress_bar.rs`; no spinner |
+| `ui/ContextMenu.svelte`, `ui/Toast.svelte` | keep | ✓ | ◐ `components/context_menu.rs`, `components/toast.rs`; views not moved yet |
+
+## Shared components
+
+`src/components/` holds one Rust component per Svelte component, with the same
+names, props and states. Views call them and do not style controls
+themselves. Colours come from `frontend/src/routes/layout.css` (`build.rs`
+generates `theme::*`), and icons from the Lucide set `scripts/extract-icons.ts`
+copies, so a token or icon change on the web side reaches the native app on
+the next build.
+
+`cargo run -- --gallery` renders `frontend/src/routes/dev/gallery/gallery.json`;
+the web app renders the same manifest at `/dev/gallery` (dev server only).
+`scripts/compare-gallery.py` diffs the two cell by cell.
+
+| Component | Svelte | Gallery | Used by views |
+|---|---|---|---|
+| `Button` | `ui/Button.svelte` | ✓ 8 variants and sizes | not yet |
+| `Input` | `ui/Input.svelte` | ✓ | not yet |
+| `Toggle` | `ui/Toggle.svelte` | ✓ (disabled knob is an exception: GPUI has no group opacity) | not yet |
+| `Select` | `ui/Select.svelte` | ✓ | not yet |
+| `ProgressBar` | `ui/ProgressBar.svelte` | ✓ | not yet |
+| `ContextMenu`, `MenuItem` | `ui/ContextMenu.svelte` | ✓ | not yet |
+| `Modal` | `ui/Modal.svelte` | ✓ | not yet |
+| `Toast` | `ui/Toast.svelte` | ✓ | not yet |
+| `FileListHeader`, `FileRow` | `FileList.svelte` | full-window shot | ✓ `ui/file_list.rs` |
+| `SidebarSection`, `NavItem` | `Sidebar.svelte` | full-window shot | ✓ `ui/sidebar.rs` |
+
+Next: `FileTile` (grid), tabs, toolbar, status bar and drive cards, then move
+dialogs, menus, settings and notices onto the primitives above.
+
+Known differences from the web app, kept on purpose: the home folder is
+labelled "Home" as in other Linux file managers, and list rows show icons,
+not thumbnails (thumbnails belong in the grid).
 
 ## Web only: not part of the native app
 

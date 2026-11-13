@@ -80,7 +80,7 @@ impl Workspace {
                         })),
                 )
                 .into_any_element(),
-            (_, ViewMode::List) => self.render_file_list(target, window, cx).into_any_element(),
+            (_, ViewMode::List) => self.render_file_list(target, cx).into_any_element(),
             (_, ViewMode::Grid) => self.render_file_grid(target, window, cx).into_any_element(),
         }
 
