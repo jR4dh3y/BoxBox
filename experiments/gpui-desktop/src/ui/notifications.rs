@@ -21,5 +21,7 @@ impl Workspace {
                 Toast::new(("notice", id as usize), notice.kind, notice.message.clone())
                     .on_dismiss(cx.listener(move |this, _, _, cx| this.dismiss_notice(id, cx)))
             }))
+            // Notifications.svelte renders the transfer panel after its toasts.
+            .child(self.render_jobs(cx))
     }
 }

@@ -6,6 +6,7 @@ mod confirm;
 mod drives;
 mod file_grid;
 mod file_list;
+mod jobs;
 mod notifications;
 mod open_with;
 mod operations;

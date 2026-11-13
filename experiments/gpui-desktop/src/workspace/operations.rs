@@ -673,6 +673,12 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let generation = self.begin_operation(format!("Transferring {} item(s)…", planned.len()));
+        let title = match planned.as_slice() {
+            [plan] => plan.keep_both.clone().filter(|_| plan.keep).unwrap_or_else(|| plan.entry.item.name.clone()),
+            planned => format!("{} items", planned.len()),
+        };
+        let folder = parent.rsplit('/').next().unwrap_or(&parent).to_string();
+        let (job, progress) = self.start_job(title, folder, clipboard.mode == ClipboardMode::Cut, cx);
         let mut affected = Vec::<Arc<Api>>::new();
         for api in clipboard.entries.iter().map(|entry| &entry.api).chain(std::iter::once(&destination)) {
             if !affected.iter().any(|known| same_provider(known, api)) {
@@ -684,8 +690,15 @@ impl Workspace {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let count = transfer_planned(mode, &planned, &destination, &parent)?;
-                    Ok(format!("Transferred {count} item(s)"))
+                    progress.scope(|| {
+                        for plan in &planned {
+                            if let Ok(Some(path)) = plan.entry.api.local_path(&plan.entry.item.path) {
+                                crate::progress::measure(&path);
+                            }
+                        }
+                        let count = transfer_planned(mode, &planned, &destination, &parent)?;
+                        Ok(format!("Transferred {count} item(s)"))
+                    })
                 })
                 .await;
             let _ = this.update(cx, move |this, cx| {
@@ -695,7 +708,7 @@ impl Workspace {
                 if result.is_ok() && mode == ClipboardMode::Cut {
                     this.file_clipboard = None;
                 }
-                this.finish_operation(generation, result, cx);
+                this.finish_transfer(job, generation, result, cx);
                 if this.pane_by_id(target.0).is_none() {
                     this.report(Err("The destination pane was closed during the transfer.".into()), cx);
                 }
@@ -999,18 +1012,27 @@ impl Workspace {
         }
         let count = paths.len();
         let generation = self.begin_operation(format!("Importing {count} item(s)…"));
+        let title = match paths.as_slice() {
+            [path] => path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default(),
+            paths => format!("{} items", paths.len()),
+        };
+        let folder = parent.rsplit('/').next().unwrap_or(&parent).to_string();
+        let (job, progress) = self.start_job(title, folder, false, cx);
         let refresh_api = api.clone();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    import_paths_into(&api, &paths, &parent)?;
-                    Ok(format!("Imported {count} item(s)"))
+                    progress.scope(|| {
+                        paths.iter().for_each(|path| crate::progress::measure(path));
+                        import_paths_into(&api, &paths, &parent)?;
+                        Ok(format!("Imported {count} item(s)"))
+                    })
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
                 this.refresh_provider(refresh_api, cx);
-                this.finish_operation(generation, result, cx);
+                this.finish_transfer(job, generation, result, cx);
             });
         })
         .detach();

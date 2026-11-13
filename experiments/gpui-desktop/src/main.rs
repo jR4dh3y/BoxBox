@@ -13,6 +13,7 @@ mod media;
 mod open_with;
 mod os_clipboard;
 mod pane;
+mod progress;
 mod persist;
 mod search;
 mod sort;

@@ -188,8 +188,18 @@ fn copy_regular_file(source: &Path, destination: &Path, confinement: Option<&Pat
             .create_new(true)
             .open(destination)
             .with_context(|| format!("cannot create {}", destination.display()))?;
-        let result = (|| {
-            io::copy(&mut input, &mut output)?;
+        let result = (|| -> Result<()> {
+            // In chunks, so a transfer can report progress and stop when cancelled.
+            let mut buffer = vec![0u8; 1024 * 1024];
+            loop {
+                crate::progress::check()?;
+                let read = io::Read::read(&mut input, &mut buffer)?;
+                if read == 0 {
+                    break;
+                }
+                output.write_all(&buffer[..read])?;
+                crate::progress::advance(read as u64);
+            }
             output.flush()?;
             output.set_permissions(metadata.permissions())?;
             Ok(())

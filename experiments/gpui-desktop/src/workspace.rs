@@ -20,6 +20,7 @@ use crate::settings_state::{DesktopSettings, SettingsPanelState};
 pub(crate) mod favorites;
 pub(crate) mod confirm;
 mod devices;
+pub(crate) mod jobs;
 mod notifications;
 pub(crate) mod open_with;
 mod watching;
@@ -236,6 +237,8 @@ pub struct Workspace {
     /// The last move to Trash or rename, for Ctrl+Z.
     pub(crate) last_undo: Option<undo::Undo>,
     pub(crate) shortcuts_open: bool,
+    pub(crate) jobs: Vec<jobs::Job>,
+    next_job_id: u64,
     pub(crate) context_menu: Option<ContextMenuState>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
@@ -339,6 +342,8 @@ impl Workspace {
             confirm: None,
             last_undo: None,
             shortcuts_open: false,
+            jobs: Vec::new(),
+            next_job_id: 0,
             context_menu: None,
             add_menu: None,
             open_select: None,
