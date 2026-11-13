@@ -237,6 +237,9 @@ impl RenderOnce for FileRow {
             .when_some(self.checkbox, |slot, on_check| {
                 slot.child(
                     checkbox(self.selected, accent)
+                        .absolute()
+                        .top(px(2.))
+                        .left(px(2.))
                         .when(!self.selected, |el| el.invisible().group_hover(group, |style| style.visible()))
                         .on_click(move |event, window, cx| {
                             cx.stop_propagation();
@@ -281,12 +284,12 @@ impl RenderOnce for FileRow {
     }
 }
 
-/// Chromium's checkbox with `accent-color`: a light box, or the accent with a white tick.
-fn checkbox(checked: bool, accent: Rgba) -> Stateful<Div> {
+/// Chromium's 16px checkbox with `accent-color`: a light box, or the accent with a white
+/// tick. Callers position it.
+pub(super) fn checkbox(checked: bool, accent: Rgba) -> Stateful<Div> {
     div()
         .id("check")
-        .absolute()
-        .inset(px(2.))
+        .size(px(16.))
         .flex()
         .items_center()
         .justify_center()

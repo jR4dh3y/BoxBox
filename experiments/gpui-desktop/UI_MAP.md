@@ -36,7 +36,7 @@ Status: ✓ present · ◐ partial · ✗ missing · — not needed.
 | Svelte | Role | Native scope | PR | Local |
 |---|---|---|---|---|
 | `FileList.svelte` | list view | keep | ✓ `ui/file_list.rs` | ✓ `components/file_list.rs` (`FileListHeader`, `FileRow`) |
-| `FileGrid.svelte` | grid with thumbnails | keep | ✓ `ui/file_grid.rs` | ✓ `ui/file_grid.rs` |
+| `FileGrid.svelte` | grid with thumbnails | keep | ✓ `ui/file_grid.rs` | ✓ `components/file_grid.rs` (`FileTile`, `GridMetrics`) |
 | `FileThumbnail.svelte` | unused on master | — | — | — |
 | `DrivesView.svelte`, `DriveList.svelte`, `DriveRow.svelte`, `DriveCard.svelte` | This PC | keep | ✓ `ui/drives.rs` | ✓ `ui/drives.rs` |
 | `DriveContextMenu.svelte` | drive menu | keep | ✓ `context_menu.rs` | ◐ `ui/overlays.rs` |
@@ -124,13 +124,15 @@ the web app renders the same manifest at `/dev/gallery` (dev server only).
 | `Toast` | `ui/Toast.svelte` | ✓ | not yet |
 | `FileListHeader`, `FileRow` | `FileList.svelte` | full-window shot | ✓ `ui/file_list.rs` |
 | `SidebarSection`, `NavItem` | `Sidebar.svelte` | full-window shot | ✓ `ui/sidebar.rs` |
+| `FileTile`, `GridMetrics` | `FileGrid.svelte` | full-window shot | ✓ `ui/file_grid.rs` |
 
-Next: `FileTile` (grid), tabs, toolbar, status bar and drive cards, then move
+Next: tabs, toolbar, status bar and drive cards, then move
 dialogs, menus, settings and notices onto the primitives above.
 
 Known differences from the web app, kept on purpose: the home folder is
 labelled "Home" as in other Linux file managers, and list rows show icons,
-not thumbnails (thumbnails belong in the grid).
+not thumbnails (thumbnails belong in the grid), and grid tiles show video and PDF
+thumbnails as well as images.
 
 ## Web only: not part of the native app
 

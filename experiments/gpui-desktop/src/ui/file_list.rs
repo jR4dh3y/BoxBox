@@ -5,7 +5,8 @@ use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context};
 
 use super::{icon, TextScale};
 use crate::components::{FileListHeader, FileRow, Selection};
-use crate::format::{file_date, file_icon, file_size, type_description};
+use crate::api::FileInfo;
+use crate::format::{display_name, file_date, file_icon, file_size, type_description};
 use crate::theme::*;
 use crate::workspace::operations::{ClipboardMode, PaneTarget};
 use crate::workspace::Workspace;
@@ -62,16 +63,7 @@ impl Workspace {
         let pane = self.pane_by_id(target.0)?;
         let item = pane.items.get(index)?;
         let (path, is_dir) = (item.path.clone(), item.is_dir);
-        let selection = Selection {
-            background: self.selection_color(false),
-            hover: self.selection_color(true),
-            accent: c(self.accent_hex()),
-        };
-        let cut = self.file_clipboard.as_ref().is_some_and(|clipboard| {
-            clipboard.mode == ClipboardMode::Cut
-                && clipboard.entries.iter().any(|entry| entry.item.path == item.path && std::sync::Arc::ptr_eq(&entry.api, &pane.api))
-        });
-        let row = FileRow::new(("row", index), display_name(&item.name, is_dir, self.preferences.show_file_extensions), is_dir, selection)
+        let row = FileRow::new(("row", index), display_name(&item.name, is_dir, self.preferences.show_file_extensions), is_dir, self.selection_style())
             .icon(file_icon(&item.name, is_dir))
             .details(
                 if is_dir { "Folder".into() } else { type_description(&item.name) },
@@ -80,14 +72,10 @@ impl Workspace {
             )
             .selected(pane.is_selected(&item.path))
             .active(pane.active == Some(index))
-            .cut(cut)
+            .cut(self.is_cut(pane, item))
             .compact(self.preferences.compact_rows);
         let row = match self.preferences.selection_checkboxes {
-            true => row.checkbox(cx.listener(move |this, _, _, cx| {
-                this.active_pane = target;
-                this.pane_mut().click(index, gpui::Modifiers { control: true, ..Default::default() });
-                cx.notify();
-            })),
+            true => row.checkbox(self.toggle_selection(target, index, cx)),
             false => row,
         };
         let (workspace, api) = (cx.entity().downgrade(), pane.api.clone());
@@ -103,6 +91,35 @@ impl Workspace {
             crate::drag_out::draggable(row.debug_selector(move || format!("row-{}-{index}", target.0)), index, workspace, api)
                 .on_mouse_down(gpui::MouseButton::Right, on_menu)
                 .on_click(on_click)
+        }))
+    }
+
+    /// How selected rows and tiles are drawn, from the accent.
+    pub(crate) fn selection_style(&self) -> Selection {
+        Selection { background: self.selection_color(false), hover: self.selection_color(true), accent: c(self.accent_hex()) }
+    }
+
+    /// Whether the item is on the clipboard to be moved.
+    pub(crate) fn is_cut(&self, pane: &crate::pane::Pane, item: &FileInfo) -> bool {
+        self.file_clipboard.as_ref().is_some_and(|clipboard| {
+            clipboard.mode == ClipboardMode::Cut
+                && clipboard.entries.iter().any(|entry| entry.item.path == item.path && std::sync::Arc::ptr_eq(&entry.api, &pane.api))
+        })
+    }
+
+    /// The selection checkbox: toggles one item, like Ctrl+click.
+    pub(crate) fn toggle_selection(
+        &self,
+        target: PaneTarget,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) -> Box<dyn Fn(&ClickEvent, &mut gpui::Window, &mut gpui::App)> {
+        Box::new(cx.listener(move |this, _, _, cx| {
+            this.active_pane = target;
+            if let Some(pane) = this.pane_mut_by_id(target.0) {
+                pane.click(index, gpui::Modifiers { control: true, ..Default::default() });
+            }
+            cx.notify();
         }))
     }
 
@@ -131,14 +148,4 @@ impl Workspace {
         }
         cx.notify();
     }
-}
-
-fn display_name(name: &str, is_dir: bool, show_extensions: bool) -> String {
-    if is_dir || show_extensions {
-        return name.to_string();
-    }
-    name.rsplit_once('.')
-        .filter(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
-        .map(|(stem, _)| stem.to_string())
-        .unwrap_or_else(|| name.to_string())
 }

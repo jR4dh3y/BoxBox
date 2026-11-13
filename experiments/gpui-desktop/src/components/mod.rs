@@ -6,6 +6,7 @@
 
 mod button;
 mod context_menu;
+mod file_grid;
 mod file_list;
 mod input;
 mod modal;
@@ -17,6 +18,7 @@ mod toggle;
 
 pub use button::{Button, ButtonSize, ButtonVariant};
 pub use context_menu::{ContextMenu, MenuItem};
+pub use file_grid::{FileTile, GridMetrics};
 pub use file_list::{FileListHeader, FileRow, Selection};
 pub use input::Input;
 pub use modal::Modal;

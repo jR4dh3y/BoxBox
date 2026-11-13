@@ -337,3 +337,14 @@ mod tests {
         assert_eq!(file_icon("docs", true), "folder");
     }
 }
+
+/// `getDisplayName`: drops the extension unless extensions are shown. Folders keep their name.
+pub fn display_name(name: &str, is_dir: bool, show_extensions: bool) -> String {
+    if is_dir || show_extensions {
+        return name.to_string();
+    }
+    name.rsplit_once('.')
+        .filter(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
+        .map(|(stem, _)| stem.to_string())
+        .unwrap_or_else(|| name.to_string())
+}
