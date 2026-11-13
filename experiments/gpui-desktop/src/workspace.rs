@@ -224,6 +224,7 @@ pub struct Workspace {
     pub(crate) file_clipboard: Option<FileClipboard>,
     /// What this app last put on the system clipboard, to tell it from other apps' copies.
     pub(crate) published_files: Option<crate::os_clipboard::Files>,
+    pub(crate) transfer_conflicts: Option<operations::TransferConflicts>,
     pub(crate) context_menu: Option<ContextMenuState>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
@@ -322,6 +323,7 @@ impl Workspace {
             .collect(),
             file_clipboard: None,
             published_files: None,
+            transfer_conflicts: None,
             context_menu: None,
             add_menu: None,
             open_select: None,
@@ -1184,6 +1186,7 @@ impl Render for Workspace {
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
             .child(self.render_notices(cx))
             .when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)))
+            .when(self.transfer_conflicts.is_some(), |root| root.child(self.render_conflicts(cx)))
             .when(self.operation_dialog.is_some(), |root| {
                 root.child(self.render_operation_dialog(window, cx))
             })

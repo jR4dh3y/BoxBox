@@ -1,6 +1,7 @@
 //! Components, one per Svelte component they reproduce.
 
 mod browser;
+mod conflicts;
 mod drives;
 mod file_grid;
 mod file_list;
