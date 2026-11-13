@@ -9,6 +9,7 @@ mod format;
 mod local;
 mod media;
 mod pane;
+mod persist;
 mod search;
 mod sort;
 mod theme;

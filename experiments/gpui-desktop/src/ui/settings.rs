@@ -48,7 +48,7 @@ impl Workspace {
                 let connections = std::mem::take(&mut this.desktop_settings.connections);
                 this.desktop_settings = DesktopSettings { connections, ..DesktopSettings::default() };
                 this.favorites.entries.clear();
-                this.favorites_error = this.favorites.save().err().map(|error| error.to_string());
+                this.save_favorites(None, cx);
                 this.reload_wallpaper(cx);
                 this.save_desktop_settings(cx);
             });
@@ -568,11 +568,14 @@ impl Workspace {
     }
 
     pub(crate) fn save_desktop_settings(&mut self, cx: &mut Context<Self>) {
-        match self.desktop_settings.save() {
-            Ok(()) => {
-                self.desktop_settings.load_error = None;
-                self.settings_panel.error = None;
-            }
+        match self.desktop_settings.encode() {
+            Ok(bytes) => self.persist(&crate::persist::DESKTOP_SETTINGS, bytes, cx, |this, result, _| match result {
+                Ok(()) => {
+                    this.desktop_settings.load_error = None;
+                    this.settings_panel.error = None;
+                }
+                Err(error) => this.settings_panel.error = Some(format!("Could not save desktop settings: {error}")),
+            }),
             Err(error) => self.settings_panel.error = Some(error),
         }
         cx.notify();

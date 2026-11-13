@@ -1,7 +1,7 @@
 use std::{
-    fs::{self, OpenOptions},
-    io::{self, Write},
-    path::{Path, PathBuf},
+    fs,
+    io,
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -161,7 +161,8 @@ impl DesktopSettings {
         settings
     }
 
-    pub(crate) fn save(&self) -> Result<(), String> {
+    /// Validates and serialises the settings for `persist::DESKTOP_SETTINGS`.
+    pub(crate) fn encode(&self) -> Result<Vec<u8>, String> {
         for connection in &self.connections {
             if connection.id.is_empty() {
                 return Err("Could not save desktop settings: saved connection has no id.".into());
@@ -171,10 +172,7 @@ impl DesktopSettings {
             validate_server_url(&connection.url)
                 .map_err(|error| format!("Could not save desktop settings: {error}"))?;
         }
-        let bytes = serde_json::to_vec_pretty(self)
-            .map_err(|error| format!("Could not encode desktop settings: {error}"))?;
-        atomic_write(&settings_path(), &bytes)
-            .map_err(|error| format!("Could not save desktop settings: {error}"))
+        serde_json::to_vec_pretty(self).map_err(|error| format!("Could not encode desktop settings: {error}"))
     }
 }
 
@@ -435,49 +433,11 @@ fn valid_host(host: &str) -> bool {
 /// Keep wallpaper bytes in app storage so moving the selected source cannot break startup.
 pub(crate) fn store_wallpaper(bytes: &[u8], digest: &str) -> Result<PathBuf, String> {
     let path = settings_path().with_file_name(format!("wallpaper-{digest}.image"));
-    atomic_write(&path, bytes).map_err(|error| format!("Could not save wallpaper: {error}"))?;
+    crate::persist::atomic_write(&path, bytes).map_err(|error| format!("Could not save wallpaper: {error}"))?;
     Ok(path)
 }
 
 fn settings_path() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("boxbox-gpui")
-        .join("desktop-settings.json")
+    crate::persist::DESKTOP_SETTINGS.path().to_path_buf()
 }
 
-fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
-    static TEMP_ID: AtomicU64 = AtomicU64::new(0);
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "settings path has no parent"))?;
-    fs::create_dir_all(parent)?;
-
-    let (temporary, mut file) = loop {
-        let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
-        let temporary = parent.join(format!(".desktop-settings-{}-{id}.tmp", std::process::id()));
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
-        {
-            Ok(file) => break (temporary, file),
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error),
-        }
-    };
-
-    let result = (|| {
-        file.write_all(contents)?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&temporary, path)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}

@@ -1275,17 +1275,7 @@ impl Workspace {
             connection_id,
         };
         self.favorites.add(favorite);
-        match self.favorites.save() {
-            Ok(()) => {
-                self.favorites_error = None;
-                self.operation_status = OperationStatus::Success("Favorite added".into());
-            }
-            Err(error) => {
-                let message = error.to_string();
-                self.favorites_error = Some(message.clone());
-                self.operation_status = OperationStatus::Error(message);
-            }
-        }
+        self.save_favorites(Some("Favorite added"), cx);
         cx.notify();
     }
 
@@ -1294,10 +1284,7 @@ impl Workspace {
             return;
         };
         self.favorites.remove(&favorite);
-        match self.favorites.save() {
-            Ok(()) => self.favorites_error = None,
-            Err(error) => self.favorites_error = Some(error.to_string()),
-        }
+        self.save_favorites(None, cx);
         cx.notify();
     }
 
@@ -1449,7 +1436,7 @@ impl Workspace {
             .find(|connection| pane.api.server_url() == Some(connection.url.as_str()))
             .map(|connection| connection.id.clone());
         self.favorites.add(Favorite { name: item.name.clone(), path: item.path.clone(), provider, connection_id });
-        self.favorites_error = self.favorites.save().err().map(|error| error.to_string());
+        self.save_favorites(None, cx);
         self.context_menu = None;
         cx.notify();
     }

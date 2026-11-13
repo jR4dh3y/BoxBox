@@ -1,7 +1,7 @@
 //! Root view: tabs of panes plus the drive data shared by the sidebar and This PC.
 //! Mirrors `lib/components/desktop/BrowseWorkspace.svelte`.
 
-use std::{collections::HashMap, fs, path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::HashMap, fs, sync::Arc, time::Duration};
 
 use gpui::{
     actions, div, prelude::*, px, relative, App, Context, FocusHandle, KeyBinding, KeyDownEvent,
@@ -77,46 +77,15 @@ impl Default for Preferences {
 }
 
 impl Preferences {
-    fn path() -> PathBuf {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("boxbox-gpui")
-            .join("settings.json")
-    }
-
     pub(crate) fn load() -> Self {
-        fs::read(Self::path())
+        fs::read(crate::persist::PREFERENCES.path())
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default()
     }
 
-    pub(crate) fn save(&self) -> Result<(), String> {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
-
-        let path = Self::path();
-        let parent = path
-            .parent()
-            .ok_or_else(|| "settings path has no parent".to_string())?;
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
-        let bytes = serde_json::to_vec_pretty(self)
-            .map_err(|error| format!("cannot serialize settings: {error}"))?;
-        let temporary = path.with_file_name(format!(
-            "settings.json.{}.{}.tmp",
-            std::process::id(),
-            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::write(&temporary, bytes)
-            .map_err(|error| format!("cannot write {}: {error}", temporary.display()))?;
-        if let Err(error) = fs::rename(&temporary, &path) {
-            let _ = fs::remove_file(&temporary);
-            return Err(format!("cannot replace {}: {error}", path.display()));
-        }
-        Ok(())
+    fn encode(&self) -> Result<Vec<u8>, String> {
+        serde_json::to_vec_pretty(self).map_err(|error| format!("cannot serialize settings: {error}"))
     }
 }
 
@@ -533,6 +502,57 @@ impl Workspace {
         .detach();
     }
 
+    /// Writes a settings file on a background thread. `done` runs on the UI thread
+    /// unless a newer write to the same file replaced this one.
+    pub(crate) fn persist(
+        &self,
+        store: &'static crate::persist::Store,
+        bytes: Vec<u8>,
+        cx: &mut Context<Self>,
+        done: impl FnOnce(&mut Self, Result<(), String>, &mut Context<Self>) + 'static,
+    ) {
+        let write = store.write(bytes);
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { write() }).await;
+            let result = match result {
+                Ok(crate::persist::Written::Superseded) => return,
+                Ok(crate::persist::Written::Saved) => Ok(()),
+                Err(error) => Err(format!("cannot write {}: {error}", store.path().display())),
+            };
+            this.update(cx, |this, cx| {
+                done(this, result, cx);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Saves favorites; `success` is the status to show once they are on disk.
+    pub(crate) fn save_favorites(&mut self, success: Option<&'static str>, cx: &mut Context<Self>) {
+        let bytes = match self.favorites.encode() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.favorites_error = Some(error.to_string());
+                return;
+            }
+        };
+        self.persist(&crate::persist::FAVORITES, bytes, cx, move |this, result, _| match result {
+            Ok(()) => {
+                this.favorites_error = None;
+                if let Some(message) = success {
+                    this.operation_status = OperationStatus::Success(message.into());
+                }
+            }
+            Err(error) => {
+                if success.is_some() {
+                    this.operation_status = OperationStatus::Error(error.clone());
+                }
+                this.favorites_error = Some(error);
+            }
+        });
+    }
+
     /// Sorts a pane's entries in the background after its sort changed.
     pub(crate) fn resort(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
         let Some(job) = self.pane_by_id(target.0).map(Pane::sort_job) else {
@@ -609,10 +629,13 @@ impl Workspace {
                 hidden_changed |= pane.apply_preferences(show_hidden_files, sort, view);
             }
         }
-        if let Err(error) = self.preferences.save() {
-            self.operation_status = OperationStatus::Error(format!(
-                "Could not save preferences: {error}"
-            ));
+        match self.preferences.encode() {
+            Ok(bytes) => self.persist(&crate::persist::PREFERENCES, bytes, cx, |this, result, _| {
+                if let Err(error) = result {
+                    this.operation_status = OperationStatus::Error(format!("Could not save preferences: {error}"));
+                }
+            }),
+            Err(error) => self.operation_status = OperationStatus::Error(format!("Could not save preferences: {error}")),
         }
         for target in resorted {
             self.resort(target, cx);

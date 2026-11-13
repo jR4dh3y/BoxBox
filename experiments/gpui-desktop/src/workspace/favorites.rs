@@ -1,6 +1,6 @@
-use std::{fs, path::PathBuf};
+use std::fs;
 
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use crate::api::Api;
@@ -37,7 +37,7 @@ pub(crate) struct Favorites {
 
 impl Favorites {
     pub fn load() -> Self {
-        let entries = fs::read(path())
+        let entries = fs::read(crate::persist::FAVORITES.path())
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Vec<Favorite>>(&bytes).ok())
             .unwrap_or_default();
@@ -61,36 +61,8 @@ impl Favorites {
         });
     }
 
-    pub fn save(&self) -> Result<()> {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
-
-        let path = path();
-        let parent = path.parent().context("favorites path has no parent")?;
-        fs::create_dir_all(parent).with_context(|| format!("cannot create {}", parent.display()))?;
-        let bytes = serde_json::to_vec_pretty(&self.entries)?;
-        let temporary = path.with_file_name(format!(
-            "favorites.json.{}.{}.tmp",
-            std::process::id(),
-            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
-        ));
-        if let Err(error) = fs::write(&temporary, bytes) {
-            let _ = fs::remove_file(&temporary);
-            return Err(error).with_context(|| format!("cannot write {}", temporary.display()));
-        }
-        if let Err(error) = fs::rename(&temporary, &path) {
-            let _ = fs::remove_file(&temporary);
-            return Err(error).with_context(|| format!("cannot replace {}", path.display()));
-        }
-        Ok(())
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        Ok(serde_json::to_vec_pretty(&self.entries)?)
     }
 }
 
-fn path() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("boxbox-gpui")
-        .join("favorites.json")
-}
