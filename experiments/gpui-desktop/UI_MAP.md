@@ -146,6 +146,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 
 | Behaviour | PR | Local |
 |---|---|---|
+| "Show in folder" from other apps (`org.freedesktop.FileManager1`) | ✗ | ✓ `filemanager1.rs`, only when no other file manager owns the name; opens the folder, does not select the item yet |
 | Single instance, launch opens a tab | ✓ `instance.rs` | ✓ `instance.rs` (from PR #226); real paths and `file://` URIs open their folder |
 | Live folder refresh | ✓ `watch.rs` (server stream) | ✓ `workspace/watching.rs` (inotify) |
 | Drag out | ◐ X11 only | ◐ X11 only |

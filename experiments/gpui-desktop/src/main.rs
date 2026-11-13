@@ -4,6 +4,7 @@ mod api;
 mod assets;
 mod components;
 mod devices;
+mod filemanager1;
 mod gallery;
 mod instance;
 mod drag_out;
@@ -88,7 +89,20 @@ fn main() {
     // A second launch opens its location in the running window instead.
     let launches = match instance::claim(&initial_path) {
         Ok(instance::Instance::Forwarded) => return,
-        Ok(instance::Instance::Primary(launches)) => Some(launches),
+        Ok(instance::Instance::Primary(launches, sender)) => {
+            // "Show in folder" from other apps, when no other file manager answers it.
+            std::thread::Builder::new()
+                .name("filemanager1".into())
+                .spawn(move || match filemanager1::serve(sender) {
+                    Ok(Some(_connection)) => loop {
+                        std::thread::park();
+                    },
+                    Ok(None) => log::info!("Another file manager answers org.freedesktop.FileManager1"),
+                    Err(error) => log::warn!("Could not serve org.freedesktop.FileManager1: {error:#}"),
+                })
+                .ok();
+            Some(launches)
+        }
         Err(error) => {
             log::warn!("Running without single-instance handoff: {error:#}");
             None

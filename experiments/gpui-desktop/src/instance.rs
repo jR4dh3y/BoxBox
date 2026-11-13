@@ -14,7 +14,7 @@ const MAX_MESSAGE: u64 = 8 * 1024;
 
 pub enum Instance {
     /// This process owns the socket; later launches arrive on the channel.
-    Primary(async_channel::Receiver<String>),
+    Primary(async_channel::Receiver<String>, async_channel::Sender<String>),
     /// The running window took the launch.
     Forwarded,
 }
@@ -49,6 +49,7 @@ fn claim_at(socket: &std::path::Path, argument: &str) -> Result<Instance> {
     std::fs::remove_file(socket).ok();
     let listener = UnixListener::bind(socket).with_context(|| format!("cannot listen on {}", socket.display()))?;
     let (sender, receiver) = async_channel::unbounded();
+    let launches = sender.clone();
     std::thread::Builder::new().name("instance".into()).spawn(move || {
         for stream in listener.incoming().flatten() {
             let mut line = String::new();
@@ -62,7 +63,7 @@ fn claim_at(socket: &std::path::Path, argument: &str) -> Result<Instance> {
             writeln!(&stream, "ok").ok();
         }
     })?;
-    Ok(Instance::Primary(receiver))
+    Ok(Instance::Primary(receiver, launches))
 }
 
 #[cfg(test)]
@@ -73,7 +74,7 @@ mod tests {
     fn a_second_claim_forwards_to_the_first() {
         let dir = std::env::temp_dir().join(format!("boxbox-instance-{}", std::process::id()));
         let socket = dir.join("instance.sock");
-        let Instance::Primary(launches) = claim_at(&socket, "").unwrap() else { panic!("the first claim owns the socket") };
+        let Instance::Primary(launches, _) = claim_at(&socket, "").unwrap() else { panic!("the first claim owns the socket") };
         assert!(matches!(claim_at(&socket, "/home/me/Documents").unwrap(), Instance::Forwarded));
         assert_eq!(launches.recv_blocking().unwrap(), "/home/me/Documents");
         std::fs::remove_dir_all(dir).ok();
