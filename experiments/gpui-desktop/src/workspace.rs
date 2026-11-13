@@ -23,6 +23,7 @@ mod devices;
 mod notifications;
 pub(crate) mod open_with;
 mod watching;
+pub(crate) mod undo;
 pub(crate) mod operations;
 pub(crate) mod preview;
 pub(crate) mod appearance;
@@ -132,6 +133,7 @@ actions!(
         FocusLocation,
         ToggleSplit,
         AddFavorite,
+        Undo,
         OperationEscape,
     ]
 );
@@ -176,6 +178,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("space", PreviewActive, context),
         KeyBinding::new("ctrl-shift-5", ToggleSplit, context),
         KeyBinding::new("ctrl-b", AddFavorite, context),
+        // A text field keeps Ctrl+Z to itself, as the web shortcut skips inputs.
+        KeyBinding::new("ctrl-z", Undo, Some("BrowseWorkspace && !TextField")),
         KeyBinding::new("escape", OperationEscape, Some("PreviewInput")),
         KeyBinding::new("escape", CloseSettings, Some("SettingsPanel")),
     ]);
@@ -227,6 +231,8 @@ pub struct Workspace {
     pub(crate) published_files: Option<crate::os_clipboard::Files>,
     pub(crate) transfer_conflicts: Option<operations::TransferConflicts>,
     pub(crate) confirm: Option<confirm::Confirm>,
+    /// The last move to Trash or rename, for Ctrl+Z.
+    pub(crate) last_undo: Option<undo::Undo>,
     pub(crate) context_menu: Option<ContextMenuState>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
@@ -328,6 +334,7 @@ impl Workspace {
             published_files: None,
             transfer_conflicts: None,
             confirm: None,
+            last_undo: None,
             context_menu: None,
             add_menu: None,
             open_select: None,
@@ -1197,6 +1204,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::focus_location))
             .on_action(cx.listener(Self::toggle_split))
             .on_action(cx.listener(Self::add_favorite))
+            .on_action(cx.listener(Self::undo))
             .on_action(cx.listener(Self::operation_escape))
             .relative()
             .size_full()

@@ -14,6 +14,7 @@ use gpui::{Context, Window};
 
 use crate::os_clipboard;
 use super::confirm::Confirm;
+use super::undo::Undo;
 use crate::api::{Api, FileInfo};
 use super::preview::ThumbnailKey;
 use super::*;
@@ -124,7 +125,7 @@ impl Workspace {
         self.mutation_generation
     }
 
-    fn finish_operation(
+    pub(crate) fn finish_operation(
         &mut self,
         generation: u64,
         result: anyhow::Result<String>,
@@ -310,6 +311,7 @@ impl Workspace {
         });
         let refresh_api = api.clone();
         let renamed_path = (kind == "rename").then(|| destination_path(&parent, &input));
+        let undo = path.clone().zip(renamed_path.clone()).map(|(before, after)| Undo::Rename { api: api.clone(), before, after });
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
@@ -331,6 +333,9 @@ impl Workspace {
             let _ = this.update(cx, |this, cx| {
                 this.operation_dialog = None;
                 if result.is_ok() {
+                    if undo.is_some() {
+                        this.last_undo = undo;
+                    }
                     if let Some(path) = renamed_path {
                         if let Some(pane) = this.pane_mut_by_id(target_id) {
                             pane.selected.clear(); pane.selected.insert(path);
@@ -778,21 +783,28 @@ impl Workspace {
             let result = cx
                 .background_executor()
                 .spawn(async move {
+                    let mut trashed = Vec::new();
                     for item in &items {
                         if is_local {
-                            api.move_to_trash(&item.path)?;
+                            trashed.push(api.move_to_trash(&item.path)?.id);
                         } else {
                             api.delete(&item.path, true)?;
                         }
                     }
-                    Ok(if is_local {
-                        format!("Moved {count} item(s) to Trash")
-                    } else {
-                        format!("Permanently deleted {count} item(s)")
-                    })
+                    Ok((
+                        trashed,
+                        if is_local { format!("Moved {count} item(s) to Trash") } else { format!("Permanently deleted {count} item(s)") },
+                    ))
                 })
                 .await;
+
             let _ = this.update(cx, |this, cx| {
+                let result = result.map(|(trashed, message)| {
+                    if !trashed.is_empty() {
+                        this.last_undo = Some(Undo::Trash { api: refresh_api.clone(), ids: trashed });
+                    }
+                    message
+                });
                 this.refresh_provider(refresh_api.clone(), cx);
                 if is_local
                     && this
