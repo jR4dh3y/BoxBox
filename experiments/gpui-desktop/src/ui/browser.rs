@@ -228,24 +228,15 @@ impl Workspace {
                                 .text_color(c(DANGER))
                                 .hover(|style| style.bg(c(SURFACE_TERTIARY)))
                                 .child("Delete")
-                                .on_click(cx.listener(move |_this, _, window, cx| {
+                                .on_click(cx.listener(move |this, _, _, cx| {
                                     let id = delete_id.clone();
-                                    let answer = window.prompt(
-                                        gpui::PromptLevel::Warning,
+                                    let confirm = crate::workspace::confirm::Confirm::new(
                                         "Delete permanently",
-                                        Some("This item will be removed permanently."),
-                                        &["Delete", "Cancel"],
-                                        cx,
+                                        "This item will be removed permanently.",
+                                        "Delete",
+                                        move |this, cx| this.delete_trash_item(id, cx),
                                     );
-                                    cx.spawn(async move |this, cx| {
-                                        if answer.await.unwrap_or(1) == 0 {
-                                            this.update(cx, |this, cx| {
-                                                this.delete_trash_item(id, cx)
-                                            })
-                                            .ok();
-                                        }
-                                    })
-                                    .detach();
+                                    this.ask(confirm, cx);
                                 })),
                         )
                 }))

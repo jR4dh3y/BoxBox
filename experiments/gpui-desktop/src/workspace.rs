@@ -18,6 +18,7 @@ use crate::theme::{c, SURFACE_PRIMARY, TEXT_PRIMARY};
 use crate::settings_state::{DesktopSettings, SettingsPanelState};
 
 pub(crate) mod favorites;
+pub(crate) mod confirm;
 mod devices;
 mod notifications;
 pub(crate) mod open_with;
@@ -225,6 +226,7 @@ pub struct Workspace {
     /// What this app last put on the system clipboard, to tell it from other apps' copies.
     pub(crate) published_files: Option<crate::os_clipboard::Files>,
     pub(crate) transfer_conflicts: Option<operations::TransferConflicts>,
+    pub(crate) confirm: Option<confirm::Confirm>,
     pub(crate) context_menu: Option<ContextMenuState>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
@@ -324,6 +326,7 @@ impl Workspace {
             file_clipboard: None,
             published_files: None,
             transfer_conflicts: None,
+            confirm: None,
             context_menu: None,
             add_menu: None,
             open_select: None,
@@ -970,7 +973,10 @@ impl Workspace {
     }
 
     fn clear_selection(&mut self, _: &ClearSelection, window: &mut Window, cx: &mut Context<Self>) {
-        if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
+        // Escape closes the topmost dialog first, as the web Modal does.
+        if self.confirm.is_some() { self.answer(false, cx); }
+        else if self.transfer_conflicts.take().is_some() {}
+        else if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
         else if self.properties.take().is_some() || self.context_menu.take().is_some() {}
         else if self.preview.is_some() { self.operation_escape(&OperationEscape, window, cx); return; }
         else { self.pane_mut().clear_selection(); }
@@ -1187,6 +1193,7 @@ impl Render for Workspace {
             .child(self.render_notices(cx))
             .when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)))
             .when(self.transfer_conflicts.is_some(), |root| root.child(self.render_conflicts(cx)))
+            .when(self.confirm.is_some(), |root| root.child(self.render_confirm(cx)))
             .when(self.operation_dialog.is_some(), |root| {
                 root.child(self.render_operation_dialog(window, cx))
             })

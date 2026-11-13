@@ -38,17 +38,12 @@ enum SharePermissionField {
 }
 
 impl Workspace {
-    fn confirm_reset_preferences(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let answer = window.prompt(
-            gpui::PromptLevel::Warning,
+    fn confirm_reset_preferences(&mut self, cx: &mut Context<Self>) {
+        let confirm = crate::workspace::confirm::Confirm::new(
             "Reset all preferences?",
-            Some("This removes your favorites and saved local wallpaper."),
-            &["Cancel", "Reset"],
-            cx,
-        );
-        cx.spawn(async move |this, cx| {
-            if answer.await != Ok(1) { return; }
-            let _ = this.update(cx, |this, cx| {
+            "This removes your favorites and saved local wallpaper. Saved servers are kept.",
+            "Reset",
+            |this, cx| {
                 this.preferences = Preferences::default();
                 this.commit_preferences(cx);
                 let connections = std::mem::take(&mut this.desktop_settings.connections);
@@ -57,8 +52,9 @@ impl Workspace {
                 this.save_favorites(None, cx);
                 this.reload_wallpaper(cx);
                 this.save_desktop_settings(cx);
-            });
-        }).detach();
+            },
+        );
+        self.ask(confirm, cx);
     }
 
     fn settings_tab(&self, id: &'static str, label: &'static str, section: SettingsSection, cx: &mut Context<Self>) -> SettingsTab {
@@ -1447,7 +1443,7 @@ impl Workspace {
             .child(
                 SettingsTab::new("settings-reset-button", "Reset to defaults", self.selection_color(false))
                     .quiet()
-                    .on_click(cx.listener(|this, _, window, cx| this.confirm_reset_preferences(window, cx))),
+                    .on_click(cx.listener(|this, _, _, cx| this.confirm_reset_preferences(cx))),
             );
         let body = div()
             .flex()

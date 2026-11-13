@@ -157,7 +157,7 @@ fn desktop_workflow(cx: &mut TestAppContext) {
         cx.simulate_keystrokes("escape");
     }
     cx.simulate_keystrokes("down delete");
-    cx.simulate_prompt_answer(if local { "Move to Trash" } else { "Delete permanently" });
+    click(cx, "confirm-accept");
     cx.run_until_parked();
     assert!(!fixture.join("dest/renamed.txt").exists());
     if local {
@@ -208,11 +208,11 @@ fn desktop_workflow(cx: &mut TestAppContext) {
         });
     }));
     click(cx, "settings-reset-button");
-    cx.simulate_prompt_answer("Cancel");
+    click(cx, "confirm-cancel");
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert_eq!(workspace.accent_hex(), 0x12abcd));
     click(cx, "settings-reset-button");
-    cx.simulate_prompt_answer("Reset");
+    click(cx, "confirm-accept");
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| {
         assert_eq!(workspace.desktop_settings.connections.len(), 1, "reset must preserve saved servers");

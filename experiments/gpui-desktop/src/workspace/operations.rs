@@ -10,9 +10,10 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context as _};
-use gpui::{Context, PromptLevel, Window};
+use gpui::{Context, Window};
 
 use crate::os_clipboard;
+use super::confirm::Confirm;
 use crate::api::{Api, FileInfo};
 use super::preview::ThumbnailKey;
 use super::*;
@@ -514,23 +515,19 @@ impl Workspace {
 
     /// Pastes what another app copied when the system clipboard holds its files;
     /// otherwise BoxBox's own clipboard.
-    pub(crate) fn paste_into(&mut self, target: PaneTarget, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn paste_into(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
         if self.operation_status.is_busy() {
             return;
         }
-        let window_handle = window.window_handle();
         cx.spawn(async move |this, cx| {
             let system = cx.background_executor().spawn(async move { os_clipboard::read() }).await;
-            cx.update_window(window_handle, |_, window, cx| {
-                this.update(cx, |this, cx| match system {
-                    Ok(Some(files)) if this.published_files.as_ref() != Some(&files) => this.paste_system_files(target, files, cx),
-                    Ok(_) => this.paste_in_app(target, window, cx),
-                    Err(error) => {
-                        log::warn!("Could not read the system clipboard: {error:#}");
-                        this.paste_in_app(target, window, cx)
-                    }
-                })
-                .ok();
+            this.update(cx, |this, cx| match system {
+                Ok(Some(files)) if this.published_files.as_ref() != Some(&files) => this.paste_system_files(target, files, cx),
+                Ok(_) => this.paste_in_app(target, cx),
+                Err(error) => {
+                    log::warn!("Could not read the system clipboard: {error:#}");
+                    this.paste_in_app(target, cx)
+                }
             })
             .ok();
         })
@@ -577,7 +574,7 @@ impl Workspace {
         .detach();
     }
 
-    fn paste_in_app(&mut self, target: PaneTarget, window: &mut Window, cx: &mut Context<Self>) {
+    fn paste_in_app(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
         if self.operation_status.is_busy() {
             return;
         }
@@ -598,28 +595,13 @@ impl Workspace {
             });
         if requires_confirmation {
             let count = clipboard.entries.len();
-            self.operation_status =
-                OperationStatus::Running("Waiting for remote move confirmation…".into());
-            cx.notify();
-            let answer = window.prompt(
-                PromptLevel::Warning,
+            let confirm = Confirm::new(
                 "Move from a remote provider?",
-                Some("This copies the items, then permanently deletes the remote originals."),
-                &["Move", "Cancel"],
-                cx,
+                "This copies the items, then permanently deletes the remote originals.",
+                "Move",
+                move |this, cx| this.run_paste(target, clipboard, destination, parent, count, cx),
             );
-            cx.spawn(async move |this, cx| {
-                let confirmed = answer.await.unwrap_or(1) == 0;
-                let _ = this.update(cx, |this, cx| {
-                    this.operation_status = OperationStatus::Idle;
-                    if confirmed {
-                        this.run_paste(target, clipboard, destination, parent, count, cx);
-                    } else {
-                        cx.notify();
-                    }
-                });
-            })
-            .detach();
+            self.ask(confirm, cx);
         } else {
             let count = clipboard.entries.len();
             self.run_paste(target, clipboard, destination, parent, count, cx);
@@ -720,28 +702,27 @@ impl Workspace {
     pub(crate) fn paste_clipboard(
         &mut self,
         _: &PasteInto,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.paste_into(self.active_pane, window, cx);
+        self.paste_into(self.active_pane, cx);
     }
 
     pub(crate) fn delete_selected(
         &mut self,
         _: &DeleteSelected,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let target = self.active_pane;
         let items = self.pane().selected_items();
-        self.delete_items(target, items, window, cx);
+        self.delete_items(target, items, cx);
     }
 
     pub(crate) fn delete_items(
         &mut self,
         target: PaneTarget,
         items: Vec<FileInfo>,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.operation_status.is_busy() {
@@ -758,37 +739,21 @@ impl Workspace {
             self.run_delete(target, api, items, cx);
             return;
         }
-        let title = if api.is_local() {
-            "Move to Trash?"
-        } else {
-            "Delete permanently?"
+        // `BrowseDialogs.svelte`: one name in the sentence, or a count and the names.
+        let local = api.is_local();
+        let fate = if local { "will be moved to Trash." } else { "will be deleted permanently." };
+        let (message, names) = match items.as_slice() {
+            [item] => (format!("“{}” {fate}", item.name), Vec::new()),
+            items => (format!("{} items {fate}", items.len()), items.iter().map(|item| item.name.clone().into()).collect()),
         };
-        let message = if api.is_local() {
-            "The selected items will be moved to Trash."
-        } else {
-            "This permanently deletes the selected remote items."
-        };
-        self.operation_status = OperationStatus::Running("Waiting for delete confirmation…".into());
-        cx.notify();
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            title,
-            Some(message),
-            &[if api.is_local() { "Move to Trash" } else { "Delete permanently" }, "Cancel"],
-            cx,
-        );
-        cx.spawn(async move |this, cx| {
-            let confirmed = answer.await.unwrap_or(1) == 0;
-            let _ = this.update(cx, |this, cx| {
-                this.operation_status = OperationStatus::Idle;
-                if confirmed {
-                    this.run_delete(target, api, items, cx);
-                } else {
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
+        let confirm = Confirm::new(
+            if local { "Move to Trash" } else { "Delete" },
+            message,
+            if local { "Move to Trash" } else { "Delete" },
+            move |this, cx| this.run_delete(target, api, items, cx),
+        )
+        .items(names);
+        self.ask(confirm, cx);
     }
 
     fn run_delete(
@@ -1232,7 +1197,7 @@ impl Workspace {
 
     pub(crate) fn context_paste(
         &mut self,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let target = self
@@ -1241,7 +1206,7 @@ impl Workspace {
             .map(|menu| PaneTarget(menu.target_id))
             .unwrap_or(self.active_pane);
         self.context_menu = None;
-        self.paste_into(target, window, cx);
+        self.paste_into(target, cx);
     }
 
     pub(crate) fn context_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1258,14 +1223,14 @@ impl Workspace {
 
     pub(crate) fn context_delete(
         &mut self,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some((target, items)) = self.context_selection() else {
             return;
         };
         self.context_menu = None;
-        self.delete_items(target, items, window, cx);
+        self.delete_items(target, items, cx);
     }
 
     pub(crate) fn context_download(&mut self, cx: &mut Context<Self>) {

@@ -2,6 +2,7 @@
 
 mod browser;
 mod conflicts;
+mod confirm;
 mod drives;
 mod file_grid;
 mod file_list;
