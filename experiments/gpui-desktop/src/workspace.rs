@@ -34,6 +34,7 @@ pub(crate) mod trash;
 pub(crate) mod place_menu;
 pub(crate) mod bookmarks;
 pub(crate) mod templates;
+pub(crate) mod item_actions;
 pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;

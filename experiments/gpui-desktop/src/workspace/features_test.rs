@@ -569,3 +569,63 @@ fn new_files_come_from_templates_and_open_for_renaming(cx: &mut TestAppContext) 
     cx.run_until_parked();
     assert_eq!(fs::read(fixture.root.join("work/Reply.odt")).unwrap(), b"Templates/Letter.odt");
 }
+
+fn menu_on(cx: &mut VisualTestContext, row: &'static str) {
+    let at = cx.debug_bounds(row).unwrap().center();
+    cx.simulate_mouse_down(at, MouseButton::Right, Modifiers::default());
+}
+
+#[gpui::test]
+fn item_menus_link_compress_open_tabs_and_send(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["Desktop/", "a/", "b/", "b/inner.txt", "x.txt", "y.txt"]);
+    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
+    cx.run_until_parked();
+    // Rows by name, ignoring case.
+    assert_eq!(names(&view, cx), ["a", "b", "Desktop", "x.txt", "y.txt"]);
+
+    // Two folders open in two new tabs.
+    click(cx, "row-0-0");
+    cx.simulate_keystrokes("shift-down");
+    menu_on(cx, "row-0-1");
+    click(cx, "context-new-tab");
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.tabs.len(), 3);
+        assert_eq!(workspace.pane().path, "home/b");
+    });
+    cx.simulate_keystrokes("ctrl-w ctrl-w");
+    cx.run_until_parked();
+
+    // A link sits beside its target and holds just its name.
+    menu_on(cx, "row-0-3");
+    click(cx, "context-link");
+    cx.run_until_parked();
+    let link = fixture.root.join("Link to x.txt");
+    assert_eq!(fs::read_link(&link).unwrap(), std::path::PathBuf::from("x.txt"));
+
+    // Several items compress into Archive.zip, which opens for renaming.
+    click(cx, "row-0-1");
+    let x = names(&view, cx).iter().position(|name| name == "x.txt").unwrap();
+    let x = cx.debug_bounds(Box::leak(format!("row-0-{x}").into_boxed_str())).unwrap().center();
+    cx.simulate_click(x, Modifiers { control: true, ..Default::default() });
+    menu_on(cx, "row-0-1");
+    click(cx, "context-compress");
+    cx.run_until_parked();
+    settle(cx);
+    view.read_with(cx, |workspace, _| assert!(workspace.renaming(PaneTarget(0), "home/Archive.zip")));
+    cx.simulate_keystrokes("b u n d l e enter");
+    cx.run_until_parked();
+    let archive = zip::ZipArchive::new(fs::File::open(fixture.root.join("bundle.zip")).unwrap()).unwrap();
+    let mut entries: Vec<&str> = archive.file_names().collect();
+    entries.sort();
+    assert_eq!(entries, ["b/", "b/inner.txt", "x.txt"]);
+
+    // Send To copies to the Desktop.
+    let y = names(&view, cx).iter().position(|name| name == "y.txt").unwrap();
+    let row: &'static str = Box::leak(format!("row-0-{y}").into_boxed_str());
+    menu_on(cx, row);
+    let send = cx.debug_bounds("send-to").unwrap().center();
+    cx.simulate_mouse_move(send, None, Modifiers::default());
+    click(cx, "send-to-0");
+    cx.run_until_parked();
+    assert!(fixture.root.join("Desktop/y.txt").is_file() && fixture.root.join("y.txt").is_file());
+}

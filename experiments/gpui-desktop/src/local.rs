@@ -98,9 +98,11 @@ impl LocalFiles {
             },
             path: root.clone(),
         }];
-        // A fixture's own Templates folder stands in for the user's.
-        if let Ok(templates) = canonical_directory(&root.join("Templates")) {
-            add_mount(&mut mounts, "templates", Some("Templates"), RootKind::Place, templates);
+        // A fixture's own Desktop and Templates folders stand in for the user's.
+        for (name, label) in [("desktop", "Desktop"), ("templates", "Templates")] {
+            if let Ok(folder) = canonical_directory(&root.join(label)) {
+                add_mount(&mut mounts, name, Some(label), RootKind::Place, folder);
+            }
         }
         Ok(Self {
             mounts,
@@ -321,6 +323,26 @@ impl LocalFiles {
         copy::copy_no_overwrite(&source_entry, &target, Some(&source_mount.path))
             .with_context(|| format!("cannot copy {source} to {destination}"))?;
         Ok(())
+    }
+
+    /// A ZIP at `destination` holding the entries at `paths`.
+    pub fn compress(&self, paths: &[String], destination: &str) -> Result<()> {
+        let sources = paths
+            .iter()
+            .map(|path| self.resolve_entry(path).map(|(mount, entry)| (entry, mount.path.clone())))
+            .collect::<Result<Vec<_>>>()?;
+        let (_, parent, name) = self.resolve_destination(destination)?;
+        archive::write_zip_of(&sources, &parent.join(name))
+    }
+
+    /// A symbolic link at `link` to the entry at `target`, in the same folder, so
+    /// the link holds just the entry's name and survives the folder moving.
+    pub fn create_link(&self, target: &str, link: &str) -> Result<()> {
+        let (_, entry) = self.resolve_entry(target)?;
+        let (_, parent, name) = self.resolve_destination(link)?;
+        ensure!(entry.parent() == Some(parent.as_path()), "a link is made next to its target");
+        let target_name = entry.file_name().context("the target has no name")?;
+        std::os::unix::fs::symlink(target_name, parent.join(name)).with_context(|| format!("cannot create a link to {target}"))
     }
 
     /// Import a selected local file or directory into an existing virtual directory.

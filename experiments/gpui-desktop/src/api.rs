@@ -238,6 +238,20 @@ impl Api {
         }
     }
 
+    pub fn compress(&self, paths: &[String], destination: &str) -> Result<()> {
+        match &self.provider {
+            Provider::Local(local) => local.compress(paths, destination),
+            Provider::Remote(_) => anyhow::bail!("Compress is available only for local files"),
+        }
+    }
+
+    pub fn create_link(&self, target: &str, link: &str) -> Result<()> {
+        match &self.provider {
+            Provider::Local(local) => local.create_link(target, link),
+            Provider::Remote(_) => anyhow::bail!("Links are available only for local files"),
+        }
+    }
+
     pub fn trash_has_items(&self) -> bool {
         match &self.provider {
             Provider::Local(local) => local.trash_has_items(),

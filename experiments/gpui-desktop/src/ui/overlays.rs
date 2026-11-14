@@ -69,6 +69,20 @@ impl Workspace {
         if items.is_empty() {
             entries.push(paste);
         } else {
+            let folders = items.iter().filter(|item| item.is_dir).count();
+            if folders > 0 {
+                entries.push(self.menu_item(
+                    "context-new-tab",
+                    if folders == 1 { "Open in New Tab" } else { "Open in New Tabs" },
+                    "plus",
+                    |this, _, cx| {
+                        if let Some((target, items)) = this.context_selection() {
+                            this.open_folders_in_tabs(target, items, cx);
+                        }
+                    },
+                    cx,
+                ));
+            }
             if single_folder && local {
                 entries.push(self.menu_item("context-terminal", "Open in Terminal", "info", |this, _, cx| this.context_open_terminal(cx), cx));
             }
@@ -92,6 +106,26 @@ impl Workspace {
                     |this, _, cx| this.context_toggle_favorite(cx),
                     cx,
                 ));
+            }
+            if local {
+                entries.push(MenuItem::Separator);
+                entries.push(
+                    self.menu_item("context-link", "Create Link", "link", |this, _, cx| {
+                        if let Some((target, items)) = this.context_selection() {
+                            this.create_links(target, items, cx);
+                        }
+                    }, cx)
+                    .disabled(read_only),
+                );
+                entries.push(
+                    self.menu_item("context-compress", "Compress", "archive", |this, _, cx| {
+                        if let Some((target, items)) = this.context_selection() {
+                            this.compress(target, items, cx);
+                        }
+                    }, cx)
+                    .disabled(read_only),
+                );
+                entries.extend(self.send_to_menu(crate::workspace::operations::PaneTarget(pane.id), items, cx));
             }
             entries.push(MenuItem::Separator);
             entries.push(

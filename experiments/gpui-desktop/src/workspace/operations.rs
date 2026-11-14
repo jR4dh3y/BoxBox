@@ -1158,7 +1158,7 @@ impl Workspace {
         cx.notify();
     }
 
-    fn context_selection(&self) -> Option<(PaneTarget, Vec<FileInfo>)> {
+    pub(crate) fn context_selection(&self) -> Option<(PaneTarget, Vec<FileInfo>)> {
         self.context_menu
             .as_ref()
             .map(|menu| (PaneTarget(menu.target_id), menu.items.clone()))
