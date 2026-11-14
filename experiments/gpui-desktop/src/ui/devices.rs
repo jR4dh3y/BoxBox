@@ -64,10 +64,7 @@ impl Workspace {
             }
             // A mounted volume takes drops into its top folder.
             let root = volume.mount_point().and_then(|point| self.pane().api.virtual_path(point));
-            let row = match root {
-                Some(root) => self.drop_place(row, root, cx).into_any_element(),
-                None => row.into_any_element(),
-            };
+            let row = self.sidebar_row(row, root, crate::workspace::place_menu::Place::Device(volume.clone()), cx);
             div().debug_selector(move || format!("volume-{index}")).child(row)
         }))
     }

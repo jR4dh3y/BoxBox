@@ -507,3 +507,43 @@ fn local_favorites_are_gtk_bookmarks_and_reorder_by_dragging(cx: &mut TestAppCon
         assert_eq!(names, ["work"]);
     });
 }
+
+#[gpui::test]
+fn sidebar_entries_have_menus(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["docs/", "a.txt"]);
+    // A drive: Open in New Tab and Properties.
+    let home = cx.debug_bounds("sidebar-drive-1").unwrap().center();
+    cx.simulate_mouse_down(home, MouseButton::Right, Modifiers::default());
+    click(cx, "place-new-tab");
+    view.read_with(cx, |workspace, _| assert_eq!((workspace.tabs.len(), workspace.pane().path.as_str()), (2, "home")));
+    cx.run_until_parked();
+    cx.simulate_mouse_down(home, MouseButton::Right, Modifiers::default());
+    click(cx, "place-properties");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.properties.as_ref().unwrap().items[0].path, "home"));
+    cx.simulate_keystrokes("escape");
+
+    // A favorite: paste into it, then remove it.
+    view.update(cx, |workspace, cx| workspace.navigate("home/docs".into(), cx));
+    cx.simulate_keystrokes("ctrl-b");
+    cx.run_until_parked();
+    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
+    cx.run_until_parked();
+    click(cx, "row-1-1");
+    cx.simulate_keystrokes("ctrl-c");
+    let favorite = cx.debug_bounds("favorite-row-0").unwrap().center();
+    cx.simulate_mouse_down(favorite, MouseButton::Right, Modifiers::default());
+    click(cx, "place-paste");
+    cx.run_until_parked();
+    assert!(fixture.root.join("docs/a.txt").is_file());
+    cx.simulate_mouse_down(favorite, MouseButton::Right, Modifiers::default());
+    click(cx, "place-unpin");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert!(workspace.favorites.entries.is_empty()));
+
+    // Recent takes no paste and has no Properties.
+    let recent = cx.debug_bounds("sidebar-place-0").unwrap().center();
+    cx.simulate_mouse_down(recent, MouseButton::Right, Modifiers::default());
+    click(cx, "place-paste");
+    view.read_with(cx, |workspace, _| assert!(workspace.place_menu.is_some(), "a disabled entry does nothing"));
+}

@@ -11,6 +11,10 @@ pub(crate) enum Place {
     /// A folder on a pane's provider.
     Folder { pane: PaneTarget, path: String },
     Trash,
+    /// An entry of the sidebar's Favorites, by index.
+    Favorite(usize),
+    /// A disk, phone or share in the sidebar's Devices.
+    Device(crate::devices::Volume),
     /// The leading crumbs a long path does not have room for: label and path.
     Hidden { pane: PaneTarget, crumbs: Vec<(String, String)> },
 }

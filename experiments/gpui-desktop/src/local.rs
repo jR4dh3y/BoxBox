@@ -223,6 +223,12 @@ impl LocalFiles {
     /// Resolve an existing virtual path to a canonical native path for previews and thumbnails.
     /// One entry's details, as a listing of its folder would give them.
     pub fn stat(&self, path: &str) -> Result<FileInfo> {
+        // A drive or place itself, named as the sidebar names it.
+        if let Some(mount) = self.mounts.iter().find(|mount| mount.point.name == path) {
+            let metadata = fs::metadata(&mount.path).with_context(|| format!("cannot inspect {path}"))?;
+            let mod_time = metadata.modified().map(format_time).unwrap_or_default();
+            return Ok(FileInfo { name: mount.point.display_name().to_string(), path: path.to_string(), size: metadata.len(), is_dir: true, mod_time });
+        }
         let (mount, real) = self.resolve_entry(path)?;
         let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
         self.info_for_path(mount, parent, &real).with_context(|| format!("cannot inspect {path}"))

@@ -57,18 +57,30 @@ impl Workspace {
 
     fn nav_item(&self, id: String, item: NavItem, current: &str, cx: &mut Context<Self>) -> impl IntoElement {
         let path = item.path;
-        let row = components::NavItem::new(SharedString::from(id), item.name, item.icon).active(is_active(current, &path)).on_click({
+        let row = components::NavItem::new(SharedString::from(id.clone()), item.name, item.icon).active(is_active(current, &path)).on_click({
             let path = path.clone();
             cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx))
         });
-        self.drop_place(row, path, cx)
+        let menu = Place::Folder { pane: self.active_pane, path: path.clone() };
+        // Recent and Network are listings: nothing is dropped into them.
+        let folder = (path != crate::local::RECENT && path != crate::local::NETWORK).then(|| path.clone());
+        self.sidebar_row(row, folder, menu, cx).debug_selector(move || format!("sidebar-{id}"))
     }
 
-    /// Lets files be dropped onto a sidebar row to put them in its folder.
-    pub(crate) fn drop_place(&self, row: components::NavItem, path: String, cx: &mut Context<Self>) -> impl IntoElement {
-        let target = DropTarget::Place { path };
-        let row = row.drop_target(self.drop_hover(cx) == Some(&target));
-        drop_zone(div(), target, cx.entity().downgrade()).child(row)
+    /// A sidebar row with its right-click menu, taking files dropped into `folder`.
+    pub(crate) fn sidebar_row(&self, row: components::NavItem, folder: Option<String>, menu: Place, cx: &mut Context<Self>) -> gpui::Div {
+        let element = match folder {
+            Some(path) => {
+                let target = DropTarget::Place { path };
+                let row = row.drop_target(self.drop_hover(cx) == Some(&target));
+                drop_zone(div(), target, cx.entity().downgrade()).child(row)
+            }
+            None => div().child(row),
+        };
+        element.on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+            cx.stop_propagation();
+            this.open_place_menu(menu.clone(), event.position, cx);
+        }))
     }
 
     pub(crate) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -109,10 +121,8 @@ impl Workspace {
                     .trailing("x", format!("Unpin {}", favorite.name), cx.listener(move |this, _, _, cx| this.remove_favorite(index, cx)))
                     .on_click(cx.listener(move |this, _, _, cx| this.open_favorite(index, cx)));
                 // A favorite on another provider is not a folder this pane can write to.
-                let row = match favorite.provider == provider {
-                    true => self.drop_place(row, favorite.path.clone(), cx).into_any_element(),
-                    false => row.into_any_element(),
-                };
+                let folder = (favorite.provider == provider).then(|| favorite.path.clone());
+                let row = self.sidebar_row(row, folder, Place::Favorite(index), cx);
                 // Dragged onto another favorite, it takes that one's place.
                 let name: SharedString = favorite.name.clone().into();
                 div()
