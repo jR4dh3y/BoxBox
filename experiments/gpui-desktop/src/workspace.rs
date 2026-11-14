@@ -418,6 +418,7 @@ impl Workspace {
             mutation_generation: 0,
         };
         workspace.reload_wallpaper(cx);
+        workspace.warm_wallpaper(window, cx);
         workspace.load_drives(PaneTarget(0), cx);
         workspace.load_pane(PaneTarget(0), cx);
         workspace.start_directory_watches(cx);

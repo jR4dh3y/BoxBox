@@ -17,9 +17,71 @@ pub(crate) enum WallpaperState {
     Failed(String),
 }
 
-// Decode and blur away from the UI thread, with the same crop for both variants.
+/// What a wallpaper needs besides its pictures, kept in the cache beside them.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Prepared {
+    dimensions: (u32, u32),
+    tile_dimensions: (u32, u32),
+    tint: u32,
+    accent: Option<u32>,
+}
+
+const PICTURES: [&str; 4] = ["image", "frosted", "tile", "frosted_tile"];
+
+/// Where a wallpaper's prepared pictures are kept. A stored wallpaper is named by
+/// its content's hash, so the name is the key; any other file is keyed by its
+/// path, size and time.
+fn cache_dir(path: &Path) -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
+    let name = path.file_stem()?.to_string_lossy();
+    let key = match name.strip_prefix("wallpaper-") {
+        Some(digest) if digest.len() == 64 => digest.to_string(),
+        _ => {
+            let metadata = std::fs::metadata(path).ok()?;
+            let stamp = format!("{}|{}|{:?}", path.display(), metadata.len(), metadata.modified().ok());
+            format!("{:x}", Sha256::digest(stamp.as_bytes()))
+        }
+    };
+    Some(base.join("boxbox-gpui/wallpapers").join(key))
+}
+
+/// The prepared wallpaper from the cache: a few file reads, fast enough to do
+/// before the first frame. `None` when it was never prepared.
+fn read_cached(path: &Path) -> Option<WallpaperState> {
+    let dir = cache_dir(path)?;
+    let prepared: Prepared = serde_json::from_slice(&std::fs::read(dir.join("prepared.json")).ok()?).ok()?;
+    let mut pictures = PICTURES.iter().map(|name| std::fs::read(dir.join(format!("{name}.png"))).ok().map(|bytes| Arc::new(Image::from_bytes(ImageFormat::Png, bytes))));
+    let mut next = || pictures.next().flatten();
+    let (image, frosted, tile, frosted_tile) = (next()?, next()?, next()?, next()?);
+    let Prepared { dimensions, tile_dimensions, tint, accent } = prepared;
+    Some(WallpaperState::Ready { image, frosted, tile, frosted_tile, dimensions, tile_dimensions, tint, accent })
+}
+
+/// The cached wallpaper, or one decoded, blurred and cached now. Runs off the UI thread.
 fn load_wallpaper(path: &Path) -> Result<WallpaperState> {
-    decode_wallpaper(&read_wallpaper(path)?)
+    if let Some(cached) = read_cached(path) {
+        return Ok(cached);
+    }
+    let (prepared, pictures) = prepare_wallpaper(&read_wallpaper(path)?)?;
+    if let Some(dir) = cache_dir(path) {
+        // A cache that cannot be written only costs the next launch this work again.
+        let written = (|| -> std::io::Result<()> {
+            std::fs::create_dir_all(&dir)?;
+            for (name, bytes) in PICTURES.iter().zip(&pictures) {
+                crate::persist::atomic_write(&dir.join(format!("{name}.png")), bytes)?;
+            }
+            crate::persist::atomic_write(&dir.join("prepared.json"), &serde_json::to_vec(&prepared)?)
+        })();
+        if let Err(error) = written {
+            log::warn!("Could not cache the wallpaper: {error}");
+        }
+    }
+    let [image, frosted, tile, frosted_tile] = pictures.map(|bytes| Arc::new(Image::from_bytes(ImageFormat::Png, bytes)));
+    let Prepared { dimensions, tile_dimensions, tint, accent } = prepared;
+    Ok(WallpaperState::Ready { image, frosted, tile, frosted_tile, dimensions, tile_dimensions, tint, accent })
 }
 
 fn read_wallpaper(path: &Path) -> Result<Vec<u8>> {
@@ -29,7 +91,9 @@ fn read_wallpaper(path: &Path) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn decode_wallpaper(bytes: &[u8]) -> Result<WallpaperState> {
+/// Decodes the wallpaper and makes its pictures as PNG: the image (at most 4096px),
+/// a blurred copy, a tile, and a blurred tile, with the same crop for both variants.
+fn prepare_wallpaper(bytes: &[u8]) -> Result<(Prepared, [Vec<u8>; 4])> {
     let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
     let mut limits = Limits::default();
     limits.max_image_width = Some(16384);
@@ -54,15 +118,16 @@ fn decode_wallpaper(bytes: &[u8]) -> Result<WallpaperState> {
         *tile.get_pixel((x + tile.width() - padding % tile.width()) % tile.width(), (y + tile.height() - padding % tile.height()) % tile.height())
     });
     let frosted_tile = image::imageops::crop_imm(&image::imageops::blur(&bordered, 24.), padding, padding, tile.width(), tile.height()).to_image();
-    let encode = |image: image::DynamicImage| -> Result<Arc<Image>> {
+    let encode = |image: image::DynamicImage| -> Result<Vec<u8>> {
         let mut output = Cursor::new(Vec::new());
         image.write_to(&mut output, image::ImageFormat::Png)?;
-        Ok(Arc::new(Image::from_bytes(ImageFormat::Png, output.into_inner())))
+        Ok(output.into_inner())
     };
     let image = if decoded.dimensions().0.max(decoded.dimensions().1) > 4096 {
         decoded.resize(4096, 4096, image::imageops::FilterType::Triangle)
     } else { decoded };
-    Ok(WallpaperState::Ready { image: encode(image)?, frosted: encode(softened)?, tile: encode(tile.into())?, frosted_tile: encode(frosted_tile.into())?, dimensions, tile_dimensions, tint, accent })
+    let pictures = [encode(image)?, encode(softened)?, encode(tile.into())?, encode(frosted_tile.into())?];
+    Ok((Prepared { dimensions, tile_dimensions, tint, accent }, pictures))
 }
 
 impl Workspace {
@@ -72,9 +137,11 @@ impl Workspace {
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move {
                 let bytes = read_wallpaper(&path)?;
-                let image = decode_wallpaper(&bytes)?;
+                // Refuse an unreadable image before keeping a copy of it.
+                image::load_from_memory(&bytes).context("Choose a supported image file")?;
                 let digest = format!("{:x}", Sha256::digest(&bytes));
                 let stored = crate::settings_state::store_wallpaper(&bytes, &digest).map_err(anyhow::Error::msg)?;
+                let image = load_wallpaper(&stored)?;
                 Ok::<_, anyhow::Error>((stored, image))
             }).await;
             let _ = this.update(cx, |this, cx| {
@@ -100,6 +167,12 @@ impl Workspace {
             cx.notify();
             return;
         };
+        // A wallpaper prepared before shows in the first frame.
+        if let Some(cached) = read_cached(&path) {
+            self.wallpaper = cached;
+            cx.notify();
+            return;
+        }
         self.wallpaper = WallpaperState::Loading;
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move { load_wallpaper(&path) }).await;
@@ -113,6 +186,19 @@ impl Workspace {
                 cx.notify();
             });
         }).detach();
+    }
+
+    /// Starts decoding the picture the wallpaper shows, so it is ready as soon as can be.
+    pub(crate) fn warm_wallpaper(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if let WallpaperState::Ready { image, frosted, tile, frosted_tile, .. } = &self.wallpaper {
+            let picture = match (self.desktop_settings.wallpaper_fit == WallpaperFit::Tile, self.preferences.frosted_glass) {
+                (true, true) => frosted_tile,
+                (true, false) => tile,
+                (false, true) => frosted,
+                (false, false) => image,
+            };
+            let _ = picture.clone().get_render_image(window, cx);
+        }
     }
 
     pub(crate) fn accent_hex(&self) -> u32 {
@@ -217,4 +303,22 @@ fn mix(color: u32, base: u32, amount: f32) -> u32 {
         (foreground * amount + background * (1. - amount)).round() as u32
     };
     channel(16) << 16 | channel(8) << 8 | channel(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_prepared_wallpaper_comes_back_from_the_cache() {
+        let root = std::env::temp_dir().join(format!("boxbox-wallpaper-{}", std::process::id()));
+        let _config = super::super::parity_test::TestConfig::new(root.join("config"));
+        std::fs::create_dir_all(&root).unwrap();
+        let picture = root.join("wallpaper-".to_string() + &"a".repeat(64) + ".image");
+        image::RgbImage::from_fn(80, 60, |x, _| image::Rgb([x as u8 * 3, 40, 200])).save_with_format(&picture, image::ImageFormat::Png).unwrap();
+        assert!(read_cached(&picture).is_none());
+        assert!(matches!(load_wallpaper(&picture).unwrap(), WallpaperState::Ready { dimensions: (80, 60), .. }));
+        assert!(matches!(read_cached(&picture), Some(WallpaperState::Ready { dimensions: (80, 60), tile_dimensions: (80, 64), .. })));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
