@@ -1,0 +1,11 @@
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-browser.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-chooser-button.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-chooser-dialog.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-chooser-model.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-clipboard-manager.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-column-model.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-column-order-editor.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-compact-view.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-component.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-context-menu-order-editor.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-context-menu-order-model.c

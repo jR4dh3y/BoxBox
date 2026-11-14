@@ -1,0 +1,8 @@
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-tree-view.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-uca-chooser.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-uca-editor.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-uca-plugin.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-uca-provider.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-user.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-util.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-view.c

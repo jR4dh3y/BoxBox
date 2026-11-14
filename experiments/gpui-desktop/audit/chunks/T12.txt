@@ -1,0 +1,7 @@
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-shortcuts-model.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-shortcuts-name-renderer.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-shortcuts-pane.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-shortcuts-view.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-side-pane.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-simple-job.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-size-label.c

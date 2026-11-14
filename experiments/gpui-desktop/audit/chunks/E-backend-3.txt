@@ -1,0 +1,10 @@
+/home/radhey/code/BoxBox/backend/internal/service/job.go
+/home/radhey/code/BoxBox/backend/internal/service/job_events.go
+/home/radhey/code/BoxBox/backend/internal/service/mounts.go
+/home/radhey/code/BoxBox/backend/internal/service/search.go
+/home/radhey/code/BoxBox/backend/internal/service/system_drives.go
+/home/radhey/code/BoxBox/backend/internal/service/thumbnail.go
+/home/radhey/code/BoxBox/backend/internal/service/thumbnail_image.go
+/home/radhey/code/BoxBox/backend/internal/service/upload.go
+/home/radhey/code/BoxBox/backend/internal/service/walker.go
+/home/radhey/code/BoxBox/backend/internal/service/wallpaper.go

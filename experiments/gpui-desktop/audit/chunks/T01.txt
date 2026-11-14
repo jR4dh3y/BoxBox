@@ -1,0 +1,15 @@
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-apr/thunar-apr-abstract-page.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-apr/thunar-apr-desktop-page.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-apr/thunar-apr-image-page.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-apr/thunar-apr-plugin.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-apr/thunar-apr-private.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-apr/thunar-apr-provider.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-sbr/thunar-sbr-case-renamer.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-sbr/thunar-sbr-date-renamer.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-sbr/thunar-sbr-insert-renamer.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-sbr/thunar-sbr-number-renamer.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-sbr/thunar-sbr-plugin.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-sbr/thunar-sbr-provider.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-sbr/thunar-sbr-remove-renamer.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-sbr/thunar-sbr-replace-renamer.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-sendto-email/main.c

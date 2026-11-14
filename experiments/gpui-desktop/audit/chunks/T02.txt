@@ -1,0 +1,10 @@
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-tpa/thunar-tpa.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-uca/thunar-uca-plugin.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-wallpaper/thunar-wallpaper-plugin.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/plugins/thunar-wallpaper/twp-provider.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar-uca/thunar-uca-base-provider.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar-uca/thunar-uca-context.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar-uca/thunar-uca-model.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/main.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-abstract-dialog.c
+/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-abstract-icon-view.c
