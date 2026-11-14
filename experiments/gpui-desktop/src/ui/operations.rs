@@ -24,7 +24,7 @@ impl Workspace {
                 Modal::new()
                     .title(dialog.title())
                     .on_close(cx.listener(|this, _, window, cx| this.close_dialog(window, cx)))
-                    .body(Input::new("").placeholder(dialog.placeholder()).focused(focused).editor(field))
+                    .body(Input::new("").focused(focused).invalid(error.is_some()).editor(field))
                     .when_some(error, |modal, error| {
                         modal.body(div().mt(px(8.)).text_size(px(12.)).text_color(c(DANGER)).child(error))
                     })

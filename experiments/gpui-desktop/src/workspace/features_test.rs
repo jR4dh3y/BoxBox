@@ -44,13 +44,21 @@ pub(super) fn open<'a>(cx: &'a mut TestAppContext, files: &[&str]) -> (Entity<Wo
         Workspace::new(api, Fonts { sans: "sans-serif".into(), mono: "monospace".into() }, "home".into(), window, cx)
     });
     cx.update(|_, app| {
-        view.update(app, |workspace, _| {
+        view.update(app, |workspace, cx| {
             workspace.preferences = Preferences { default_sort: crate::sort::SortField::Name, default_sort_direction: crate::sort::SortDir::Asc, ..Preferences::default() };
-            workspace.pane_mut().sort = Sort { field: crate::sort::SortField::Name, dir: crate::sort::SortDir::Asc };
+            workspace.set_pane_sort(PaneTarget(0), Sort { field: crate::sort::SortField::Name, dir: crate::sort::SortDir::Asc }, cx);
         })
     });
+    // Focus events reach their listeners only in an active window.
+    cx.update(|window, _| window.activate_window());
     cx.run_until_parked();
     (view, cx, Fixture { root, _config: config })
+}
+
+/// Draws a frame, which is when focus changes reach their listeners, then waits.
+pub(super) fn settle(cx: &mut VisualTestContext) {
+    cx.simulate_mouse_move(gpui::point(gpui::px(1.), gpui::px(1.)), None, Modifiers::default());
+    cx.run_until_parked();
 }
 
 pub(super) fn notices(view: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String> {
@@ -99,4 +107,65 @@ fn pasting_with_nothing_copied_says_so(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("ctrl-v");
     cx.run_until_parked();
     assert!(notices(&view, cx).contains(&"The clipboard has no files to paste".to_string()));
+}
+
+fn dialog_text(view: &Entity<Workspace>, cx: &mut VisualTestContext) -> String {
+    view.read_with(cx, |workspace, app| workspace.dialog_field.read(app).text().to_string())
+}
+
+#[gpui::test]
+fn the_create_dialog_suggests_a_free_name_and_explains_a_bad_one(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["New folder/", "untitled.txt"]);
+    cx.simulate_keystrokes("ctrl-shift-n");
+    assert_eq!(dialog_text(&view, cx), "New folder 2");
+    // The suggestion is selected, so typing replaces it.
+    cx.simulate_keystrokes("a / b enter");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.dialog_error.as_deref(), Some("A name cannot contain “/”.")));
+    cx.simulate_keystrokes("ctrl-a space s p a c e d space enter");
+    cx.run_until_parked();
+    assert!(fixture.root.join("spaced").is_dir(), "the name is trimmed");
+    cx.simulate_keystrokes("ctrl-shift-e");
+    assert_eq!(dialog_text(&view, cx), "untitled 2.txt");
+    // Only the part before the extension is selected.
+    cx.simulate_keystrokes("n o t e s enter");
+    cx.run_until_parked();
+    assert!(fixture.root.join("notes.txt").is_file());
+    cx.simulate_keystrokes("ctrl-shift-e ctrl-a n o t e s . t x t enter");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.dialog_error.as_deref(), Some("“notes.txt” already exists here.")));
+}
+
+#[gpui::test]
+fn rename_happens_in_place(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a.txt", "b.txt", "c.txt"]);
+    click(cx, "row-0-0");
+    cx.simulate_keystrokes("f2");
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.operation_dialog.is_none(), "no dialog");
+        assert!(workspace.renaming(PaneTarget(0), "home/a.txt"));
+    });
+    // The part before the extension is selected; Up and Down stay in the field.
+    cx.simulate_keystrokes("d up down enter");
+    cx.run_until_parked();
+    assert!(fixture.root.join("d.txt").is_file() && !fixture.root.join("a.txt").exists());
+    assert_eq!(names(&view, cx), ["b.txt", "c.txt", "d.txt"]);
+
+    // Escape keeps the old name.
+    click(cx, "row-0-0");
+    cx.simulate_keystrokes("f2 x escape");
+    cx.run_until_parked();
+    assert!(fixture.root.join("b.txt").is_file());
+    view.read_with(cx, |workspace, _| assert!(workspace.inline_rename.is_none()));
+
+    // A taken name is refused and the field stays open; a click elsewhere keeps the text.
+    cx.simulate_keystrokes("f2 c enter");
+    assert!(notices(&view, cx).contains(&"“c.txt” already exists here.".to_string()));
+    view.read_with(cx, |workspace, _| assert!(workspace.inline_rename.is_some()));
+    cx.simulate_keystrokes("ctrl-a e . t x t");
+    click(cx, "row-0-2");
+    settle(cx);
+    assert!(fixture.root.join("e.txt").is_file() && !fixture.root.join("b.txt").exists());
+    // Undo puts the old name back.
+    cx.simulate_keystrokes("ctrl-z");
+    cx.run_until_parked();
+    assert!(fixture.root.join("b.txt").is_file());
 }

@@ -49,34 +49,25 @@ impl FileClipboard {
     }
 }
 
-pub(crate) enum OperationDialog {
-    CreateFolder { target_id: usize, parent: String },
-    CreateFile { target_id: usize, parent: String },
-    Rename { target_id: usize, path: String },
+/// The name dialog for something new in a folder.
+pub(crate) struct OperationDialog {
+    pub target_id: usize,
+    pub parent: String,
+    pub folder: bool,
 }
 
 impl OperationDialog {
     pub fn title(&self) -> &'static str {
-        match self {
-            Self::CreateFolder { .. } => "New folder",
-            Self::CreateFile { .. } => "New file",
-            Self::Rename { .. } => "Rename",
-        }
+        if self.folder { "New folder" } else { "New file" }
     }
 
-    pub fn placeholder(&self) -> &'static str {
-        match self {
-            Self::CreateFolder { .. } => "New folder",
-            Self::CreateFile { .. } => "untitled.txt",
-            Self::Rename { .. } => "",
-        }
+    /// The name the field starts with, before a taken one is numbered.
+    pub fn suggestion(&self) -> &'static str {
+        if self.folder { "New folder" } else { "untitled.txt" }
     }
 
     pub fn confirm_label(&self) -> &'static str {
-        match self {
-            Self::CreateFolder { .. } | Self::CreateFile { .. } => "Create",
-            Self::Rename { .. } => "Rename",
-        }
+        "Create"
     }
 }
 
@@ -193,7 +184,7 @@ impl Workspace {
             return;
         }
         let pane = self.pane();
-        self.open_dialog(OperationDialog::CreateFolder { target_id: pane.id, parent: pane.path.clone() }, "", 0..0, window, cx);
+        self.open_dialog(OperationDialog { target_id: pane.id, parent: pane.path.clone(), folder: true }, window, cx);
     }
 
     pub(crate) fn create_file(
@@ -209,7 +200,7 @@ impl Workspace {
             return;
         }
         let pane = self.pane();
-        self.open_dialog(OperationDialog::CreateFile { target_id: pane.id, parent: pane.path.clone() }, "", 0..0, window, cx);
+        self.open_dialog(OperationDialog { target_id: pane.id, parent: pane.path.clone(), folder: false }, window, cx);
     }
 
     pub(crate) fn rename_selected(
@@ -229,37 +220,17 @@ impl Workspace {
         if !self.ensure_writable(self.active_pane, cx) {
             return;
         }
-        self.start_rename(self.active_pane.0, items.remove(0), window, cx);
+        self.start_rename(self.active_pane, items.remove(0), window, cx);
     }
 
-    fn start_rename(
-        &mut self,
-        target_id: usize,
-        item: FileInfo,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Select the name without its extension, as file managers do.
-        let stem = match item.name.rfind('.') {
-            Some(dot) if dot > 0 && !item.is_dir => dot,
-            _ => item.name.len(),
-        };
-        let name = item.name.clone();
-        self.open_dialog(OperationDialog::Rename { target_id, path: item.path }, &name, 0..stem, window, cx);
-    }
-
-    fn open_dialog(
-        &mut self,
-        dialog: OperationDialog,
-        text: &str,
-        selection: std::ops::Range<usize>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    /// Opens the name dialog with a free name, its part before the extension selected.
+    fn open_dialog(&mut self, dialog: OperationDialog, window: &mut Window, cx: &mut Context<Self>) {
+        let taken: HashSet<String> = self.pane_by_id(dialog.target_id).map(|pane| pane.items.iter().map(|item| item.name.clone()).collect()).unwrap_or_default();
+        let text = super::names::unused_name(dialog.suggestion(), dialog.folder, &|name| taken.contains(name));
+        let selection = 0..super::names::basename_end(&text, dialog.folder);
         self.operation_dialog = Some(dialog);
         self.dialog_error = None;
         self.context_menu = None;
-        let text = text.to_string();
         self.dialog_field.update(cx, |field, cx| field.set_text(text, selection, cx));
         self.dialog_field.read(cx).focus(window);
         cx.notify();
@@ -308,70 +279,31 @@ impl Workspace {
             return;
         };
         let input = self.dialog_field.read(cx).text().trim().to_string();
-        if input.is_empty()
-            || input == "."
-            || input == ".."
-            || input.chars().any(|ch| matches!(ch, '/' | '\\' | '\0'))
-        {
-            self.operation_dialog = Some(dialog);
-            self.dialog_error = Some("Enter a valid file or folder name.".into());
-            cx.notify();
-            return;
-        }
-        let (target_id, parent, kind, path) = match dialog {
-            OperationDialog::CreateFolder { target_id, parent, .. } => {
-                (target_id, parent, "folder", None)
-            }
-            OperationDialog::CreateFile { target_id, parent, .. } => {
-                (target_id, parent, "file", None)
-            }
-            OperationDialog::Rename { target_id, path, .. } => {
-                let parent = parent_path(&path).to_string();
-                (target_id, parent, "rename", Some(path))
-            }
-        };
-        let Some((_, api, _)) = self.operation_target(PaneTarget(target_id)) else {
+        let Some((pane, api, _)) = self.operation_target(PaneTarget(dialog.target_id)) else {
             self.set_operation_error("The destination pane is no longer open.", cx);
             return;
         };
-        let generation = self.begin_operation(match kind {
-            "folder" => format!("Creating {input}…"),
-            "file" => format!("Creating {input}…"),
-            _ => format!("Renaming to {input}…"),
-        });
+        if let Some(problem) = super::names::name_problem(&input, pane.items.iter().map(|item| item.name.as_str())) {
+            self.operation_dialog = Some(dialog);
+            self.dialog_error = Some(problem);
+            cx.notify();
+            return;
+        }
+        let OperationDialog { parent, folder, .. } = dialog;
+        let generation = self.begin_operation(format!("Creating {input}…"));
         let refresh_api = api.clone();
-        let renamed_path = (kind == "rename").then(|| destination_path(&parent, &input));
-        let undo = path.clone().zip(renamed_path.clone()).map(|(before, after)| Undo::Rename { api: api.clone(), before, after });
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    match (kind, path) {
-                        ("folder", None) => api
-                            .create_directory(&parent, &input)
-                            .map(|_| format!("Created folder “{input}”")),
-                        ("file", None) => api
-                            .create_file(&parent, &input, "")
-                            .map(|_| format!("Created file “{input}”")),
-                        (_, Some(path)) => api
-                            .rename(&path, &destination_path(&parent, &input))
-                            .map(|_| format!("Renamed to “{input}”")),
-                        _ => bail!("invalid operation"),
+                    if folder {
+                        api.create_directory(&parent, &input).map(|_| format!("Created folder “{input}”"))
+                    } else {
+                        api.create_file(&parent, &input, "").map(|_| format!("Created file “{input}”"))
                     }
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
-                this.operation_dialog = None;
-                if result.is_ok() {
-                    if undo.is_some() {
-                        this.last_undo = undo;
-                    }
-                    if let Some(path) = renamed_path {
-                        if let Some(pane) = this.pane_mut_by_id(target_id) {
-                            pane.selected.clear(); pane.selected.insert(path);
-                        }
-                    }
-                }
                 this.refresh_provider(refresh_api, cx);
                 this.finish_operation(generation, result, cx);
             });
@@ -1289,7 +1221,9 @@ impl Workspace {
         };
         self.context_menu = None;
         if items.len() == 1 {
-            self.start_rename(target.0, items.into_iter().next().unwrap(), window, cx);
+            if self.ensure_writable(target, cx) {
+                self.start_rename(target, items.into_iter().next().unwrap(), window, cx);
+            }
         } else {
             self.set_operation_error("Select exactly one item to rename.", cx);
         }

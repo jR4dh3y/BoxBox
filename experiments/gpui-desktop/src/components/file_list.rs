@@ -5,9 +5,11 @@
 //! Name takes the rest, so every column scales with the pane.
 
 use gpui::{
-    div, prelude::*, px, relative, App, ClickEvent, Div, ElementId, FontWeight, Rgba, SharedString,
-    Stateful, Window,
+    div, prelude::*, px, relative, AnyElement, App, ClickEvent, Div, ElementId, Entity, FontWeight, MouseButton, Rgba,
+    SharedString, Stateful, Window,
 };
+
+use super::TextField;
 
 use super::Type;
 use crate::sort::{Sort, SortDir, SortField};
@@ -143,6 +145,26 @@ pub struct FileRow {
     selection: Selection,
     checkbox: Option<CheckHandler>,
     decorate: Option<Decorate>,
+    editor: Option<AnyElement>,
+}
+
+/// The name field of a rename in place: a thin focused box that keeps clicks and
+/// drags to itself, so they edit the text instead of selecting or moving the item.
+pub fn rename_box(field: Entity<TextField>) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .min_w_0()
+        .h(px(22.))
+        .px(px(4.))
+        .rounded(px(super::ROUNDED))
+        .border_1()
+        .border_color(c(BORDER_FOCUS))
+        .bg(c(SURFACE_PRIMARY))
+        .text_color(c(TEXT_PRIMARY))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+        .child(field)
 }
 
 impl FileRow {
@@ -164,11 +186,18 @@ impl FileRow {
             selection,
             checkbox: None,
             decorate: None,
+            editor: None,
         }
     }
 
     pub fn icon(mut self, icon: &'static str) -> Self {
         self.icon = icon;
+        self
+    }
+
+    /// Draws `editor` in place of the name, for a rename in place.
+    pub fn editor(mut self, editor: impl IntoElement) -> Self {
+        self.editor = Some(editor.into_any_element());
         self
     }
 
@@ -298,8 +327,12 @@ impl RenderOnce for FileRow {
                 cell(None)
                     .gap(px(8.))
                     .child(slot)
-                    .child(text(self.name).flex_shrink_0().max_w(relative(0.7)).when(self.is_dir, |name| name.text_color(c(FOLDER))))
-                    .child(text(self.location).flex_1().text_color(c(TEXT_MUTED))),
+                    .map(|cell| match self.editor {
+                        Some(editor) => cell.child(div().flex_1().min_w_0().child(editor)),
+                        None => cell
+                            .child(text(self.name).flex_shrink_0().max_w(relative(0.7)).when(self.is_dir, |name| name.text_color(c(FOLDER))))
+                            .child(text(self.location).flex_1().text_color(c(TEXT_MUTED))),
+                    }),
             )
             .child(cell(Some(0.18)).text_color(secondary).child(text(self.kind)))
             .child(cell(Some(0.15)).justify_end().text_color(secondary).child(text(self.size)))

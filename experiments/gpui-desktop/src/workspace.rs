@@ -27,6 +27,8 @@ pub(crate) mod open_with;
 mod watching;
 pub(crate) mod undo;
 pub(crate) mod operations;
+pub(crate) mod names;
+pub(crate) mod rename;
 pub(crate) mod preview;
 pub(crate) mod appearance;
 mod palette;
@@ -171,16 +173,17 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-c", CopySelected, context),
         KeyBinding::new("ctrl-x", CutSelected, context),
         KeyBinding::new("ctrl-v", PasteInto, context),
-        KeyBinding::new("up", SelectUp, context),
-        KeyBinding::new("down", SelectDown, context),
-        KeyBinding::new("shift-up", ExtendUp, context),
-        KeyBinding::new("shift-down", ExtendDown, context),
         KeyBinding::new("left", SelectLeft, context),
         KeyBinding::new("right", SelectRight, context),
         KeyBinding::new("enter", OpenActive, context),
         KeyBinding::new("ctrl-shift-5", ToggleSplit, context),
         KeyBinding::new("ctrl-b", AddFavorite, context),
         KeyBinding::new("f1", ShowShortcuts, context),
+        // Up and Down in a text field, such as a name being edited, stay there.
+        KeyBinding::new("up", SelectUp, Some("BrowseWorkspace && !TextField")),
+        KeyBinding::new("down", SelectDown, Some("BrowseWorkspace && !TextField")),
+        KeyBinding::new("shift-up", ExtendUp, Some("BrowseWorkspace && !TextField")),
+        KeyBinding::new("shift-down", ExtendDown, Some("BrowseWorkspace && !TextField")),
         // A space typed in a text field is a space, not a preview.
         KeyBinding::new("space", PreviewActive, Some("BrowseWorkspace && !TextField")),
         // A text field keeps Ctrl+Z to itself, as the web shortcut skips inputs.
@@ -233,6 +236,9 @@ pub struct Workspace {
     pub(crate) open_with_search: Entity<TextField>,
     pub(crate) settings_focus: FocusHandle,
     pub(crate) dialog_field: Entity<TextField>,
+    /// The name being edited in place, and its field.
+    pub(crate) inline_rename: Option<rename::InlineRename>,
+    pub(crate) rename_field: Entity<TextField>,
     pub(crate) location_editor: Option<LocationEditor>,
     pub(crate) location_field: Entity<TextField>,
     _subscriptions: Vec<Subscription>,
@@ -291,6 +297,8 @@ impl Workspace {
             preference_view(&preferences),
         );
         let dialog_field = cx.new(|cx| TextField::new("", cx));
+        let rename_field = cx.new(|cx| TextField::new("", cx));
+        let rename_focus = gpui::Focusable::focus_handle(rename_field.read(cx), cx);
         let location_field = cx.new(|cx| TextField::new("Type a location", cx));
         let accent_field = cx.new(|cx| TextField::new("#4a9eff", cx));
         let open_with_search = cx.new(|cx| TextField::new("Search applications", cx));
@@ -344,10 +352,14 @@ impl Workspace {
             open_with_search: open_with_search.clone(),
             settings_focus: cx.focus_handle(),
             dialog_field: dialog_field.clone(),
+            inline_rename: None,
+            rename_field: rename_field.clone(),
             location_editor: None,
             location_field: location_field.clone(),
             _subscriptions: vec![
                 cx.subscribe_in(&dialog_field, window, |this, _, event, window, cx| this.on_dialog_field(event, window, cx)),
+                cx.subscribe_in(&rename_field, window, |this, _, event, window, cx| this.on_rename_field(event, window, cx)),
+                cx.on_blur(&rename_focus, window, |this, window, cx| this.on_rename_blur(window, cx)),
                 cx.subscribe_in(&location_field, window, |this, _, event, window, cx| this.on_location_field(event, window, cx)),
                 cx.subscribe_in(&accent_field, window, |this, _, event, _, cx| this.on_accent_field(event, cx)),
                 cx.subscribe_in(&open_with_search, window, |this, _, event, window, cx| this.on_open_with_search(event, window, cx)),
@@ -409,6 +421,18 @@ impl Workspace {
     pub(crate) fn browser_width(&self, window: &Window) -> f32 {
         let width = f32::from(window.viewport_size().width) - crate::ui::SIDEBAR_WIDTH;
         if self.split_panes.contains_key(&self.tabs[self.active_tab].id) { (width - 1.) / 2. } else { width }
+    }
+
+    /// Scrolls the item at `index` into view in its pane's list or grid.
+    pub(crate) fn reveal(&self, target: PaneTarget, index: usize, window: &Window) {
+        let Some(pane) = self.pane_by_id(target.0) else { return };
+        match pane.current_view_mode() {
+            ViewMode::List => pane.list_scroll.scroll_to_item(index, gpui::ScrollStrategy::Top),
+            ViewMode::Grid => {
+                let columns = crate::components::GridMetrics::new(self.preferences.compact_rows).columns(self.browser_width(window));
+                pane.grid_scroll.scroll_to_item(index / columns.max(1), gpui::ScrollStrategy::Top);
+            }
+        }
     }
 
     pub(crate) fn pane(&self) -> &Pane {

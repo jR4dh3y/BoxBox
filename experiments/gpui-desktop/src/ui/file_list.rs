@@ -78,6 +78,10 @@ impl Workspace {
             .cut(self.is_cut(pane, item))
             .drop_target(self.drop_hover(cx) == Some(&folder))
             .compact(self.preferences.compact_rows);
+        let row = match self.renaming(target, &item.path) {
+            true => row.editor(crate::components::rename_box(self.rename_field.clone())),
+            false => row,
+        };
         let row = match self.preferences.selection_checkboxes {
             true => row.checkbox(self.toggle_selection(target, index, cx)),
             false => row,

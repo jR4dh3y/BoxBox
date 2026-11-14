@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use gpui::{div, img, prelude::*, px, App, ClickEvent, Div, ElementId, Image, ObjectFit, SharedString, Stateful, Window};
+use gpui::{div, img, prelude::*, px, AnyElement, App, ClickEvent, Div, ElementId, Image, ObjectFit, SharedString, Stateful, Window};
 
 use super::file_list::{checkbox, Selection};
 use super::ROUNDED;
@@ -55,6 +55,7 @@ pub struct FileTile {
     selection: Selection,
     checkbox: Option<CheckHandler>,
     decorate: Option<Decorate>,
+    editor: Option<AnyElement>,
 }
 
 impl FileTile {
@@ -74,7 +75,14 @@ impl FileTile {
             selection,
             checkbox: None,
             decorate: None,
+            editor: None,
         }
+    }
+
+    /// Draws `editor` in place of the name, for a rename in place.
+    pub fn editor(mut self, editor: impl IntoElement) -> Self {
+        self.editor = Some(editor.into_any_element());
+        self
     }
 
     pub fn icon(mut self, icon: &'static str) -> Self {
@@ -160,17 +168,20 @@ impl RenderOnce for FileTile {
             .mt(px(6.))
             .min_w_0()
             .overflow_hidden()
-            .child(
+            .map(|label| match self.editor {
+                Some(editor) => label.child(div().text_size(px(13.)).child(editor)),
                 // text-[13px] leading-4, two lines at most
-                div()
-                    .w_full()
-                    .text_center()
-                    .text_size(px(13.))
-                    .line_height(px(16.))
-                    .line_clamp(2)
-                    .text_color(c(if self.is_dir { FOLDER } else { TEXT_PRIMARY }))
-                    .child(self.name),
-            )
+                None => label.child(
+                    div()
+                        .w_full()
+                        .text_center()
+                        .text_size(px(13.))
+                        .line_height(px(16.))
+                        .line_clamp(2)
+                        .text_color(c(if self.is_dir { FOLDER } else { TEXT_PRIMARY }))
+                        .child(self.name),
+                ),
+            })
             .child(
                 // mt-0.5 truncate text-[11px] leading-3.5. GPUI's ellipsis collapses centred
                 // text to "…", so this clips instead.

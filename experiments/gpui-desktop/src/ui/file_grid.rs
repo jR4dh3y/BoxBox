@@ -91,6 +91,10 @@ impl Workspace {
         .cut(self.is_cut(pane, &item))
         .drop_target(self.drop_hover(cx) == Some(&folder))
         .compact(self.preferences.compact_rows);
+        let tile = match self.renaming(target, &item.path) {
+            true => tile.editor(crate::components::rename_box(self.rename_field.clone())),
+            false => tile,
+        };
         let tile = match self.preferences.selection_checkboxes {
             true => tile.checkbox(self.toggle_selection(target, index, cx)),
             false => tile,
