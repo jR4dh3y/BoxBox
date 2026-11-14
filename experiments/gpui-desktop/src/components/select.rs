@@ -1,13 +1,13 @@
 //! `lib/components/ui/Select.svelte`: the closed control. Its option list
 //! opens as a `ContextMenu`.
 
-use gpui::{div, prelude::*, px, rgb, App, ClickEvent, ElementId, SharedString, Window};
+use gpui::{div, prelude::*, px, rgb, App, ElementId, MouseButton, MouseDownEvent, SharedString, Window};
 
 use super::{Type, ROUNDED};
 use crate::theme::*;
 use crate::ui::icon;
 
-type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+type PressHandler = Box<dyn Fn(&MouseDownEvent, &mut Window, &mut App) + 'static>;
 
 #[derive(IntoElement)]
 pub struct Select {
@@ -15,12 +15,12 @@ pub struct Select {
     label: SharedString,
     swatch: Option<u32>,
     disabled: bool,
-    on_click: Option<ClickHandler>,
+    on_press: Option<PressHandler>,
 }
 
 impl Select {
     pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
-        Self { id: id.into(), label: label.into(), swatch: None, disabled: false, on_click: None }
+        Self { id: id.into(), label: label.into(), swatch: None, disabled: false, on_press: None }
     }
 
     /// A colour dot before the label, as `0xRRGGBB`.
@@ -34,8 +34,9 @@ impl Select {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
-        self.on_click = Some(Box::new(handler));
+    /// Runs when the control is pressed, as a native combo box opens on press.
+    pub fn on_press(mut self, handler: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static) -> Self {
+        self.on_press = Some(Box::new(handler));
         self
     }
 }
@@ -68,6 +69,6 @@ impl RenderOnce for Select {
             })
             .child(self.label)
             .child(div().absolute().right(px(7.)).flex().items_center().h_full().child(icon("chevron-down", 14., c(TEXT_MUTED))))
-            .when_some(self.on_click.filter(|_| !self.disabled), |el, handler| el.on_click(handler))
+            .when_some(self.on_press.filter(|_| !self.disabled), |el, handler| el.on_mouse_down(MouseButton::Left, handler))
     }
 }

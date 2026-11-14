@@ -764,3 +764,22 @@ fn bookmarks_of_places_are_not_listed_twice(cx: &mut TestAppContext) {
     // The file keeps both.
     assert_eq!(fs::read_to_string(&bookmarks).unwrap().lines().count(), 2);
 }
+
+#[gpui::test]
+fn pressing_an_open_select_closes_it(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.txt"]);
+    cx.simulate_keystrokes("ctrl-,");
+    click(cx, "settings-appearance");
+    click(cx, "accent-source");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("accent-source")));
+    click(cx, "accent-source");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, None, "a second press closes the list"));
+    click(cx, "accent-source");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("accent-source"), "and a third opens it again"));
+    // A press elsewhere closes it, and the next press on the control opens it.
+    click(cx, "settings-appearance");
+    cx.run_until_parked();
+    click(cx, "accent-source");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("accent-source")));
+}

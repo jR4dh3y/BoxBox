@@ -22,8 +22,14 @@ impl Workspace {
             .relative()
             .w(px(width))
             .debug_selector(move || id.to_string())
-            .child(Select::new(id, label).on_click(cx.listener(move |this, _, _, cx| {
-                this.open_select = if this.open_select == Some(id) { None } else { Some(id) };
+            // Toggles on press. A press on the control while the list is open first closes
+            // it as a press outside the list; that same press must not open it again.
+            .child(Select::new(id, label).on_press(cx.listener(move |this, _, _, cx| {
+                this.open_select = match (this.open_select, this.select_dismissed.take()) {
+                    (_, Some(dismissed)) if dismissed == id => None,
+                    (Some(open), _) if open == id => None,
+                    _ => Some(id),
+                };
                 cx.notify();
             })))
             .when(open, |slot| {
@@ -52,8 +58,14 @@ impl Workspace {
                                 .id(SharedString::from(format!("{id}-menu")))
                                 .occlude()
                                 .min_w(px(width))
-                                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                                .on_mouse_down_out(cx.listener(move |this, _, _, cx| {
                                     this.open_select = None;
+                                    this.select_dismissed = Some(id);
+                                    // Only this press counts; later ones open the list again.
+                                    let workspace = cx.entity().downgrade();
+                                    cx.defer(move |cx| {
+                                        workspace.update(cx, |this, _| this.select_dismissed = None).ok();
+                                    });
                                     cx.notify();
                                 }))
                                 .child(ContextMenu::new(items)),

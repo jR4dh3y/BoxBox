@@ -267,6 +267,8 @@ pub struct Workspace {
     pub(crate) add_menu: Option<PaneTarget>,
     /// The select whose option list is open.
     pub(crate) open_select: Option<&'static str>,
+    /// The select whose list the current press closed, so it does not reopen it.
+    pub(crate) select_dismissed: Option<&'static str>,
     pub(crate) accent_field: Entity<TextField>,
     /// The settings dialogs' fields: first, second and the masked token.
     pub(crate) settings_fields: [Entity<TextField>; 3],
@@ -401,6 +403,7 @@ impl Workspace {
             path_bar_widths: Default::default(),
             add_menu: None,
             open_select: None,
+            select_dismissed: None,
             accent_field: accent_field.clone(),
             settings_fields: settings_fields.clone(),
             pending_field_focus: None,
