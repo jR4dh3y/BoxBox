@@ -154,6 +154,27 @@ impl Workspace {
         self.report(Err(message.into()), cx);
     }
 
+    /// Whether nothing may be created, renamed or removed in the pane's folder:
+    /// This PC, a folder without write permission, or a read-only server mount.
+    pub(crate) fn read_only(&self, target: PaneTarget) -> bool {
+        let Some(pane) = self.pane_by_id(target.0) else { return true };
+        let root = pane.path.split('/').next().unwrap_or("");
+        let read_only_drive = match &pane.drives {
+            Load::Loaded(drives) => drives.iter().any(|drive| drive.name == root && drive.read_only),
+            _ => false,
+        };
+        pane.is_at_root() || !pane.writable || read_only_drive
+    }
+
+    /// Says so and returns false when the pane's folder cannot be changed.
+    pub(crate) fn ensure_writable(&mut self, target: PaneTarget, cx: &mut Context<Self>) -> bool {
+        if !self.read_only(target) {
+            return true;
+        }
+        self.notify(crate::components::ToastKind::Info, "This location is read-only or unavailable", cx);
+        false
+    }
+
     fn operation_target(&self, target: PaneTarget) -> Option<(&Pane, Arc<Api>, String)> {
         self.pane_by_id(target.0)
             .map(|pane| (pane, pane.api.clone(), pane.path.clone()))
@@ -168,11 +189,10 @@ impl Workspace {
         if self.operation_status.is_busy() {
             return;
         }
-        let pane = self.pane();
-        if pane.path.is_empty() {
-            self.set_operation_error("Choose a folder before creating a new folder.", cx);
+        if !self.ensure_writable(self.active_pane, cx) {
             return;
         }
+        let pane = self.pane();
         self.open_dialog(OperationDialog::CreateFolder { target_id: pane.id, parent: pane.path.clone() }, "", 0..0, window, cx);
     }
 
@@ -185,11 +205,10 @@ impl Workspace {
         if self.operation_status.is_busy() {
             return;
         }
-        let pane = self.pane();
-        if pane.path.is_empty() {
-            self.set_operation_error("Choose a folder before creating a new file.", cx);
+        if !self.ensure_writable(self.active_pane, cx) {
             return;
         }
+        let pane = self.pane();
         self.open_dialog(OperationDialog::CreateFile { target_id: pane.id, parent: pane.path.clone() }, "", 0..0, window, cx);
     }
 
@@ -202,13 +221,15 @@ impl Workspace {
         if self.operation_status.is_busy() {
             return;
         }
-        let pane = self.pane();
-        let items = pane.selected_items();
+        let mut items = self.pane().selected_items();
         if items.len() != 1 {
             self.set_operation_error("Select exactly one item to rename.", cx);
             return;
         }
-        self.start_rename(pane.id, items.into_iter().next().unwrap(), window, cx);
+        if !self.ensure_writable(self.active_pane, cx) {
+            return;
+        }
+        self.start_rename(self.active_pane.0, items.remove(0), window, cx);
     }
 
     fn start_rename(
@@ -481,6 +502,9 @@ impl Workspace {
             self.set_operation_error("Select at least one item first.", cx);
             return;
         }
+        if mode == ClipboardMode::Cut && !self.ensure_writable(target, cx) {
+            return;
+        }
         if api.is_local() {
             self.publish_files(api.clone(), &items, mode, cx);
         }
@@ -535,7 +559,7 @@ impl Workspace {
     /// Pastes what another app copied when the system clipboard holds its files;
     /// otherwise BoxBox's own clipboard.
     pub(crate) fn paste_into(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
-        if self.operation_status.is_busy() {
+        if self.operation_status.is_busy() || !self.ensure_writable(target, cx) {
             return;
         }
         cx.spawn(async move |this, cx| {
@@ -602,7 +626,7 @@ impl Workspace {
             return;
         }
         let Some(clipboard) = self.file_clipboard.clone() else {
-            self.set_operation_error("The file clipboard is empty.", cx);
+            self.notify(crate::components::ToastKind::Info, "The clipboard has no files to paste", cx);
             return;
         };
         let Some((_, destination, parent)) = self.operation_target(target) else {
@@ -780,6 +804,9 @@ impl Workspace {
         }
         if items.is_empty() {
             self.set_operation_error("Select at least one item first.", cx);
+            return;
+        }
+        if !self.ensure_writable(target, cx) {
             return;
         }
         let Some((_, api, _)) = self.operation_target(target) else {

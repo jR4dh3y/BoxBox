@@ -3,16 +3,21 @@ use gpui::{TestAppContext, VisualTestContext, Modifiers, MouseButton};
 
 struct ProbeServer(std::process::Child);
 
-struct TestConfig {
+/// Points the settings files at a temporary folder. Tests that render a workspace
+/// share the environment, so they take turns.
+pub(super) struct TestConfig {
     previous: Option<std::ffi::OsString>,
     path: std::path::PathBuf,
+    _turn: std::sync::MutexGuard<'static, ()>,
 }
 
 impl TestConfig {
-    fn new(path: std::path::PathBuf) -> Self {
+    pub(super) fn new(path: std::path::PathBuf) -> Self {
+        static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let turn = TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let previous = std::env::var_os("XDG_CONFIG_HOME");
         std::env::set_var("XDG_CONFIG_HOME", &path);
-        Self { previous, path }
+        Self { previous, path, _turn: turn }
     }
 }
 
@@ -58,7 +63,7 @@ fn fixture_api(fixture: &std::path::Path) -> (Api, Option<ProbeServer>) {
     (api, Some(server))
 }
 
-fn click(cx: &mut VisualTestContext, selector: &'static str) {
+pub(super) fn click(cx: &mut VisualTestContext, selector: &'static str) {
     let bounds = cx.debug_bounds(selector).unwrap_or_else(|| panic!("{selector} must be rendered"));
     cx.simulate_click(bounds.center(), Modifiers::default());
 }

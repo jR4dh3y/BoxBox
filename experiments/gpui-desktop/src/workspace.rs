@@ -546,12 +546,15 @@ impl Workspace {
                 .background_executor()
                 .spawn(async move {
                     let items = api.list(&path).map(|items| crate::pane::arrange(items, view));
-                    (items, api.local_path(&path).ok().flatten())
+                    let real = api.local_path(&path).ok().flatten();
+                    let writable = real.as_deref().map_or(true, crate::local::writable);
+                    (items, real, writable)
                 })
                 .await;
             this.update(cx, |this, cx| {
                 if let Some(pane) = this.pane_mut_by_id(target.0) {
                     if pane.generation == generation {
+                        pane.writable = result.2;
                         let stale = pane.finish_load(result.0, view);
                         if let Some(path) = result.1 { this.directory_watches.watch(target.0, path); }
                         if stale { this.resort(target, cx); }
@@ -1324,3 +1327,5 @@ impl Render for Workspace {
 
 #[cfg(test)]
 mod parity_test;
+#[cfg(test)]
+mod features_test;

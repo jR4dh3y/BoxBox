@@ -26,12 +26,7 @@ impl Workspace {
         let Some(menu) = &self.context_menu else { return div().into_any_element() };
         let Some(pane) = self.pane_by_id(menu.target_id) else { return div().into_any_element() };
         let local = pane.api.is_local();
-        let read_only = match &pane.drives {
-            crate::pane::Load::Loaded(drives) => {
-                drives.iter().any(|drive| drive.name == pane.path.split('/').next().unwrap_or("") && drive.read_only)
-            }
-            _ => false,
-        } || self.operation_status.is_busy();
+        let read_only = self.read_only(crate::workspace::operations::PaneTarget(pane.id)) || self.operation_status.is_busy();
         let can_create = !pane.path.is_empty();
         let can_paste = self.file_clipboard.is_some();
         let items = &menu.items;

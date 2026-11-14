@@ -466,6 +466,14 @@ impl LocalFiles {
     }
 }
 
+/// Whether this process may add, rename and remove entries in `folder`.
+pub(crate) fn writable(folder: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt as _;
+    let Ok(path) = CString::new(folder.as_os_str().as_bytes()) else { return false };
+    // SAFETY: the C path is NUL-terminated and outlives the call.
+    unsafe { libc::access(path.as_ptr(), libc::W_OK | libc::X_OK) == 0 }
+}
+
 fn canonical_directory(path: &Path) -> Result<PathBuf> {
     let canonical = fs::canonicalize(path)
         .with_context(|| format!("cannot resolve directory {}", path.display()))?;
