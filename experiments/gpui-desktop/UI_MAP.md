@@ -47,8 +47,6 @@ Linux file manager does, not commitments.
   explicit `--enable`/`--disable` portal route.
 - Register as the default folder handler (`inode/directory`,
   `x-scheme-handler/file`), opt-in.
-- Dragging inside the app: onto a folder or the other pane moves, Ctrl+Drag
-  copies, a dragged item refuses its own drop; drop targets highlight.
 - Dropping from other apps onto a folder row, tile or sidebar entry, not only
   the pane.
 - Drive context menu: Rename and Reset Name, with stored drive names.
@@ -265,6 +263,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Single instance, launch opens a tab | ✓ `instance.rs` | ✓ `instance.rs` (from PR #226); real paths and `file://` URIs open their folder |
 | Live folder refresh | ✓ `watch.rs` (server stream) | ✓ `workspace/watching.rs` (inotify) |
 | Drag out | ◐ X11 only | ✓ `drag_out/`: XDND on X11; on Wayland `drag_out/wayland.rs` starts a `wl_data_device` drag on GPUI's own connection once the pointer leaves the window (run on sway only; no drag icon outside the window) |
+| Drag inside the window | ✓ `dnd.rs` | ✓ `workspace/drag_drop.rs`: onto a folder row or tile, a pane or a sidebar entry; moves on one filesystem and copies to another, Ctrl copies, Shift moves; an item refuses itself, its own inside and the folder it is in; the target under the pointer is highlighted |
 | Drop in from other apps | ✓ `dnd.rs` | ◐ |
 | OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✓ `os_clipboard.rs`: owns the Wayland clipboard via data-control (not GNOME); `xclip` on X11 |
 | Devices: mount, unlock, eject | ✓ `devices.rs` (server) | ✓ `devices/udisks.rs`: UDisks2 over D-Bus (`zbus`), live, with LUKS unlock and lock. `devices/gvfs.rs`: GVfs mounts and volume monitors over D-Bus; `smb://`, `sftp://`, `ftp://` and `mtp://` typed in the location bar mount and open, and a backend's password or host-key question opens a dialog. Rows show a usage bar, a read-only mark and a dimmed unmounted state. Run against a Samba share, an SSH login and a LUKS loop image; no phone was plugged in, so MTP is untested |

@@ -7,6 +7,7 @@ use super::{icon, TextScale};
 use crate::components::{FileTile, GridMetrics};
 use crate::format::{display_name, file_icon, file_size};
 use crate::theme::*;
+use crate::workspace::drag_drop::{drop_zone, DropTarget};
 use crate::workspace::operations::PaneTarget;
 use crate::workspace::Workspace;
 
@@ -70,6 +71,7 @@ impl Workspace {
         let item = pane.items.get(index)?.clone();
         let (path, is_dir) = (item.path.clone(), item.is_dir);
         let thumbnail = self.thumbnail(&pane.api, &item);
+        let folder = DropTarget::Folder { pane: target, path: path.clone() };
         let tile = FileTile::new(
             ("tile", index),
             display_name(&item.name, is_dir, self.preferences.show_file_extensions),
@@ -82,6 +84,7 @@ impl Workspace {
         .selected(pane.is_selected(&item.path))
         .active(pane.active == Some(index))
         .cut(self.is_cut(pane, &item))
+        .drop_target(self.drop_hover(cx) == Some(&folder))
         .compact(self.preferences.compact_rows);
         let tile = match self.preferences.selection_checkboxes {
             true => tile.checkbox(self.toggle_selection(target, index, cx)),
@@ -97,8 +100,9 @@ impl Workspace {
             this.activate_list_item(index, &path, is_dir, event, window, cx)
         });
         Some(tile.decorate(move |tile| {
-            crate::drag_out::draggable(tile, index, workspace, api)
-                .on_mouse_down(gpui::MouseButton::Right, on_menu)
+            let tile = crate::drag_out::draggable(tile, target, index, workspace.clone(), api);
+            let tile = if is_dir { drop_zone(tile, folder, workspace) } else { tile };
+            tile.on_mouse_down(gpui::MouseButton::Right, on_menu)
                 .on_click(on_click)
         }))
     }

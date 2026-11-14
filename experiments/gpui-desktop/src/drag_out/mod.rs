@@ -12,61 +12,68 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result};
 use gpui::{
-    div, point, prelude::*, px, App, Bounds, Context, DragMoveEvent, Entity, Global, SharedString,
-    WeakEntity, Window,
+    div, point, prelude::*, px, App, Bounds, Context, DragMoveEvent, Entity, Global, Pixels, Point,
+    SharedString, WeakEntity, Window,
 };
 
 use crate::api::{Api, FileInfo};
 use crate::theme::*;
+use crate::workspace::operations::PaneTarget;
 use crate::workspace::Workspace;
 
 /// Resolves the dragged items to real paths. It can download, so it never runs on the UI thread.
 pub type Prepare = Box<dyn FnOnce() -> Result<Vec<PathBuf>> + Send>;
 
-/// The in-window drag value: the index of the row or tile, resolved to items when a drag starts.
-pub struct DraggedItem(pub usize);
+/// The in-window drag value: the pane and index of the row or tile, resolved to items when a
+/// drag starts.
+pub struct DraggedItem {
+    pub pane: PaneTarget,
+    pub index: usize,
+}
 
 pub struct DragPreview {
     label: SharedString,
+    /// Where in the dragged row the pointer took hold. GPUI draws the preview at
+    /// the row's corner, so this much padding puts the label beside the pointer.
+    grip: Point<Pixels>,
 }
 
 impl Render for DragPreview {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px(px(8.))
-            .py(px(4.))
-            .rounded(px(4.))
-            .border_1()
-            .border_color(c(BORDER_PRIMARY))
-            .bg(c(SURFACE_SECONDARY))
-            .text_size(px(13.))
-            .text_color(c(TEXT_PRIMARY))
-            .child(self.label.clone())
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div().pl(self.grip.x + px(12.)).pt(self.grip.y + px(12.)).child(
+            div()
+                .when_some(cx.try_global::<crate::components::UiFont>(), |el, font| el.font_family(font.0.clone()))
+                .px(px(8.))
+                .py(px(4.))
+                .rounded(px(4.))
+                .border_1()
+                .border_color(c(BORDER_PRIMARY))
+                .bg(c(SURFACE_SECONDARY))
+                .text_size(px(13.))
+                .text_color(c(TEXT_PRIMARY))
+                .child(self.label.clone()),
+        )
     }
 }
 
-/// Makes the item at `index` draggable within the window and out to other apps.
+/// Makes the item at `index` of `pane` draggable within the window and out to other apps.
 pub fn draggable<E: StatefulInteractiveElement>(
     element: E,
+    pane: PaneTarget,
     index: usize,
     workspace: WeakEntity<Workspace>,
     api: Arc<Api>,
 ) -> E {
     element.on_drag(
-        DraggedItem(index),
-        move |item: &DraggedItem, _, _: &mut Window, cx: &mut App| -> Entity<DragPreview> {
-            let files = workspace
-                .upgrade()
-                .map(|workspace| workspace.read(cx).pane().drag_items(item.0))
-                .unwrap_or_default();
+        DraggedItem { pane, index },
+        move |item: &DraggedItem, grip, _: &mut Window, cx: &mut App| -> Entity<DragPreview> {
+            let files = workspace.update(cx, |workspace, _| workspace.begin_drag(item.pane, item.index)).unwrap_or_default();
             let label = match files.as_slice() {
                 [item] => item.name.clone(),
                 items => format!("{} items", items.len()),
             };
             start(files, api.clone(), cx);
-            cx.new(|_| DragPreview {
-                label: label.into(),
-            })
+            cx.new(|_| DragPreview { label: label.into(), grip })
         },
     )
 }

@@ -50,6 +50,7 @@ pub struct FileTile {
     selected: bool,
     active: bool,
     cut: bool,
+    drop_target: bool,
     compact: bool,
     selection: Selection,
     checkbox: Option<CheckHandler>,
@@ -68,6 +69,7 @@ impl FileTile {
             selected: false,
             active: false,
             cut: false,
+            drop_target: false,
             compact: false,
             selection,
             checkbox: None,
@@ -103,6 +105,12 @@ impl FileTile {
 
     pub fn cut(mut self, cut: bool) -> Self {
         self.cut = cut;
+        self
+    }
+
+    /// A dragged item is over this folder and would be dropped into it.
+    pub fn drop_target(mut self, drop_target: bool) -> Self {
+        self.drop_target = drop_target;
         self
     }
 
@@ -200,6 +208,7 @@ impl RenderOnce for FileTile {
                     tile.border_color(gpui::transparent_black()).hover(|style| style.bg(c(SURFACE_SECONDARY)))
                 }
             })
+            .when(self.drop_target, |tile| tile.border_color(accent).bg(background))
             .child(preview)
             .child(label)
             .when_some(self.checkbox, |tile, on_check| {

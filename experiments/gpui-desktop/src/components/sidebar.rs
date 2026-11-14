@@ -94,6 +94,7 @@ pub struct NavItem {
     active: bool,
     disabled: bool,
     muted: bool,
+    drop_target: bool,
     usage: Option<f64>,
     badge: Option<&'static str>,
     tooltip: Option<SharedString>,
@@ -111,6 +112,7 @@ impl NavItem {
             active: false,
             disabled: false,
             muted: false,
+            drop_target: false,
             usage: None,
             badge: None,
             tooltip: None,
@@ -137,6 +139,12 @@ impl NavItem {
 
     pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
+        self
+    }
+
+    /// A dragged item is over this entry and would be dropped into its folder.
+    pub fn drop_target(mut self, drop_target: bool) -> Self {
+        self.drop_target = drop_target;
         self
     }
 
@@ -197,6 +205,7 @@ impl RenderOnce for NavItem {
             .text_color(c(text))
             .when(self.disabled, |row| row.opacity(0.5))
             .when(!self.disabled, |row| row.cursor_pointer().hover(|style| style.bg(c(SURFACE_SECONDARY))))
+            .when(self.drop_target, |row| row.bg(alpha(ACCENT, 0.25)))
             .child(icon(self.icon, 16., alpha(text, if self.muted { 0.5 } else if self.dim_icon { 0.8 } else { 1. })))
             .child(
                 div()

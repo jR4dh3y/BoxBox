@@ -129,6 +129,7 @@ pub struct FileRow {
     selected: bool,
     active: bool,
     cut: bool,
+    drop_target: bool,
     compact: bool,
     selection: Selection,
     checkbox: Option<CheckHandler>,
@@ -148,6 +149,7 @@ impl FileRow {
             selected: false,
             active: false,
             cut: false,
+            drop_target: false,
             compact: false,
             selection,
             checkbox: None,
@@ -186,6 +188,12 @@ impl FileRow {
 
     pub fn cut(mut self, cut: bool) -> Self {
         self.cut = cut;
+        self
+    }
+
+    /// A dragged item is over this folder and would be dropped into it.
+    pub fn drop_target(mut self, drop_target: bool) -> Self {
+        self.drop_target = drop_target;
         self
     }
 
@@ -269,6 +277,7 @@ impl RenderOnce for FileRow {
             })
             // shadow-[inset_2px_0_0_var(--color-accent)]
             .when(self.active, |row| row.child(div().absolute().left_0().top_0().bottom_0().w(px(2.)).bg(accent)))
+            .when(self.drop_target, |row| row.bg(background).child(div().absolute().inset_0().border_1().border_color(accent)))
             .child(
                 cell(None).gap(px(8.)).child(slot).child(
                     text(self.name).flex_1().when(self.is_dir, |name| name.text_color(c(FOLDER))),

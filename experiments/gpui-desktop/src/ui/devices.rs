@@ -62,6 +62,12 @@ impl Workspace {
                 let label = format!("{} {}", if volume.ejectable { "Eject" } else { "Unmount" }, volume.name);
                 row = row.trailing("arrow-up-from-line", label, cx.listener(move |this, _, _, cx| this.eject_volume(eject.clone(), cx)));
             }
+            // A mounted volume takes drops into its top folder.
+            let root = volume.mount_point().and_then(|point| self.pane().api.virtual_path(point));
+            let row = match root {
+                Some(root) => self.drop_place(row, root, cx).into_any_element(),
+                None => row.into_any_element(),
+            };
             div().debug_selector(move || format!("volume-{index}")).child(row)
         }))
     }

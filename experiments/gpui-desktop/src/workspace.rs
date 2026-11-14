@@ -20,6 +20,7 @@ use crate::settings_state::{DesktopSettings, SettingsPanelState};
 pub(crate) mod favorites;
 pub(crate) mod confirm;
 pub(crate) mod devices;
+pub(crate) mod drag_drop;
 pub(crate) mod jobs;
 mod notifications;
 pub(crate) mod open_with;
@@ -222,6 +223,7 @@ pub struct Workspace {
     pub(crate) dialog_error: Option<String>,
     pub(crate) notices: notifications::Notices,
     pub(crate) devices: devices::Devices,
+    pub(crate) drag_drop: drag_drop::DragDrop,
     /// The sign-in dialog's fields: user, domain and the masked password.
     pub(crate) device_fields: [Entity<TextField>; 3],
     /// Focus the sign-in dialog on the next render; a mount asked from the background.
@@ -334,6 +336,7 @@ impl Workspace {
             dialog_error: None,
             notices: Default::default(),
             devices: Default::default(),
+            drag_drop: Default::default(),
             device_fields,
             pending_credential_focus: false,
             open_with: None,
@@ -1183,7 +1186,10 @@ impl Render for Workspace {
         div()
             .key_context("BrowseWorkspace")
             .track_focus(&self.focus_handle)
+            // First, so it runs before the drop zones inside report themselves.
+            .on_drag_move(cx.listener(|this, _: &gpui::DragMoveEvent<crate::drag_out::DraggedItem>, _, cx| this.track_drag(cx)))
             .on_drag_move(crate::drag_out::moved)
+            .on_drop(cx.listener(|this, _: &crate::drag_out::DraggedItem, window, cx| this.drop_items(window, cx)))
             .on_action(cx.listener(Self::back))
             .on_action(cx.listener(Self::forward))
             .on_action(cx.listener(Self::refresh))

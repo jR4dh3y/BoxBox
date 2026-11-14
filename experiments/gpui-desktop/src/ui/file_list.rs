@@ -8,6 +8,7 @@ use crate::components::{FileListHeader, FileRow, Selection};
 use crate::api::FileInfo;
 use crate::format::{display_name, file_date, file_icon, file_size, type_description};
 use crate::theme::*;
+use crate::workspace::drag_drop::{drop_zone, DropTarget};
 use crate::workspace::operations::{ClipboardMode, PaneTarget};
 use crate::workspace::Workspace;
 
@@ -63,6 +64,7 @@ impl Workspace {
         let pane = self.pane_by_id(target.0)?;
         let item = pane.items.get(index)?;
         let (path, is_dir) = (item.path.clone(), item.is_dir);
+        let folder = DropTarget::Folder { pane: target, path: path.clone() };
         let row = FileRow::new(("row", index), display_name(&item.name, is_dir, self.preferences.show_file_extensions), is_dir, self.selection_style())
             .icon(file_icon(&item.name, is_dir))
             .details(
@@ -73,6 +75,7 @@ impl Workspace {
             .selected(pane.is_selected(&item.path))
             .active(pane.active == Some(index))
             .cut(self.is_cut(pane, item))
+            .drop_target(self.drop_hover(cx) == Some(&folder))
             .compact(self.preferences.compact_rows);
         let row = match self.preferences.selection_checkboxes {
             true => row.checkbox(self.toggle_selection(target, index, cx)),
@@ -88,8 +91,9 @@ impl Workspace {
             this.activate_list_item(index, &path, is_dir, event, window, cx)
         });
         Some(row.decorate(move |row| {
-            crate::drag_out::draggable(row.debug_selector(move || format!("row-{}-{index}", target.0)), index, workspace, api)
-                .on_mouse_down(gpui::MouseButton::Right, on_menu)
+            let row = crate::drag_out::draggable(row.debug_selector(move || format!("row-{}-{index}", target.0)), target, index, workspace.clone(), api);
+            let row = if is_dir { drop_zone(row, folder, workspace) } else { row };
+            row.on_mouse_down(gpui::MouseButton::Right, on_menu)
                 .on_click(on_click)
         }))
     }

@@ -6,6 +6,7 @@ use super::{TextScale, SIDEBAR_WIDTH};
 use crate::api::RootKind;
 use crate::components::{self, SidebarSection};
 use crate::theme::*;
+use crate::workspace::drag_drop::{drop_zone, DropTarget};
 use crate::workspace::Workspace;
 
 struct NavItem {
@@ -50,14 +51,24 @@ impl Workspace {
 
     fn nav_item(&self, id: String, item: NavItem, current: &str, cx: &mut Context<Self>) -> impl IntoElement {
         let path = item.path;
-        components::NavItem::new(SharedString::from(id), item.name, item.icon)
-            .active(is_active(current, &path))
-            .on_click(cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx)))
+        let row = components::NavItem::new(SharedString::from(id), item.name, item.icon).active(is_active(current, &path)).on_click({
+            let path = path.clone();
+            cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx))
+        });
+        self.drop_place(row, path, cx)
+    }
+
+    /// Lets files be dropped onto a sidebar row to put them in its folder.
+    pub(crate) fn drop_place(&self, row: components::NavItem, path: String, cx: &mut Context<Self>) -> impl IntoElement {
+        let target = DropTarget::Place { path };
+        let row = row.drop_target(self.drop_hover(cx) == Some(&target));
+        drop_zone(div(), target, cx.entity().downgrade()).child(row)
     }
 
     pub(crate) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = self.pane();
         let current = pane.path.clone();
+        let provider = crate::workspace::favorites::FavoriteProvider::for_api(&pane.api);
         let roots: &[crate::api::MountPoint] = match &pane.roots {
             crate::pane::Load::Loaded(roots) => roots,
             _ => &[],
@@ -88,9 +99,14 @@ impl Workspace {
             .iter()
             .enumerate()
             .map(|(index, favorite)| {
-                components::NavItem::new(SharedString::from(format!("favorite-{index}")), favorite.name.clone(), "star")
+                let row = components::NavItem::new(SharedString::from(format!("favorite-{index}")), favorite.name.clone(), "star")
                     .trailing("x", format!("Unpin {}", favorite.name), cx.listener(move |this, _, _, cx| this.remove_favorite(index, cx)))
-                    .on_click(cx.listener(move |this, _, _, cx| this.open_favorite(index, cx)))
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_favorite(index, cx)));
+                // A favorite on another provider is not a folder this pane can write to.
+                match favorite.provider == provider {
+                    true => self.drop_place(row, favorite.path.clone(), cx).into_any_element(),
+                    false => row.into_any_element(),
+                }
             })
             .collect::<Vec<_>>();
         let no_favorites = favorites.is_empty();

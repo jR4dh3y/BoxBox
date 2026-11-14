@@ -6,6 +6,7 @@ use crate::ui::icon;
 use super::TextScale;
 use crate::pane::{Listing, ViewMode};
 use crate::theme::*;
+use crate::workspace::drag_drop::{drop_zone, DropTarget};
 use crate::workspace::operations::PaneTarget;
 use crate::workspace::{Load, Workspace};
 
@@ -85,7 +86,8 @@ impl Workspace {
         }
 
         };
-        div()
+        let dropping = self.drop_hover(cx) == Some(&DropTarget::Pane(target));
+        drop_zone(div(), DropTarget::Pane(target), cx.entity().downgrade())
             .id(("browser-pane", target.0))
             .debug_selector(|| format!("browser-pane-{}", target.0))
             .capture_any_mouse_down(cx.listener(move |this, _, window, cx| {
@@ -134,7 +136,9 @@ impl Workspace {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(content),
+                    .child(content)
+                    // The folder this pane shows would take the drop.
+                    .when(dropping, |content| content.child(div().absolute().inset_0().border_2().border_color(c(self.accent_hex())))),
             )
             .when(!self.trash_open, |browser| {
                 browser.child(self.render_status_bar(target, cx))

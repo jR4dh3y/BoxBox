@@ -24,6 +24,8 @@ const GROUPS: [(&str, &[(&str, &str)]); 3] = [
             ("F2", "Rename selected item"),
             ("Delete", "Trash locally; delete on a server"),
             ("Ctrl + B", "Pin to Favorites"),
+            ("Drag", "Move to a folder; copy to another disk"),
+            ("Ctrl · Shift + Drag", "Copy · Move"),
         ],
     ),
     (

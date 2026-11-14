@@ -40,6 +40,15 @@ pub(crate) struct FileClipboard {
     pub entries: Vec<ClipboardEntry>,
 }
 
+impl FileClipboard {
+    /// Whether both hold the same items for the same operation.
+    pub fn same_items(&self, other: &Self) -> bool {
+        self.mode == other.mode
+            && self.entries.len() == other.entries.len()
+            && self.entries.iter().zip(&other.entries).all(|(left, right)| Arc::ptr_eq(&left.api, &right.api) && left.item.path == right.item.path)
+    }
+}
+
 pub(crate) enum OperationDialog {
     CreateFolder { target_id: usize, parent: String },
     CreateFile { target_id: usize, parent: String },
@@ -599,12 +608,25 @@ impl Workspace {
             self.set_operation_error("Choose a destination folder before pasting.", cx);
             return;
         }
+        self.start_transfer(target, clipboard, destination, parent, cx);
+    }
+
+    /// Copies or moves `clipboard` into `parent`, asking first when a move would
+    /// delete originals on a remote provider. Paste and drag and drop both end here.
+    pub(crate) fn start_transfer(
+        &mut self,
+        target: PaneTarget,
+        clipboard: FileClipboard,
+        destination: Arc<Api>,
+        parent: String,
+        cx: &mut Context<Self>,
+    ) {
         let requires_confirmation = clipboard.mode == ClipboardMode::Cut
             && clipboard.entries.iter().any(|entry| {
                 !entry.api.is_local() && !same_provider(&entry.api, &destination)
             });
+        let count = clipboard.entries.len();
         if requires_confirmation {
-            let count = clipboard.entries.len();
             let confirm = Confirm::new(
                 "Move from a remote provider?",
                 "This copies the items, then permanently deletes the remote originals.",
@@ -613,7 +635,6 @@ impl Workspace {
             );
             self.ask(confirm, cx);
         } else {
-            let count = clipboard.entries.len();
             self.run_paste(target, clipboard, destination, parent, count, cx);
         }
     }
@@ -691,6 +712,7 @@ impl Workspace {
             }
         }
         let mode = clipboard.mode;
+        let moved = clipboard;
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
@@ -710,7 +732,8 @@ impl Workspace {
                 for api in affected {
                     this.refresh_provider(api, cx);
                 }
-                if result.is_ok() && mode == ClipboardMode::Cut {
+                // A cut is spent once pasted; a drag leaves the clipboard alone.
+                if result.is_ok() && mode == ClipboardMode::Cut && this.file_clipboard.as_ref().is_some_and(|held| held.same_items(&moved)) {
                     this.file_clipboard = None;
                 }
                 this.finish_transfer(job, generation, result, cx);
@@ -1597,7 +1620,7 @@ fn destination_path(parent: &str, name: &str) -> String {
         format!("{parent}/{name}")
     }
 }
-fn same_provider(left: &Api, right: &Api) -> bool {
+pub(crate) fn same_provider(left: &Api, right: &Api) -> bool {
     FavoriteProvider::for_api(left) == FavoriteProvider::for_api(right)
 }
 
