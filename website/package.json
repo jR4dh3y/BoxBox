@@ -20,7 +20,7 @@
     "marked": "^18.1.2",
     "sanitize-html": "^2.18.1",
     "shiki": "^4.6.0",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.5"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.12",
