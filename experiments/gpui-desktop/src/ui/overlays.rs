@@ -6,6 +6,8 @@ use gpui::{anchored, div, img, prelude::*, px, AnyElement, Context, MouseButton,
 use super::TextScale;
 use crate::components::{ContextMenu, MenuItem, Modal, ModalSize, Type};
 use crate::format::{file_date, file_size, type_description};
+use crate::workspace::properties::permission_string;
+use crate::workspace::Load;
 use crate::theme::*;
 use crate::workspace::preview::PreviewContent;
 use crate::workspace::{OperationEscape, Workspace};
@@ -113,7 +115,7 @@ impl Workspace {
                     .disabled(!single),
                 );
             }
-            entries.push(self.menu_item("context-properties", "Properties", "info", |this, _, cx| this.context_properties(cx), cx).disabled(!single));
+            entries.push(self.menu_item("context-properties", "Properties", "info", |this, _, cx| this.context_properties(cx), cx).shortcut("Alt+Enter"));
         }
         div()
             .id("context-dismiss")
@@ -141,17 +143,46 @@ impl Workspace {
 
     pub(crate) fn render_properties(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(properties) = &self.properties else { return div().into_any_element() };
-        let item = &properties.item;
-        let location = item.path.rsplit_once('/').map(|(parent, _)| parent.to_string()).unwrap_or_else(|| "/".into());
-        let mut rows: Vec<(&str, String)> = vec![
-            ("Name", item.name.clone()),
-            ("Type", if item.is_dir { "Folder".into() } else { type_description(&item.name).to_string() }),
-            ("Location", location),
-        ];
-        if !item.is_dir {
-            rows.push(("Size", file_size(item.size)));
-        }
-        rows.push(("Modified", file_date(&item.mod_time).to_string()));
+        let parent = |path: &str| path.rsplit_once('/').map(|(parent, _)| parent.to_string()).unwrap_or_else(|| "/".into());
+        let size = match &properties.totals {
+            Load::Loading => "Calculating…".to_string(),
+            Load::Failed(error) => error.clone(),
+            Load::Loaded(totals) => file_size(totals.bytes),
+        };
+        let mut rows: Vec<(&str, String)> = match properties.items.as_slice() {
+            [item] => {
+                let mut rows = vec![
+                    ("Name", item.name.clone()),
+                    ("Type", if item.is_dir { "Folder".into() } else { type_description(&item.name).to_string() }),
+                    ("Location", parent(&item.path)),
+                    ("Size", size),
+                ];
+                if let (true, Load::Loaded(totals)) = (item.is_dir, &properties.totals) {
+                    // The walk counts the folder itself.
+                    rows.push(("Contents", counted(totals.files, "file", totals.folders.saturating_sub(1), "folder")));
+                }
+                rows.push(("Modified", file_date(&item.mod_time).to_string()));
+                match &properties.ownership {
+                    Some(Load::Loaded(ownership)) => {
+                        rows.push(("Permissions", format!("{} ({:o})", permission_string(ownership.mode), ownership.mode & 0o7777)));
+                        rows.push(("Owner", ownership.owner.clone()));
+                        rows.push(("Group", ownership.group.clone()));
+                    }
+                    Some(Load::Failed(error)) => rows.push(("Permissions", error.clone())),
+                    Some(Load::Loading) | None => {}
+                }
+                rows
+            }
+            items => {
+                let folders = items.iter().filter(|item| item.is_dir).count();
+                let mut rows = vec![("Selected", format!("{} items", items.len())), ("Folders", folders.to_string()), ("Size", size)];
+                let location = parent(&items[0].path);
+                if items.iter().all(|item| parent(&item.path) == location) {
+                    rows.push(("Location", location));
+                }
+                rows
+            }
+        };
         rows.push(("Provider", properties.provider_label.clone()));
         // grid-cols-[5.5rem_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-[13px]
         let list = div().flex().flex_col().gap(px(10.)).type_13().children(rows.into_iter().map(|(label, value)| {
@@ -163,6 +194,7 @@ impl Workspace {
         }));
         div()
             .id("properties-overlay")
+            .debug_selector(|| "properties-overlay".into())
             .absolute()
             .inset_0()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -205,4 +237,10 @@ impl Workspace {
             )
             .into_any_element()
     }
+}
+
+/// "3 files, 1 folder".
+fn counted(first: u64, first_noun: &str, second: u64, second_noun: &str) -> String {
+    let plural = |count: u64, noun: &str| format!("{count} {noun}{}", if count == 1 { "" } else { "s" });
+    format!("{}, {}", plural(first, first_noun), plural(second, second_noun))
 }

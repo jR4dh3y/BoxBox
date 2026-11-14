@@ -113,11 +113,6 @@ pub(crate) struct LocationEditor {
     pub target_id: usize,
 }
 
-#[derive(Clone)]
-pub(crate) struct PropertiesState {
-    pub item: FileInfo,
-    pub provider_label: String,
-}
 impl Workspace {
     pub(crate) fn begin_operation(&mut self, label: impl Into<String>) -> u64 {
         self.mutation_generation = self.mutation_generation.wrapping_add(1);
@@ -1249,27 +1244,9 @@ impl Workspace {
     }
 
     pub(crate) fn context_properties(&mut self, cx: &mut Context<Self>) {
-        let Some((target, items)) = self.context_selection() else {
-            return;
-        };
-        self.context_menu = None;
-        let Some(item) = items.into_iter().next() else {
-            return;
-        };
-        let provider_label = self
-            .pane_by_id(target.0)
-            .map(|pane| {
-                pane.api
-                    .server_url()
-                    .unwrap_or("Local storage")
-                    .to_string()
-            })
-            .unwrap_or_else(|| "Unknown provider".into());
-        self.properties = Some(PropertiesState {
-            item,
-            provider_label,
-        });
-        cx.notify();
+        if let Some((target, items)) = self.context_selection() {
+            self.show_properties(target, items, cx);
+        }
     }
 
     pub(crate) fn context_share(&mut self, window: &mut Window, cx: &mut Context<Self>) {

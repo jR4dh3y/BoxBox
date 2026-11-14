@@ -28,6 +28,8 @@ mod watching;
 pub(crate) mod undo;
 pub(crate) mod operations;
 pub(crate) mod names;
+pub(crate) mod properties;
+use properties::PropertiesState;
 pub(crate) mod rename;
 pub(crate) mod preview;
 pub(crate) mod appearance;
@@ -37,7 +39,6 @@ use appearance::WallpaperState;
 use favorites::{Favorite, FavoriteProvider, Favorites};
 use operations::{
     ContextMenuState, FileClipboard, LocationEditor, OperationDialog, OperationStatus, PaneTarget,
-    PropertiesState,
 };
 use preview::{has_inline_thumbnail, is_text_preview, PreviewContent, PreviewState, ThumbnailCache};
 
@@ -1272,12 +1273,8 @@ impl Render for Workspace {
                 this.settings_section = SettingsSection::Connections;
             }))
             .on_action(cx.listener(|this, _: &PropertiesSelected, _, cx| {
-                let pane = this.pane();
-                let items = pane.selected_items();
-                if let [item] = items.as_slice() {
-                    this.properties = Some(PropertiesState { item: item.clone(), provider_label: pane.api.server_url().unwrap_or("Local storage").to_string() });
-                    cx.notify();
-                }
+                let items = this.pane().selected_items();
+                this.show_properties(this.active_pane, items, cx);
             }))
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(Self::clear_selection))

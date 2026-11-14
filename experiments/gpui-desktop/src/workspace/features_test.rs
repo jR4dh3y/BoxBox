@@ -169,3 +169,30 @@ fn rename_happens_in_place(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(fixture.root.join("b.txt").is_file());
 }
+
+#[gpui::test]
+fn properties_summarise_several_items_and_show_owner_and_permissions(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["docs/", "docs/a.txt", "docs/deep/b.txt", "c.txt"]);
+    cx.simulate_keystrokes("ctrl-a alt-enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        let properties = workspace.properties.as_ref().expect("Alt+Enter opens Properties for several items");
+        assert_eq!(properties.items.len(), 2);
+        let Load::Loaded(totals) = &properties.totals else { panic!("totals are read") };
+        // docs, docs/deep; a.txt, b.txt, c.txt and their bytes (each file holds its own name).
+        assert_eq!((totals.folders, totals.files), (2, 3));
+        assert_eq!(totals.bytes, ("docs/a.txt".len() + "docs/deep/b.txt".len() + "c.txt".len()) as u64);
+    });
+    assert!(cx.debug_bounds("properties-overlay").is_some());
+    cx.simulate_keystrokes("escape");
+    set_mode(&fixture.root.join("c.txt"), 0o640);
+    click(cx, "row-0-1");
+    cx.simulate_keystrokes("alt-enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        let properties = workspace.properties.as_ref().unwrap();
+        let Some(Load::Loaded(ownership)) = &properties.ownership else { panic!("owner is read") };
+        assert_eq!(super::properties::permission_string(ownership.mode), "-rw-r-----");
+        assert_eq!(ownership.owner, std::env::var("USER").unwrap());
+    });
+}
