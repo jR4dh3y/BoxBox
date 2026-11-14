@@ -516,7 +516,7 @@ impl Workspace {
         self.active_pane = PaneTarget(id);
         self.trash_open = false;
         self.trash_error = None;
-        self.thumbnail_cache.invalidate();
+        self.clear_thumbnails(cx);
         self.load_drives(PaneTarget(id), cx);
         self.load_pane(PaneTarget(id), cx);
         cx.notify();
@@ -702,7 +702,7 @@ impl Workspace {
     }
 
     fn refresh_provider(&mut self, api: Arc<Api>, cx: &mut Context<Self>) {
-        self.thumbnail_cache.invalidate();
+        self.clear_thumbnails(cx);
         let targets: Vec<_> = self
             .all_pane_ids()
             .into_iter()
@@ -804,7 +804,7 @@ impl Workspace {
             }
         } else {
             let target = self.active_pane;
-            self.thumbnail_cache.invalidate();
+            self.clear_thumbnails(cx);
             if self.pane().is_at_root() {
                 self.load_drives(target, cx);
             } else {

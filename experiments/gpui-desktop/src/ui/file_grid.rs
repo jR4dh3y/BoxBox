@@ -37,6 +37,7 @@ impl Workspace {
                     "file-grid",
                     rows,
                     cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                        let _span = crate::profile::span("grid rows").with(|| format!("{} rows", range.len()));
                         let count = this.pane_by_id(target.0).map_or(0, |pane| pane.items.len());
                         range
                             .map(|row| {

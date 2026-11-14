@@ -1,12 +1,14 @@
 use std::{collections::{HashMap, HashSet, VecDeque}, sync::Arc};
 
-use gpui::{Image, ImageFormat};
+use gpui::{Image, RenderImage};
 
 use crate::{api::{Api, FileInfo}, format::extension};
 
 use super::favorites::FavoriteProvider;
 
-const THUMBNAIL_CACHE_CAPACITY: usize = 96;
+/// More than a large screen of tiles, so the visible ones are never evicted.
+/// Each 256 px thumbnail takes about 200 KB of decoded pixels.
+const THUMBNAIL_CACHE_CAPACITY: usize = 512;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct ThumbnailKey {
@@ -29,7 +31,7 @@ impl ThumbnailKey {
 
 #[derive(Default)]
 pub(crate) struct ThumbnailCache {
-    images: HashMap<ThumbnailKey, Arc<Image>>,
+    images: HashMap<ThumbnailKey, Arc<RenderImage>>,
     insertion_order: VecDeque<ThumbnailKey>,
     pending: HashMap<ThumbnailKey, u64>,
     next_generation: u64,
@@ -37,7 +39,7 @@ pub(crate) struct ThumbnailCache {
 }
 
 impl ThumbnailCache {
-    pub fn get(&self, key: &ThumbnailKey) -> Option<Arc<Image>> {
+    pub fn get(&self, key: &ThumbnailKey) -> Option<Arc<RenderImage>> {
         self.images.get(key).cloned()
     }
 
@@ -51,32 +53,34 @@ impl ThumbnailCache {
         Some(generation)
     }
 
+    /// Stores a finished thumbnail. Returns the images it evicted, which the
+    /// caller must release from the GPU with `drop_image`.
+    #[must_use]
     pub fn finish(
         &mut self,
         key: ThumbnailKey,
         generation: u64,
-        result: anyhow::Result<Vec<u8>>,
-    ) {
+        result: anyhow::Result<Arc<RenderImage>>,
+    ) -> Vec<Arc<RenderImage>> {
+        let mut evicted = Vec::new();
         if self.pending.get(&key) != Some(&generation) {
-            return;
+            return evicted;
         }
         self.pending.remove(&key);
-        let Ok(bytes) = result else {
+        let Ok(image) = result else {
             if self.failed.len() >= THUMBNAIL_CACHE_CAPACITY { self.failed.clear(); }
             self.failed.insert(key);
-            return;
+            return evicted;
         };
         while self.images.len() >= THUMBNAIL_CACHE_CAPACITY {
             let Some(oldest) = self.insertion_order.pop_front() else {
                 break;
             };
-            self.images.remove(&oldest);
+            evicted.extend(self.images.remove(&oldest));
         }
-        self.images.insert(
-            key.clone(),
-            Arc::new(Image::from_bytes(ImageFormat::Png, bytes)),
-        );
+        self.images.insert(key.clone(), image);
         self.insertion_order.push_back(key);
+        evicted
     }
 
     /// A request that was dropped unrendered; the tile asks again when it is drawn.
@@ -86,12 +90,24 @@ impl ThumbnailCache {
         }
     }
 
-    pub fn invalidate(&mut self) {
-        self.images.clear();
+    /// Forgets everything. Returns the images to release from the GPU.
+    #[must_use]
+    pub fn invalidate(&mut self) -> Vec<Arc<RenderImage>> {
         self.insertion_order.clear();
         self.pending.clear();
         self.failed.clear();
+        self.images.drain().map(|(_, image)| image).collect()
     }
+}
+
+/// Decodes a PNG thumbnail into GPUI's BGRA pixels. A `RenderImage` stays out of
+/// GPUI's asset map, which never frees what it holds, so the cache owns its lifetime.
+pub(crate) fn decode_thumbnail(png: &[u8]) -> anyhow::Result<Arc<RenderImage>> {
+    let mut pixels = image::load_from_memory_with_format(png, image::ImageFormat::Png)?.into_rgba8();
+    for pixel in pixels.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    Ok(Arc::new(RenderImage::new(vec![image::Frame::new(pixels)])))
 }
 
 pub(crate) enum PreviewContent {

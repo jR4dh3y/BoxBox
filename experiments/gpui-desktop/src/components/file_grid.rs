@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use gpui::{div, img, prelude::*, px, AnyElement, App, ClickEvent, Div, ElementId, Image, ObjectFit, SharedString, Stateful, Window};
+use gpui::{div, img, prelude::*, px, AnyElement, App, ClickEvent, Div, ElementId, ObjectFit, RenderImage, SharedString, Stateful, Window};
 
 use super::file_list::{checkbox, Selection};
 use super::ROUNDED;
@@ -46,7 +46,7 @@ pub struct FileTile {
     is_dir: bool,
     icon: &'static str,
     detail: SharedString,
-    thumbnail: Option<Arc<Image>>,
+    thumbnail: Option<Arc<RenderImage>>,
     selected: bool,
     active: bool,
     cut: bool,
@@ -96,7 +96,7 @@ impl FileTile {
         self
     }
 
-    pub fn thumbnail(mut self, thumbnail: Option<Arc<Image>>) -> Self {
+    pub fn thumbnail(mut self, thumbnail: Option<Arc<RenderImage>>) -> Self {
         self.thumbnail = thumbnail;
         self
     }

@@ -62,8 +62,7 @@ pub fn thumbnail(api: &Api, item: &FileInfo, width: u32, height: u32) -> Result<
     let _span = crate::profile::span("thumbnail").with(|| format!("{} {width}x{height}", item.path));
     ensure_file(item)?;
     if let Some(path) = local_file(api, &item.path)? {
-        return boxbox_thumbnail::thumbnail_path(&path, width, height)
-            .with_context(|| format!("cannot create thumbnail for {}", item.path));
+        return crate::local::thumbnails::thumbnail(&path, width, height);
     }
     let bytes = api
         .thumbnail(&item.path, width, height)

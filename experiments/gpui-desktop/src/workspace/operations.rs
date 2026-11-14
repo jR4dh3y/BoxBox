@@ -1471,6 +1471,13 @@ impl Workspace {
         }
     }
 
+    /// Drops every thumbnail, releasing their GPU textures.
+    pub(crate) fn clear_thumbnails(&mut self, cx: &mut Context<Self>) {
+        for image in self.thumbnail_cache.invalidate() {
+            cx.drop_image(image, None);
+        }
+    }
+
     pub(crate) fn request_thumbnail(
         &mut self,
         target: PaneTarget,
@@ -1488,12 +1495,16 @@ impl Workspace {
         let Some(generation) = self.thumbnail_cache.request(key.clone()) else {
             return;
         };
-        let rendered = crate::thumbnail_queue::render(move || crate::media::thumbnail(&api, &item, 160, 120));
+        let rendered = crate::thumbnail_queue::render(move || {
+            crate::media::thumbnail(&api, &item, 160, 120).and_then(|png| super::preview::decode_thumbnail(&png))
+        });
         cx.spawn(async move |this, cx| {
             let result = rendered.await;
             let _ = this.update(cx, |this, cx| match result {
                 Some(result) => {
-                    this.thumbnail_cache.finish(key, generation, result);
+                    for image in this.thumbnail_cache.finish(key, generation, result) {
+                        cx.drop_image(image, None);
+                    }
                     cx.notify();
                 }
                 None => this.thumbnail_cache.forget(&key, generation),
@@ -1506,7 +1517,7 @@ impl Workspace {
         &self,
         api: &Arc<Api>,
         item: &FileInfo,
-    ) -> Option<Arc<gpui::Image>> {
+    ) -> Option<Arc<gpui::RenderImage>> {
         let key = ThumbnailKey::new(api, item);
         self.thumbnail_cache.get(&key)
     }

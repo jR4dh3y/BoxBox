@@ -138,8 +138,9 @@ Most valuable first.
 | `preview/VideoPreview.svelte`, `preview/AudioPreview.svelte` | playback | — native app | — | — |
 | `preview/OfficePreview.svelte`, `preview/NotebookPreview.svelte` | documents | — native app | — | — |
 
-Thumbnails come from `desktop/native` (linked as a crate) and should add the
-freedesktop thumbnailers and shared cache (`~/.cache/thumbnails`).
+Thumbnails come from `desktop/native` (linked as a crate) through the shared
+freedesktop cache (`~/.cache/thumbnails`, `local/thumbnails.rs`), on their own
+threads (`thumbnail_queue.rs`). Installed freedesktop thumbnailers are still to add.
 
 ## Desktop integration
 

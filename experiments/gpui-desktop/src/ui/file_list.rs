@@ -51,6 +51,7 @@ impl Workspace {
                         "file-list",
                         count,
                         cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                            let _span = crate::profile::span("list rows").with(|| format!("{} rows", range.len()));
                             range.filter_map(|index| this.render_row(target, index, cx)).collect::<Vec<_>>()
                         }),
                     )
