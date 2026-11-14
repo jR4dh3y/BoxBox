@@ -23,7 +23,7 @@ impl Workspace {
             .flex()
             .flex_col()
             .bg(self.file_background())
-            .child(FileListHeader::new(pane.sort).on_sort({
+            .child(FileListHeader::new(pane.sort).unsorted(pane.shows_ranked()).on_sort({
                 let workspace = cx.entity().downgrade();
                 move |field, _, _, cx| {
                     let _ = workspace.update(cx, |this, cx| {
@@ -67,6 +67,7 @@ impl Workspace {
         let folder = DropTarget::Folder { pane: target, path: path.clone() };
         let row = FileRow::new(("row", index), display_name(&item.name, is_dir, self.preferences.show_file_extensions), is_dir, self.selection_style())
             .icon(file_icon(&item.name, is_dir))
+            .location(if pane.is_searching() { crate::search::location(&pane.path, &item.path).to_string() } else { String::new() })
             .details(
                 if is_dir { "Folder".into() } else { type_description(&item.name) },
                 if is_dir { "—".into() } else { file_size(item.size) },

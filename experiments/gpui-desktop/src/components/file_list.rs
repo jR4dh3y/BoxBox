@@ -42,12 +42,20 @@ type SortHandler = Box<dyn Fn(SortField, &ClickEvent, &mut Window, &mut App) + '
 #[derive(IntoElement)]
 pub struct FileListHeader {
     sort: Sort,
+    unsorted: bool,
     on_sort: Option<SortHandler>,
 }
 
 impl FileListHeader {
     pub fn new(sort: Sort) -> Self {
-        Self { sort, on_sort: None }
+        Self { sort, unsorted: false, on_sort: None }
+    }
+
+    /// The rows are in an order no column describes, such as search results by
+    /// relevance, so no column shows a sort arrow.
+    pub fn unsorted(mut self, unsorted: bool) -> Self {
+        self.unsorted = unsorted;
+        self
     }
 
     pub fn on_sort(mut self, handler: impl Fn(SortField, &ClickEvent, &mut Window, &mut App) + 'static) -> Self {
@@ -77,7 +85,7 @@ impl RenderOnce for FileListHeader {
             .children(COLUMNS.into_iter().map(|(field, label, share, right)| {
                 // `thSortedClass` loses to `thClass`'s text colour in the built CSS, so the web
                 // draws every header, sorted or not, in text-secondary.
-                let sorted = self.sort.field == field;
+                let sorted = !self.unsorted && self.sort.field == field;
                 // The border is inside GPUI's box but half outside the web's collapsed one;
                 // pb-px puts the label on the same line.
                 cell(share)
@@ -121,6 +129,7 @@ pub struct Selection {
 pub struct FileRow {
     id: ElementId,
     name: SharedString,
+    location: SharedString,
     is_dir: bool,
     icon: &'static str,
     kind: SharedString,
@@ -141,6 +150,7 @@ impl FileRow {
         Self {
             id: id.into(),
             name: name.into(),
+            location: SharedString::default(),
             is_dir,
             icon: "file",
             kind: SharedString::default(),
@@ -159,6 +169,12 @@ impl FileRow {
 
     pub fn icon(mut self, icon: &'static str) -> Self {
         self.icon = icon;
+        self
+    }
+
+    /// The folder a search result is in, shown muted after its name.
+    pub fn location(mut self, location: impl Into<SharedString>) -> Self {
+        self.location = location.into();
         self
     }
 
@@ -279,9 +295,11 @@ impl RenderOnce for FileRow {
             .when(self.active, |row| row.child(div().absolute().left_0().top_0().bottom_0().w(px(2.)).bg(accent)))
             .when(self.drop_target, |row| row.bg(background).child(div().absolute().inset_0().border_1().border_color(accent)))
             .child(
-                cell(None).gap(px(8.)).child(slot).child(
-                    text(self.name).flex_1().when(self.is_dir, |name| name.text_color(c(FOLDER))),
-                ),
+                cell(None)
+                    .gap(px(8.))
+                    .child(slot)
+                    .child(text(self.name).flex_shrink_0().max_w(relative(0.7)).when(self.is_dir, |name| name.text_color(c(FOLDER))))
+                    .child(text(self.location).flex_1().text_color(c(TEXT_MUTED))),
             )
             .child(cell(Some(0.18)).text_color(secondary).child(text(self.kind)))
             .child(cell(Some(0.15)).justify_end().text_color(secondary).child(text(self.size)))

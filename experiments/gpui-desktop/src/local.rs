@@ -2,9 +2,9 @@
 
 mod archive;
 mod copy;
+mod search;
 mod trash;
 
-use std::collections::{HashSet, VecDeque};
 use std::ffi::CString;
 use std::fs::{self, OpenOptions};
 use std::io::Read;
@@ -124,61 +124,6 @@ impl LocalFiles {
             .into_iter()
             .map(|entry| self.info_for_entry(mount, path, &entry.path()))
             .collect()
-    }
-
-    /// Case-insensitive recursive name search. Directory symlinks are visited only when their
-    /// resolved targets stay within the selected mount; canonical-directory tracking stops loops.
-    pub fn search(&self, path: &str, query: &str) -> Result<Vec<FileInfo>> {
-        let (mount, start) = self.resolve_directory(path)?;
-        let query = query.to_lowercase();
-        if query.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut found = Vec::new();
-        let mut pending = VecDeque::from([(start.clone(), path.to_owned())]);
-        let mut visited = HashSet::new();
-        'walk: while let Some((directory, virtual_directory)) = pending.pop_front() {
-            let canonical = match fs::canonicalize(&directory) {
-                Ok(path) if path.starts_with(&mount.path) => path,
-                _ => continue,
-            };
-            if !visited.insert(canonical.clone()) {
-                continue;
-            }
-            let entries = match fs::read_dir(&canonical) {
-                Ok(entries) => entries,
-                Err(error) if canonical == start => {
-                    return Err(error).with_context(|| format!("cannot search {path}"));
-                }
-                Err(_) => continue,
-            };
-            for entry in entries {
-                let entry = match entry {
-                    Ok(entry) => entry,
-                    Err(_) => continue,
-                };
-                let item = match self.info_for_entry(mount, &virtual_directory, &entry.path()) {
-                    Ok(item) => item,
-                    Err(_) => continue,
-                };
-                if item.name.to_lowercase().contains(&query) {
-                    found.push(item.clone());
-                    if found.len() == 1000 {
-                        break 'walk;
-                    }
-                }
-                if item.is_dir && !skip_search_directory(mount, &entry.path()) {
-                    if let Ok(target) = fs::canonicalize(entry.path()) {
-                        if target.starts_with(&mount.path) {
-                            pending.push_back((target, item.path));
-                        }
-                    }
-                }
-            }
-        }
-        found.sort_by(|left, right| left.path.cmp(&right.path));
-        Ok(found)
     }
 
     pub fn create_directory(&self, parent: &str, name: &str) -> Result<FileInfo> {

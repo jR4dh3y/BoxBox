@@ -178,10 +178,11 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("left", SelectLeft, context),
         KeyBinding::new("right", SelectRight, context),
         KeyBinding::new("enter", OpenActive, context),
-        KeyBinding::new("space", PreviewActive, context),
         KeyBinding::new("ctrl-shift-5", ToggleSplit, context),
         KeyBinding::new("ctrl-b", AddFavorite, context),
         KeyBinding::new("f1", ShowShortcuts, context),
+        // A space typed in a text field is a space, not a preview.
+        KeyBinding::new("space", PreviewActive, Some("BrowseWorkspace && !TextField")),
         // A text field keeps Ctrl+Z to itself, as the web shortcut skips inputs.
         KeyBinding::new("ctrl-z", Undo, Some("BrowseWorkspace && !TextField")),
         KeyBinding::new("escape", OperationEscape, Some("PreviewInput")),
@@ -940,16 +941,46 @@ impl Workspace {
         let Some(pane) = self.pane_mut_by_id(pane_id) else {
             return;
         };
-        let Some((generation, query)) = pane.begin_search() else {
+        let Some((generation, query, cancel)) = pane.begin_search() else {
             return;
         };
         let path = pane.path.clone();
         let api = pane.api.clone();
-        let view = pane.view();
+        let view = pane.search_view();
+        // Matches found so far, arranged on the search's thread and shown as they come.
+        let (partial, shown) = async_channel::unbounded::<Vec<crate::api::FileInfo>>();
+        cx.spawn(async move |this, cx| {
+            while let Ok(items) = shown.recv().await {
+                let current = this.update(cx, |this, cx| {
+                    let Some(pane) = this.pane_mut_by_id(pane_id).filter(|pane| pane.search_generation == generation) else {
+                        return false;
+                    };
+                    if pane.show_partial_search(items, view) {
+                        this.resort(PaneTarget(pane_id), cx);
+                    }
+                    cx.notify();
+                    true
+                });
+                if !current.unwrap_or(false) {
+                    break;
+                }
+            }
+        })
+        .detach();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { api.search(&path, &query).map(|items| crate::pane::arrange(items, view)) })
+                .spawn(async move {
+                    let query = search::Query::parse(&query);
+                    let request = search::Request { path: &path, query: &query, hidden: view.show_hidden_files, cancel: &cancel };
+                    let mut progress = |items| {
+                        let _ = partial.send_blocking(crate::pane::arrange(items, view));
+                    };
+                    let started = std::time::Instant::now();
+                    let found = api.search(&request, &mut progress).map(|items| crate::pane::arrange(items, view));
+                    log::debug!("search of {path} took {:?}", started.elapsed());
+                    found
+                })
                 .await;
             this.update(cx, |this, cx| {
                 if let Some(pane) = this.pane_mut_by_id(pane_id) {
@@ -1039,6 +1070,8 @@ impl Workspace {
         else if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
         else if self.properties.take().is_some() || self.context_menu.take().is_some() {}
         else if self.preview.is_some() { self.operation_escape(&OperationEscape, window, cx); return; }
+        // With nothing selected, Escape leaves the search, as it does in the field.
+        else if self.pane().selected.is_empty() && self.pane().is_searching() { self.pane_mut().clear_search(); }
         else { self.pane_mut().clear_selection(); }
         self.focus_handle.focus(window);
         cx.notify();

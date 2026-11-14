@@ -67,7 +67,6 @@ Linux file manager does, not commitments.
 - Clipboard on GNOME: data-control is not offered there, so copy and paste
   with other apps fail.
 - Transfers: per-item progress, dismiss and clear finished jobs.
-- Search: 300 ms debounce, two-character minimum, Escape clears.
 - Keep the selection and scroll position across refresh and Back.
 - Folder load errors through `LoadError` with Retry; a delayed spinner (150 ms)
   and a shared `Spinner`; an indeterminate `ProgressBar`.
@@ -267,6 +266,21 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Devices: mount, unlock, eject | ✓ `devices.rs` (server) | ✓ `devices/udisks.rs`: UDisks2 over D-Bus (`zbus`), live, with LUKS unlock and lock. `devices/gvfs.rs`: GVfs mounts and volume monitors over D-Bus; `smb://`, `sftp://`, `ftp://` and `mtp://` typed in the location bar mount and open, and a backend's password or host-key question opens a dialog. Rows show a usage bar, a read-only mark and a dimmed unmounted state. Run against a Samba share, an SSH login and a LUKS loop image; no phone was plugged in, so MTP is untested |
 | Wayland rendering | ◐ untested | ◐ falls back to XWayland on Niri (stale frames); GPUI 0.2.2 panics if a new keyboard sends modifiers before its keymap (`wayland/client.rs:1267`), seen with a `wtype` virtual keyboard |
 | Keyboard focus movement, type-ahead | ✗ | ◐ arrow selection |
+
+## Search
+
+`search.rs` owns the rules and `local/search.rs` the walk. The field waits
+300 ms after the last key and needs two characters; Escape clears it, in the
+field or in the list. Every word of the query must be in the name, and a word
+with `*` or `?` is a pattern for the whole name. Results come best first: an
+exact name, then a name that starts with the text, then a word that does,
+then any other place; nearer folders break ties. They keep that order until a
+column header is clicked. Each result shows the folder it is in.
+
+The local walk is breadth-first, shows its matches while it runs, stops when
+the text changes, skips hidden folders unless hidden files are shown, does not
+enter linked folders, and keeps the best 1000. A server is asked for the
+longest word and its answer is matched and ranked the same way.
 
 ## Joining the two lines
 

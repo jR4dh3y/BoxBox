@@ -259,10 +259,12 @@ impl Api {
         }
     }
 
-    pub fn search(&self, path: &str, query: &str) -> Result<Vec<FileInfo>> {
+    /// The best name matches below a folder, best first. A local search reports
+    /// its matches so far through `progress`; a server answers once.
+    pub fn search(&self, request: &crate::search::Request, progress: &mut dyn FnMut(Vec<FileInfo>)) -> Result<Vec<FileInfo>> {
         match &self.provider {
-            Provider::Local(local) => local.search(path, query),
-            Provider::Remote(remote) => remote.search(path, query),
+            Provider::Local(local) => local.search(request, progress),
+            Provider::Remote(remote) => remote.search(request),
         }
     }
 

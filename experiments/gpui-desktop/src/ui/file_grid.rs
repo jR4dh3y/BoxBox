@@ -79,7 +79,12 @@ impl Workspace {
             self.selection_style(),
         )
         .icon(file_icon(&item.name, is_dir))
-        .detail(if is_dir { gpui::SharedString::default() } else { file_size(item.size).into() })
+        .detail(match (pane.is_searching(), is_dir) {
+            // A search result says where it is; a file in its folder, how big.
+            (true, _) => crate::search::location(&pane.path, &item.path).to_string().into(),
+            (false, true) => gpui::SharedString::default(),
+            (false, false) => file_size(item.size).into(),
+        })
         .thumbnail(thumbnail)
         .selected(pane.is_selected(&item.path))
         .active(pane.active == Some(index))

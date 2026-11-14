@@ -86,7 +86,11 @@ impl Workspace {
         if self.operation_status.is_busy() { return; }
         for id in self.directory_watches.changed(&self.all_pane_ids()) {
             self.load_pane(PaneTarget(id), cx);
-            self.schedule_search_for(id, std::time::Duration::ZERO, cx);
+            // A finished search is brought up to date; one still walking is left to finish,
+            // or a busy folder would restart it for ever.
+            if self.pane_by_id(id).is_some_and(|pane| matches!(pane.search, crate::pane::Search::Done)) {
+                self.schedule_search_for(id, std::time::Duration::ZERO, cx);
+            }
         }
     }
 

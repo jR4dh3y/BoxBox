@@ -2,6 +2,7 @@
 //! Mirrors `lib/browse/location.svelte.ts` and `selection.svelte.ts`.
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use gpui::{Modifiers, UniformListScrollHandle};
@@ -14,13 +15,18 @@ use crate::sort::{sort_files, Sort};
 pub struct View {
     pub sort: Sort,
     pub show_hidden_files: bool,
+    /// Search results in the order the search ranked them; `sort` is not applied.
+    pub ranked: bool,
 }
 
-/// Drops hidden entries unless shown, then sorts. Runs off the UI thread.
+/// Drops hidden entries unless shown, then sorts unless the entries are ranked.
+/// Runs off the UI thread.
 pub fn arrange(items: Vec<FileInfo>, view: View) -> Vec<FileInfo> {
     let mut items: Vec<FileInfo> =
         items.into_iter().filter(|item| view.show_hidden_files || !item.name.starts_with('.')).collect();
-    sort_files(&mut items, view.sort);
+    if !view.ranked {
+        sort_files(&mut items, view.sort);
+    }
     items
 }
 
@@ -28,6 +34,8 @@ pub struct SortJob {
     items: Arc<Vec<FileInfo>>,
     folder_items: Arc<Vec<FileInfo>>,
     pub sort: Sort,
+    /// `items` are ranked search results, which keep their order.
+    ranked: bool,
 }
 
 impl SortJob {
@@ -38,7 +46,8 @@ impl SortJob {
             sort_files(&mut items, self.sort);
             items
         };
-        (sorted(&self.items), sorted(&self.folder_items))
+        let items = if self.ranked { self.items.to_vec() } else { sorted(&self.items) };
+        (items, sorted(&self.folder_items))
     }
 }
 
@@ -92,6 +101,11 @@ pub struct Pane {
     pub items: Arc<Vec<FileInfo>>,
     pub search_input: String,
     pub search: Search,
+    /// Results stay in the search's own order, best match first, until a column is
+    /// clicked; then they sort like a folder.
+    pub search_ranked: bool,
+    /// Stops the walk of the search in flight.
+    search_cancel: Option<Arc<AtomicBool>>,
     /// The folder's entries while `items` hold search results.
     folder_items: Arc<Vec<FileInfo>>,
     pub sort: Sort,
@@ -152,6 +166,8 @@ impl Pane {
             items: Arc::default(),
             search_input: String::new(),
             search: Search::Off,
+            search_ranked: true,
+            search_cancel: None,
             folder_items: Arc::default(),
             sort,
             view_mode,
@@ -213,8 +229,8 @@ impl Pane {
         self.folder_items = Arc::default();
         self.search_input.clear();
         self.search = Search::Off;
-        // Invalidates a search still in flight for the old folder.
-        self.search_generation += 1;
+        // A search still in flight is for the old folder.
+        self.invalidate_search();
         self.clear_selection();
         self.listing = if self.path.is_empty() {
             Listing::Root
@@ -251,14 +267,38 @@ impl Pane {
         }
     }
 
-    /// What `arrange` needs, read on the UI thread before work is sent off it.
+    /// What `arrange` needs for a folder listing, read on the UI thread before work
+    /// is sent off it.
     pub fn view(&self) -> View {
-        View { sort: self.sort, show_hidden_files: self.show_hidden_files }
+        View { sort: self.sort, show_hidden_files: self.show_hidden_files, ranked: false }
+    }
+
+    /// The same for search results, which may keep the search's order.
+    pub fn search_view(&self) -> View {
+        View { ranked: self.search_ranked, ..self.view() }
     }
 
     /// The current entries and how to sort them, for `apply_sort`.
     pub fn sort_job(&self) -> SortJob {
-        SortJob { items: self.items.clone(), folder_items: self.folder_items.clone(), sort: self.sort }
+        SortJob {
+            items: self.items.clone(),
+            folder_items: self.folder_items.clone(),
+            sort: self.sort,
+            ranked: self.is_searching() && self.search_ranked,
+        }
+    }
+
+    /// Whether the list shows results in the search's order rather than a column's.
+    pub fn shows_ranked(&self) -> bool {
+        self.is_searching() && self.search_ranked
+    }
+
+    /// Makes any search in flight stale and stops its walk.
+    fn invalidate_search(&mut self) {
+        self.search_generation += 1;
+        if let Some(cancel) = self.search_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Applies a finished `SortJob` unless the entries or the sort changed meanwhile.
@@ -299,11 +339,12 @@ impl Pane {
         }
         self.search_input = input;
         // Whatever search was pending or running is for the old text.
-        self.search_generation += 1;
+        self.invalidate_search();
         if search::active_query(&self.search_input).is_some() {
             if !self.is_searching() {
                 self.folder_items = std::mem::take(&mut self.items);
                 self.clear_selection();
+                self.search_ranked = true;
             }
             self.search = Search::Loading;
             true
@@ -315,7 +356,7 @@ impl Pane {
 
     pub fn clear_search(&mut self) {
         self.search_input.clear();
-        self.search_generation += 1;
+        self.invalidate_search();
         self.end_search();
     }
 
@@ -327,21 +368,31 @@ impl Pane {
         }
     }
 
-    /// The query and request generation for a search about to be sent.
-    pub fn begin_search(&mut self) -> Option<(u64, String)> {
+    /// The query, request generation and stop flag for a search about to be sent.
+    pub fn begin_search(&mut self) -> Option<(u64, String, Arc<AtomicBool>)> {
         let query = search::active_query(&self.search_input)?.to_string();
-        self.search_generation += 1;
+        self.invalidate_search();
         self.search = Search::Loading;
-        Some((self.search_generation, query))
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.search_cancel = Some(cancel.clone());
+        Some((self.search_generation, query, cancel))
+    }
+
+    /// Shows the matches found so far while the search goes on. Returns whether the
+    /// view changed while they were prepared, like `finish_search`.
+    pub fn show_partial_search(&mut self, items: Vec<FileInfo>, view: View) -> bool {
+        self.replace_items(items);
+        view != self.search_view()
     }
 
     /// Like `finish_load`, for search results.
     pub fn finish_search(&mut self, result: anyhow::Result<Vec<FileInfo>>, view: View) -> bool {
+        self.search_cancel = None;
         match result {
             Ok(items) => {
                 self.replace_items(items);
                 self.search = Search::Done;
-                view != self.view()
+                view != self.search_view()
             }
             Err(error) => {
                 self.items = Arc::default();
@@ -386,7 +437,10 @@ impl Pane {
     ) -> bool {
         let hidden_changed = self.show_hidden_files != show_hidden_files;
         self.show_hidden_files = show_hidden_files;
-        self.set_sort(sort);
+        // An unrelated preference must not take search results out of their ranking.
+        if sort != self.sort {
+            self.set_sort(sort);
+        }
         self.set_view_mode(view_mode);
         hidden_changed
     }
@@ -394,6 +448,7 @@ impl Pane {
     /// Records the sort; the workspace re-sorts the entries off the UI thread.
     pub fn set_sort(&mut self, sort: Sort) {
         self.sort = sort;
+        self.search_ranked = false;
         self.anchor = None;
         self.active = None;
     }
@@ -535,7 +590,7 @@ mod tests {
     }
 
     fn found(pane: &mut Pane, items: Vec<FileInfo>) {
-        let view = pane.view();
+        let view = pane.search_view();
         assert!(!pane.finish_search(Ok(arrange(items, view)), view));
     }
 
@@ -680,14 +735,15 @@ mod tests {
         assert!(pane.items.is_empty() && pane.selected.is_empty());
         assert_eq!(pane.placeholder().unwrap().1, "Searching...");
 
-        let (generation, query) = pane.begin_search().unwrap();
+        let (generation, query, _) = pane.begin_search().unwrap();
         assert_eq!(query, "ca");
         assert_eq!(generation, pane.search_generation);
         found(&mut pane, vec![hit("d/x/cat"), hit("d/y/car")]);
-        assert_eq!(names(&pane), ["car", "cat"]);
+        // The search's own order, not the folder's sort.
+        assert_eq!(names(&pane), ["cat", "car"]);
         assert!(pane.placeholder().is_none());
         // Results carry their own paths, so nested hits stay selectable.
-        pane.click(1, Modifiers::default());
+        pane.click(0, Modifiers::default());
         assert!(pane.is_selected("d/x/cat"));
 
         pane.clear_search();
@@ -711,11 +767,14 @@ mod tests {
     fn later_input_invalidates_the_request_in_flight() {
         let mut pane = pane_in_folder();
         pane.set_search_input("ca".into());
-        let (stale, _) = pane.begin_search().unwrap();
+        let (stale, _, cancel) = pane.begin_search().unwrap();
         pane.set_search_input("cat".into());
         assert_ne!(stale, pane.search_generation);
+        // The walk for the old text is told to stop.
+        assert!(cancel.load(Ordering::Relaxed));
         // The workspace drops responses whose generation no longer matches.
-        let (current, query) = pane.begin_search().unwrap();
+        let (current, query, cancel) = pane.begin_search().unwrap();
+        assert!(!cancel.load(Ordering::Relaxed));
         assert_eq!(query, "cat");
         assert_eq!(current, pane.search_generation);
         assert!(matches!(pane.search, Search::Loading));
@@ -742,7 +801,9 @@ mod tests {
         pane.set_search_input("ab".into());
         pane.begin_search();
         found(&mut pane, vec![hit("d/b/zab"), hit("d/.ab"), hit("d/aab")]);
-        assert_eq!(names(&pane), ["aab", "zab"]);
+        assert!(pane.shows_ranked());
+        assert_eq!(names(&pane), ["zab", "aab"]);
+        // A column click sorts the results like a folder.
         pane.set_sort(Sort {
             field: crate::sort::SortField::Name,
             dir: crate::sort::SortDir::Desc,
@@ -750,9 +811,31 @@ mod tests {
         let job = pane.sort_job();
         let (items, folder_items) = job.run();
         assert!(pane.apply_sort(&job, items, folder_items));
+        assert!(!pane.shows_ranked());
         assert_eq!(names(&pane), ["zab", "aab"]);
         pane.clear_search();
         assert_eq!(names(&pane), ["b", "a"]);
+        // The next search is ranked again.
+        pane.set_search_input("ab".into());
+        assert!(pane.search_ranked);
+    }
+
+    #[test]
+    fn matches_show_while_the_search_runs_and_a_resort_keeps_their_rank() {
+        let mut pane = pane_in_folder();
+        pane.set_search_input("ab".into());
+        pane.begin_search();
+        let view = pane.search_view();
+        assert!(!pane.show_partial_search(vec![hit("d/zab")], view));
+        assert_eq!(names(&pane), ["zab"]);
+        assert!(matches!(pane.search, Search::Loading));
+        assert!(pane.placeholder().is_none());
+        found(&mut pane, vec![hit("d/zab"), hit("d/aab")]);
+        // A background sort of the folder underneath leaves the ranked results alone.
+        let job = pane.sort_job();
+        let (items, folder_items) = job.run();
+        assert!(pane.apply_sort(&job, items, folder_items));
+        assert_eq!(names(&pane), ["zab", "aab"]);
     }
 
     #[test]
@@ -771,8 +854,9 @@ mod tests {
     fn opening_another_folder_leaves_search() {
         let mut pane = pane_in_folder();
         pane.set_search_input("ab".into());
-        let (stale, _) = pane.begin_search().unwrap();
+        let (stale, _, cancel) = pane.begin_search().unwrap();
         assert!(pane.navigate("e".into()));
+        assert!(cancel.load(Ordering::Relaxed));
         assert!(!pane.is_searching() && pane.search_input.is_empty());
         assert_ne!(stale, pane.search_generation);
         assert!(pane.items.is_empty());

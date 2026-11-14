@@ -28,7 +28,7 @@ Local files are handed to other apps by their real filesystem paths. Remote file
 
 This only works on X11. On Niri, the app prefers XWayland when DISPLAY exists because the native Wayland renderer retained stale frames on the development host. `BOXBOX_NATIVE_WAYLAND=1` opts back into native Wayland. On other compositors, start with `WAYLAND_DISPLAY=` to select XWayland. macOS and Windows are not implemented. The existing Electrobun app cannot drag files out either.
 
-The current GPUI build still lacks the private `--desktop` cookie/session behavior and a full Rust replacement for the Go self-hosted server. Search has a keyboard-driven field, typed API client, debounce, cancellation and result-state handling. Settings opens as a native modal and persists browse preferences. Native thumbnails use the existing Rust renderer. The surface ledger records runtime evidence and remaining direct-interaction checks.
+The current GPUI build still lacks the private `--desktop` cookie/session behavior and a full Rust replacement for the Go self-hosted server. Search matches every word of the query against file names below the open folder, ranks the best matches first, and shows local results while it is still walking. Settings opens as a native modal and persists browse preferences. Native thumbnails use the existing Rust renderer. The surface ledger records runtime evidence and remaining direct-interaction checks.
 
 ### Devices and network locations
 

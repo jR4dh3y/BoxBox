@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{Context as _, Result};
+use anyhow::{bail, Context as _, Result};
 use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::{json, Value};
@@ -71,14 +71,17 @@ impl RemoteApi {
         parse_directory(self.get::<FileList>(&endpoint)?)
     }
 
-    pub(super) fn search(&self, path: &str, query: &str) -> Result<Vec<FileInfo>> {
+    /// The server matches one piece of text anywhere in the name, so it is asked for
+    /// the query's longest word and the answer is matched and ranked here.
+    pub(super) fn search(&self, request: &crate::search::Request) -> Result<Vec<FileInfo>> {
+        let path = request.path;
         validate_remote_path(path)?;
-        let endpoint = format!(
-            "/search?path={}&q={}",
-            encode_component(path),
-            encode_component(query)
-        );
-        parse_search(self.get::<SearchResponse>(&endpoint)?, path, query)
+        let Some(filter) = request.query.broadest_filter() else {
+            bail!("Search needs a word without * or ? on a server");
+        };
+        let endpoint = format!("/search?path={}&q={}", encode_component(path), encode_component(filter));
+        let listed = parse_search(self.get::<SearchResponse>(&endpoint)?, path, filter)?;
+        Ok(crate::search::rank_listed(listed, request))
     }
 
     pub(super) fn create_directory(&self, parent: &str, name: &str) -> Result<FileInfo> {
