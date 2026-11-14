@@ -93,6 +93,10 @@ pub struct NavItem {
     dim_icon: bool,
     active: bool,
     disabled: bool,
+    muted: bool,
+    usage: Option<f64>,
+    badge: Option<&'static str>,
+    tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
     trailing: Option<(&'static str, SharedString, ClickHandler)>,
 }
@@ -106,6 +110,10 @@ impl NavItem {
             dim_icon: true,
             active: false,
             disabled: false,
+            muted: false,
+            usage: None,
+            badge: None,
+            tooltip: None,
             on_click: None,
             trailing: None,
         }
@@ -129,6 +137,29 @@ impl NavItem {
 
     pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
+        self
+    }
+
+    /// Dims the row: a device that is present but not mounted.
+    pub fn muted(mut self, muted: bool) -> Self {
+        self.muted = muted;
+        self
+    }
+
+    /// A thin bar under the label showing how full a mounted device is, 0–100.
+    pub fn usage(mut self, used_pct: f64) -> Self {
+        self.usage = Some(used_pct);
+        self
+    }
+
+    /// A small glyph after the label, such as the read-only mark.
+    pub fn badge(mut self, icon: &'static str) -> Self {
+        self.badge = Some(icon);
+        self
+    }
+
+    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(text.into());
         self
     }
 
@@ -166,8 +197,25 @@ impl RenderOnce for NavItem {
             .text_color(c(text))
             .when(self.disabled, |row| row.opacity(0.5))
             .when(!self.disabled, |row| row.cursor_pointer().hover(|style| style.bg(c(SURFACE_SECONDARY))))
-            .child(icon(self.icon, 16., if self.dim_icon { alpha(text, 0.8) } else { c(text) }))
-            .child(div().flex_1().min_w_0().truncate().child(self.label))
+            .child(icon(self.icon, 16., alpha(text, if self.muted { 0.5 } else if self.dim_icon { 0.8 } else { 1. })))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(3.))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .child(div().min_w_0().truncate().when(self.muted, |label| label.text_color(c(TEXT_MUTED))).child(self.label))
+                            .when_some(self.badge, |label, glyph| label.child(icon(glyph, 12., c(TEXT_MUTED)))),
+                    )
+                    .when_some(self.usage, |column, used_pct| column.child(div().flex().child(super::usage_bar(used_pct)))),
+            )
+            .when_some(self.tooltip, |row, text| row.tooltip(super::Tooltip::text(text)))
             .when_some(self.trailing, |row, (glyph, label, handler)| {
                 // absolute top-1 right-2 h-6 w-6 rounded text-text-muted, shown on group hover
                 row.child(

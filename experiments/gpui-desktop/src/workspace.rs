@@ -19,7 +19,7 @@ use crate::settings_state::{DesktopSettings, SettingsPanelState};
 
 pub(crate) mod favorites;
 pub(crate) mod confirm;
-mod devices;
+pub(crate) mod devices;
 pub(crate) mod jobs;
 mod notifications;
 pub(crate) mod open_with;
@@ -222,6 +222,10 @@ pub struct Workspace {
     pub(crate) dialog_error: Option<String>,
     pub(crate) notices: notifications::Notices,
     pub(crate) devices: devices::Devices,
+    /// The sign-in dialog's fields: user, domain and the masked password.
+    pub(crate) device_fields: [Entity<TextField>; 3],
+    /// Focus the sign-in dialog on the next render; a mount asked from the background.
+    pub(crate) pending_credential_focus: bool,
     pub(crate) open_with: Option<open_with::OpenWith>,
     pub(crate) open_with_search: Entity<TextField>,
     pub(crate) settings_focus: FocusHandle,
@@ -292,6 +296,15 @@ impl Workspace {
             cx.new(|cx| TextField::new("https://files.example.com", cx)),
             cx.new(|cx| TextField::new("Paste token; it will not be saved", cx).masked()),
         ];
+        let device_fields = [
+            cx.new(|cx| TextField::new("User name", cx)),
+            cx.new(|cx| TextField::new("Domain", cx)),
+            cx.new(|cx| TextField::new("Password", cx).masked()),
+        ];
+        let device_subscriptions = device_fields
+            .iter()
+            .map(|field| cx.subscribe_in(field, window, |this, _, event, window, cx| this.on_credential_field(event, window, cx)))
+            .collect::<Vec<_>>();
         let settings_subscriptions = settings_fields
             .iter()
             .map(|field| cx.subscribe_in(field, window, |this, _, event, window, cx| this.on_settings_field(event, window, cx)))
@@ -321,6 +334,8 @@ impl Workspace {
             dialog_error: None,
             notices: Default::default(),
             devices: Default::default(),
+            device_fields,
+            pending_credential_focus: false,
             open_with: None,
             open_with_search: open_with_search.clone(),
             settings_focus: cx.focus_handle(),
@@ -335,6 +350,7 @@ impl Workspace {
             ]
             .into_iter()
             .chain(settings_subscriptions)
+            .chain(device_subscriptions)
             .collect(),
             file_clipboard: None,
             published_files: None,
@@ -1014,6 +1030,7 @@ impl Workspace {
     fn clear_selection(&mut self, _: &ClearSelection, window: &mut Window, cx: &mut Context<Self>) {
         // Escape closes the topmost dialog first, as the web Modal does.
         if self.confirm.is_some() { self.answer(false, cx); }
+        else if self.devices.prompt.is_some() { self.cancel_credentials(window, cx); }
         else if self.transfer_conflicts.take().is_some() {}
         else if self.shortcuts_open { self.shortcuts_open = false; }
         else if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
@@ -1153,6 +1170,9 @@ impl Render for Workspace {
         if let Some(field) = self.pending_field_focus.take() {
             self.settings_field(field).read(cx).focus(window);
         }
+        if std::mem::take(&mut self.pending_credential_focus) {
+            self.focus_credentials(window, cx);
+        }
         let primary = PaneTarget(self.tabs[self.active_tab].id);
         let mut browsers = div().flex().flex_1().min_h_0().min_w_0()
             .child(self.render_browser(primary, window, cx));
@@ -1254,6 +1274,7 @@ impl Render for Workspace {
             .when(self.transfer_conflicts.is_some(), |root| root.child(self.render_conflicts(cx)))
             .when(self.confirm.is_some(), |root| root.child(self.render_confirm(cx)))
             .when(self.shortcuts_open, |root| root.child(self.render_shortcuts(cx)))
+            .when(self.devices.prompt.is_some(), |root| root.child(self.render_credentials(window, cx)))
             .when(self.operation_dialog.is_some(), |root| {
                 root.child(self.render_operation_dialog(window, cx))
             })

@@ -14,31 +14,32 @@ use crate::workspace::operations::PaneTarget;
 use crate::components::{ContextMenu, MenuItem};
 use crate::workspace::{Back, CreateFile, CreateFolder, Forward, OpenSettings, Refresh, Workspace};
 
-struct Crumb {
-    label: String,
+pub(crate) struct Crumb {
+    pub label: String,
     path: String,
 }
 
 impl Workspace {
     /// Root label, then the path below it, like `EditablePathBar`'s breadcrumbs.
-    fn breadcrumbs(&self, target: PaneTarget) -> Vec<Crumb> {
+    pub(crate) fn breadcrumbs(&self, target: PaneTarget) -> Vec<Crumb> {
         let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
         let path = &pane.path;
-        let root = match &pane.roots {
-            crate::pane::Load::Loaded(roots) => roots
-                .iter()
-                .find(|root| path == &root.name || path.starts_with(&format!("{}/", root.name))),
+        let under = |root: &str| path == root || path.starts_with(&format!("{root}/"));
+        // A mounted device or share starts the trail with its name, not its mount folder.
+        let volume = self
+            .devices
+            .volumes()
+            .filter_map(|volume| Some((volume.name.clone(), pane.api.virtual_path(volume.mount_point()?)?)))
+            .filter(|(_, root)| under(root))
+            .max_by_key(|(_, root)| root.len());
+        let root = volume.or_else(|| match &pane.roots {
+            crate::pane::Load::Loaded(roots) => {
+                roots.iter().find(|root| under(&root.name)).map(|root| (root.display_name().to_string(), root.name.clone()))
+            }
             _ => None,
-        };
+        });
         let (mut crumbs, rest, mut prefix) = match root {
-            Some(root) => (
-                vec![Crumb {
-                    label: root.display_name().to_string(),
-                    path: root.name.clone(),
-                }],
-                &path[root.name.len()..],
-                root.name.clone(),
-            ),
+            Some((label, root)) => (vec![Crumb { label, path: root.clone() }], &path[root.len()..], root),
             None => (Vec::new(), path.as_str(), String::new()),
         };
         for segment in rest.split('/').filter(|segment| !segment.is_empty()) {

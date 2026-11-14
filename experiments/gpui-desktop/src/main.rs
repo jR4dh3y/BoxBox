@@ -113,6 +113,7 @@ fn main() {
         .with_assets(assets::Assets)
         .run(move |cx: &mut App| {
             workspace::bind_keys(cx);
+            cx.set_global(components::UiFont(fonts.sans.clone()));
             components::text_field_bind_keys(cx);
             let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
             cx.open_window(

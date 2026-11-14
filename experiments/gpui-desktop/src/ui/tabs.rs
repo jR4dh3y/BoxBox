@@ -4,16 +4,15 @@ use gpui::{div, prelude::*, px, Context};
 
 use super::{icon, TextScale};
 use crate::theme::*;
+use crate::workspace::operations::PaneTarget;
 use crate::workspace::{NewTab, ToggleSplit, Workspace};
 
 impl Workspace {
     pub(crate) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let closable = self.tabs.len() > 1;
         let tabs = self.tabs.iter().enumerate().map(|(index, pane)| {
-            let title = match pane.path.rsplit('/').next() {
-                Some(name) if !name.is_empty() => name.to_string(),
-                _ => "This PC".to_string(),
-            };
+            // The folder's name as the path bar shows it, so a device root reads as the device.
+            let title = self.breadcrumbs(PaneTarget(pane.id)).pop().map_or_else(|| "This PC".to_string(), |crumb| crumb.label);
             let active = index == self.active_tab;
             div()
                 .flex()

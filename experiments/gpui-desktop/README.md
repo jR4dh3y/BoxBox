@@ -30,6 +30,10 @@ This only works on X11. On Niri, the app prefers XWayland when DISPLAY exists be
 
 The current GPUI build still lacks the private `--desktop` cookie/session behavior and a full Rust replacement for the Go self-hosted server. Search has a keyboard-driven field, typed API client, debounce, cancellation and result-state handling. Settings opens as a native modal and persists browse preferences. Native thumbnails use the existing Rust renderer. The surface ledger records runtime evidence and remaining direct-interaction checks.
 
+### Devices and network locations
+
+The sidebar lists disks from UDisks2, and phones and network shares from GVfs, both over D-Bus. A row shows how full a mounted volume is, a mark when it is read-only, and is dimmed while unmounted; an encrypted volume shows a lock and asks for its passphrase. Type `smb://server/share`, `sftp://user@host/path` or `ftp://host` in the location bar (Ctrl+L) to mount and open a network location. Network backends are GVfs packages: `gvfs-smb` for SMB, `gvfs-mtp` for phones.
+
 ## Screenshots
 
 | List | Grid |

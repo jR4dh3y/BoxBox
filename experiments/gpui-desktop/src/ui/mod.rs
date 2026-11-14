@@ -3,6 +3,7 @@
 mod browser;
 mod conflicts;
 mod confirm;
+mod devices;
 mod drives;
 mod file_grid;
 mod file_list;

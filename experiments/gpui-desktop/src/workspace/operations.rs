@@ -389,6 +389,11 @@ impl Workspace {
         };
         let path = self.location_field.read(cx).text().trim().to_string();
         let target = PaneTarget(editor.target_id);
+        // A network location, such as smb://nas/media, is mounted and then opened.
+        if crate::devices::gvfs::spec::is_uri(&path) {
+            self.connect_location(target, path, cx);
+            return;
+        }
         if path.contains('\0') || path.split('/').any(|part| part == "..") {
             self.set_operation_error("Enter a valid provider path.", cx);
             return;

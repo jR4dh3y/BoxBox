@@ -32,9 +32,6 @@ Linux file manager does, not commitments.
 
 - Tabs and status bar on shared components. Status bar: selected count of
   total and selected size.
-- Phone and network mounts (MTP, SMB) through GVfs, unlocking encrypted
-  volumes, and device rows with capacity, read-only state and an unmounted
-  look. Electrobun used `gio mount` (`desktop_volumes_gio.go`).
 - Shared freedesktop thumbnails (`~/.cache/thumbnails`, installed
   thumbnailers), and an icon when a thumbnail fails.
 - Location editor: suggestions (120 ms, folders only, hidden only when shown
@@ -270,7 +267,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Drag out | ◐ X11 only | ✓ `drag_out/`: XDND on X11; on Wayland `drag_out/wayland.rs` starts a `wl_data_device` drag on GPUI's own connection once the pointer leaves the window (run on sway only; no drag icon outside the window) |
 | Drop in from other apps | ✓ `dnd.rs` | ◐ |
 | OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✓ `os_clipboard.rs`: owns the Wayland clipboard via data-control (not GNOME); `xclip` on X11 |
-| Removable volumes: mount, eject | ✓ `devices.rs` (server) | ✓ `devices.rs`: UDisks2 over D-Bus (`zbus`), live; GVfs mounts (MTP, network) and LUKS unlock not yet |
+| Devices: mount, unlock, eject | ✓ `devices.rs` (server) | ✓ `devices/udisks.rs`: UDisks2 over D-Bus (`zbus`), live, with LUKS unlock and lock. `devices/gvfs.rs`: GVfs mounts and volume monitors over D-Bus; `smb://`, `sftp://`, `ftp://` and `mtp://` typed in the location bar mount and open, and a backend's password or host-key question opens a dialog. Rows show a usage bar, a read-only mark and a dimmed unmounted state. Run against a Samba share, an SSH login and a LUKS loop image; no phone was plugged in, so MTP is untested |
 | Wayland rendering | ◐ untested | ◐ falls back to XWayland on Niri (stale frames); GPUI 0.2.2 panics if a new keyboard sends modifiers before its keymap (`wayland/client.rs:1267`), seen with a `wtype` virtual keyboard |
 | Keyboard focus movement, type-ahead | ✗ | ◐ arrow selection |
 

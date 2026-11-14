@@ -18,6 +18,7 @@ mod sidebar;
 mod text_field;
 mod toast;
 mod toggle;
+mod tooltip;
 
 pub use button::{Button, ButtonSize, ButtonVariant};
 pub use drive_card::{usage_bar, usage_text, DriveCard};
@@ -33,6 +34,7 @@ pub use text_field::{bind_keys as text_field_bind_keys, InputEvent, TextField};
 pub use sidebar::{NavItem, SidebarSection};
 pub use toast::{Toast, ToastKind};
 pub use toggle::Toggle;
+pub use tooltip::{Tooltip, UiFont};
 
 use gpui::{px, Styled};
 
