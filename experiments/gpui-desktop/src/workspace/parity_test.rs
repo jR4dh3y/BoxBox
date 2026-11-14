@@ -98,7 +98,8 @@ fn desktop_workflow(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("ctrl-l h o m e / p o r t enter");
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home/port"));
-    cx.simulate_keystrokes("ctrl-shift-e n o t e . t x t enter");
+    // The suggested "untitled.txt" has "untitled" selected, so the typed name keeps ".txt".
+    cx.simulate_keystrokes("ctrl-shift-e n o t e enter");
     cx.run_until_parked();
     assert!(fixture.join("port/note.txt").is_file());
     if local {
