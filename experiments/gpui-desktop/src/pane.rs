@@ -220,20 +220,26 @@ impl Pane {
         true
     }
 
-    pub fn go_back(&mut self) -> bool {
-        let Some(path) = self.back.pop() else {
-            return false;
-        };
-        self.forward.push(std::mem::replace(&mut self.path, path));
-        self.reset();
-        true
+    /// Places Back would go to, nearest first, and the same for Forward.
+    pub fn history(&self) -> (Vec<String>, Vec<String>) {
+        (self.back.iter().rev().cloned().collect(), self.forward.iter().rev().cloned().collect())
     }
 
-    pub fn go_forward(&mut self) -> bool {
-        let Some(path) = self.forward.pop() else {
+    /// Drops `missing` places from both histories, then moves `steps` places back or
+    /// forward. Returns false when there was nowhere to go.
+    pub fn travel(&mut self, back: bool, steps: usize, missing: &HashSet<String>) -> bool {
+        self.back.retain(|path| !missing.contains(path));
+        self.forward.retain(|path| !missing.contains(path));
+        let (from, to) = if back { (&mut self.back, &mut self.forward) } else { (&mut self.forward, &mut self.back) };
+        if steps == 0 || from.len() < steps {
             return false;
-        };
-        self.back.push(std::mem::replace(&mut self.path, path));
+        }
+        let mut current = std::mem::take(&mut self.path);
+        for _ in 0..steps {
+            to.push(current);
+            current = from.pop().expect("checked above");
+        }
+        self.path = current;
         self.reset();
         true
     }
@@ -684,9 +690,9 @@ mod tests {
             },
         );
         assert_eq!(pane.selected.len(), 2);
-        assert!(pane.go_back());
+        assert!(pane.travel(true, 1, &HashSet::new()));
         assert!(pane.is_at_root() && pane.selected.is_empty() && pane.can_go_forward());
-        assert!(pane.go_forward());
+        assert!(pane.travel(false, 1, &HashSet::new()));
         assert_eq!(pane.path, "d");
     }
 
@@ -709,6 +715,23 @@ mod tests {
         assert_eq!(pane.find_prefix("C", 0), Some(2));
         assert_eq!(pane.find_prefix("a", 1), Some(0));
         assert_eq!(pane.find_prefix("z", 0), None);
+    }
+
+    #[test]
+    fn travel_skips_places_that_are_gone() {
+        let mut pane = Pane::new(0, String::new(), false, Sort::default(), ViewMode::List);
+        for path in ["a", "b", "c", "d"] {
+            pane.navigate(path.into());
+        }
+        let gone: HashSet<String> = ["c".to_string()].into();
+        assert!(pane.travel(true, 1, &gone));
+        assert_eq!(pane.path, "b");
+        assert_eq!(pane.history(), (vec!["a".into(), String::new()], vec!["d".into()]));
+        assert!(pane.travel(true, 2, &HashSet::new()));
+        assert_eq!(pane.path, "");
+        assert!(pane.travel(false, 3, &HashSet::new()));
+        assert_eq!(pane.path, "d");
+        assert!(!pane.travel(false, 1, &HashSet::new()));
     }
 
     #[test]
@@ -754,7 +777,7 @@ mod tests {
     fn every_load_invalidates_older_requests() {
         let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
         let pending = pane.begin_load();
-        pane.go_back();
+        pane.travel(true, 1, &HashSet::new());
         assert!(pane.navigate(String::new()));
         assert_ne!(pane.begin_load(), pending);
         assert!(matches!(pane.listing, Listing::Root));

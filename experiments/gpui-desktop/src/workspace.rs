@@ -29,6 +29,7 @@ pub(crate) mod undo;
 pub(crate) mod operations;
 pub(crate) mod names;
 pub(crate) mod keyboard;
+pub(crate) mod history;
 pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;
@@ -244,6 +245,7 @@ pub struct Workspace {
     pub(crate) jobs: Vec<jobs::Job>,
     next_job_id: u64,
     pub(crate) context_menu: Option<ContextMenuState>,
+    pub(crate) history_menu: Option<history::HistoryMenu>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
     /// The select whose option list is open.
@@ -369,6 +371,7 @@ impl Workspace {
             jobs: Vec::new(),
             next_job_id: 0,
             context_menu: None,
+            history_menu: None,
             add_menu: None,
             open_select: None,
             accent_field: accent_field.clone(),
@@ -758,19 +761,11 @@ impl Workspace {
             cx.notify();
             return;
         }
-        if self.pane_mut().go_back() {
-            let target = self.active_pane;
-            self.load_pane(target, cx);
-            cx.notify();
-        }
+        self.travel(self.active_pane, true, 1, cx);
     }
 
     pub(crate) fn forward(&mut self, _: &Forward, _: &mut Window, cx: &mut Context<Self>) {
-        if self.pane_mut().go_forward() {
-            let target = self.active_pane;
-            self.load_pane(target, cx);
-            cx.notify();
-        }
+        self.travel(self.active_pane, false, 1, cx);
     }
 
     pub(crate) fn refresh(&mut self, _: &Refresh, _: &mut Window, cx: &mut Context<Self>) {
@@ -1292,6 +1287,7 @@ impl Render for Workspace {
             })
             .when(self.preview.is_some(), |root| root.child(self.render_preview(cx)))
             .when(self.context_menu.is_some(), |root| root.child(self.render_context_menu(cx)))
+            .when(self.history_menu.is_some(), |root| root.child(self.render_history_menu(cx)))
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
             .child(self.render_notices(cx))
             .when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)))

@@ -278,6 +278,45 @@ impl Workspace {
         .with_priority(1)
     }
 
+    /// The Back or Forward menu: one row per place, nearest first.
+    pub(crate) fn render_history_menu(&self, cx: &mut Context<Self>) -> AnyElement {
+        let Some(menu) = &self.history_menu else { return div().into_any_element() };
+        let (target, back) = (menu.target, menu.back);
+        let items = menu
+            .places
+            .iter()
+            .enumerate()
+            .map(|(index, place)| {
+                MenuItem::action(("history", index), self.place_label(target, place))
+                    .icon(if place.is_empty() { "server" } else { "folder" })
+                    .on_select(cx.listener(move |this, _, _, cx| {
+                        this.history_menu = None;
+                        this.travel(target, back, index + 1, cx);
+                    }))
+            })
+            .collect();
+        let close = |this: &mut Self, cx: &mut Context<Self>| {
+            this.history_menu = None;
+            cx.notify();
+        };
+        div()
+            .absolute()
+            .inset_0()
+            .id("history-dismiss")
+            .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _, _, cx| close(this, cx)))
+            .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, _, _, cx| close(this, cx)))
+            .child(
+                anchored().position(menu.position).snap_to_window().child(
+                    div()
+                        .id("history-menu")
+                        .debug_selector(|| "history-menu".into())
+                        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .child(ContextMenu::new(items)),
+                ),
+            )
+            .into_any_element()
+    }
+
     pub(crate) fn render_toolbar(
         &self,
         target: PaneTarget,
@@ -303,14 +342,25 @@ impl Workspace {
                     .gap(px(2.))
                     .child(
                         self.nav_button("back", "chevron-left", 18., pane.can_go_back())
+                            .debug_selector(|| "nav-back".into())
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.back(&Back, window, cx)),
-                            ),
+                            )
+                            // Right-click lists the places Back can go to.
+                            .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                                cx.stop_propagation();
+                                this.open_history_menu(target, true, event.position, cx);
+                            })),
                     )
                     .child(
                         self.nav_button("forward", "chevron-right", 18., pane.can_go_forward())
+                            .debug_selector(|| "nav-forward".into())
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.forward(&Forward, window, cx)
+                            }))
+                            .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                                cx.stop_propagation();
+                                this.open_history_menu(target, false, event.position, cx);
                             })),
                     ),
             )

@@ -267,3 +267,41 @@ fn the_grid_moves_by_rows_and_columns(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("up");
     assert_eq!(cursor(&view, cx).0, Some(0));
 }
+
+#[gpui::test]
+fn history_menus_list_and_back_skips_folders_that_are_gone(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a/", "a/b/", "a/b/c/"]);
+    for path in ["home/a", "home/a/b", "home/a/b/c"] {
+        view.update(cx, |workspace, cx| workspace.navigate(path.into(), cx));
+    }
+    cx.run_until_parked();
+    let back = cx.debug_bounds("nav-back").unwrap();
+    cx.simulate_mouse_down(back.center(), MouseButton::Right, Modifiers::default());
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        let menu = workspace.history_menu.as_ref().expect("right-click on Back lists the places");
+        assert_eq!(menu.places, ["home/a/b", "home/a", "home"]);
+    });
+    click(cx, "history-2");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home"));
+
+    // Forward goes to a. With b and c removed, nothing ahead is listed, and Forward
+    // drops them instead of opening a folder that is gone.
+    cx.simulate_keystrokes("alt-right");
+    cx.run_until_parked();
+    fs::remove_dir_all(fixture.root.join("a/b")).unwrap();
+    let forward = cx.debug_bounds("nav-forward").unwrap();
+    cx.simulate_mouse_down(forward.center(), MouseButton::Right, Modifiers::default());
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert!(workspace.history_menu.is_none(), "nothing ahead exists"));
+    cx.simulate_keystrokes("alt-right");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.pane().path, "home/a");
+        assert!(!workspace.pane().can_go_forward(), "places that are gone leave history");
+    });
+    cx.simulate_keystrokes("alt-left");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home"));
+}

@@ -42,6 +42,7 @@ const GROUPS: [(&str, &[(&str, &str)]); 3] = [
             ("Ctrl + L", "Edit location"),
             ("Ctrl + F", "Search this folder"),
             ("Alt + Left · Right · Up", "Back · Forward · Parent folder"),
+            ("Right-click Back · Forward", "Places in history"),
             ("F5", "Refresh"),
             ("Ctrl + H", "Show or hide hidden files"),
             ("Ctrl + T · W", "New tab · Close tab"),
