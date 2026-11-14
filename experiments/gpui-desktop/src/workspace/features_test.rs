@@ -196,3 +196,74 @@ fn properties_summarise_several_items_and_show_owner_and_permissions(cx: &mut Te
         assert_eq!(ownership.owner, std::env::var("USER").unwrap());
     });
 }
+
+fn cursor(view: &Entity<Workspace>, cx: &mut VisualTestContext) -> (Option<usize>, Vec<String>) {
+    view.read_with(cx, |workspace, _| {
+        let pane = workspace.pane();
+        let mut selected: Vec<String> = pane.selected.iter().map(|path| path.trim_start_matches("home/").to_string()).collect();
+        selected.sort();
+        (pane.active, selected)
+    })
+}
+
+#[gpui::test]
+fn the_keyboard_moves_selects_and_finds_by_name(cx: &mut TestAppContext) {
+    let files: Vec<String> = (0..60).map(|index| format!("f{index:02}")).chain(["apple", "avocado", "banana"].map(String::from)).collect();
+    let files: Vec<&str> = files.iter().map(String::as_str).collect();
+    let (view, cx, _fixture) = open(cx, &files);
+    cx.simulate_keystrokes("down down");
+    assert_eq!(cursor(&view, cx), (Some(1), vec!["avocado".into()]));
+    cx.simulate_keystrokes("shift-down");
+    assert_eq!(cursor(&view, cx).1, ["avocado", "banana"]);
+    cx.simulate_keystrokes("ctrl-down ctrl-down ctrl-space");
+    assert_eq!(cursor(&view, cx), (Some(4), vec!["avocado".into(), "banana".into(), "f01".into()]));
+    cx.simulate_keystrokes("end");
+    assert_eq!(cursor(&view, cx), (Some(62), vec!["f59".into()]));
+    cx.simulate_keystrokes("shift-home");
+    assert_eq!(cursor(&view, cx).1.len(), 63);
+    cx.simulate_keystrokes("home pagedown");
+    let (Some(page), _) = cursor(&view, cx) else { panic!() };
+    assert!(page > 5 && page < 62, "Page Down moves by the rows on screen, moved to {page}");
+    // The cursor is scrolled into view.
+    assert!(cx.debug_bounds(Box::leak(format!("row-0-{page}").into_boxed_str())).is_some());
+    cx.simulate_keystrokes("pageup");
+    assert_eq!(cursor(&view, cx).0, Some(0));
+    // Left and Right do nothing in a list.
+    cx.simulate_keystrokes("right");
+    assert_eq!(cursor(&view, cx).0, Some(0));
+
+    // Typing a name selects it; the same letter again goes to the next one.
+    cx.simulate_keystrokes("b");
+    assert_eq!(cursor(&view, cx).1, ["banana"]);
+    view.update(cx, |workspace, _| workspace.type_ahead = Default::default());
+    cx.simulate_keystrokes("a v");
+    assert_eq!(cursor(&view, cx).1, ["avocado"]);
+    view.update(cx, |workspace, _| workspace.type_ahead = Default::default());
+    cx.simulate_keystrokes("a a");
+    assert_eq!(cursor(&view, cx).1, ["avocado"]);
+
+    // The Menu key opens the item's menu; with nothing selected, the folder's.
+    cx.simulate_keystrokes("menu");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.context_menu.as_ref().unwrap().items.len(), 1));
+    cx.simulate_keystrokes("escape escape shift-f10");
+    view.read_with(cx, |workspace, _| assert!(workspace.context_menu.as_ref().unwrap().items.is_empty()));
+}
+
+#[gpui::test]
+fn the_grid_moves_by_rows_and_columns(cx: &mut TestAppContext) {
+    let files: Vec<String> = (0..30).map(|index| format!("f{index:02}")).collect();
+    let files: Vec<&str> = files.iter().map(String::as_str).collect();
+    let (view, cx, _fixture) = open(cx, &files);
+    view.update(cx, |workspace, _| workspace.pane_mut().set_view_mode(ViewMode::Grid));
+    let columns = cx.update(|window, app| {
+        let workspace = view.read(app);
+        crate::components::GridMetrics::new(false).columns(workspace.browser_width(window))
+    });
+    assert!(columns > 1);
+    cx.simulate_keystrokes("right right down");
+    assert_eq!(cursor(&view, cx).0, Some(1 + columns));
+    cx.simulate_keystrokes("shift-left");
+    assert_eq!(cursor(&view, cx).1.len(), 2);
+    cx.simulate_keystrokes("up");
+    assert_eq!(cursor(&view, cx).0, Some(0));
+}

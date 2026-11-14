@@ -28,6 +28,7 @@ mod watching;
 pub(crate) mod undo;
 pub(crate) mod operations;
 pub(crate) mod names;
+pub(crate) mod keyboard;
 pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;
@@ -127,12 +128,6 @@ actions!(
         CopySelected,
         CutSelected,
         PasteInto,
-        SelectUp,
-        SelectDown,
-        ExtendUp,
-        ExtendDown,
-        SelectLeft,
-        SelectRight,
         OpenActive,
         PreviewActive,
         FocusLocation,
@@ -174,17 +169,10 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-c", CopySelected, context),
         KeyBinding::new("ctrl-x", CutSelected, context),
         KeyBinding::new("ctrl-v", PasteInto, context),
-        KeyBinding::new("left", SelectLeft, context),
-        KeyBinding::new("right", SelectRight, context),
         KeyBinding::new("enter", OpenActive, context),
         KeyBinding::new("ctrl-shift-5", ToggleSplit, context),
         KeyBinding::new("ctrl-b", AddFavorite, context),
         KeyBinding::new("f1", ShowShortcuts, context),
-        // Up and Down in a text field, such as a name being edited, stay there.
-        KeyBinding::new("up", SelectUp, Some("BrowseWorkspace && !TextField")),
-        KeyBinding::new("down", SelectDown, Some("BrowseWorkspace && !TextField")),
-        KeyBinding::new("shift-up", ExtendUp, Some("BrowseWorkspace && !TextField")),
-        KeyBinding::new("shift-down", ExtendDown, Some("BrowseWorkspace && !TextField")),
         // A space typed in a text field is a space, not a preview.
         KeyBinding::new("space", PreviewActive, Some("BrowseWorkspace && !TextField")),
         // A text field keeps Ctrl+Z to itself, as the web shortcut skips inputs.
@@ -192,6 +180,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("escape", OperationEscape, Some("PreviewInput")),
         KeyBinding::new("escape", CloseSettings, Some("SettingsPanel")),
     ]);
+    keyboard::bind_keys(cx);
 }
 
 
@@ -251,6 +240,7 @@ pub struct Workspace {
     /// The last move to Trash or rename, for Ctrl+Z.
     pub(crate) last_undo: Option<undo::Undo>,
     pub(crate) shortcuts_open: bool,
+    type_ahead: keyboard::TypeAhead,
     pub(crate) jobs: Vec<jobs::Job>,
     next_job_id: u64,
     pub(crate) context_menu: Option<ContextMenuState>,
@@ -375,6 +365,7 @@ impl Workspace {
             confirm: None,
             last_undo: None,
             shortcuts_open: false,
+            type_ahead: Default::default(),
             jobs: Vec::new(),
             next_job_id: 0,
             context_menu: None,
@@ -1104,36 +1095,6 @@ impl Workspace {
         self.focus_handle.focus(window);
         cx.notify();
     }
-    pub(crate) fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
-        self.pane_mut().move_selection(-1, false);
-        cx.notify();
-    }
-
-    pub(crate) fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
-        self.pane_mut().move_selection(1, false);
-        cx.notify();
-    }
-
-    pub(crate) fn extend_up(&mut self, _: &ExtendUp, _: &mut Window, cx: &mut Context<Self>) {
-        self.pane_mut().move_selection(-1, true);
-        cx.notify();
-    }
-
-    pub(crate) fn extend_down(&mut self, _: &ExtendDown, _: &mut Window, cx: &mut Context<Self>) {
-        self.pane_mut().move_selection(1, true);
-        cx.notify();
-    }
-
-    pub(crate) fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
-        self.pane_mut().move_selection(-1, false);
-        cx.notify();
-    }
-
-    pub(crate) fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
-        self.pane_mut().move_selection(1, false);
-        cx.notify();
-    }
-
     pub(crate) fn toggle_split(
         &mut self,
         _: &ToggleSplit,
@@ -1289,12 +1250,10 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::copy_selected))
             .on_action(cx.listener(Self::cut_selected))
             .on_action(cx.listener(Self::paste_clipboard))
-            .on_action(cx.listener(Self::select_up))
-            .on_action(cx.listener(Self::select_down))
-            .on_action(cx.listener(Self::extend_up))
-            .on_action(cx.listener(Self::extend_down))
-            .on_action(cx.listener(Self::select_left))
-            .on_action(cx.listener(Self::select_right))
+            .on_action(cx.listener(Self::move_cursor))
+            .on_action(cx.listener(Self::toggle_active))
+            .on_action(cx.listener(Self::open_menu_key))
+            .on_key_down(cx.listener(Self::type_ahead))
             .on_action(cx.listener(Self::open_active))
             .on_action(cx.listener(Self::preview_active))
             .on_action(cx.listener(Self::focus_location))

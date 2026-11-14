@@ -51,6 +51,17 @@ impl SortJob {
     }
 }
 
+/// How a keyboard move treats the selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Move {
+    /// Select only the item moved to.
+    Select,
+    /// Shift: select from the anchor to it.
+    Extend,
+    /// Ctrl: move the cursor and keep the selection.
+    Focus,
+}
+
 pub enum Load<T> {
     Loading,
     Loaded(T),
@@ -476,30 +487,55 @@ impl Pane {
         self.selected.contains(path)
     }
 
-    /// Moves the active row and updates selection; Shift extends from the current anchor.
-    pub fn move_selection(&mut self, delta: isize, extend: bool) -> Option<usize> {
-        if self.items.is_empty() {
-            return None;
-        }
-        let next = match self.active {
-            Some(index) => (index as isize + delta).clamp(0, self.items.len() as isize - 1),
-            None if delta < 0 => self.items.len() as isize - 1,
+    /// The index `delta` items from the keyboard cursor, clamped to the list. With no
+    /// cursor, Down starts at the first item and Up at the last.
+    pub fn cursor_step(&self, delta: isize) -> Option<usize> {
+        let last = self.items.len().checked_sub(1)?;
+        Some(match self.active.filter(|&index| index <= last) {
+            Some(index) => (index as isize + delta).clamp(0, last as isize) as usize,
+            None if delta < 0 => last,
             None => 0,
-        } as usize;
-        if extend {
-            let anchor = self.anchor.filter(|&index| index < self.items.len()).unwrap_or(next);
-            let (start, end) = if anchor <= next { (anchor, next) } else { (next, anchor) };
-            self.selected.clear();
-            self.selected
-                .extend(self.items[start..=end].iter().map(|item| item.path.clone()));
-            self.anchor = Some(anchor);
-        } else {
-            self.selected.clear();
-            self.selected.insert(self.items[next].path.clone());
-            self.anchor = Some(next);
+        })
+    }
+
+    /// Puts the keyboard cursor on `index`: selecting only it, extending the selection
+    /// from the anchor to it, or leaving the selection as it is.
+    pub fn move_cursor(&mut self, index: usize, how: Move) {
+        let Some(item) = self.items.get(index) else { return };
+        match how {
+            Move::Select => {
+                self.selected.clear();
+                self.selected.insert(item.path.clone());
+                self.anchor = Some(index);
+            }
+            Move::Extend => {
+                let anchor = self.anchor.or(self.active).filter(|&anchor| anchor < self.items.len()).unwrap_or(index);
+                let (start, end) = if anchor <= index { (anchor, index) } else { (index, anchor) };
+                self.selected.clear();
+                self.selected.extend(self.items[start..=end].iter().map(|item| item.path.clone()));
+                self.anchor = Some(anchor);
+            }
+            Move::Focus => {}
         }
-        self.active = Some(next);
-        Some(next)
+        self.active = Some(index);
+    }
+
+    /// Ctrl+Space: selects or deselects the item under the keyboard cursor.
+    pub fn toggle_active(&mut self) {
+        let Some(index) = self.active else { return };
+        let Some(path) = self.items.get(index).map(|item| item.path.clone()) else { return };
+        if !self.selected.remove(&path) {
+            self.selected.insert(path);
+        }
+        self.anchor = Some(index);
+    }
+
+    /// The first item whose name starts with `prefix`, ignoring case, looking from
+    /// `from` and wrapping around.
+    pub fn find_prefix(&self, prefix: &str, from: usize) -> Option<usize> {
+        let prefix = prefix.to_lowercase();
+        let count = self.items.len();
+        (0..count).map(|offset| (from + offset) % count).find(|&index| self.items[index].name.to_lowercase().starts_with(&prefix))
     }
 
     pub fn active_item(&self) -> Option<FileInfo> {
@@ -652,6 +688,27 @@ mod tests {
         assert!(pane.is_at_root() && pane.selected.is_empty() && pane.can_go_forward());
         assert!(pane.go_forward());
         assert_eq!(pane.path, "d");
+    }
+
+    #[test]
+    fn the_keyboard_cursor_selects_extends_or_only_moves() {
+        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
+        load(&mut pane, ["a", "b", "c", "d", "e"].map(file).to_vec());
+        assert_eq!(pane.cursor_step(1), Some(0));
+        assert_eq!(pane.cursor_step(-1), Some(4));
+        pane.move_cursor(1, Move::Select);
+        pane.move_cursor(pane.cursor_step(2).unwrap(), Move::Focus);
+        assert_eq!((pane.active, pane.selected.len()), (Some(3), 1));
+        pane.toggle_active();
+        assert!(pane.is_selected("d/b") && pane.is_selected("d/d"));
+        pane.move_cursor(4, Move::Extend);
+        let mut selected: Vec<_> = pane.selected.iter().cloned().collect();
+        selected.sort();
+        assert_eq!(selected, ["d/d", "d/e"]);
+        assert_eq!(pane.cursor_step(10), Some(4));
+        assert_eq!(pane.find_prefix("C", 0), Some(2));
+        assert_eq!(pane.find_prefix("a", 1), Some(0));
+        assert_eq!(pane.find_prefix("z", 0), None);
     }
 
     #[test]

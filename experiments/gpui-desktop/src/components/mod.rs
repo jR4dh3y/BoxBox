@@ -24,7 +24,7 @@ pub use button::{Button, ButtonSize, ButtonVariant};
 pub use drive_card::{usage_bar, usage_text, DriveCard};
 pub use context_menu::{ContextMenu, MenuItem};
 pub use file_grid::{FileTile, GridMetrics};
-pub use file_list::{rename_box, FileListHeader, FileRow, Selection};
+pub use file_list::{rename_box, row_height, FileListHeader, FileRow, Selection};
 pub use input::Input;
 pub use modal::{Modal, ModalSize};
 pub use progress_bar::{ProgressBar, ProgressSize, ProgressVariant};
