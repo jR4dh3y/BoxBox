@@ -353,10 +353,14 @@ impl Workspace {
         let items = vec![
             item("add-folder", "New folder", "folder-plus", |this, _, window, cx| this.create_folder(&CreateFolder, window, cx), cx),
             item("add-file", "New file", "file-plus", |this, _, window, cx| this.create_file(&CreateFile, window, cx), cx),
+        ];
+        let mut items = items;
+        items.extend(self.template_menu(target, |this| this.add_menu = None, cx));
+        items.extend([
             MenuItem::Separator,
             item("add-files", if local { "Copy files here…" } else { "Upload files" }, "download", |this, target, _, cx| this.import_with_picker(target, false, cx), cx),
             item("add-folders", if local { "Copy folder here…" } else { "Upload folder" }, "folder-open", |this, target, _, cx| this.import_with_picker(target, true, cx), cx),
-        ];
+        ]);
         // AddMenu sits 4px under the button's left edge.
         deferred(
             anchored().position_mode(AnchoredPositionMode::Local).position(point(px(0.), px(32.))).snap_to_window().child(
@@ -367,7 +371,7 @@ impl Workspace {
                         this.add_menu = None;
                         cx.notify();
                     }))
-                    .child(ContextMenu::new(items)),
+                    .child(ContextMenu::new(items).on_submenu(self.submenu_listener(cx))),
             ),
         )
         .with_priority(1)
@@ -473,6 +477,8 @@ impl Workspace {
                             .child(self.nav_button("add", "plus", 16., !pane.is_at_root()).when(!pane.is_at_root(), |button| {
                                 button.on_click(cx.listener(move |this, _, _, cx| {
                                     this.add_menu = if this.add_menu == Some(target) { None } else { Some(target) };
+                                    this.open_submenu = None;
+                                    this.refresh_templates(cx);
                                     cx.notify();
                                 }))
                             }))

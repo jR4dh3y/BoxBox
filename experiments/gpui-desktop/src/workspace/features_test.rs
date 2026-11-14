@@ -547,3 +547,25 @@ fn sidebar_entries_have_menus(cx: &mut TestAppContext) {
     click(cx, "place-paste");
     view.read_with(cx, |workspace, _| assert!(workspace.place_menu.is_some(), "a disabled entry does nothing"));
 }
+
+#[gpui::test]
+fn new_files_come_from_templates_and_open_for_renaming(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["Templates/Letter.odt", "Templates/.hidden", "work/", "work/Letter.odt"]);
+    view.update(cx, |workspace, cx| workspace.navigate("home/work".into(), cx));
+    cx.run_until_parked();
+    let pane = cx.debug_bounds("browser-pane-0").unwrap();
+    cx.simulate_mouse_down(gpui::point(pane.center().x, pane.bottom() - gpui::px(60.)), MouseButton::Right, Modifiers::default());
+    cx.run_until_parked();
+    let submenu = cx.debug_bounds("new-from-template").expect("the folder menu offers templates").center();
+    cx.simulate_mouse_move(submenu, None, Modifiers::default());
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.templates.len(), 1, "hidden files are not templates"));
+    click(cx, "template-0");
+    cx.run_until_parked();
+    settle(cx);
+    assert!(fixture.root.join("work/Letter 2.odt").is_file(), "a taken name is numbered");
+    view.read_with(cx, |workspace, _| assert!(workspace.renaming(PaneTarget(0), "home/work/Letter 2.odt"), "the new file opens for renaming"));
+    cx.simulate_keystrokes("R e p l y enter");
+    cx.run_until_parked();
+    assert_eq!(fs::read(fixture.root.join("work/Reply.odt")).unwrap(), b"Templates/Letter.odt");
+}

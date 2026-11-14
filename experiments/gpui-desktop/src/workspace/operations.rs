@@ -1123,6 +1123,17 @@ impl Workspace {
         }
     }
 
+    /// The menu for the folder a pane shows, which clears the selection first.
+    pub(crate) fn show_folder_context_menu(&mut self, target: PaneTarget, position: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        if let Some(pane) = self.pane_mut_by_id(target.0) {
+            pane.clear_selection();
+        }
+        self.open_submenu = None;
+        self.refresh_templates(cx);
+        self.context_menu = Some(ContextMenuState { target_id: target.0, items: Vec::new(), position });
+        cx.notify();
+    }
+
     pub(crate) fn show_item_context_menu(
         &mut self,
         target: PaneTarget,
@@ -1138,6 +1149,7 @@ impl Workspace {
         }
         let items = pane.selected_items();
         self.active_pane = target;
+        self.open_submenu = None;
         self.context_menu = Some(ContextMenuState {
             target_id: target.0,
             items,

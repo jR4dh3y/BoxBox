@@ -33,6 +33,7 @@ pub(crate) mod history;
 pub(crate) mod trash;
 pub(crate) mod place_menu;
 pub(crate) mod bookmarks;
+pub(crate) mod templates;
 pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;
@@ -234,6 +235,12 @@ pub struct Workspace {
     pub(crate) dialog_field: Entity<TextField>,
     /// The name being edited in place, and its field.
     pub(crate) inline_rename: Option<rename::InlineRename>,
+    /// An item just created that opens for renaming once its folder lists it.
+    pub(crate) pending_rename: Option<(PaneTarget, String)>,
+    /// The templates folder's entries, read when a menu that offers them opens.
+    pub(crate) templates: Vec<crate::api::FileInfo>,
+    /// The submenu open in whichever menu is showing.
+    pub(crate) open_submenu: Option<SharedString>,
     pub(crate) rename_field: Entity<TextField>,
     pub(crate) location_editor: Option<LocationEditor>,
     pub(crate) location_field: Entity<TextField>,
@@ -357,6 +364,9 @@ impl Workspace {
             settings_focus: cx.focus_handle(),
             dialog_field: dialog_field.clone(),
             inline_rename: None,
+            pending_rename: None,
+            templates: Vec::new(),
+            open_submenu: None,
             rename_field: rename_field.clone(),
             location_editor: None,
             location_field: location_field.clone(),
@@ -1110,6 +1120,7 @@ impl Render for Workspace {
         if std::mem::take(&mut self.pending_credential_focus) {
             self.focus_credentials(window, cx);
         }
+        self.start_pending_rename(window, cx);
         let primary = PaneTarget(self.tabs[self.active_tab].id);
         let mut browsers = div().flex().flex_1().min_h_0().min_w_0()
             .child(self.render_browser(primary, window, cx));

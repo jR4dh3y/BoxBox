@@ -142,11 +142,7 @@ impl Workspace {
         let position = gpui::point(position.x.clamp(bounds.left(), bounds.right()), position.y.clamp(bounds.top(), bounds.bottom()));
         match cursor {
             Some(index) => self.show_item_context_menu(target, index, position, cx),
-            None => {
-                self.pane_mut().clear_selection();
-                self.context_menu = Some(super::operations::ContextMenuState { target_id: target.0, items: Vec::new(), position });
-                cx.notify();
-            }
+            None => self.show_folder_context_menu(target, position, cx),
         }
     }
 

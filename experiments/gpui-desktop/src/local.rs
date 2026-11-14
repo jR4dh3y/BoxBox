@@ -90,15 +90,20 @@ impl LocalFiles {
     /// Build a single `home` mount rooted at `root`; intended for isolated fixtures.
     pub fn with_root(root: PathBuf) -> Result<Self> {
         let root = canonical_directory(&root).context("cannot open local root")?;
+        let mut mounts = vec![Mount {
+            point: MountPoint {
+                name: "home".into(),
+                label: Some("Home".into()),
+                kind: RootKind::Drive,
+            },
+            path: root.clone(),
+        }];
+        // A fixture's own Templates folder stands in for the user's.
+        if let Ok(templates) = canonical_directory(&root.join("Templates")) {
+            add_mount(&mut mounts, "templates", Some("Templates"), RootKind::Place, templates);
+        }
         Ok(Self {
-            mounts: vec![Mount {
-                point: MountPoint {
-                    name: "home".into(),
-                    label: Some("Home".into()),
-                    kind: RootKind::Drive,
-                },
-                path: root.clone(),
-            }],
+            mounts,
             trash_data_home: root.join(".local/share"),
             volume_trash: false,
         })

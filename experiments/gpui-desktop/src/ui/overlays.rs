@@ -24,6 +24,21 @@ impl Workspace {
         }))
     }
 
+    /// Keeps which submenu the pointer opened, for the next frame.
+    pub(crate) fn submenu_listener(&self, cx: &mut Context<Self>) -> impl Fn(Option<gpui::SharedString>, &mut Window, &mut gpui::App) + 'static {
+        let workspace = cx.entity().downgrade();
+        move |id, _, cx| {
+            workspace
+                .update(cx, |this, cx| {
+                    if this.open_submenu != id {
+                        this.open_submenu = id;
+                        cx.notify();
+                    }
+                })
+                .ok();
+        }
+    }
+
     pub(crate) fn render_context_menu(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(menu) = &self.context_menu else { return div().into_any_element() };
         let Some(pane) = self.pane_by_id(menu.target_id) else { return div().into_any_element() };
@@ -32,6 +47,7 @@ impl Workspace {
         let can_create = !pane.path.is_empty();
         let can_paste = self.file_clipboard.is_some();
         let items = &menu.items;
+        let items_empty = items.is_empty();
         let single = items.len() == 1;
         let single_folder = single && items[0].is_dir;
         let single_file = single && !items[0].is_dir;
@@ -41,8 +57,11 @@ impl Workspace {
                 .disabled(read_only || !can_create),
             self.menu_item("context-folder", "New Folder", "folder-plus", |this, window, cx| this.context_create_folder(window, cx), cx)
                 .disabled(read_only || !can_create),
-            MenuItem::Separator,
         ];
+        if items_empty {
+            entries.extend(self.template_menu(crate::workspace::operations::PaneTarget(pane.id), |this| this.context_menu = None, cx));
+        }
+        entries.push(MenuItem::Separator);
         let paste = self
             .menu_item("context-paste", "Paste", "clipboard-paste", |this, window, cx| this.context_paste(window, cx), cx)
             .shortcut("Ctrl+V")
@@ -135,7 +154,7 @@ impl Workspace {
                         .id("file-context-menu")
                         .debug_selector(|| "file-context-menu".into())
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .child(ContextMenu::new(entries)),
+                        .child(ContextMenu::new(entries).on_submenu(self.submenu_listener(cx))),
                 ),
             )
             .into_any_element()
