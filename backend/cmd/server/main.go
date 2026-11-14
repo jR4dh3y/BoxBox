@@ -121,7 +121,11 @@ func main() {
 	// Cancel long-lived event streams before waiting for HTTP shutdown.
 	server.BaseContext = func(net.Listener) context.Context { return ctx }
 	// Bind before announcing readiness so the desktop app never guesses a port.
-	listener, err := net.Listen("tcp", server.Addr)
+	listen := func() (net.Listener, error) { return net.Listen("tcp", server.Addr) }
+	if *desktopMode {
+		listen = func() (net.Listener, error) { return desktopListener(server.Addr) }
+	}
+	listener, err := listen()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to listen")
 	}

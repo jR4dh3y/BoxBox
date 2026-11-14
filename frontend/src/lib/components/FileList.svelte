@@ -208,7 +208,7 @@
 			return;
 		}
 
-		const target = event.target instanceof HTMLElement ? event.target : null;
+		const target = event.target instanceof Element ? event.target : null;
 		if (target?.closest('[data-file-header="true"]') || items.length === 0) return;
 
 		const currentIndex = Math.min(
@@ -297,7 +297,7 @@
 	}
 
 	function handleBackgroundContextMenu(event: MouseEvent) {
-		const target = event.target instanceof HTMLElement ? event.target : null;
+		const target = event.target instanceof Element ? event.target : null;
 		if (target?.closest('[data-file-row="true"], [data-file-header="true"]')) return;
 
 		event.preventDefault();
