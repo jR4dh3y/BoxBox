@@ -4,6 +4,11 @@ Every Svelte file in `frontend/src` (master `d1bc979`), mapped to the native
 file manager. The app looks like BoxBox but behaves like a Linux file manager:
 files open in their native apps, and the web-only surfaces are dropped.
 
+The Electrobun rows below say what a feature must do, not how to build it.
+Build each one as a native file manager would: through the system's own
+interfaces (UDisks2, GVfs, Wayland, freedesktop specs), not by copying the Go
+server or shelling out to tools such as `gio`.
+
 Two GPUI lines split at `492ecc7` and both need folding in:
 
 - **PR** — `origin/hoplite/emporion-ca08fa2f` (`cc284b3`, PR #226). Every file

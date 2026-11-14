@@ -38,6 +38,16 @@ Read the code that runs before you change it. Prefer the smallest complete chang
 - A method that an `$effect` calls must not read the state it changes. Wrap that read in `untrack`.
 - The browse page is wired from `lib/browse/`: location, data, actions, uploads and selection.
 
+## Native file manager (GPUI)
+
+`experiments/gpui-desktop/` is a native Linux file manager that looks like BoxBox. It is not a port of the web app or of the Electrobun desktop app.
+
+- Build each feature the way a native file manager does: talk to the system directly (D-Bus services such as UDisks2 and GVfs, Wayland protocols, freedesktop specs, the kernel). Do not copy how the Go server or the Electrobun host did it, and do not shell out to a command-line tool where the system offers an API.
+- Follow Linux file manager behaviour (Thunar, Nautilus, Dolphin) when it differs from the web UI. The web UI sets the look, not the behaviour.
+- Hand files to their native apps instead of rebuilding web previews or editors.
+- Keep filesystem, D-Bus, process and sorting work off the UI thread.
+- `experiments/gpui-desktop/UI_MAP.md` lists what exists and what is left.
+
 ## Performance
 
 - Measure the journey the user feels, from click to rendered, before you change anything. A component's own loading state does not count.
