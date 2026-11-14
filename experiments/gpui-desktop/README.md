@@ -26,7 +26,11 @@ Drag a row or tile out of the window to drop it into another app, such as a file
 
 Local files are handed to other apps by their real filesystem paths. Remote files are staged into `$TMPDIR/boxbox-gpui-drag/`. Folders arrive as the server's ZIP archive. The staged copies are not deleted automatically.
 
-This only works on X11. On Niri, the app prefers XWayland when DISPLAY exists because the native Wayland renderer retained stale frames on the development host. `BOXBOX_NATIVE_WAYLAND=1` opts back into native Wayland. On other compositors, start with `WAYLAND_DISPLAY=` to select XWayland. macOS and Windows are not implemented. The existing Electrobun app cannot drag files out either.
+On Wayland the drag is handed to the compositor when the pointer leaves the window (`src/drag_out/wayland.rs`). macOS and Windows are not implemented.
+
+### Wayland
+
+The app is a native Wayland client on Niri, Hyprland and sway. At start it asks the compositor which GPU it uses (the `linux-dmabuf` main device) and draws on that one. GPUI would otherwise take the first Vulkan device, which on a laptop with two GPUs is often the discrete card while the compositor runs on the integrated one, so every frame crosses GPUs. Set `ZED_DEVICE_ID` to a PCI device ID (such as `25a2`) to choose a GPU yourself, or start with `WAYLAND_DISPLAY=` to use XWayland.
 
 The current GPUI build still lacks the private `--desktop` cookie/session behavior and a full Rust replacement for the Go self-hosted server. Search matches every word of the query against file names below the open folder, ranks the best matches first, and shows local results while it is still walking. Settings opens as a native modal and persists browse preferences. Native thumbnails use the existing Rust renderer. The surface ledger records runtime evidence and remaining direct-interaction checks.
 

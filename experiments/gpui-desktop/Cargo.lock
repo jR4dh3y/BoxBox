@@ -760,6 +760,7 @@ dependencies = [
  "ureq",
  "wayland-backend",
  "wayland-client",
+ "wayland-protocols 0.32.13",
  "wl-clipboard-rs",
  "x11rb",
  "zbus",

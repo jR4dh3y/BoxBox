@@ -15,6 +15,8 @@ mod open_with;
 mod os_clipboard;
 mod pane;
 mod progress;
+#[cfg(target_os = "linux")]
+mod render_gpu;
 mod persist;
 mod search;
 mod sort;
@@ -46,18 +48,9 @@ fn fontconfig_family(pattern: &str, fallback: &str) -> SharedString {
 }
 
 fn main() {
-    // GPUI 0.2.2 can retain an old frame on Niri's native Wayland backend.
-    // Prefer the verified XWayland path when available; keep an explicit Wayland opt-in.
-    #[cfg(target_os = "linux")]
-    if (std::env::var_os("NIRI_SOCKET").is_some()
-        || std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|desktop| desktop.split(':').any(|name| name.eq_ignore_ascii_case("niri"))))
-        && std::env::var_os("DISPLAY").is_some_and(|display| !display.is_empty())
-        && std::env::var_os("BOXBOX_NATIVE_WAYLAND").is_none()
-    {
-        std::env::remove_var("WAYLAND_DISPLAY");
-    }
-
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    #[cfg(target_os = "linux")]
+    render_gpu::follow_compositor();
     let token = std::env::var("BOXBOX_TOKEN")
         .ok()
         .filter(|token| !token.is_empty());

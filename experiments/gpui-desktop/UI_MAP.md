@@ -79,7 +79,6 @@ Linux file manager does, not commitments.
 - Open With: app icons from the current icon theme, not only hicolor.
 - Wallpaper: preview before applying, SVG and AVIF, test the picker.
 - Collapse the sidebar into a drawer on narrow windows.
-- Native Wayland on Niri (XWayland now shows stale frames).
 - Later: Servers page and device pairing.
 
 ### Native file manager (from Thunar)
@@ -264,7 +263,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Drop in from other apps | ✓ `dnd.rs` | ✓ the same targets and highlight as a drag inside the window; files are copied, since GPUI does not report the action the other app offered |
 | OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✓ `os_clipboard.rs`: owns the Wayland clipboard via data-control (not GNOME); `xclip` on X11 |
 | Devices: mount, unlock, eject | ✓ `devices.rs` (server) | ✓ `devices/udisks.rs`: UDisks2 over D-Bus (`zbus`), live, with LUKS unlock and lock. `devices/gvfs.rs`: GVfs mounts and volume monitors over D-Bus; `smb://`, `sftp://`, `ftp://` and `mtp://` typed in the location bar mount and open, and a backend's password or host-key question opens a dialog. Rows show a usage bar, a read-only mark and a dimmed unmounted state. Run against a Samba share, an SSH login and a LUKS loop image; no phone was plugged in, so MTP is untested |
-| Wayland rendering | ◐ untested | ◐ falls back to XWayland on Niri (stale frames); GPUI 0.2.2 panics if a new keyboard sends modifiers before its keymap (`wayland/client.rs:1267`), seen with a `wtype` virtual keyboard |
+| Wayland rendering | ◐ untested | ✓ native on Niri, Hyprland and sway; `render_gpu.rs` draws on the compositor's GPU (`linux-dmabuf` main device) instead of the first Vulkan device. Run on a live Hyprland session and in nested niri; a Niri session on real hardware was not run. GPUI 0.2.2 still panics if a new keyboard sends modifiers before its keymap (`wayland/client.rs:1267`), and drops the first key of a newly added keyboard; both seen only with `wtype` virtual keyboards |
 | Keyboard focus movement, type-ahead | ✗ | ◐ arrow selection |
 
 ## Search
