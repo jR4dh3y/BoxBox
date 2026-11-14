@@ -489,14 +489,23 @@ impl Workspace {
         if self.operation_status.is_busy() || !self.ensure_writable(target, cx) {
             return;
         }
+        let Some(folder) = self.pane_by_id(target.0).map(|pane| pane.path.clone()) else { return };
+        self.paste_into_folder(target, folder, cx);
+    }
+
+    /// Pastes into `folder` on `target`'s provider, which need not be the folder it shows.
+    pub(crate) fn paste_into_folder(&mut self, target: PaneTarget, folder: String, cx: &mut Context<Self>) {
+        if self.operation_status.is_busy() {
+            return;
+        }
         cx.spawn(async move |this, cx| {
             let system = cx.background_executor().spawn(async move { os_clipboard::read() }).await;
             this.update(cx, |this, cx| match system {
-                Ok(Some(files)) if this.published_files.as_ref() != Some(&files) => this.paste_system_files(target, files, cx),
-                Ok(_) => this.paste_in_app(target, cx),
+                Ok(Some(files)) if this.published_files.as_ref() != Some(&files) => this.paste_system_files(target, folder, files, cx),
+                Ok(_) => this.paste_in_app(target, folder, cx),
                 Err(error) => {
                     log::warn!("Could not read the system clipboard: {error:#}");
-                    this.paste_in_app(target, cx)
+                    this.paste_in_app(target, folder, cx)
                 }
             })
             .ok();
@@ -504,8 +513,8 @@ impl Workspace {
         .detach();
     }
 
-    fn paste_system_files(&mut self, target: PaneTarget, files: os_clipboard::Files, cx: &mut Context<Self>) {
-        let Some((_, destination, parent)) = self.operation_target(target) else {
+    fn paste_system_files(&mut self, target: PaneTarget, parent: String, files: os_clipboard::Files, cx: &mut Context<Self>) {
+        let Some((_, destination, _)) = self.operation_target(target) else {
             return;
         };
         if parent.is_empty() {
@@ -548,7 +557,7 @@ impl Workspace {
         .detach();
     }
 
-    fn paste_in_app(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
+    fn paste_in_app(&mut self, target: PaneTarget, parent: String, cx: &mut Context<Self>) {
         if self.operation_status.is_busy() {
             return;
         }
@@ -556,7 +565,7 @@ impl Workspace {
             self.notify(crate::components::ToastKind::Info, "The clipboard has no files to paste", cx);
             return;
         };
-        let Some((_, destination, parent)) = self.operation_target(target) else {
+        let Some((_, destination, _)) = self.operation_target(target) else {
             return;
         };
         if parent.is_empty() {

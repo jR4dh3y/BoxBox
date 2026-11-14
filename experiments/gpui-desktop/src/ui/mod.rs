@@ -12,6 +12,7 @@ mod notifications;
 mod open_with;
 mod operations;
 mod overlays;
+mod place_menu;
 mod select_menu;
 mod settings;
 mod shortcuts;

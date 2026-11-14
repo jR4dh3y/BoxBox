@@ -354,10 +354,83 @@ fn trash_takes_drops_shows_restored_items_and_empties(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let trash = cx.debug_bounds("sidebar-trash").unwrap().center();
     cx.simulate_mouse_down(trash, MouseButton::Right, Modifiers::default());
-    click(cx, "sidebar-empty-trash");
+    click(cx, "place-empty-trash");
     view.read_with(cx, |workspace, _| assert_eq!(workspace.confirm.as_ref().unwrap().title.as_ref(), "Empty Trash"));
     click(cx, "confirm-accept");
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert!(!workspace.trash_full));
     assert_eq!(fs::read_dir(fixture.root.join(".local/share/Trash/files")).unwrap().count(), 0);
+}
+
+#[gpui::test]
+fn breadcrumbs_open_tabs_take_drops_and_fold_long_paths(cx: &mut TestAppContext) {
+    let deep = "a-rather-long-folder-name/another-long-folder-name/yet-another-long-folder/and-one-more-folder/";
+    let (view, cx, fixture) = open(cx, &[deep, "x.txt", "y.txt"]);
+    view.update(cx, |workspace, cx| workspace.navigate("home/a-rather-long-folder-name/another-long-folder-name".into(), cx));
+    cx.run_until_parked();
+
+    // Middle-click opens the crumb in a new tab.
+    let home = cx.debug_bounds("crumb-0-0").unwrap().center();
+    cx.simulate_mouse_down(home, MouseButton::Middle, Modifiers::default());
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.tabs.len(), 2);
+        assert_eq!(workspace.pane().path, "home");
+    });
+    cx.run_until_parked();
+
+    // Copy a file in the new tab, then paste it into a crumb's folder from its menu.
+    click(cx, "row-1-1");
+    cx.simulate_keystrokes("ctrl-c");
+    view.update(cx, |workspace, cx| workspace.navigate("home/a-rather-long-folder-name/another-long-folder-name".into(), cx));
+    cx.run_until_parked();
+    let first = cx.debug_bounds("crumb-1-1").unwrap().center();
+    cx.simulate_mouse_down(first, MouseButton::Right, Modifiers::default());
+    click(cx, "place-paste");
+    cx.run_until_parked();
+    assert!(fixture.root.join("a-rather-long-folder-name/x.txt").is_file());
+
+    // A row dropped onto a crumb moves into that folder; resting on a crumb opens it.
+    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
+    cx.run_until_parked();
+    view.update(cx, |workspace, cx| workspace.navigate("home/a-rather-long-folder-name".into(), cx));
+    cx.run_until_parked();
+    click(cx, "crumb-1-0");
+    cx.run_until_parked();
+    drag(cx, "row-1-2", "crumb-1-0");
+    assert!(fixture.root.join("y.txt").is_file(), "dropping on the folder the item is in does nothing");
+    view.update(cx, |workspace, cx| workspace.navigate("home/a-rather-long-folder-name/another-long-folder-name".into(), cx));
+    cx.run_until_parked();
+    let start = cx.debug_bounds("crumb-1-0").unwrap().center();
+    // Drag the folder's only row (it holds yet-another-long-folder) and rest on "home".
+    let row = cx.debug_bounds("row-1-0").unwrap().center();
+    cx.simulate_mouse_down(row, MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(row + gpui::point(gpui::px(10.), gpui::px(10.)), Some(MouseButton::Left), Modifiers::default());
+    cx.simulate_mouse_move(start, Some(MouseButton::Left), Modifiers::default());
+    cx.simulate_mouse_move(start + gpui::point(gpui::px(1.), gpui::px(0.)), Some(MouseButton::Left), Modifiers::default());
+    cx.update(|_, _| {});
+    cx.executor().advance_clock(std::time::Duration::from_millis(800));
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home", "resting on a crumb opens it"));
+    let pane = cx.debug_bounds("browser-pane-1").unwrap();
+    let inside = gpui::point(pane.center().x, pane.bottom() - gpui::px(60.));
+    cx.simulate_mouse_move(inside, Some(MouseButton::Left), Modifiers::default());
+    cx.update(|_, _| {});
+    cx.simulate_mouse_up(inside, MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    assert!(fixture.root.join("yet-another-long-folder").is_dir(), "the drop lands in the opened folder");
+
+    // A narrow window hides the first crumbs behind "…", which lists them.
+    view.update(cx, |workspace, cx| workspace.navigate("home/a-rather-long-folder-name/another-long-folder-name".into(), cx));
+    cx.simulate_resize(gpui::size(gpui::px(640.), gpui::px(480.)));
+    cx.run_until_parked();
+    settle(cx);
+    assert!(cx.debug_bounds("crumb-overflow").is_some(), "a long path folds");
+    click(cx, "crumb-overflow");
+    view.read_with(cx, |workspace, _| {
+        let Some(crate::workspace::place_menu::PlaceMenu { place: crate::workspace::place_menu::Place::Hidden { crumbs, .. }, .. }) = &workspace.place_menu else { panic!("… lists the hidden crumbs") };
+        assert_eq!(crumbs[0].1, "home");
+    });
+    click(cx, "hidden-crumb-0");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home"));
 }

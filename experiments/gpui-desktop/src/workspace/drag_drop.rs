@@ -28,7 +28,12 @@ pub(crate) enum DropTarget {
     Place { path: String },
     /// The sidebar's Trash: dropped local items are moved there.
     Trash,
+    /// A breadcrumb of a pane's location. Held there while dragging, it opens.
+    Crumb { pane: PaneTarget, path: String },
 }
+
+/// How long a drag rests on a breadcrumb before it opens, as GTK's path bar does.
+const HOVER_OPEN: std::time::Duration = std::time::Duration::from_millis(700);
 
 /// The items being dragged, taken when the drag starts so a refresh cannot change them.
 pub(crate) struct DragSource {
@@ -117,6 +122,25 @@ impl Workspace {
         items
     }
 
+    /// Opens a breadcrumb's folder if the drag is still on it after a moment.
+    fn open_on_hover(&mut self, target: DropTarget, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(HOVER_OPEN).await;
+            this.update(cx, |this, cx| {
+                if this.drag_drop.hover.as_ref() != Some(&target) || !cx.has_active_drag() {
+                    return;
+                }
+                if let DropTarget::Crumb { pane, path } = target {
+                    if this.pane_by_id(pane.0).is_some_and(|found| found.path != path) {
+                        this.navigate_in(pane, path, cx);
+                    }
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     /// The target to highlight, while a drag is in the window.
     pub(crate) fn drop_hover(&self, cx: &App) -> Option<&DropTarget> {
         self.drag_drop.hover.as_ref().filter(|_| cx.has_active_drag())
@@ -136,6 +160,9 @@ impl Workspace {
                     this.drag_drop.settling = false;
                     let candidate = this.drag_drop.candidate.take();
                     if this.drag_drop.hover != candidate {
+                        if let Some(DropTarget::Crumb { pane, path }) = &candidate {
+                            this.open_on_hover(DropTarget::Crumb { pane: *pane, path: path.clone() }, cx);
+                        }
                         this.drag_drop.hover = candidate;
                         cx.notify();
                     }
@@ -168,7 +195,7 @@ impl Workspace {
         };
         if allowed {
             self.drag_drop.candidate = Some(target);
-        } else if matches!(target, DropTarget::Folder { .. } | DropTarget::Place { .. } | DropTarget::Trash) {
+        } else if !matches!(target, DropTarget::Pane(_)) {
             // A refused folder must not fall back to the pane around it.
             self.drag_drop.candidate = None;
         }
@@ -178,7 +205,9 @@ impl Workspace {
     fn drop_destination(&self, target: &DropTarget) -> Option<(PaneTarget, Arc<Api>, String)> {
         match target {
             DropTarget::Pane(pane) => self.pane_by_id(pane.0).map(|found| (*pane, found.api.clone(), found.path.clone())),
-            DropTarget::Folder { pane, path } => self.pane_by_id(pane.0).map(|found| (*pane, found.api.clone(), path.clone())),
+            DropTarget::Folder { pane, path } | DropTarget::Crumb { pane, path } => {
+                self.pane_by_id(pane.0).map(|found| (*pane, found.api.clone(), path.clone()))
+            }
             DropTarget::Place { path } => Some((self.active_pane, self.active_api(), path.clone())),
             DropTarget::Trash => None,
         }

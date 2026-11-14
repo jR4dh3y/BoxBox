@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use gpui::{
-    anchored, deferred, div, percentage, point, prelude::*, px, AnchoredPositionMode, Animation,
+    anchored, canvas, deferred, div, percentage, point, prelude::*, px, AnchoredPositionMode, Animation,
     AnimationExt as _, AnyElement, Context, Transformation, Window,
 };
 
@@ -11,12 +11,37 @@ use super::{icon, TextScale};
 use crate::pane::Search;
 use crate::theme::*;
 use crate::workspace::operations::PaneTarget;
-use crate::components::{ContextMenu, MenuItem};
+use crate::components::{ContextMenu, MenuItem, Tooltip};
+use crate::workspace::drag_drop::{drop_zone, DropTarget};
 use crate::workspace::{Back, CreateFile, CreateFolder, Forward, OpenSettings, Refresh, Workspace};
 
 pub(crate) struct Crumb {
     pub label: String,
     path: String,
+}
+
+/// How many leading crumbs to hide behind "…" so the rest fit in `available`.
+/// The current folder always shows.
+fn hidden_crumbs(widths: &[f32], available: f32) -> usize {
+    const SEPARATOR: f32 = 4. + 7. + 4. + 4.;
+    const OVERFLOW: f32 = 15. + SEPARATOR;
+    let need = |from: usize| -> f32 {
+        let shown: f32 = widths[from..].iter().map(|width| width + 4.).sum::<f32>() + SEPARATOR * (widths.len() - from - 1) as f32;
+        shown + if from > 0 { OVERFLOW } else { 0. }
+    };
+    (0..widths.len().saturating_sub(1)).find(|&from| need(from) <= available).unwrap_or(widths.len().saturating_sub(1))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn long_paths_hide_their_first_crumbs() {
+        let widths = [40., 60., 80., 100.];
+        assert_eq!(super::hidden_crumbs(&widths, 1000.), 0);
+        assert_eq!(super::hidden_crumbs(&widths, 250.), 2);
+        // The current folder stays even when nothing else fits.
+        assert_eq!(super::hidden_crumbs(&widths, 10.), 3);
+    }
 }
 
 impl Workspace {
@@ -87,7 +112,7 @@ impl Workspace {
             ))
     }
 
-    fn render_path_bar(&self, target: PaneTarget, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_path_bar(&self, target: PaneTarget, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.location_editor.as_ref().is_some_and(|editor| editor.target_id == target.0) {
             // The same box as the breadcrumbs, holding the text field.
             return div()
@@ -107,7 +132,6 @@ impl Workspace {
                 .into_any_element();
         }
         let crumbs = self.breadcrumbs(target);
-        let last = crumbs.len().saturating_sub(1);
         let content: AnyElement = if crumbs.is_empty() {
             div()
                 .text_13()
@@ -115,38 +139,7 @@ impl Workspace {
                 .child("This PC")
                 .into_any_element()
         } else {
-            let mut row = div()
-                .flex()
-                .flex_1()
-                .min_w_0()
-                .items_center()
-                .gap(px(4.))
-                .overflow_hidden()
-                .whitespace_nowrap();
-            for (index, crumb) in crumbs.into_iter().enumerate() {
-                if index > 0 {
-                    row = row.child(div().text_xs_tw().text_color(c(TEXT_MUTED)).child("/"));
-                }
-                if index == last {
-                    row = row.child(div().text_13().whitespace_nowrap().child(crumb.label));
-                } else {
-                    let path = crumb.path;
-                    row = row.child(
-                        div()
-                            .id(("crumb", index))
-                            .text_13()
-                            .whitespace_nowrap()
-                            .text_color(c(TEXT_SECONDARY))
-                            .cursor_pointer()
-                            .hover(|style| style.text_color(c(WHITE)).underline())
-                            .child(crumb.label)
-                            .on_click(
-                                cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx)),
-                            ),
-                    );
-                }
-            }
-            row.into_any_element()
+            self.render_crumbs(target, crumbs, window, cx).into_any_element()
         };
         div()
             .flex()
@@ -173,6 +166,108 @@ impl Workspace {
                     .on_click(cx.listener(|this, _, _, cx| this.navigate(String::new(), cx))),
             )
             .child(content).into_any_element()
+    }
+
+    /// The crumbs that fit, after a "…" that lists the ones that do not. Each opens
+    /// on click, opens a tab on middle-click, has a menu, takes drops, opens when a
+    /// drag rests on it, and shows its full path on hover.
+    fn render_crumbs(&self, target: PaneTarget, crumbs: Vec<Crumb>, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
+        let last = crumbs.len() - 1;
+        let font = gpui::font(self.fonts.sans.clone());
+        let widths: Vec<f32> = crumbs
+            .iter()
+            .map(|crumb| {
+                let run = gpui::TextRun { len: crumb.label.len(), font: font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
+                f32::from(window.text_system().shape_line(crumb.label.clone().into(), px(13.), &[run], None).width)
+            })
+            .collect();
+        let hidden = self.path_bar_widths.borrow().get(&target.0).map_or(0, |&available| hidden_crumbs(&widths, available));
+        let full_path = |index: usize| -> String {
+            match &pane.real_path {
+                Some(real) => real.ancestors().nth(last - index).unwrap_or(real).display().to_string(),
+                None => format!("{}/{}", pane.api.server_url().unwrap_or(""), crumbs[index].path),
+            }
+        };
+        let hover = self.drop_hover(cx).cloned();
+        let mut row = div().relative().flex().flex_1().min_w_0().items_center().gap(px(4.)).overflow_hidden().whitespace_nowrap();
+        if hidden > 0 {
+            let listed: Vec<(String, String)> = crumbs[..hidden].iter().map(|crumb| (crumb.label.clone(), crumb.path.clone())).collect();
+            row = row
+                .child(
+                    div()
+                        .id("crumb-overflow")
+                        .debug_selector(|| "crumb-overflow".into())
+                        .flex_none()
+                        .px(px(4.))
+                        .rounded(px(4.))
+                        .text_13()
+                        .text_color(c(TEXT_SECONDARY))
+                        .cursor_pointer()
+                        .hover(|style| style.bg(c(SURFACE_ELEVATED)))
+                        .child("…")
+                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            this.open_place_menu(crate::workspace::place_menu::Place::Hidden { pane: target, crumbs: listed.clone() }, event.position, cx);
+                        })),
+                )
+                .child(div().text_xs_tw().text_color(c(TEXT_MUTED)).child("/"));
+        }
+        for (index, crumb) in crumbs.iter().enumerate().skip(hidden) {
+            if index > hidden {
+                row = row.child(div().flex_none().text_xs_tw().text_color(c(TEXT_MUTED)).child("/"));
+            }
+            let path = crumb.path.clone();
+            let zone = DropTarget::Crumb { pane: target, path: path.clone() };
+            let dropping = hover.as_ref() == Some(&zone);
+            let (open, tab, menu) = (path.clone(), path.clone(), path.clone());
+            let element = div()
+                .id(("crumb", index))
+                .debug_selector(move || format!("crumb-{}-{index}", target.0))
+                .min_w_0()
+                .px(px(2.))
+                .rounded(px(4.))
+                .text_13()
+                .whitespace_nowrap()
+                .truncate()
+                .when(dropping, |crumb| crumb.bg(alpha(ACCENT, 0.25)))
+                .map(|crumb| match index == last {
+                    true => crumb.flex_shrink(),
+                    false => crumb
+                        .flex_none()
+                        .text_color(c(TEXT_SECONDARY))
+                        .cursor_pointer()
+                        .hover(|style| style.text_color(c(WHITE)).underline())
+                        .on_click(cx.listener(move |this, _, _, cx| this.navigate_in(target, open.clone(), cx))),
+                })
+                .on_mouse_down(gpui::MouseButton::Middle, cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.open_in_new_tab(target, tab.clone(), cx);
+                }))
+                .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_place_menu(crate::workspace::place_menu::Place::Folder { pane: target, path: menu.clone() }, event.position, cx);
+                }))
+                .tooltip(Tooltip::text(full_path(index)))
+                .child(crumb.label.clone());
+            row = row.child(drop_zone(element, zone, cx.entity().downgrade()));
+        }
+        // The row's width, for the next frame's choice of crumbs.
+        let widths_store = self.path_bar_widths.clone();
+        row.child(
+            canvas(
+                move |bounds, _, _| bounds.size.width,
+                move |_, width, window, _| {
+                    let width = f32::from(width);
+                    let previous = widths_store.borrow_mut().insert(target.0, width);
+                    if previous.is_none_or(|previous| (previous - width).abs() > 0.5) {
+                        window.request_animation_frame();
+                    }
+                },
+            )
+            .absolute()
+            .size_full(),
+        )
     }
 
     /// `SearchBar.svelte` (compact): the pane's text field with a search icon, or a
@@ -364,7 +459,7 @@ impl Workspace {
                             })),
                     ),
             )
-            .child(self.render_path_bar(target, cx))
+            .child(self.render_path_bar(target, window, cx))
             .children((!pane.is_at_root()).then(|| self.render_search(target, toolbar_width, window, cx)))
             .child(
                 div()

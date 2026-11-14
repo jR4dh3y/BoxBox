@@ -31,7 +31,7 @@ pub(crate) mod names;
 pub(crate) mod keyboard;
 pub(crate) mod history;
 pub(crate) mod trash;
-pub(crate) mod sidebar;
+pub(crate) mod place_menu;
 pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;
@@ -250,7 +250,9 @@ pub struct Workspace {
     next_job_id: u64,
     pub(crate) context_menu: Option<ContextMenuState>,
     pub(crate) history_menu: Option<history::HistoryMenu>,
-    pub(crate) sidebar_menu: Option<sidebar::SidebarMenu>,
+    pub(crate) place_menu: Option<place_menu::PlaceMenu>,
+    /// Each pane's breadcrumb row width in the last frame, to fit its crumbs.
+    pub(crate) path_bar_widths: std::rc::Rc<std::cell::RefCell<HashMap<usize, f32>>>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
     /// The select whose option list is open.
@@ -378,7 +380,8 @@ impl Workspace {
             next_job_id: 0,
             context_menu: None,
             history_menu: None,
-            sidebar_menu: None,
+            place_menu: None,
+            path_bar_widths: Default::default(),
             add_menu: None,
             open_select: None,
             accent_field: accent_field.clone(),
@@ -548,6 +551,7 @@ impl Workspace {
                 if let Some(pane) = this.pane_mut_by_id(target.0) {
                     if pane.generation == generation {
                         pane.writable = result.2;
+                        pane.real_path = result.1.clone();
                         let stale = pane.finish_load(result.0, view);
                         if let Some(path) = result.1 { this.directory_watches.watch(target.0, path); }
                         if stale { this.resort(target, cx); }
@@ -767,6 +771,10 @@ impl Workspace {
     /// Opens a new tab at a virtual path, on the active provider.
     pub(crate) fn open_tab(&mut self, path: String, cx: &mut Context<Self>) {
         let api = self.active_api();
+        self.open_tab_with(api, path, cx);
+    }
+
+    pub(crate) fn open_tab_with(&mut self, api: Arc<Api>, path: String, cx: &mut Context<Self>) {
         let id = self.next_pane_id;
         self.next_pane_id += 1;
         self.tabs.push(Pane::with_api(
@@ -1181,7 +1189,7 @@ impl Render for Workspace {
             .when(self.preview.is_some(), |root| root.child(self.render_preview(cx)))
             .when(self.context_menu.is_some(), |root| root.child(self.render_context_menu(cx)))
             .when(self.history_menu.is_some(), |root| root.child(self.render_history_menu(cx)))
-            .when(self.sidebar_menu.is_some(), |root| root.child(self.render_sidebar_menu(cx)))
+            .when(self.place_menu.is_some(), |root| root.child(self.render_place_menu(cx)))
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
             .child(self.render_notices(cx))
             .when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)))

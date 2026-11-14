@@ -108,6 +108,8 @@ pub struct Pane {
     pub listing: Listing,
     /// Whether the open folder takes new entries, renames and deletions.
     pub writable: bool,
+    /// Where the open folder is on this computer, for a local provider.
+    pub real_path: Option<std::path::PathBuf>,
     /// Visible entries in display order (hidden files removed, then sorted): the folder, or the
     /// search results while a search is on. Shared, so sorting can run on a
     /// background thread without copying on the UI thread.
@@ -173,6 +175,7 @@ impl Pane {
             path,
             api,
             writable: true,
+            real_path: None,
             roots: Load::Loading,
             drives: Load::Loading,
             back: Vec::new(),

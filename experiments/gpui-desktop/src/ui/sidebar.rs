@@ -7,8 +7,7 @@ use crate::api::RootKind;
 use crate::components::{self, SidebarSection};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
-use crate::components::{ContextMenu, MenuItem};
-use crate::workspace::sidebar::{SidebarEntry, SidebarMenu};
+use crate::workspace::place_menu::Place;
 use crate::workspace::Workspace;
 
 struct NavItem {
@@ -139,8 +138,7 @@ impl Workspace {
                     drop_zone(div(), DropTarget::Trash, cx.entity().downgrade())
                         .debug_selector(|| "sidebar-trash".into())
                         .on_mouse_down(gpui::MouseButton::Right, cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
-                            this.sidebar_menu = Some(SidebarMenu { entry: SidebarEntry::Trash, position: event.position });
-                            cx.notify();
+                            this.open_place_menu(Place::Trash, event.position, cx);
                         }))
                         .child(row),
                 )
@@ -149,47 +147,6 @@ impl Workspace {
                 // px-5 py-2 text-xs text-text-muted
                 section.child(div().px(px(20.)).py(px(8.)).text_xs_tw().text_color(c(TEXT_MUTED)).child("No favorites yet"))
             }))
-    }
-}
-
-impl Workspace {
-    /// The right-click menu of a sidebar entry.
-    pub(crate) fn render_sidebar_menu(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(menu) = &self.sidebar_menu else { return div().into_any_element() };
-        let item = |id: &'static str, label: &'static str, icon: &'static str, run: fn(&mut Workspace, &mut Context<Workspace>), cx: &mut Context<Self>| {
-            MenuItem::action(id, label).icon(icon).on_select(cx.listener(move |this, _, _, cx| {
-                this.sidebar_menu = None;
-                run(this, cx);
-                cx.notify();
-            }))
-        };
-        let items = match &menu.entry {
-            SidebarEntry::Trash => vec![
-                item("sidebar-open", "Open", "folder-open", |this, cx| this.open_trash(cx), cx),
-                MenuItem::Separator,
-                item("sidebar-empty-trash", "Empty Trash", "trash-2", |this, cx| this.empty_trash(cx), cx).disabled(!self.trash_full),
-            ],
-        };
-        let close = |this: &mut Self, cx: &mut Context<Self>| {
-            this.sidebar_menu = None;
-            cx.notify();
-        };
-        div()
-            .absolute()
-            .inset_0()
-            .id("sidebar-menu-dismiss")
-            .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _, _, cx| close(this, cx)))
-            .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, _, _, cx| close(this, cx)))
-            .child(
-                gpui::anchored().position(menu.position).snap_to_window().child(
-                    div()
-                        .id("sidebar-menu")
-                        .debug_selector(|| "sidebar-menu".into())
-                        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .child(ContextMenu::new(items)),
-                ),
-            )
-            .into_any_element()
     }
 }
 
