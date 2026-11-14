@@ -745,3 +745,22 @@ fn a_transparent_background_replaces_the_wallpaper(cx: &mut TestAppContext) {
     settle(cx);
     view.read_with(cx, |workspace, _| assert_eq!(workspace.window_transparent, Some(false)));
 }
+
+#[gpui::test]
+fn bookmarks_of_places_are_not_listed_twice(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["Desktop/", "work/"]);
+    let bookmarks = fixture.root.with_extension("config").join("gtk-3.0/bookmarks");
+    fs::create_dir_all(bookmarks.parent().unwrap()).unwrap();
+    let uri = |name: &str| crate::os_clipboard::file_uri(&fixture.root.join(name));
+    fs::write(&bookmarks, format!("{}\n{}\n", uri("Desktop"), uri("work"))).unwrap();
+    view.update(cx, |workspace, cx| workspace.load_bookmarks(cx));
+    cx.run_until_parked();
+    settle(cx);
+    // Desktop is a place, so its bookmark is not repeated under Favorites; work is listed.
+    assert!(cx.debug_bounds("favorite-row-1").is_some());
+    // This window never drew the Desktop bookmark's row, so its bounds were never recorded.
+    assert!(cx.debug_bounds("favorite-row-0").is_none());
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.favorites.entries.len(), 2, "both stay bookmarked"));
+    // The file keeps both.
+    assert_eq!(fs::read_to_string(&bookmarks).unwrap().lines().count(), 2);
+}

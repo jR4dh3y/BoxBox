@@ -116,6 +116,9 @@ impl Workspace {
             .entries
             .iter()
             .enumerate()
+            // A bookmark of a drive or place, such as GTK's default Documents or Music, is
+            // already in the sidebar; it stays in the file for other apps.
+            .filter(|(_, favorite)| favorite.provider != provider || !roots.iter().any(|root| root.name == favorite.path))
             .map(|(index, favorite)| {
                 let row = components::NavItem::new(SharedString::from(format!("favorite-{index}")), favorite.name.clone(), "star")
                     .trailing("x", format!("Unpin {}", favorite.name), cx.listener(move |this, _, _, cx| this.remove_favorite(index, cx)))
