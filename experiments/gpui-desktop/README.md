@@ -62,6 +62,25 @@ On Linux, GPUI needs Vulkan and the development packages for xkbcommon, wayland,
 
 `sudo apt install libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan1 libx11-xcb-dev libxcb1-dev libfontconfig-dev libfreetype-dev`
 
+## Profiling
+
+Set `BOXBOX_PROFILE` to a file to record where time goes:
+
+```sh
+BOXBOX_PROFILE=/tmp/boxbox.json cargo run --release
+cargo run --release -- --profile-summary /tmp/boxbox.json
+```
+
+The summary ranks three things:
+
+- **Journeys**: the time from an action until the frame that shows its result is painted. Recorded journeys are startup, opening a folder, loading drives, sorting, and search (first results and the complete result).
+- **Spans**: work on any thread. Every `Api` call (`api.list`, `api.copy`, `api.thumbnail`, …), UDisks2 and GVfs calls, sorting, startup steps, and the root `render`. A span on the UI thread over 4 ms is listed separately because it blocks input.
+- **Frames**: time from render to the end of paint, and how many frames took longer than 16.7 ms.
+
+For a timeline, open the file in [ui.perfetto.dev](https://ui.perfetto.dev). Each thread is a track, and journeys are shown as async slices. The file is written as events arrive, so a trace from a killed app still opens. Without `BOXBOX_PROFILE`, each probe costs one atomic load.
+
+To time something new, add `let _span = crate::profile::span("name");`. For a user action, call `crate::profile::journey(...)` and pass it to `crate::profile::ready` where the result is applied.
+
 ## Benchmark snapshot
 
 Measured locally on Linux on 2026-11-05, using the same BoxBox server workload and a warm installed desktop runtime. Startup is measured from process launch until the first browse API/page-ready event; memory is settled RSS after approximately three seconds.

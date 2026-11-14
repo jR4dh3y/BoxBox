@@ -527,6 +527,7 @@ impl Workspace {
             return;
         };
         let api = pane.api.clone();
+        let journey = crate::profile::journey("load drives", String::new);
         cx.spawn(async move |this, cx| {
             let (roots, drives) = cx
                 .background_executor()
@@ -542,6 +543,7 @@ impl Workspace {
                         Ok(drives) => Load::Loaded(drives),
                         Err(error) => Load::Failed(format!("{error:#}")),
                     };
+                    crate::profile::ready(journey);
                     cx.notify();
                 }
             })
@@ -561,11 +563,15 @@ impl Workspace {
         let path = pane.path.clone();
         let api = pane.api.clone();
         let view = pane.view();
+        let journey = crate::profile::journey("open folder", || path.clone());
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let items = api.list(&path).map(|items| crate::pane::arrange(items, view));
+                    let items = api.list(&path).map(|items| {
+                        let _span = crate::profile::span("arrange").with(|| format!("{} entries", items.len()));
+                        crate::pane::arrange(items, view)
+                    });
                     let real = api.local_path(&path).ok().flatten();
                     // A local listing with no folder behind it, such as Recent, takes nothing.
                     let writable = match &real {
@@ -580,9 +586,11 @@ impl Workspace {
                     if pane.generation == generation {
                         pane.writable = result.2;
                         pane.real_path = result.1.clone();
+                        let _span = crate::profile::span("apply listing");
                         let stale = pane.finish_load(result.0, view);
                         if let Some(path) = result.1 { this.directory_watches.watch(target.0, path); }
                         if stale { this.resort(target, cx); }
+                        crate::profile::ready(journey);
                         cx.notify();
                     }
                 }
@@ -650,16 +658,19 @@ impl Workspace {
         let Some(job) = self.pane_by_id(target.0).map(Pane::sort_job) else {
             return;
         };
+        let journey = crate::profile::journey("sort", String::new);
         cx.spawn(async move |this, cx| {
             let (job, (items, folder_items)) = cx
                 .background_executor()
                 .spawn(async move {
+                    let _span = crate::profile::span("sort");
                     let sorted = job.run();
                     (job, sorted)
                 })
                 .await;
             this.update(cx, |this, cx| {
                 if this.pane_mut_by_id(target.0).is_some_and(|pane| pane.apply_sort(&job, items, folder_items)) {
+                    crate::profile::ready(journey);
                     cx.notify();
                 }
             })
@@ -899,6 +910,8 @@ impl Workspace {
         let view = pane.search_view();
         // Matches found so far, arranged on the search's thread and shown as they come.
         let (partial, shown) = async_channel::unbounded::<Vec<crate::api::FileInfo>>();
+        let mut first_results = crate::profile::journey("search: first results", || query.clone());
+        let journey = crate::profile::journey("search: complete", || query.clone());
         cx.spawn(async move |this, cx| {
             while let Ok(items) = shown.recv().await {
                 let current = this.update(cx, |this, cx| {
@@ -908,6 +921,7 @@ impl Workspace {
                     if pane.show_partial_search(items, view) {
                         this.resort(PaneTarget(pane_id), cx);
                     }
+                    crate::profile::ready(first_results.take());
                     cx.notify();
                     true
                 });
@@ -926,10 +940,7 @@ impl Workspace {
                     let mut progress = |items| {
                         let _ = partial.send_blocking(crate::pane::arrange(items, view));
                     };
-                    let started = std::time::Instant::now();
-                    let found = api.search(&request, &mut progress).map(|items| crate::pane::arrange(items, view));
-                    log::debug!("search of {path} took {:?}", started.elapsed());
-                    found
+                    api.search(&request, &mut progress).map(|items| crate::pane::arrange(items, view))
                 })
                 .await;
             this.update(cx, |this, cx| {
@@ -938,6 +949,7 @@ impl Workspace {
                         if pane.finish_search(result, view) {
                             this.resort(PaneTarget(pane_id), cx);
                         }
+                        crate::profile::ready(journey);
                         cx.notify();
                     }
                 }
@@ -1122,6 +1134,8 @@ fn preference_view(preferences: &Preferences) -> ViewMode {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::profile::frame_started();
+        let _span = crate::profile::span("render");
         self.sync_search_fields(window, cx);
         if let Some(field) = self.pending_field_focus.take() {
             self.settings_field(field).read(cx).focus(window);
@@ -1237,6 +1251,7 @@ impl Render for Workspace {
             .when(self.operation_dialog.is_some(), |root| {
                 root.child(self.render_operation_dialog(window, cx))
             })
+            .children(crate::profile::frame_marker())
     }
 }
 

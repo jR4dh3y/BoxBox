@@ -79,6 +79,7 @@ fn object(properties: &Properties, name: &str) -> Option<OwnedObjectPath> {
 
 /// The user-visible filesystems and locked volumes, sorted by name.
 pub fn list(connection: &Connection) -> Result<Vec<Volume>> {
+    let _span = crate::profile::span("udisks.list");
     let manager = ObjectManagerProxy::builder(connection).destination(SERVICE)?.path(ROOT)?.build()?;
     let objects = manager.get_managed_objects().context("UDisks did not list its devices")?;
     let interfaces = |path: &OwnedObjectPath, name: &str| -> Option<Properties> {
@@ -179,6 +180,7 @@ fn no_options() -> HashMap<&'static str, Value<'static>> {
 
 /// Mounts the volume (UDisks asks polkit for permission) and returns where.
 pub fn mount(id: &str) -> Result<PathBuf> {
+    let _span = crate::profile::span("udisks.mount");
     mount_on(&Connection::system()?, id)
 }
 
@@ -198,6 +200,7 @@ fn mount_on(connection: &Connection, id: &str) -> Result<PathBuf> {
 
 /// Unlocks an encrypted volume and mounts the filesystem inside it.
 pub fn unlock(id: &str, passphrase: &str) -> Result<PathBuf> {
+    let _span = crate::profile::span("udisks.unlock");
     let connection = Connection::system()?;
     let encrypted = Proxy::new(&connection, SERVICE, id.to_string(), ENCRYPTED)?;
     let cleartext: OwnedObjectPath = encrypted.call("Unlock", &(passphrase, no_options())).map_err(|error| {
@@ -223,6 +226,7 @@ pub fn unlock(id: &str, passphrase: &str) -> Result<PathBuf> {
 
 /// Unmounts, and locks the encrypted volume underneath when there is one.
 pub fn unmount(id: &str, crypto: Option<&str>) -> Result<()> {
+    let _span = crate::profile::span("udisks.unmount");
     let connection = Connection::system()?;
     unmount_on(&connection, id, crypto)
 }
@@ -241,6 +245,7 @@ fn unmount_on(connection: &Connection, id: &str, crypto: Option<&str>) -> Result
 
 /// Unmounts every filesystem on the volume's drive, then ejects or powers it off.
 pub fn eject(id: &str, crypto: Option<&str>) -> Result<()> {
+    let _span = crate::profile::span("udisks.eject");
     let connection = Connection::system()?;
     if crypto.is_some() {
         unmount_on(&connection, id, crypto)?;

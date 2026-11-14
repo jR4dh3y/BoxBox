@@ -114,6 +114,7 @@ fn unmounted(connection: &Connection, monitor: &str) -> Result<Vec<Volume>> {
 
 /// Mounted locations, then plugged-in devices that are not mounted, each sorted by name.
 pub fn list(connection: &Connection) -> Result<Vec<Volume>> {
+    let _span = crate::profile::span("gvfs.list");
     let mounts: Vec<MountInfo> = tracker(connection)?.call("ListMounts2", &(true,)).context("GVfs did not list its mounts")?;
     let mut volumes: Vec<Volume> = mounts.into_iter().filter_map(volume).collect();
     for monitor in monitors() {
@@ -164,6 +165,7 @@ fn lookup(tracker: &Proxy, location: &spec::Location) -> Option<PathBuf> {
 /// Mounts a location such as `smb://nas/media` unless it already is, and returns
 /// its folder. The backend asks for credentials through `prompts`.
 pub fn mount(uri: &str, prompts: Prompts) -> Result<PathBuf> {
+    let _span = crate::profile::span("gvfs.mount");
     let location = spec::parse(uri)?;
     let connection = zbus::blocking::connection::Builder::session()?
         .serve_at(OPERATION, prompt::MountOperation { prompts })?
@@ -189,6 +191,7 @@ pub fn mount(uri: &str, prompts: Prompts) -> Result<PathBuf> {
 }
 
 pub fn unmount(daemon: &str, object: &str) -> Result<()> {
+    let _span = crate::profile::span("gvfs.unmount");
     let connection = Connection::session()?;
     // No mount operation: an unmount has nothing to ask.
     Proxy::new(&connection, daemon.to_string(), object.to_string(), MOUNT)?

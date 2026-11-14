@@ -189,6 +189,7 @@ impl Api {
     /// Resolve a virtual local path. Remote paths are owned by the server.
     /// One local entry's details. Remote providers are reached by listing instead.
     pub fn stat(&self, path: &str) -> Result<FileInfo> {
+        let _span = crate::profile::span("api.stat").with(|| path.to_string());
         match &self.provider {
             Provider::Local(local) => local.stat(path),
             Provider::Remote(_) => anyhow::bail!("{path} is not on this computer"),
@@ -211,6 +212,7 @@ impl Api {
     }
 
     pub fn roots(&self) -> Result<Vec<MountPoint>> {
+        let _span = crate::profile::span("api.roots");
         match &self.provider {
             Provider::Local(local) => local.roots(),
             Provider::Remote(remote) => remote.roots(),
@@ -218,6 +220,7 @@ impl Api {
     }
 
     pub fn drives(&self) -> Result<Vec<DriveStats>> {
+        let _span = crate::profile::span("api.drives");
         match &self.provider {
             Provider::Local(local) => local.drives(),
             Provider::Remote(remote) => remote.drives(),
@@ -225,6 +228,7 @@ impl Api {
     }
 
     pub fn trash(&self) -> Result<Vec<TrashItem>> {
+        let _span = crate::profile::span("api.trash");
         match &self.provider {
             Provider::Local(local) => local.trash(),
             Provider::Remote(_) => anyhow::bail!("Trash is available only in local mode"),
@@ -232,6 +236,7 @@ impl Api {
     }
 
     pub fn move_to_trash(&self, path: &str) -> Result<TrashItem> {
+        let _span = crate::profile::span("api.move_to_trash").with(|| path.to_string());
         match &self.provider {
             Provider::Local(local) => local.move_to_trash(path),
             Provider::Remote(_) => anyhow::bail!("Trash is available only in local mode"),
@@ -239,6 +244,7 @@ impl Api {
     }
 
     pub fn compress(&self, paths: &[String], destination: &str) -> Result<()> {
+        let _span = crate::profile::span("api.compress").with(|| destination.to_string());
         match &self.provider {
             Provider::Local(local) => local.compress(paths, destination),
             Provider::Remote(_) => anyhow::bail!("Compress is available only for local files"),
@@ -246,6 +252,7 @@ impl Api {
     }
 
     pub fn create_link(&self, target: &str, link: &str) -> Result<()> {
+        let _span = crate::profile::span("api.create_link").with(|| link.to_string());
         match &self.provider {
             Provider::Local(local) => local.create_link(target, link),
             Provider::Remote(_) => anyhow::bail!("Links are available only for local files"),
@@ -253,6 +260,7 @@ impl Api {
     }
 
     pub fn trash_has_items(&self) -> bool {
+        let _span = crate::profile::span("api.trash_has_items");
         match &self.provider {
             Provider::Local(local) => local.trash_has_items(),
             Provider::Remote(_) => false,
@@ -261,6 +269,7 @@ impl Api {
 
     /// Deletes everything in Trash; returns how many items there were.
     pub fn empty_trash(&self) -> Result<usize> {
+        let _span = crate::profile::span("api.empty_trash");
         match &self.provider {
             Provider::Local(local) => local.empty_trash(),
             Provider::Remote(_) => anyhow::bail!("Trash is available only in local mode"),
@@ -275,6 +284,7 @@ impl Api {
     }
 
     pub fn restore_trash(&self, id: &str) -> Result<()> {
+        let _span = crate::profile::span("api.restore_trash").with(|| id.to_string());
         match &self.provider {
             Provider::Local(local) => local.restore_trash(id),
             Provider::Remote(_) => anyhow::bail!("Trash is available only in local mode"),
@@ -282,6 +292,7 @@ impl Api {
     }
 
     pub fn delete_trash(&self, id: &str) -> Result<()> {
+        let _span = crate::profile::span("api.delete_trash").with(|| id.to_string());
         match &self.provider {
             Provider::Local(local) => local.delete_trash(id),
             Provider::Remote(_) => anyhow::bail!("Trash is available only in local mode"),
@@ -289,6 +300,7 @@ impl Api {
     }
 
     pub fn list(&self, path: &str) -> Result<Vec<FileInfo>> {
+        let _span = crate::profile::span("api.list").with(|| path.to_string());
         match &self.provider {
             Provider::Local(local) => local.list(path),
             Provider::Remote(remote) => remote.list(path),
@@ -298,6 +310,7 @@ impl Api {
     /// The best name matches below a folder, best first. A local search reports
     /// its matches so far through `progress`; a server answers once.
     pub fn search(&self, request: &crate::search::Request, progress: &mut dyn FnMut(Vec<FileInfo>)) -> Result<Vec<FileInfo>> {
+        let _span = crate::profile::span("api.search").with(|| request.path.to_string());
         match &self.provider {
             Provider::Local(local) => local.search(request, progress),
             Provider::Remote(remote) => remote.search(request),
@@ -305,6 +318,7 @@ impl Api {
     }
 
     pub fn create_directory(&self, parent: &str, name: &str) -> Result<FileInfo> {
+        let _span = crate::profile::span("api.create_directory").with(|| parent.to_string());
         match &self.provider {
             Provider::Local(local) => local.create_directory(parent, name),
             Provider::Remote(remote) => remote.create_directory(parent, name),
@@ -312,6 +326,7 @@ impl Api {
     }
 
     pub fn create_file(&self, parent: &str, name: &str, content: &str) -> Result<FileInfo> {
+        let _span = crate::profile::span("api.create_file").with(|| parent.to_string());
         match &self.provider {
             Provider::Local(local) => local.create_file(parent, name, content),
             Provider::Remote(remote) => remote.create_file(parent, name, content),
@@ -319,6 +334,7 @@ impl Api {
     }
 
     pub fn rename(&self, old_path: &str, new_path: &str) -> Result<FileInfo> {
+        let _span = crate::profile::span("api.rename").with(|| old_path.to_string());
         match &self.provider {
             Provider::Local(local) => local.rename(old_path, new_path),
             Provider::Remote(remote) => remote.rename(old_path, new_path),
@@ -326,6 +342,7 @@ impl Api {
     }
 
     pub fn delete(&self, path: &str, confirm: bool) -> Result<()> {
+        let _span = crate::profile::span("api.delete").with(|| path.to_string());
         match &self.provider {
             Provider::Local(local) => local.delete(path, confirm),
             Provider::Remote(remote) => remote.delete(path, confirm),
@@ -333,6 +350,7 @@ impl Api {
     }
 
     pub fn download(&self, item: &FileInfo, dir: &Path) -> Result<PathBuf> {
+        let _span = crate::profile::span("api.download").with(|| item.path.to_string());
         match &self.provider {
             Provider::Local(local) => local.download(item, dir),
             Provider::Remote(remote) => remote.download(item, dir),
@@ -340,6 +358,7 @@ impl Api {
     }
 
     pub fn read_text(&self, path: &str, max_bytes: usize) -> Result<String> {
+        let _span = crate::profile::span("api.read_text").with(|| path.to_string());
         match &self.provider {
             Provider::Local(local) => local.read_text(path, max_bytes),
             Provider::Remote(remote) => remote.read_text(path, max_bytes),
@@ -348,6 +367,7 @@ impl Api {
 
     /// Copies `source` to the exact virtual destination path, including its new name.
     pub fn copy(&self, source: &str, destination: &str) -> Result<()> {
+        let _span = crate::profile::span("api.copy").with(|| source.to_string());
         match &self.provider {
             Provider::Local(local) => local.copy(source, destination),
             Provider::Remote(remote) => remote.copy(source, destination),
@@ -355,6 +375,7 @@ impl Api {
     }
 
     pub fn import_file(&self, source: &Path, parent: &str) -> Result<FileInfo> {
+        let _span = crate::profile::span("api.import_file").with(|| source.display().to_string());
         match &self.provider {
             Provider::Local(local) => local.import_file(source, parent),
             Provider::Remote(remote) => remote.import_file(source, parent),
@@ -362,6 +383,7 @@ impl Api {
     }
 
     pub fn thumbnail(&self, path: &str, width: u32, height: u32) -> Result<Vec<u8>> {
+        let _span = crate::profile::span("api.thumbnail").with(|| path.to_string());
         match &self.provider {
             Provider::Local(local) => {
                 let path = local.local_path(path)?;
@@ -373,6 +395,7 @@ impl Api {
     }
 
     pub fn list_shares(&self) -> Result<Vec<ShareSummary>> {
+        let _span = crate::profile::span("api.list_shares");
         match &self.provider {
             Provider::Local(_) => {
                 anyhow::bail!("Public sharing requires a BoxBox server")
@@ -387,6 +410,7 @@ impl Api {
         permissions: SharePermissions,
         expires_in_seconds: Option<i64>,
     ) -> Result<ShareSummary> {
+        let _span = crate::profile::span("api.create_share").with(|| path.to_string());
         match &self.provider {
             Provider::Local(_) => {
                 anyhow::bail!("Public sharing requires a BoxBox server")
@@ -403,6 +427,7 @@ impl Api {
         permissions: SharePermissions,
         max_upload_bytes: Option<i64>,
     ) -> Result<ShareSummary> {
+        let _span = crate::profile::span("api.update_share").with(|| id.to_string());
         match &self.provider {
             Provider::Local(_) => {
                 anyhow::bail!("Public sharing requires a BoxBox server")
@@ -412,6 +437,7 @@ impl Api {
     }
 
     pub fn revoke_share(&self, id: &str) -> Result<()> {
+        let _span = crate::profile::span("api.revoke_share").with(|| id.to_string());
         match &self.provider {
             Provider::Local(_) => {
                 anyhow::bail!("Public sharing requires a BoxBox server")

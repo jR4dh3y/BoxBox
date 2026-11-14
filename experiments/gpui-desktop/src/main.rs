@@ -19,6 +19,7 @@ mod progress;
 #[cfg(target_os = "linux")]
 mod render_gpu;
 mod persist;
+mod profile;
 mod search;
 mod sort;
 mod theme;
@@ -38,6 +39,7 @@ use crate::workspace::{Fonts, Workspace};
 
 /// The browser resolves the CSS `sans-serif`/`monospace` stacks through fontconfig; do the same.
 fn fontconfig_family(pattern: &str, fallback: &str) -> SharedString {
+    let _span = profile::span("fontconfig").with(|| pattern.to_string());
     Command::new("fc-match")
         .args(["-f", "%{family[0]}", pattern])
         .output()
@@ -49,9 +51,24 @@ fn fontconfig_family(pattern: &str, fallback: &str) -> SharedString {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--profile-summary") {
+        let Some(trace) = std::env::args().nth(2) else {
+            eprintln!("usage: boxbox-gpui --profile-summary <trace.json>");
+            std::process::exit(2);
+        };
+        if let Err(error) = profile::summary::run(&trace) {
+            eprintln!("{error:#}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    profile::init();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     #[cfg(target_os = "linux")]
-    render_gpu::follow_compositor();
+    {
+        let _span = profile::span("follow compositor GPU");
+        render_gpu::follow_compositor();
+    }
     let token = std::env::var("BOXBOX_TOKEN")
         .ok()
         .filter(|token| !token.is_empty());
@@ -81,7 +98,11 @@ fn main() {
         return;
     }
     // A second launch opens its location in the running window instead.
-    let launches = match instance::claim(&initial_path) {
+    let claimed = {
+        let _span = profile::span("single-instance claim");
+        instance::claim(&initial_path)
+    };
+    let launches = match claimed {
         Ok(instance::Instance::Forwarded) => return,
         Ok(instance::Instance::Primary(launches, sender)) => {
             // "Show in folder" from other apps, when no other file manager answers it.
@@ -103,9 +124,12 @@ fn main() {
         }
     };
 
+    let platform_init = profile::span("GPUI platform init");
     Application::new()
         .with_assets(assets::Assets)
         .run(move |cx: &mut App| {
+            drop(platform_init);
+            let _span = profile::span("open window");
             workspace::bind_keys(cx);
             cx.set_global(components::UiFont(fonts.sans.clone()));
             components::text_field_bind_keys(cx);
@@ -126,6 +150,7 @@ fn main() {
                 |window, cx| {
                     drag_out::init(window, cx);
                     cx.new(|cx| {
+                        let _span = profile::span("Workspace::new");
                         let mut workspace = Workspace::new(api, fonts, initial_path, window, cx);
                         if let Some(launches) = launches {
                             workspace.receive_launches(launches, window, cx);
