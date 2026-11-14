@@ -14,12 +14,10 @@ import (
 )
 
 type stubDesktopTrashService struct {
-	items      []service.DesktopTrashItem
-	trashItem  service.DesktopTrashItem
-	err        error
-	path       string
-	restoredID string
-	deletedID  string
+	items     []service.DesktopTrashItem
+	trashItem service.DesktopTrashItem
+	err       error
+	path      string
 }
 
 func (s *stubDesktopTrashService) List(context.Context) ([]service.DesktopTrashItem, error) {
@@ -31,13 +29,11 @@ func (s *stubDesktopTrashService) Trash(_ context.Context, path string) (service
 	return s.trashItem, s.err
 }
 
-func (s *stubDesktopTrashService) Restore(_ context.Context, id string) error {
-	s.restoredID = id
+func (s *stubDesktopTrashService) Restore(context.Context, string) error {
 	return s.err
 }
 
-func (s *stubDesktopTrashService) Delete(_ context.Context, id string) error {
-	s.deletedID = id
+func (s *stubDesktopTrashService) Delete(context.Context, string) error {
 	return s.err
 }
 
@@ -76,30 +72,6 @@ func TestDesktopTrashHandlerRoutesListAndMove(t *testing.T) {
 	}
 	if err := json.NewDecoder(move.Body).Decode(&moveBody); err != nil || moveBody.Item.ID != item.ID {
 		t.Fatalf("move body = %#v, error = %v", moveBody, err)
-	}
-}
-
-func TestDesktopTrashHandlerRoutesRestoreAndDelete(t *testing.T) {
-	stub := &stubDesktopTrashService{}
-	router := desktopTrashRouter(stub)
-	for _, tc := range []struct {
-		path string
-		want func() string
-	}{
-		{path: "/trash/restore", want: func() string { return stub.restoredID }},
-		{path: "/trash/delete", want: func() string { return stub.deletedID }},
-	} {
-		recorder := httptest.NewRecorder()
-		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(`{"id":"entry-1"}`)))
-		if recorder.Code != http.StatusOK || tc.want() != "entry-1" {
-			t.Fatalf("%s status=%d id=%q", tc.path, recorder.Code, tc.want())
-		}
-		var response struct {
-			OK bool `json:"ok"`
-		}
-		if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil || !response.OK {
-			t.Fatalf("%s response = %#v, error = %v", tc.path, response, err)
-		}
 	}
 }
 

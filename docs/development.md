@@ -226,3 +226,16 @@ Use the existing Handler -> Service -> Model/Filesystem shape:
 - Formatting belongs in `frontend/src/lib/utils/format.ts`.
 - File type logic belongs in `frontend/src/lib/utils/fileTypes.ts`.
 - Central config belongs in `frontend/src/lib/config.ts`.
+
+## CI change selection
+
+`.github/scripts/ci_scope.py` selects validation from the PR merge-base diff. Pushes use the before/after diff. Unknown inputs or an unavailable diff select every check. Renames include both the old and new paths.
+
+- Backend test-only edits run Go tests. Benchmark and allocation-budget edits also run the backend performance comparison.
+- Frontend test-only edits run typechecks and unit tests. They skip production builds, Chromium setup and browser performance comparisons.
+- Desktop test-only edits run desktop checks and tests, including the native integration fixtures, without building release packages.
+- Runtime backend/frontend edits still validate their consumers: the embedded app, desktop packages and Docker. Frontend runtime edits also keep the browser and bundle-budget checks.
+- The website reads Markdown directly under `docs/`. Evidence and release notes in subdirectories do not trigger a website build.
+- Workflow edits select their consumers. Changes to the CI workflow or selector exercise every check. Release-helper unit tests always run in the selection job.
+
+The required `Backend Go tests` and `Frontend check and build` job names stay stable. Selection happens inside the workflow so a skipped job can still report its result. Tag/manual release workflows and publication permissions are separate from this PR validation selector. GitHub's default CodeQL setup is also configured separately from these checked-in workflows.

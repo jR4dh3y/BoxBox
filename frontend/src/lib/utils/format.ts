@@ -33,48 +33,9 @@ export function formatFileSize(bytes: number, decimals: number = 2): string {
 }
 
 /**
- * Format a file size with consistent decimal places (no trimming)
- * @param bytes - The size in bytes
- * @param decimals - Number of decimal places (default: 2)
- * @returns Formatted string like "1.50 MB"
- */
-export function formatFileSizeFixed(bytes: number, decimals: number = 2): string {
-	if (bytes === 0) return '0 B';
-	if (bytes < 0) return 'Invalid size';
-	if (!Number.isFinite(bytes)) return 'Invalid size';
-
-	const k = 1024;
-	const dm = Math.max(0, decimals);
-	const i = Math.floor(Math.log(bytes) / Math.log(k));
-	const unitIndex = Math.min(i, SIZE_UNITS.length - 1);
-
-	const value = bytes / Math.pow(k, unitIndex);
-
-	return `${value.toFixed(dm)} ${SIZE_UNITS[unitIndex]}`;
-}
-
-/**
- * Parse a human-readable file size string back to bytes
- * @param sizeStr - String like "1.5 MB" or "1.5MB"
- * @returns Size in bytes, or NaN if invalid
- */
-export function parseFileSize(sizeStr: string): number {
-	const match = sizeStr.trim().match(/^([\d.]+)\s*([A-Za-z]+)$/);
-	if (!match) return NaN;
-
-	const value = parseFloat(match[1]);
-	const unit = match[2].toUpperCase();
-
-	const unitIndex = SIZE_UNITS.indexOf(unit as (typeof SIZE_UNITS)[number]);
-	if (unitIndex === -1) return NaN;
-
-	return value * Math.pow(1024, unitIndex);
-}
-
-/**
  * Date formatting options
  */
-export interface DateFormatOptions {
+interface DateFormatOptions {
 	includeTime?: boolean;
 	includeSeconds?: boolean;
 	relative?: boolean;
@@ -191,42 +152,6 @@ export function formatFileDate(date: Date | string | number): string {
 }
 
 /**
- * Format a duration in milliseconds to a human-readable string
- * @param ms - Duration in milliseconds
- * @returns Formatted duration string like "2h 30m" or "45s"
- */
-export function formatDuration(ms: number): string {
-	if (ms < 0) return 'Invalid duration';
-	if (ms === 0) return '0s';
-
-	const seconds = Math.floor(ms / 1000);
-	const minutes = Math.floor(seconds / 60);
-	const hours = Math.floor(minutes / 60);
-	const days = Math.floor(hours / 24);
-
-	const parts: string[] = [];
-
-	if (days > 0) parts.push(`${days}d`);
-	if (hours % 24 > 0) parts.push(`${hours % 24}h`);
-	if (minutes % 60 > 0) parts.push(`${minutes % 60}m`);
-	if (seconds % 60 > 0 && days === 0) parts.push(`${seconds % 60}s`);
-
-	return parts.length > 0 ? parts.join(' ') : '0s';
-}
-
-/**
- * Format a transfer speed in bytes per second
- * @param bytesPerSecond - Speed in bytes per second
- * @returns Formatted speed string like "1.5 MB/s"
- */
-export function formatTransferSpeed(bytesPerSecond: number): string {
-	if (bytesPerSecond < 0) return 'Invalid speed';
-	if (bytesPerSecond === 0) return '0 B/s';
-
-	return `${formatFileSize(bytesPerSecond)}/s`;
-}
-
-/**
  * Format a percentage value
  * @param value - Value between 0 and 1, or 0 and 100
  * @param decimals - Number of decimal places (default: 0)
@@ -247,110 +172,6 @@ export function formatPercentage(
 	return `${percentage.toFixed(decimals)}%`;
 }
 
-/**
- * Truncate a filename while preserving the extension
- * @param filename - The filename to truncate
- * @param maxLength - Maximum length (default: 30)
- * @returns Truncated filename with extension preserved
- */
-export function truncateFilename(filename: string, maxLength: number = 30): string {
-	if (filename.length <= maxLength) return filename;
-
-	const lastDot = filename.lastIndexOf('.');
-	const hasExtension = lastDot > 0 && lastDot < filename.length - 1;
-
-	if (!hasExtension) {
-		return filename.slice(0, maxLength - 3) + '...';
-	}
-
-	const extension = filename.slice(lastDot);
-	const name = filename.slice(0, lastDot);
-	const availableLength = maxLength - extension.length - 3; // 3 for "..."
-
-	if (availableLength <= 0) {
-		return filename.slice(0, maxLength - 3) + '...';
-	}
-
-	return name.slice(0, availableLength) + '...' + extension;
-}
-
 // Note: getFileTypeDescription has been moved to #lib/utils/fileTypes.ts
 // Import it from there: import { getFileTypeDescription } from '#lib/utils/fileTypes.js';
 export { getFileTypeDescription } from '#lib/utils/fileTypes.js';
-
-import { CONFIG } from '#lib/config.js';
-import type { MountPoint } from '#lib/api/files.js';
-
-/**
- * Map a system mount point (as returned by df/system drives API) to a browsable path in the app.
- * This handles the translation from container-internal paths to the app's mount point names.
- *
- * Examples:
- * - '/media/devmon' -> 'drives'
- * - '/media/devmon/usb-drive' -> 'drives/usb-drive'
- * - '/home/user' -> 'home'
- * - '/host_root' -> 'root'
- * - '/host_root/mnt/rclone' -> 'root/mnt/rclone'
- *
- * @param mountPoint - The system mount point path
- * @returns The browsable path that can be used with handleNavigate
- */
-export function mapSystemMountToBrowsePath(mountPoint: string, roots: MountPoint[] = []): string {
-	const normalizedMountPoint = normalizeMountPath(mountPoint);
-	const configuredRoot = [...roots]
-		.filter((root) => root.path)
-		.sort((a, b) => normalizeMountPath(b.path).length - normalizeMountPath(a.path).length)
-		.find((root) => isSameOrChildPath(normalizedMountPoint, normalizeMountPath(root.path)));
-
-	if (configuredRoot) {
-		const rootPath = normalizeMountPath(configuredRoot.path);
-		if (normalizedMountPoint === rootPath) {
-			return configuredRoot.name;
-		}
-
-		const subPath =
-			rootPath === '/' ? normalizedMountPoint : normalizedMountPoint.slice(rootPath.length);
-		return configuredRoot.name + subPath;
-	}
-
-	// Find matching mount point mapping
-	for (const mapping of CONFIG.paths.mountPointMappings) {
-		if (normalizedMountPoint === mapping.systemPath) {
-			// Exact match
-			return mapping.browsePath;
-		} else if (normalizedMountPoint.startsWith(mapping.systemPath + '/')) {
-			// Subpath match - replace prefix with browse path
-			const subPath = normalizedMountPoint.slice(mapping.systemPath.length);
-			return mapping.browsePath + subPath;
-		}
-	}
-
-	// Fallback for root filesystem
-	if (normalizedMountPoint === '/') {
-		return CONFIG.paths.hostRootMount;
-	}
-
-	// Unknown mount - log warning and try using it as-is
-	console.warn('Unknown system mount point:', mountPoint);
-	return normalizedMountPoint.startsWith('/')
-		? normalizedMountPoint.slice(1)
-		: normalizedMountPoint;
-}
-
-function normalizeMountPath(path: string): string {
-	let end = path.length;
-	const trailingSeparator = path[end - 1];
-
-	if (trailingSeparator === '/' || trailingSeparator === '\\') {
-		while (end > 0 && path[end - 1] === trailingSeparator) {
-			end -= 1;
-		}
-	}
-
-	const normalized = path.slice(0, end);
-	return normalized === '' ? '/' : normalized;
-}
-
-function isSameOrChildPath(path: string, parent: string): boolean {
-	return path === parent || parent === '/' || path.startsWith(parent + '/');
-}

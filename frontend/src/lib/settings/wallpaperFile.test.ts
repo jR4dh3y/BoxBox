@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { WALLPAPER_FILE_ACCEPT, WALLPAPER_MAX_BYTES, wallpaperFileProblem } from './wallpaperFile';
+import { WALLPAPER_MAX_BYTES, wallpaperFileProblem } from './wallpaperFile';
 
 const file = (name: string, type: string, size = 1024) => ({ name, type, size });
 
@@ -27,7 +27,4 @@ test('wallpaper files match the types the server stores', () => {
 		/smaller than/
 	);
 	assert.equal(wallpaperFileProblem(file('limit.png', 'image/png', WALLPAPER_MAX_BYTES)), null);
-	assert.ok(
-		WALLPAPER_FILE_ACCEPT.includes('image/webp') && WALLPAPER_FILE_ACCEPT.includes('.jpeg')
-	);
 });

@@ -5,9 +5,10 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
 	"testing"
+	"time"
 )
 
-func TestJobEventsOwnerIsolationAndOverflow(t *testing.T) {
+func TestJobEventsOwnerIsolationAndSnapshot(t *testing.T) {
 	var events JobEvents
 	alice, stopAlice := events.Watch(authcontext.WithUsername(context.Background(), "alice"))
 	defer stopAlice()
@@ -27,7 +28,18 @@ func TestJobEventsOwnerIsolationAndOverflow(t *testing.T) {
 	for i := 0; i < 129; i++ {
 		events.Publish(job)
 	}
-	for range alice {
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
+drain:
+	for {
+		select {
+		case _, ok := <-alice:
+			if !ok {
+				break drain
+			}
+		case <-timeout.C:
+			t.Fatal("overflowed subscriber channel did not close")
+		}
 	}
 	stopAlice()
 }

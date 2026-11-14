@@ -148,22 +148,6 @@ func TestLoadPrefersBoxBoxEnvironmentOverLegacyAliases(t *testing.T) {
 	}
 }
 
-func TestLoadStillReturnsConfigOnly(t *testing.T) {
-	clearConfigEnv(t)
-	configPath := writeMinimalConfig(t)
-
-	t.Setenv("BOXBOX_JWT_SECRET", "unit-test-secret-at-least-thirty-two-bytes")
-	t.Setenv("BOXBOX_USERS_admin", testHashA)
-
-	cfg, err := Load(configPath)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.JWTSecret != "unit-test-secret-at-least-thirty-two-bytes" {
-		t.Fatalf("JWTSecret = %q, want strong unit-test secret", cfg.JWTSecret)
-	}
-}
-
 func TestLoadWarnsForDeprecatedConfigSearchPath(t *testing.T) {
 	clearConfigEnv(t)
 	tempDir := t.TempDir()

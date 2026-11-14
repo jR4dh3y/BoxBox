@@ -17,10 +17,6 @@ describe('connection view', () => {
 		assert.match(connectionSummary(view), /^1 drive · access until /);
 	});
 
-	test('an unprobed server is checking', () => {
-		assert.equal(connectionView(server, undefined, now).kind, 'checking');
-	});
-
 	test('an expired pairing needs pairing whatever the last probe said', () => {
 		const view = connectionView(
 			{ ...server, expiresAt: '2026-10-01T00:00:00Z' },

@@ -25,6 +25,10 @@ jobs:
       website: ${{ steps.scope.outputs.website }}
       desktop: ${{ steps.scope.outputs.desktop }}
       docker: ${{ steps.scope.outputs.docker }}
+      backend_perf: ${{ steps.scope.outputs.backend_perf }}
+      frontend_build: ${{ steps.scope.outputs.frontend_build }}
+      frontend_browser: ${{ steps.scope.outputs.frontend_browser }}
+      desktop_package: ${{ steps.scope.outputs.desktop_package }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,23 +67,23 @@ jobs:
         run: go test ./...
 
       - name: Set up Bun for benchmark comparison
-        if: github.event_name == 'pull_request'
+        if: ${{ github.event_name == 'pull_request' && (needs.changes.result != 'success' || needs.changes.outputs.backend_perf == 'true') }}
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.3
 
       - name: Install pinned benchstat
-        if: github.event_name == 'pull_request'
+        if: ${{ github.event_name == 'pull_request' && (needs.changes.result != 'success' || needs.changes.outputs.backend_perf == 'true') }}
         run: go install golang.org/x/perf/cmd/benchstat@v0.0.0-20261009192801-be2c69fb417e
 
       - name: Compare backend allocation and byte budgets
-        if: github.event_name == 'pull_request'
+        if: ${{ github.event_name == 'pull_request' && (needs.changes.result != 'success' || needs.changes.outputs.backend_perf == 'true') }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: bun frontend/scripts/perf/backend.ts --base "$BASE_SHA"
 
       - name: Upload backend performance evidence
-        if: always() && github.event_name == 'pull_request'
+        if: ${{ always() && (github.event_name == 'pull_request' && (needs.changes.result != 'success' || needs.changes.outputs.backend_perf == 'true')) }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: backend-performance
@@ -103,6 +107,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go for embedded-server browser tests
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.frontend_browser == 'true' }}
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: backend/go.mod
@@ -128,23 +133,27 @@ jobs:
         run: bun run test
 
       - name: Build Svelte app
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.frontend_build == 'true' }}
         working-directory: frontend
         run: bun run build
 
       - name: Check initial bundle budget
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.number != 158 }}
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.frontend_build == 'true' }}
         working-directory: frontend
         run: bun run perf:budget
 
       - name: Install pinned Chromium and system dependencies
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.frontend_browser == 'true' }}
         working-directory: frontend
         run: bunx playwright install --with-deps chromium
 
       - name: Check shared-cookie session recovery
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.frontend_browser == 'true' }}
         working-directory: frontend
         run: bun scripts/auth-session-browser.ts
 
       - name: Guard real browser cold and warm folder loads
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.frontend_browser == 'true' }}
         working-directory: frontend
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -156,7 +165,7 @@ jobs:
           fi
 
       - name: Upload browser performance evidence
-        if: always()
+        if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.frontend_browser == 'true') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-performance
@@ -237,10 +246,12 @@ jobs:
           bun run check:desktop
           bun run test:desktop
       - name: Build and verify release packages
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.desktop_package == 'true' }}
         run: |
           bun scripts/package-release.ts
           bun scripts/check-release-package.ts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.desktop_package == 'true' }}
         with:
           name: desktop-release-preview
           path: dist/release/*

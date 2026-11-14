@@ -21,13 +21,12 @@ import {
 
 export type PreviewType =
 	'video' | 'audio' | 'image' | 'pdf' | 'code' | 'text' | 'office' | 'notebook' | 'unsupported';
-export type FileCategory = keyof typeof FILE_EXTENSIONS | 'unknown';
 
 /**
  * Centralized file extension definitions
  * This is the ONLY place where file extensions should be defined
  */
-export const FILE_EXTENSIONS = {
+const FILE_EXTENSIONS = {
 	video: ['mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'm4v', 'ogv'],
 	audio: ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma', 'opus'],
 	image: [
@@ -176,21 +175,6 @@ export function getExtension(filename: string): string {
 	const lastDot = filename.lastIndexOf('.');
 	if (lastDot === -1) return '';
 	return filename.slice(lastDot + 1).toLowerCase();
-}
-
-/**
- * Get the file category based on extension
- */
-export function getFileCategory(filename: string): FileCategory {
-	const ext = getExtension(filename);
-	if (!ext) return 'unknown';
-
-	for (const [category, extensions] of Object.entries(FILE_EXTENSIONS)) {
-		if ((extensions as readonly string[]).includes(ext)) {
-			return category as FileCategory;
-		}
-	}
-	return 'unknown';
 }
 
 /**

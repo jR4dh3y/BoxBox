@@ -315,3 +315,22 @@ func testPasswordHash(t *testing.T, password string) string {
 	}
 	return string(hash)
 }
+
+func TestExpiredTokensAreRejectedByRealAuthService(t *testing.T) {
+	svc := newTestAuthService(t)
+	pair, err := svc.Login(context.Background(), "admin", "correct-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{pair.AccessToken, pair.RefreshToken} {
+		claims, err := svc.ValidateToken(token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Hour))
+		expired := issueTestToken(t, *claims)
+		if _, err := svc.ValidateToken(expired); !errors.Is(err, ErrTokenExpired) {
+			t.Fatalf("expired %s token: got %v, want ErrTokenExpired", claims.TokenType, err)
+		}
+	}
+}

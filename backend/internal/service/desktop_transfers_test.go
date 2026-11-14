@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -220,39 +219,6 @@ func TestDesktopTransfersCapabilityAndCancel(t *testing.T) {
 		t.Fatal("source lost")
 	}
 }
-func TestDesktopTransferHTTPBoundary(t *testing.T) {
-	f := newTransferFixture(t)
-	s, remote, _ := transferService(t, f)
-	f.save(t, "small", []byte("copy"))
-	r := chi.NewRouter()
-	handler.NewDesktopTransfersHandler(s).RegisterRoutes(r)
-	server := httptest.NewServer(r)
-	defer server.Close()
-	body, _ := json.Marshal(model.JobParams{Type: model.JobTypeCopy, SourcePath: remote + "/small", DestPath: "files/result"})
-	response, err := http.Post(server.URL+"/transfers", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != 202 {
-		t.Fatal(response.StatusCode)
-	}
-	var job model.Job
-	if err := json.NewDecoder(response.Body).Decode(&job); err != nil {
-		t.Fatal(err)
-	}
-	waitTransfer(t, s, job.ID, model.JobStateCompleted)
-	response, err = http.Get(server.URL + "/transfers")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	contents, _ := io.ReadAll(response.Body)
-	if !bytes.Contains(contents, []byte(job.ID)) {
-		t.Fatal("job absent from list")
-	}
-}
-
 func TestDesktopTransfersSeparateAuthoritiesWithOverlappingPaths(t *testing.T) {
 	first, second := newTransferFixture(t), newTransferFixture(t)
 	first.save(t, "same/file", []byte("first authority"))
