@@ -71,6 +71,8 @@ pub(crate) struct SavedConnection {
 pub(crate) struct DesktopSettings {
     pub(crate) wallpaper: Option<PathBuf>,
     pub(crate) wallpaper_fit: WallpaperFit,
+    /// The window is see-through, so the compositor can blur what is behind it.
+    pub(crate) transparent: bool,
     pub(crate) accent: AccentColor,
     pub(crate) custom_accent: Option<u32>,
     pub(crate) accent_from_wallpaper: bool,
@@ -84,6 +86,7 @@ impl Default for DesktopSettings {
         Self {
             wallpaper: None,
             wallpaper_fit: WallpaperFit::default(),
+            transparent: false,
             accent: AccentColor::default(),
             custom_accent: None,
             accent_from_wallpaper: true,

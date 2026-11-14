@@ -1,7 +1,7 @@
 use std::{io::{Cursor, Read}, path::{Path, PathBuf}, sync::Arc};
 
 use anyhow::{bail, Context as _, Result};
-use gpui::{div, img, prelude::*, px, Context, Image, ImageFormat, ObjectFit, Rgba, Window};
+use gpui::{div, img, prelude::*, px, Context, Image, ImageFormat, ObjectFit, Rgba, Window, WindowBackgroundAppearance};
 use image::{GenericImageView, ImageReader, Limits};
 use sha2::{Digest, Sha256};
 
@@ -128,7 +128,37 @@ impl Workspace {
 
     pub(crate) fn has_wallpaper(&self) -> bool { matches!(self.wallpaper, WallpaperState::Ready { .. }) }
 
+    /// The window shows what is behind it instead of a wallpaper: the compositor's
+    /// blur of the desktop, when it blurs.
+    pub(crate) fn transparent(&self) -> bool {
+        self.desktop_settings.transparent
+    }
+
+    /// Whether the panels are translucent over something: a wallpaper or the desktop.
+    fn see_through(&self) -> bool {
+        self.transparent() || self.has_wallpaper()
+    }
+
+    /// The window's own fill, under the panels.
+    pub(crate) fn window_background(&self) -> Rgba {
+        if self.transparent() { alpha(0, 0.) } else { c(SURFACE_PRIMARY) }
+    }
+
+    /// Tells the window to draw see-through or opaque, when that changed.
+    pub(crate) fn apply_window_background(&mut self, window: &mut Window) {
+        let transparent = self.transparent();
+        if self.window_transparent != Some(transparent) {
+            self.window_transparent = Some(transparent);
+            // Blurred asks for KDE's blur protocol where there is one; Hyprland and niri
+            // blur transparent windows by their own rules.
+            window.set_background_appearance(if transparent { WindowBackgroundAppearance::Blurred } else { WindowBackgroundAppearance::Opaque });
+        }
+    }
+
     pub(crate) fn shell_background(&self) -> Rgba {
+        if self.transparent() {
+            return alpha(0x121418, 0.68);
+        }
         if let WallpaperState::Ready { tint, .. } = self.wallpaper {
             if self.preferences.wallpaper_tint { return alpha(mix(tint, 0x121418, 0.18), 0.8); }
             alpha(0x121418, 0.68)
@@ -136,15 +166,18 @@ impl Workspace {
     }
 
     pub(crate) fn chrome_background(&self) -> Rgba {
-        if self.has_wallpaper() { alpha(0x121418, 0.3) } else { c(SURFACE_SECONDARY) }
+        if self.see_through() { alpha(0x121418, 0.3) } else { c(SURFACE_SECONDARY) }
     }
 
     pub(crate) fn file_background(&self) -> Rgba {
-        if self.has_wallpaper() { alpha(0, 0.) } else { c(SURFACE_PRIMARY) }
+        if self.see_through() { alpha(0, 0.) } else { c(SURFACE_PRIMARY) }
     }
 
     pub(crate) fn render_wallpaper(&self, window: &Window) -> impl IntoElement {
         let mut layer = div().absolute().inset_0().size_full().overflow_hidden();
+        if self.transparent() {
+            return layer;
+        }
         if let WallpaperState::Ready { image, frosted, tile, frosted_tile, dimensions, tile_dimensions, .. } = &self.wallpaper {
             let fit = match self.desktop_settings.wallpaper_fit {
                 WallpaperFit::Fit => ObjectFit::Contain,

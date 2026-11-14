@@ -725,3 +725,23 @@ fn a_select_opens_its_list_right_under_it(cx: &mut TestAppContext) {
     let gap = first.top() - control.bottom();
     assert!(gap >= gpui::px(0.) && gap < gpui::px(12.), "the list starts just below the control, {gap:?} away");
 }
+
+#[gpui::test]
+fn a_transparent_background_replaces_the_wallpaper(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.txt"]);
+    cx.simulate_keystrokes("ctrl-,");
+    click(cx, "settings-appearance");
+    assert!(cx.debug_bounds("wallpaper-choose").is_some());
+    click(cx, "setting-transparent");
+    settle(cx);
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.desktop_settings.transparent);
+        assert_eq!(workspace.window_transparent, Some(true), "the window was told to draw see-through");
+        assert_eq!(workspace.window_background().a, 0.);
+        assert!(workspace.shell_background().a < 1., "panels are tinted glass over the desktop");
+    });
+    assert!(DesktopSettings::load().transparent, "the choice is saved");
+    click(cx, "setting-transparent");
+    settle(cx);
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.window_transparent, Some(false)));
+}

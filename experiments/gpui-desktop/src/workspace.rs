@@ -284,6 +284,8 @@ pub struct Workspace {
     pub(crate) bookmarks_read: bool,
     pub(crate) wallpaper: WallpaperState,
     pub(crate) wallpaper_generation: u64,
+    /// The background the window was last told to draw, see-through or opaque.
+    window_transparent: Option<bool>,
     mutation_generation: u64,
 }
 
@@ -412,6 +414,7 @@ impl Workspace {
             bookmarks_read: false,
             wallpaper: WallpaperState::Empty,
             wallpaper_generation: 0,
+            window_transparent: None,
             mutation_generation: 0,
         };
         workspace.reload_wallpaper(cx);
@@ -1123,6 +1126,7 @@ impl Render for Workspace {
             self.focus_credentials(window, cx);
         }
         self.start_pending_rename(window, cx);
+        self.apply_window_background(window);
         let primary = PaneTarget(self.tabs[self.active_tab].id);
         let mut browsers = div().flex().flex_1().min_h_0().min_w_0()
             .child(self.render_browser(primary, window, cx));
@@ -1193,7 +1197,7 @@ impl Render for Workspace {
             .relative()
             .size_full()
             .flex()
-            .bg(c(SURFACE_PRIMARY))
+            .bg(self.window_background())
             .child(self.render_wallpaper(window))
             .text_color(c(TEXT_PRIMARY))
             .font_family(self.fonts.sans.clone())

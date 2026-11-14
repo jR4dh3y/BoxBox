@@ -201,37 +201,52 @@ impl Workspace {
             |p| &mut p.compact_rows,
             cx,
         )));
-        rows.push(SettingsRow::new("Wallpaper").control(
-            div()
-                .flex()
-                .min_w_0()
-                .items_center()
-                .gap(px(8.))
-                .when_some(wallpaper_label, |row, label| {
-                    row.child(div().max_w(px(144.)).truncate().text_xs_tw().text_color(c(TEXT_SECONDARY)).child(label))
-                })
-                .child(
-                    Button::new("wallpaper-choose")
-                        .label(if has_wallpaper { "Change" } else { "Choose" })
-                        .variant(ButtonVariant::Secondary)
-                        .size(ButtonSize::Sm)
-                        .on_click(cx.listener(|this, _, _, cx| this.choose_wallpaper(cx))),
-                )
-                .when(has_wallpaper, |row| {
-                    row.child(
-                        Button::new("wallpaper-remove")
-                            .label("Remove")
+        rows.push(SettingsRow::new("Transparent background").control({
+            let workspace = cx.entity().downgrade();
+            Toggle::new("setting-transparent", settings.transparent).on_change(move |value, _, _, cx| {
+                workspace
+                    .update(cx, |this, cx| {
+                        this.desktop_settings.transparent = value;
+                        this.save_desktop_settings(cx);
+                    })
+                    .ok();
+            })
+        }));
+        // A wallpaper would not show behind a see-through window.
+        let transparent = settings.transparent;
+        if !transparent {
+            rows.push(SettingsRow::new("Wallpaper").control(
+                div()
+                    .flex()
+                    .min_w_0()
+                    .items_center()
+                    .gap(px(8.))
+                    .when_some(wallpaper_label, |row, label| {
+                        row.child(div().max_w(px(144.)).truncate().text_xs_tw().text_color(c(TEXT_SECONDARY)).child(label))
+                    })
+                    .child(
+                        Button::new("wallpaper-choose")
+                            .label(if has_wallpaper { "Change" } else { "Choose" })
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Sm)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.desktop_settings.wallpaper = None;
-                                this.reload_wallpaper(cx);
-                                this.save_desktop_settings(cx);
-                            })),
+                            .on_click(cx.listener(|this, _, _, cx| this.choose_wallpaper(cx))),
                     )
-                }),
-        ));
-        if has_wallpaper {
+                    .when(has_wallpaper, |row| {
+                        row.child(
+                            Button::new("wallpaper-remove")
+                                .label("Remove")
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Sm)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.desktop_settings.wallpaper = None;
+                                    this.reload_wallpaper(cx);
+                                    this.save_desktop_settings(cx);
+                                })),
+                        )
+                    }),
+            ));
+        }
+        if has_wallpaper && !transparent {
             rows.push(SettingsRow::new("Wallpaper fit").control(self.select(
                 "setting-wallpaper-fit",
                 settings.wallpaper_fit,
