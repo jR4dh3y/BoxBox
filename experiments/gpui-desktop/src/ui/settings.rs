@@ -41,14 +41,14 @@ impl Workspace {
     fn confirm_reset_preferences(&mut self, cx: &mut Context<Self>) {
         let confirm = crate::workspace::confirm::Confirm::new(
             "Reset all preferences?",
-            "This removes your favorites and saved local wallpaper. Saved servers are kept.",
+            "This removes server favorites and the saved wallpaper. Saved servers and local favorites stay.",
             "Reset",
             |this, cx| {
                 this.preferences = Preferences::default();
                 this.commit_preferences(cx);
                 let connections = std::mem::take(&mut this.desktop_settings.connections);
                 this.desktop_settings = DesktopSettings { connections, ..DesktopSettings::default() };
-                this.favorites.entries.clear();
+                this.favorites.entries.retain(|favorite| favorite.provider == crate::workspace::favorites::FavoriteProvider::Local);
                 this.save_favorites(None, cx);
                 this.reload_wallpaper(cx);
                 this.save_desktop_settings(cx);

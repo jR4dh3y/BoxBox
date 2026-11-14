@@ -16,7 +16,7 @@ pub(crate) const TRASH_WATCH: usize = usize::MAX;
 
 impl Workspace {
     /// The local provider whose Trash the sidebar shows.
-    fn local_api(&self) -> Option<Arc<Api>> {
+    pub(crate) fn local_api(&self) -> Option<Arc<Api>> {
         self.tabs.iter().chain(self.split_panes.values()).map(|pane| pane.api.clone()).find(|api| api.is_local())
     }
 

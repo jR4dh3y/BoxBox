@@ -464,3 +464,46 @@ fn recent_lists_used_files_where_they_are(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("ctrl-shift-n");
     view.read_with(cx, |workspace, _| assert!(workspace.operation_dialog.is_none()));
 }
+
+#[gpui::test]
+fn local_favorites_are_gtk_bookmarks_and_reorder_by_dragging(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["music/", "photos/", "work/"]);
+    // Bookmarks another app wrote, including one for a drive that is not plugged in.
+    let bookmarks = fixture.root.with_extension("config").join("gtk-3.0/bookmarks");
+    fs::create_dir_all(bookmarks.parent().unwrap()).unwrap();
+    let away = "file:///run/media/nobody/USB/stuff";
+    fs::write(&bookmarks, format!("{} Tunes\n{away}\nsftp://host/srv Server\n", crate::os_clipboard::file_uri(&fixture.root.join("music")))).unwrap();
+    view.update(cx, |workspace, cx| workspace.load_bookmarks(cx));
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        let names: Vec<&str> = workspace.favorites.entries.iter().map(|favorite| favorite.name.as_str()).collect();
+        assert_eq!(names, ["Tunes", "stuff", "Server"]);
+        assert_eq!(workspace.favorites.entries[0].path, "home/music");
+    });
+
+    // Pinning a folder adds a bookmark; the others are written back as they were.
+    let photos = cx.debug_bounds("row-0-1").unwrap().center();
+    cx.simulate_mouse_down(photos, MouseButton::Right, Modifiers::default());
+    click(cx, "context-favorite");
+    cx.run_until_parked();
+    let written = fs::read_to_string(&bookmarks).unwrap();
+    let lines: Vec<&str> = written.lines().collect();
+    assert_eq!(lines.len(), 4);
+    assert!(lines[0].ends_with("/music Tunes") && lines[1] == away && lines[2] == "sftp://host/srv Server");
+    assert_eq!(lines[3], crate::os_clipboard::file_uri(&fixture.root.join("photos")));
+
+    // Dragging the new favorite onto the first moves it there.
+    drag(cx, "favorite-row-3", "favorite-row-0");
+    cx.run_until_parked();
+    let written = fs::read_to_string(&bookmarks).unwrap();
+    assert!(written.lines().next().unwrap().ends_with("/photos"), "reordered: {written}");
+
+    // Another app's change shows up.
+    fs::write(&bookmarks, format!("{}\n", crate::os_clipboard::file_uri(&fixture.root.join("work")))).unwrap();
+    view.update(cx, |workspace, cx| workspace.poll_directory_changes(cx));
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        let names: Vec<&str> = workspace.favorites.entries.iter().map(|favorite| favorite.name.as_str()).collect();
+        assert_eq!(names, ["work"]);
+    });
+}

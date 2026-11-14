@@ -7,6 +7,8 @@ use crate::api::RootKind;
 use crate::components::{self, SidebarSection};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
+use crate::drag_out::DragPreview;
+use crate::workspace::bookmarks::FavoriteDrag;
 use crate::workspace::place_menu::Place;
 use crate::workspace::Workspace;
 
@@ -107,10 +109,20 @@ impl Workspace {
                     .trailing("x", format!("Unpin {}", favorite.name), cx.listener(move |this, _, _, cx| this.remove_favorite(index, cx)))
                     .on_click(cx.listener(move |this, _, _, cx| this.open_favorite(index, cx)));
                 // A favorite on another provider is not a folder this pane can write to.
-                match favorite.provider == provider {
+                let row = match favorite.provider == provider {
                     true => self.drop_place(row, favorite.path.clone(), cx).into_any_element(),
                     false => row.into_any_element(),
-                }
+                };
+                // Dragged onto another favorite, it takes that one's place.
+                let name: SharedString = favorite.name.clone().into();
+                div()
+                    .id(("favorite-drag", index))
+                    .debug_selector(move || format!("favorite-row-{index}"))
+                    .on_drag(FavoriteDrag(index), move |_, grip, _, cx| cx.new(|_| DragPreview { label: name.clone(), grip }))
+                    .drag_over::<FavoriteDrag>(|style, _, _, _| style.border_t_2().border_color(c(ACCENT)))
+                    .on_drop(cx.listener(move |this, dragged: &FavoriteDrag, _, cx| this.drop_favorite(dragged.0, index, cx)))
+                    .child(row)
+                    .into_any_element()
             })
             .collect::<Vec<_>>();
         let no_favorites = favorites.is_empty();

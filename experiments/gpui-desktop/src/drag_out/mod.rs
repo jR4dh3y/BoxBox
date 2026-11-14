@@ -32,10 +32,10 @@ pub struct DraggedItem {
 }
 
 pub struct DragPreview {
-    label: SharedString,
+    pub label: SharedString,
     /// Where in the dragged row the pointer took hold. GPUI draws the preview at
     /// the row's corner, so this much padding puts the label beside the pointer.
-    grip: Point<Pixels>,
+    pub grip: Point<Pixels>,
 }
 
 impl Render for DragPreview {

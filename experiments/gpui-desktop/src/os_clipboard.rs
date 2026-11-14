@@ -33,7 +33,7 @@ pub struct Files {
 }
 
 /// `file://` URI with every byte outside the unreserved set and `/` escaped.
-fn file_uri(path: &Path) -> String {
+pub fn file_uri(path: &Path) -> String {
     use std::os::unix::ffi::OsStrExt;
     let mut uri = String::from("file://");
     for &byte in path.as_os_str().as_bytes() {

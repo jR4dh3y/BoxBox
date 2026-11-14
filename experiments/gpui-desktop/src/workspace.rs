@@ -32,6 +32,7 @@ pub(crate) mod keyboard;
 pub(crate) mod history;
 pub(crate) mod trash;
 pub(crate) mod place_menu;
+pub(crate) mod bookmarks;
 pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;
@@ -270,6 +271,8 @@ pub struct Workspace {
     pub(crate) thumbnail_cache: ThumbnailCache,
     pub(crate) favorites: Favorites,
     pub(crate) favorites_error: Option<String>,
+    /// Whether the GTK bookmarks were read, so writing them keeps what they hold.
+    pub(crate) bookmarks_read: bool,
     pub(crate) wallpaper: WallpaperState,
     pub(crate) wallpaper_generation: u64,
     mutation_generation: u64,
@@ -394,6 +397,7 @@ impl Workspace {
             thumbnail_cache: ThumbnailCache::default(),
             favorites: Favorites::load(),
             favorites_error: None,
+            bookmarks_read: false,
             wallpaper: WallpaperState::Empty,
             wallpaper_generation: 0,
             mutation_generation: 0,
@@ -404,6 +408,7 @@ impl Workspace {
         workspace.start_directory_watches(cx);
         workspace.start_device_watch(cx);
         workspace.watch_trash(cx);
+        workspace.load_bookmarks(cx);
         workspace
     }
 
@@ -594,8 +599,10 @@ impl Workspace {
         .detach();
     }
 
-    /// Saves favorites; `success` is the status to show once they are on disk.
+    /// Saves favorites: local ones to the GTK bookmarks, the rest to BoxBox's file.
+    /// `success` is the status to show once they are on disk.
     pub(crate) fn save_favorites(&mut self, success: Option<&'static str>, cx: &mut Context<Self>) {
+        self.save_bookmarks(cx);
         let bytes = match self.favorites.encode() {
             Ok(bytes) => bytes,
             Err(error) => {

@@ -85,10 +85,14 @@ impl Workspace {
     pub(crate) fn poll_directory_changes(&mut self, cx: &mut Context<Self>) {
         if self.operation_status.is_busy() { return; }
         let mut watched = self.all_pane_ids();
-        watched.push(super::trash::TRASH_WATCH);
+        watched.extend([super::trash::TRASH_WATCH, super::bookmarks::BOOKMARKS_WATCH]);
         for id in self.directory_watches.changed(&watched) {
             if id == super::trash::TRASH_WATCH {
                 self.refresh_trash_state(cx);
+                continue;
+            }
+            if id == super::bookmarks::BOOKMARKS_WATCH {
+                self.load_bookmarks(cx);
                 continue;
             }
             self.load_pane(PaneTarget(id), cx);

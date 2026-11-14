@@ -1036,6 +1036,7 @@ impl Workspace {
             path: pane.path.clone(),
             provider,
             connection_id,
+            uri: None,
         };
         self.favorites.add(favorite);
         self.save_favorites(Some("Favorite added"), cx);
@@ -1188,7 +1189,7 @@ impl Workspace {
         let connection_id = self.desktop_settings.connections.iter()
             .find(|connection| pane.api.server_url() == Some(connection.url.as_str()))
             .map(|connection| connection.id.clone());
-        self.favorites.add(Favorite { name: item.name.clone(), path: item.path.clone(), provider, connection_id });
+        self.favorites.add(Favorite { name: item.name.clone(), path: item.path.clone(), provider, connection_id, uri: None });
         self.save_favorites(None, cx);
         self.context_menu = None;
         cx.notify();
