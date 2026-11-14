@@ -1,53 +1,98 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import FeaturesBento from '../components/FeaturesBento.astro';
+import SiteNav from '../components/SiteNav.astro';
+import GetBoxBox from '../components/GetBoxBox.astro';
+import Closing from '../components/Closing.astro';
 import AppInterfaceDemo from '../components/AppInterfaceDemo.astro';
+import Walkthrough from '../components/Walkthrough.astro';
 import ReleaseBanner from '../components/ReleaseBanner.astro';
 import SiteFooter from '../components/SiteFooter.astro';
-
-import {
-  CirclePlay,
-  GitFork,
-  Download
-} from '@lucide/astro';
 ---
 <Layout title="BoxBox | Self-hosted File Manager & Linux Desktop" description="Manage local files with the Linux desktop app, or self-host BoxBox to browse and share your server files. Pair both in one workspace.">
 <ReleaseBanner />
-<section class="relative min-h-screen flex flex-col items-center justify-start pt-20 pb-20 px-4 text-center overflow-hidden z-10">
+<SiteNav />
 
-  <h1 class="text-5xl md:text-7xl lg:text-8xl font-black mb-6 max-w-5xl mx-auto tracking-tight leading-tight animate-fade-in-up text-white" style="animation-delay: 200ms;">
-    The file manager your <span class="text-accent">homelab</span> deserves.
-  </h1>
+<main>
+<section class="relative z-10 overflow-hidden px-5 pt-10 pb-16 md:px-8 md:pt-20">
+  <div class="mx-auto max-w-7xl">
+    <h1 class="hero-title font-display animate-fade-in-up font-extrabold text-white" style="animation-delay: 100ms;">
+      The file manager <br class="md:hidden" />your <br class="hidden md:block" /><span class="word-box hero-rename"><span id="hero-rename-window"><span id="hero-rename-word" aria-hidden="true">homelab</span></span><span class="sr-only">homelab, NAS, or server</span></span> <br class="md:hidden" />deserves.
+    </h1>
 
-  <p class="text-lg md:text-2xl text-text-secondary max-w-3xl mx-auto mb-12 font-medium leading-relaxed animate-fade-in-up" style="animation-delay: 300ms;">
-    Browse your server like local folders. Upload whole directories, edit code, and share files or folders with the access you choose.
-  </p>
-
-  <div id="desktop" class="mb-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm animate-fade-in-up" style="animation-delay: 350ms;">
-    <p class="text-text-secondary">Now available as a Linux desktop app.</p>
-    <a href="/download/#desktop" class="inline-flex min-h-11 items-center gap-2 font-semibold text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
-      <Download class="h-4 w-4" /> Download for Linux
-    </a>
+    <div class="mt-8 flex flex-col gap-8 md:mt-10 lg:flex-row lg:items-end lg:justify-between lg:gap-12">
+      <p class="animate-fade-in-up max-w-xl text-lg leading-relaxed text-text-secondary md:text-xl" style="animation-delay: 200ms;">
+        Browse your server like local folders. Upload whole directories, edit code, and share files or folders with the access you choose.
+      </p>
+      <div class="animate-fade-in-up shrink-0" style="animation-delay: 300ms;">
+        <GetBoxBox />
+      </div>
+    </div>
   </div>
 
-  <div class="flex flex-wrap items-center justify-center gap-4 animate-fade-in-up" style="animation-delay: 400ms;">
-    <a href="/docs/quickstart/" class="bg-accent-solid hover:bg-accent-solid-hover text-white font-semibold text-lg px-8 py-4 rounded-lg flex items-center gap-2 transition-all">
-      <CirclePlay class="w-5 h-5" />
-      Get started
-    </a>
-    <a href="https://github.com/jR4dh3y/BoxBox" target="_blank" class="glass-panel text-text-primary hover:text-white font-semibold text-lg px-8 py-4 rounded-lg flex items-center gap-2 transition-all">
-      <GitFork class="w-5 h-5" />
-      GitHub
-    </a>
+  <div class="flex justify-center">
+    <AppInterfaceDemo />
   </div>
-
-  <AppInterfaceDemo />
 </section>
 
-<!-- Features Section -->
-<FeaturesBento />
+<section id="features" class="relative z-10 scroll-mt-8 bg-[#0d0d0d] px-5 pt-10 pb-24 md:px-8 md:pt-16 md:pb-36">
+  <h2 class="sr-only">What BoxBox does and how to run it</h2>
+  <div class="mx-auto flex max-w-7xl flex-col gap-24 md:gap-36">
+    <Walkthrough />
+    <Closing />
+  </div>
+</section>
+</main>
 
-<!-- Footer -->
 <SiteFooter />
 
 </Layout>
+
+<script>
+  // The next name slides up into the box, like a list scrolling one row, and
+  // the box follows its width.
+  const frame = document.getElementById('hero-rename-window');
+  const word = document.getElementById('hero-rename-word');
+  const names = ['homelab', 'NAS', 'server'];
+
+  function slideTo(view: HTMLElement, target: HTMLElement, next: string) {
+    const timing = { duration: 700, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' };
+    const from = view.getBoundingClientRect().width;
+    const leaving = document.createElement('span');
+    leaving.textContent = target.textContent;
+    leaving.setAttribute('aria-hidden', 'true');
+    leaving.style.cssText = 'position:absolute;left:0;top:0';
+    view.append(leaving);
+    target.textContent = next;
+    const to = target.getBoundingClientRect().width;
+    view.animate({ width: [`${from}px`, `${to}px`] }, timing);
+    target.animate({ transform: ['translateY(110%)', 'translateY(0)'] }, timing);
+    leaving.animate({ transform: ['translateY(0)', 'translateY(-110%)'] }, timing).finished.then(() => leaving.remove());
+  }
+
+  if (frame && word && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    let index = 0;
+    window.setInterval(() => {
+      index = (index + 1) % names.length;
+      slideTo(frame, word, names[index]);
+    }, 3000);
+  }
+</script>
+
+<style>
+  .hero-title {
+    font-size: clamp(2.75rem, 8.4vw, 6rem);
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+  }
+
+  /* Clips the sliding names above and below, but not at the sides where a
+     letter can overhang. overflow: hidden would also move the baseline. */
+  #hero-rename-window {
+    position: relative;
+    display: inline-block;
+    line-height: 1.1;
+    clip-path: inset(0 -0.15em);
+  }
+
+  #hero-rename-word { display: inline-block; }
+</style>

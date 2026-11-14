@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 @theme {
+	--font-display: 'Bricolage Grotesque', sans-serif;
+
 	/* Surface colors (backgrounds) */
 	--color-surface-primary: #1e1e1e;
 	--color-surface-secondary: #252525;
@@ -248,3 +250,30 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
 
 /* Inline package names and installation paths must fit phone-sized docs. */
 .doc-content :not(pre) > code { overflow-wrap: anywhere; }
+
+/* A word drawn as a box, the way the logo draws its letters. The hero uses it
+   for the rotating word and the walkthrough uses it for words you can open. */
+.word-box {
+  display: inline-block;
+  margin: 0 -0.04em;
+  padding: 0 0.1em 0.06em;
+  border: max(1.5px, 0.035em) solid var(--color-accent);
+  border-radius: 0.1em;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Inside a sentence the box is something to open: a screenshot or a link. */
+:is(a, button).word-box {
+  margin: 0 0.02em;
+  cursor: pointer;
+  transition: background-color 250ms ease, color 250ms ease;
+}
+
+a.word-box:hover,
+button.word-box[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: #0d0d0d;
+}

@@ -1,0 +1,135 @@
+---
+// The pitch continues as one sentence in the hero's type. Each boxed word
+// opens the real screenshot of what it names.
+const shots = [
+  { id: 'drives', file: 'browse', alt: 'BoxBox browsing a Pictures folder in grid view, with drives and places in the sidebar' },
+  { id: 'config', file: 'editor', alt: 'docker-compose.yml open in the BoxBox code editor' },
+  { id: 'preview', file: 'preview', alt: 'sunset.jpg open in the BoxBox image preview' },
+  { id: 'sharing', file: 'share-modal', alt: 'Share dialog for a folder, with access level and expiry' },
+  { id: 'no-account', file: 'share-page', alt: 'Public share page showing a shared folder with an image preview' }
+];
+---
+
+<div id="walkthrough" class="grid items-center gap-10 lg:grid-cols-[1fr_1.25fr] lg:gap-16">
+  <div>
+    <p class="walk-text font-display">Your <button type="button" class="word-box" data-shot="drives" aria-pressed="true">drives</button> open like local folders. Drag in a whole folder and it uploads in chunks, paths intact. Fix a <button type="button" class="word-box" data-shot="config" aria-pressed="false">config</button> without SSH. <button type="button" class="word-box" data-shot="preview" aria-pressed="false">Preview</button> a file before you download it. Send a <button type="button" id="sharing" class="word-box scroll-mt-32" data-shot="sharing" aria-pressed="false">link</button> that expires on its own, with <button type="button" class="word-box" data-shot="no-account" aria-pressed="false">no account</button> needed to open it.</p>
+    <p class="mt-8 max-w-lg leading-relaxed text-text-secondary">
+      Copy, move, and delete run in the background with live progress. There is search, read-only mounts, multiple users, and rate limits. It is free and MIT licensed.
+    </p>
+  </div>
+
+  <div class="walk-stage order-first lg:order-none">
+    <div class="walk-frame">
+    {shots.map((shot, index) => (
+      <img src={`/media/screens/${shot.file}.webp`} alt={shot.alt} data-shot-image={shot.id} data-active={index === 0 ? '' : undefined} loading={index === 0 ? 'eager' : 'lazy'} decoding="async" />
+    ))}
+    </div>
+  </div>
+</div>
+
+<script>
+  const walkthrough = document.getElementById('walkthrough');
+
+  if (walkthrough) {
+    const words = Array.from(walkthrough.querySelectorAll<HTMLButtonElement>('[data-shot]'));
+    const images = Array.from(walkthrough.querySelectorAll<HTMLImageElement>('[data-shot-image]'));
+    let current = 0;
+    let tour: number | undefined;
+
+    function show(index: number) {
+      current = index;
+      const shot = words[index]?.dataset.shot;
+      words.forEach((word, wordIndex) => word.setAttribute('aria-pressed', String(wordIndex === index)));
+      images.forEach((image) => image.toggleAttribute('data-active', image.dataset.shotImage === shot));
+    }
+
+    // The highlight walks through the sentence on its own until the visitor
+    // picks a word.
+    function stopTour() {
+      window.clearInterval(tour);
+      tour = undefined;
+    }
+
+    words.forEach((word, index) => {
+      const choose = () => {
+        stopTour();
+        observer?.disconnect();
+        show(index);
+      };
+      word.addEventListener('pointerenter', (event) => {
+        if (event.pointerType === 'mouse') choose();
+      });
+      word.addEventListener('focus', choose);
+      word.addEventListener('click', choose);
+    });
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const observer = reduceMotion || !('IntersectionObserver' in window) ? undefined : new IntersectionObserver((entries) => {
+      const visible = entries.some((entry) => entry.isIntersecting);
+      if (visible && tour === undefined) tour = window.setInterval(() => show((current + 1) % words.length), 3200);
+      else if (!visible) stopTour();
+    }, { threshold: 0.5 });
+    observer?.observe(walkthrough);
+
+    if (window.location.hash === '#sharing') {
+      const index = words.findIndex((word) => word.id === 'sharing');
+      if (index !== -1) show(index);
+    }
+  }
+</script>
+
+<style>
+  .walk-text {
+    font-size: clamp(1.7rem, 2.9vw, 2.5rem);
+    font-weight: 700;
+    line-height: 1.32;
+    letter-spacing: -0.025em;
+    color: #fff;
+  }
+
+  /* On small screens the screenshot stays pinned while the sentence scrolls
+     under it, so a tapped word always has its picture in view. */
+  .walk-stage {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0 -1.25rem;
+    padding: 0.75rem 1.25rem;
+    background: #0d0d0d;
+  }
+
+  .walk-frame {
+    position: relative;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: 14px;
+    background: #161616;
+    box-shadow: 0 40px 80px -36px rgb(0 0 0 / 0.95);
+  }
+
+  .walk-frame img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    opacity: 0;
+    transform: scale(1.03);
+    transition: opacity 450ms ease, transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .walk-frame img[data-active] {
+    opacity: 1;
+    transform: none;
+  }
+
+  @media (min-width: 1024px) {
+    .walk-stage {
+      position: static;
+      margin: 0;
+      padding: 0;
+      background: none;
+    }
+  }
+</style>

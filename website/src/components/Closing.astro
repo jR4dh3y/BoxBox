@@ -1,0 +1,107 @@
+---
+// The page ends with hero-sized type and a taped-up note from the author, in
+// the same handwriting as the doodle in the nav.
+import GetBoxBox from './GetBoxBox.astro';
+---
+
+<div class="closing">
+  <div>
+    <h2 class="font-display">Go give your server a file manager.</h2>
+    <div class="mt-10"><GetBoxBox /></div>
+  </div>
+
+  <div class="closing-note-wall">
+    <figure id="sticky-note" class="closing-note">
+      <span class="closing-note-tape" aria-hidden="true"></span>
+      <blockquote>
+        <p>I built this for my own homelab.</p>
+        <p>It's free and open source, so now it's yours too.</p>
+        <p>Found a bug? Tell me.</p>
+      </blockquote>
+      <figcaption>— jR4dh3y</figcaption>
+    </figure>
+  </div>
+</div>
+
+<script>
+  import { attachStickyNote } from '../lib/stickyNote';
+
+  const note = document.getElementById('sticky-note');
+  const bounds = note?.closest('section');
+  if (note && bounds) attachStickyNote(note, bounds);
+</script>
+
+<style>
+  .closing h2 {
+    max-width: 11ch;
+    font-size: clamp(2.75rem, 8.4vw, 6rem);
+    font-weight: 800;
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+    color: #fff;
+  }
+
+  /* A note held to the page by one strip of tape. lib/stickyNote.ts moves
+     it; --lift is how far it is off the page, from 0 to 1. */
+  .closing-note-wall {
+    position: relative;
+    z-index: 5;
+    width: min(100%, 22rem);
+    margin: 4rem 0 0 0.5rem;
+  }
+
+  .closing-note {
+    --lift: 0;
+    position: relative;
+    display: flex;
+    aspect-ratio: 1;
+    flex-direction: column;
+    padding: 2.75rem 2rem 1.75rem;
+    background: var(--color-folder);
+    color: #1c1608;
+    font-family: 'Caveat', cursive;
+    font-size: 1.9rem;
+    font-weight: 700;
+    line-height: 1.15;
+    box-shadow: 0 calc(14px + var(--lift) * 34px) calc(20px + var(--lift) * 36px) calc(-12px + var(--lift) * 4px) rgb(0 0 0 / calc(0.85 - var(--lift) * 0.35));
+    transform: rotate(2.5deg);
+    transform-origin: center 0.2rem;
+    cursor: grab;
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .closing-note[data-held] { cursor: grabbing; }
+
+  .closing-note-tape {
+    position: absolute;
+    top: -0.85rem;
+    left: 50%;
+    width: 6.5rem;
+    height: 1.8rem;
+    background: rgb(255 255 255 / 0.3);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+    transform: translateX(-50%) rotate(-2deg);
+  }
+
+  .closing-note p + p { margin-top: 0.7rem; }
+
+  .closing-note figcaption {
+    margin-top: auto;
+    text-align: right;
+    font-size: 2.1rem;
+  }
+
+  @media (min-width: 1024px) {
+    .closing {
+      display: grid;
+      width: 100%;
+      grid-template-columns: minmax(0, 1fr) 22rem;
+      align-items: center;
+      gap: 4rem;
+    }
+
+    .closing-note-wall { width: 100%; margin: 0; }
+  }
+</style>
