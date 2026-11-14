@@ -2,6 +2,8 @@
 
 mod archive;
 mod copy;
+pub mod network;
+mod recent;
 mod search;
 mod trash;
 
@@ -63,6 +65,7 @@ impl LocalFiles {
             ("music", "Music", "XDG_MUSIC_DIR", "Music"),
             ("pictures", "Pictures", "XDG_PICTURES_DIR", "Pictures"),
             ("videos", "Videos", "XDG_VIDEOS_DIR", "Videos"),
+            ("templates", "Templates", "XDG_TEMPLATES_DIR", "Templates"),
         ] {
             let candidate = user_directory(&home, config_key)
                 .unwrap_or_else(|| home.join(fallback));
@@ -101,8 +104,12 @@ impl LocalFiles {
         })
     }
 
+    /// The mounts, with Recent first among the places and Network last. Those two
+    /// are listings, not folders.
     pub fn roots(&self) -> Result<Vec<MountPoint>> {
-        Ok(self.mounts.iter().map(|mount| mount.point.clone()).collect())
+        let place = |name: &str, label: &str| MountPoint { name: name.into(), label: Some(label.into()), kind: RootKind::Place };
+        let (drives, places): (Vec<_>, Vec<_>) = self.mounts.iter().map(|mount| mount.point.clone()).partition(|point| point.kind == RootKind::Drive);
+        Ok(drives.into_iter().chain([place(RECENT, "Recent")]).chain(places).chain([place(NETWORK, "Network")]).collect())
     }
 
     pub fn drives(&self) -> Result<Vec<DriveStats>> {
@@ -114,6 +121,11 @@ impl LocalFiles {
     }
 
     pub fn list(&self, path: &str) -> Result<Vec<FileInfo>> {
+        match path {
+            RECENT => return Ok(self.recent()),
+            NETWORK => return network_entries(),
+            _ => {}
+        }
         let (mount, directory) = self.resolve_directory(path)?;
         let mut entries = fs::read_dir(&directory)
             .with_context(|| format!("cannot list {}", path))?
@@ -342,6 +354,14 @@ impl LocalFiles {
         )
     }
 
+    /// Recently used local files, each at its own path, newest first.
+    fn recent(&self) -> Vec<FileInfo> {
+        recent::files(&self.trash_data_home, 200)
+            .into_iter()
+            .filter_map(|real| self.stat(&self.virtual_path(&real)?).ok())
+            .collect()
+    }
+
     pub fn trash_has_items(&self) -> bool {
         trash::has_items(&self.trash_data_home, self.volume_trash)
     }
@@ -485,6 +505,19 @@ pub(crate) fn writable(folder: &Path) -> bool {
     let Ok(path) = CString::new(folder.as_os_str().as_bytes()) else { return false };
     // SAFETY: the C path is NUL-terminated and outlives the call.
     unsafe { libc::access(path.as_ptr(), libc::W_OK | libc::X_OK) == 0 }
+}
+
+/// The listing of recently used files.
+pub const RECENT: &str = "recent";
+/// The listing of servers on the local network.
+pub const NETWORK: &str = "network";
+
+/// Servers as folders whose paths are the addresses that mount them.
+fn network_entries() -> Result<Vec<FileInfo>> {
+    Ok(network::browse()?
+        .into_iter()
+        .map(|server| FileInfo { name: format!("{} ({})", server.name, server.kind), path: server.uri, size: 0, is_dir: true, mod_time: String::new() })
+        .collect())
 }
 
 fn canonical_directory(path: &Path) -> Result<PathBuf> {

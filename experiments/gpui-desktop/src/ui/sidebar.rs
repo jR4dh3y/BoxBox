@@ -24,6 +24,9 @@ fn place_icon(name: &str) -> &'static str {
         "music" => "music",
         "pictures" => "image",
         "videos" => "video",
+        "templates" => "layout-template",
+        "recent" => "clock",
+        "network" => "network",
         _ => "folder",
     }
 }

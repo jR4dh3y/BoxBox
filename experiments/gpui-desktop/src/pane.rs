@@ -351,6 +351,12 @@ impl Pane {
         self.active = active.and_then(|path| self.index_of(&path));
     }
 
+    /// Whether rows say which folder each item is in: search results and Recent,
+    /// whose items come from many folders.
+    pub fn shows_locations(&self) -> bool {
+        self.is_searching() || self.path == crate::local::RECENT
+    }
+
     pub fn is_searching(&self) -> bool {
         !matches!(self.search, Search::Off)
     }

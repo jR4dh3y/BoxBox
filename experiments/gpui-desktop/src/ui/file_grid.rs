@@ -79,7 +79,7 @@ impl Workspace {
             self.selection_style(),
         )
         .icon(file_icon(&item.name, is_dir))
-        .detail(match (pane.is_searching(), is_dir) {
+        .detail(match (pane.shows_locations(), is_dir) {
             // A search result says where it is; a file in its folder, how big.
             (true, _) => crate::search::location(&pane.path, &item.path).to_string().into(),
             (false, true) => gpui::SharedString::default(),

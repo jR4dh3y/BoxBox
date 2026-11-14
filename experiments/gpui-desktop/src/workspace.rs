@@ -543,7 +543,11 @@ impl Workspace {
                 .spawn(async move {
                     let items = api.list(&path).map(|items| crate::pane::arrange(items, view));
                     let real = api.local_path(&path).ok().flatten();
-                    let writable = real.as_deref().map_or(true, crate::local::writable);
+                    // A local listing with no folder behind it, such as Recent, takes nothing.
+                    let writable = match &real {
+                        Some(real) => crate::local::writable(real),
+                        None => !api.is_local(),
+                    };
                     (items, real, writable)
                 })
                 .await;
@@ -721,6 +725,11 @@ impl Workspace {
         path: String,
         cx: &mut Context<Self>,
     ) {
+        // A server on the Network page, or a typed address: mount it, then open it.
+        if crate::devices::gvfs::spec::is_uri(&path) {
+            self.connect_location(target, path, cx);
+            return;
+        }
         self.trash_open = false;
         self.trash_error = None;
         if self

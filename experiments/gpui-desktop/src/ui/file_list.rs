@@ -67,7 +67,7 @@ impl Workspace {
         let folder = DropTarget::Folder { pane: target, path: path.clone() };
         let row = FileRow::new(("row", index), display_name(&item.name, is_dir, self.preferences.show_file_extensions), is_dir, self.selection_style())
             .icon(file_icon(&item.name, is_dir))
-            .location(if pane.is_searching() { crate::search::location(&pane.path, &item.path).to_string() } else { String::new() })
+            .location(if pane.shows_locations() { crate::search::location(&pane.path, &item.path).to_string() } else { String::new() })
             .details(
                 if is_dir { "Folder".into() } else { type_description(&item.name) },
                 if is_dir { "—".into() } else { file_size(item.size) },

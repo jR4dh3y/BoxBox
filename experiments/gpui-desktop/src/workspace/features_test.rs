@@ -434,3 +434,33 @@ fn breadcrumbs_open_tabs_take_drops_and_fold_long_paths(cx: &mut TestAppContext)
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home"));
 }
+
+#[gpui::test]
+fn recent_lists_used_files_where_they_are(cx: &mut TestAppContext) {
+    let stamp = |day: u32| format!("2026-01-{day:02}T00:00:00Z");
+    let files = ["docs/", "docs/report.pdf", "notes.txt"];
+    let (view, cx, fixture) = open(cx, &files);
+    let entry = |name: &str, day: u32| {
+        format!(r#"<bookmark href="file://{}/{name}" added="{0}" modified="{0}" visited="{0}"></bookmark>"#, fixture.root.display()).replace("{0}", &stamp(day))
+    };
+    let xbel = format!("<xbel version=\"1.0\">{}{}</xbel>", entry("notes.txt", 1), entry("docs/report.pdf", 2));
+    fs::create_dir_all(fixture.root.join(".local/share")).unwrap();
+    fs::write(fixture.root.join(".local/share/recently-used.xbel"), xbel).unwrap();
+    view.read_with(cx, |workspace, _| {
+        let crate::pane::Load::Loaded(roots) = &workspace.pane().roots else { panic!() };
+        assert!(roots.iter().any(|root| root.name == "recent") && roots.iter().any(|root| root.name == "network"));
+    });
+    view.update(cx, |workspace, cx| workspace.navigate("recent".into(), cx));
+    cx.run_until_parked();
+    let mut found = names(&view, cx);
+    found.sort();
+    assert_eq!(found, ["notes.txt", "report.pdf"]);
+    view.read_with(cx, |workspace, _| {
+        let pane = workspace.pane();
+        assert!(pane.shows_locations());
+        assert!(pane.items.iter().any(|item| item.path == "home/docs/report.pdf"), "items keep their own paths");
+    });
+    // Recent is a listing, not a folder: nothing is created in it.
+    cx.simulate_keystrokes("ctrl-shift-n");
+    view.read_with(cx, |workspace, _| assert!(workspace.operation_dialog.is_none()));
+}

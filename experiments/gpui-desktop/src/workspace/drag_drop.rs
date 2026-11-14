@@ -76,8 +76,7 @@ fn parent(path: &str) -> &str {
 /// Whether `items` may be dropped into `folder`. `same` says the folder is on the
 /// items' provider; `moving` that the drop would move rather than copy.
 pub(crate) fn accepts(items: &[FileInfo], same: bool, folder: &str, moving: bool) -> bool {
-    // This PC holds drives, not files.
-    if folder.is_empty() || items.is_empty() {
+    if !takes_files(folder) || items.is_empty() {
         return false;
     }
     if !same {
@@ -86,6 +85,11 @@ pub(crate) fn accepts(items: &[FileInfo], same: bool, folder: &str, moving: bool
     let onto_itself = items.iter().any(|item| item.path == folder || (item.is_dir && folder.starts_with(&format!("{}/", item.path))));
     let already_there = moving && items.iter().all(|item| parent(&item.path) == folder);
     !onto_itself && !already_there
+}
+
+/// This PC holds drives, and Recent and Network are listings: none is a folder.
+fn takes_files(folder: &str) -> bool {
+    !folder.is_empty() && folder != crate::local::RECENT && folder != crate::local::NETWORK
 }
 
 /// Which drag is over the window.
@@ -191,7 +195,7 @@ impl Workspace {
             (Origin::Outside, DropTarget::Trash) => true,
             (Origin::Window, _) => self.drop_allowed(&target, request(window.modifiers())),
             // This PC holds drives, not files; any folder takes files from outside.
-            (Origin::Outside, _) => self.drop_destination(&target).is_some_and(|(_, _, folder)| !folder.is_empty()),
+            (Origin::Outside, _) => self.drop_destination(&target).is_some_and(|(_, _, folder)| takes_files(&folder)),
         };
         if allowed {
             self.drag_drop.candidate = Some(target);
@@ -263,7 +267,7 @@ impl Workspace {
             self.trash_external(paths, cx);
             return;
         }
-        let Some((pane, destination, folder)) = self.drop_destination(&target).filter(|(_, _, folder)| !folder.is_empty()) else { return };
+        let Some((pane, destination, folder)) = self.drop_destination(&target).filter(|(_, _, folder)| takes_files(folder)) else { return };
         cx.spawn(async move |this, cx| {
             // A drop can come from this very folder, shown in another file manager.
             let (resolver, inside) = (destination.clone(), folder.clone());
