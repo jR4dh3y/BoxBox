@@ -702,3 +702,26 @@ fn delete_names_one_item_or_counts_and_lists_several(cx: &mut TestAppContext) {
         assert_eq!(names, ["a.txt", "b.txt"]);
     });
 }
+
+#[gpui::test]
+fn a_long_notice_wraps_inside_its_toast(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.txt"]);
+    let message = "Could not open 482 GB Volume: could not mount: org.freedesktop.UDisks2.Error.NotAuthorizedCanObtain: Not authorized to perform operation";
+    view.update(cx, |workspace, cx| workspace.report(Err(message.into()), cx));
+    settle(cx);
+    let text = cx.debug_bounds("toast-message").unwrap();
+    assert!(text.size.width <= gpui::px(380.), "the message stays in the 380px toast: {text:?}");
+    assert!(text.size.height > gpui::px(40.), "and wraps onto more lines: {text:?}");
+}
+
+#[gpui::test]
+fn a_select_opens_its_list_right_under_it(cx: &mut TestAppContext) {
+    let (_view, cx, _fixture) = open(cx, &["a.txt"]);
+    cx.simulate_keystrokes("ctrl-,");
+    click(cx, "settings-appearance");
+    click(cx, "accent-source");
+    let control = cx.debug_bounds("accent-source").unwrap();
+    let first = cx.debug_bounds("accent-source-0").unwrap();
+    let gap = first.top() - control.bottom();
+    assert!(gap >= gpui::px(0.) && gap < gpui::px(12.), "the list starts just below the control, {gap:?} away");
+}

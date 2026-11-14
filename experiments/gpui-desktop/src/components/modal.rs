@@ -101,6 +101,8 @@ impl RenderOnce for Modal {
             .items_center()
             .justify_center()
             .bg(rgba(0x0000008c))
+            // What is behind the dialog takes no hover or clicks while it is open.
+            .occlude()
             .child(
                 // mx-4 max-h-[90vh] w-full max-w-* flex-col overflow-hidden rounded-lg border
                 // border-border-primary bg-surface-secondary shadow-2xl

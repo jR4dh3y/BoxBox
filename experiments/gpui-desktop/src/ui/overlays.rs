@@ -172,6 +172,7 @@ impl Workspace {
         }
         div()
             .id("context-dismiss")
+            .occlude()
             .absolute()
             .inset_0()
             .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {

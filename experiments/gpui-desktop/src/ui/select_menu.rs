@@ -43,7 +43,9 @@ impl Workspace {
                             }))
                     })
                     .collect();
-                slot.child(
+                // From the slot's top-left corner, not from below the control, where the
+                // menu would otherwise sit in the flow.
+                slot.child(div().absolute().top_0().left_0().child(
                     deferred(
                         anchored().position_mode(AnchoredPositionMode::Local).position(point(px(0.), px(34.))).snap_to_window().child(
                             div()
@@ -58,7 +60,7 @@ impl Workspace {
                         ),
                     )
                     .with_priority(2),
-                )
+                ))
             })
     }
 }

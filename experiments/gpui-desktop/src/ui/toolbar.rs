@@ -402,6 +402,7 @@ impl Workspace {
             .absolute()
             .inset_0()
             .id("history-dismiss")
+            .occlude()
             .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, _, _, cx| close(this, cx)))
             .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, _, _, cx| close(this, cx)))
             .child(
@@ -482,7 +483,7 @@ impl Workspace {
                                     cx.notify();
                                 }))
                             }))
-                            .when(self.add_menu == Some(target), |slot| slot.child(self.render_add_menu(target, cx))),
+                            .when(self.add_menu == Some(target), |slot| slot.child(div().absolute().top_0().left_0().child(self.render_add_menu(target, cx)))),
                     )
                     .child(
                         self.nav_button("refresh", "refresh-cw", 16., true)

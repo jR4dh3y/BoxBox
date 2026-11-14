@@ -94,6 +94,7 @@ impl Workspace {
             .absolute()
             .inset_0()
             .id("place-menu-dismiss")
+            .occlude()
             .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| close(this, cx)))
             .on_mouse_down(MouseButton::Right, cx.listener(move |this, _, _, cx| close(this, cx)))
             .child(
