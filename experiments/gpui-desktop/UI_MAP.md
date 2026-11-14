@@ -49,20 +49,6 @@ Linux file manager does, not commitments.
   `x-scheme-handler/file`), opt-in.
 - Drive context menu: Rename and Reset Name, with stored drive names.
 - Shift+Delete deletes permanently outside Trash; Delete in Trash deletes.
-- Keys: Home, End, PageUp, PageDown, Ctrl+Arrow moves focus, Ctrl+Space
-  toggles, Shift+Left/Right extends in the grid, Ctrl+Shift+click adds a
-  range, the Menu key and Shift+F10 open the context menu, type-ahead. List
-  them in F1.
-- Right-click on empty space clears the selection before the folder menu.
-- Alt+Enter on several items summarises count, folders and size.
-- Properties: permissions and owner.
-- Create dialog prefills `New folder` / `untitled.txt` and selects the
-  basename; rename selects the basename; names are trimmed and `/` is refused
-  with a message.
-- Rename in place instead of a dialog.
-- Delete confirmation names the item, or gives the count and list.
-- Notices for a read-only location and for pasting with no files on the
-  clipboard.
 - After a cut is pasted, clear the OS clipboard if it still holds that cut.
 - Clipboard on GNOME: data-control is not offered there, so copy and paste
   with other apps fail.
@@ -88,37 +74,24 @@ Most valuable first.
 - Transfer conflicts: Replace, Rename, Merge folders, Apply to all; retry or
   skip a failed item instead of stopping the batch; warn when the target lacks
   space; names valid on FAT/exFAT targets.
-- Empty Trash, a Trash full/empty icon kept current, drop onto Trash, and
-  Restore that offers to open the restored item.
 - Bulk rename for several items: replace (regex), case, insert, numbering,
   remove, date, with a preview that catches collisions.
 - Permissions and owner editor in Properties, optionally recursive.
-- Properties: folder size and counts (cancellable), image dimensions, EXIF date
-  and camera, MIME type, link target, all dates, free space; values selectable.
-- Mouse Back/Forward buttons; middle-click opens a folder in a new tab; Ctrl
-  with it opens in the background.
-- Open selected folders in new tabs; reorder tabs; restore tabs and split
-  panes on launch.
-- Breadcrumbs: context menu, middle-click, drop onto a crumb, hover to open
-  while dragging, overflow for long paths, full name on hover.
-- Back/Forward history menus; skip history entries that no longer exist.
-- Places: Recent, Desktop, Templates, Network; read and write GTK bookmarks;
-  reorder favorites by drag; sidebar context menu (Open in new tab, Properties,
-  Mount, Eject, Empty Trash).
-- New file from XDG Templates.
+- Properties: image dimensions, EXIF date and camera, MIME type, link target,
+  all dates, free space; values selectable. (Folder size and counts are done.)
+- Mouse Back/Forward buttons; middle-click on a folder row opens it in a new
+  tab; Ctrl with it opens in the background.
+- Reorder tabs; restore tabs and split panes on launch.
 - Details view: choose, resize and reorder columns (owner, permissions, MIME
   type, created, accessed), remembered per folder.
 - Per-folder view and sort; zoom (Ctrl+wheel, Ctrl+plus/minus) in grid and list.
 - Select by pattern and invert selection; rubber-band selection.
-- Hover a folder while dragging to open it; autoscroll at the edges; Link on
-  drop, and Ask on right-drag.
-- Executable scripts and `.desktop` launchers: ask before running, honour the
-  execute bit and trust.
+- Hover a folder row while dragging to open it (crumbs already do);
+  autoscroll at the edges; Link on drop, and Ask on right-drag.
+- Launchers with `Terminal=true`: open them in a terminal.
 - Middle-ellipsis for long names, keeping the extension.
 - Undo for copy, move, create and link as well as Trash and rename; Redo.
 - Transfer pause and resume, current file, rate and time left.
-- Context-menu entries: Create link, Open in new tab, Send to (removable
-  drive, mail), Compress several items into one archive.
 - Custom actions: user commands filtered by file type, in the context menu.
 - Folder tree in the sidebar.
 - Accessibility: names and roles for screen readers.
@@ -151,8 +124,8 @@ Most valuable first.
 | `DriveContextMenu.svelte` | drive menu | keep | ✓ `context_menu.rs` | ◐ `ui/overlays.rs` |
 | `FileContextMenu.svelte`, `ui/ContextMenu.svelte` | file and empty-space menus | keep | ✓ `context_menu.rs` | ✓ `ui/overlays.rs` on `ContextMenu`, items as in `fileContextMenu.ts` |
 | `BrowseDialogs.svelte` | create, rename, delete, properties | keep | ✓ `dialogs.rs` | ✓ create, rename, delete and properties on `Modal`; every confirmation uses `workspace/confirm.rs` |
-| `ui/InlineRename.svelte` | rename in place | keep | ◐ dialog instead | ◐ dialog instead |
-| `KeyboardShortcutsDialog.svelte` | F1 shortcuts | keep | ✓ claimed | ✓ `ui/shortcuts.rs`, listing the keys this app binds |
+| `ui/InlineRename.svelte` | rename in place | keep | ◐ dialog instead | ✓ `workspace/rename.rs`: the row's or tile's name becomes a field (`rename_box`); Enter or a click elsewhere renames, Escape cancels |
+| `KeyboardShortcutsDialog.svelte` | F1 shortcuts | keep | ✓ claimed | ✓ `ui/shortcuts.rs`, listing the keys this app binds, including the movement keys of `workspace/keyboard.rs` |
 
 ## Previews: a quick look only; everything else opens in its app
 
@@ -264,7 +237,17 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✓ `os_clipboard.rs`: owns the Wayland clipboard via data-control (not GNOME); `xclip` on X11 |
 | Devices: mount, unlock, eject | ✓ `devices.rs` (server) | ✓ `devices/udisks.rs`: UDisks2 over D-Bus (`zbus`), live, with LUKS unlock and lock. `devices/gvfs.rs`: GVfs mounts and volume monitors over D-Bus; `smb://`, `sftp://`, `ftp://` and `mtp://` typed in the location bar mount and open, and a backend's password or host-key question opens a dialog. Rows show a usage bar, a read-only mark and a dimmed unmounted state. Run against a Samba share, an SSH login and a LUKS loop image; no phone was plugged in, so MTP is untested |
 | Wayland rendering | ◐ untested | ✓ native on Niri, Hyprland and sway; `render_gpu.rs` draws on the compositor's GPU (`linux-dmabuf` main device) instead of the first Vulkan device. Run on a live Hyprland session and in nested niri; a Niri session on real hardware was not run. GPUI 0.2.2 still panics if a new keyboard sends modifiers before its keymap (`wayland/client.rs:1267`), and drops the first key of a newly added keyboard; both seen only with `wtype` virtual keyboards |
-| Keyboard focus movement, type-ahead | ✗ | ◐ arrow selection |
+| Keyboard focus movement, type-ahead | ✗ | ✓ `workspace/keyboard.rs`: arrows (by row in the grid), Home, End, Page Up/Down; Shift extends, Ctrl moves the cursor alone, Ctrl+Space toggles; Menu and Shift+F10; type-ahead with a 1 s pause; the cursor scrolls into view |
+| Read-only folders | — | ✓ checked with `access(2)` on load; New, Rename, Cut, Paste and Delete say "This location is read-only or unavailable" |
+| History | — | ✓ `workspace/history.rs`: right-click Back or Forward for the places; places that no longer exist are skipped and dropped |
+| Breadcrumbs | — | ✓ `ui/toolbar.rs` `render_crumbs`: menu (Open in New Tab, Paste Into Folder, Properties), middle-click, drops, open after 0.7 s of dragging, "…" for crumbs that do not fit, full path on hover |
+| Places | — | ✓ Recent (`recently-used.xbel`), Templates, Network (Avahi over D-Bus; untested here, as Avahi is disabled on this machine), Desktop; every sidebar entry has a menu (`ui/place_menu.rs`) |
+| Favorites | — | ✓ local favorites are the GTK bookmarks file, shared with other file managers and watched; server favorites stay in BoxBox's file; drag to reorder |
+| Trash | — | ✓ `workspace/trash.rs`: Empty Trash, a full or empty icon kept current by watching Trash, drops onto Trash, Restore offers Show |
+| Templates | — | ✓ `workspace/templates.rs`: "New from Template" in the folder and + menus; the copy opens for renaming |
+| Item menu | — | ✓ `workspace/item_actions.rs`: Open in New Tab, Create Link, Compress (ZIP), Send To (Desktop, removable drives, mail through the Email portal; mail untested, as it opens the mail app) |
+| Running files | — | ✓ `launch.rs`, `workspace/run.rs`: executable scripts and programs ask first; launchers run when trusted (executable or installed) and ask otherwise |
+| Properties | — | ✓ `workspace/properties.rs`: permissions, owner and group; for several items or a folder, counts and total size, read off the UI thread |
 
 ## Search
 

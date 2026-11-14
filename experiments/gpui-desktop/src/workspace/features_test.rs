@@ -683,3 +683,22 @@ fn scripts_ask_before_running_and_launchers_need_trust(cx: &mut TestAppContext) 
     assert!(wait_for(&launched));
 }
 
+
+#[gpui::test]
+fn delete_names_one_item_or_counts_and_lists_several(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt"]);
+    click(cx, "row-0-0");
+    cx.simulate_keystrokes("delete");
+    view.read_with(cx, |workspace, _| {
+        let confirm = workspace.confirm.as_ref().unwrap();
+        assert_eq!(confirm.message.as_ref(), "“a.txt” will be moved to Trash.");
+        assert!(confirm.items.is_empty());
+    });
+    cx.simulate_keystrokes("escape ctrl-a delete");
+    view.read_with(cx, |workspace, _| {
+        let confirm = workspace.confirm.as_ref().unwrap();
+        assert_eq!(confirm.message.as_ref(), "2 items will be moved to Trash.");
+        let names: Vec<&str> = confirm.items.iter().map(|name| name.as_ref()).collect();
+        assert_eq!(names, ["a.txt", "b.txt"]);
+    });
+}
