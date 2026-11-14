@@ -1488,14 +1488,15 @@ impl Workspace {
         let Some(generation) = self.thumbnail_cache.request(key.clone()) else {
             return;
         };
+        let rendered = crate::thumbnail_queue::render(move || crate::media::thumbnail(&api, &item, 160, 120));
         cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { crate::media::thumbnail(&api, &item, 160, 120) })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                this.thumbnail_cache.finish(key, generation, result);
-                cx.notify();
+            let result = rendered.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Some(result) => {
+                    this.thumbnail_cache.finish(key, generation, result);
+                    cx.notify();
+                }
+                None => this.thumbnail_cache.forget(&key, generation),
             });
         })
         .detach();

@@ -31,6 +31,7 @@ wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
 x11rb = "0.13"
+yeslogic-fontconfig-sys = "6.0.1"
 
 [profile.dev]
 opt-level = 1

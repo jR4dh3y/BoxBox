@@ -763,6 +763,7 @@ dependencies = [
  "wayland-protocols 0.32.13",
  "wl-clipboard-rs",
  "x11rb",
+ "yeslogic-fontconfig-sys",
  "zbus",
  "zip",
 ]

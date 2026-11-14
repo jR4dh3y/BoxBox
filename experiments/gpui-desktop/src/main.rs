@@ -23,11 +23,11 @@ mod profile;
 mod search;
 mod sort;
 mod theme;
+mod thumbnail_queue;
 mod ui;
 mod workspace;
 mod settings_state;
-
-use std::process::Command;
+mod system_fonts;
 
 use gpui::{
     point, px, size, App, AppContext, Application, Bounds, SharedString, TitlebarOptions,
@@ -35,20 +35,7 @@ use gpui::{
 };
 
 use crate::api::Api;
-use crate::workspace::{Fonts, Workspace};
-
-/// The browser resolves the CSS `sans-serif`/`monospace` stacks through fontconfig; do the same.
-fn fontconfig_family(pattern: &str, fallback: &str) -> SharedString {
-    let _span = profile::span("fontconfig").with(|| pattern.to_string());
-    Command::new("fc-match")
-        .args(["-f", "%{family[0]}", pattern])
-        .output()
-        .ok()
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .filter(|family| !family.trim().is_empty())
-        .map(|family| SharedString::from(family.trim().to_string()))
-        .unwrap_or_else(|| SharedString::from(fallback.to_string()))
-}
+use crate::workspace::Workspace;
 
 fn main() {
     if std::env::args().nth(1).as_deref() == Some("--profile-summary") {
@@ -63,6 +50,8 @@ fn main() {
         return;
     }
     profile::init();
+    // Overlaps GPUI's own start-up; the window needs the result only once it opens.
+    let fonts = std::thread::Builder::new().name("fonts".into()).spawn(system_fonts::resolve).expect("cannot start a thread");
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     #[cfg(target_os = "linux")]
     {
@@ -88,13 +77,8 @@ fn main() {
         std::process::exit(1);
     });
     let initial_path = std::env::args().nth(1).unwrap_or_default();
-    let fonts = Fonts {
-        sans: fontconfig_family("sans-serif", ".SystemUIFont"),
-        mono: fontconfig_family("monospace", "monospace"),
-    };
-
     if std::env::args().nth(1).as_deref() == Some("--gallery") {
-        run_gallery(fonts.sans);
+        run_gallery(fonts.join().expect("font lookup panicked").sans);
         return;
     }
     // A second launch opens its location in the running window instead.
@@ -130,6 +114,7 @@ fn main() {
         .run(move |cx: &mut App| {
             drop(platform_init);
             let _span = profile::span("open window");
+            let fonts = fonts.join().expect("font lookup panicked");
             workspace::bind_keys(cx);
             cx.set_global(components::UiFont(fonts.sans.clone()));
             components::text_field_bind_keys(cx);

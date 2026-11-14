@@ -59,6 +59,7 @@ pub fn read_text_preview(api: &Api, item: &FileInfo) -> Result<String> {
 
 /// Return a PNG thumbnail, rendering local files natively and requesting remote thumbnails directly.
 pub fn thumbnail(api: &Api, item: &FileInfo, width: u32, height: u32) -> Result<Vec<u8>> {
+    let _span = crate::profile::span("thumbnail").with(|| format!("{} {width}x{height}", item.path));
     ensure_file(item)?;
     if let Some(path) = local_file(api, &item.path)? {
         return boxbox_thumbnail::thumbnail_path(&path, width, height)

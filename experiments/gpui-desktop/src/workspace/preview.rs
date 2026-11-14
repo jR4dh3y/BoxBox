@@ -79,6 +79,13 @@ impl ThumbnailCache {
         self.insertion_order.push_back(key);
     }
 
+    /// A request that was dropped unrendered; the tile asks again when it is drawn.
+    pub fn forget(&mut self, key: &ThumbnailKey, generation: u64) {
+        if self.pending.get(key) == Some(&generation) {
+            self.pending.remove(key);
+        }
+    }
+
     pub fn invalidate(&mut self) {
         self.images.clear();
         self.insertion_order.clear();

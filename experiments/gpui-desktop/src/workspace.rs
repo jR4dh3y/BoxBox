@@ -552,7 +552,9 @@ impl Workspace {
         .detach();
     }
 
+    #[track_caller]
     fn load_pane(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
+        let caller = std::panic::Location::caller();
         let Some(pane) = self.pane_mut_by_id(target.0) else {
             return;
         };
@@ -563,11 +565,14 @@ impl Workspace {
         let path = pane.path.clone();
         let api = pane.api.clone();
         let view = pane.view();
-        let journey = crate::profile::journey("open folder", || path.clone());
+        // The caller tells a navigation from a refresh or a watcher reload.
+        let journey = crate::profile::journey("open folder", || format!("{path}  ({}:{})", caller.file(), caller.line()));
+        let queued = crate::profile::span("listing queued");
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
                 .spawn(async move {
+                    drop(queued);
                     let items = api.list(&path).map(|items| {
                         let _span = crate::profile::span("arrange").with(|| format!("{} entries", items.len()));
                         crate::pane::arrange(items, view)
