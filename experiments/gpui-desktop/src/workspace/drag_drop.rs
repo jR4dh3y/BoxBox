@@ -26,6 +26,8 @@ pub(crate) enum DropTarget {
     Folder { pane: PaneTarget, path: String },
     /// A sidebar entry, on the active pane's provider.
     Place { path: String },
+    /// The sidebar's Trash: dropped local items are moved there.
+    Trash,
 }
 
 /// The items being dragged, taken when the drag starts so a refresh cannot change them.
@@ -157,14 +159,16 @@ impl Workspace {
                 return;
             }
         }
-        let allowed = match origin {
-            Origin::Window => self.drop_allowed(&target, request(window.modifiers())),
+        let allowed = match (origin, &target) {
+            (Origin::Window, DropTarget::Trash) => self.drag_drop.source.as_ref().is_some_and(|source| source.api.is_local()),
+            (Origin::Outside, DropTarget::Trash) => true,
+            (Origin::Window, _) => self.drop_allowed(&target, request(window.modifiers())),
             // This PC holds drives, not files; any folder takes files from outside.
-            Origin::Outside => self.drop_destination(&target).is_some_and(|(_, _, folder)| !folder.is_empty()),
+            (Origin::Outside, _) => self.drop_destination(&target).is_some_and(|(_, _, folder)| !folder.is_empty()),
         };
         if allowed {
             self.drag_drop.candidate = Some(target);
-        } else if matches!(target, DropTarget::Folder { .. } | DropTarget::Place { .. }) {
+        } else if matches!(target, DropTarget::Folder { .. } | DropTarget::Place { .. } | DropTarget::Trash) {
             // A refused folder must not fall back to the pane around it.
             self.drag_drop.candidate = None;
         }
@@ -176,6 +180,7 @@ impl Workspace {
             DropTarget::Pane(pane) => self.pane_by_id(pane.0).map(|found| (*pane, found.api.clone(), found.path.clone())),
             DropTarget::Folder { pane, path } => self.pane_by_id(pane.0).map(|found| (*pane, found.api.clone(), path.clone())),
             DropTarget::Place { path } => Some((self.active_pane, self.active_api(), path.clone())),
+            DropTarget::Trash => None,
         }
     }
 
@@ -190,6 +195,10 @@ impl Workspace {
     pub(crate) fn drop_items(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (source, target) = (self.drag_drop.source.take(), self.drag_drop.hover.take());
         let (Some(source), Some(target)) = (source, target) else { return };
+        if target == DropTarget::Trash {
+            self.trash_dropped(source.api, source.items, cx);
+            return;
+        }
         let request = request(window.modifiers());
         let Some((pane, destination, folder)) = self.drop_destination(&target) else { return };
         let same = same_provider(&source.api, &destination);
@@ -221,6 +230,10 @@ impl Workspace {
     /// GPUI does not say which action the other app offered.
     pub(crate) fn drop_external(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         let Some(target) = self.drag_drop.hover.take() else { return };
+        if target == DropTarget::Trash {
+            self.trash_external(paths, cx);
+            return;
+        }
         let Some((pane, destination, folder)) = self.drop_destination(&target).filter(|(_, _, folder)| !folder.is_empty()) else { return };
         cx.spawn(async move |this, cx| {
             // A drop can come from this very folder, shown in another file manager.

@@ -760,7 +760,7 @@ impl Workspace {
         self.ask(confirm, cx);
     }
 
-    fn run_delete(
+    pub(crate) fn run_delete(
         &mut self,
         target: PaneTarget,
         api: Arc<Api>,
@@ -805,13 +805,8 @@ impl Workspace {
                     message
                 });
                 this.refresh_provider(refresh_api.clone(), cx);
-                if is_local
-                    && this
-                        .trash_provider
-                        .as_ref()
-                        .is_some_and(|trash_api| same_provider(trash_api, &refresh_api))
-                {
-                    this.load_trash(refresh_api, cx);
+                if is_local {
+                    this.refresh_trash_state(cx);
                 }
                 if this.pane_by_id(target.0).is_none() && result.is_ok() {
                     this.report(Err("The source pane was closed during deletion.".into()), cx);

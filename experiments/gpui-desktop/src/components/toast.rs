@@ -23,11 +23,18 @@ pub struct Toast {
     kind: ToastKind,
     message: SharedString,
     on_dismiss: Option<DismissHandler>,
+    action: Option<(SharedString, DismissHandler)>,
 }
 
 impl Toast {
     pub fn new(id: impl Into<ElementId>, kind: ToastKind, message: impl Into<SharedString>) -> Self {
-        Self { id: id.into(), kind, message: message.into(), on_dismiss: None }
+        Self { id: id.into(), kind, message: message.into(), on_dismiss: None, action: None }
+    }
+
+    /// A text button before the close button, for the notice's follow-up.
+    pub fn action(mut self, label: impl Into<SharedString>, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+        self.action = Some((label.into(), Box::new(handler)));
+        self
     }
 
     pub fn on_dismiss(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
@@ -60,6 +67,22 @@ impl RenderOnce for Toast {
             .child(div().mt(px(2.)).flex_none().child(icon(glyph, 16., c(color))))
             // flex-1 pr-2 text-[13px] text-text-primary
             .child(div().flex_1().pr(px(8.)).type_13().text_color(c(TEXT_PRIMARY)).child(self.message))
+            .when_some(self.action, |el, (label, handler)| {
+                // text-[13px] font-medium text-accent, as a link-like button
+                el.child(
+                    div()
+                        .id("toast-action")
+                        .debug_selector(|| "toast-action".into())
+                        .flex_none()
+                        .type_13()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(c(ACCENT))
+                        .cursor_pointer()
+                        .hover(|style| style.underline())
+                        .child(label)
+                        .on_click(handler),
+                )
+            })
             .child(
                 // shrink-0 rounded p-0.5 text-text-muted, a 14px X
                 div()

@@ -2,6 +2,7 @@
 
 use gpui::{div, prelude::*, px, AnyElement, Context, SharedString, Window};
 
+use crate::components::{Button, ButtonSize, ButtonVariant};
 use crate::ui::icon;
 use super::TextScale;
 use crate::pane::{Listing, ViewMode};
@@ -175,8 +176,7 @@ impl Workspace {
                 .gap(px(1.))
                 .p(px(12.))
                 .children(items.iter().map(|item| {
-                    let restore_id = item.id.clone();
-                    let delete_id = item.id.clone();
+                    let (restored, deleted) = (item.clone(), item.clone());
                     let can_restore = item.can_restore;
                     div()
                         .id(SharedString::from(format!("trash-{}", item.id)))
@@ -218,7 +218,7 @@ impl Workspace {
                                 .child(if can_restore { "Restore" } else { "Unavailable" })
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     if can_restore {
-                                        this.restore_trash(restore_id.clone(), cx)
+                                        this.restore_trash(restored.clone(), cx)
                                     }
                                 })),
                         )
@@ -232,17 +232,9 @@ impl Workspace {
                                 .text_xs_tw()
                                 .text_color(c(DANGER))
                                 .hover(|style| style.bg(c(SURFACE_TERTIARY)))
+                                .debug_selector(|| format!("delete-trash-{}", deleted.name))
                                 .child("Delete")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    let id = delete_id.clone();
-                                    let confirm = crate::workspace::confirm::Confirm::new(
-                                        "Delete permanently",
-                                        "This item will be removed permanently.",
-                                        "Delete",
-                                        move |this, cx| this.delete_trash_item(id, cx),
-                                    );
-                                    this.ask(confirm, cx);
-                                })),
+                                .on_click(cx.listener(move |this, _, _, cx| this.delete_trash_item(deleted.clone(), cx))),
                         )
                 }))
                 .into_any_element(),
@@ -275,18 +267,14 @@ impl Workspace {
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child("Trash"),
             )
+            // Trash is watched, so it needs no Refresh.
             .child(
-                div()
-                    .id("trash-refresh")
-                    .cursor_pointer()
-                    .rounded(px(4.))
-                    .px(px(8.))
-                    .py(px(4.))
-                    .hover(|style| style.bg(c(SURFACE_ELEVATED)))
-                    .child(icon("refresh-cw", 15., c(TEXT_SECONDARY)))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.refresh(&crate::workspace::Refresh, window, cx)
-                    })),
+                Button::new("empty-trash")
+                    .label("Empty Trash")
+                    .variant(ButtonVariant::Danger)
+                    .size(ButtonSize::Sm)
+                    .disabled(!matches!(&self.trash, Load::Loaded(items) if !items.is_empty()) || self.operation_status.is_busy())
+                    .on_click(cx.listener(|this, _, _, cx| this.empty_trash(cx))),
             );
         div()
             .id("trash-page")

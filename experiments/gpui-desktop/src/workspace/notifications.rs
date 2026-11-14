@@ -1,9 +1,10 @@
 //! `stores/toast.svelte.ts`: result notices. At most four show at once, and a
 //! notice's five seconds start only once it is shown.
 
+use std::rc::Rc;
 use std::time::Duration;
 
-use gpui::Context;
+use gpui::{Context, SharedString};
 
 use super::Workspace;
 use crate::components::ToastKind;
@@ -15,8 +16,12 @@ pub(crate) struct Notice {
     pub id: u64,
     pub kind: ToastKind,
     pub message: String,
+    /// A follow-up the notice offers, such as showing a restored item.
+    pub action: Option<(SharedString, NoticeAction)>,
     timed: bool,
 }
+
+pub(crate) type NoticeAction = Rc<dyn Fn(&mut Workspace, &mut Context<Workspace>)>;
 
 #[derive(Default)]
 pub(crate) struct Notices {
@@ -29,9 +34,9 @@ impl Notices {
         &self.entries[..self.entries.len().min(MAX_VISIBLE)]
     }
 
-    fn push(&mut self, kind: ToastKind, message: String) {
+    fn push(&mut self, kind: ToastKind, message: String, action: Option<(SharedString, NoticeAction)>) {
         self.next_id += 1;
-        self.entries.push(Notice { id: self.next_id, kind, message, timed: false });
+        self.entries.push(Notice { id: self.next_id, kind, message, action, timed: false });
     }
 
     fn remove(&mut self, id: u64) -> bool {
@@ -65,9 +70,31 @@ impl Workspace {
     }
 
     pub(crate) fn notify(&mut self, kind: ToastKind, message: impl Into<String>, cx: &mut Context<Self>) {
-        self.notices.push(kind, message.into());
+        self.notices.push(kind, message.into(), None);
         self.start_notice_timers(cx);
         cx.notify();
+    }
+
+    /// A notice with a button that runs `action` and closes the notice.
+    pub(crate) fn notify_with_action(
+        &mut self,
+        kind: ToastKind,
+        message: impl Into<String>,
+        label: impl Into<SharedString>,
+        action: impl Fn(&mut Workspace, &mut Context<Workspace>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        self.notices.push(kind, message.into(), Some((label.into(), Rc::new(action))));
+        self.start_notice_timers(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn run_notice_action(&mut self, id: u64, cx: &mut Context<Self>) {
+        let action = self.notices.visible().iter().find(|notice| notice.id == id).and_then(|notice| notice.action.as_ref().map(|(_, action)| action.clone()));
+        self.dismiss_notice(id, cx);
+        if let Some(action) = action {
+            action(self, cx);
+        }
     }
 
     pub(crate) fn dismiss_notice(&mut self, id: u64, cx: &mut Context<Self>) {
@@ -96,7 +123,7 @@ mod tests {
     fn only_shown_notices_start_their_lifetime() {
         let mut notices = Notices::default();
         for index in 0..6 {
-            notices.push(ToastKind::Info, index.to_string());
+            notices.push(ToastKind::Info, index.to_string(), None);
         }
         assert_eq!(notices.start_timers(), [1, 2, 3, 4]);
         assert!(notices.start_timers().is_empty());

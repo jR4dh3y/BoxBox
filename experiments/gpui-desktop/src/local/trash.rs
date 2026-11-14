@@ -170,6 +170,23 @@ pub(super) fn delete(
         .with_context(|| format!("deleted Trash entry but could not remove {}", record.info_path.display()))
 }
 
+/// Whether any Trash folder holds an entry; cheaper than listing them.
+pub(super) fn has_items(data_home: &Path, include_volume_trash: bool) -> bool {
+    discover_roots(data_home, include_volume_trash)
+        .unwrap_or_default()
+        .iter()
+        .any(|root| fs::read_dir(root.path.join("files")).is_ok_and(|mut entries| entries.next().is_some()))
+}
+
+/// Deletes every item in Trash. Returns how many there were.
+pub(super) fn empty(mounts: &[Mount], data_home: &Path, include_volume_trash: bool) -> Result<usize> {
+    let items = list(mounts, data_home, include_volume_trash)?;
+    for item in &items {
+        delete(mounts, data_home, include_volume_trash, &item.id)?;
+    }
+    Ok(items.len())
+}
+
 fn store_entry(root: &TrashRoot, source: &Path, path_in_info: &Path) -> Result<Record> {
     let (files, info) = ensure_trash_dirs(root)?;
     let name = source

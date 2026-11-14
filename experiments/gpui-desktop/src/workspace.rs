@@ -30,6 +30,8 @@ pub(crate) mod operations;
 pub(crate) mod names;
 pub(crate) mod keyboard;
 pub(crate) mod history;
+pub(crate) mod trash;
+pub(crate) mod sidebar;
 pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;
@@ -202,7 +204,9 @@ pub struct Workspace {
     /// Sidebar sections the user folded, by title.
     pub(crate) collapsed_sections: std::collections::HashSet<&'static str>,
     pub(crate) trash_error: Option<String>,
-    trash_provider: Option<Arc<Api>>,
+    pub(crate) trash_provider: Option<Arc<Api>>,
+    /// Whether Trash holds anything, for its icon.
+    pub(crate) trash_full: bool,
     pub(crate) fonts: Fonts,
     pub(crate) focus_handle: FocusHandle,
     /// One search field per pane, as each pane's toolbar has one.
@@ -246,6 +250,7 @@ pub struct Workspace {
     next_job_id: u64,
     pub(crate) context_menu: Option<ContextMenuState>,
     pub(crate) history_menu: Option<history::HistoryMenu>,
+    pub(crate) sidebar_menu: Option<sidebar::SidebarMenu>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
     /// The select whose option list is open.
@@ -325,6 +330,7 @@ impl Workspace {
             collapsed_sections: Default::default(),
             trash_error: None,
             trash_provider: None,
+            trash_full: false,
             fonts,
             focus_handle,
             search_fields: HashMap::new(),
@@ -372,6 +378,7 @@ impl Workspace {
             next_job_id: 0,
             context_menu: None,
             history_menu: None,
+            sidebar_menu: None,
             add_menu: None,
             open_select: None,
             accent_field: accent_field.clone(),
@@ -393,6 +400,7 @@ impl Workspace {
         workspace.load_pane(PaneTarget(0), cx);
         workspace.start_directory_watches(cx);
         workspace.start_device_watch(cx);
+        workspace.watch_trash(cx);
         workspace
     }
 
@@ -506,40 +514,6 @@ impl Workspace {
                     pane.drives = match drives {
                         Ok(drives) => Load::Loaded(drives),
                         Err(error) => Load::Failed(format!("{error:#}")),
-                    };
-                    cx.notify();
-                }
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn load_trash(&mut self, api: Arc<Api>, cx: &mut Context<Self>) {
-        if !api.is_local() {
-            return;
-        }
-        self.trash_provider = Some(api.clone());
-        self.trash = Load::Loading;
-        self.trash_error = None;
-        let request_api = api.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { request_api.trash() })
-                .await;
-            this.update(cx, |this, cx| {
-                if this
-                    .trash_provider
-                    .as_ref()
-                    .is_some_and(|current| Arc::ptr_eq(current, &api))
-                {
-                    this.trash = match result {
-                        Ok(items) => Load::Loaded(items),
-                        Err(error) => {
-                            this.trash_error = Some(format!("{error:#}"));
-                            Load::Failed(format!("{error:#}"))
-                        }
                     };
                     cx.notify();
                 }
@@ -785,87 +759,6 @@ impl Workspace {
         }
         cx.notify();
     }
-
-    pub(crate) fn open_trash(&mut self, cx: &mut Context<Self>) {
-        let api = self.active_api();
-        if !api.is_local() {
-            self.report(Err("Trash is available only for local storage".into()), cx);
-            return;
-        }
-        self.trash_open = true;
-        self.trash_error = None;
-        self.load_trash(api, cx);
-        cx.notify();
-    }
-
-    pub(crate) fn restore_trash(&mut self, id: String, cx: &mut Context<Self>) {
-        let Some(api) = self.trash_provider.clone().filter(|api| api.is_local()) else {
-            return;
-        };
-        if self.operation_status.is_busy() {
-            return;
-        }
-        let token = self.begin_operation("Restoring from Trash");
-        let refresh_api = api.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { api.restore_trash(&id) })
-                .await;
-            this.update(cx, |this, cx| {
-                if this.mutation_generation == token {
-                    this.report(match &result {
-                        Ok(()) => Ok("Restored from Trash".into()),
-                        Err(error) => Err(format!("Could not restore item: {error:#}")),
-                    }, cx);
-                    this.trash_error = result
-                        .as_ref()
-                        .err()
-                        .map(|error| format!("Could not restore item: {error:#}"));
-                    this.load_trash(refresh_api.clone(), cx);
-                    this.refresh_provider(refresh_api.clone(), cx);
-                    cx.notify();
-                }
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    pub(crate) fn delete_trash_item(&mut self, id: String, cx: &mut Context<Self>) {
-        let Some(api) = self.trash_provider.clone().filter(|api| api.is_local()) else {
-            return;
-        };
-        if self.operation_status.is_busy() {
-            return;
-        }
-        let token = self.begin_operation("Deleting permanently");
-        let refresh_api = api.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { api.delete_trash(&id) })
-                .await;
-            this.update(cx, |this, cx| {
-                if this.mutation_generation == token {
-                    this.report(match &result {
-                        Ok(()) => Ok("Deleted permanently".into()),
-                        Err(error) => Err(format!("Could not permanently delete item: {error:#}")),
-                    }, cx);
-                    this.trash_error = result.as_ref().err().map(|error| {
-                        format!("Could not permanently delete item: {error:#}")
-                    });
-                    this.load_trash(refresh_api.clone(), cx);
-                    this.refresh_provider(refresh_api.clone(), cx);
-                    cx.notify();
-                }
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-
 
     pub(crate) fn new_tab(&mut self, _: &NewTab, _: &mut Window, cx: &mut Context<Self>) {
         self.open_tab(String::new(), cx);
@@ -1288,6 +1181,7 @@ impl Render for Workspace {
             .when(self.preview.is_some(), |root| root.child(self.render_preview(cx)))
             .when(self.context_menu.is_some(), |root| root.child(self.render_context_menu(cx)))
             .when(self.history_menu.is_some(), |root| root.child(self.render_history_menu(cx)))
+            .when(self.sidebar_menu.is_some(), |root| root.child(self.render_sidebar_menu(cx)))
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
             .child(self.render_notices(cx))
             .when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)))

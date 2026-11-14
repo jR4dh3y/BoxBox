@@ -238,6 +238,28 @@ impl Api {
         }
     }
 
+    pub fn trash_has_items(&self) -> bool {
+        match &self.provider {
+            Provider::Local(local) => local.trash_has_items(),
+            Provider::Remote(_) => false,
+        }
+    }
+
+    /// Deletes everything in Trash; returns how many items there were.
+    pub fn empty_trash(&self) -> Result<usize> {
+        match &self.provider {
+            Provider::Local(local) => local.empty_trash(),
+            Provider::Remote(_) => anyhow::bail!("Trash is available only in local mode"),
+        }
+    }
+
+    pub fn trash_files(&self) -> Option<PathBuf> {
+        match &self.provider {
+            Provider::Local(local) => Some(local.trash_files()),
+            Provider::Remote(_) => None,
+        }
+    }
+
     pub fn restore_trash(&self, id: &str) -> Result<()> {
         match &self.provider {
             Provider::Local(local) => local.restore_trash(id),

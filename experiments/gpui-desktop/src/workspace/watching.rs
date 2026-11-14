@@ -84,7 +84,13 @@ impl DirectoryWatches {
 impl Workspace {
     pub(crate) fn poll_directory_changes(&mut self, cx: &mut Context<Self>) {
         if self.operation_status.is_busy() { return; }
-        for id in self.directory_watches.changed(&self.all_pane_ids()) {
+        let mut watched = self.all_pane_ids();
+        watched.push(super::trash::TRASH_WATCH);
+        for id in self.directory_watches.changed(&watched) {
+            if id == super::trash::TRASH_WATCH {
+                self.refresh_trash_state(cx);
+                continue;
+            }
             self.load_pane(PaneTarget(id), cx);
             // A finished search is brought up to date; one still walking is left to finish,
             // or a busy folder would restart it for ever.

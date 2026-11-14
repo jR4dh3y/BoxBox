@@ -12,7 +12,8 @@ const ICONS = [
 	'RefreshCw', 'Search', 'Server', 'Settings', 'Star', 'Trash2', 'Video', 'X',
 	'AlertTriangle', 'AppWindow', 'CheckCircle', 'ClipboardPaste', 'Copy', 'ExternalLink', 'Info',
 	'Check', 'Pencil', 'Scissors', 'XCircle', 'FilePlus', 'FolderPlus', 'Pin', 'PinOff', 'Share2', 'FolderInput',
-	'Smartphone', 'Lock', 'PencilOff'
+	'Smartphone', 'Lock', 'PencilOff', 'Trash', 'Link', 'Send', 'Archive', 'Clock', 'Network', 'LayoutTemplate',
+	'SquareTerminal', 'Play', 'Bookmark'
 ];
 
 const root = join(import.meta.dir, '../../../frontend/node_modules/lucide-svelte/dist');

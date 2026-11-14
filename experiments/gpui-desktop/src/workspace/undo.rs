@@ -34,10 +34,8 @@ impl Workspace {
                 })
                 .await;
             this.update(cx, |this, cx| {
-                this.refresh_provider(api.clone(), cx);
-                if this.trash_provider.is_some() {
-                    this.load_trash(api, cx);
-                }
+                this.refresh_provider(api, cx);
+                this.refresh_trash_state(cx);
                 this.finish_operation(generation, result, cx);
             })
             .ok();

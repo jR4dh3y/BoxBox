@@ -305,3 +305,59 @@ fn history_menus_list_and_back_skips_folders_that_are_gone(cx: &mut TestAppConte
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home"));
 }
+
+fn drag(cx: &mut VisualTestContext, from: &'static str, to: &'static str) {
+    let start = cx.debug_bounds(from).unwrap().center();
+    let end = cx.debug_bounds(to).unwrap().center();
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(start + gpui::point(gpui::px(10.), gpui::px(10.)), Some(MouseButton::Left), Modifiers::default());
+    cx.simulate_mouse_move(end, Some(MouseButton::Left), Modifiers::default());
+    cx.simulate_mouse_move(end + gpui::point(gpui::px(1.), gpui::px(0.)), Some(MouseButton::Left), Modifiers::default());
+    // The hover target settles in a deferred update, before the next frame.
+    cx.update(|_, _| {});
+    cx.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn trash_takes_drops_shows_restored_items_and_empties(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["docs/", "docs/a.txt", "b.txt"]);
+    view.read_with(cx, |workspace, _| assert!(!workspace.trash_full));
+    // Dropping a row onto Trash moves it there without a question.
+    drag(cx, "row-0-1", "sidebar-trash");
+    assert!(!fixture.root.join("b.txt").exists(), "the dropped file went to Trash");
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.confirm.is_none());
+        assert!(workspace.trash_full, "the Trash icon shows it is full");
+    });
+
+    // Restoring offers to show the item where it went back to.
+    click(cx, "sidebar-trash");
+    cx.run_until_parked();
+    click(cx, "restore-b.txt");
+    cx.run_until_parked();
+    assert!(fixture.root.join("b.txt").is_file());
+    view.update(cx, |workspace, cx| workspace.navigate("home/docs".into(), cx));
+    cx.run_until_parked();
+    click(cx, "toast-action");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        assert!(!workspace.trash_open);
+        assert_eq!(workspace.pane().path, "home");
+        assert!(workspace.pane().is_selected("home/b.txt"));
+        assert!(!workspace.trash_full);
+    });
+
+    // Empty Trash asks, then deletes everything, from the page or the sidebar menu.
+    cx.simulate_keystrokes("delete");
+    click(cx, "confirm-accept");
+    cx.run_until_parked();
+    let trash = cx.debug_bounds("sidebar-trash").unwrap().center();
+    cx.simulate_mouse_down(trash, MouseButton::Right, Modifiers::default());
+    click(cx, "sidebar-empty-trash");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.confirm.as_ref().unwrap().title.as_ref(), "Empty Trash"));
+    click(cx, "confirm-accept");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert!(!workspace.trash_full));
+    assert_eq!(fs::read_dir(fixture.root.join(".local/share/Trash/files")).unwrap().count(), 0);
+}

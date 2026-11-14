@@ -342,6 +342,19 @@ impl LocalFiles {
         )
     }
 
+    pub fn trash_has_items(&self) -> bool {
+        trash::has_items(&self.trash_data_home, self.volume_trash)
+    }
+
+    pub fn empty_trash(&self) -> Result<usize> {
+        trash::empty(&self.mounts, &self.trash_data_home, self.volume_trash)
+    }
+
+    /// The home Trash's `files` folder, which changes whenever Trash does.
+    pub fn trash_files(&self) -> PathBuf {
+        self.trash_data_home.join("Trash/files")
+    }
+
     pub fn restore_trash(&self, id: &str) -> Result<()> {
         trash::restore(&self.mounts, &self.trash_data_home, self.volume_trash, id)
     }
