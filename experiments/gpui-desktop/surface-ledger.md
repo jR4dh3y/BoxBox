@@ -15,7 +15,7 @@ Target: reproduce Electrobun appearance and behavior with native Rust local file
 | Restore | Workflow passed | Does not apply | Remote service has no Trash contract |
 | Pin/unpin folder | Workflow passed | Workflow passed | Context menu and favorites state |
 | Share create/revoke | Does not apply | Workflow passed | Rendered controls and server share list |
-| Split panes | Bounds checked | Bounds checked | Both panes drawn; cross-pane drag unverified |
+| Split panes | Bounds checked | Bounds checked | Both panes drawn; a drag to the other pane moves the item |
 | Wallpaper | Async install/remove passed | Same client-owned settings | Persistence, custom accent, fit/frost/tint controls; native chooser untested |
 | Reset | Confirmation/cancel passed | Same client settings | Clears favorites and preserves connections |
 | External changes | Linux inotify workflow passed | Missing | Actual external create/remove updates local listing |
@@ -35,11 +35,11 @@ Native image/video/audio/PDF thumbnail probes passed earlier. Thumbnail evidence
 - Image zoom, media playback, PDF paging, office/notebook previews and full editor interaction. Media/PDF currently display static thumbnails; text editing lacks IME and mouse selection.
 - Read-only runtime verification. Context menu disables mutation using drive metadata, while the server remains authoritative.
 - Details, multi-selection properties, permanent local delete and complete keyboard/menu parity.
-- Cross-pane/external drag/drop, cut across providers, recursive uploads, authentication failures, disconnected servers and share permission/expiry verification.
+- Drag and drop on a remote provider, cut across providers, recursive uploads, authentication failures, disconnected servers and share permission/expiry verification.
 - Hardware acceleration switching. The appearance panel explicitly explains that GPUI requires GPU rendering and this build has no switch.
 
 ## Platform boundary
 
-GPUI 0.2.2 retained stale frames on this Niri host's native Wayland backend. XWayland displayed wallpaper correctly. Startup prefers XWayland on Niri when DISPLAY exists; `BOXBOX_NATIVE_WAYLAND=1` opts into native Wayland. This is a workaround. Other compositors and platforms remain unverified.
+The app is a native Wayland client and draws on the compositor's GPU (`src/render_gpu.rs`). An earlier build showed stale frames on this host's Niri session and fell back to XWayland there; that fallback is gone. Native Wayland was run on a live Hyprland session and in niri nested in a headless sway, where the stale frames did not reproduce. A Niri session on real hardware was not run. `WAYLAND_DISPLAY=` forces XWayland.
 
 The Go server remains the self-hosted backend. Its replacement and the Electrobun private cookie/session protocol are separate from the native-local provider. No commit, push or merge is authorized.

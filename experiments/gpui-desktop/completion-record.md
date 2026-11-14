@@ -12,7 +12,7 @@ Exit condition: Electrobun behavior and visuals reproduced and verified at the n
 - Fixed settings input routing/focus. Reset confirms, removes favorites and preserves saved servers.
 - Added context pin/unpin, remote share shortcut, provider-specific delete labels and disabled mutation controls.
 - Added Linux folder watches and reference shortcuts for split, tabs, parent navigation, hidden files, connections and properties.
-- Added the Niri XWayland workaround after native screenshots exposed stale Wayland content.
+- Added the Niri XWayland workaround after native screenshots exposed stale Wayland content. Removed later: the app now draws on the compositor's GPU and runs as a native Wayland client everywhere.
 
 ## Evidence
 

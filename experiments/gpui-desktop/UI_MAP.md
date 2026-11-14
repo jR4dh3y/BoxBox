@@ -110,8 +110,8 @@ Most valuable first.
   type, created, accessed), remembered per folder.
 - Per-folder view and sort; zoom (Ctrl+wheel, Ctrl+plus/minus) in grid and list.
 - Select by pattern and invert selection; rubber-band selection.
-- Hover a folder while dragging to open it; autoscroll at the edges; Copy,
-  Move or Link on drop, with Ask on right-drag.
+- Hover a folder while dragging to open it; autoscroll at the edges; Link on
+  drop, and Ask on right-drag.
 - Executable scripts and `.desktop` launchers: ask before running, honour the
   execute bit and trust.
 - Middle-ellipsis for long names, keeping the extension.
@@ -134,9 +134,9 @@ Most valuable first.
 | `Toolbar.svelte` | back/forward, location, search, actions | keep | ✓ `ui/toolbar.rs` | ✓ `ui/toolbar.rs` |
 | `EditablePathBar.svelte` | breadcrumbs ↔ text location | keep | ✓ `location.rs`, `ui/text_input.rs` | ✓ `render_path_bar` with `TextField` |
 | `PathEditor.svelte` | location suggestions | keep | ✗ | ✗ |
-| `SearchBar.svelte` | search field | keep | ✓ `search.rs` | ✓ `TextField` per pane |
+| `SearchBar.svelte` | search field | keep | ✓ `search.rs` | ✓ `TextField` per pane; matching, ranking and the walk are in `search.rs` and `local/search.rs` (see Search below) |
 | `AddMenu.svelte` | **+** menu: new file, folder, upload | keep (upload → copy in) | ◐ context menu only | ✓ `ui/toolbar.rs` on `ContextMenu`; local folders say “Copy files here…” |
-| `Sidebar.svelte` | drives, places, devices, Trash, favorites | keep | ✓ `ui/sidebar.rs`, `devices.rs` | ✓ `components/sidebar.rs` (`SidebarSection`, `NavItem`), Devices from UDisks2 |
+| `Sidebar.svelte` | drives, places, devices, Trash, favorites | keep | ✓ `ui/sidebar.rs`, `devices.rs` | ✓ `components/sidebar.rs` (`SidebarSection`, `NavItem`), Devices from UDisks2 and GVfs (`ui/devices.rs`); rows take drops |
 | `StatusBar.svelte` | counts, selection size, view switch | keep | ✓ `ui/status_bar.rs` | ✓ `ui/status_bar.rs` |
 | `LoadError.svelte` | folder load failure | keep | ◐ inline text | ◐ inline text |
 
@@ -258,7 +258,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | "Show in folder" from other apps (`org.freedesktop.FileManager1`) | ✗ | ✓ `filemanager1.rs`, only when no other file manager owns the name; opens the folder, does not select the item yet |
 | Single instance, launch opens a tab | ✓ `instance.rs` | ✓ `instance.rs` (from PR #226); real paths and `file://` URIs open their folder |
 | Live folder refresh | ✓ `watch.rs` (server stream) | ✓ `workspace/watching.rs` (inotify) |
-| Drag out | ◐ X11 only | ✓ `drag_out/`: XDND on X11; on Wayland `drag_out/wayland.rs` starts a `wl_data_device` drag on GPUI's own connection once the pointer leaves the window (run on sway only; no drag icon outside the window) |
+| Drag out | ◐ X11 only | ✓ `drag_out/`: XDND on X11; on Wayland `drag_out/wayland.rs` starts a `wl_data_device` drag on GPUI's own connection once the pointer leaves the window (run on sway only; no drag icon outside the window); it takes a new pointer when the seat regains one |
 | Drag inside the window | ✓ `dnd.rs` | ✓ `workspace/drag_drop.rs`: onto a folder row or tile, a pane or a sidebar entry; moves on one filesystem and copies to another, Ctrl copies, Shift moves; an item refuses itself, its own inside and the folder it is in; the target under the pointer is highlighted |
 | Drop in from other apps | ✓ `dnd.rs` | ✓ the same targets and highlight as a drag inside the window; files are copied, since GPUI does not report the action the other app offered |
 | OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✓ `os_clipboard.rs`: owns the Wayland clipboard via data-control (not GNOME); `xclip` on X11 |
