@@ -73,12 +73,13 @@ impl Modal {
 }
 
 impl RenderOnce for Modal {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        let max_width = match self.size {
+    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
+        let max_width: f32 = match self.size {
             ModalSize::Md => 448.,
             ModalSize::Xl => 672.,
             ModalSize::Lg => 768.,
         };
+        let width = max_width.min(f32::from(window.viewport_size().width) - 32.).max(0.);
         let close = div()
             .id("modal-close")
             .flex()
@@ -103,10 +104,12 @@ impl RenderOnce for Modal {
             .child(
                 // mx-4 max-h-[90vh] w-full max-w-* flex-col overflow-hidden rounded-lg border
                 // border-border-primary bg-surface-secondary shadow-2xl
+                // A definite width, not w-full capped by max-w: a percentage leaves wrapped
+                // text measured as one line, and the footer would fall outside the panel.
                 div()
+                    .debug_selector(|| "modal-panel".into())
                     .mx(px(16.))
-                    .w_full()
-                    .max_w(px(max_width))
+                    .w(px(width))
                     .flex()
                     .flex_col()
                     .overflow_hidden()
