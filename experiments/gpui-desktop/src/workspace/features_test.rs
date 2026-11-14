@@ -629,3 +629,57 @@ fn item_menus_link_compress_open_tabs_and_send(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(fixture.root.join("Desktop/y.txt").is_file() && fixture.root.join("y.txt").is_file());
 }
+
+/// Waits for a started program to leave its mark.
+fn wait_for(path: &Path) -> bool {
+    (0..100).any(|_| {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        path.exists()
+    })
+}
+
+#[gpui::test]
+fn scripts_ask_before_running_and_launchers_need_trust(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["go.sh", "tool.desktop"]);
+    let ran = fixture.root.join("ran");
+    let launched = fixture.root.join("launched");
+    fs::write(fixture.root.join("go.sh"), format!("#!/bin/sh\ntouch '{}'\n", ran.display())).unwrap();
+    set_mode(&fixture.root.join("go.sh"), 0o755);
+    fs::write(fixture.root.join("tool.desktop"), format!("[Desktop Entry]\nType=Application\nName=Tool\nExec=touch \"{}\"\n", launched.display())).unwrap();
+    set_mode(&fixture.root.join("tool.desktop"), 0o644);
+    cx.simulate_keystrokes("f5");
+    cx.run_until_parked();
+
+    // An executable script asks, offering to open it instead.
+    cx.simulate_keystrokes("down enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        let confirm = workspace.confirm.as_ref().expect("running asks first");
+        assert_eq!(confirm.title.as_ref(), "Run “go.sh”?");
+        assert!(confirm.secondary.is_some());
+    });
+    assert!(!ran.exists(), "nothing runs before the answer");
+    click(cx, "confirm-accept");
+    cx.run_until_parked();
+    assert!(wait_for(&ran), "Run starts the script");
+
+    // An untrusted launcher asks; trusting it marks it executable and starts it.
+    cx.simulate_keystrokes("down enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.confirm.as_ref().unwrap().title.as_ref(), "Untrusted launcher"));
+    // The message wraps; the panel grows to hold it, so its buttons stay inside.
+    let (panel, accept) = (cx.debug_bounds("modal-panel").unwrap(), cx.debug_bounds("confirm-accept").unwrap());
+    assert!(accept.bottom() <= panel.bottom(), "the footer is inside the dialog: {accept:?} in {panel:?}");
+    click(cx, "confirm-accept");
+    cx.run_until_parked();
+    assert!(wait_for(&launched), "the launcher's app starts");
+    use std::os::unix::fs::PermissionsExt as _;
+    assert_ne!(fs::metadata(fixture.root.join("tool.desktop")).unwrap().permissions().mode() & 0o100, 0);
+    // Trusted now, it starts without a question.
+    fs::remove_file(&launched).unwrap();
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert!(workspace.confirm.is_none()));
+    assert!(wait_for(&launched));
+}
+

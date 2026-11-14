@@ -10,6 +10,7 @@ mod instance;
 mod drag_out;
 mod format;
 mod local;
+mod launch;
 mod media;
 mod open_with;
 mod os_clipboard;

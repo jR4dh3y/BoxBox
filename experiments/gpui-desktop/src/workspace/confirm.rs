@@ -15,6 +15,8 @@ pub(crate) struct Confirm {
     pub confirm_label: SharedString,
     pub danger: bool,
     action: Action,
+    /// A second answer beside the main one, such as Open beside Run.
+    pub secondary: Option<(SharedString, Action)>,
 }
 
 impl Confirm {
@@ -31,7 +33,19 @@ impl Confirm {
             confirm_label: confirm_label.into(),
             danger: true,
             action: Box::new(action),
+            secondary: None,
         }
+    }
+
+    /// The main action is not destructive.
+    pub fn safe(mut self) -> Self {
+        self.danger = false;
+        self
+    }
+
+    pub fn secondary(mut self, label: impl Into<SharedString>, action: impl FnOnce(&mut Workspace, &mut Context<Workspace>) + 'static) -> Self {
+        self.secondary = Some((label.into(), Box::new(action)));
+        self
     }
 
     pub fn items(mut self, items: Vec<SharedString>) -> Self {
@@ -51,6 +65,13 @@ impl Workspace {
             if confirmed {
                 (confirm.action)(self, cx);
             }
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn answer_secondary(&mut self, cx: &mut Context<Self>) {
+        if let Some((_, action)) = self.confirm.take().and_then(|confirm| confirm.secondary) {
+            action(self, cx);
             cx.notify();
         }
     }

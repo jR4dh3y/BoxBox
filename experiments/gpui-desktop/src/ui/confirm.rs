@@ -38,6 +38,14 @@ impl Workspace {
                     .close_selector("confirm-cancel")
                     .on_close(cx.listener(|this, _, _, cx| this.answer(false, cx)))
                     .body(body)
+                    .when_some(confirm.secondary.as_ref().map(|(label, _)| label.clone()), |modal, label| {
+                        modal.footer(
+                            Button::new("confirm-secondary")
+                                .label(label)
+                                .variant(ButtonVariant::Secondary)
+                                .on_click(cx.listener(|this, _, _, cx| this.answer_secondary(cx))),
+                        )
+                    })
                     .footer(
                         Button::new("confirm-accept")
                             .label(confirm.confirm_label.clone())

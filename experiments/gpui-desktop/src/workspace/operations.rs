@@ -1364,7 +1364,8 @@ impl Workspace {
         }
     }
 
-    pub(crate) fn open_item(&mut self, target: PaneTarget, item: FileInfo, cx: &mut Context<Self>) {
+    /// Opens a file in its app, without asking whether to run it.
+    pub(crate) fn open_document(&mut self, target: PaneTarget, item: FileInfo, cx: &mut Context<Self>) {
         let Some((_, api, _)) = self.operation_target(target) else {
             return;
         };

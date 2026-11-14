@@ -55,7 +55,7 @@ fn unique(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
     paths.into_iter().filter(|path| seen.insert(path.clone())).collect()
 }
 
-fn application_dirs() -> Vec<PathBuf> {
+pub(crate) fn application_dirs() -> Vec<PathBuf> {
     let data_home = home_dir("XDG_DATA_HOME", ".local/share");
     unique(
         std::iter::once(data_home.join("applications"))
@@ -82,7 +82,7 @@ fn valid_id(id: &str) -> bool {
     !id.is_empty() && !id.contains(['/', '\\', '\0', '\r', '\n', ';']) && id.ends_with(".desktop")
 }
 
-fn unescape(value: &str) -> String {
+pub(crate) fn unescape(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let mut chars = value.chars();
     while let Some(ch) = chars.next() {
