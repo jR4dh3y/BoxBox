@@ -67,6 +67,20 @@ fn set_mode(path: &Path, mode: u32) {
 }
 
 #[gpui::test]
+fn right_click_on_empty_space_clears_the_selection(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt"]);
+    click(cx, "row-0-0");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().selected.len(), 1));
+    let pane = cx.debug_bounds("browser-pane-0").unwrap();
+    let empty = gpui::point(pane.center().x, pane.bottom() - gpui::px(60.));
+    cx.simulate_mouse_down(empty, MouseButton::Right, Modifiers::default());
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.pane().selected.is_empty());
+        assert!(workspace.context_menu.as_ref().is_some_and(|menu| menu.items.is_empty()));
+    });
+}
+
+#[gpui::test]
 fn a_read_only_folder_refuses_changes_with_a_notice(cx: &mut TestAppContext) {
     let (view, cx, fixture) = open(cx, &["locked/", "locked/a.txt"]);
     set_mode(&fixture.root.join("locked"), 0o555);

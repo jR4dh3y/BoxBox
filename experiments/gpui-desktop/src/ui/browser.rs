@@ -97,6 +97,10 @@ impl Workspace {
                 cx.notify();
             }))
             .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                // Rows stop the event, so this is empty space: the menu is for the folder.
+                if let Some(pane) = this.pane_mut_by_id(target.0) {
+                    pane.clear_selection();
+                }
                 this.context_menu = Some(crate::workspace::operations::ContextMenuState {
                     target_id: target.0, items: Vec::new(), position: event.position,
                 });
