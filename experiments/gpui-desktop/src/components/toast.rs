@@ -66,7 +66,7 @@ impl RenderOnce for Toast {
             // mt-0.5 shrink-0, a 16px icon
             .child(div().mt(px(2.)).flex_none().child(icon(glyph, 16., c(color))))
             // flex-1 pr-2 text-[13px] text-text-primary
-                        // min-w-0, or a flex item is at least its text's one-line width and never wraps.
+            // min-w-0, or a flex item is at least its text's one-line width and never wraps.
             .child(div().debug_selector(|| "toast-message".into()).flex_1().min_w_0().pr(px(8.)).type_13().text_color(c(TEXT_PRIMARY)).child(self.message))
             .when_some(self.action, |el, (label, handler)| {
                 // text-[13px] font-medium text-accent, as a link-like button

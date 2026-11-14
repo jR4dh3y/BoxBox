@@ -183,7 +183,16 @@ pub fn mount(id: &str) -> Result<PathBuf> {
 }
 
 fn mount_on(connection: &Connection, id: &str) -> Result<PathBuf> {
-    let path: String = filesystem(connection, id)?.call("Mount", &(no_options(),)).context("could not mount")?;
+    let mounted: zbus::Result<String> = filesystem(connection, id)?.call("Mount", &(no_options(),));
+    let path = mounted.map_err(|error| {
+        // ntfs3 refuses a volume Windows left in use (Fast Startup, hibernation); UDisks
+        // only passes on mount's generic "wrong fs type".
+        let ntfs = Proxy::new(connection, SERVICE, id.to_string(), BLOCK).and_then(|block| block.get_property::<String>("IdType")).is_ok_and(|kind| kind == "ntfs");
+        match ntfs && error.to_string().contains("wrong fs type") {
+            true => anyhow::anyhow!("Windows did not fully shut down, so the disk is still marked in use. Shut Windows down fully (turn off Fast Startup), or run chkdsk, then try again"),
+            false => super::reason(error).context("could not mount"),
+        }
+    })?;
     Ok(PathBuf::from(path))
 }
 

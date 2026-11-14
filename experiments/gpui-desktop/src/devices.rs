@@ -134,6 +134,10 @@ fn mounted(point: PathBuf, read_only_device: bool) -> State {
 /// The service's own words for a failed call, without the D-Bus error name in front.
 fn reason(error: zbus::Error) -> anyhow::Error {
     match error {
+        // polkit would ask for a password, but nothing in the session can show the question.
+        zbus::Error::MethodError(name, _, _) if name.as_str() == "org.freedesktop.UDisks2.Error.NotAuthorizedCanObtain" => {
+            anyhow::anyhow!("this needs your password, but no authentication agent is running to ask for it. Start one with your session, such as polkit-gnome")
+        }
         zbus::Error::MethodError(_, Some(description), _) => anyhow::anyhow!(description),
         other => anyhow::Error::new(other),
     }
