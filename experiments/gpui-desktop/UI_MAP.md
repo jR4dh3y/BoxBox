@@ -47,8 +47,6 @@ Linux file manager does, not commitments.
   explicit `--enable`/`--disable` portal route.
 - Register as the default folder handler (`inode/directory`,
   `x-scheme-handler/file`), opt-in.
-- Dropping from other apps onto a folder row, tile or sidebar entry, not only
-  the pane.
 - Drive context menu: Rename and Reset Name, with stored drive names.
 - Shift+Delete deletes permanently outside Trash; Delete in Trash deletes.
 - Keys: Home, End, PageUp, PageDown, Ctrl+Arrow moves focus, Ctrl+Space
@@ -264,7 +262,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Live folder refresh | ✓ `watch.rs` (server stream) | ✓ `workspace/watching.rs` (inotify) |
 | Drag out | ◐ X11 only | ✓ `drag_out/`: XDND on X11; on Wayland `drag_out/wayland.rs` starts a `wl_data_device` drag on GPUI's own connection once the pointer leaves the window (run on sway only; no drag icon outside the window) |
 | Drag inside the window | ✓ `dnd.rs` | ✓ `workspace/drag_drop.rs`: onto a folder row or tile, a pane or a sidebar entry; moves on one filesystem and copies to another, Ctrl copies, Shift moves; an item refuses itself, its own inside and the folder it is in; the target under the pointer is highlighted |
-| Drop in from other apps | ✓ `dnd.rs` | ◐ |
+| Drop in from other apps | ✓ `dnd.rs` | ✓ the same targets and highlight as a drag inside the window; files are copied, since GPUI does not report the action the other app offered |
 | OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✓ `os_clipboard.rs`: owns the Wayland clipboard via data-control (not GNOME); `xclip` on X11 |
 | Devices: mount, unlock, eject | ✓ `devices.rs` (server) | ✓ `devices/udisks.rs`: UDisks2 over D-Bus (`zbus`), live, with LUKS unlock and lock. `devices/gvfs.rs`: GVfs mounts and volume monitors over D-Bus; `smb://`, `sftp://`, `ftp://` and `mtp://` typed in the location bar mount and open, and a backend's password or host-key question opens a dialog. Rows show a usage bar, a read-only mark and a dimmed unmounted state. Run against a Samba share, an SSH login and a LUKS loop image; no phone was plugged in, so MTP is untested |
 | Wayland rendering | ◐ untested | ◐ falls back to XWayland on Niri (stale frames); GPUI 0.2.2 panics if a new keyboard sends modifiers before its keymap (`wayland/client.rs:1267`), seen with a `wtype` virtual keyboard |

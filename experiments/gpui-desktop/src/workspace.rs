@@ -1188,6 +1188,8 @@ impl Render for Workspace {
             .track_focus(&self.focus_handle)
             // First, so it runs before the drop zones inside report themselves.
             .on_drag_move(cx.listener(|this, _: &gpui::DragMoveEvent<crate::drag_out::DraggedItem>, _, cx| this.track_drag(cx)))
+            .on_drag_move(cx.listener(|this, _: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| this.track_drag(cx)))
+            .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, _, cx| this.drop_external(paths.paths().to_vec(), cx)))
             .on_drag_move(crate::drag_out::moved)
             .on_drop(cx.listener(|this, _: &crate::drag_out::DraggedItem, window, cx| this.drop_items(window, cx)))
             .on_action(cx.listener(Self::back))

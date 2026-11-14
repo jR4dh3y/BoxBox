@@ -553,8 +553,6 @@ impl Workspace {
         .detach();
     }
 
-    /// Files another app copied. Paths this provider can reach go through the normal
-    /// transfer, so a cut moves them; anything else is copied in.
     fn paste_system_files(&mut self, target: PaneTarget, files: os_clipboard::Files, cx: &mut Context<Self>) {
         let Some((_, destination, parent)) = self.operation_target(target) else {
             return;
@@ -563,6 +561,12 @@ impl Workspace {
             self.set_operation_error("Choose a destination folder before pasting.", cx);
             return;
         }
+        self.receive_files(target, destination, parent, files, cx);
+    }
+
+    /// Files from another app, pasted or dropped. Paths this provider can reach go
+    /// through the normal transfer, so a cut moves them; anything else is copied in.
+    pub(crate) fn receive_files(&mut self, target: PaneTarget, destination: Arc<Api>, parent: String, files: os_clipboard::Files, cx: &mut Context<Self>) {
         let reachable: Option<Vec<String>> = files.paths.iter().map(|path| destination.virtual_path(path)).collect();
         let Some(virtual_paths) = reachable else {
             self.import_paths_to(destination, parent, files.paths, cx);
@@ -1005,39 +1009,6 @@ impl Workspace {
                 ),
                 _ => this.set_operation_error("No items were selected for import.", cx),
             });
-        })
-        .detach();
-    }
-
-    pub(crate) fn import_paths(
-        &mut self,
-        target: PaneTarget,
-        paths: Vec<PathBuf>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.operation_status.is_busy() || paths.is_empty() {
-            return;
-        }
-        let Some((_, api, parent)) = self.operation_target(target) else {
-            return;
-        };
-        if parent.is_empty() {
-            self.set_operation_error("Choose a destination folder before importing.", cx);
-            return;
-        }
-        // A drop can come from this folder, in this window or another file manager's.
-        cx.spawn(async move |this, cx| {
-            let (resolver, folder) = (api.clone(), parent.clone());
-            let paths = cx
-                .background_executor()
-                .spawn(async move {
-                    match resolver.local_path(&folder) {
-                        Ok(Some(folder)) => outside_folder(&folder, paths),
-                        _ => paths,
-                    }
-                })
-                .await;
-            let _ = this.update(cx, |this, cx| this.import_paths_to(api, parent, paths, cx));
         })
         .detach();
     }
@@ -1771,7 +1742,7 @@ fn transfer_between_providers(
 }
 
 /// Drops the paths that already sit directly in `folder`: dropping a file where it is does nothing.
-fn outside_folder(folder: &Path, paths: Vec<PathBuf>) -> Vec<PathBuf> {
+pub(crate) fn outside_folder(folder: &Path, paths: Vec<PathBuf>) -> Vec<PathBuf> {
     paths
         .into_iter()
         .filter(|path| path.parent() != Some(folder))

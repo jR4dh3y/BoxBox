@@ -96,9 +96,6 @@ impl Workspace {
                 this.focus_handle.focus(window);
                 cx.notify();
             }))
-            .on_drop(cx.listener(move |this, paths: &gpui::ExternalPaths, _, cx| {
-                this.import_paths(target, paths.paths().to_vec(), cx);
-            }))
             .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
                 this.context_menu = Some(crate::workspace::operations::ContextMenuState {
                     target_id: target.0, items: Vec::new(), position: event.position,

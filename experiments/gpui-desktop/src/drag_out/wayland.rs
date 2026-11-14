@@ -222,7 +222,11 @@ impl Dispatch<WlSeat, ()> for State {
         else {
             return;
         };
-        if capabilities.contains(Capability::Pointer) && state.pointer.is_none() {
+        // When the last mouse is unplugged the compositor silences the old pointer
+        // object, so one plugged in later needs a new one.
+        if !capabilities.contains(Capability::Pointer) {
+            state.pointer = None;
+        } else if state.pointer.is_none() {
             state.pointer = Some(seat.get_pointer(handle, ()));
         }
     }

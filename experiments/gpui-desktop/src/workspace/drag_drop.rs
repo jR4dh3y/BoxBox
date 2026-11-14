@@ -1,5 +1,6 @@
-//! Dragging files inside the window: which folder the pointer is over, whether
-//! the drop is allowed there, and the move or copy it starts.
+//! Dragging files onto the window, from inside it or from another app: which
+//! folder the pointer is over, whether the drop is allowed there, and the move
+//! or copy it starts.
 //!
 //! Every place that takes a drop registers with `drop_zone`. While a drag
 //! moves, the innermost zone under the pointer becomes the hover target, which
@@ -7,9 +8,11 @@
 
 use std::sync::Arc;
 
-use gpui::{App, Context, DragMoveEvent, InteractiveElement, Modifiers, Pixels, Point, WeakEntity, Window};
+use std::path::PathBuf;
 
-use super::operations::{same_provider, ClipboardEntry, ClipboardMode, FileClipboard, PaneTarget};
+use gpui::{App, Context, DragMoveEvent, ExternalPaths, InteractiveElement, Modifiers, Pixels, Point, WeakEntity, Window};
+
+use super::operations::{outside_folder, same_provider, ClipboardEntry, ClipboardMode, FileClipboard, PaneTarget};
 use super::Workspace;
 use crate::api::{Api, FileInfo};
 use crate::drag_out::DraggedItem;
@@ -78,14 +81,28 @@ pub(crate) fn accepts(items: &[FileInfo], same: bool, folder: &str, moving: bool
     !onto_itself && !already_there
 }
 
+/// Which drag is over the window.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    /// Rows or tiles of this window; `DragDrop::source` holds them.
+    Window,
+    /// Files from another app.
+    Outside,
+}
+
 /// Marks `element` as a place to drop onto.
 pub(crate) fn drop_zone<E: InteractiveElement>(element: E, target: DropTarget, workspace: WeakEntity<Workspace>) -> E {
-    element.on_drag_move::<DraggedItem>(move |event: &DragMoveEvent<DraggedItem>, window, cx| {
-        if event.bounds.contains(&event.event.position) {
-            let position = event.event.position;
-            workspace.update(cx, |this, _| this.offer_drop(target.clone(), position, window)).ok();
+    fn offer<T: 'static>(origin: Origin, target: DropTarget, workspace: WeakEntity<Workspace>) -> impl Fn(&DragMoveEvent<T>, &mut Window, &mut App) {
+        move |event, window, cx| {
+            if event.bounds.contains(&event.event.position) {
+                let position = event.event.position;
+                workspace.update(cx, |this, _| this.offer_drop(origin, target.clone(), position, window)).ok();
+            }
         }
-    })
+    }
+    element
+        .on_drag_move::<DraggedItem>(offer(Origin::Window, target.clone(), workspace.clone()))
+        .on_drag_move::<ExternalPaths>(offer(Origin::Outside, target, workspace))
 }
 
 impl Workspace {
@@ -126,7 +143,7 @@ impl Workspace {
     }
 
     /// A zone under the pointer. Zones report outermost first, so the last valid one wins.
-    fn offer_drop(&mut self, target: DropTarget, position: Point<Pixels>, window: &Window) {
+    fn offer_drop(&mut self, origin: Origin, target: DropTarget, position: Point<Pixels>, window: &Window) {
         // A row scrolled half under the header still has bounds there.
         if let DropTarget::Folder { pane, .. } = &target {
             let visible = self.pane_by_id(pane.0).is_some_and(|pane| {
@@ -140,7 +157,12 @@ impl Workspace {
                 return;
             }
         }
-        if self.drop_allowed(&target, request(window.modifiers())) {
+        let allowed = match origin {
+            Origin::Window => self.drop_allowed(&target, request(window.modifiers())),
+            // This PC holds drives, not files; any folder takes files from outside.
+            Origin::Outside => self.drop_destination(&target).is_some_and(|(_, _, folder)| !folder.is_empty()),
+        };
+        if allowed {
             self.drag_drop.candidate = Some(target);
         } else if matches!(target, DropTarget::Folder { .. } | DropTarget::Place { .. }) {
             // A refused folder must not fall back to the pane around it.
@@ -189,6 +211,34 @@ impl Workspace {
                 }
             };
             this.update(cx, |this, cx| this.start_transfer(pane, FileClipboard { mode, entries }, to, folder, cx)).ok();
+        })
+        .detach();
+    }
+}
+
+impl Workspace {
+    /// Files dragged in from another app, dropped on the hover target. They are copied:
+    /// GPUI does not say which action the other app offered.
+    pub(crate) fn drop_external(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let Some(target) = self.drag_drop.hover.take() else { return };
+        let Some((pane, destination, folder)) = self.drop_destination(&target).filter(|(_, _, folder)| !folder.is_empty()) else { return };
+        cx.spawn(async move |this, cx| {
+            // A drop can come from this very folder, shown in another file manager.
+            let (resolver, inside) = (destination.clone(), folder.clone());
+            let paths = cx
+                .background_executor()
+                .spawn(async move {
+                    match resolver.local_path(&inside) {
+                        Ok(Some(real)) => outside_folder(&real, paths),
+                        _ => paths,
+                    }
+                })
+                .await;
+            if paths.is_empty() {
+                return;
+            }
+            let files = crate::os_clipboard::Files { op: crate::os_clipboard::FileOp::Copy, paths };
+            this.update(cx, |this, cx| this.receive_files(pane, destination, folder, files, cx)).ok();
         })
         .detach();
     }
