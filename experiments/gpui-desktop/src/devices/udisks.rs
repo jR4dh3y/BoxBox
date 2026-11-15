@@ -137,8 +137,11 @@ pub fn list(connection: &Connection) -> Result<Vec<Volume>> {
         } else {
             continue;
         };
+        // The encrypted block's UUID, so a name holds whether it is locked or not.
+        let uuid = property::<&str>(physical, "IdUUID").filter(|uuid| !uuid.is_empty());
         volumes.push(Volume {
             id: path.to_string(),
+            key: uuid.map_or_else(|| path.to_string(), |uuid| format!("uuid:{uuid}")),
             name: label.or(hint).map(str::to_string).unwrap_or(fallback),
             kind: Kind::Disk,
             state,

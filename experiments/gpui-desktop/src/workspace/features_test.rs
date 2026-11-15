@@ -1244,3 +1244,42 @@ fn a_folder_keeps_the_sort_picked_in_it(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(super::folder_views::FolderViews::load().encode(), b"{}");
 }
+
+#[gpui::test]
+fn a_drive_keeps_the_name_given_it(cx: &mut TestAppContext) {
+    use super::drive_names::{DriveKey, DriveNames};
+    let (view, cx, fixture) = open(cx, &["a.txt"]);
+    let api = Api::local_with_root(fixture.root.clone()).unwrap();
+    let key = DriveKey::root(&api, "home");
+    let shown = |view: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |workspace, _| {
+            let card = workspace.storage().unwrap().iter().map(|entry| workspace.drive_info(entry).name.to_string()).find(|name| name != "Desktop");
+            (workspace.drive_names.name(&DriveKey::root(&workspace.home.api, "home"), "own").to_string(), card)
+        })
+    };
+
+    // Rename from the sidebar's menu: the field starts with the drive's name, selected.
+    let home = cx.debug_bounds("sidebar-drive-1").unwrap().center();
+    cx.simulate_mouse_down(home, MouseButton::Right, Modifiers::default());
+    assert!(cx.debug_bounds("drive-reset-name").is_none(), "a drive with its own name has nothing to reset");
+    click(cx, "drive-rename");
+    settle(cx);
+    view.read_with(cx, |workspace, cx| assert_eq!(workspace.dialog_field.read(cx).text(), "Home"));
+    cx.simulate_keystrokes("w o r k enter");
+    settle(cx);
+    assert_eq!(shown(&view, cx), ("work".to_string(), Some("work".to_string())));
+    assert_eq!(DriveNames::load().name(&key, "home"), "work", "kept for the next window");
+
+    // The path bar starts with the new name too.
+    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.breadcrumbs(PaneTarget(0))[0].label, "work"));
+
+    // Reset Name gives the drive its own name back and forgets the given one.
+    let home = cx.debug_bounds("sidebar-drive-1").unwrap().center();
+    cx.simulate_mouse_down(home, MouseButton::Right, Modifiers::default());
+    click(cx, "drive-reset-name");
+    cx.run_until_parked();
+    assert_eq!(shown(&view, cx).0, "own");
+    assert_eq!(DriveNames::load().name(&key, "home"), "home");
+}

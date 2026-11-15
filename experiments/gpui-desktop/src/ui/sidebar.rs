@@ -10,6 +10,7 @@ use crate::workspace::drag_drop::{drop_zone, DropTarget};
 use crate::workspace::overview::Storage;
 use crate::drag_out::DragPreview;
 use crate::workspace::bookmarks::FavoriteDrag;
+use crate::workspace::drive_names::DriveKey;
 use crate::workspace::place_menu::Place;
 use crate::workspace::Workspace;
 
@@ -17,6 +18,8 @@ struct NavItem {
     name: SharedString,
     path: String,
     icon: &'static str,
+    /// A drive's own name, which Reset Name returns to; places have none.
+    own: Option<String>,
 }
 
 fn place_icon(name: &str) -> &'static str {
@@ -74,7 +77,10 @@ impl Workspace {
         if !home {
             return div().child(row).debug_selector(selector);
         }
-        let menu = Place::Folder { pane: self.active_pane, path: path.clone() };
+        let menu = match item.own {
+            Some(own) => Place::Drive { key: DriveKey::root(&self.home.api, &path), own, folder: Some(path.clone()) },
+            None => Place::Folder { pane: self.active_pane, path: path.clone() },
+        };
         // Recent and Network are listings: nothing is dropped into them.
         let folder = (path != crate::local::RECENT && path != crate::local::NETWORK).then(|| path.clone());
         self.sidebar_row(row, folder, menu, cx).debug_selector(selector)
@@ -89,7 +95,7 @@ impl Workspace {
             .filter(|entry| matches!(entry, Storage::ServerDrive { .. } | Storage::Server { .. } | Storage::Remembered { .. }))
             .enumerate()
             .map(|(index, entry)| {
-                let info = entry.info();
+                let info = self.drive_info(&entry);
                 let (detail, waiting, tooltip) = match &entry {
                     Storage::ServerDrive { server, .. } => (server.name.clone(), false, server.url.clone()),
                     Storage::Server { server, status, reason } => ((*status).to_string(), true, reason.clone().unwrap_or_else(|| server.url.clone())),
@@ -106,7 +112,18 @@ impl Workspace {
                     Some(wait) => row.waiting(wait),
                     None => row,
                 };
-                row.on_click(cx.listener(move |this, _, window, cx| this.open_storage(entry.clone(), window, cx))).into_any_element()
+                let menu = self.drive_key(&entry).map(|(key, own)| Place::Drive { key, own, folder: None });
+                let row = row.on_click(cx.listener(move |this, _, window, cx| this.open_storage(entry.clone(), window, cx)));
+                match menu {
+                    Some(menu) => div()
+                        .child(row)
+                        .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            this.open_place_menu(menu.clone(), event.position, cx);
+                        }))
+                        .into_any_element(),
+                    None => row.into_any_element(),
+                }
             })
             .collect()
     }
@@ -137,11 +154,11 @@ impl Workspace {
             crate::pane::Load::Loaded(roots) => roots,
             _ => &[],
         };
-        let mut drives = std::iter::once(NavItem { name: "Overview".into(), path: String::new(), icon: "layout-dashboard" })
-            .chain(roots.iter().filter(|root| root.kind != RootKind::Place).map(|root| NavItem {
-                name: root.display_name().to_string().into(),
-                path: root.name.clone(),
-                icon: "hard-drive",
+        let mut drives = std::iter::once(NavItem { name: "Overview".into(), path: String::new(), icon: "layout-dashboard", own: None })
+            .chain(roots.iter().filter(|root| root.kind != RootKind::Place).map(|root| {
+                let own = root.display_name().to_string();
+                let key = DriveKey::root(&self.home.api, &root.name);
+                NavItem { name: self.drive_names.name(&key, &own).to_string().into(), path: root.name.clone(), icon: "hard-drive", own: Some(own) }
             }))
             .enumerate()
             .map(|(index, item)| self.nav_item(format!("drive-{index}"), item, &current, cx).into_any_element())
@@ -157,6 +174,7 @@ impl Workspace {
                 name: capitalize(root.display_name()).into(),
                 path: root.name.clone(),
                 icon: place_icon(&root.name),
+                own: None,
             })
             .enumerate()
             .map(|(index, item)| self.nav_item(format!("place-{index}"), item, &current, cx))

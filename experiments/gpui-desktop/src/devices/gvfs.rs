@@ -75,6 +75,7 @@ fn volume(connection: &Connection, mount: MountInfo, sizes: Sizes) -> Option<(Vo
     let state = State::Mounted { point, space, read_only: false };
     let volume = Volume {
         id: format!("gvfs:{daemon}{object}"),
+        key: spec_key(spec.iter().map(|(key, value)| (key.as_str(), value.as_str()))),
         name,
         kind: if matches!(kind.as_str(), "mtp" | "gphoto2" | "afc") { Kind::Phone } else { Kind::Network },
         state,
@@ -85,6 +86,13 @@ fn volume(connection: &Connection, mount: MountInfo, sizes: Sizes) -> Option<(Vo
         ejectable: false,
     };
     Some((volume, spec))
+}
+
+/// A location's identity, whether it was mounted or not: its spec in key order.
+fn spec_key<'a>(spec: impl Iterator<Item = (&'a str, &'a str)>) -> String {
+    let mut pairs: Vec<String> = spec.map(|(key, value)| format!("{key}={value}")).collect();
+    pairs.sort();
+    format!("gvfs:{}", pairs.join(","))
 }
 
 /// `Mount.QueryFilesystemInfo` on the mount's root: for a phone, every storage together.
@@ -136,6 +144,7 @@ fn unmounted(connection: &Connection, monitor: &str) -> Result<Vec<Volume>> {
             let can_mount = matches!(fields.get(6), Some(Value::Bool(true)));
             (mount.is_empty() && can_mount && !uri.is_empty()).then(|| Volume {
                 id: format!("gvfs:{monitor}/{id}"),
+                key: spec::parse(&uri).map_or_else(|_| uri.clone(), |location| spec_key(location.spec.iter().map(|(key, value)| (*key, value.as_str())))),
                 name,
                 kind: Kind::Phone,
                 state: State::Unmounted,
@@ -172,7 +181,10 @@ pub fn list(connection: &Connection, sizes: Sizes) -> Result<Vec<Volume>> {
                     // A phone mounted by its location rather than through its volume is
                     // still listed unmounted; it is one device, under the volume's name.
                     match mounted.iter_mut().find(|(_, spec)| serves(spec, uri)) {
-                        Some((mount, _)) => mount.name = device.name,
+                        Some((mount, _)) => {
+                            mount.name = device.name;
+                            mount.key = device.key;
+                        }
                         None => volumes.push(device),
                     }
                 }

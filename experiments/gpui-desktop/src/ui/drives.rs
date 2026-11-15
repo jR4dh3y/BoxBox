@@ -6,6 +6,7 @@ use super::{icon, TextScale};
 use crate::components::{skeleton, usage_bar, usage_text, DriveCard};
 use crate::format::file_size;
 use crate::workspace::overview::Storage;
+use crate::workspace::place_menu::Place;
 use crate::theme::*;
 use crate::workspace::Workspace;
 
@@ -48,8 +49,23 @@ impl Workspace {
 
     fn render_drive_card(&self, index: usize, drive: &Storage, cx: &mut Context<Self>) -> impl IntoElement {
         let open = drive.clone();
-        DriveCard::new(("drive-card", index), drive.info(), c(self.accent_hex()), self.fonts.mono.clone())
-            .on_click(cx.listener(move |this, _, window, cx| this.open_storage(open.clone(), window, cx)))
+        let card = DriveCard::new(("drive-card", index), self.drive_info(drive), c(self.accent_hex()), self.fonts.mono.clone())
+            .on_click(cx.listener(move |this, _, window, cx| this.open_storage(open.clone(), window, cx)));
+        self.with_drive_menu(div().flex_1().min_w_0().flex().child(card), drive, cx)
+    }
+
+    /// The drive's right-click menu: a device's own, or Rename and Reset Name.
+    fn with_drive_menu<E: InteractiveElement>(&self, element: E, drive: &Storage, cx: &mut Context<Self>) -> E {
+        let menu = match drive {
+            Storage::Volume(volume) => Some(Place::Device(volume.clone())),
+            Storage::Drive(stats) => self.drive_key(drive).map(|(key, own)| Place::Drive { key, own, folder: Some(stats.name.clone()) }),
+            _ => self.drive_key(drive).map(|(key, own)| Place::Drive { key, own, folder: None }),
+        };
+        let Some(menu) = menu else { return element };
+        element.on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+            cx.stop_propagation();
+            this.open_place_menu(menu.clone(), event.position, cx);
+        }))
     }
 
     pub(crate) fn render_drive_list(
@@ -116,14 +132,14 @@ impl Workspace {
             })
             .child(used_col(cell()).child("Used"));
 
-        let rows = drives.iter().enumerate().map(|(index, drive)| {
-            let open = drive.clone();
-            let drive = drive.info();
+        let rows = drives.iter().enumerate().map(|(index, storage)| {
+            let open = storage.clone();
+            let drive = self.drive_info(storage);
             let usage = drive.state.usage();
             let wait = drive.state.wait();
             let mono = self.fonts.mono.clone();
             let detail = |text: Option<String>| text.filter(|text| !text.is_empty()).unwrap_or("—".into());
-            div()
+            let row = div()
                 .id(("drive-row", index))
                 .flex()
                 .h(px(32.))
@@ -167,7 +183,8 @@ impl Workspace {
                     if event.click_count() >= 2 {
                         this.open_storage(open.clone(), window, cx);
                     }
-                }))
+                }));
+            self.with_drive_menu(row, storage, cx)
         });
 
         div()

@@ -53,6 +53,9 @@ pub enum Source {
 pub struct Volume {
     /// Stable while the device is present.
     pub id: String,
+    /// Stable across unplugging and restarts: the filesystem's UUID, or the
+    /// network location. Drive names are kept by it.
+    pub key: String,
     pub name: String,
     pub kind: Kind,
     pub state: State,

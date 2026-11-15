@@ -4,6 +4,7 @@ use gpui::{anchored, div, prelude::*, AnyElement, Context, MouseButton, Window};
 
 use crate::components::{ContextMenu, MenuItem};
 use crate::workspace::operations::PaneTarget;
+use crate::workspace::drive_names::DriveKey;
 use crate::workspace::place_menu::Place;
 use crate::workspace::Workspace;
 
@@ -56,6 +57,8 @@ impl Workspace {
                         vec![item("place-mount", "Mount", "hard-drive", Box::new(move |this, window, cx| this.open_volume(volume.clone(), window, cx)), cx)]
                     }
                 };
+                items.push(MenuItem::Separator);
+                items.extend(self.drive_name_items(&DriveKey::volume(volume), &volume.name, cx));
                 if volume.removable() {
                     let eject = volume.clone();
                     items.push(MenuItem::Separator);
@@ -67,6 +70,20 @@ impl Workspace {
                         cx,
                     ));
                 }
+                items
+            }
+            Place::Drive { key, own, folder } => {
+                // The folder items act on the active pane, so only while it is on this provider.
+                let home = std::sync::Arc::ptr_eq(&self.pane().api, &self.home.api);
+                let mut items = match folder.clone().filter(|_| home) {
+                    Some(folder) => {
+                        let mut items = folder_items(self.active_pane, folder, cx);
+                        items.push(MenuItem::Separator);
+                        items
+                    }
+                    None => Vec::new(),
+                };
+                items.extend(self.drive_name_items(key, own, cx));
                 items
             }
             Place::Trash => vec![

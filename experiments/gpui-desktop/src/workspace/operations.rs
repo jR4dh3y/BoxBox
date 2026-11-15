@@ -59,6 +59,8 @@ pub(crate) struct OperationDialog {
 pub(crate) enum DialogKind {
     New { parent: String, folder: bool },
     SelectPattern,
+    /// The name shown for a drive; `own` is the drive's own name.
+    RenameDrive { key: super::drive_names::DriveKey, own: String },
 }
 
 impl OperationDialog {
@@ -67,6 +69,7 @@ impl OperationDialog {
             DialogKind::New { folder: true, .. } => "New folder",
             DialogKind::New { folder: false, .. } => "New file",
             DialogKind::SelectPattern => "Select by Pattern",
+            DialogKind::RenameDrive { .. } => "Rename Drive",
         }
     }
 
@@ -74,6 +77,7 @@ impl OperationDialog {
         match self.kind {
             DialogKind::New { .. } => "Create",
             DialogKind::SelectPattern => "Select",
+            DialogKind::RenameDrive { .. } => "Rename",
         }
     }
 }
@@ -227,7 +231,7 @@ impl Workspace {
 
     /// Opens the dialog: a new item's field holds a free name with the part before
     /// the extension selected; the pattern field holds the last pattern, selected.
-    fn open_dialog(&mut self, dialog: OperationDialog, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_dialog(&mut self, dialog: OperationDialog, window: &mut Window, cx: &mut Context<Self>) {
         let (text, selection) = match &dialog.kind {
             DialogKind::New { folder, .. } => {
                 let taken: HashSet<String> = self.pane_by_id(dialog.target_id).map(|pane| pane.items.iter().map(|item| item.name.clone()).collect()).unwrap_or_default();
@@ -238,6 +242,11 @@ impl Workspace {
             }
             DialogKind::SelectPattern => {
                 let text = self.last_pattern.clone();
+                let end = text.len();
+                (text, 0..end)
+            }
+            DialogKind::RenameDrive { key, own } => {
+                let text = self.drive_names.name(key, own).to_string();
                 let end = text.len();
                 (text, 0..end)
             }
@@ -323,6 +332,11 @@ impl Workspace {
             return;
         };
         let input = self.dialog_field.read(cx).text().trim().to_string();
+        if let DialogKind::RenameDrive { key, own } = &dialog.kind {
+            // An empty name gives the drive its own back.
+            self.rename_drive(key, Some(&input), own, cx);
+            return;
+        }
         let Some((pane, api, _)) = self.operation_target(PaneTarget(dialog.target_id)) else {
             self.set_operation_error("The destination pane is no longer open.", cx);
             return;
@@ -333,6 +347,7 @@ impl Workspace {
                 self.select_pattern(dialog, input, cx);
                 return;
             }
+            DialogKind::RenameDrive { .. } => return,
         };
         if let Some(problem) = super::names::name_problem(&input, pane.items.iter().map(|item| item.name.as_str())) {
             self.operation_dialog = Some(dialog);

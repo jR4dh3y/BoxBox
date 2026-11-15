@@ -93,11 +93,11 @@ impl Workspace {
     /// Opens a volume, unlocking or mounting it first if needed.
     pub(crate) fn open_volume(&mut self, volume: Volume, window: &mut Window, cx: &mut Context<Self>) {
         match &volume.state {
-            State::Mounted { point, .. } => self.open_mounted(self.active_pane, &volume.name, &point.clone(), cx),
+            State::Mounted { point, .. } => self.open_mounted(self.active_pane, &self.volume_name(&volume).to_string(), &point.clone(), cx),
             State::Unmounted => self.mount_volume(volume, None, cx),
             State::Locked => {
                 let credentials = Credentials {
-                    title: format!("Unlock {}", volume.name),
+                    title: format!("Unlock {}", self.volume_name(&volume)),
                     message: "This volume is encrypted. Enter its passphrase to open it.".into(),
                     user: false,
                     domain: false,
@@ -109,7 +109,7 @@ impl Workspace {
     }
 
     fn mount_volume(&mut self, volume: Volume, passphrase: Option<String>, cx: &mut Context<Self>) {
-        let name = volume.name.clone();
+        let name = self.volume_name(&volume).to_string();
         self.run_mount(self.active_pane, name, cx, move |prompts| devices::mount(&volume, passphrase.as_deref(), prompts));
     }
 
@@ -279,10 +279,11 @@ impl Workspace {
                 }
                 // Whether it is safe to pull the device out shows nowhere else.
                 if result.is_ok() && volume.ejectable {
-                    this.notify(crate::components::ToastKind::Success, format!("{} can be removed", volume.name), cx);
+                    this.notify(crate::components::ToastKind::Success, format!("{} can be removed", this.volume_name(&volume)), cx);
                 }
                 let verb = if volume.ejectable { "eject" } else { "unmount" };
-                this.report(result.map_err(|error| format!("Could not {verb} {}: {error:#}", volume.name)), cx);
+                let name = this.volume_name(&volume).to_string();
+                this.report(result.map_err(|error| format!("Could not {verb} {name}: {error:#}")), cx);
             })
             .ok();
         })

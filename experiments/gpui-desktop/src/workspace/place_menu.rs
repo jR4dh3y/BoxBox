@@ -15,6 +15,9 @@ pub(crate) enum Place {
     Favorite(usize),
     /// A disk, phone or share in the sidebar's Devices.
     Device(crate::devices::Volume),
+    /// A drive of this computer or a server, which can be renamed. `folder`
+    /// is its top folder on the window's own provider, for the folder items.
+    Drive { key: super::drive_names::DriveKey, own: String, folder: Option<String> },
     /// The leading crumbs a long path does not have room for: label and path.
     Hidden { pane: PaneTarget, crumbs: Vec<(String, String)> },
 }

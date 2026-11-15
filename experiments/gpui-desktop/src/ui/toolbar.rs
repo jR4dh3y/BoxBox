@@ -54,12 +54,12 @@ impl Workspace {
         let volume = self
             .devices
             .volumes()
-            .filter_map(|volume| Some((volume.name.clone(), pane.api.virtual_path(volume.mount_point()?)?)))
+            .filter_map(|volume| Some((self.volume_name(volume).to_string(), pane.api.virtual_path(volume.mount_point()?)?)))
             .filter(|(_, root)| under(root))
             .max_by_key(|(_, root)| root.len());
         let root = volume.or_else(|| match &pane.roots {
             crate::pane::Load::Loaded(roots) => {
-                roots.iter().find(|root| under(&root.name)).map(|root| (root.display_name().to_string(), root.name.clone()))
+                roots.iter().find(|root| under(&root.name)).map(|root| (self.root_name(&pane.api, root).to_string(), root.name.clone()))
             }
             _ => None,
         });

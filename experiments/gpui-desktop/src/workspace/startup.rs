@@ -20,6 +20,7 @@ pub struct Startup {
     pub(super) api: Arc<Api>,
     pub(super) preferences: Preferences,
     pub(super) folder_views: super::folder_views::FolderViews,
+    pub(super) drive_names: super::drive_names::DriveNames,
     /// The virtual path to open; empty for the drive list.
     pub(super) path: String,
     /// The path came from the start location, not the launch; if it no longer
@@ -83,7 +84,7 @@ impl Startup {
             false => (launch_path(&api, argument), false),
             true => (start_path(&api, preferences.start_location), true),
         };
-        Self { api, preferences, folder_views: super::folder_views::FolderViews::load(), path, fallback, prefetch: None }
+        Self { api, preferences, folder_views: super::folder_views::FolderViews::load(), drive_names: super::drive_names::DriveNames::load(), path, fallback, prefetch: None }
     }
 }
 

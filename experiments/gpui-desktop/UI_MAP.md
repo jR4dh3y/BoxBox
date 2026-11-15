@@ -48,7 +48,6 @@ Linux file manager does, not commitments.
   explicit `--enable`/`--disable` portal route.
 - Register as the default folder handler (`inode/directory`,
   `x-scheme-handler/file`), opt-in.
-- Drive context menu: Rename and Reset Name, with stored drive names.
 - Delete in Trash deletes: the Trash page has per-row buttons, no selection.
 - After a cut is pasted, clear the OS clipboard if it still holds that cut.
 - Clipboard on GNOME: data-control is not offered there, so copy and paste
@@ -113,7 +112,7 @@ Most valuable first.
 | `FileGrid.svelte` | grid with thumbnails | keep | ✓ `ui/file_grid.rs` | ✓ `components/file_grid.rs` (`FileTile`, `GridMetrics`) |
 | `FileThumbnail.svelte` | unused on master | — | — | — |
 | `DrivesView.svelte`, `DriveList.svelte`, `DriveRow.svelte`, `DriveCard.svelte` | Overview | keep | ✓ `ui/drives.rs` | ✓ `components/drive_card.rs` (`DriveCard`, usage bar on `ProgressBar`); list rows still in `ui/drives.rs`. Cards and rows cover the system drive and every device (`workspace/overview.rs`); an unmounted or locked one mounts or unlocks on open |
-| `DriveContextMenu.svelte` | drive menu | keep | ✓ `context_menu.rs` | ◐ `ui/overlays.rs` |
+| `DriveContextMenu.svelte` | drive menu | keep | ✓ `context_menu.rs` | ✓ `workspace/drive_names.rs`, `ui/place_menu.rs`: every drive (this computer's, a disk, phone or share, a server's) has Rename and, once renamed, Reset Name, from the Overview cards and table and the sidebar. The name shows on the Overview, in the sidebar, the path bar and device notices; the drive itself is not relabelled. Kept in `drive-names.json` by filesystem UUID (the encrypted one for LUKS, so it holds locked or open), GVfs location, or provider and drive name |
 | `FileContextMenu.svelte`, `ui/ContextMenu.svelte` | file and empty-space menus | keep | ✓ `context_menu.rs` | ✓ `ui/overlays.rs` on `ContextMenu`, items as in `fileContextMenu.ts` |
 | `BrowseDialogs.svelte` | create, rename, delete, properties | keep | ✓ `dialogs.rs` | ✓ create, rename, delete and properties on `Modal`; every confirmation uses `workspace/confirm.rs` |
 | `ui/InlineRename.svelte` | rename in place | keep | ◐ dialog instead | ✓ `workspace/rename.rs`: the row's or tile's name becomes a field (`rename_box`); Enter or a click elsewhere renames, Escape cancels |

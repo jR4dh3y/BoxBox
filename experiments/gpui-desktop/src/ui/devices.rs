@@ -37,7 +37,7 @@ impl Workspace {
         self.devices.volumes().enumerate().map(|(index, volume)| {
             let (open, eject) = (volume.clone(), volume.clone());
             let glyph = crate::workspace::overview::volume_glyph(volume);
-            let mut row = components::NavItem::new(SharedString::from(format!("volume-{index}")), volume.name.clone(), glyph)
+            let mut row = components::NavItem::new(SharedString::from(format!("volume-{index}")), self.volume_name(volume).to_string(), glyph)
                 .dim_icon(false)
                 .disabled(busy)
                 .tooltip(summary(volume))
@@ -48,7 +48,7 @@ impl Workspace {
                 State::Unmounted | State::Locked => row = row.muted(true),
             }
             if volume.removable() {
-                let label = format!("{} {}", if volume.ejectable { "Eject" } else { "Unmount" }, volume.name);
+                let label = format!("{} {}", if volume.ejectable { "Eject" } else { "Unmount" }, self.volume_name(volume));
                 row = row.trailing("arrow-up-from-line", label, cx.listener(move |this, _, _, cx| this.eject_volume(eject.clone(), cx)));
             }
             // A mounted volume takes drops into its top folder.

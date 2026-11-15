@@ -48,6 +48,7 @@ mod palette;
 pub(crate) mod zoom;
 pub(crate) mod band;
 pub(crate) mod folder_views;
+pub(crate) mod drive_names;
 use appearance::WallpaperState;
 
 use favorites::{Favorite, FavoriteProvider, Favorites};
@@ -272,6 +273,7 @@ pub struct Workspace {
     /// A rubber-band press or drag in a pane.
     pub(crate) band: Option<band::Band>,
     pub(crate) folder_views: folder_views::FolderViews,
+    pub(crate) drive_names: drive_names::DriveNames,
     pub(crate) drag_drop: drag_drop::DragDrop,
     /// The sign-in dialog's fields: user, domain and the masked password.
     pub(crate) device_fields: [Entity<TextField>; 3],
@@ -339,7 +341,7 @@ impl Workspace {
     pub fn new(start: startup::Startup, fonts: Fonts, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);
-        let startup::Startup { api, preferences, folder_views, path: initial_path, fallback, prefetch } = start;
+        let startup::Startup { api, preferences, folder_views, drive_names, path: initial_path, fallback, prefetch } = start;
         let last_location = Some(initial_path.clone());
         let mut initial_pane = Pane::with_api(
             0,
@@ -410,6 +412,7 @@ impl Workspace {
             zoom_scroll: 0.,
             band: None,
             folder_views,
+            drive_names,
             drag_drop: Default::default(),
             device_fields,
             pending_credential_focus: false,
