@@ -108,8 +108,6 @@ impl Workspace {
                 .control(self.preference_toggle("setting-extensions", p.show_file_extensions, |p| &mut p.show_file_extensions, cx)),
             SettingsRow::new("Confirm before delete")
                 .control(self.preference_toggle("setting-confirm-delete", p.confirm_delete, |p| &mut p.confirm_delete, cx)),
-            SettingsRow::new("Preview on single click")
-                .control(self.preference_toggle("setting-preview", p.preview_on_single_click, |p| &mut p.preview_on_single_click, cx)),
             SettingsRow::new("Selection checkboxes")
                 .control(self.preference_toggle("setting-checkboxes", p.selection_checkboxes, |p| &mut p.selection_checkboxes, cx)),
             // Selects are w-40.

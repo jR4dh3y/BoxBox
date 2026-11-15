@@ -11,8 +11,7 @@ pub mod thumbnails;
 mod thumbnailers;
 
 use std::ffi::CString;
-use std::fs::{self, OpenOptions};
-use std::io::Read;
+use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{bail, ensure, Context as _, Result};
@@ -259,41 +258,6 @@ impl LocalFiles {
             .with_context(|| format!("cannot resolve {path}"))?;
         ensure!(resolved.starts_with(&mount.path), "{path} resolves outside its mount");
         Ok(resolved)
-    }
-
-    pub fn read_text(&self, path: &str, max_bytes: usize) -> Result<String> {
-        let (mount, candidate) = self.candidate_path(path)?;
-        let resolved = fs::canonicalize(&candidate)
-            .with_context(|| format!("cannot read {path}"))?;
-        ensure!(resolved.starts_with(&mount.path), "{path} resolves outside its mount");
-        let metadata = fs::metadata(&resolved)?;
-        ensure!(metadata.is_file(), "{path} is not a regular file");
-        ensure!(metadata.len() <= max_bytes as u64, "{path} exceeds the text size limit");
-        let mut options = OpenOptions::new();
-        options.read(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt as _;
-            options.custom_flags(libc::O_NOFOLLOW);
-        }
-        let file = options
-            .open(&resolved)
-            .with_context(|| format!("cannot read {path}"))?;
-        let opened = file.metadata()?;
-        ensure!(opened.is_file(), "{path} is not a regular file");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt as _;
-            ensure!(
-                opened.dev() == metadata.dev() && opened.ino() == metadata.ino(),
-                "{path} changed while opening"
-            );
-        }
-        let mut contents = Vec::with_capacity(metadata.len() as usize);
-        file.take(max_bytes.saturating_add(1) as u64)
-            .read_to_end(&mut contents)?;
-        ensure!(contents.len() <= max_bytes, "{path} exceeds the text size limit");
-        String::from_utf8(contents).with_context(|| format!("{path} is not UTF-8 text"))
     }
 
     pub fn create_file(&self, parent: &str, name: &str, content: &str) -> Result<FileInfo> {

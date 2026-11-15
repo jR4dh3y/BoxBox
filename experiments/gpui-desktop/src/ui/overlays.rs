@@ -1,16 +1,14 @@
 //! `FileContextMenu.svelte` (items from `utils/fileContextMenu.ts`), the
-//! properties dialog in `BrowseDialogs.svelte`, and `FilePreview.svelte`.
+//! properties dialog in `BrowseDialogs.svelte`.
 
-use gpui::{anchored, div, img, prelude::*, px, AnyElement, Context, MouseButton, ObjectFit, Window};
+use gpui::{anchored, div, prelude::*, px, AnyElement, Context, MouseButton, Window};
 
-use super::TextScale;
-use crate::components::{ContextMenu, MenuItem, Modal, ModalSize, Type};
+use crate::components::{ContextMenu, MenuItem, Modal, Type};
 use crate::format::{file_date, file_size, type_description};
 use crate::workspace::properties::permission_string;
 use crate::workspace::Load;
 use crate::theme::*;
-use crate::workspace::preview::PreviewContent;
-use crate::workspace::{OperationEscape, Workspace};
+use crate::workspace::Workspace;
 
 type Action = fn(&mut Workspace, &mut Window, &mut Context<Workspace>);
 
@@ -84,13 +82,12 @@ impl Workspace {
                 ));
             }
             if single_folder && local {
-                entries.push(self.menu_item("context-terminal", "Open in Terminal", "info", |this, _, cx| this.context_open_terminal(cx), cx));
+                entries.push(self.menu_item("context-terminal", "Open in Terminal", "square-terminal", |this, _, cx| this.context_open_terminal(cx), cx));
             }
             if single_file && local {
-                entries.push(self.menu_item("context-open-with", "Open with…", "info", |this, window, cx| this.context_open_with(window, cx), cx));
+                entries.push(self.menu_item("context-open-with", "Open With…", "app-window", |this, window, cx| this.context_open_with(window, cx), cx));
             }
             if single_file {
-                entries.push(self.menu_item("context-preview", "Preview", "info", |this, window, cx| this.context_preview(window, cx), cx));
             }
             entries.push(self.menu_item("context-copy", "Copy", "copy", |this, _, cx| this.context_copy(cx), cx).shortcut("Ctrl+C"));
             entries.push(
@@ -109,14 +106,6 @@ impl Workspace {
             }
             if local {
                 entries.push(MenuItem::Separator);
-                entries.push(
-                    self.menu_item("context-link", "Create Link", "link", |this, _, cx| {
-                        if let Some((target, items)) = this.context_selection() {
-                            this.create_links(target, items, cx);
-                        }
-                    }, cx)
-                    .disabled(read_only),
-                );
                 entries.push(
                     self.menu_item("context-compress", "Compress", "archive", |this, _, cx| {
                         if let Some((target, items)) = this.context_selection() {
@@ -256,39 +245,6 @@ impl Workspace {
                 this.properties = None;
                 cx.notify();
             })).body(list))
-            .into_any_element()
-    }
-
-    pub(crate) fn render_preview(&self, cx: &mut Context<Self>) -> AnyElement {
-        let Some(preview) = &self.preview else { return div().into_any_element() };
-        let content = match &preview.content {
-            PreviewContent::Loading => div().text_13().text_color(c(TEXT_MUTED)).child("Loading preview…").into_any_element(),
-            PreviewContent::Failed(error) => div().text_13().text_color(c(DANGER)).child(error.clone()).into_any_element(),
-            PreviewContent::Image(image) => img(image.clone()).size_full().object_fit(ObjectFit::Contain).into_any_element(),
-            PreviewContent::Text(text) => div()
-                .id("preview-text")
-                .size_full()
-                .overflow_y_scroll()
-                .font_family(self.fonts.mono.clone())
-                .text_13()
-                .whitespace_normal()
-                .child(text.clone())
-                .into_any_element(),
-        };
-        div()
-            .id("preview-overlay")
-            .absolute()
-            .inset_0()
-            .key_context("PreviewInput")
-            .track_focus(&self.preview_focus)
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .child(
-                Modal::new()
-                    .title(preview.item.name.clone())
-                    .size(ModalSize::Lg)
-                    .on_close(cx.listener(|this, _, window, cx| this.operation_escape(&OperationEscape, window, cx)))
-                    .body(div().debug_selector(|| "preview-panel".into()).h(px(480.)).min_h_0().child(content)),
-            )
             .into_any_element()
     }
 }

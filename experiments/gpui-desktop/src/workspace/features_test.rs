@@ -857,13 +857,6 @@ fn item_menus_link_compress_open_tabs_and_send(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("ctrl-w ctrl-w");
     cx.run_until_parked();
 
-    // A link sits beside its target and holds just its name.
-    menu_on(cx, "row-0-3");
-    click(cx, "context-link");
-    cx.run_until_parked();
-    let link = fixture.root.join("Link to x.txt");
-    assert_eq!(fs::read_link(&link).unwrap(), std::path::PathBuf::from("x.txt"));
-
     // Several items compress into Archive.zip, which opens for renaming.
     click(cx, "row-0-1");
     let x = names(&view, cx).iter().position(|name| name == "x.txt").unwrap();

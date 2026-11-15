@@ -385,14 +385,6 @@ impl Api {
         }
     }
 
-    pub fn read_text(&self, path: &str, max_bytes: usize) -> Result<String> {
-        let _span = crate::profile::span("api.read_text").with(|| path.to_string());
-        match &self.provider {
-            Provider::Local(local) => local.read_text(path, max_bytes),
-            Provider::Remote(remote) => remote.read_text(path, max_bytes),
-        }
-    }
-
     /// Copies `source` to the exact virtual destination path, including its new name.
     pub fn copy(&self, source: &str, destination: &str) -> Result<()> {
         let _span = crate::profile::span("api.copy").with(|| source.to_string());

@@ -26,7 +26,6 @@ const GROUPS: [(&str, &[(&str, &str)]); 3] = [
             ("Ctrl + A", "Select all"),
             ("Escape", "Clear selection or close a dialog"),
             ("Enter", "Open selected item"),
-            ("Space", "Preview"),
             ("Alt + Enter", "Show selection details"),
             ("Ctrl + C · X · V", "Copy · Cut · Paste"),
             ("Ctrl + Shift + N · E", "New folder · New file"),

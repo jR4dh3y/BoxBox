@@ -126,18 +126,13 @@ fn desktop_workflow(cx: &mut TestAppContext) {
         cx.run_until_parked();
         view.read_with(cx, |workspace, _| assert!(!workspace.pane().items.iter().any(|item| item.name == "outside.txt"), "external removal must refresh the listing"));
     }
-    // Previews are read-only; editing belongs to the file's own app.
     fs::write(fixture.join("port/note.txt"), "hello").unwrap();
     let row = cx.debug_bounds("row-0-0").expect("created file must render a row");
     cx.simulate_mouse_down(row.center(), MouseButton::Right, Modifiers::default());
     assert!(cx.debug_bounds("file-context-menu").is_some(), "right click must render the menu");
-    click(cx, "context-preview");
-    cx.run_until_parked();
-    view.read_with(cx, |workspace, _| {
-        let preview = workspace.preview.as_ref().expect("the menu must open a preview");
-        assert!(matches!(&preview.content, crate::workspace::preview::PreviewContent::Text(text) if text.as_ref() == "hello"));
-    });
-    cx.simulate_keystrokes("escape f3");
+    cx.simulate_click(row.center(), Modifiers::default());
+    view.read_with(cx, |workspace, _| assert!(workspace.context_menu.is_none(), "a click outside must close the menu"));
+    cx.simulate_keystrokes("f3");
     view.read_with(cx, |workspace, _| assert_eq!(workspace.split_panes.len(), 1));
     assert!(cx.debug_bounds("browser-pane-0").is_some());
     assert!(cx.debug_bounds("browser-pane-1").is_some(), "split pane must be drawn");

@@ -41,8 +41,6 @@ Linux file manager does, not commitments.
   or typed `.`), Up/Down, Tab or Right to complete; `~` and `file://` input; a
   typed file path opens its folder and selects the file; click on the blank
   path bar, or F2 or Enter on it, opens the editor.
-- Preview: previous/next, image zoom (25–500%, wheel) and rotate, Escape and
-  backdrop close, a "Preview not available" notice for other types.
 - "Show in folder" and launch arguments: select the item, accept several
   paths and `--select PATH`, reject bad input.
 - System file picker through the xdg portal (`desktop_chooser_portal.go`):
@@ -122,16 +120,15 @@ Most valuable first.
 | `ui/InlineRename.svelte` | rename in place | keep | ◐ dialog instead | ✓ `workspace/rename.rs`: the row's or tile's name becomes a field (`rename_box`); Enter or a click elsewhere renames, Escape cancels |
 | `KeyboardShortcutsDialog.svelte` | F1 shortcuts | keep | ✓ claimed | ✓ `ui/shortcuts.rs`, listing the keys this app binds, including the movement keys of `workspace/keyboard.rs` |
 
-## Previews: a quick look only; everything else opens in its app
+## Previews: none; every file opens in its app
+
+The in-app preview is gone (menu entry, Space, "Preview on single click"):
+it showed text files and, for everything else, only a low-resolution
+thumbnail, which the grid already shows. Files open in their native app.
 
 | Svelte | Role | Native scope | PR | Local |
 |---|---|---|---|---|
-| `FilePreview.svelte` | preview frame, ←/→ stepping | keep, read-only | ✓ claimed | ◐ `ui/overlays.rs` on `Modal`, read-only; no stepping |
-| `preview/ImagePreview.svelte` | image with zoom | keep | ✓ claimed | ◐ no zoom |
-| `preview/CodePreview.svelte` | text and code | keep, read-only | ✓ claimed | ✓ read-only text |
-| `preview/PdfPreview.svelte` | PDF | first page only | ✓ claimed | ◐ thumbnail |
-| `preview/VideoPreview.svelte`, `preview/AudioPreview.svelte` | playback | — native app | — | — |
-| `preview/OfficePreview.svelte`, `preview/NotebookPreview.svelte` | documents | — native app | — | — |
+| `FilePreview.svelte`, `preview/*.svelte` | in-app previews | — native app | ✓ claimed | — removed |
 
 Thumbnails come from `desktop/native` (linked as a crate) through the shared
 freedesktop cache (`~/.cache/thumbnails`, `local/thumbnails.rs`), on their own
@@ -198,7 +195,7 @@ the web app renders the same manifest at `/dev/gallery` (dev server only).
 | `Select` | `ui/Select.svelte` | ✓ | ✓ settings |
 | `ProgressBar` | `ui/ProgressBar.svelte` | ✓ | not yet |
 | `ContextMenu`, `MenuItem` | `ui/ContextMenu.svelte` | ✓ | ✓ file menu, **+** menu |
-| `Modal` | `ui/Modal.svelte` | ✓ | ✓ dialogs, properties, preview |
+| `Modal` | `ui/Modal.svelte` | ✓ | ✓ dialogs, properties |
 | `Toast` | `ui/Toast.svelte` | ✓ | ✓ notices |
 | `FileListHeader`, `FileRow` | `FileList.svelte` | full-window shot | ✓ `ui/file_list.rs` |
 | `SidebarSection`, `NavItem` | `Sidebar.svelte` | full-window shot | ✓ `ui/sidebar.rs` |
@@ -249,7 +246,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Favorites | — | ✓ local favorites are the GTK bookmarks file, shared with other file managers and watched; server favorites stay in BoxBox's file; drag to reorder |
 | Trash | — | ✓ `workspace/trash.rs`: Empty Trash, a full or empty icon kept current by watching Trash, drops onto Trash, Restore offers Show and recreates folders deleted since; folders list first, then the most recently deleted |
 | Templates | — | ✓ `workspace/templates.rs`: "New from Template" in the folder and + menus; the copy opens for renaming |
-| Item menu | — | ✓ `workspace/item_actions.rs`: Open in New Tab, Create Link, Compress (ZIP), Send To (Desktop, removable drives, mail through the Email portal; mail untested, as it opens the mail app) |
+| Item menu | — | ✓ `workspace/item_actions.rs`: Open in New Tab, Compress (ZIP); no "Create Link" beside the item (links are made where they are dropped), and Open With, Open in Terminal and Properties each have their own icon; Send To (Desktop, removable drives, mail through the Email portal; mail untested, as it opens the mail app) |
 | Running files | — | ✓ `launch.rs`, `workspace/run.rs`: executable scripts and programs ask first; launchers run when trusted (executable or installed) and ask otherwise; a `Terminal=true` launcher runs in the default terminal (`xdg-terminal-exec`, then `$TERMINAL`, then a common one) |
 | Properties | — | ✓ `workspace/properties.rs`: permissions, owner and group; for several items or a folder, counts and total size, read off the UI thread |
 

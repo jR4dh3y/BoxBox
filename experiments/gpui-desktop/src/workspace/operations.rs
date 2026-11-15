@@ -16,7 +16,7 @@ use crate::os_clipboard;
 use super::confirm::Confirm;
 use super::undo::Undo;
 use crate::api::{Api, FileInfo};
-use super::preview::ThumbnailKey;
+use super::thumbnails::ThumbnailKey;
 use super::*;
 
 
@@ -371,8 +371,8 @@ impl Workspace {
         if self.operation_status.is_busy() {
             return;
         }
-        // Close the topmost thing: a dialog, the location field, the preview, then a menu.
-        if self.operation_dialog.take().is_none() && self.location_editor.take().is_none() && self.preview.take().is_none() {
+        // Close the topmost thing: a dialog, the location field, then a menu.
+        if self.operation_dialog.take().is_none() && self.location_editor.take().is_none() {
             self.context_menu = None;
         }
         self.focus_handle.focus(window);
@@ -1238,16 +1238,6 @@ impl Workspace {
             .map(|menu| (PaneTarget(menu.target_id), menu.items.clone()))
     }
 
-    pub(crate) fn context_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((target, items)) = self.context_selection() else {
-            return;
-        };
-        self.context_menu = None;
-        if let Some(item) = items.into_iter().next() {
-            self.preview_item(target, item, window, cx);
-        }
-    }
-
     pub(crate) fn context_copy(&mut self, cx: &mut Context<Self>) {
         if let Some((target, items)) = self.context_selection() {
             self.copy_items(target, items, ClipboardMode::Copy, cx);
@@ -1425,13 +1415,10 @@ impl Workspace {
         &mut self,
         target: PaneTarget,
         item: FileInfo,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if item.is_dir {
             self.navigate_in(target, item.path, cx);
-        } else if self.preferences.preview_on_single_click {
-            self.preview_item(target, item, window, cx);
         } else {
             self.open_item(target, item, cx);
         }
@@ -1453,94 +1440,6 @@ impl Workspace {
             let _ = this.update(cx, |this, cx| this.finish_operation(generation, result, cx));
         })
         .detach();
-    }
-
-    pub(crate) fn preview_item(
-        &mut self,
-        target: PaneTarget,
-        item: FileInfo,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some((_, api, _)) = self.operation_target(target) else {
-            return;
-        };
-        if item.is_dir {
-            self.set_operation_error("Folders cannot be previewed.", cx);
-            return;
-        }
-        self.context_menu = None;
-        self.mutation_generation = self.mutation_generation.wrapping_add(1);
-        let generation = self.mutation_generation;
-        let text_preview = is_text_preview(&item.name);
-        let media_preview = has_inline_thumbnail(&item.name);
-        let content = if text_preview || media_preview {
-            PreviewContent::Loading
-        } else {
-            PreviewContent::Failed("No in-app preview is available for this file type.".into())
-        };
-        self.preview = Some(PreviewState {
-            target_id: target.0,
-            api: api.clone(),
-            item: item.clone(),
-            content,
-        });
-        self.preview_focus.focus(window);
-        cx.notify();
-
-        if text_preview {
-            let read_api = api.clone();
-            let read_item = item.clone();
-            cx.spawn(async move |this, cx| {
-                let result = cx
-                    .background_executor()
-                    .spawn(async move { crate::media::read_text_preview(&read_api, &read_item) })
-                    .await;
-                let _ = this.update(cx, |this, cx| {
-                    if this.mutation_generation == generation {
-                        if let Some(preview) = this.preview.as_mut().filter(|preview| {
-                            preview.target_id == target.0
-                                && preview.item.path == item.path
-                                && Arc::ptr_eq(&preview.api, &api)
-                        }) {
-                            preview.content = match result {
-                                Ok(text) => PreviewContent::Text(text.into()),
-                                Err(error) => PreviewContent::Failed(format!("{error:#}")),
-                            };
-                        }
-                    }
-                    cx.notify();
-                });
-            })
-            .detach();
-        } else if media_preview {
-            let thumbnail_api = api.clone();
-            let thumbnail_item = item.clone();
-            cx.spawn(async move |this, cx| {
-                let result = cx
-                    .background_executor()
-                    .spawn(async move { crate::media::thumbnail(&thumbnail_api, &thumbnail_item, 512, 512) })
-                    .await;
-                let _ = this.update(cx, |this, cx| {
-                    if this.mutation_generation == generation {
-                        if let Some(preview) = this.preview.as_mut().filter(|preview| {
-                            preview.target_id == target.0
-                                && preview.item.path == item.path
-                                && Arc::ptr_eq(&preview.api, &api)
-                        }) {
-                            preview.content = match result {
-                                Ok(bytes) => PreviewContent::Image(Arc::new(
-                                    gpui::Image::from_bytes(gpui::ImageFormat::Png, bytes),
-                                )),
-                                Err(error) => PreviewContent::Failed(format!("{error:#}")),
-                            };
-                        }
-                    }
-                    cx.notify();
-                });
-            })
-            .detach();
-        }
     }
 
     /// Drops every thumbnail, releasing their GPU textures.
@@ -1569,7 +1468,7 @@ impl Workspace {
             return;
         };
         let rendered = crate::thumbnail_queue::render(move || {
-            crate::media::thumbnail(&api, &item, edge, edge * 3 / 4).and_then(|png| super::preview::decode_thumbnail(&png))
+            crate::media::thumbnail(&api, &item, edge, edge * 3 / 4).and_then(|png| super::thumbnails::decode_thumbnail(&png))
         });
         cx.spawn(async move |this, cx| {
             let result = rendered.await;
@@ -1599,22 +1498,11 @@ impl Workspace {
     pub(crate) fn open_active(
         &mut self,
         _: &OpenActive,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if let Some(item) = self.pane().active_item() {
-            self.activate_item(self.active_pane, item, window, cx);
-        }
-    }
-
-    pub(crate) fn preview_active(
-        &mut self,
-        _: &PreviewActive,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(item) = self.pane().active_item() {
-            self.preview_item(self.active_pane, item, window, cx);
+            self.activate_item(self.active_pane, item, cx);
         }
     }
 }

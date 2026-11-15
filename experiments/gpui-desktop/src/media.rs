@@ -10,7 +10,6 @@ use anyhow::{bail, Context, Result};
 
 use crate::api::{Api, FileInfo};
 
-pub const MAX_TEXT_PREVIEW_BYTES: usize = 1 << 20;
 const MAX_STAGED_NAME_BYTES: usize = 240;
 static STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -50,12 +49,6 @@ pub fn open_file(api: &Api, item: &FileInfo) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Return the whole UTF-8 text when it fits the preview bound; oversized files are rejected.
-pub fn read_text_preview(api: &Api, item: &FileInfo) -> Result<String> {
-    ensure_file(item)?;
-    api.read_text(&item.path, MAX_TEXT_PREVIEW_BYTES)
-        .with_context(|| format!("cannot read text preview for {}", item.path))
-}
 
 /// Return a PNG thumbnail, rendering local files natively and requesting remote thumbnails directly.
 pub fn thumbnail(api: &Api, item: &FileInfo, width: u32, height: u32) -> Result<Vec<u8>> {

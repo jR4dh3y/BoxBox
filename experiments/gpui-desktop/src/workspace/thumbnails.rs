@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, HashSet, VecDeque}, sync::Arc};
 
-use gpui::{Image, RenderImage};
+use gpui::RenderImage;
 
 use crate::{api::{Api, FileInfo}, format::extension};
 
@@ -111,33 +111,6 @@ pub(crate) fn decode_thumbnail(png: &[u8]) -> anyhow::Result<Arc<RenderImage>> {
         pixel.swap(0, 2);
     }
     Ok(Arc::new(RenderImage::new(vec![image::Frame::new(pixels)])))
-}
-
-pub(crate) enum PreviewContent {
-    Loading,
-    /// Read-only: editing belongs to the file's own app.
-    Text(gpui::SharedString),
-    Image(Arc<Image>),
-    Failed(String),
-}
-
-pub(crate) struct PreviewState {
-    pub target_id: usize,
-    pub api: Arc<Api>,
-    pub item: FileInfo,
-    pub content: PreviewContent,
-}
-
-pub(crate) fn is_text_preview(name: &str) -> bool {
-    matches!(
-        extension(name).to_ascii_lowercase().as_str(),
-        "txt" | "log" | "csv" | "tsv" | "md" | "rst" | "json" | "yaml" | "yml"
-            | "toml" | "ini" | "conf" | "env" | "xml" | "html" | "htm" | "css"
-            | "scss" | "sass" | "less" | "js" | "jsx" | "ts" | "tsx" | "mjs"
-            | "cjs" | "rs" | "py" | "pyi" | "sh" | "bash" | "zsh" | "fish" | "go"
-            | "java" | "kt" | "kts" | "c" | "h" | "cc" | "cpp" | "hpp" | "cs"
-            | "rb" | "php" | "sql" | "swift" | "scala" | "lua" | "r" | "pl" | "properties"
-    )
 }
 
 pub(crate) fn has_inline_thumbnail(name: &str) -> bool {

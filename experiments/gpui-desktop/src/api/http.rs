@@ -19,7 +19,6 @@ use super::{
 };
 
 const MAX_JSON_BYTES: usize = 8 * 1024 * 1024;
-const MAX_TEXT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_ERROR_BYTES: usize = 64 * 1024;
 const MAX_THUMBNAIL_BYTES: usize = 32 * 1024 * 1024;
 const UPLOAD_CHUNK_SIZE: usize = 1024 * 1024;
@@ -171,19 +170,6 @@ impl RemoteApi {
             return Err(error).with_context(|| format!("cannot download {}", item.path));
         }
         Ok(target)
-    }
-
-    pub(super) fn read_text(&self, path: &str, max_bytes: usize) -> Result<String> {
-        anyhow::ensure!(
-            max_bytes <= MAX_TEXT_BYTES,
-            "text preview limit exceeds the {}-byte cap",
-            MAX_TEXT_BYTES
-        );
-        validate_remote_path(path)?;
-        let endpoint = format!("/stream/preview/{}", encode_path(path));
-        let response = self.call("GET", &endpoint, None)?;
-        let bytes = read_limited(response, max_bytes, "text preview")?;
-        String::from_utf8(bytes).context("text preview is not valid UTF-8")
     }
 
     pub(super) fn thumbnail(&self, path: &str, width: u32, height: u32) -> Result<Vec<u8>> {

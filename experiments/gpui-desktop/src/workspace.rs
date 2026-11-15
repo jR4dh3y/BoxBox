@@ -42,7 +42,7 @@ pub(crate) mod startup;
 pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;
-pub(crate) mod preview;
+pub(crate) mod thumbnails;
 pub(crate) mod appearance;
 mod palette;
 pub(crate) mod zoom;
@@ -54,7 +54,7 @@ use favorites::{Favorite, FavoriteProvider, Favorites};
 use operations::{
     ContextMenuState, FileClipboard, LocationEditor, OperationDialog, OperationStatus, PaneTarget,
 };
-use preview::{has_inline_thumbnail, is_text_preview, PreviewContent, PreviewState, ThumbnailCache};
+use thumbnails::{has_inline_thumbnail, ThumbnailCache};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsSection {
@@ -70,7 +70,6 @@ pub(crate) struct Preferences {
     pub show_hidden_files: bool,
     pub show_file_extensions: bool,
     pub confirm_delete: bool,
-    pub preview_on_single_click: bool,
     pub selection_checkboxes: bool,
     pub default_sort: SortField,
     pub default_sort_direction: SortDir,
@@ -104,7 +103,6 @@ impl Default for Preferences {
             show_hidden_files: false,
             show_file_extensions: true,
             confirm_delete: true,
-            preview_on_single_click: false,
             selection_checkboxes: true,
             // `DEFAULT_SORT_BY` and `DEFAULT_SORT_DIR` in sortFiles.ts.
             default_sort: SortField::Modified,
@@ -164,7 +162,6 @@ actions!(
         CutSelected,
         PasteInto,
         OpenActive,
-        PreviewActive,
         FocusLocation,
         ToggleSplit,
         AddFavorite,
@@ -219,11 +216,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-+", ZoomIn, context),
         KeyBinding::new("ctrl--", ZoomOut, context),
         KeyBinding::new("ctrl-0", ZoomReset, context),
-        // A space typed in a text field is a space, not a preview.
-        KeyBinding::new("space", PreviewActive, Some("BrowseWorkspace && !TextField")),
         // A text field keeps Ctrl+Z to itself, as the web shortcut skips inputs.
         KeyBinding::new("ctrl-z", Undo, Some("BrowseWorkspace && !TextField")),
-        KeyBinding::new("escape", OperationEscape, Some("PreviewInput")),
         KeyBinding::new("escape", CloseSettings, Some("SettingsPanel")),
     ]);
     keyboard::bind_keys(cx);
@@ -328,8 +322,6 @@ pub struct Workspace {
     pub(crate) pending_field_focus: Option<crate::ui::SettingsField>,
     /// The accent field holds text that is not a colour.
     pub(crate) accent_invalid: bool,
-    pub(crate) preview: Option<PreviewState>,
-    pub(crate) preview_focus: FocusHandle,
     pub(crate) properties: Option<PropertiesState>,
     pub(crate) thumbnail_cache: ThumbnailCache,
     pub(crate) favorites: Favorites,
@@ -463,8 +455,6 @@ impl Workspace {
             settings_fields: settings_fields.clone(),
             pending_field_focus: None,
             accent_invalid: false,
-            preview: None,
-            preview_focus: cx.focus_handle(),
             properties: None,
             thumbnail_cache: ThumbnailCache::default(),
             favorites: Favorites::load(),
@@ -1186,7 +1176,6 @@ impl Workspace {
         else if self.shortcuts_open { self.shortcuts_open = false; }
         else if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
         else if self.properties.take().is_some() || self.context_menu.take().is_some() {}
-        else if self.preview.is_some() { self.operation_escape(&OperationEscape, window, cx); return; }
         // With nothing selected, Escape leaves the search, as it does in the field.
         else if self.pane().selected.is_empty() && self.pane().is_searching() { self.pane_mut().clear_search(); }
         else { self.pane_mut().clear_selection(); }
@@ -1363,7 +1352,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::open_menu_key))
             .on_key_down(cx.listener(Self::type_ahead))
             .on_action(cx.listener(Self::open_active))
-            .on_action(cx.listener(Self::preview_active))
             .on_action(cx.listener(Self::focus_location))
             .on_action(cx.listener(Self::toggle_split))
             .on_action(cx.listener(Self::add_favorite))
@@ -1398,7 +1386,6 @@ impl Render for Workspace {
             .when(self.settings_open, |root| {
                 root.child(self.render_settings(window, cx))
             })
-            .when(self.preview.is_some(), |root| root.child(self.render_preview(cx)))
             .when(self.context_menu.is_some(), |root| root.child(self.render_context_menu(cx)))
             .when(self.history_menu.is_some(), |root| root.child(self.render_history_menu(cx)))
             .when(self.place_menu.is_some(), |root| root.child(self.render_place_menu(cx)))

@@ -96,9 +96,9 @@ impl Workspace {
         });
         let tab = path.clone();
         let on_middle = cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| this.middle_click_folder(target, tab.clone(), event, cx));
-        let on_click = cx.listener(move |this, event: &ClickEvent, window, cx| {
+        let on_click = cx.listener(move |this, event: &ClickEvent, _, cx| {
             this.active_pane = target;
-            this.activate_list_item(index, &path, is_dir, event, window, cx)
+            this.activate_list_item(index, &path, is_dir, event, cx)
         });
         Some(row.decorate(move |row| {
             let row = crate::drag_out::draggable(row.debug_selector(move || format!("row-{}-{index}", target.0)), target, index, workspace.clone(), api);
@@ -144,22 +144,16 @@ impl Workspace {
         path: &str,
         is_dir: bool,
         event: &ClickEvent,
-        window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
         if event.click_count() >= 2 {
             if is_dir { self.navigate(path.to_string(), cx); }
             else if let Some(item) = self.pane().items.get(index).cloned() {
-                self.activate_item(self.active_pane, item, window, cx);
+                self.activate_item(self.active_pane, item, cx);
             }
             return;
         }
         self.pane_mut().click(index, event.modifiers());
-        if !is_dir && self.preferences.preview_on_single_click && !event.modifiers().control && !event.modifiers().shift {
-            if let Some(item) = self.pane().items.get(index).cloned() {
-                self.preview_item(self.active_pane, item, window, cx);
-            }
-        }
         cx.notify();
     }
 }

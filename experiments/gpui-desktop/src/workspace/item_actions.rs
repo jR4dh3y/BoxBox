@@ -1,4 +1,4 @@
-//! Context-menu actions on selected items: Open in New Tab, Create Link,
+//! Context-menu actions on selected items: Open in New Tab,
 //! Compress and Send To (a removable drive, the Desktop, or an email).
 
 use std::collections::{HashMap, HashSet};
@@ -30,46 +30,6 @@ impl Workspace {
         for item in items.into_iter().filter(|item| item.is_dir) {
             self.open_in_new_tab(target, item.path, cx);
         }
-    }
-
-    /// A link to each item beside it, named "Link to …".
-    pub(crate) fn create_links(&mut self, target: PaneTarget, items: Vec<FileInfo>, cx: &mut Context<Self>) {
-        let Some(pane) = self.pane_by_id(target.0) else { return };
-        let api = pane.api.clone();
-        let mut taken: HashSet<String> = pane.items.iter().map(|item| item.name.clone()).collect();
-        let links: Vec<(String, String)> = items
-            .iter()
-            .map(|item| {
-                let name = super::names::unused_name(&format!("Link to {}", item.name), item.is_dir, &|name| taken.contains(name));
-                taken.insert(name.clone());
-                let folder = parent(&item.path);
-                (item.path.clone(), if folder.is_empty() { name } else { format!("{folder}/{name}") })
-            })
-            .collect();
-        let generation = self.begin_operation("Creating links…");
-        let request_api = api.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    for (item, link) in &links {
-                        request_api.create_link(item, link)?;
-                    }
-                    Ok(links.into_iter().map(|(_, link)| link).collect::<Vec<_>>())
-                })
-                .await;
-            this.update(cx, |this, cx| {
-                let result = result.map(|links: Vec<String>| {
-                    if let Some(pane) = this.pane_mut_by_id(target.0) {
-                        pane.selected = links.into_iter().collect();
-                    }
-                });
-                this.refresh_provider(api, cx);
-                this.finish_operation(generation, result, cx);
-            })
-            .ok();
-        })
-        .detach();
     }
 
     /// A ZIP of the items beside them: "name.zip" for one, "Archive.zip" for several.
