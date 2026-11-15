@@ -152,8 +152,13 @@ pub fn compare(left: &Hit, right: &Hit) -> Ordering {
 
 /// Orders the hits and keeps the best `LIMIT`.
 pub fn best(hits: &mut Vec<Hit>) {
-    hits.sort_by(compare);
-    hits.truncate(LIMIT);
+    best_by(hits, |hit| hit);
+}
+
+/// `best` for values that hold a hit.
+pub fn best_by<T>(values: &mut Vec<T>, hit: impl Fn(&T) -> &Hit) {
+    values.sort_by(|left, right| compare(hit(left), hit(right)));
+    values.truncate(LIMIT);
 }
 
 /// One search, as a provider receives it.

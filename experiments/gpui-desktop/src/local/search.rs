@@ -3,32 +3,54 @@
 
 use std::collections::VecDeque;
 use std::fs;
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
 
-use super::{skip_search_directory, LocalFiles};
+use super::{skip_search_directory, LocalFiles, Mount};
 use crate::api::FileInfo;
-use crate::search::{best, Hit, Request, LIMIT};
+use crate::search::{best_by, Hit, Request, LIMIT};
 
 /// How often the matches so far are shown while the walk goes on.
 const REPORT_EVERY: Duration = Duration::from_millis(150);
 
-fn items(hits: &[Hit]) -> Vec<FileInfo> {
-    hits.iter().map(|hit| hit.item.clone()).collect()
+/// A matching name. Ranking needs only the name and the depth, so the entry is
+/// inspected once it is among the best: "file1" in a folder of 20,000 matched
+/// 11,111 names, and inspecting each took most of the search.
+struct Found {
+    /// Until `inspected`, holds the name, path and folder flag only.
+    hit: Hit,
+    real: PathBuf,
+    parent: String,
+    inspected: bool,
 }
 
 impl LocalFiles {
+    /// Keeps the best matches, inspects those not yet inspected, and returns them.
+    /// An entry gone since it was read is dropped.
+    fn best_items(&self, mount: &Mount, found: &mut Vec<Found>) -> Vec<FileInfo> {
+        best_by(found, |found| &found.hit);
+        found.retain_mut(|found| {
+            if !found.inspected {
+                let Ok(item) = self.info_for_path(mount, &found.parent, &found.real) else { return false };
+                (found.hit.item, found.inspected) = (item, true);
+            }
+            true
+        });
+        found.iter().map(|found| found.hit.item.clone()).collect()
+    }
+
     /// The best matches below `request.path`, best first. `progress` receives the
     /// matches so far, in the same order, while the walk runs.
     ///
-    /// Names are matched from the directory entry alone; only a match is inspected.
+    /// Names are matched from the directory entry alone; only the best are inspected.
     /// Linked folders are not entered, which also keeps the walk free of loops, and
     /// hidden folders are entered only when hidden files are shown.
     pub fn search(&self, request: &Request, progress: &mut dyn FnMut(Vec<FileInfo>)) -> Result<Vec<FileInfo>> {
         let (mount, start) = self.resolve_directory(request.path)?;
-        let mut hits: Vec<Hit> = Vec::new();
+        let mut hits: Vec<Found> = Vec::new();
         let mut pending = VecDeque::from([(start.clone(), request.path.to_owned(), 0usize)]);
         let (mut reported, mut unreported) = (Instant::now(), false);
         while let Some((directory, virtual_directory, depth)) = pending.pop_front() {
@@ -49,30 +71,32 @@ impl LocalFiles {
                 if !request.hidden && name.starts_with('.') {
                     continue;
                 }
-                let path = entry.path();
-                if let Some(rank) = request.query.rank(name) {
-                    if let Ok(item) = self.info_for_path(mount, &virtual_directory, &path) {
-                        hits.push(Hit { item, rank, depth });
-                        unreported = true;
-                    }
-                }
                 let is_folder = entry.file_type().is_ok_and(|kind| kind.is_dir());
+                let rank = request.query.rank(name);
+                if rank.is_none() && !is_folder {
+                    continue;
+                }
+                let path = entry.path();
+                let virtual_path = format!("{virtual_directory}/{name}");
+                if let Some(rank) = rank {
+                    let item = FileInfo { name: name.to_owned(), path: virtual_path.clone(), size: 0, is_dir: is_folder, mod_time: None };
+                    hits.push(Found { hit: Hit { item, rank, depth }, real: path.clone(), parent: virtual_directory.clone(), inspected: false });
+                    unreported = true;
+                }
                 if is_folder && !skip_search_directory(mount, &path) {
-                    pending.push_back((path, format!("{virtual_directory}/{name}"), depth + 1));
+                    pending.push_back((path, virtual_path, depth + 1));
                 }
             }
             // Past the limit only better matches matter; keep memory bounded.
             if hits.len() > LIMIT * 2 {
-                best(&mut hits);
+                best_by(&mut hits, |found| &found.hit);
             }
             if unreported && reported.elapsed() >= REPORT_EVERY {
-                best(&mut hits);
-                progress(items(&hits));
+                progress(self.best_items(mount, &mut hits));
                 (reported, unreported) = (Instant::now(), false);
             }
         }
-        best(&mut hits);
-        Ok(items(&hits))
+        Ok(self.best_items(mount, &mut hits))
     }
 }
 
@@ -136,6 +160,20 @@ mod tests {
         std::os::unix::fs::symlink(&fixture.0, fixture.0.join("real/loop")).unwrap();
         assert_eq!(find(&local, "home", "target", false), ["home/real/target.txt"]);
         assert_eq!(find(&local, "home", "real", false), ["home/real", "home/real-link"]);
+    }
+
+    #[test]
+    fn results_carry_what_a_listing_gives() {
+        let (fixture, local) = Fixture::new("details", &["real/notes.txt"]);
+        std::os::unix::fs::symlink(fixture.0.join("real"), fixture.0.join("notes-link")).unwrap();
+        let (query, cancel) = (Query::parse("notes"), AtomicBool::new(false));
+        let request = Request { path: "home", query: &query, hidden: false, cancel: &cancel };
+        let found = local.search(&request, &mut |_| {}).unwrap();
+        let listed = local.list("home/real").unwrap();
+        let file = found.iter().find(|item| item.path == "home/real/notes.txt").unwrap();
+        assert_eq!((file.size, file.is_dir, file.mod_time), (listed[0].size, false, listed[0].mod_time));
+        assert!(file.mod_time.is_some());
+        assert!(found.iter().find(|item| item.path == "home/notes-link").unwrap().is_dir);
     }
 
     #[test]

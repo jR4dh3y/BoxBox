@@ -953,6 +953,8 @@ impl Workspace {
                         cx.notify();
                     }
                 }
+                // What the walk read and did not keep.
+                cx.background_executor().spawn(async { crate::heap::release_freed() }).detach();
             })
                 .ok();
         })
