@@ -13,12 +13,13 @@ use crate::workspace::operations::{ClipboardMode, PaneTarget};
 use crate::workspace::Workspace;
 
 impl Workspace {
-    pub(crate) fn render_file_list(&self, target: PaneTarget, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_file_list(&self, target: PaneTarget, window: &gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
         let count = pane.items.len();
         let placeholder = pane.placeholder();
         let empty = placeholder.is_some();
         div()
+            .relative()
             .size_full()
             .flex()
             .flex_col()
@@ -59,6 +60,7 @@ impl Workspace {
                     .flex_1(),
                 )
             })
+            .child(self.pointer_layer(target, window, cx))
     }
 
     fn render_row(&self, target: PaneTarget, index: usize, cx: &mut Context<Self>) -> Option<FileRow> {
@@ -78,7 +80,7 @@ impl Workspace {
             .active(pane.active == Some(index))
             .cut(self.is_cut(pane, item))
             .drop_target(self.drop_hover(cx) == Some(&folder))
-            .compact(self.preferences.compact_rows);
+            .zoom(self.preferences.list_zoom);
         let row = match self.renaming(target, &item.path) {
             true => row.editor(crate::components::rename_box(self.rename_field.clone())),
             false => row,

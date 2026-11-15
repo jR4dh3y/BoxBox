@@ -16,15 +16,18 @@ pub(crate) struct ThumbnailKey {
     pub path: String,
     pub mod_time: Option<i64>,
     pub size: u64,
+    /// The longest edge it is drawn at (`GridMetrics::thumbnail`).
+    pub edge: u32,
 }
 
 impl ThumbnailKey {
-    pub fn new(api: &Api, item: &FileInfo) -> Self {
+    pub fn new(api: &Api, item: &FileInfo, edge: u32) -> Self {
         Self {
             provider: FavoriteProvider::for_api(api),
             path: item.path.clone(),
             mod_time: item.mod_time,
             size: item.size,
+            edge,
         }
     }
 }

@@ -4,7 +4,7 @@
 use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, Window};
 
 use super::{icon, TextScale};
-use crate::components::{FileTile, GridMetrics};
+use crate::components::FileTile;
 use crate::format::{display_name, file_icon, file_size};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
@@ -14,7 +14,7 @@ use crate::workspace::Workspace;
 impl Workspace {
     pub(crate) fn render_file_grid(&self, target: PaneTarget, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
-        let metrics = GridMetrics::new(self.preferences.compact_rows);
+        let metrics = self.grid_metrics();
         if let Some((glyph, message)) = pane.placeholder() {
             return div()
                 .size_full()
@@ -30,6 +30,7 @@ impl Workspace {
         let columns = metrics.columns(self.browser_width(window));
         let rows = pane.items.len().div_ceil(columns);
         div()
+            .relative()
             .size_full()
             .bg(self.file_background())
             .child(
@@ -64,6 +65,7 @@ impl Workspace {
                 .track_scroll(pane.grid_scroll.clone())
                 .size_full(),
             )
+            .child(self.pointer_layer(target, window, cx))
             .into_any_element()
     }
 
@@ -91,7 +93,7 @@ impl Workspace {
         .active(pane.active == Some(index))
         .cut(self.is_cut(pane, &item))
         .drop_target(self.drop_hover(cx) == Some(&folder))
-        .compact(self.preferences.compact_rows);
+        .zoom(self.preferences.grid_zoom);
         let tile = match self.renaming(target, &item.path) {
             true => tile.editor(crate::components::rename_box(self.rename_field.clone())),
             false => tile,

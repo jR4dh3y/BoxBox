@@ -10,23 +10,37 @@ use super::ROUNDED;
 use crate::theme::*;
 use crate::ui::thin_icon;
 
-/// Tile width, row height, column gap and outer padding.
+/// A grid zoom step: tile width, row height, column gap, outer padding, and the
+/// preview box and icon inside a tile. The name and size lines stay the same.
 #[derive(Clone, Copy)]
 pub struct GridMetrics {
     pub tile_width: f32,
     pub row_height: f32,
     pub gap: f32,
     pub padding: f32,
+    pub preview_height: f32,
+    pub icon: f32,
+    /// The longest edge of a thumbnail drawn at this size.
+    pub thumbnail: u32,
 }
 
 impl GridMetrics {
-    /// `grid h-[164px] gap-x-3` in `p-3`, or `h-[136px] gap-x-2` in `p-2` when compact.
-    pub fn new(compact: bool) -> Self {
-        if compact {
-            Self { tile_width: 96., row_height: 136., gap: 8., padding: 8. }
-        } else {
-            Self { tile_width: 112., row_height: 164., gap: 12., padding: 12. }
-        }
+    /// Step 1 is the web app's `grid h-[164px] gap-x-3` in `p-3`; step 0 its compact one.
+    pub const STEPS: [Self; 5] = [
+        Self { tile_width: 96., row_height: 136., gap: 8., padding: 8., preview_height: 56., icon: 24., thumbnail: 160 },
+        Self { tile_width: 112., row_height: 164., gap: 12., padding: 12., preview_height: 80., icon: 30., thumbnail: 160 },
+        Self { tile_width: 144., row_height: 196., gap: 12., padding: 12., preview_height: 112., icon: 42., thumbnail: 160 },
+        Self { tile_width: 192., row_height: 244., gap: 12., padding: 12., preview_height: 160., icon: 60., thumbnail: 256 },
+        Self { tile_width: 256., row_height: 308., gap: 12., padding: 12., preview_height: 224., icon: 84., thumbnail: 256 },
+    ];
+
+    pub fn new(zoom: u8) -> Self {
+        Self::STEPS[usize::from(zoom).min(Self::STEPS.len() - 1)]
+    }
+
+    /// A tile's height: the row without the padding folded into it.
+    pub fn tile_height(&self) -> f32 {
+        self.row_height - self.padding
     }
 
     /// `columnsFor` in `virtualWindow.ts`, for the pane's full width.
@@ -51,7 +65,7 @@ pub struct FileTile {
     active: bool,
     cut: bool,
     drop_target: bool,
-    compact: bool,
+    metrics: GridMetrics,
     selection: Selection,
     checkbox: Option<CheckHandler>,
     decorate: Option<Decorate>,
@@ -71,7 +85,7 @@ impl FileTile {
             active: false,
             cut: false,
             drop_target: false,
-            compact: false,
+            metrics: GridMetrics::new(1),
             selection,
             checkbox: None,
             decorate: None,
@@ -122,8 +136,8 @@ impl FileTile {
         self
     }
 
-    pub fn compact(mut self, compact: bool) -> Self {
-        self.compact = compact;
+    pub fn zoom(mut self, zoom: u8) -> Self {
+        self.metrics = GridMetrics::new(zoom);
         self
     }
 
@@ -143,12 +157,12 @@ impl FileTile {
 impl RenderOnce for FileTile {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let Selection { background, hover, accent } = self.selection;
-        let metrics = GridMetrics::new(self.compact);
+        let metrics = self.metrics;
         let group = SharedString::from(format!("file-tile-{}", self.id));
         let tone = if self.is_dir { FOLDER } else { TEXT_SECONDARY };
-        // thumbnailClass: rounded border bg-surface-primary, h-20 (h-14 compact)
+        // thumbnailClass: rounded border bg-surface-primary, as tall as the zoom step says
         let preview = div()
-            .h(px(if self.compact { 56. } else { 80. }))
+            .h(px(metrics.preview_height))
             .w_full()
             .flex_none()
             .flex()
@@ -161,7 +175,7 @@ impl RenderOnce for FileTile {
             .bg(c(SURFACE_PRIMARY))
             .map(|slot| match self.thumbnail {
                 Some(image) => slot.child(img(image).size_full().object_fit(ObjectFit::Cover)),
-                None => slot.child(thin_icon(self.icon, if self.compact { 24. } else { 30. }, c(tone))),
+                None => slot.child(thin_icon(self.icon, metrics.icon, c(tone))),
             });
         let label = div()
             .w_full()
@@ -196,13 +210,13 @@ impl RenderOnce for FileTile {
                     .text_color(c(if self.selected { TEXT_PRIMARY } else { TEXT_MUTED }))
                     .child(self.detail),
             );
-        // tileClass: relative flex flex-col rounded border p-2, 152px (128px compact) tall
+        // tileClass: relative flex flex-col rounded border p-2, the row less its padding
         let tile = div()
             .id(self.id)
             .group(group.clone())
             .relative()
             .w(px(metrics.tile_width))
-            .h(px(if self.compact { 128. } else { 152. }))
+            .h(px(metrics.tile_height()))
             .flex_none()
             .flex()
             .flex_col()

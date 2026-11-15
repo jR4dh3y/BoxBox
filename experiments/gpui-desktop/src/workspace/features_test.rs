@@ -278,7 +278,7 @@ fn the_grid_moves_by_rows_and_columns(cx: &mut TestAppContext) {
     view.update(cx, |workspace, _| workspace.pane_mut().set_view_mode(ViewMode::Grid));
     let columns = cx.update(|window, app| {
         let workspace = view.read(app);
-        crate::components::GridMetrics::new(false).columns(workspace.browser_width(window))
+        crate::components::GridMetrics::new(1).columns(workspace.browser_width(window))
     });
     assert!(columns > 1);
     cx.simulate_keystrokes("right right down");
@@ -1102,4 +1102,80 @@ fn pressing_an_open_select_closes_it(cx: &mut TestAppContext) {
     cx.run_until_parked();
     click(cx, "accent-source");
     view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("accent-source")));
+}
+
+fn selected_names(view: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String> {
+    let mut names: Vec<String> = view.read_with(cx, |workspace, _| workspace.pane().selected_items().into_iter().map(|item| item.name).collect());
+    names.sort();
+    names
+}
+
+#[gpui::test]
+fn a_band_from_empty_space_selects_the_rows_it_crosses(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt", "c.txt", "d.txt"]);
+    let pane = cx.debug_bounds("browser-pane-0").unwrap();
+    let empty = gpui::point(pane.center().x, pane.bottom() - gpui::px(60.));
+    let second = cx.debug_bounds("row-0-1").unwrap().center();
+    let band = |cx: &mut VisualTestContext, modifiers: Modifiers| {
+        cx.simulate_mouse_down(empty, MouseButton::Left, modifiers);
+        cx.simulate_mouse_move(empty - gpui::point(gpui::px(0.), gpui::px(10.)), Some(MouseButton::Left), modifiers);
+        cx.simulate_mouse_move(second, Some(MouseButton::Left), modifiers);
+        cx.simulate_mouse_up(second, MouseButton::Left, modifiers);
+        cx.run_until_parked();
+    };
+    band(cx, Modifiers::default());
+    assert_eq!(selected_names(&view, cx), ["b.txt", "c.txt", "d.txt"]);
+    view.read_with(cx, |workspace, _| assert!(workspace.band.is_none()));
+
+    // A click on empty space clears the selection; Ctrl+drag adds to it.
+    click(cx, "row-0-0");
+    cx.simulate_mouse_down(empty, MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_up(empty, MouseButton::Left, Modifiers::default());
+    assert!(selected_names(&view, cx).is_empty());
+    click(cx, "row-0-0");
+    band(cx, Modifiers { control: true, ..Default::default() });
+    assert_eq!(selected_names(&view, cx), ["a.txt", "b.txt", "c.txt", "d.txt"]);
+
+    // A press on a row is the row's: it selects it, and starts no band.
+    let first = cx.debug_bounds("row-0-0").unwrap().center();
+    cx.simulate_mouse_down(first, MouseButton::Left, Modifiers::default());
+    view.read_with(cx, |workspace, _| assert!(workspace.band.is_none()));
+    cx.simulate_mouse_up(first, MouseButton::Left, Modifiers::default());
+    assert_eq!(selected_names(&view, cx), ["a.txt"]);
+}
+
+#[gpui::test]
+fn zoom_steps_the_view_and_ctrl_zero_resets_it(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt"]);
+    let height = |cx: &mut VisualTestContext| f32::from(cx.debug_bounds("row-0-0").unwrap().size.height);
+    assert_eq!(height(cx), 32.);
+    cx.simulate_keystrokes("ctrl-= ctrl-=");
+    cx.run_until_parked();
+    assert_eq!(height(cx), 48.);
+    cx.simulate_keystrokes("ctrl-=");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.preferences.list_zoom, 3, "the largest step holds"));
+    cx.simulate_keystrokes("ctrl-0 ctrl--");
+    cx.run_until_parked();
+    assert_eq!(height(cx), 28.);
+
+    // Ctrl+wheel up over the list zooms in instead of scrolling; the grid keeps its own step.
+    let row = cx.debug_bounds("row-0-0").unwrap().center();
+    cx.simulate_event(gpui::ScrollWheelEvent {
+        position: row,
+        delta: gpui::ScrollDelta::Lines(gpui::point(0., 1.)),
+        modifiers: Modifiers { control: true, ..Default::default() },
+        touch_phase: gpui::TouchPhase::Moved,
+    });
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.preferences.list_zoom, 1);
+        assert_eq!(workspace.preferences.grid_zoom, 1);
+    });
+
+    // Zooming the grid keeps the grid.
+    view.update(cx, |workspace, _| workspace.pane_mut().set_view_mode(ViewMode::Grid));
+    cx.simulate_keystrokes("ctrl-=");
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.preferences.grid_zoom, 2);
+        assert_eq!(workspace.pane().current_view_mode(), ViewMode::Grid);
+    });
 }

@@ -45,6 +45,8 @@ pub(crate) mod rename;
 pub(crate) mod preview;
 pub(crate) mod appearance;
 mod palette;
+pub(crate) mod zoom;
+pub(crate) mod band;
 use appearance::WallpaperState;
 
 use favorites::{Favorite, FavoriteProvider, Favorites};
@@ -74,7 +76,9 @@ pub(crate) struct Preferences {
     pub default_view: ViewMode,
     pub start_location: StartLocation,
     pub hardware_acceleration: bool,
-    pub compact_rows: bool,
+    /// Zoom steps of the list and the grid (`ListMetrics`, `GridMetrics`).
+    pub list_zoom: u8,
+    pub grid_zoom: u8,
     pub wallpaper_tint: bool,
     pub frosted_glass: bool,
 }
@@ -107,7 +111,8 @@ impl Default for Preferences {
             default_view: ViewMode::List,
             start_location: StartLocation::Overview,
             hardware_acceleration: true,
-            compact_rows: false,
+            list_zoom: 1,
+            grid_zoom: 1,
             wallpaper_tint: false,
             frosted_glass: false,
         }
@@ -165,6 +170,9 @@ actions!(
         Undo,
         ShowShortcuts,
         OperationEscape,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
     ]
 );
 
@@ -206,6 +214,10 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-shift-5", ToggleSplit, context),
         KeyBinding::new("ctrl-b", AddFavorite, context),
         KeyBinding::new("f1", ShowShortcuts, context),
+        KeyBinding::new("ctrl-=", ZoomIn, context),
+        KeyBinding::new("ctrl-+", ZoomIn, context),
+        KeyBinding::new("ctrl--", ZoomOut, context),
+        KeyBinding::new("ctrl-0", ZoomReset, context),
         // A space typed in a text field is a space, not a preview.
         KeyBinding::new("space", PreviewActive, Some("BrowseWorkspace && !TextField")),
         // A text field keeps Ctrl+Z to itself, as the web shortcut skips inputs.
@@ -260,6 +272,10 @@ pub struct Workspace {
     last_location: Option<String>,
     /// What Select by Pattern last selected with, offered again.
     pub(crate) last_pattern: String,
+    /// Touchpad pixels of Ctrl+scroll not yet turned into a zoom step.
+    pub(crate) zoom_scroll: f32,
+    /// A rubber-band press or drag in a pane.
+    pub(crate) band: Option<band::Band>,
     pub(crate) drag_drop: drag_drop::DragDrop,
     /// The sign-in dialog's fields: user, domain and the masked password.
     pub(crate) device_fields: [Entity<TextField>; 3],
@@ -393,6 +409,8 @@ impl Workspace {
             servers: Default::default(),
             last_location,
             last_pattern: "*".into(),
+            zoom_scroll: 0.,
+            band: None,
             drag_drop: Default::default(),
             device_fields,
             pending_credential_focus: false,
@@ -502,7 +520,7 @@ impl Workspace {
         match pane.current_view_mode() {
             ViewMode::List => pane.list_scroll.scroll_to_item(index, gpui::ScrollStrategy::Top),
             ViewMode::Grid => {
-                let columns = crate::components::GridMetrics::new(self.preferences.compact_rows).columns(self.browser_width(window));
+                let columns = self.grid_metrics().columns(self.browser_width(window));
                 pane.grid_scroll.scroll_to_item(index / columns.max(1), gpui::ScrollStrategy::Top);
             }
         }
@@ -799,14 +817,7 @@ impl Workspace {
                 hidden_changed |= pane.apply_preferences(show_hidden_files, sort, view);
             }
         }
-        match self.preferences.encode() {
-            Ok(bytes) => self.persist(&crate::persist::PREFERENCES, bytes, cx, |this, result, cx| {
-                if let Err(error) = result {
-                    this.report(Err(format!("Could not save preferences: {error}")), cx);
-                }
-            }),
-            Err(error) => self.report(Err(format!("Could not save preferences: {error}")), cx),
-        }
+        self.save_preferences(cx);
         for target in resorted {
             self.resort(target, cx);
         }
@@ -817,6 +828,19 @@ impl Workspace {
             }
         }
         cx.notify();
+    }
+
+    /// Writes the preferences without applying them to the panes again, for a
+    /// change such as zoom that the panes do not hold.
+    pub(crate) fn save_preferences(&mut self, cx: &mut Context<Self>) {
+        match self.preferences.encode() {
+            Ok(bytes) => self.persist(&crate::persist::PREFERENCES, bytes, cx, |this, result, cx| {
+                if let Err(error) = result {
+                    this.report(Err(format!("Could not save preferences: {error}")), cx);
+                }
+            }),
+            Err(error) => self.report(Err(format!("Could not save preferences: {error}")), cx),
+        }
     }
 
     pub(crate) fn navigate(&mut self, path: String, cx: &mut Context<Self>) {
@@ -1317,6 +1341,9 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::delete_permanently))
             .on_action(cx.listener(Self::open_select_pattern))
             .on_action(cx.listener(Self::invert_selection))
+            .on_action(cx.listener(Self::zoom_in))
+            .on_action(cx.listener(Self::zoom_out))
+            .on_action(cx.listener(Self::zoom_reset))
             .on_action(cx.listener(Self::download_selected))
             .on_action(cx.listener(Self::copy_selected))
             .on_action(cx.listener(Self::cut_selected))

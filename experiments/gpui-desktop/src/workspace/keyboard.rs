@@ -8,7 +8,6 @@ use gpui::{px, App, Context, KeyBinding, KeyDownEvent, Window};
 
 use super::operations::PaneTarget;
 use super::Workspace;
-use crate::components::GridMetrics;
 use crate::pane::{Move, ViewMode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,11 +98,11 @@ impl Workspace {
         match pane.current_view_mode() {
             ViewMode::List => {
                 let height = pane.list_scroll.0.borrow().base_handle.bounds().size.height;
-                let rows = (f32::from(height) / crate::components::row_height(self.preferences.compact_rows)).floor() as usize;
+                let rows = (f32::from(height) / self.list_metrics().row_height).floor() as usize;
                 (1, rows.max(1))
             }
             ViewMode::Grid => {
-                let metrics = GridMetrics::new(self.preferences.compact_rows);
+                let metrics = self.grid_metrics();
                 let columns = metrics.columns(self.browser_width(window));
                 let height = pane.grid_scroll.0.borrow().base_handle.bounds().size.height;
                 let rows = (f32::from(height) / metrics.row_height).floor() as usize;
@@ -123,8 +122,8 @@ impl Workspace {
         let target = self.active_pane;
         let Some(pane) = self.pane_by_id(target.0) else { return };
         let (scroll, item_height) = match pane.current_view_mode() {
-            ViewMode::List => (pane.list_scroll.0.borrow().base_handle.clone(), crate::components::row_height(self.preferences.compact_rows)),
-            ViewMode::Grid => (pane.grid_scroll.0.borrow().base_handle.clone(), GridMetrics::new(self.preferences.compact_rows).row_height),
+            ViewMode::List => (pane.list_scroll.0.borrow().base_handle.clone(), self.list_metrics().row_height),
+            ViewMode::Grid => (pane.grid_scroll.0.borrow().base_handle.clone(), self.grid_metrics().row_height),
         };
         let (bounds, offset) = (scroll.bounds(), scroll.offset());
         let (columns, _) = self.layout(target, window);
@@ -133,7 +132,7 @@ impl Workspace {
         let position = match cursor {
             Some(index) => {
                 let (row, column) = (index / columns, index % columns);
-                let tile = GridMetrics::new(self.preferences.compact_rows);
+                let tile = self.grid_metrics();
                 let x = if columns == 1 { 40. } else { tile.padding + column as f32 * (tile.tile_width + tile.gap) + tile.tile_width / 2. };
                 bounds.origin + offset + gpui::point(px(x), px((row as f32 + 0.75) * item_height))
             }

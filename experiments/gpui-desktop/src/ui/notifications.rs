@@ -16,6 +16,8 @@ impl Workspace {
             .flex()
             .flex_col()
             .gap(px(8.))
+            // A click on a toast or the transfers is not a click on the files under them.
+            .occlude()
             .children(self.notices.visible().iter().map(|notice| {
                 let id = notice.id;
                 let toast = Toast::new(("notice", id as usize), notice.kind, notice.message.clone())

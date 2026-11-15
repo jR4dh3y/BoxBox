@@ -19,8 +19,25 @@ use crate::ui::icon;
 /// `LIST_HEADER_HEIGHT`; compact mode only shrinks rows.
 pub const HEADER_HEIGHT: f32 = 32.;
 
-pub fn row_height(compact: bool) -> f32 {
-    if compact { 28. } else { 32. }
+/// A list zoom step: the row height and icon size. Text stays 13px.
+#[derive(Clone, Copy)]
+pub struct ListMetrics {
+    pub row_height: f32,
+    pub icon: f32,
+}
+
+impl ListMetrics {
+    /// Step 1 is the web app's `h-8` row; step 0 its compact one.
+    pub const STEPS: [Self; 4] = [
+        Self { row_height: 28., icon: 16. },
+        Self { row_height: 32., icon: 16. },
+        Self { row_height: 40., icon: 24. },
+        Self { row_height: 48., icon: 32. },
+    ];
+
+    pub fn new(zoom: u8) -> Self {
+        Self::STEPS[usize::from(zoom).min(Self::STEPS.len() - 1)]
+    }
 }
 
 const COLUMNS: [(SortField, &str, Option<f32>, bool); 4] = [
@@ -141,7 +158,7 @@ pub struct FileRow {
     active: bool,
     cut: bool,
     drop_target: bool,
-    compact: bool,
+    metrics: ListMetrics,
     selection: Selection,
     checkbox: Option<CheckHandler>,
     decorate: Option<Decorate>,
@@ -182,7 +199,7 @@ impl FileRow {
             active: false,
             cut: false,
             drop_target: false,
-            compact: false,
+            metrics: ListMetrics::new(1),
             selection,
             checkbox: None,
             decorate: None,
@@ -242,8 +259,8 @@ impl FileRow {
         self
     }
 
-    pub fn compact(mut self, compact: bool) -> Self {
-        self.compact = compact;
+    pub fn zoom(mut self, zoom: u8) -> Self {
+        self.metrics = ListMetrics::new(zoom);
         self
     }
 
@@ -267,6 +284,8 @@ impl RenderOnce for FileRow {
         let tone = if self.is_dir { FOLDER } else { TEXT_SECONDARY };
         let group = SharedString::from(format!("file-icon-{}", self.id));
         let has_checkbox = self.checkbox.is_some();
+        let ListMetrics { row_height, icon: glyph_size } = self.metrics;
+        let slot_size = glyph_size + 4.;
 
         // group/icon relative h-5 w-5; the checkbox is absolute inset-0.5 over the icon
         let glyph = div()
@@ -276,7 +295,7 @@ impl RenderOnce for FileRow {
             .size_full()
             .when(has_checkbox && self.selected, |el| el.invisible())
             .when(has_checkbox && !self.selected, |el| el.group_hover(group.clone(), |style| style.invisible()))
-            .child(icon(self.icon, 16., c(tone)));
+            .child(icon(self.icon, glyph_size, c(tone)));
         let slot = div()
             .id("icon")
             .group(group.clone())
@@ -285,14 +304,14 @@ impl RenderOnce for FileRow {
             .flex_none()
             .items_center()
             .justify_center()
-            .size(px(20.))
+            .size(px(slot_size))
             .child(glyph)
             .when_some(self.checkbox, |slot, on_check| {
                 slot.child(
                     checkbox(self.selected, accent)
                         .absolute()
-                        .top(px(2.))
-                        .left(px(2.))
+                        .top(px((slot_size - 16.) / 2.))
+                        .left(px((slot_size - 16.) / 2.))
                         .when(!self.selected, |el| el.invisible().group_hover(group, |style| style.visible()))
                         .on_click(move |event, window, cx| {
                             cx.stop_propagation();
@@ -307,7 +326,7 @@ impl RenderOnce for FileRow {
             .relative()
             .flex()
             .w_full()
-            .h(px(row_height(self.compact)))
+            .h(px(row_height))
             .border_b_1()
             .border_color(c(BORDER_SECONDARY))
             .type_13()

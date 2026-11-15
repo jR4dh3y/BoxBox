@@ -206,12 +206,6 @@ impl Workspace {
                     ),
             ));
         }
-        rows.push(SettingsRow::new("Compact rows").control(self.preference_toggle(
-            "setting-compact",
-            preferences.compact_rows,
-            |p| &mut p.compact_rows,
-            cx,
-        )));
         rows.push(SettingsRow::new("Transparent background").control({
             let workspace = cx.entity().downgrade();
             Toggle::new("setting-transparent", settings.transparent).on_change(move |value, _, _, cx| {

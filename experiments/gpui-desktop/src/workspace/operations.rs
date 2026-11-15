@@ -1563,12 +1563,13 @@ impl Workspace {
             return;
         }
         let api = pane.api.clone();
-        let key = ThumbnailKey::new(&api, &item);
+        let edge = self.grid_metrics().thumbnail;
+        let key = ThumbnailKey::new(&api, &item, edge);
         let Some(generation) = self.thumbnail_cache.request(key.clone()) else {
             return;
         };
         let rendered = crate::thumbnail_queue::render(move || {
-            crate::media::thumbnail(&api, &item, 160, 120).and_then(|png| super::preview::decode_thumbnail(&png))
+            crate::media::thumbnail(&api, &item, edge, edge * 3 / 4).and_then(|png| super::preview::decode_thumbnail(&png))
         });
         cx.spawn(async move |this, cx| {
             let result = rendered.await;
@@ -1590,7 +1591,7 @@ impl Workspace {
         api: &Arc<Api>,
         item: &FileInfo,
     ) -> Option<Arc<gpui::RenderImage>> {
-        let key = ThumbnailKey::new(api, item);
+        let key = ThumbnailKey::new(api, item, self.grid_metrics().thumbnail);
         self.thumbnail_cache.get(&key)
     }
 
