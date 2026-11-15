@@ -12,6 +12,8 @@ use std::process::Command;
 
 use anyhow::{bail, Context as _, Result};
 
+use crate::icon_theme::IconTheme;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct App {
     /// The desktop file ID, such as `org.gnome.TextEditor.desktop`.
@@ -31,6 +33,8 @@ pub struct Apps {
 #[derive(Clone)]
 struct Entry {
     app: App,
+    /// The `Icon` key; `list` looks up only the apps it returns.
+    icon: String,
     path: PathBuf,
     mime_types: Vec<String>,
     /// Handler-only entries are offered when associated, never in the full list.
@@ -181,7 +185,8 @@ fn read_entry(path: &Path, id: &str) -> Option<Result<Entry, ()>> {
     }
     let name = if value("Name").is_empty() { id.trim_end_matches(".desktop").to_string() } else { value("Name").to_string() };
     Some(Ok(Entry {
-        app: App { id: id.to_string(), name, icon: icon_path(value("Icon")), is_default: false },
+        app: App { id: id.to_string(), name, icon: None, is_default: false },
+        icon: value("Icon").to_string(),
         path: path.to_path_buf(),
         mime_types: value("MimeType").split(';').map(str::trim).filter(|mime| !mime.is_empty()).map(str::to_string).collect(),
         no_display: value("NoDisplay") == "true",
@@ -323,8 +328,16 @@ fn list_for(mime_type: &str, entries: &HashMap<String, Entry>) -> Apps {
 
 /// The apps that can open `path`.
 pub fn list(path: &Path) -> Result<Apps> {
+    let _list = crate::profile::span("open with list");
     let mime_type = content_type(path)?;
-    Ok(list_for(&mime_type, &installed()))
+    let entries = installed();
+    let mut apps = list_for(&mime_type, &entries);
+    let _span = crate::profile::span("open with icons");
+    let theme = IconTheme::current();
+    for app in apps.recommended.iter_mut().chain(&mut apps.other) {
+        app.icon = theme.find(&entries[&app.id].icon);
+    }
+    Ok(apps)
 }
 
 /// Opens `path` in the app, which must be one `list` offers for it.
@@ -349,35 +362,6 @@ pub fn launch(path: &Path, app_id: &str, make_default: bool) -> Result<()> {
     Ok(())
 }
 
-/// An icon name or path as a file: the hicolor theme and pixmaps, PNG or SVG.
-fn icon_path(icon: &str) -> Option<PathBuf> {
-    if icon.is_empty() {
-        return None;
-    }
-    let as_path = Path::new(icon);
-    if as_path.is_absolute() {
-        return as_path.is_file().then(|| as_path.to_path_buf());
-    }
-    let data_dirs = std::iter::once(home_dir("XDG_DATA_HOME", ".local/share")).chain(search_dirs("XDG_DATA_DIRS", "/usr/local/share:/usr/share"));
-    for dir in data_dirs {
-        for size in ["scalable", "48x48", "64x64", "32x32", "128x128", "256x256"] {
-            for extension in ["svg", "png"] {
-                let candidate = dir.join(format!("icons/hicolor/{size}/apps/{icon}.{extension}"));
-                if candidate.is_file() {
-                    return Some(candidate);
-                }
-            }
-        }
-        for extension in ["png", "svg"] {
-            let candidate = dir.join(format!("pixmaps/{icon}.{extension}"));
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
 /// `filterOpenWithChoices`: search covers both groups, by name or ID.
 pub fn filter(apps: &Apps, search: &str) -> (Vec<App>, Vec<App>) {
     let query = search.trim().to_lowercase();
@@ -399,6 +383,7 @@ mod tests {
             id.to_string(),
             Entry {
                 app: App { id: id.into(), name: name.into(), icon: None, is_default: false },
+                icon: String::new(),
                 path: PathBuf::from(format!("/apps/{id}")),
                 mime_types: mime.iter().map(|mime| mime.to_string()).collect(),
                 no_display,

@@ -62,7 +62,6 @@ Linux file manager does, not commitments.
   focus; context menus close on Escape or an outside click and stay inside
   the window.
 - Refuse Trash on network filesystems.
-- Open With: app icons from the current icon theme, not only hicolor.
 - Wallpaper: preview before applying, SVG and AVIF, test the picker.
 - Collapse the sidebar into a drawer on narrow windows.
 - Later: a Servers page with per-server status, and icons.
@@ -146,7 +145,7 @@ threads (`thumbnail_queue.rs`). Installed freedesktop thumbnailers are still to 
 | `desktop/TrashPage.svelte` | Trash, restore, delete forever | keep | ✓ `trash.rs` | ✓ `local/trash.rs`, `ui/browser.rs` |
 | `desktop/TransferJobs.svelte` | transfer progress, cancel | keep | ✓ `jobs.rs`, `sse.rs` | ◐ coarse status |
 | `desktop/TransferConflictDialog.svelte` | Skip or Keep both | keep | ✓ `clipboard.rs` | ✗ conflicts fail |
-| `desktop/OpenWithDialog.svelte`, `desktop/ApplicationIcon.svelte` | Open With, set default | keep | ✓ `desktop.rs` | ✗ |
+| `desktop/OpenWithDialog.svelte`, `desktop/ApplicationIcon.svelte` | Open With, set default | keep | ✓ `desktop.rs` | ✓ `open_with.rs`, `ui/open_with.rs`; icons from the desktop's icon theme and its parents (`icon_theme.rs`, theme name from the settings portal); "Use as default" beside Open |
 | `desktop/DesktopUndoShortcut.svelte` | Ctrl+Z | keep | ✓ `undo.rs` | ✗ |
 | `desktop/FileChooser.svelte`, `desktop/ChooserLocations.svelte`, `routes/chooser/+page.svelte` | system file picker | keep (portal) | ✗ | ✗ |
 | `Notifications.svelte`, `ui/Toast.svelte` | toasts | keep | ✓ `notifications.rs` | ✓ `workspace/notifications.rs`, `ui/notifications.rs` on `Toast` |
