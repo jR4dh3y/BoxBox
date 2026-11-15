@@ -206,7 +206,7 @@ dialogs, menus, settings and notices onto the primitives above.
 Known differences from the web app, kept on purpose: the home folder is
 labelled "Home" as in other Linux file managers, and list rows show icons,
 not thumbnails (thumbnails belong in the grid), and grid tiles show video and PDF
-thumbnails as well as images.
+thumbnails as well as images, and files and folders use the desktop icon theme instead of Lucide glyphs.
 
 ## Web only: not part of the native app
 
@@ -233,6 +233,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Tabs from a folder | — | ✓ a middle-click on a folder row, tile or crumb opens it in a new tab; with Ctrl, behind the current one |
 | Start location | — | ✓ Settings → General: the Overview, the home folder or the last location (kept in `$XDG_STATE_HOME/boxbox-gpui/last-location`); a remembered folder that is gone starts on the Overview |
 | Per-folder view and sort | — | ✓ `workspace/folder_views.rs`: List or Grid picked in the status bar, and the sort picked from a column header, stick to that folder (by server and path, in `$XDG_STATE_HOME/boxbox-gpui/folder-views.json`, read before the first frame); other folders open with the defaults from Settings, a new default leaves folders that have their own, and picking the default forgets it. Search results do not change the folder's sort |
+| Theme icons | — | ✓ `file_icons.rs`, `workspace/file_icons.rs`, `icon_theme.rs`: rows and tiles draw the desktop icon theme's icons, as Thunar does: `folder`, the home and XDG user folders' own (`user-home`, `folder-download`, …, by every virtual path that reaches them), and for files the MIME type from the name (shared-mime-info `icons` and `generic-icons`, then `text-x-generic`). Each theme folder is listed once into a name index; SVGs are drawn with resvg at device pixels in size buckets (16–256), PNGs only scaled down, all off the UI thread and kept per type and size. Grid icons stand without a frame (thumbnails keep theirs) and folder names keep the text colour; the Lucide glyph stays as the fallback. Not yet: following a theme change while running, `.desktop` files' own icons, a link emblem, drive icons from UDisks2 |
 | Zoom | — | ✓ `workspace/zoom.rs`: Ctrl+plus, Ctrl+minus, Ctrl+wheel (capture phase, so the list does not scroll), Ctrl+0 resets; the list (4 steps) and the grid (5) keep their own step in the preferences, and replace the old Compact rows setting; large grid steps ask for 256 px thumbnails. Ctrl+wheel tested only with a simulated event |
 | Rubber-band selection | — | ✓ `workspace/band.rs`, `ui/pointer.rs`: a drag from empty space selects every row or tile it touches (hit-tested by arithmetic on the uniform layout), Ctrl or Shift adds, past the edge it scrolls; a click on empty space clears the selection. Toasts and transfers occlude, so clicks on them stay theirs |
 | Select by pattern | — | ✓ Ctrl+S: `*` and `?` match the whole name, plain text anywhere, case ignored (`search::matches_pattern`); Ctrl+I inverts the selection |

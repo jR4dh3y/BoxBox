@@ -232,6 +232,15 @@ impl Api {
         }
     }
 
+    /// Virtual paths of the home and XDG user folders with their theme icons.
+    /// Reads `user-dirs.dirs`, so call it off the UI thread.
+    pub fn special_folders(&self) -> Vec<(String, &'static str)> {
+        match &self.provider {
+            Provider::Local(local) => local.special_folders(),
+            Provider::Remote(_) => Vec::new(),
+        }
+    }
+
     pub fn local_path(&self, path: &str) -> Result<Option<PathBuf>> {
         match &self.provider {
             Provider::Local(local) => local.local_path(path).map(Some),

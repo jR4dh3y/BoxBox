@@ -333,7 +333,7 @@ pub fn list(path: &Path) -> Result<Apps> {
     let entries = installed();
     let mut apps = list_for(&mime_type, &entries);
     let _span = crate::profile::span("open with icons");
-    let theme = IconTheme::current();
+    let theme = IconTheme::shared();
     for app in apps.recommended.iter_mut().chain(&mut apps.other) {
         app.icon = theme.find(&entries[&app.id].icon);
     }

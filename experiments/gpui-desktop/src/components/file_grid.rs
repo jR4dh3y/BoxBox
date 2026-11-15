@@ -38,6 +38,11 @@ impl GridMetrics {
         Self::STEPS[usize::from(zoom).min(Self::STEPS.len() - 1)]
     }
 
+    /// The edge of a theme icon: the preview box, less a margin, never wider than the tile.
+    pub fn theme_icon(&self) -> f32 {
+        (self.preview_height - 8.).min(self.tile_width - 16.)
+    }
+
     /// A tile's height: the row without the padding folded into it.
     pub fn tile_height(&self) -> f32 {
         self.row_height - self.padding
@@ -61,6 +66,8 @@ pub struct FileTile {
     icon: &'static str,
     detail: SharedString,
     thumbnail: Option<Arc<RenderImage>>,
+    /// The icon theme's image, drawn without a frame when there is no thumbnail.
+    image: Option<Arc<RenderImage>>,
     selected: bool,
     active: bool,
     cut: bool,
@@ -81,6 +88,7 @@ impl FileTile {
             icon: "file",
             detail: SharedString::default(),
             thumbnail: None,
+            image: None,
             selected: false,
             active: false,
             cut: false,
@@ -112,6 +120,11 @@ impl FileTile {
 
     pub fn thumbnail(mut self, thumbnail: Option<Arc<RenderImage>>) -> Self {
         self.thumbnail = thumbnail;
+        self
+    }
+
+    pub fn image(mut self, image: Option<Arc<RenderImage>>) -> Self {
+        self.image = image;
         self
     }
 
@@ -160,7 +173,10 @@ impl RenderOnce for FileTile {
         let metrics = self.metrics;
         let group = SharedString::from(format!("file-tile-{}", self.id));
         let tone = if self.is_dir { FOLDER } else { TEXT_SECONDARY };
-        // thumbnailClass: rounded border bg-surface-primary, as tall as the zoom step says
+        // A theme icon already says "folder"; the name keeps the text colour, as in Thunar.
+        let folder_name = self.is_dir && self.image.is_none();
+        // As tall as the zoom step says. A thumbnail sits in thumbnailClass's frame
+        // (rounded border bg-surface-primary); an icon stands on its own, as in Thunar.
         let preview = div()
             .h(px(metrics.preview_height))
             .w_full()
@@ -169,13 +185,15 @@ impl RenderOnce for FileTile {
             .items_center()
             .justify_center()
             .overflow_hidden()
-            .rounded(px(ROUNDED))
-            .border_1()
-            .border_color(c(BORDER_PRIMARY))
-            .bg(c(SURFACE_PRIMARY))
-            .map(|slot| match self.thumbnail {
-                Some(image) => slot.child(img(image).size_full().object_fit(ObjectFit::Cover)),
-                None => slot.child(thin_icon(self.icon, metrics.icon, c(tone))),
+            .map(|slot| match (self.thumbnail, self.image) {
+                (Some(image), _) => slot
+                    .rounded(px(ROUNDED))
+                    .border_1()
+                    .border_color(c(BORDER_PRIMARY))
+                    .bg(c(SURFACE_PRIMARY))
+                    .child(img(image).size_full().object_fit(ObjectFit::Cover)),
+                (None, Some(image)) => slot.child(img(image).size(px(metrics.theme_icon()))),
+                (None, None) => slot.child(thin_icon(self.icon, metrics.icon, c(tone))),
             });
         let label = div()
             .w_full()
@@ -192,7 +210,7 @@ impl RenderOnce for FileTile {
                         .text_size(px(13.))
                         .line_height(px(16.))
                         .line_clamp(2)
-                        .text_color(c(if self.is_dir { FOLDER } else { TEXT_PRIMARY }))
+                        .text_color(c(if folder_name { FOLDER } else { TEXT_PRIMARY }))
                         .child(self.name),
                 ),
             })

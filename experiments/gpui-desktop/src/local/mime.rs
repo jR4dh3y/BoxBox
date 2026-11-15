@@ -17,6 +17,9 @@ struct Glob {
 struct Database {
     globs: Vec<Glob>,
     aliases: HashMap<String, String>,
+    /// `mime/icons` and `mime/generic-icons`: a type's own icon name and its family's.
+    icons: HashMap<String, String>,
+    generic_icons: HashMap<String, String>,
 }
 
 /// `$XDG_DATA_HOME`, then `$XDG_DATA_DIRS`: the user's files win.
@@ -41,6 +44,13 @@ fn database() -> &'static Database {
             if let Ok(text) = std::fs::read_to_string(dir.join("mime/aliases")) {
                 for (alias, canonical) in text.lines().filter_map(|line| line.split_once(' ')) {
                     database.aliases.entry(alias.to_string()).or_insert_with(|| canonical.trim().to_string());
+                }
+            }
+            for (file, table) in [("mime/icons", &mut database.icons), ("mime/generic-icons", &mut database.generic_icons)] {
+                if let Ok(text) = std::fs::read_to_string(dir.join(file)) {
+                    for (mime, icon) in text.lines().filter_map(|line| line.split_once(':')) {
+                        table.entry(mime.to_string()).or_insert_with(|| icon.trim().to_string());
+                    }
                 }
             }
         }
@@ -99,6 +109,22 @@ pub fn from_name(path: &Path) -> Option<String> {
     lookup(database(), &path.file_name()?.to_string_lossy())
 }
 
+/// The icon names for a type, best first, as GIO lists them: the type's own
+/// (`text-x-python`), its family's (`text-x-script`), then the media's generic one.
+pub fn icon_names(mime: &str) -> Vec<String> {
+    icon_names_in(database(), mime)
+}
+
+fn icon_names_in(database: &Database, mime: &str) -> Vec<String> {
+    let mime = canonical_in(database, mime);
+    let media = mime.split('/').next().unwrap_or("application");
+    let mut names = vec![database.icons.get(mime).cloned().unwrap_or_else(|| mime.replace('/', "-"))];
+    names.extend(database.generic_icons.get(mime).cloned());
+    names.push(format!("{media}-x-generic"));
+    names.dedup();
+    names
+}
+
 /// The canonical name of a type that may be an alias, such as `video/x-matroska`.
 pub fn canonical(mime: &str) -> &str {
     canonical_in(database(), mime)
@@ -113,6 +139,8 @@ mod tests {
         Database {
             globs: parse_globs(globs).collect(),
             aliases: [("video/x-matroska".to_string(), "video/matroska".to_string())].into_iter().collect(),
+            icons: HashMap::new(),
+            generic_icons: [("text/x-python".to_string(), "text-x-script".to_string())].into_iter().collect(),
         }
     }
 
@@ -126,6 +154,13 @@ mod tests {
         assert_eq!(lookup(&database, "notes").as_deref(), None);
         assert_eq!(lookup(&database, "vidéo.mp4").as_deref(), Some("video/mp4"));
         assert_eq!(lookup(&database, "ééé").as_deref(), None);
+    }
+
+    #[test]
+    fn icon_names_run_from_the_type_to_its_family() {
+        let database = database();
+        assert_eq!(icon_names_in(&database, "text/x-python"), ["text-x-python", "text-x-script", "text-x-generic"]);
+        assert_eq!(icon_names_in(&database, "video/x-matroska"), ["video-matroska", "video-x-generic"]);
     }
 
     #[test]

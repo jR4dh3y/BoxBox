@@ -47,6 +47,7 @@ pub(crate) mod appearance;
 mod palette;
 pub(crate) mod zoom;
 pub(crate) mod band;
+pub(crate) mod file_icons;
 pub(crate) mod folder_views;
 pub(crate) mod drive_names;
 use appearance::WallpaperState;
@@ -326,6 +327,7 @@ pub struct Workspace {
     pub(crate) accent_invalid: bool,
     pub(crate) properties: Option<PropertiesState>,
     pub(crate) thumbnail_cache: ThumbnailCache,
+    pub(crate) file_icons: file_icons::FileIcons,
     pub(crate) favorites: Favorites,
     pub(crate) favorites_error: Option<String>,
     /// Whether the GTK bookmarks were read, so writing them keeps what they hold.
@@ -461,6 +463,7 @@ impl Workspace {
             accent_invalid: false,
             properties: None,
             thumbnail_cache: ThumbnailCache::default(),
+            file_icons: Default::default(),
             favorites: Favorites::load(),
             favorites_error: None,
             bookmarks_read: false,
@@ -480,6 +483,7 @@ impl Workspace {
         }
         workspace.start_directory_watches(cx);
         workspace.start_device_watch(cx);
+        workspace.load_special_folders(cx);
         workspace.connect_servers(cx);
         workspace.watch_trash(cx);
         workspace.load_bookmarks(cx);
@@ -1274,6 +1278,7 @@ fn preference_view(preferences: &Preferences) -> ViewMode {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::profile::frame_started();
+        self.file_icons.scale = window.scale_factor();
         let _span = crate::profile::span("render");
         self.sync_search_fields(window, cx);
         if let Some(field) = self.pending_field_focus.take() {

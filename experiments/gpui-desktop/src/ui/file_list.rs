@@ -53,7 +53,13 @@ impl Workspace {
                         count,
                         cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                             let _span = crate::profile::span("list rows").with(|| format!("{} rows", range.len()));
-                            range.filter_map(|index| this.render_row(target, index, cx)).collect::<Vec<_>>()
+                            let size = crate::components::ListMetrics::new(this.preferences.list_zoom).icon + 4.;
+                            range
+                                .filter_map(|index| {
+                                    this.request_entry_icon(target, index, size, cx);
+                                    this.render_row(target, index, cx)
+                                })
+                                .collect::<Vec<_>>()
                         }),
                     )
                     .track_scroll(pane.list_scroll.clone())
@@ -70,6 +76,7 @@ impl Workspace {
         let folder = DropTarget::Folder { pane: target, path: path.clone() };
         let row = FileRow::new(("row", index), display_name(&item.name, is_dir, self.preferences.show_file_extensions), is_dir, self.selection_style())
             .icon(file_icon(&item.name, is_dir))
+            .image(self.item_icon(&pane.api, item, crate::components::ListMetrics::new(self.preferences.list_zoom).icon + 4.))
             .location(if pane.shows_locations() { crate::search::location(&pane.path, &item.path).to_string() } else { String::new() })
             .details(
                 if is_dir { "Folder".into() } else { type_description(&item.name) },

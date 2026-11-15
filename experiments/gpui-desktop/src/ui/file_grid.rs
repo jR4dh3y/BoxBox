@@ -56,6 +56,7 @@ impl Workspace {
                                     .children((start..end).filter_map(|index| {
                                         let item = this.pane_by_id(target.0)?.items.get(index)?.clone();
                                         this.request_thumbnail(target, item, cx);
+                                        this.request_entry_icon(target, index, metrics.theme_icon(), cx);
                                         this.render_tile(target, index, cx)
                                     }))
                             })
@@ -82,6 +83,7 @@ impl Workspace {
             self.selection_style(),
         )
         .icon(file_icon(&item.name, is_dir))
+        .image(self.item_icon(&pane.api, &item, crate::components::GridMetrics::new(self.preferences.grid_zoom).theme_icon()))
         .detail(match (pane.shows_locations(), is_dir) {
             // A search result says where it is; a file in its folder, how big.
             (true, _) => crate::search::location(&pane.path, &item.path).to_string().into(),

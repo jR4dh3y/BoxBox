@@ -8,6 +8,7 @@ mod filemanager1;
 mod gallery;
 mod instance;
 mod drag_out;
+mod file_icons;
 mod format;
 mod heap;
 mod icon_theme;

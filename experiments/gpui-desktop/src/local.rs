@@ -6,7 +6,7 @@ pub mod network;
 mod recent;
 mod search;
 mod trash;
-mod mime;
+pub(crate) mod mime;
 pub mod thumbnails;
 mod thumbnailers;
 
@@ -250,6 +250,40 @@ impl LocalFiles {
             path.push_str(&part.as_os_str().to_string_lossy());
         }
         Some(path)
+    }
+
+    /// The home folder and the XDG user folders by every virtual path that
+    /// reaches them, with the theme icon each one has.
+    pub fn special_folders(&self) -> Vec<(String, &'static str)> {
+        let icon = |name: &str| match name {
+            "home" => Some("user-home"),
+            "desktop" => Some("user-desktop"),
+            "documents" => Some("folder-documents"),
+            "downloads" => Some("folder-download"),
+            "music" => Some("folder-music"),
+            "pictures" => Some("folder-pictures"),
+            "videos" => Some("folder-videos"),
+            "templates" => Some("folder-templates"),
+            _ => None,
+        };
+        let mut places: Vec<(&Path, &'static str)> =
+            self.mounts.iter().filter_map(|mount| Some((mount.path.as_path(), icon(&mount.point.name)?))).collect();
+        let home = self.mounts.iter().find(|mount| mount.point.name == "home").map(|mount| mount.path.clone());
+        let public = home.as_ref().and_then(|home| user_directory(home, "XDG_PUBLICSHARE_DIR").or_else(|| Some(home.join("Public"))));
+        if let Some(public) = &public {
+            places.push((public, "folder-publicshare"));
+        }
+        // Each place under each mount: `home/Downloads`, `files/home/me/Downloads`, `downloads`.
+        let mut found = Vec::new();
+        for mount in &self.mounts {
+            for (path, icon) in &places {
+                if let Ok(rest) = path.strip_prefix(&mount.path) {
+                    let rest = rest.to_string_lossy();
+                    found.push((if rest.is_empty() { mount.point.name.clone() } else { format!("{}/{rest}", mount.point.name) }, *icon));
+                }
+            }
+        }
+        found
     }
 
     pub fn local_path(&self, path: &str) -> Result<PathBuf> {

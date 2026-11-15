@@ -1,23 +1,28 @@
-//! Finds an app's icon in the desktop's icon theme, as GTK does: the theme the
-//! settings portal reports, the themes it inherits, then hicolor and pixmaps
-//! (freedesktop Icon Theme Specification). Blocks on D-Bus and the filesystem,
-//! so it runs off the UI thread.
+//! Finds icons in the desktop's icon theme, as GTK does: the theme the settings
+//! portal reports, the themes it inherits, then hicolor and pixmaps
+//! (freedesktop Icon Theme Specification). Each theme's folders are listed once
+//! into an index, so a lookup touches no disk. Building it blocks on D-Bus and
+//! the filesystem, so it runs off the UI thread.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-/// The size the lookup aims for; the dialog draws icons at 24px, on HiDPI at 48.
-const SIZE: u32 = 48;
+/// The size an app icon is looked up at; Open With draws them at 24px, on HiDPI at 48.
+const APP_SIZE: u32 = 48;
 
 pub struct IconTheme {
-    /// Icon directories (`<base>/<theme>/<dir>`) for apps, best first.
-    dirs: Vec<PathBuf>,
+    /// Every icon folder of every theme in the chain: (theme index, folder).
+    dirs: Vec<(usize, Dir)>,
+    /// Icon name → (index into `dirs`, is SVG), in no order.
+    names: HashMap<String, Vec<(usize, bool)>>,
     pixmaps: Vec<PathBuf>,
 }
 
+#[derive(Clone)]
 struct Dir {
-    path: String,
+    path: PathBuf,
     size: u32,
     min: u32,
     max: u32,
@@ -25,26 +30,28 @@ struct Dir {
 }
 
 impl Dir {
-    /// How far the directory's icons are from `SIZE`: 0 when they cover it.
-    fn distance(&self) -> u32 {
-        if self.min <= SIZE && SIZE <= self.max {
+    /// How far the folder's icons are from `size`: 0 when they cover it.
+    fn distance(&self, size: u32) -> u32 {
+        if self.min <= size && size <= self.max {
             0
-        } else if SIZE < self.min {
-            self.min - SIZE
+        } else if size < self.min {
+            self.min - size
         } else {
-            SIZE - self.max
+            size - self.max
         }
     }
 }
 
 impl IconTheme {
-    /// The desktop's current theme with its parents.
-    pub fn current() -> Self {
-        Self::load(current_name().as_deref(), &data_dirs(), &home().join(".icons"))
+    /// The desktop's theme, read once per run.
+    pub fn shared() -> Arc<IconTheme> {
+        static THEME: OnceLock<Arc<IconTheme>> = OnceLock::new();
+        THEME.get_or_init(|| Arc::new(Self::load(current_name().as_deref(), &data_dirs(), &home().join(".icons")))).clone()
     }
 
     /// `name` and its parents in `~/.icons` and each data dir's `icons`.
     fn load(name: Option<&str>, data: &[PathBuf], dot_icons: &Path) -> Self {
+        let _span = crate::profile::span("icon theme index");
         let mut bases = vec![dot_icons.to_path_buf()];
         bases.extend(data.iter().map(|dir| dir.join("icons")));
         // (theme, its index.theme), the theme first and hicolor last.
@@ -62,14 +69,44 @@ impl IconTheme {
             chain.push((theme, text));
         }
         let mut dirs = Vec::new();
-        for (theme, text) in &chain {
-            let mut theme_dirs = app_dirs(&Ini::parse(text));
-            theme_dirs.sort_by_key(|dir| (dir.distance(), dir.scale != 1, dir.size.abs_diff(SIZE)));
-            for dir in theme_dirs {
-                dirs.extend(bases.iter().map(|base| base.join(theme).join(&dir.path)).filter(|path| path.is_dir()));
+        let mut names: HashMap<String, Vec<(usize, bool)>> = HashMap::new();
+        for (index, (theme, text)) in chain.iter().enumerate() {
+            for dir in theme_dirs(&Ini::parse(text)) {
+                for base in &bases {
+                    let path = base.join(theme).join(&dir.path);
+                    let Ok(entries) = std::fs::read_dir(&path) else { continue };
+                    let at = dirs.len();
+                    for entry in entries.flatten() {
+                        let file = entry.file_name();
+                        let Some(file) = file.to_str() else { continue };
+                        let (stem, svg) = match file.rsplit_once('.') {
+                            Some((stem, "svg")) => (stem, true),
+                            Some((stem, "png")) => (stem, false),
+                            _ => continue,
+                        };
+                        names.entry(stem.to_string()).or_default().push((at, svg));
+                    }
+                    dirs.push((index, Dir { path, ..dir.clone() }));
+                }
             }
         }
-        Self { dirs, pixmaps: data.iter().map(|dir| dir.join("pixmaps")).collect() }
+        Self { dirs, names, pixmaps: data.iter().map(|dir| dir.join("pixmaps")).collect() }
+    }
+
+    /// The file for icon `name` drawn at `size` pixels: from the first theme of
+    /// the chain that has it, the folder nearest that size, an SVG on a tie.
+    pub fn find_sized(&self, name: &str, size: u32) -> Option<PathBuf> {
+        let candidates = self.names.get(name)?;
+        let (dir, svg) = candidates.iter().copied().min_by_key(|(dir, svg)| {
+            let (theme, folder) = &self.dirs[*dir];
+            (*theme, folder.distance(size), folder.scale != 1, !svg, folder.size.abs_diff(size))
+        })?;
+        Some(self.dirs[dir].1.path.join(format!("{name}.{}", if svg { "svg" } else { "png" })))
+    }
+
+    /// The first of `names` the theme has, at `size`.
+    pub fn find_first(&self, names: &[impl AsRef<str>], size: u32) -> Option<PathBuf> {
+        names.iter().find_map(|name| self.find_sized(name.as_ref(), size))
     }
 
     /// A desktop entry's `Icon`: an absolute path, or a name to look up.
@@ -81,25 +118,21 @@ impl IconTheme {
         if as_path.is_absolute() {
             return as_path.is_file().then(|| as_path.to_path_buf());
         }
-        let in_dir = |dir: &PathBuf, extensions: &[&str]| {
-            extensions.iter().map(|extension| dir.join(format!("{icon}.{extension}"))).find(|path| path.is_file())
-        };
-        self.dirs.iter().find_map(|dir| in_dir(dir, &["svg", "png"])).or_else(|| self.pixmaps.iter().find_map(|dir| in_dir(dir, &["png", "svg"])))
+        self.find_sized(icon, APP_SIZE).or_else(|| {
+            self.pixmaps.iter().find_map(|dir| ["png", "svg"].iter().map(|extension| dir.join(format!("{icon}.{extension}"))).find(|path| path.is_file()))
+        })
     }
 }
 
-/// The directories of a theme's `index.theme` that hold app icons.
-fn app_dirs(index: &Ini) -> Vec<Dir> {
+/// The folders of a theme's `index.theme`, except symbolic ones: those are
+/// single-colour glyphs meant to be recoloured.
+fn theme_dirs(index: &Ini) -> Vec<Dir> {
     let listed = index.get("Icon Theme", "Directories").to_string() + "," + index.get("Icon Theme", "ScaledDirectories");
     listed
         .split(',')
         .map(str::trim)
-        .filter(|path| !path.is_empty())
+        .filter(|path| !path.is_empty() && !path.contains("symbolic"))
         .filter_map(|path| {
-            let context = index.get(path, "Context");
-            if context != "Applications" && !(context.is_empty() && path.ends_with("apps")) {
-                return None;
-            }
             let number = |name: &str| index.get(path, name).parse::<u32>().ok();
             let size = number("Size")?;
             let threshold = number("Threshold").unwrap_or(2);
@@ -108,7 +141,7 @@ fn app_dirs(index: &Ini) -> Vec<Dir> {
                 "Scalable" => (number("MinSize").unwrap_or(size), number("MaxSize").unwrap_or(size)),
                 _ => (size.saturating_sub(threshold), size + threshold),
             };
-            Some(Dir { path: path.to_string(), size, min, max, scale: number("Scale").unwrap_or(1) })
+            Some(Dir { path: PathBuf::from(path), size, min, max, scale: number("Scale").unwrap_or(1) })
         })
         .collect()
 }
