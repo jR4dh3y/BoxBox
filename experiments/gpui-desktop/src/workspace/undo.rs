@@ -17,7 +17,24 @@ impl Workspace {
         if self.operation_status.is_busy() {
             return;
         }
-        let Some(undo) = self.last_undo.take() else { return };
+        if let Some(undo) = self.last_undo.take() {
+            self.run_undo(undo, cx);
+        }
+    }
+
+    /// The Undo button on a "Moved to Trash" notice: restores those items, and
+    /// Ctrl+Z no longer tries to.
+    pub(crate) fn undo_trash(&mut self, api: Arc<Api>, ids: Vec<String>, cx: &mut Context<Self>) {
+        if self.operation_status.is_busy() {
+            return;
+        }
+        if matches!(&self.last_undo, Some(Undo::Trash { ids: last, .. }) if *last == ids) {
+            self.last_undo = None;
+        }
+        self.run_undo(Undo::Trash { api, ids }, cx);
+    }
+
+    fn run_undo(&mut self, undo: Undo, cx: &mut Context<Self>) {
         let generation = self.begin_operation("Undoing…");
         let api = match &undo {
             Undo::Trash { api, .. } | Undo::Rename { api, .. } => api.clone(),
@@ -30,7 +47,6 @@ impl Workspace {
                         Undo::Rename { api, before, after } => api.rename(&after, &before).map(|_| ()),
                         Undo::Trash { api, ids } => ids.iter().try_for_each(|id| api.restore_trash(id)),
                     }
-                    .map(|()| "Operation undone".to_string())
                 })
                 .await;
             this.update(cx, |this, cx| {

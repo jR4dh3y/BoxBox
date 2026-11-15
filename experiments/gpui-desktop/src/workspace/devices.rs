@@ -276,16 +276,12 @@ impl Workspace {
                 if result.is_ok() {
                     this.leave_volume(&volume, cx);
                 }
+                // Whether it is safe to pull the device out shows nowhere else.
+                if result.is_ok() && volume.ejectable {
+                    this.notify(crate::components::ToastKind::Success, format!("{} can be removed", volume.name), cx);
+                }
                 let verb = if volume.ejectable { "eject" } else { "unmount" };
-                this.report(
-                    result
-                        .map(|()| match volume.ejectable {
-                            true => format!("{} can be removed", volume.name),
-                            false => format!("Unmounted {}", volume.name),
-                        })
-                        .map_err(|error| format!("Could not {verb} {}: {error:#}", volume.name)),
-                    cx,
-                );
+                this.report(result.map_err(|error| format!("Could not {verb} {}: {error:#}", volume.name)), cx);
             })
             .ok();
         })

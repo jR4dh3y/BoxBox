@@ -53,7 +53,7 @@ impl Workspace {
     /// A favorite dropped on another moves to its place.
     pub(crate) fn drop_favorite(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
         if self.favorites.reorder(from, to) {
-            self.save_favorites(None, cx);
+            self.save_favorites(false, cx);
             cx.notify();
         }
     }

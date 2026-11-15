@@ -123,7 +123,7 @@ impl Workspace {
     pub(crate) fn finish_operation(
         &mut self,
         generation: u64,
-        result: anyhow::Result<String>,
+        result: anyhow::Result<()>,
         cx: &mut Context<Self>,
     ) {
         if self.mutation_generation != generation {
@@ -292,9 +292,9 @@ impl Workspace {
                 .background_executor()
                 .spawn(async move {
                     if folder {
-                        api.create_directory(&parent, &input).map(|_| format!("Created folder “{input}”"))
+                        api.create_directory(&parent, &input).map(|_| ())
                     } else {
-                        api.create_file(&parent, &input, "").map(|_| format!("Created file “{input}”"))
+                        api.create_file(&parent, &input, "").map(|_| ())
                     }
                 })
                 .await;
@@ -378,7 +378,7 @@ impl Workspace {
                 Ok(path) if this.mutation_generation == generation => {
                     this.location_editor = None;
                     this.navigate_in(target, path, cx);
-                    this.finish_operation(generation, Ok("Location opened".into()), cx);
+                    this.finish_operation(generation, Ok(()), cx);
                 }
                 Err(error) => {
                     this.finish_operation(generation, Err(error), cx);
@@ -445,10 +445,6 @@ impl Workspace {
                 })
                 .collect(),
         });
-        self.report(Ok(match mode {
-            ClipboardMode::Copy => "Items copied".into(),
-            ClipboardMode::Cut => "Items marked to move".into(),
-        }), cx);
         self.context_menu = None;
         cx.notify();
     }
@@ -646,7 +642,7 @@ impl Workspace {
     pub(crate) fn resolve_conflicts(&mut self, cx: &mut Context<Self>) {
         if let Some(TransferConflicts { target, clipboard, planned, destination, parent }) = self.transfer_conflicts.take() {
             if planned.iter().all(|plan| plan.keep_both.is_some() && !plan.keep) {
-                self.report(Ok("Skipped every item".into()), cx);
+                self.report(Ok(()), cx);
                 return;
             }
             self.execute_paste(target, clipboard, planned, destination, parent, cx);
@@ -687,8 +683,7 @@ impl Workspace {
                                 crate::progress::measure(&path);
                             }
                         }
-                        let count = transfer_planned(mode, &planned, &destination, &parent)?;
-                        Ok(format!("Transferred {count} item(s)"))
+                        transfer_planned(mode, &planned, &destination, &parent).map(|_| ())
                     })
                 })
                 .await;
@@ -799,19 +794,19 @@ impl Workspace {
                             api.delete(&item.path, true)?;
                         }
                     }
-                    Ok((
-                        trashed,
-                        if is_local { format!("Moved {count} item(s) to Trash") } else { format!("Permanently deleted {count} item(s)") },
-                    ))
+                    Ok(trashed)
                 })
                 .await;
 
             let _ = this.update(cx, |this, cx| {
-                let result = result.map(|(trashed, message)| {
+                let result = result.map(|trashed| {
                     if !trashed.is_empty() {
-                        this.last_undo = Some(Undo::Trash { api: refresh_api.clone(), ids: trashed });
+                        this.last_undo = Some(Undo::Trash { api: refresh_api.clone(), ids: trashed.clone() });
+                        // The items leave the view, so say where they went and offer them back.
+                        let message = if count == 1 { "Moved 1 item to Trash".to_string() } else { format!("Moved {count} items to Trash") };
+                        let api = refresh_api.clone();
+                        this.notify_with_action(crate::components::ToastKind::Success, message, "Undo", move |this, cx| this.undo_trash(api.clone(), trashed.clone(), cx), cx);
                     }
-                    message
                 });
                 this.refresh_provider(refresh_api.clone(), cx);
                 if is_local {
@@ -908,14 +903,16 @@ impl Workspace {
                         api.download(item, &directory)
                             .with_context(|| format!("cannot download {}", item.name))?;
                     }
-                    Ok(format!(
-                        "Downloaded {count} item(s) to {}",
-                        directory.display()
-                    ))
+                    Ok(directory)
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
-                this.finish_operation(generation, result, cx);
+                // The files land outside this window, so say where.
+                if let Ok(directory) = &result {
+                    let message = format!("Downloaded {count} item{} to {}", if count == 1 { "" } else { "s" }, directory.display());
+                    this.notify(crate::components::ToastKind::Success, message, cx);
+                }
+                this.finish_operation(generation, result.map(|_| ()), cx);
             });
         })
         .detach();
@@ -996,8 +993,7 @@ impl Workspace {
                 .spawn(async move {
                     progress.scope(|| {
                         paths.iter().for_each(|path| crate::progress::measure(path));
-                        import_paths_into(&api, &paths, &parent)?;
-                        Ok(format!("Imported {count} item(s)"))
+                        import_paths_into(&api, &paths, &parent)
                     })
                 })
                 .await;
@@ -1039,7 +1035,7 @@ impl Workspace {
             uri: None,
         };
         self.favorites.add(favorite);
-        self.save_favorites(Some("Favorite added"), cx);
+        self.save_favorites(true, cx);
         cx.notify();
     }
 
@@ -1048,7 +1044,7 @@ impl Workspace {
             return;
         };
         self.favorites.remove(&favorite);
-        self.save_favorites(None, cx);
+        self.save_favorites(false, cx);
         cx.notify();
     }
 
@@ -1202,7 +1198,7 @@ impl Workspace {
             .find(|connection| pane.api.server_url() == Some(connection.url.as_str()))
             .map(|connection| connection.id.clone());
         self.favorites.add(Favorite { name: item.name.clone(), path: item.path.clone(), provider, connection_id, uri: None });
-        self.save_favorites(None, cx);
+        self.save_favorites(false, cx);
         self.context_menu = None;
         cx.notify();
     }
@@ -1339,8 +1335,7 @@ impl Workspace {
                             .map(Path::to_path_buf)
                             .ok_or_else(|| anyhow!("item has no parent directory"))?
                     };
-                    open_terminal(&directory)?;
-                    Ok(format!("Opened terminal in {}", directory.display()))
+                    open_terminal(&directory)
                 })
                 .await;
             let _ = this.update(cx, |this, cx| this.finish_operation(generation, result, cx));
@@ -1374,8 +1369,7 @@ impl Workspace {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    crate::media::open_file(&api, &item)
-                        .map(|path| format!("Opened {} ({})", item.name, path.display()))
+                    crate::media::open_file(&api, &item).map(|_| ())
                 })
                 .await;
             let _ = this.update(cx, |this, cx| this.finish_operation(generation, result, cx));

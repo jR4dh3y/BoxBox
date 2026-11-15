@@ -52,7 +52,7 @@ impl Workspace {
         (id, progress)
     }
 
-    pub(crate) fn finish_job(&mut self, id: u64, result: &anyhow::Result<String>, cx: &mut Context<Self>) {
+    pub(crate) fn finish_job(&mut self, id: u64, result: &anyhow::Result<()>, cx: &mut Context<Self>) {
         if let Some(job) = self.jobs.iter_mut().find(|job| job.id == id) {
             job.state = match result {
                 Ok(_) => JobState::Done,
@@ -65,7 +65,7 @@ impl Workspace {
 
     /// Ends a transfer's job and its operation. A cancel is shown in the panel only,
     /// not as an error notice.
-    pub(crate) fn finish_transfer(&mut self, job: u64, generation: u64, result: anyhow::Result<String>, cx: &mut Context<Self>) {
+    pub(crate) fn finish_transfer(&mut self, job: u64, generation: u64, result: anyhow::Result<()>, cx: &mut Context<Self>) {
         self.finish_job(job, &result, cx);
         let cancelled = self.jobs.iter().any(|entry| entry.id == job && matches!(entry.state, JobState::Cancelled));
         if cancelled {

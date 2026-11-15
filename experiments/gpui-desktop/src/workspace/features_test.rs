@@ -320,6 +320,16 @@ fn drag(cx: &mut VisualTestContext, from: &'static str, to: &'static str) {
 }
 
 #[gpui::test]
+fn the_trash_notice_undoes_its_move(cx: &mut TestAppContext) {
+    let (_view, cx, fixture) = open(cx, &["docs/", "b.txt"]);
+    drag(cx, "row-0-1", "sidebar-trash");
+    assert!(!fixture.root.join("b.txt").exists());
+    click(cx, "toast-action");
+    cx.run_until_parked();
+    assert!(fixture.root.join("b.txt").is_file(), "Undo put the file back");
+}
+
+#[gpui::test]
 fn trash_takes_drops_shows_restored_items_and_empties(cx: &mut TestAppContext) {
     let (view, cx, fixture) = open(cx, &["docs/", "docs/a.txt", "b.txt"]);
     view.read_with(cx, |workspace, _| assert!(!workspace.trash_full));
@@ -329,6 +339,12 @@ fn trash_takes_drops_shows_restored_items_and_empties(cx: &mut TestAppContext) {
     view.read_with(cx, |workspace, _| {
         assert!(workspace.confirm.is_none());
         assert!(workspace.trash_full, "the Trash icon shows it is full");
+        let notices: Vec<_> = workspace.notices.visible().iter().map(|notice| (notice.message.as_str(), notice.action.as_ref().map(|(label, _)| label.to_string()))).collect();
+        assert_eq!(notices, [("Moved 1 item to Trash", Some("Undo".to_string()))], "only the move to Trash is announced, with Undo");
+    });
+    view.update(cx, |workspace, cx| {
+        let id = workspace.notices.visible()[0].id;
+        workspace.dismiss_notice(id, cx);
     });
 
     // Restoring offers to show the item where it went back to.

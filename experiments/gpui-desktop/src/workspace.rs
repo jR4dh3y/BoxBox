@@ -633,8 +633,8 @@ impl Workspace {
     }
 
     /// Saves favorites: local ones to the GTK bookmarks, the rest to BoxBox's file.
-    /// `success` is the status to show once they are on disk.
-    pub(crate) fn save_favorites(&mut self, success: Option<&'static str>, cx: &mut Context<Self>) {
+    /// A pin the user just made reports a failure; its success shows in the sidebar.
+    pub(crate) fn save_favorites(&mut self, pinned: bool, cx: &mut Context<Self>) {
         self.save_bookmarks(cx);
         let bytes = match self.favorites.encode() {
             Ok(bytes) => bytes,
@@ -644,14 +644,9 @@ impl Workspace {
             }
         };
         self.persist(&crate::persist::FAVORITES, bytes, cx, move |this, result, cx| match result {
-            Ok(()) => {
-                this.favorites_error = None;
-                if let Some(message) = success {
-                    this.report(Ok(message.into()), cx);
-                }
-            }
+            Ok(()) => this.favorites_error = None,
             Err(error) => {
-                if success.is_some() {
+                if pinned {
                     this.report(Err(error.clone()), cx);
                 }
                 this.favorites_error = Some(error);

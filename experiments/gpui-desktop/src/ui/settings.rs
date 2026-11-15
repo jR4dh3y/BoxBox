@@ -49,7 +49,7 @@ impl Workspace {
                 let connections = std::mem::take(&mut this.desktop_settings.connections);
                 this.desktop_settings = DesktopSettings { connections, ..DesktopSettings::default() };
                 this.favorites.entries.retain(|favorite| favorite.provider == crate::workspace::favorites::FavoriteProvider::Local);
-                this.save_favorites(None, cx);
+                this.save_favorites(false, cx);
                 this.reload_wallpaper(cx);
                 this.save_desktop_settings(cx);
             },

@@ -84,7 +84,7 @@ impl Workspace {
                     this.pending_rename = Some((target, destination));
                 }
                 this.refresh_provider(api, cx);
-                this.finish_operation(generation, result.map(|()| format!("Created “{name}”")), cx);
+                this.finish_operation(generation, result, cx);
             })
             .ok();
         })

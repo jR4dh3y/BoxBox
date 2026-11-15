@@ -88,7 +88,6 @@ impl Workspace {
                         pane.selected.clear();
                         pane.selected.insert(renamed);
                     }
-                    format!("Renamed to “{name}”")
                 });
                 this.refresh_provider(api, cx);
                 this.finish_operation(generation, result, cx);

@@ -46,7 +46,6 @@ impl Workspace {
                 (item.path.clone(), if folder.is_empty() { name } else { format!("{folder}/{name}") })
             })
             .collect();
-        let count = links.len();
         let generation = self.begin_operation("Creating links…");
         let request_api = api.clone();
         cx.spawn(async move |this, cx| {
@@ -64,7 +63,6 @@ impl Workspace {
                     if let Some(pane) = this.pane_mut_by_id(target.0) {
                         pane.selected = links.into_iter().collect();
                     }
-                    if count == 1 { "Created a link".to_string() } else { format!("Created {count} links") }
                 });
                 this.refresh_provider(api, cx);
                 this.finish_operation(generation, result, cx);
@@ -99,7 +97,7 @@ impl Workspace {
                     this.pending_rename = Some((target, destination));
                 }
                 this.refresh_provider(api, cx);
-                this.finish_operation(generation, result.map(|()| format!("Created “{name}”")), cx);
+                this.finish_operation(generation, result, cx);
             })
             .ok();
         })

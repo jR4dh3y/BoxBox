@@ -46,7 +46,7 @@ impl Workspace {
             let ran = name.clone();
             cx.spawn(async move |this, cx| {
                 let result = cx.background_executor().spawn(async move { crate::launch::run(&real) }).await;
-                this.update(cx, |this, cx| this.report(result.map(|()| format!("Started “{ran}”")).map_err(|error| format!("Could not run “{ran}”: {error:#}")), cx)).ok();
+                this.update(cx, |this, cx| this.report(result.map_err(|error| format!("Could not run “{ran}”: {error:#}")), cx)).ok();
             })
             .detach();
         })
@@ -81,7 +81,7 @@ impl Workspace {
                     crate::launch::launch(&real)
                 })
                 .await;
-            this.update(cx, |this, cx| this.report(result.map(|()| format!("Started {name}")).map_err(|error| format!("Could not start {name}: {error:#}")), cx)).ok();
+            this.update(cx, |this, cx| this.report(result.map_err(|error| format!("Could not start {name}: {error:#}")), cx)).ok();
         })
         .detach();
     }

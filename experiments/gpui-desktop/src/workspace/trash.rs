@@ -151,7 +151,7 @@ impl Workspace {
                 let result = cx.background_executor().spawn(async move { request_api.delete_trash(&id) }).await;
                 this.update(cx, |this, cx| {
                     if this.mutation_generation == token {
-                        this.report(result.as_ref().map(|()| format!("Deleted “{}” permanently", item.name)).map_err(|error| format!("Could not permanently delete item: {error:#}")), cx);
+                        this.report(result.as_ref().map(|_| ()).map_err(|error| format!("Could not permanently delete item: {error:#}")), cx);
                         this.refresh_trash_state(cx);
                         this.load_trash(api.clone(), cx);
                     }
@@ -185,7 +185,7 @@ impl Workspace {
                 let result = cx.background_executor().spawn(async move { request_api.empty_trash() }).await;
                 this.update(cx, |this, cx| {
                     if this.mutation_generation == token {
-                        this.finish_operation(token, result.map(|count| format!("Deleted {count} item(s) from Trash")), cx);
+                        this.finish_operation(token, result.map(|_| ()), cx);
                     }
                     this.trash_provider = Some(api.clone());
                     this.refresh_trash_state(cx);

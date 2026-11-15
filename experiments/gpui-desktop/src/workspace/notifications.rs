@@ -60,13 +60,15 @@ impl Notices {
 }
 
 impl Workspace {
-    /// Shows the outcome of an operation and ends its busy state.
-    pub(crate) fn report(&mut self, result: Result<String, String>, cx: &mut Context<Self>) {
+    /// Ends an operation's busy state and shows its failure. Success is silent, as
+    /// in other file managers: the new folder, the opened app or the pasted files
+    /// are the result. Outcomes nothing on screen shows call `notify` themselves.
+    pub(crate) fn report(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
         self.operation_status = super::operations::OperationStatus::Idle;
-        match result {
-            Ok(message) => self.notify(ToastKind::Success, message, cx),
-            Err(message) => self.notify(ToastKind::Error, message, cx),
+        if let Err(message) = result {
+            self.notify(ToastKind::Error, message, cx);
         }
+        cx.notify();
     }
 
     pub(crate) fn notify(&mut self, kind: ToastKind, message: impl Into<String>, cx: &mut Context<Self>) {
