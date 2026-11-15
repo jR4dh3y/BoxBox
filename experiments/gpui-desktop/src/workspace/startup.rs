@@ -60,10 +60,8 @@ impl Startup {
             if !path.is_empty() {
                 let _ = listing_sender.try_send(read_listing(&api, &path, view));
             }
-            // glibc keeps what this thread and the stat threads freed in their own
-            // arenas: 2.4 MB after a 20,000-entry folder.
-            // SAFETY: malloc_trim only returns free memory to the system.
-            unsafe { libc::malloc_trim(0) };
+            // What this thread and the stat threads freed: 2.4 MB for 20,000 entries.
+            crate::heap::release_freed();
         });
         start.prefetch = reader.is_ok().then_some(Prefetch { listing, drives });
         start

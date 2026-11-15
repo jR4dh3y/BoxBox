@@ -601,6 +601,8 @@ impl Workspace {
         if stale { self.resort(target, cx); }
         crate::profile::ready(journey);
         cx.notify();
+        // The folder it replaced was freed above.
+        cx.background_executor().spawn(async { crate::heap::release_freed() }).detach();
     }
 
     /// Writes a settings file on a background thread. `done` runs on the UI thread

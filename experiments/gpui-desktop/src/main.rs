@@ -9,6 +9,7 @@ mod gallery;
 mod instance;
 mod drag_out;
 mod format;
+mod heap;
 mod local;
 mod launch;
 mod media;
