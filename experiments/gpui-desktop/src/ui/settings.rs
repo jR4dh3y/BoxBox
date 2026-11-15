@@ -17,7 +17,7 @@ use crate::settings_state::{
     ShareListState, WallpaperFit,
 };
 use crate::theme::*;
-use crate::workspace::{Preferences, SettingsSection, Workspace};
+use crate::workspace::{Preferences, SettingsSection, StartLocation, Workspace};
 
 /// Which settings text field a dialog input uses.
 #[derive(Clone, Copy)]
@@ -132,6 +132,17 @@ impl Workspace {
                 this.preferences.default_view = value;
                 this.commit_preferences(cx);
             })),
+            SettingsRow::new("Start location").control(self.select(
+                "setting-start",
+                p.start_location,
+                &StartLocation::OPTIONS,
+                160.,
+                cx,
+                |this, value, cx| {
+                    this.preferences.start_location = value;
+                    this.commit_preferences(cx);
+                },
+            )),
         ])
     }
 

@@ -27,6 +27,15 @@ pub(crate) fn cache_dir() -> PathBuf {
         .join("boxbox-gpui")
 }
 
+/// What the app was doing, such as the last folder, under `$XDG_STATE_HOME/boxbox-gpui`.
+pub(crate) fn state_dir() -> PathBuf {
+    std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("boxbox-gpui")
+}
+
 /// Writes through a temporary file and a rename, so a crash leaves the old or the new file.
 pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
     static TEMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -102,6 +111,7 @@ impl Store {
 pub(crate) static PREFERENCES: LazyLock<Store> = LazyLock::new(|| Store::new("settings.json"));
 pub(crate) static DESKTOP_SETTINGS: LazyLock<Store> = LazyLock::new(|| Store::new("desktop-settings.json"));
 pub(crate) static FAVORITES: LazyLock<Store> = LazyLock::new(|| Store::new("favorites.json"));
+pub(crate) static LAST_LOCATION: LazyLock<Store> = LazyLock::new(|| Store::at(state_dir().join("last-location")));
 pub(crate) static SERVER_DRIVES: LazyLock<Store> = LazyLock::new(|| Store::at(cache_dir().join("server-drives.json")));
 
 #[cfg(test)]

@@ -488,6 +488,29 @@ fn remembered_server_drives_hold_their_places_until_the_server_answers(cx: &mut 
 }
 
 #[gpui::test]
+fn the_last_location_is_kept_for_the_next_launch(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["docs/a.txt"]);
+    let api = Api::local_with_root(fixture.root.clone()).unwrap();
+    let kept = || fs::read_to_string(crate::persist::LAST_LOCATION.path()).unwrap_or_default();
+    view.update(cx, |workspace, cx| workspace.navigate("home/docs".into(), cx));
+    cx.run_until_parked();
+    assert_eq!(kept(), "home/docs", "written off the UI thread");
+    assert_eq!(startup::start_path(&api, StartLocation::Last), "home/docs");
+    assert_eq!(startup::start_path(&api, StartLocation::Overview), "");
+
+    // The Overview is a place too.
+    view.update(cx, |workspace, cx| workspace.navigate(String::new(), cx));
+    cx.run_until_parked();
+    assert_eq!(kept(), "");
+
+    // A server's folder needs the server first, so it is not kept.
+    let server = Arc::new(Api::new("http://127.0.0.1:9", None));
+    view.update(cx, |workspace, cx| workspace.navigate_to(workspace.active_pane, server, "media".into(), cx));
+    cx.run_until_parked();
+    assert_eq!(kept(), "");
+}
+
+#[gpui::test]
 fn the_trash_notice_undoes_its_move(cx: &mut TestAppContext) {
     let (_view, cx, fixture) = open(cx, &["docs/", "b.txt"]);
     drag(cx, "row-0-1", "sidebar-trash");

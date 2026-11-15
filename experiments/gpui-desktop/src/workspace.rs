@@ -72,10 +72,25 @@ pub(crate) struct Preferences {
     pub default_sort: SortField,
     pub default_sort_direction: SortDir,
     pub default_view: ViewMode,
+    pub start_location: StartLocation,
     pub hardware_acceleration: bool,
     pub compact_rows: bool,
     pub wallpaper_tint: bool,
     pub frosted_glass: bool,
+}
+
+/// What a window opens on when it is launched without a folder.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum StartLocation {
+    #[default]
+    Overview,
+    Home,
+    /// The folder the last window was on, or the Overview if it is gone.
+    Last,
+}
+
+impl StartLocation {
+    pub const OPTIONS: [(Self, &'static str); 3] = [(Self::Overview, "Overview"), (Self::Home, "Home folder"), (Self::Last, "Last location")];
 }
 
 impl Default for Preferences {
@@ -90,6 +105,7 @@ impl Default for Preferences {
             default_sort: SortField::Modified,
             default_sort_direction: SortDir::Desc,
             default_view: ViewMode::List,
+            start_location: StartLocation::Overview,
             hardware_acceleration: true,
             compact_rows: false,
             wallpaper_tint: false,
@@ -233,6 +249,8 @@ pub struct Workspace {
     /// show whatever provider a pane is on.
     pub(crate) home: overview::Home,
     pub(crate) servers: servers::Servers,
+    /// The active pane's place as last written for "Start location: Last location".
+    last_location: Option<String>,
     pub(crate) drag_drop: drag_drop::DragDrop,
     /// The sign-in dialog's fields: user, domain and the masked password.
     pub(crate) device_fields: [Entity<TextField>; 3],
@@ -302,7 +320,8 @@ impl Workspace {
     pub fn new(start: startup::Startup, fonts: Fonts, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);
-        let startup::Startup { api, preferences, path: initial_path, prefetch } = start;
+        let startup::Startup { api, preferences, path: initial_path, fallback, prefetch } = start;
+        let last_location = Some(initial_path.clone());
         let initial_pane = Pane::with_api(
             0,
             initial_path,
@@ -363,6 +382,7 @@ impl Workspace {
             devices: Default::default(),
             home: overview::Home::new(api.clone()),
             servers: Default::default(),
+            last_location,
             drag_drop: Default::default(),
             device_fields,
             pending_credential_focus: false,
@@ -424,7 +444,7 @@ impl Workspace {
         workspace.reload_wallpaper(cx);
         workspace.warm_wallpaper(window, cx);
         match prefetch {
-            Some(prefetch) => workspace.receive_prefetch(prefetch, cx),
+            Some(prefetch) => workspace.receive_prefetch(prefetch, fallback, cx),
             None => {
                 workspace.load_drives(PaneTarget(0), cx);
                 workspace.load_pane(PaneTarget(0), cx);
@@ -564,9 +584,26 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Keeps the active pane's place on this computer for the next launch, when it
+    /// changed. A server's folders are not kept: they need the server first.
+    fn remember_location(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
+        let Some(pane) = self.pane_by_id(target.0).filter(|_| target == self.active_pane) else { return };
+        if !Arc::ptr_eq(&pane.api, &self.home.api) || self.last_location.as_deref() == Some(pane.path.as_str()) {
+            return;
+        }
+        let path = pane.path.clone();
+        self.last_location = Some(path.clone());
+        self.persist(&crate::persist::LAST_LOCATION, path.into_bytes(), cx, |_, result, _| {
+            if let Err(error) = result {
+                log::debug!("{error}");
+            }
+        });
+    }
+
     #[track_caller]
     fn load_pane(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
         let caller = std::panic::Location::caller();
+        self.remember_location(target, cx);
         let Some(pane) = self.pane_mut_by_id(target.0) else {
             return;
         };

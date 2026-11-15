@@ -301,6 +301,13 @@ impl Pane {
         self.moved_from(&previous.api)
     }
 
+    /// Shows the Overview in place of the folder the pane started on, keeping no
+    /// history: for a remembered start folder that is gone.
+    pub fn start_on_overview(&mut self) {
+        self.path.clear();
+        self.reset();
+    }
+
     fn reset(&mut self) {
         self.items = Arc::default();
         self.folder_items = Arc::default();

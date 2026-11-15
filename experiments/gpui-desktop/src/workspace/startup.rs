@@ -11,7 +11,7 @@ use anyhow::Result;
 use async_channel::{Receiver, TryRecvError};
 use gpui::Context;
 
-use super::{launch_path, preference_sort, PaneTarget, Preferences, Workspace};
+use super::{launch_path, preference_sort, PaneTarget, Preferences, StartLocation, Workspace};
 use crate::api::{Api, DriveStats, FileInfo, MountPoint};
 use crate::pane::View;
 
@@ -21,6 +21,9 @@ pub struct Startup {
     pub(super) preferences: Preferences,
     /// The virtual path to open; empty for the drive list.
     pub(super) path: String,
+    /// The path came from the start location, not the launch; if it no longer
+    /// opens, the window starts on the Overview instead of an error.
+    pub(super) fallback: bool,
     pub(super) prefetch: Option<Prefetch>,
 }
 
@@ -74,8 +77,21 @@ impl Startup {
     /// Reads nothing until the window asks, as tests need.
     pub fn deferred(api: Api, argument: &str) -> Self {
         let api = Arc::new(api);
-        let path = launch_path(&api, argument);
-        Self { api, preferences: Preferences::load(), path, prefetch: None }
+        let preferences = Preferences::load();
+        let (path, fallback) = match argument.is_empty() {
+            false => (launch_path(&api, argument), false),
+            true => (start_path(&api, preferences.start_location), true),
+        };
+        Self { api, preferences, path, fallback, prefetch: None }
+    }
+}
+
+/// Where a launch without a folder opens.
+pub(super) fn start_path(api: &Api, start: StartLocation) -> String {
+    match start {
+        StartLocation::Overview => String::new(),
+        StartLocation::Home => std::env::var_os("HOME").and_then(|home| api.virtual_path(std::path::Path::new(&home))).unwrap_or_default(),
+        StartLocation::Last => std::fs::read_to_string(crate::persist::LAST_LOCATION.path()).map(|path| path.trim().to_string()).unwrap_or_default(),
     }
 }
 
@@ -102,7 +118,7 @@ pub(super) fn read_drives(api: &Api) -> DrivesRead {
 impl Workspace {
     /// Applies what the start-up thread read, or waits for it. A read that never
     /// arrives (its thread failed) falls back to the usual load.
-    pub(super) fn receive_prefetch(&mut self, prefetch: Prefetch, cx: &mut Context<Self>) {
+    pub(super) fn receive_prefetch(&mut self, prefetch: Prefetch, fallback: bool, cx: &mut Context<Self>) {
         let target = PaneTarget(0);
         receive(self, prefetch.remembered, cx, |this, remembered, cx| {
             this.servers.set_remembered(remembered.unwrap_or_default());
@@ -121,6 +137,13 @@ impl Workspace {
         let view = pane.view();
         let journey = crate::profile::journey("open folder", || format!("{}  (start-up)", pane.path));
         receive(self, prefetch.listing, cx, move |this, read, cx| match read {
+            // The remembered folder is gone: start on the Overview, not an error.
+            Some(read) if fallback && read.items.is_err() => {
+                if let Some(pane) = this.pane_mut_by_id(target.0) {
+                    pane.start_on_overview();
+                }
+                cx.notify();
+            }
             Some(read) => this.apply_listing(target, generation, view, read, journey, cx),
             None => this.load_pane(target, cx),
         });

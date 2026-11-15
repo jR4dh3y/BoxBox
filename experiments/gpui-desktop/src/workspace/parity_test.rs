@@ -8,6 +8,7 @@ struct ProbeServer(std::process::Child);
 pub(super) struct TestConfig {
     previous: Option<std::ffi::OsString>,
     previous_cache: Option<std::ffi::OsString>,
+    previous_state: Option<std::ffi::OsString>,
     path: std::path::PathBuf,
     _turn: std::sync::MutexGuard<'static, ()>,
 }
@@ -20,7 +21,9 @@ impl TestConfig {
         let previous_cache = std::env::var_os("XDG_CACHE_HOME");
         std::env::set_var("XDG_CONFIG_HOME", &path);
         std::env::set_var("XDG_CACHE_HOME", path.join("cache"));
-        Self { previous, previous_cache, path, _turn: turn }
+        let previous_state = std::env::var_os("XDG_STATE_HOME");
+        std::env::set_var("XDG_STATE_HOME", path.join("state"));
+        Self { previous, previous_cache, previous_state, path, _turn: turn }
     }
 }
 
@@ -33,6 +36,10 @@ impl Drop for TestConfig {
         match &self.previous_cache {
             Some(previous) => std::env::set_var("XDG_CACHE_HOME", previous),
             None => std::env::remove_var("XDG_CACHE_HOME"),
+        }
+        match &self.previous_state {
+            Some(previous) => std::env::set_var("XDG_STATE_HOME", previous),
+            None => std::env::remove_var("XDG_STATE_HOME"),
         }
         let _ = fs::remove_dir_all(&self.path);
     }
