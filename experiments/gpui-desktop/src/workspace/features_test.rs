@@ -944,6 +944,31 @@ fn delete_names_one_item_or_counts_and_lists_several(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn shift_delete_deletes_for_good_after_asking(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a.txt", "docs/b.txt"]);
+    // Sorted by name: docs, a.txt.
+    click(cx, "row-0-1");
+    cx.simulate_keystrokes("shift-delete");
+    view.read_with(cx, |workspace, _| {
+        let confirm = workspace.confirm.as_ref().expect("always asks, even with confirmation off");
+        assert_eq!(confirm.title.as_ref(), "Delete Permanently");
+        assert_eq!(confirm.message.as_ref(), "“a.txt” will be deleted permanently. This cannot be undone.");
+    });
+    click(cx, "confirm-accept");
+    cx.run_until_parked();
+    assert!(!fixture.root.join("a.txt").exists());
+    assert!(names(&view, cx) == ["docs"]);
+
+    // With the Trash page showing, the folder behind it is not what Delete acts on.
+    click(cx, "row-0-0");
+    view.update(cx, |workspace, cx| workspace.open_trash(cx));
+    cx.simulate_keystrokes("delete");
+    cx.simulate_keystrokes("shift-delete");
+    view.read_with(cx, |workspace, _| assert!(workspace.confirm.is_none()));
+    assert!(fixture.root.join("docs").is_dir());
+}
+
+#[gpui::test]
 fn a_long_notice_wraps_inside_its_toast(cx: &mut TestAppContext) {
     let (view, cx, _fixture) = open(cx, &["a.txt"]);
     let message = "Could not open 482 GB Volume: could not mount: org.freedesktop.UDisks2.Error.NotAuthorizedCanObtain: Not authorized to perform operation";

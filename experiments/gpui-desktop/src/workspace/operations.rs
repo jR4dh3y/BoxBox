@@ -726,15 +726,32 @@ impl Workspace {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // The Trash page has its own buttons; the folder behind it is not on screen.
+        if self.trash_open {
+            return;
+        }
         let target = self.active_pane;
         let items = self.pane().selected_items();
-        self.delete_items(target, items, cx);
+        self.delete_items(target, items, false, cx);
     }
 
+    /// Shift+Delete: gone without passing through Trash, after asking.
+    pub(crate) fn delete_permanently(&mut self, _: &DeletePermanently, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.trash_open {
+            return;
+        }
+        let target = self.active_pane;
+        let items = self.pane().selected_items();
+        self.delete_items(target, items, true, cx);
+    }
+
+    /// Moves `items` to Trash, or deletes them for good when `permanent` or on a
+    /// server, which has no Trash.
     pub(crate) fn delete_items(
         &mut self,
         target: PaneTarget,
         items: Vec<FileInfo>,
+        permanent: bool,
         cx: &mut Context<Self>,
     ) {
         if self.operation_status.is_busy() {
@@ -750,23 +767,20 @@ impl Workspace {
         let Some((_, api, _)) = self.operation_target(target) else {
             return;
         };
-        if api.is_local() && !self.preferences.confirm_delete && items.iter().all(|item| !item.is_dir) {
-            self.run_delete(target, api, items, cx);
+        let to_trash = api.is_local() && !permanent;
+        // Only a move to Trash, which can be undone, may skip the question.
+        if to_trash && !self.preferences.confirm_delete && items.iter().all(|item| !item.is_dir) {
+            self.run_delete(target, api, items, false, cx);
             return;
         }
         // `BrowseDialogs.svelte`: one name in the sentence, or a count and the names.
-        let local = api.is_local();
-        let fate = if local { "will be moved to Trash." } else { "will be deleted permanently." };
+        let fate = if to_trash { "will be moved to Trash." } else { "will be deleted permanently. This cannot be undone." };
         let (message, names) = match items.as_slice() {
             [item] => (format!("“{}” {fate}", item.name), Vec::new()),
             items => (format!("{} items {fate}", items.len()), items.iter().map(|item| item.name.clone().into()).collect()),
         };
-        let confirm = Confirm::new(
-            if local { "Move to Trash" } else { "Delete" },
-            message,
-            if local { "Move to Trash" } else { "Delete" },
-            move |this, cx| this.run_delete(target, api, items, cx),
-        )
+        let (title, action) = if to_trash { ("Move to Trash", "Move to Trash") } else { ("Delete Permanently", "Delete") };
+        let confirm = Confirm::new(title, message, action, move |this, cx| this.run_delete(target, api, items, permanent, cx))
         .items(names);
         self.ask(confirm, cx);
     }
@@ -776,16 +790,18 @@ impl Workspace {
         target: PaneTarget,
         api: Arc<Api>,
         items: Vec<FileInfo>,
+        permanent: bool,
         cx: &mut Context<Self>,
     ) {
         if self.operation_status.is_busy() {
             return;
         }
         let count = items.len();
-        let generation = self.begin_operation(if api.is_local() {
+        let to_trash = api.is_local() && !permanent;
+        let generation = self.begin_operation(if to_trash {
             format!("Moving {count} item(s) to Trash…")
         } else {
-            format!("Deleting {count} remote item(s)…")
+            format!("Deleting {count} item(s)…")
         });
         let refresh_api = api.clone();
         cx.spawn(async move |this, cx| {
@@ -795,7 +811,7 @@ impl Workspace {
                 .spawn(async move {
                     let mut trashed = Vec::new();
                     for item in &items {
-                        if is_local {
+                        if to_trash {
                             trashed.push(api.move_to_trash(&item.path)?.id);
                         } else {
                             api.delete(&item.path, true)?;
@@ -1253,7 +1269,7 @@ impl Workspace {
             return;
         };
         self.context_menu = None;
-        self.delete_items(target, items, cx);
+        self.delete_items(target, items, false, cx);
     }
 
     pub(crate) fn context_download(&mut self, cx: &mut Context<Self>) {

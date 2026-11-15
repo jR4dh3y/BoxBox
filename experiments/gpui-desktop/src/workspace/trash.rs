@@ -229,6 +229,6 @@ impl Workspace {
             .chain(self.split_panes.values())
             .find(|pane| Arc::ptr_eq(&pane.api, &local))
             .map_or(self.active_pane, |pane| PaneTarget(pane.id));
-        self.run_delete(target, local, items, cx);
+        self.run_delete(target, local, items, false, cx);
     }
 }

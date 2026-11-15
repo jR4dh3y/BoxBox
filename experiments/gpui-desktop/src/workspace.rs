@@ -150,6 +150,7 @@ actions!(
         CreateFile,
         RenameSelected,
         DeleteSelected,
+        DeletePermanently,
         DownloadSelected,
         CopySelected,
         CutSelected,
@@ -191,6 +192,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-shift-e", CreateFile, context),
         KeyBinding::new("f2", RenameSelected, context),
         KeyBinding::new("delete", DeleteSelected, context),
+        KeyBinding::new("shift-delete", DeletePermanently, context),
         KeyBinding::new("ctrl-d", DownloadSelected, context),
         KeyBinding::new("ctrl-c", CopySelected, context),
         KeyBinding::new("ctrl-x", CutSelected, context),
@@ -1298,6 +1300,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::create_file))
             .on_action(cx.listener(Self::rename_selected))
             .on_action(cx.listener(Self::delete_selected))
+            .on_action(cx.listener(Self::delete_permanently))
             .on_action(cx.listener(Self::download_selected))
             .on_action(cx.listener(Self::copy_selected))
             .on_action(cx.listener(Self::cut_selected))
