@@ -1967,8 +1967,6 @@ dependencies = [
 [[package]]
 name = "fontdb"
 version = "0.16.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0299020c3ef3f60f526a4f64ab4a3d4ce116b1acbf24cdd22da0068e5d81dc3"
 dependencies = [
  "fontconfig-parser",
  "log",
@@ -1976,6 +1974,7 @@ dependencies = [
  "slotmap",
  "tinyvec",
  "ttf-parser 0.20.0",
+ "yeslogic-fontconfig-sys",
 ]
 
 [[package]]

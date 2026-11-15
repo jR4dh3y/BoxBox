@@ -43,3 +43,8 @@ opt-level = 3
 
 [dev-dependencies]
 gpui = { version = "0.2.2", features = ["test-support"] }
+
+# GPUI builds its font list on the UI thread at launch; this fontdb reads it from
+# fontconfig's cache instead of parsing every installed font. See the vendored crate.
+[patch.crates-io]
+fontdb = { path = "vendor/fontdb" }
