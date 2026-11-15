@@ -73,7 +73,10 @@ pub(super) fn list(
             });
         }
     }
-    items.sort_by(|left, right| left.deleted_at.cmp(&right.deleted_at).then(left.name.cmp(&right.name)));
+    // Folders first, then what was deleted last; `deleted_at` is ISO 8601, which sorts as text.
+    items.sort_by(|left, right| {
+        right.is_dir.cmp(&left.is_dir).then(right.deleted_at.cmp(&left.deleted_at)).then(left.name.cmp(&right.name))
+    });
     Ok(items)
 }
 
@@ -137,6 +140,10 @@ pub(super) fn restore(
 ) -> Result<()> {
     let record = find_record(data_home, include_volume_trash, id)?;
     let destination = validate_original(mounts, &record.original_path)?;
+    if !destination.missing.is_empty() {
+        fs::create_dir_all(destination.folder()).context("cannot recreate the folder the item was in")?;
+    }
+    let destination = destination.path();
     match copy::rename_noreplace(&record.data_path, &destination) {
         Ok(()) => {}
         Err(error) if is_cross_device(&error) => {
@@ -607,27 +614,58 @@ fn can_restore(mounts: &[Mount], original: &Path) -> bool {
     validate_original(mounts, original).is_ok()
 }
 
-fn validate_original(mounts: &[Mount], original: &Path) -> Result<PathBuf> {
+/// Where a Trash item goes back to: the nearest of its folders that still exists,
+/// inside a local mount, and the folders under it deleted since, which a restore
+/// makes again as other file managers do.
+struct Destination {
+    existing: PathBuf,
+    missing: Vec<std::ffi::OsString>,
+    name: std::ffi::OsString,
+}
+
+impl Destination {
+    fn folder(&self) -> PathBuf {
+        self.missing.iter().fold(self.existing.clone(), |folder, part| folder.join(part))
+    }
+
+    fn path(&self) -> PathBuf {
+        self.folder().join(&self.name)
+    }
+}
+
+fn validate_original(mounts: &[Mount], original: &Path) -> Result<Destination> {
     let destination = validate_original_parent(mounts, original)?;
-    match fs::symlink_metadata(&destination) {
+    match fs::symlink_metadata(destination.path()) {
         Ok(_) => bail!("restore destination already exists"),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(destination),
         Err(error) => Err(error.into()),
     }
 }
 
-fn validate_original_parent(mounts: &[Mount], original: &Path) -> Result<PathBuf> {
+fn validate_original_parent(mounts: &[Mount], original: &Path) -> Result<Destination> {
     ensure!(original.is_absolute(), "Trash restore path is not absolute");
     reject_line_breaks(original)?;
-    let parent = original.parent().context("Trash restore path has no parent")?;
-    let name = original.file_name().context("Trash restore path has no name")?;
-    let canonical_parent = fs::canonicalize(parent)
-        .with_context(|| format!("Trash restore directory {} is unavailable", parent.display()))?;
+    // Folders to recreate are named, never `..`, so nothing lands outside the mount.
     ensure!(
-        mounts.iter().any(|mount| canonical_parent.starts_with(&mount.path)),
+        original.components().all(|part| matches!(part, Component::RootDir | Component::Normal(_))),
+        "Trash restore path is not a plain path"
+    );
+    let name = original.file_name().context("Trash restore path has no name")?.to_owned();
+    let mut folder = original.parent().context("Trash restore path has no parent")?;
+    let mut missing = Vec::new();
+    while let Err(error) = fs::symlink_metadata(folder) {
+        ensure!(error.kind() == std::io::ErrorKind::NotFound, "Trash restore directory {} is unavailable: {error}", folder.display());
+        missing.push(folder.file_name().context("Trash restore path has no existing folder")?.to_owned());
+        folder = folder.parent().context("Trash restore path has no existing folder")?;
+    }
+    missing.reverse();
+    let existing = fs::canonicalize(folder)
+        .with_context(|| format!("Trash restore directory {} is unavailable", folder.display()))?;
+    ensure!(
+        mounts.iter().any(|mount| existing.starts_with(&mount.path)),
         "Trash restore path is outside all local mounts"
     );
-    Ok(canonical_parent.join(name))
+    Ok(Destination { existing, missing, name })
 }
 
 fn encode_path(path: &Path) -> String {
@@ -852,4 +890,39 @@ fn unescape_mount_field(value: &str) -> String {
         }
     }
     String::from_utf8_lossy(&decoded).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::local::LocalFiles;
+
+    struct Root(std::path::PathBuf);
+
+    impl Drop for Root {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn restore_recreates_the_folders_deleted_since_and_folders_list_first() {
+        let root = Root(std::env::temp_dir().join(format!("boxbox-trash-{}", std::process::id())));
+        let _ = std::fs::remove_dir_all(&root.0);
+        std::fs::create_dir_all(root.0.join("a/b")).unwrap();
+        std::fs::create_dir_all(root.0.join("d")).unwrap();
+        std::fs::write(root.0.join("a/b/c.txt"), "c").unwrap();
+        std::fs::write(root.0.join("e.txt"), "e").unwrap();
+        let local = LocalFiles::with_root(root.0.clone()).unwrap();
+        let c = local.move_to_trash("home/a/b/c.txt").unwrap();
+        local.move_to_trash("home/e.txt").unwrap();
+        local.move_to_trash("home/d").unwrap();
+        std::fs::remove_dir_all(root.0.join("a")).unwrap();
+
+        let listed = local.trash().unwrap();
+        assert_eq!(listed[0].name, "d", "folders first");
+        let item = listed.iter().find(|item| item.id == c.id).unwrap();
+        assert!(item.can_restore, "a missing folder does not stop a restore");
+        local.restore_trash(&c.id).unwrap();
+        assert_eq!(std::fs::read_to_string(root.0.join("a/b/c.txt")).unwrap(), "c");
+    }
 }
