@@ -4,7 +4,7 @@
 use gpui::{div, img, prelude::*, px, AnyElement, Context, MouseButton, ObjectFit, SharedString, Window};
 
 use super::{icon, TextScale};
-use crate::components::{Button, Input, Modal};
+use crate::components::{check, Button, Input, Modal};
 use crate::open_with::{self, App};
 use crate::theme::*;
 use crate::workspace::{Load, Workspace};
@@ -27,19 +27,7 @@ impl Workspace {
             .text_13()
             .cursor_pointer()
             .map(|row| if selected { row.bg(self.selection_color(false)) } else { row.hover(|style| style.bg(c(SURFACE_SECONDARY))) })
-            .child(
-                div()
-                    .size(px(14.))
-                    .flex_none()
-                    .rounded_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .map(|radio| match selected {
-                        true => radio.bg(accent).child(div().size(px(6.)).rounded_full().bg(c(WHITE))),
-                        false => radio.bg(c(WHITE)).border_1().border_color(c(0x767676)),
-                    }),
-            )
+            .child(check::radio(selected, accent))
             .child(
                 div().size(px(24.)).flex_none().flex().items_center().justify_center().map(|slot| match &app.icon {
                     Some(path) => slot.child(img(path.clone()).size(px(24.)).object_fit(ObjectFit::Contain)),
@@ -96,7 +84,6 @@ impl Workspace {
                 } else {
                     "No recommended application matches.".to_string()
                 };
-                let make_default = dialog.make_default;
                 div()
                     .flex()
                     .flex_col()
@@ -123,39 +110,35 @@ impl Workspace {
                                     .children(other.iter().map(|app| self.open_with_row(app, chosen.as_deref(), cx).into_any_element()))
                             }),
                     )
-                    .child(
-                        // mt-3 flex items-center gap-2 text-[13px] text-text-secondary
-                        div()
-                            .id("open-with-default")
-                            .mt(px(12.))
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .text_13()
-                            .text_color(c(TEXT_SECONDARY))
-                            .cursor_pointer()
-                            .child(
-                                div()
-                                    .size(px(14.))
-                                    .rounded(px(2.))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .map(|box_| match make_default {
-                                        true => box_.bg(c(self.accent_hex())).child(icon("check", 11., c(WHITE))),
-                                        false => box_.bg(c(WHITE)).border_1().border_color(c(0x767676)),
-                                    }),
-                            )
-                            .child(format!("Use as default for {mime}"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                if let Some(dialog) = this.open_with.as_mut() {
-                                    dialog.make_default = !dialog.make_default;
-                                }
-                                cx.notify();
-                            })),
-                    )
                     .into_any_element()
             }
+        };
+        // Beside Open, as GTK's app chooser puts it: it qualifies the button, not the list.
+        let use_default = match &dialog.apps {
+            Load::Loaded(apps) if !(apps.recommended.is_empty() && apps.other.is_empty()) => {
+                let mime = if apps.mime_type.is_empty() { "this file type" } else { apps.mime_type.as_str() };
+                Some(
+                    div()
+                        .id("open-with-default")
+                        .mr_auto()
+                        .min_w_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .text_13()
+                        .text_color(c(TEXT_SECONDARY))
+                        .cursor_pointer()
+                        .child(check::checkbox(dialog.make_default, c(self.accent_hex()), 14.))
+                        .child(div().min_w_0().truncate().child(format!("Use as default for {mime}")))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            if let Some(dialog) = this.open_with.as_mut() {
+                                dialog.make_default = !dialog.make_default;
+                            }
+                            cx.notify();
+                        })),
+                )
+            }
+            _ => None,
         };
         let launching = dialog.launching;
         div()
@@ -168,6 +151,7 @@ impl Workspace {
                     .title(format!("Open “{}” with", dialog.item.name))
                     .on_close(cx.listener(|this, _, window, cx| this.close_open_with(window, cx)))
                     .body(body)
+                    .when_some(use_default, |modal, toggle| modal.footer(toggle))
                     .footer(
                         Button::new("open-with-confirm")
                             .label(if launching { "Opening…" } else { "Open" })

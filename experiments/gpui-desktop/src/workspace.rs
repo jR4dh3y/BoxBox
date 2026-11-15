@@ -14,7 +14,7 @@ pub use crate::pane::Load;
 use crate::components::{InputEvent, TextField};
 use crate::search;
 use crate::sort::{Sort, SortDir, SortField};
-use crate::theme::{c, SURFACE_PRIMARY, TEXT_PRIMARY};
+use crate::theme::{c, TEXT_PRIMARY};
 use crate::settings_state::{DesktopSettings, SettingsPanelState};
 
 pub(crate) mod favorites;

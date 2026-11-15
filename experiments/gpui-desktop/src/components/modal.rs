@@ -153,6 +153,7 @@ impl RenderOnce for Modal {
                             div()
                                 .flex()
                                 .justify_end()
+                                .items_center()
                                 .gap(px(8.))
                                 .border_t_1()
                                 .border_color(c(BORDER_SECONDARY))

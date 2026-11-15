@@ -344,19 +344,7 @@ impl RenderOnce for FileRow {
     }
 }
 
-/// Chromium's 16px checkbox with `accent-color` in its dark scheme: a dark box with a
-/// light border, or the accent with a white tick. Callers position it.
+/// The 16px selection checkbox of rows and tiles.
 pub(super) fn checkbox(checked: bool, accent: Rgba) -> Stateful<Div> {
-    div()
-        .id("check")
-        .size(px(16.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(2.))
-        .cursor_pointer()
-        .map(|el| match checked {
-            true => el.bg(accent).child(icon("check", 12., c(WHITE))),
-            false => el.bg(c(0x3b3b3b)).border_1().border_color(c(0x858585)),
-        })
+    super::check::checkbox(checked, accent, 16.).id("check").cursor_pointer()
 }

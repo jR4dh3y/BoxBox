@@ -5,6 +5,7 @@
 //! for comparison against the web app.
 
 mod button;
+pub mod check;
 mod context_menu;
 mod drive_card;
 mod file_grid;
