@@ -61,8 +61,7 @@ Linux file manager does, not commitments.
 - Modals close the top dialog on Escape and on a backdrop click, and restore
   focus; context menus close on Escape or an outside click and stay inside
   the window.
-- Restore from Trash recreates missing parent folders; Trash lists folders
-  first, then newest; refuse Trash on network filesystems.
+- Refuse Trash on network filesystems.
 - Open With: app icons from the current icon theme, not only hicolor.
 - Wallpaper: preview before applying, SVG and AVIF, test the picker.
 - Collapse the sidebar into a drawer on narrow windows.
@@ -84,10 +83,9 @@ Most valuable first.
 - Details view: choose, resize and reorder columns (owner, permissions, MIME
   type, created, accessed), remembered per folder.
 - Per-folder view and sort; zoom (Ctrl+wheel, Ctrl+plus/minus) in grid and list.
-- Select by pattern and invert selection; rubber-band selection.
+- Rubber-band selection.
 - Hover a folder row while dragging to open it (crumbs already do);
   autoscroll at the edges; Link on drop, and Ask on right-drag.
-- Launchers with `Terminal=true`: open them in a terminal.
 - Middle-ellipsis for long names, keeping the extension.
 - Undo for copy, move, create and link as well as Trash and rename; Redo.
 - Transfer pause and resume, current file, rate and time left.
@@ -242,15 +240,16 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | History | — | ✓ `workspace/history.rs`: right-click Back or Forward for the places; places that no longer exist are skipped and dropped; the mouse's side buttons go back and forward in the pane under the pointer; Back and Forward return to the folder's selection, cursor and scroll position (`pane::ViewMemo`), and a newly opened folder starts at its top |
 | Tabs from a folder | — | ✓ a middle-click on a folder row, tile or crumb opens it in a new tab; with Ctrl, behind the current one |
 | Start location | — | ✓ Settings → General: the Overview, the home folder or the last location (kept in `$XDG_STATE_HOME/boxbox-gpui/last-location`); a remembered folder that is gone starts on the Overview |
+| Select by pattern | — | ✓ Ctrl+S: `*` and `?` match the whole name, plain text anywhere, case ignored (`search::matches_pattern`); Ctrl+I inverts the selection |
 | Delete permanently | — | ✓ Shift+Delete, always after asking; Delete and Shift+Delete do nothing while the Trash page shows |
 | Server drives at launch | — | ✓ each server's drives as last seen (`$XDG_CACHE_HOME/boxbox-gpui/server-drives.json`) stand in place with a pulsing usage placeholder (`components/skeleton.rs`) until the server answers; one opened meanwhile opens when it does |
 | Breadcrumbs | — | ✓ `ui/toolbar.rs` `render_crumbs`: menu (Open in New Tab, Paste Into Folder, Properties), middle-click, drops, open after 0.7 s of dragging, "…" for crumbs that do not fit, full path on hover |
 | Places | — | ✓ Recent (`recently-used.xbel`), Templates, Network (Avahi over D-Bus; untested here, as Avahi is disabled on this machine), Desktop; every sidebar entry has a menu (`ui/place_menu.rs`) |
 | Favorites | — | ✓ local favorites are the GTK bookmarks file, shared with other file managers and watched; server favorites stay in BoxBox's file; drag to reorder |
-| Trash | — | ✓ `workspace/trash.rs`: Empty Trash, a full or empty icon kept current by watching Trash, drops onto Trash, Restore offers Show |
+| Trash | — | ✓ `workspace/trash.rs`: Empty Trash, a full or empty icon kept current by watching Trash, drops onto Trash, Restore offers Show and recreates folders deleted since; folders list first, then the most recently deleted |
 | Templates | — | ✓ `workspace/templates.rs`: "New from Template" in the folder and + menus; the copy opens for renaming |
 | Item menu | — | ✓ `workspace/item_actions.rs`: Open in New Tab, Create Link, Compress (ZIP), Send To (Desktop, removable drives, mail through the Email portal; mail untested, as it opens the mail app) |
-| Running files | — | ✓ `launch.rs`, `workspace/run.rs`: executable scripts and programs ask first; launchers run when trusted (executable or installed) and ask otherwise |
+| Running files | — | ✓ `launch.rs`, `workspace/run.rs`: executable scripts and programs ask first; launchers run when trusted (executable or installed) and ask otherwise; a `Terminal=true` launcher runs in the default terminal (`xdg-terminal-exec`, then `$TERMINAL`, then a common one) |
 | Properties | — | ✓ `workspace/properties.rs`: permissions, owner and group; for several items or a folder, counts and total size, read off the UI thread |
 
 ## Search
