@@ -183,10 +183,11 @@ impl ShareExpiry {
 }
 
 /// The open settings dialog. Its text lives in the workspace's settings fields:
-/// name and URL, the token field, or the first field for a share path or upload limit.
+/// name, URL and pairing code, or the first field for a share path or upload limit.
 pub(crate) enum SettingsDialog {
     EditConnection { index: Option<usize> },
-    ConnectSaved { connection: SavedConnection },
+    /// The server has no credential for this computer, or refused it.
+    Pair { connection: SavedConnection, reason: String },
     RemoveConnection { index: usize, name: String },
     CreateShare { permissions: SharePermissions, expires: ShareExpiry },
     EditShare { id: String, label: String, permissions: SharePermissions },

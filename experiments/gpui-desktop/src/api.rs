@@ -178,6 +178,19 @@ impl Api {
         matches!(&self.provider, Provider::Local(_))
     }
 
+    /// Pairs with a server by the code its Settings show, returning the credential.
+    pub fn redeem(base: &str, code: &str, client_name: &str) -> Result<String> {
+        RemoteApi::new(base, None).redeem(code, client_name)
+    }
+
+    /// Asks the server to forget this computer's credential.
+    pub fn revoke_self(&self) -> Result<()> {
+        match &self.provider {
+            Provider::Local(_) => Ok(()),
+            Provider::Remote(remote) => remote.revoke_self(),
+        }
+    }
+
     /// The configured, credential-free server base URL; local mode has no server URL.
     pub fn server_url(&self) -> Option<&str> {
         match &self.provider {
@@ -496,6 +509,19 @@ fn parse_search(response: SearchResponse, path: &str, query: &str) -> Result<Vec
         })
         .collect()
 }
+
+/// The server refused this computer's credential: it expired, was revoked, or
+/// was never given. Pairing again fixes it.
+#[derive(Debug)]
+pub struct Unauthorized(pub String);
+
+impl std::fmt::Display for Unauthorized {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Unauthorized {}
 
 fn server_message(body: &str) -> Option<String> {
     #[derive(Deserialize)]

@@ -17,6 +17,7 @@ use crate::settings_state::{
     ShareListState, WallpaperFit,
 };
 use crate::theme::*;
+use crate::workspace::servers::Opened;
 use crate::workspace::{Preferences, SettingsSection, Workspace};
 
 /// Which settings text field a dialog input uses.
@@ -26,8 +27,8 @@ pub(crate) enum SettingsField {
     First,
     /// A connection's URL.
     Second,
-    /// A bearer token, masked.
-    Token,
+    /// The pairing code a server's Settings show.
+    Code,
 }
 
 #[derive(Clone, Copy)]
@@ -308,7 +309,7 @@ impl Workspace {
         match field {
             SettingsField::First => &self.settings_fields[0],
             SettingsField::Second => &self.settings_fields[1],
-            SettingsField::Token => &self.settings_fields[2],
+            SettingsField::Code => &self.settings_fields[2],
         }
     }
 
@@ -550,17 +551,11 @@ impl Workspace {
                         |this, cx| {
                             this.open_settings_dialog(
                                 SettingsDialog::EditConnection { index: None },
-                                &[(SettingsField::First, String::new()), (SettingsField::Second, String::new())],
+                                &[(SettingsField::First, String::new()), (SettingsField::Second, String::new()), (SettingsField::Code, String::new())],
                                 cx,
                             );
                         },
                     )),
-            )
-            .child(
-                div()
-                    .text_xs_tw()
-                    .text_color(c(TEXT_MUTED))
-                    .child("Bearer tokens are requested when opening a server and are never saved."),
             )
             .child(local)
             .children(connections)
@@ -583,15 +578,78 @@ impl Workspace {
         let Some(connection) = self.desktop_settings.connections.get(index) else {
             return;
         };
-        let texts = [(SettingsField::First, connection.name.clone()), (SettingsField::Second, connection.url.clone())];
+        let texts = [(SettingsField::First, connection.name.clone()), (SettingsField::Second, connection.url.clone()), (SettingsField::Code, String::new())];
         self.open_settings_dialog(SettingsDialog::EditConnection { index: Some(index) }, &texts, cx);
     }
 
+    /// Opens a saved server with its keyring credential, or asks for a pairing code.
     fn connect_saved_connection(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(connection) = self.desktop_settings.connections.get(index).cloned() else {
             return;
         };
-        self.open_settings_dialog(SettingsDialog::ConnectSaved { connection }, &[(SettingsField::Token, String::new())], cx);
+        if self.settings_panel.busy {
+            return;
+        }
+        self.settings_panel.busy = true;
+        self.settings_panel.error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let opening = connection.clone();
+            let result = cx.background_executor().spawn(async move { crate::workspace::servers::open(&opening) }).await;
+            this.update(cx, |this, cx| {
+                this.settings_panel.busy = false;
+                match result {
+                    Ok(Opened::Ready(api)) => this.show_server(api, cx),
+                    Ok(Opened::NeedsPairing(reason)) => {
+                        this.open_settings_dialog(SettingsDialog::Pair { connection, reason }, &[(SettingsField::Code, String::new())], cx)
+                    }
+                    Err(error) => this.settings_panel.error = Some(format!("Could not open {}: {error:#}", connection.name)),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn show_server(&mut self, api: Api, cx: &mut Context<Self>) {
+        self.settings_panel.dialog = None;
+        self.settings_open = false;
+        self.open_provider(api, cx);
+    }
+
+    /// Pairs in the background. On success `done` runs with the open server;
+    /// on failure the dialog comes back with the server's reason.
+    fn pair_connection(
+        &mut self,
+        connection: SavedConnection,
+        code: String,
+        dialog: SettingsDialog,
+        cx: &mut Context<Self>,
+        done: impl FnOnce(&mut Self, SavedConnection, Api, &mut Context<Self>) + 'static,
+    ) {
+        self.settings_panel.busy = true;
+        self.settings_panel.error = None;
+        self.settings_panel.dialog = Some(dialog);
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let pairing = connection.clone();
+            let result = cx.background_executor().spawn(async move { crate::workspace::servers::pair(&pairing, &code) }).await;
+            this.update(cx, |this, cx| {
+                this.settings_panel.busy = false;
+                match result {
+                    Ok(api) => {
+                        // The code is spent; it does not stay in the field.
+                        this.settings_field(SettingsField::Code).clone().update(cx, |field, cx| field.set_text("", 0..0, cx));
+                        done(this, connection, api, cx);
+                    }
+                    Err(error) => this.settings_panel.error = Some(format!("Could not pair with {}: {error:#}", connection.url)),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn confirm_remove_connection(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -610,9 +668,21 @@ impl Workspace {
             self.settings_panel.dialog = None;
             self.settings_panel.error = Some("That saved connection no longer exists.".into());
         } else {
-            self.desktop_settings.connections.remove(index);
+            let connection = self.desktop_settings.connections.remove(index);
             self.settings_panel.dialog = None;
             self.save_desktop_settings(cx);
+            cx.spawn(async move |this, cx| {
+                let name = connection.name.clone();
+                let result = cx.background_executor().spawn(async move { crate::workspace::servers::forget(&connection) }).await;
+                if let Err(error) = result {
+                    this.update(cx, |this, cx| {
+                        this.settings_panel.error = Some(format!("Removed {name}, but its credential is still in the keyring: {error:#}"));
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            })
+            .detach();
         }
         cx.notify();
     }
@@ -642,22 +712,44 @@ impl Workspace {
             return;
         }
 
-        match index {
-            Some(index) => {
-                let Some(existing) = self.desktop_settings.connections.get(index) else {
-                    self.settings_panel.error =
-                        Some("That saved connection no longer exists.".into());
-                    self.settings_panel.dialog = Some(SettingsDialog::EditConnection { index: Some(index) });
-                    cx.notify();
-                    return;
-                };
-                let mut connection = connection;
-                connection.id = existing.id.clone();
-                self.desktop_settings.connections[index] = connection;
+        let existing = index.and_then(|index| self.desktop_settings.connections.get(index).cloned());
+        if index.is_some() && existing.is_none() {
+            self.settings_panel.error = Some("That saved connection no longer exists.".into());
+            self.settings_panel.dialog = Some(SettingsDialog::EditConnection { index });
+            cx.notify();
+            return;
+        }
+        let connection = SavedConnection { id: existing.as_ref().map_or(connection.id.clone(), |existing| existing.id.clone()), ..connection };
+        let code = self.settings_field(SettingsField::Code).read(cx).text().trim().to_string();
+        // A credential belongs to one server, so a new address needs a new code.
+        let paired = existing.as_ref().is_some_and(|existing| existing.url == connection.url);
+        if code.is_empty() && !paired {
+            self.settings_panel.error = Some("Enter the pairing code from that server’s Settings → Account.".into());
+            self.settings_panel.dialog = Some(SettingsDialog::EditConnection { index });
+            cx.notify();
+            return;
+        }
+        if code.is_empty() {
+            self.keep_connection(connection, cx);
+            self.settings_panel.dialog = None;
+            return;
+        }
+        let adding = index.is_none();
+        self.pair_connection(connection, code, SettingsDialog::EditConnection { index }, cx, move |this, connection, api, cx| {
+            this.keep_connection(connection, cx);
+            match adding {
+                true => this.show_server(api, cx),
+                false => this.settings_panel.dialog = None,
             }
+        });
+    }
+
+    /// Saves a connection over the one with its id, or as a new one.
+    fn keep_connection(&mut self, connection: SavedConnection, cx: &mut Context<Self>) {
+        match self.desktop_settings.connections.iter_mut().find(|existing| existing.id == connection.id) {
+            Some(existing) => *existing = connection,
             None => self.desktop_settings.connections.push(connection),
         }
-        self.settings_panel.dialog = None;
         self.save_desktop_settings(cx);
     }
 
@@ -668,12 +760,15 @@ impl Workspace {
                     self.save_saved_connection(index, cx);
                 }
             }
-            Some(SettingsDialog::ConnectSaved { .. }) => {
-                if let Some(SettingsDialog::ConnectSaved { connection }) = self.settings_panel.dialog.take() {
-                    let token = self.settings_field(SettingsField::Token).read(cx).text().to_string();
-                    // The token is never kept once used.
-                    self.settings_field(SettingsField::Token).clone().update(cx, |field, cx| field.set_text("", 0..0, cx));
-                    self.open_saved_connection(connection, token, cx);
+            Some(SettingsDialog::Pair { .. }) => {
+                if let Some(SettingsDialog::Pair { connection, reason }) = self.settings_panel.dialog.take() {
+                    let code = self.settings_field(SettingsField::Code).read(cx).text().trim().to_string();
+                    if code.is_empty() {
+                        self.settings_panel.dialog = Some(SettingsDialog::Pair { connection, reason });
+                        return;
+                    }
+                    let dialog = SettingsDialog::Pair { connection: connection.clone(), reason };
+                    self.pair_connection(connection, code, dialog, cx, |this, _, api, cx| this.show_server(api, cx));
                 }
             }
             Some(SettingsDialog::CreateShare { .. }) => self.create_share(cx),
@@ -685,30 +780,6 @@ impl Workspace {
             Some(SettingsDialog::RevokeShare { .. }) => self.revoke_share(cx),
             _ => {}
         }
-    }
-
-    fn open_saved_connection(
-        &mut self,
-        connection: SavedConnection,
-        token: String,
-        cx: &mut Context<Self>,
-    ) {
-        let connection = match validate_connection(&connection.name, &connection.url) {
-            Ok(validated) => SavedConnection {
-                id: connection.id,
-                ..validated
-            },
-            Err(error) => {
-                self.settings_panel.error = Some(error);
-                cx.notify();
-                return;
-            }
-        };
-        let token = (!token.is_empty()).then_some(token);
-        let api = Api::new(&connection.url, token);
-        self.settings_panel.dialog = None;
-        self.settings_open = false;
-        self.open_provider(api, cx);
     }
 
 
@@ -1308,21 +1379,28 @@ impl Workspace {
                     .gap(px(10.))
                     .child(self.settings_text_field("settings-connection-name", "Name", SettingsField::First, window, cx))
                     .child(self.settings_text_field("settings-connection-url", "Server URL", SettingsField::Second, window, cx))
-                    .child(hint("Use http:// or https://. Credentials, query strings, and fragments are not allowed."))
+                    .child(self.settings_text_field("settings-connection-code", "Pairing code", SettingsField::Code, window, cx))
+                    .child(hint(if index.is_some() {
+                        "From that server’s Settings → Account. Leave it blank to keep this computer’s pairing."
+                    } else {
+                        "From that server’s Settings → Account."
+                    }))
                     .into_any_element(),
-                confirm("settings-connection-save", "Save", true, ButtonVariant::Primary, cx),
+                confirm("settings-connection-save", if index.is_some() { "Save" } else { "Pair and open" }, !busy, ButtonVariant::Primary, cx),
             ),
-            SettingsDialog::ConnectSaved { connection } => (
-                "Open server connection",
+            SettingsDialog::Pair { connection, reason } => (
+                "Pair with server",
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(8.))
                     .child(div().text_13().text_color(c(TEXT_PRIMARY)).child(connection.name.clone()))
                     .child(div().text_xs_tw().text_color(c(TEXT_MUTED)).child(connection.url.clone()))
-                    .child(self.settings_text_field("settings-connection-token", "Bearer token (optional)", SettingsField::Token, window, cx))
+                    .child(div().text_13().text_color(c(TEXT_SECONDARY)).child(reason.clone()))
+                    .child(self.settings_text_field("settings-connection-code", "Pairing code", SettingsField::Code, window, cx))
+                    .child(hint("From that server’s Settings → Account."))
                     .into_any_element(),
-                confirm("settings-connection-open", "Open", true, ButtonVariant::Primary, cx),
+                confirm("settings-connection-pair", "Pair and open", !busy, ButtonVariant::Primary, cx),
             ),
             SettingsDialog::RemoveConnection { name, .. } => (
                 "Remove server connection",

@@ -69,7 +69,7 @@ Linux file manager does, not commitments.
 - Open With: app icons from the current icon theme, not only hicolor.
 - Wallpaper: preview before applying, SVG and AVIF, test the picker.
 - Collapse the sidebar into a drawer on narrow windows.
-- Later: Servers page and device pairing.
+- Later: a Servers page with per-server status, and icons.
 
 ### Native file manager (from Thunar)
 
@@ -162,7 +162,7 @@ threads (`thumbnail_queue.rs`). Installed freedesktop thumbnailers are still to 
 
 | Svelte | Role | Native scope | PR | Local |
 |---|---|---|---|---|
-| `desktop/ServersPage.svelte`, `desktop/RemoteCatalog*.svelte`, `desktop/DeploymentIcon.svelte` | saved servers | later | ✗ | ◐ connections in settings, `api/http.rs` |
+| `desktop/ServersPage.svelte`, `desktop/RemoteCatalog*.svelte`, `desktop/DeploymentIcon.svelte` | saved servers | later | ✗ | ◐ connections in settings: a server pairs once by the code from its Settings → Account (`workspace/servers.rs`), the credential lives in the keyring over the Secret Service (`secrets.rs`), a refused one asks to pair again, and removing revokes it and forgets it. Run against a local server and GNOME Keyring |
 | `ShareModal.svelte`, `ShareLinkList.svelte`, `settings/ShareLinksSettings.svelte` | share links (server only) | later | ✗ | ✓ `ui/settings.rs` |
 | `settings/PairingCodeSettings.svelte` | pair a device | later | ✗ | ✗ |
 

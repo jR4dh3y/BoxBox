@@ -57,6 +57,21 @@ impl RemoteApi {
         self.server_url.as_deref()
     }
 
+    /// `POST /connect/redeem`: trades a pairing code for this computer's credential.
+    pub(super) fn redeem(&self, code: &str, client_name: &str) -> Result<String> {
+        #[derive(Deserialize)]
+        struct Redemption {
+            credential: String,
+        }
+        let redemption: Redemption = self.mutate_json("POST", "/connect/redeem", json!({ "code": code, "clientName": client_name }))?;
+        Ok(redemption.credential)
+    }
+
+    /// `DELETE /connect/client`: the server forgets this computer.
+    pub(super) fn revoke_self(&self) -> Result<()> {
+        self.mutate_empty("DELETE", "/connect/client", None)
+    }
+
     pub(super) fn roots(&self) -> Result<Vec<MountPoint>> {
         Ok(self.get::<RootsResponse>("/files/")?.roots)
     }
@@ -525,6 +540,9 @@ fn handle_result(
                 .ok()
                 .and_then(super::server_message)
                 .unwrap_or_else(|| format!("HTTP {code}"));
+            if code == 401 {
+                return Err(super::Unauthorized(message).into());
+            }
             anyhow::bail!(message)
         }
         Err(ureq::Error::Transport(_)) => anyhow::bail!("cannot reach BoxBox server"),

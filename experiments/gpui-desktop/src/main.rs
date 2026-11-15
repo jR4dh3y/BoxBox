@@ -21,6 +21,7 @@ mod render_gpu;
 mod persist;
 mod profile;
 mod search;
+mod secrets;
 mod sort;
 mod theme;
 mod thumbnail_queue;

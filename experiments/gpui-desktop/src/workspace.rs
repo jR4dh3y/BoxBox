@@ -20,6 +20,7 @@ use crate::settings_state::{DesktopSettings, SettingsPanelState};
 pub(crate) mod favorites;
 pub(crate) mod confirm;
 pub(crate) mod devices;
+pub(crate) mod servers;
 pub(crate) mod overview;
 pub(crate) mod drag_drop;
 pub(crate) mod jobs;
