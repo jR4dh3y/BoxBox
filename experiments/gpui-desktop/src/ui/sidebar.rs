@@ -103,6 +103,14 @@ impl Workspace {
             .collect::<Vec<_>>();
         if pane.api.is_local() {
             drives.extend(self.device_rows(cx).into_iter().map(IntoElement::into_any_element));
+            drives.extend(self.desktop_settings.connections.iter().map(|connection| {
+                let open = connection.clone();
+                components::NavItem::new(SharedString::from(format!("server-{}", connection.id)), connection.name.clone(), "server")
+                    .disabled(self.settings_panel.busy)
+                    .tooltip(connection.url.clone())
+                    .on_click(cx.listener(move |this, _, _, cx| this.connect_server(open.clone(), cx)))
+                    .into_any_element()
+            }));
         }
         let places = roots
             .iter()

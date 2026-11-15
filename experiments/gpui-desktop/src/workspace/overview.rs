@@ -7,13 +7,16 @@ use crate::api::DriveStats;
 use crate::components::{DriveInfo, DriveState, Usage};
 use crate::devices::{Kind, State, Volume};
 use crate::pane::{Load, Pane};
+use crate::settings_state::SavedConnection;
 use crate::workspace::Workspace;
 
-/// A drive the provider lists, or a disk, phone or share the system reports.
+/// A drive the provider lists, a disk, phone or share the system reports, or a
+/// paired BoxBox server.
 #[derive(Clone)]
 pub(crate) enum Storage {
     Drive(DriveStats),
     Volume(Volume),
+    Server(SavedConnection),
 }
 
 pub(crate) fn volume_glyph(volume: &Volume) -> &'static str {
@@ -57,23 +60,35 @@ impl Storage {
                     fs_type: volume.fs_type.clone(),
                 }
             }
+            // Its drives show once it is open, in its own tab.
+            Storage::Server(connection) => DriveInfo {
+                name: connection.name.clone().into(),
+                glyph: "server",
+                state: DriveState::Status { status: "BoxBox server".into(), size: None },
+                read_only: false,
+                device: Some(connection.url.clone()),
+                fs_type: None,
+            },
         }
     }
 }
 
 impl Workspace {
-    /// The pane's drives, then, on this computer, its disks, phones and shares.
-    /// None until the drives load.
+    /// The pane's drives, then, on this computer, its disks, phones and shares,
+    /// and the saved servers. None until the drives load.
     pub(crate) fn storage(&self, pane: &Pane) -> Option<Vec<Storage>> {
         let Load::Loaded(drives) = &pane.drives else { return None };
-        let volumes = pane.api.is_local().then(|| self.devices.volumes()).into_iter().flatten();
-        Some(drives.iter().cloned().map(Storage::Drive).chain(volumes.cloned().map(Storage::Volume)).collect())
+        let local = pane.api.is_local();
+        let volumes = local.then(|| self.devices.volumes()).into_iter().flatten().cloned().map(Storage::Volume);
+        let servers = local.then_some(&self.desktop_settings.connections).into_iter().flatten().cloned().map(Storage::Server);
+        Some(drives.iter().cloned().map(Storage::Drive).chain(volumes).chain(servers).collect())
     }
 
     pub(crate) fn open_storage(&mut self, storage: Storage, window: &mut Window, cx: &mut Context<Self>) {
         match storage {
             Storage::Drive(drive) => self.navigate(drive.name, cx),
             Storage::Volume(volume) => self.open_volume(volume, window, cx),
+            Storage::Server(connection) => self.connect_server(connection, cx),
         }
     }
 }

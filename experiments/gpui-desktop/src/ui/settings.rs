@@ -582,11 +582,15 @@ impl Workspace {
         self.open_settings_dialog(SettingsDialog::EditConnection { index: Some(index) }, &texts, cx);
     }
 
-    /// Opens a saved server with its keyring credential, or asks for a pairing code.
     fn connect_saved_connection(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(connection) = self.desktop_settings.connections.get(index).cloned() else {
-            return;
-        };
+        if let Some(connection) = self.desktop_settings.connections.get(index).cloned() {
+            self.connect_server(connection, cx);
+        }
+    }
+
+    /// Opens a saved server with its keyring credential, or asks for a pairing
+    /// code in Settings, where the pairing dialog lives.
+    pub(crate) fn connect_server(&mut self, connection: SavedConnection, cx: &mut Context<Self>) {
         if self.settings_panel.busy {
             return;
         }
@@ -601,9 +605,18 @@ impl Workspace {
                 match result {
                     Ok(Opened::Ready(api)) => this.show_server(api, cx),
                     Ok(Opened::NeedsPairing(reason)) => {
+                        this.settings_open = true;
+                        this.settings_section = SettingsSection::Connections;
                         this.open_settings_dialog(SettingsDialog::Pair { connection, reason }, &[(SettingsField::Code, String::new())], cx)
                     }
-                    Err(error) => this.settings_panel.error = Some(format!("Could not open {}: {error:#}", connection.name)),
+                    Err(error) => {
+                        let message = format!("Could not open {}: {error:#}", connection.name);
+                        // Opened from Settings, the error shows there; from the Overview, as a notice.
+                        match this.settings_open {
+                            true => this.settings_panel.error = Some(message),
+                            false => this.report(Err(message), cx),
+                        }
+                    }
                 }
                 cx.notify();
             })

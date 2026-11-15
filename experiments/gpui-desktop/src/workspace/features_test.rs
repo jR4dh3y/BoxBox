@@ -320,6 +320,22 @@ fn drag(cx: &mut VisualTestContext, from: &'static str, to: &'static str) {
 }
 
 #[gpui::test]
+fn the_overview_lists_saved_servers_after_the_drives(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.txt"]);
+    view.update(cx, |workspace, _| {
+        let server = crate::settings_state::SavedConnection { id: "s1".into(), name: "Home server".into(), url: "http://nas:8080".into() };
+        workspace.desktop_settings.connections.push(server);
+    });
+    view.read_with(cx, |workspace, _| {
+        let storage = workspace.storage(workspace.pane()).expect("drives loaded");
+        assert!(matches!(storage.first(), Some(overview::Storage::Drive(_))));
+        let Some(overview::Storage::Server(server)) = storage.last() else { panic!("the server comes last") };
+        assert_eq!(server.name, "Home server");
+        assert_eq!(storage.last().unwrap().info().device.as_deref(), Some("http://nas:8080"));
+    });
+}
+
+#[gpui::test]
 fn the_trash_notice_undoes_its_move(cx: &mut TestAppContext) {
     let (_view, cx, fixture) = open(cx, &["docs/", "b.txt"]);
     drag(cx, "row-0-1", "sidebar-trash");
