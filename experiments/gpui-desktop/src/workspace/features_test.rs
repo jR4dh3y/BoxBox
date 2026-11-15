@@ -46,7 +46,7 @@ pub(super) fn open<'a>(cx: &'a mut TestAppContext, files: &[&str]) -> (Entity<Wo
     cx.update(|_, app| {
         view.update(app, |workspace, cx| {
             workspace.preferences = Preferences { default_sort: crate::sort::SortField::Name, default_sort_direction: crate::sort::SortDir::Asc, ..Preferences::default() };
-            workspace.set_pane_sort(PaneTarget(0), Sort { field: crate::sort::SortField::Name, dir: crate::sort::SortDir::Asc }, cx);
+            workspace.choose_sort(PaneTarget(0), Sort { field: crate::sort::SortField::Name, dir: crate::sort::SortDir::Asc }, cx);
         })
     });
     // Focus events reach their listeners only in an active window.
@@ -1196,13 +1196,51 @@ fn a_folder_keeps_the_view_picked_in_it(cx: &mut TestAppContext) {
     // The next window opens the folder in its view: the choice is written to disk.
     let api = Api::local_with_root(fixture.root.clone()).unwrap();
     let kept = super::folder_views::FolderViews::load();
-    assert_eq!(kept.get(&api, "home/photos", ViewMode::List), ViewMode::Grid);
-    assert_eq!(kept.get(&api, "home", ViewMode::List), ViewMode::List);
+    assert_eq!(kept.mode(&api, "home/photos", ViewMode::List), ViewMode::Grid);
+    assert_eq!(kept.mode(&api, "home", ViewMode::List), ViewMode::List);
 
     // Picking the default again forgets the folder.
     view.update(cx, |workspace, cx| workspace.navigate("home/photos".into(), cx));
     cx.run_until_parked();
     click(cx, "view-list");
+    cx.run_until_parked();
+    assert_eq!(super::folder_views::FolderViews::load().encode(), b"{}");
+}
+
+#[gpui::test]
+fn a_folder_keeps_the_sort_picked_in_it(cx: &mut TestAppContext) {
+    use crate::sort::{Sort, SortDir, SortField};
+    let (view, cx, fixture) = open(cx, &["docs/a.txt", "docs/b.txt", "music/c.txt", "music/d.txt"]);
+    let sort = |view: &Entity<Workspace>, cx: &mut VisualTestContext| view.read_with(cx, |workspace, _| workspace.pane().sort);
+    let by_name_desc = Sort { field: SortField::Name, dir: SortDir::Desc };
+    view.update(cx, |workspace, cx| workspace.navigate("home/docs".into(), cx));
+    cx.run_until_parked();
+    view.update(cx, |workspace, cx| workspace.choose_sort(PaneTarget(0), by_name_desc, cx));
+    settle(cx);
+    assert_eq!(names(&view, cx), ["b.txt", "a.txt"]);
+
+    // Another folder opens with the default sort; coming back restores the folder's own.
+    view.update(cx, |workspace, cx| workspace.navigate("home/music".into(), cx));
+    settle(cx);
+    assert_eq!(names(&view, cx), ["c.txt", "d.txt"]);
+    view.update(cx, |workspace, cx| workspace.navigate("home/docs".into(), cx));
+    settle(cx);
+    assert_eq!(sort(&view, cx), by_name_desc);
+    assert_eq!(names(&view, cx), ["b.txt", "a.txt"]);
+
+    // A new default in Settings leaves the folder's sort alone.
+    view.update(cx, |workspace, cx| {
+        workspace.preferences.default_sort = SortField::Size;
+        workspace.apply_preferences(cx);
+    });
+    settle(cx);
+    assert_eq!(sort(&view, cx), by_name_desc);
+
+    // Kept on disk for the next window; choosing the default forgets it.
+    let api = Api::local_with_root(fixture.root.clone()).unwrap();
+    let default = Sort { field: SortField::Size, dir: SortDir::Asc };
+    assert_eq!(super::folder_views::FolderViews::load().sort(&api, "home/docs", default), by_name_desc);
+    view.update(cx, |workspace, cx| workspace.choose_sort(PaneTarget(0), default, cx));
     cx.run_until_parked();
     assert_eq!(super::folder_views::FolderViews::load().encode(), b"{}");
 }

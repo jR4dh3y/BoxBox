@@ -32,7 +32,7 @@ impl SortDir {
     pub const OPTIONS: [(Self, &'static str); 2] = [(Self::Asc, "Ascending"), (Self::Desc, "Descending")];
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Sort {
     pub field: SortField,
     pub dir: SortDir,

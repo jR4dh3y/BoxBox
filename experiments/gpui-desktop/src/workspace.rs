@@ -350,7 +350,8 @@ impl Workspace {
             preference_view(&preferences),
         );
         if !initial_pane.is_at_root() {
-            initial_pane.view_mode = folder_views.get(&api, &initial_pane.path, preference_view(&preferences));
+            initial_pane.view_mode = folder_views.mode(&api, &initial_pane.path, preference_view(&preferences));
+            initial_pane.sort = folder_views.sort(&api, &initial_pane.path, preference_sort(&preferences));
         }
         let dialog_field = cx.new(|cx| TextField::new("", cx));
         let rename_field = cx.new(|cx| TextField::new("", cx));
@@ -761,15 +762,6 @@ impl Workspace {
         .detach();
     }
 
-    /// Changes one pane's sort from its column headers.
-    pub(crate) fn set_pane_sort(&mut self, target: PaneTarget, sort: crate::sort::Sort, cx: &mut Context<Self>) {
-        if let Some(pane) = self.pane_mut_by_id(target.0) {
-            pane.set_sort(sort);
-            self.resort(target, cx);
-            cx.notify();
-        }
-    }
-
     fn all_pane_ids(&self) -> Vec<usize> {
         self.tabs
             .iter()
@@ -807,14 +799,14 @@ impl Workspace {
         let mut hidden_changed = false;
         let mut resorted = Vec::new();
         for id in &ids {
-            if let Some(pane) = self.pane_mut_by_id(*id) {
-                if pane.sort != sort {
-                    resorted.push(PaneTarget(*id));
-                }
-                hidden_changed |= pane.apply_preferences(show_hidden_files, sort, view);
+            let Some(pane) = self.pane_by_id(*id) else { continue };
+            // A folder's own sort and view win over the new defaults.
+            let sort = if pane.is_at_root() { sort } else { self.folder_views.sort(&pane.api, &pane.path, sort) };
+            let Some(pane) = self.pane_mut_by_id(*id) else { continue };
+            if pane.sort != sort {
+                resorted.push(PaneTarget(*id));
             }
-        }
-        for id in &ids {
+            hidden_changed |= pane.apply_preferences(show_hidden_files, sort, view);
             self.apply_folder_view(PaneTarget(*id));
         }
         self.save_preferences(cx);
@@ -1268,7 +1260,7 @@ pub(crate) fn launch_path(api: &Api, argument: &str) -> String {
     api.virtual_path(&folder).unwrap_or_default()
 }
 
-fn preference_sort(preferences: &Preferences) -> Sort {
+pub(super) fn preference_sort(preferences: &Preferences) -> Sort {
     Sort { field: preferences.default_sort, dir: preferences.default_sort_direction }
 }
 

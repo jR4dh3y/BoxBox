@@ -30,7 +30,7 @@ impl Workspace {
                     let _ = workspace.update(cx, |this, cx| {
                         this.active_pane = target;
                         let next = this.pane().sort.toggled(field);
-                        this.set_pane_sort(target, next, cx);
+                        this.choose_sort(target, next, cx);
                     });
                 }
             }))
