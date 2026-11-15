@@ -159,12 +159,13 @@ impl Workspace {
         .detach();
     }
 
+    /// Opens a mount on this computer, even in a pane that is on a server.
     fn open_mounted(&mut self, target: PaneTarget, name: &str, point: &Path, cx: &mut Context<Self>) {
-        let path = self.pane_by_id(target.0).and_then(|pane| pane.api.virtual_path(point));
-        match path {
+        let home = self.home.api.clone();
+        match home.virtual_path(point) {
             Some(path) => {
                 self.location_editor = None;
-                self.navigate_in(target, path, cx);
+                self.navigate_to(target, home, path, cx);
             }
             None => self.report(Err(format!("{name} is mounted at {}, outside the folders this window can open.", point.display())), cx),
         }

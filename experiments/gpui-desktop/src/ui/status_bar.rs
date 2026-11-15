@@ -13,7 +13,7 @@ impl Workspace {
     pub(crate) fn render_status_bar(&self, target: PaneTarget, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
         let item_count = if pane.is_at_root() {
-            self.storage(pane).map_or(0, |drives| drives.len())
+            self.storage().map_or(0, |drives| drives.len())
         } else {
             pane.items.len()
         };

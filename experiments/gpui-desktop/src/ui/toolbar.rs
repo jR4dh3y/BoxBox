@@ -387,7 +387,7 @@ impl Workspace {
             .enumerate()
             .map(|(index, place)| {
                 MenuItem::action(("history", index), self.place_label(target, place))
-                    .icon(if place.is_empty() { "layout-dashboard" } else { "folder" })
+                    .icon(if place.path.is_empty() { "layout-dashboard" } else { "folder" })
                     .on_select(cx.listener(move |this, _, _, cx| {
                         this.history_menu = None;
                         this.travel(target, back, index + 1, cx);

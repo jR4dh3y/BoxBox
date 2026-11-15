@@ -11,6 +11,30 @@ use crate::api::{Api, DriveStats, FileInfo, MountPoint};
 use crate::search;
 use crate::sort::{sort_files, Sort};
 
+/// A folder in a pane's history, on the provider that holds it: a tab moves
+/// between this computer and paired servers.
+#[derive(Clone)]
+pub struct Place {
+    pub api: Arc<Api>,
+    pub path: String,
+}
+
+impl PartialEq for Place {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.api, &other.api) && self.path == other.path
+    }
+}
+
+/// What `Pane::navigate_to` did.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Moved {
+    /// The place was already open.
+    No,
+    Within,
+    /// To another provider, whose drives the pane must load.
+    Across,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct View {
     pub sort: Sort,
@@ -62,6 +86,7 @@ pub enum Move {
     Focus,
 }
 
+#[derive(Clone)]
 pub enum Load<T> {
     Loading,
     Loaded(T),
@@ -103,8 +128,8 @@ pub struct Pane {
     pub(crate) api: std::sync::Arc<Api>,
     pub(crate) roots: Load<Vec<MountPoint>>,
     pub(crate) drives: Load<Vec<DriveStats>>,
-    back: Vec<String>,
-    forward: Vec<String>,
+    back: Vec<Place>,
+    forward: Vec<Place>,
     pub listing: Listing,
     /// Whether the open folder takes new entries, renames and deletions.
     pub writable: bool,
@@ -213,38 +238,67 @@ impl Pane {
     }
 
     /// Returns false when `path` is already open.
+    #[cfg(test)]
     pub fn navigate(&mut self, path: String) -> bool {
-        if path == self.path {
-            return false;
+        self.navigate_to(self.api.clone(), path) != Moved::No
+    }
+
+    pub fn place(&self) -> Place {
+        Place { api: self.api.clone(), path: self.path.clone() }
+    }
+
+    /// Opens `path` on `api`, which may be another provider than the current one.
+    pub fn navigate_to(&mut self, api: Arc<Api>, path: String) -> Moved {
+        let place = Place { api, path };
+        if place == self.place() {
+            return Moved::No;
         }
-        self.back.push(std::mem::replace(&mut self.path, path));
+        let previous = self.enter(place);
+        self.back.push(previous);
         self.forward.clear();
+        self.moved_from(&self.back.last().expect("just pushed").api.clone())
+    }
+
+    /// Makes `place` current and returns the place it replaces.
+    fn enter(&mut self, place: Place) -> Place {
+        let previous = Place { api: std::mem::replace(&mut self.api, place.api), path: std::mem::replace(&mut self.path, place.path) };
         self.reset();
-        true
+        previous
+    }
+
+    fn moved_from(&mut self, previous: &Arc<Api>) -> Moved {
+        if Arc::ptr_eq(previous, &self.api) {
+            return Moved::Within;
+        }
+        self.roots = Load::Loading;
+        self.drives = Load::Loading;
+        Moved::Across
     }
 
     /// Places Back would go to, nearest first, and the same for Forward.
-    pub fn history(&self) -> (Vec<String>, Vec<String>) {
+    pub fn history(&self) -> (Vec<Place>, Vec<Place>) {
         (self.back.iter().rev().cloned().collect(), self.forward.iter().rev().cloned().collect())
     }
 
     /// Drops `missing` places from both histories, then moves `steps` places back or
-    /// forward. Returns false when there was nowhere to go.
-    pub fn travel(&mut self, back: bool, steps: usize, missing: &HashSet<String>) -> bool {
-        self.back.retain(|path| !missing.contains(path));
-        self.forward.retain(|path| !missing.contains(path));
-        let (from, to) = if back { (&mut self.back, &mut self.forward) } else { (&mut self.forward, &mut self.back) };
+    /// forward.
+    pub fn travel(&mut self, back: bool, steps: usize, missing: &[Place]) -> Moved {
+        self.back.retain(|place| !missing.contains(place));
+        self.forward.retain(|place| !missing.contains(place));
+        let from = if back { &mut self.back } else { &mut self.forward };
         if steps == 0 || from.len() < steps {
-            return false;
+            return Moved::No;
         }
-        let mut current = std::mem::take(&mut self.path);
-        for _ in 0..steps {
-            to.push(current);
-            current = from.pop().expect("checked above");
+        let mut skipped = Vec::with_capacity(steps);
+        for _ in 1..steps {
+            skipped.push(from.pop().expect("checked above"));
         }
-        self.path = current;
-        self.reset();
-        true
+        let destination = from.pop().expect("checked above");
+        let previous = self.enter(destination);
+        let to = if back { &mut self.forward } else { &mut self.back };
+        to.push(previous.clone());
+        to.extend(skipped);
+        self.moved_from(&previous.api)
     }
 
     fn reset(&mut self) {
@@ -699,9 +753,9 @@ mod tests {
             },
         );
         assert_eq!(pane.selected.len(), 2);
-        assert!(pane.travel(true, 1, &HashSet::new()));
+        assert_eq!(pane.travel(true, 1, &[]), Moved::Within);
         assert!(pane.is_at_root() && pane.selected.is_empty() && pane.can_go_forward());
-        assert!(pane.travel(false, 1, &HashSet::new()));
+        assert_eq!(pane.travel(false, 1, &[]), Moved::Within);
         assert_eq!(pane.path, "d");
     }
 
@@ -732,15 +786,35 @@ mod tests {
         for path in ["a", "b", "c", "d"] {
             pane.navigate(path.into());
         }
-        let gone: HashSet<String> = ["c".to_string()].into();
-        assert!(pane.travel(true, 1, &gone));
+        let gone = [Place { api: pane.api.clone(), path: "c".into() }];
+        assert_eq!(pane.travel(true, 1, &gone), Moved::Within);
         assert_eq!(pane.path, "b");
-        assert_eq!(pane.history(), (vec!["a".into(), String::new()], vec!["d".into()]));
-        assert!(pane.travel(true, 2, &HashSet::new()));
+        let paths = |places: Vec<Place>| places.into_iter().map(|place| place.path).collect::<Vec<_>>();
+        let (back, forward) = pane.history();
+        assert_eq!((paths(back), paths(forward)), (vec!["a".into(), String::new()], vec!["d".into()]));
+        assert_eq!(pane.travel(true, 2, &[]), Moved::Within);
         assert_eq!(pane.path, "");
-        assert!(pane.travel(false, 3, &HashSet::new()));
+        assert_eq!(pane.travel(false, 3, &[]), Moved::Within);
         assert_eq!(pane.path, "d");
-        assert!(!pane.travel(false, 1, &HashSet::new()));
+        assert_eq!(pane.travel(false, 1, &[]), Moved::No);
+    }
+
+    #[test]
+    fn history_remembers_each_places_provider() {
+        let mut pane = Pane::new(0, String::new(), false, Sort::default(), ViewMode::List);
+        let home = pane.api.clone();
+        let server = Arc::new(Api::new("http://nas:8080", None));
+        pane.navigate("a".into());
+        assert_eq!(pane.navigate_to(server.clone(), "media".into()), Moved::Across);
+        assert!(Arc::ptr_eq(&pane.api, &server));
+        assert!(matches!(pane.drives, Load::Loading), "the server's drives load next");
+        assert_eq!(pane.navigate_to(server.clone(), "media/films".into()), Moved::Within);
+        // Two steps back crosses to this computer again.
+        assert_eq!(pane.travel(true, 2, &[]), Moved::Across);
+        assert!(Arc::ptr_eq(&pane.api, &home));
+        assert_eq!(pane.path, "a");
+        assert_eq!(pane.travel(false, 1, &[]), Moved::Across);
+        assert_eq!((pane.path.as_str(), Arc::ptr_eq(&pane.api, &server)), ("media", true));
     }
 
     #[test]
@@ -786,7 +860,7 @@ mod tests {
     fn every_load_invalidates_older_requests() {
         let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
         let pending = pane.begin_load();
-        pane.travel(true, 1, &HashSet::new());
+        pane.travel(true, 1, &[]);
         assert!(pane.navigate(String::new()));
         assert_ne!(pane.begin_load(), pending);
         assert!(matches!(pane.listing, Listing::Root));

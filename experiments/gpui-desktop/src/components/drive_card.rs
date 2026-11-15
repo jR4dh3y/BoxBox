@@ -71,6 +71,8 @@ pub struct DriveInfo {
     pub glyph: &'static str,
     pub state: DriveState,
     pub read_only: bool,
+    /// The server a remote drive is on.
+    pub origin: Option<SharedString>,
     pub device: Option<String>,
     pub fs_type: Option<String>,
 }
@@ -170,7 +172,7 @@ impl RenderOnce for DriveCard {
                             })
                             .when(drive.read_only, |line| line.child(div().ml(px(4.)).text_color(c(WARNING)).child("· Read-only"))),
                     )
-                    .when(device.is_some() || fs_type.is_some(), |info| {
+                    .when(drive.origin.is_some() || device.is_some() || fs_type.is_some(), |info| {
                         info.child(
                             div()
                                 .flex()
@@ -179,6 +181,10 @@ impl RenderOnce for DriveCard {
                                 .whitespace_nowrap()
                                 .text_11()
                                 .text_color(c(TEXT_MUTED))
+                                .when_some(drive.origin.clone(), |line, origin| {
+                                    let origin = if device.is_some() { format!("{origin}\u{a0}·\u{a0}") } else { origin.to_string() };
+                                    line.child(div().text_color(c(TEXT_SECONDARY)).child(origin))
+                                })
                                 .when_some(device.clone(), |line, device| line.child(div().font_family(self.mono.clone()).child(device)))
                                 .when_some(fs_type, |line, fs| {
                                     let fs = if device.is_some() { format!("\u{a0}· {fs}") } else { fs };

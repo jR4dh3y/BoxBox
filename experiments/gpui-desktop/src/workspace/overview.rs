@@ -1,22 +1,43 @@
-//! The Overview: every drive and device a pane can open, in one list that the
-//! cards, the table, the sidebar and the status bar share.
+//! The Overview: every drive the window can open, in one list that the cards,
+//! the table, the sidebar and the status bar share. This computer's drives and
+//! devices come first, then each paired server's drives, as if they were local.
+
+use std::sync::Arc;
 
 use gpui::{Context, Window};
 
-use crate::api::DriveStats;
+use crate::api::{Api, DriveStats, MountPoint};
 use crate::components::{DriveInfo, DriveState, Usage};
 use crate::devices::{Kind, State, Volume};
-use crate::pane::{Load, Pane};
+use crate::pane::Load;
 use crate::settings_state::SavedConnection;
+use crate::workspace::servers::ServerState;
 use crate::workspace::Workspace;
 
-/// A drive the provider lists, a disk, phone or share the system reports, or a
-/// paired BoxBox server.
+/// The window's own provider, whose drives and places the sidebar always shows.
+pub(crate) struct Home {
+    pub api: Arc<Api>,
+    pub roots: Load<Vec<MountPoint>>,
+    pub drives: Load<Vec<DriveStats>>,
+}
+
+impl Home {
+    pub fn new(api: Arc<Api>) -> Self {
+        Self { api, roots: Load::Loading, drives: Load::Loading }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) enum Storage {
+    /// A drive of the window's own provider.
     Drive(DriveStats),
+    /// A disk, phone or share the system reports.
     Volume(Volume),
-    Server(SavedConnection),
+    /// A drive on a paired server.
+    ServerDrive { server: SavedConnection, api: Arc<Api>, drive: DriveStats },
+    /// A saved server whose drives are not known: connecting, unpaired or offline,
+    /// with the server's own words when it gave any.
+    Server { server: SavedConnection, status: &'static str, reason: Option<String> },
 }
 
 pub(crate) fn volume_glyph(volume: &Volume) -> &'static str {
@@ -28,14 +49,19 @@ pub(crate) fn volume_glyph(volume: &Volume) -> &'static str {
     }
 }
 
+fn usage(drive: &DriveStats) -> DriveState {
+    DriveState::Usage(Usage { total: drive.total_bytes, used: drive.used_bytes, free: drive.free_bytes, pct: drive.used_pct })
+}
+
 impl Storage {
     pub fn info(&self) -> DriveInfo {
         match self {
             Storage::Drive(drive) => DriveInfo {
                 name: drive.display_name().to_string().into(),
                 glyph: "hard-drive",
-                state: DriveState::Usage(Usage { total: drive.total_bytes, used: drive.used_bytes, free: drive.free_bytes, pct: drive.used_pct }),
+                state: usage(drive),
                 read_only: drive.read_only,
+                origin: None,
                 device: drive.device.clone(),
                 fs_type: drive.fs_type.clone(),
             },
@@ -56,39 +82,79 @@ impl Storage {
                     glyph: volume_glyph(volume),
                     state,
                     read_only,
+                    origin: None,
                     device: volume.device.clone(),
                     fs_type: volume.fs_type.clone(),
                 }
             }
-            // Its drives show once it is open, in its own tab.
-            Storage::Server(connection) => DriveInfo {
-                name: connection.name.clone().into(),
+            Storage::ServerDrive { server, drive, .. } => DriveInfo {
+                name: drive.display_name().to_string().into(),
                 glyph: "server",
-                state: DriveState::Status { status: "BoxBox server".into(), size: None },
+                state: usage(drive),
+                read_only: drive.read_only,
+                origin: Some(server.name.clone().into()),
+                device: drive.device.clone(),
+                fs_type: drive.fs_type.clone(),
+            },
+            Storage::Server { server, status, .. } => DriveInfo {
+                name: server.name.clone().into(),
+                glyph: "server",
+                state: DriveState::Status { status: (*status).into(), size: None },
                 read_only: false,
-                device: Some(connection.url.clone()),
+                origin: None,
+                device: Some(server.url.clone()),
                 fs_type: None,
             },
+        }
+    }
+
+    /// Whether the pane is on this entry: the same provider, at or under its drive.
+    pub fn holds(&self, workspace: &Workspace, api: &Arc<Api>, path: &str) -> bool {
+        let under = |root: &str| path == root || path.starts_with(&format!("{root}/"));
+        match self {
+            Storage::Drive(drive) => Arc::ptr_eq(api, &workspace.home.api) && under(&drive.name),
+            Storage::ServerDrive { api: server, drive, .. } => Arc::ptr_eq(api, server) && under(&drive.name),
+            Storage::Volume(_) | Storage::Server { .. } => false,
         }
     }
 }
 
 impl Workspace {
-    /// The pane's drives, then, on this computer, its disks, phones and shares,
-    /// and the saved servers. None until the drives load.
-    pub(crate) fn storage(&self, pane: &Pane) -> Option<Vec<Storage>> {
-        let Load::Loaded(drives) = &pane.drives else { return None };
-        let local = pane.api.is_local();
-        let volumes = local.then(|| self.devices.volumes()).into_iter().flatten().cloned().map(Storage::Volume);
-        let servers = local.then_some(&self.desktop_settings.connections).into_iter().flatten().cloned().map(Storage::Server);
-        Some(drives.iter().cloned().map(Storage::Drive).chain(volumes).chain(servers).collect())
+    /// This computer's drives, its disks, phones and shares, then each saved
+    /// server's drives, or one entry for a server that has none to show yet.
+    /// None until this computer's drives load.
+    pub(crate) fn storage(&self) -> Option<Vec<Storage>> {
+        let Load::Loaded(drives) = &self.home.drives else { return None };
+        let local = self.home.api.is_local();
+        let mut storage: Vec<Storage> = drives.iter().cloned().map(Storage::Drive).collect();
+        if local {
+            storage.extend(self.devices.volumes().cloned().map(Storage::Volume));
+        }
+        for server in &self.desktop_settings.connections {
+            let (status, reason) = match self.servers.state(&server.id) {
+                Some(ServerState::Ready { api, drives }) if !drives.is_empty() => {
+                    storage.extend(drives.iter().map(|drive| Storage::ServerDrive { server: server.clone(), api: api.clone(), drive: drive.clone() }));
+                    continue;
+                }
+                Some(ServerState::Ready { .. }) => ("No drives shared", None),
+                None | Some(ServerState::Connecting) => ("Connecting…", None),
+                Some(ServerState::NeedsPairing(reason)) => ("Not paired", Some(reason.clone())),
+                Some(ServerState::Offline(reason)) => ("Can’t reach the server", Some(reason.clone())),
+            };
+            storage.push(Storage::Server { server: server.clone(), status, reason });
+        }
+        Some(storage)
     }
 
     pub(crate) fn open_storage(&mut self, storage: Storage, window: &mut Window, cx: &mut Context<Self>) {
         match storage {
-            Storage::Drive(drive) => self.navigate(drive.name, cx),
+            Storage::Drive(drive) => {
+                let home = self.home.api.clone();
+                self.navigate_to(self.active_pane, home, drive.name, cx);
+            }
             Storage::Volume(volume) => self.open_volume(volume, window, cx),
-            Storage::Server(connection) => self.connect_server(connection, cx),
+            Storage::ServerDrive { api, drive, .. } => self.navigate_to(self.active_pane, api, drive.name, cx),
+            Storage::Server { server, .. } => self.connect_server(server, true, cx),
         }
     }
 }

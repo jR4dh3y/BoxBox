@@ -301,7 +301,8 @@ fn history_menus_list_and_back_skips_folders_that_are_gone(cx: &mut TestAppConte
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| {
         let menu = workspace.history_menu.as_ref().expect("right-click on Back lists the places");
-        assert_eq!(menu.places, ["home/a/b", "home/a", "home"]);
+        let paths: Vec<&str> = menu.places.iter().map(|place| place.path.as_str()).collect();
+        assert_eq!(paths, ["home/a/b", "home/a", "home"]);
     });
     click(cx, "history-2");
     cx.run_until_parked();
@@ -341,18 +342,49 @@ fn drag(cx: &mut VisualTestContext, from: &'static str, to: &'static str) {
 }
 
 #[gpui::test]
-fn the_overview_lists_saved_servers_after_the_drives(cx: &mut TestAppContext) {
+fn servers_drives_sit_beside_this_computers(cx: &mut TestAppContext) {
+    use crate::settings_state::SavedConnection;
+    use servers::ServerState;
     let (view, cx, _fixture) = open(cx, &["a.txt"]);
+    let server = Arc::new(Api::new("http://nas:8080", None));
+    let drive = |name: &str| crate::api::DriveStats {
+        name: name.into(),
+        label: None,
+        device: Some("/dev/sdb1".into()),
+        fs_type: Some("ext4".into()),
+        total_bytes: 100,
+        free_bytes: 60,
+        used_bytes: 40,
+        used_pct: 40.,
+        read_only: false,
+    };
     view.update(cx, |workspace, _| {
-        let server = crate::settings_state::SavedConnection { id: "s1".into(), name: "Home server".into(), url: "http://nas:8080".into() };
-        workspace.desktop_settings.connections.push(server);
+        workspace.desktop_settings.connections.push(SavedConnection { id: "nas".into(), name: "nas".into(), url: "http://nas:8080".into() });
+        workspace.desktop_settings.connections.push(SavedConnection { id: "office".into(), name: "office".into(), url: "http://office:8080".into() });
+        workspace.servers.set("nas", ServerState::Ready { api: server.clone(), drives: vec![drive("media"), drive("backups")] });
+        workspace.servers.set("office", ServerState::Offline("cannot reach BoxBox server".into()));
     });
+    // This machine's own disks and phones may show up too; they are not this test's.
+    let storage: Vec<_> = view.read_with(cx, |workspace, _| workspace.storage().expect("drives loaded")).into_iter().filter(|entry| !matches!(entry, overview::Storage::Volume(_))).collect();
+    let names: Vec<String> = storage.iter().map(|entry| entry.info().name.to_string()).collect();
+    assert_eq!(names, ["Home", "media", "backups", "office"], "this computer's drive, the ready server's drives, then the offline one");
+    assert_eq!(storage[1].info().origin.map(|origin| origin.to_string()).as_deref(), Some("nas"));
+    assert!(matches!(&storage[3], overview::Storage::Server { status: "Can’t reach the server", .. }));
+
+    // A server drive opens in the same pane, which moves to the server; Back returns.
+    view.update(cx, |workspace, cx| workspace.navigate_to(workspace.active_pane, server.clone(), "media".into(), cx));
     view.read_with(cx, |workspace, _| {
-        let storage = workspace.storage(workspace.pane()).expect("drives loaded");
-        assert!(matches!(storage.first(), Some(overview::Storage::Drive(_))));
-        let Some(overview::Storage::Server(server)) = storage.last() else { panic!("the server comes last") };
-        assert_eq!(server.name, "Home server");
-        assert_eq!(storage.last().unwrap().info().device.as_deref(), Some("http://nas:8080"));
+        assert_eq!(workspace.tabs.len(), 1, "no new tab");
+        assert!(Arc::ptr_eq(&workspace.pane().api, &server));
+        assert!(storage[1].holds(workspace, &workspace.pane().api, "media/films"));
+        assert!(!storage[0].holds(workspace, &workspace.pane().api, "home"));
+    });
+    // The sidebar keeps this computer's places while the pane is on the server.
+    view.read_with(cx, |workspace, _| assert!(matches!(&workspace.home.roots, Load::Loaded(roots) if roots.iter().any(|root| root.name == "home"))));
+    view.update(cx, |workspace, cx| workspace.navigate(String::new(), cx));
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.pane().is_at_root());
+        assert!(Arc::ptr_eq(&workspace.pane().api, &workspace.home.api), "the Overview is this computer's");
     });
 }
 
