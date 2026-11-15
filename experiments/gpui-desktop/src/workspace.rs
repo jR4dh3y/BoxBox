@@ -1,4 +1,4 @@
-//! Root view: tabs of panes plus the drive data shared by the sidebar and This PC.
+//! Root view: tabs of panes plus the drive data shared by the sidebar and the Overview.
 //! Mirrors `lib/components/desktop/BrowseWorkspace.svelte`.
 
 use std::{collections::HashMap, fs, sync::Arc, time::Duration};
@@ -20,6 +20,7 @@ use crate::settings_state::{DesktopSettings, SettingsPanelState};
 pub(crate) mod favorites;
 pub(crate) mod confirm;
 pub(crate) mod devices;
+pub(crate) mod overview;
 pub(crate) mod drag_drop;
 pub(crate) mod jobs;
 mod notifications;

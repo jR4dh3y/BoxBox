@@ -12,7 +12,7 @@ impl Workspace {
         let closable = self.tabs.len() > 1;
         let tabs = self.tabs.iter().enumerate().map(|(index, pane)| {
             // The folder's name as the path bar shows it, so a device root reads as the device.
-            let title = self.breadcrumbs(PaneTarget(pane.id)).pop().map_or_else(|| "This PC".to_string(), |crumb| crumb.label);
+            let title = self.breadcrumbs(PaneTarget(pane.id)).pop().map_or_else(|| "Overview".to_string(), |crumb| crumb.label);
             let active = index == self.active_tab;
             div()
                 .flex()

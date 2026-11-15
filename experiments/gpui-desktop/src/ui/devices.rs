@@ -1,11 +1,11 @@
-//! The sidebar's Devices rows, and the dialog a mount opens to ask for a
-//! passphrase or a login.
+//! The sidebar's rows for disks, phones and shares, and the dialog a mount
+//! opens to ask for a passphrase or a login.
 
 use gpui::{div, prelude::*, px, Context, SharedString, Window};
 
 use super::TextScale;
-use crate::components::{self, Button, Input, Modal, SidebarSection};
-use crate::devices::{Kind, State, Volume};
+use crate::components::{self, Button, Input, Modal};
+use crate::devices::{State, Volume};
 use crate::format::file_size;
 use crate::theme::*;
 use crate::workspace::devices::CredentialField;
@@ -30,18 +30,13 @@ fn summary(volume: &Volume) -> String {
 }
 
 impl Workspace {
-    /// A plain label, then each volume: a usage bar when mounted, dimmed when not,
-    /// and a button to eject or unmount.
-    pub(crate) fn render_devices(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// Each volume: a usage bar when mounted, dimmed when not, and a button to
+    /// eject or unmount.
+    pub(crate) fn device_rows(&self, cx: &mut Context<Self>) -> Vec<gpui::Div> {
         let busy = self.devices.busy;
-        SidebarSection::new("devices", "Devices").children(self.devices.volumes().enumerate().map(|(index, volume)| {
+        self.devices.volumes().enumerate().map(|(index, volume)| {
             let (open, eject) = (volume.clone(), volume.clone());
-            let glyph = match (&volume.state, volume.kind) {
-                (State::Locked, _) => "lock",
-                (_, Kind::Disk) => "hard-drive",
-                (_, Kind::Phone) => "smartphone",
-                (_, Kind::Network) => "globe",
-            };
+            let glyph = crate::workspace::overview::volume_glyph(volume);
             let mut row = components::NavItem::new(SharedString::from(format!("volume-{index}")), volume.name.clone(), glyph)
                 .dim_icon(false)
                 .disabled(busy)
@@ -66,7 +61,7 @@ impl Workspace {
             let root = volume.mount_point().and_then(|point| self.pane().api.virtual_path(point));
             let row = self.sidebar_row(row, root, crate::workspace::place_menu::Place::Device(volume.clone()), cx);
             div().debug_selector(move || format!("volume-{index}")).child(row)
-        }))
+        }).collect()
     }
 
     fn credential_input(&self, label: &'static str, field: CredentialField, window: &Window, cx: &Context<Self>) -> impl IntoElement {

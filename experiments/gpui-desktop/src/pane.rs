@@ -97,7 +97,7 @@ pub enum Search {
 
 pub struct Pane {
     pub id: usize,
-    /// Virtual path; "" is This PC.
+    /// Virtual path; "" is the Overview.
     pub path: String,
     /// Provider identity and operations for this pane; another pane may use another provider.
     pub(crate) api: std::sync::Arc<Api>,

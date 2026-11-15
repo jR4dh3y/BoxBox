@@ -87,7 +87,7 @@ pub(crate) fn accepts(items: &[FileInfo], same: bool, folder: &str, moving: bool
     !onto_itself && !already_there
 }
 
-/// This PC holds drives, and Recent and Network are listings: none is a folder.
+/// The Overview holds drives, and Recent and Network are listings: none is a folder.
 fn takes_files(folder: &str) -> bool {
     !folder.is_empty() && folder != crate::local::RECENT && folder != crate::local::NETWORK
 }
@@ -194,7 +194,7 @@ impl Workspace {
             (Origin::Window, DropTarget::Trash) => self.drag_drop.source.as_ref().is_some_and(|source| source.api.is_local()),
             (Origin::Outside, DropTarget::Trash) => true,
             (Origin::Window, _) => self.drop_allowed(&target, request(window.modifiers())),
-            // This PC holds drives, not files; any folder takes files from outside.
+            // The Overview holds drives, not files; any folder takes files from outside.
             (Origin::Outside, _) => self.drop_destination(&target).is_some_and(|(_, _, folder)| takes_files(&folder)),
         };
         if allowed {

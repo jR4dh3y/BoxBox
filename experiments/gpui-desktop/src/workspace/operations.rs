@@ -141,7 +141,7 @@ impl Workspace {
     }
 
     /// Whether nothing may be created, renamed or removed in the pane's folder:
-    /// This PC, a folder without write permission, or a read-only server mount.
+    /// The Overview, a folder without write permission, or a read-only server mount.
     pub(crate) fn read_only(&self, target: PaneTarget) -> bool {
         let Some(pane) = self.pane_by_id(target.0) else { return true };
         let root = pane.path.split('/').next().unwrap_or("");

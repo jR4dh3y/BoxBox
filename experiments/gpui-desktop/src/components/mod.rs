@@ -21,7 +21,7 @@ mod toggle;
 mod tooltip;
 
 pub use button::{Button, ButtonSize, ButtonVariant};
-pub use drive_card::{usage_bar, usage_text, DriveCard};
+pub use drive_card::{usage_bar, usage_text, DriveCard, DriveInfo, DriveState, Usage};
 pub use context_menu::{ContextMenu, MenuItem};
 pub use file_grid::{FileTile, GridMetrics};
 pub use file_list::{rename_box, row_height, FileListHeader, FileRow, Selection};

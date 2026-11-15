@@ -53,22 +53,35 @@ fn tracker(connection: &Connection) -> Result<Proxy<'static>> {
     Ok(Proxy::new(connection, DAEMON, TRACKER_PATH, TRACKER)?)
 }
 
-fn volume(mount: MountInfo) -> Option<Volume> {
+/// A mount's spec keys as text, such as `type=mtp, host=…`.
+type Spec = HashMap<String, String>;
+
+fn volume(mount: MountInfo) -> Option<(Volume, Spec)> {
     let (daemon, object, name, _, _, _, _, _, _, fuse, (_, spec), _) = mount;
     let point = PathBuf::from(text(&fuse));
     // A mount without a folder cannot be browsed by path.
     if point.as_os_str().is_empty() {
         return None;
     }
-    let kind = spec.get("type").and_then(|value| <Vec<u8>>::try_from(value.try_clone().ok()?).ok()).map(|bytes| text(&bytes)).unwrap_or_default();
-    Some(Volume {
+    let spec: Spec = spec.into_iter().filter_map(|(key, value)| Some((key, text(&<Vec<u8>>::try_from(value).ok()?)))).collect();
+    let kind = spec.get("type").cloned().unwrap_or_default();
+    let volume = Volume {
         id: format!("gvfs:{daemon}{object}"),
         name,
         kind: if matches!(kind.as_str(), "mtp" | "gphoto2" | "afc") { Kind::Phone } else { Kind::Network },
         state: super::mounted(point, false),
         source: Source::GvfsMount { daemon, object: object.to_string() },
+        device: None,
+        fs_type: Some(kind).filter(|kind| !kind.is_empty()),
         ejectable: false,
-    })
+    };
+    Some((volume, spec))
+}
+
+/// Whether a monitor's device is the one a mount serves: GIO's shadow-mount match,
+/// by the device's location against the mount's spec.
+fn serves(spec: &Spec, uri: &str) -> bool {
+    spec::parse(uri).is_ok_and(|location| location.spec.iter().all(|(key, value)| spec.get(*key) == Some(value)))
 }
 
 /// The bus names of the installed volume monitors, except the disk one that
@@ -105,7 +118,9 @@ fn unmounted(connection: &Connection, monitor: &str) -> Result<Vec<Volume>> {
                 name,
                 kind: Kind::Phone,
                 state: State::Unmounted,
+                fs_type: uri.split_once("://").map(|(scheme, _)| scheme.to_string()),
                 source: Source::GvfsVolume { uri },
+                device: None,
                 ejectable: false,
             })
         })
@@ -116,13 +131,25 @@ fn unmounted(connection: &Connection, monitor: &str) -> Result<Vec<Volume>> {
 pub fn list(connection: &Connection) -> Result<Vec<Volume>> {
     let _span = crate::profile::span("gvfs.list");
     let mounts: Vec<MountInfo> = tracker(connection)?.call("ListMounts2", &(true,)).context("GVfs did not list its mounts")?;
-    let mut volumes: Vec<Volume> = mounts.into_iter().filter_map(volume).collect();
+    let mut mounted: Vec<(Volume, Spec)> = mounts.into_iter().filter_map(volume).collect();
+    let mut volumes = Vec::new();
     for monitor in monitors() {
         match unmounted(connection, &monitor) {
-            Ok(found) => volumes.extend(found),
+            Ok(found) => {
+                for device in found {
+                    let Source::GvfsVolume { uri } = &device.source else { continue };
+                    // A phone mounted by its location rather than through its volume is
+                    // still listed unmounted; it is one device, under the volume's name.
+                    match mounted.iter_mut().find(|(_, spec)| serves(spec, uri)) {
+                        Some((mount, _)) => mount.name = device.name,
+                        None => volumes.push(device),
+                    }
+                }
+            }
             Err(error) => log::info!("{monitor} did not list its devices: {error:#}"),
         }
     }
+    volumes.extend(mounted.into_iter().map(|(volume, _)| volume));
     volumes.sort_by(|left, right| crate::sort::natural_cmp(&left.name, &right.name));
     Ok(volumes)
 }
@@ -207,5 +234,13 @@ mod tests {
     fn byte_strings_lose_their_terminator() {
         assert_eq!(text(b"/run/user/1000/gvfs/x\0"), "/run/user/1000/gvfs/x");
         assert_eq!(text(b"plain"), "plain");
+    }
+
+    #[test]
+    fn a_mounted_phone_serves_its_volume() {
+        let spec: Spec = [("type", "mtp"), ("host", "Nothing_A015_001")].into_iter().map(|(key, value)| (key.into(), value.into())).collect();
+        assert!(serves(&spec, "mtp://Nothing_A015_001/"));
+        assert!(!serves(&spec, "mtp://Other_002/"));
+        assert!(!serves(&spec, "gphoto2://Nothing_A015_001/"));
     }
 }

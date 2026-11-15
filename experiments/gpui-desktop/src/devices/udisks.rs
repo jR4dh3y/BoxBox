@@ -53,6 +53,15 @@ fn mount_points(properties: &Properties) -> Vec<PathBuf> {
         .collect()
 }
 
+/// A NUL-terminated byte-string property, such as `Block.PreferredDevice`.
+fn byte_text(properties: &Properties, name: &str) -> Option<String> {
+    let mut bytes = properties.get(name).and_then(|value| value.try_clone().ok()).and_then(|value| <Vec<u8>>::try_from(value).ok())?;
+    if bytes.last() == Some(&0) {
+        bytes.pop();
+    }
+    (!bytes.is_empty()).then(|| String::from_utf8_lossy(&bytes).into_owned())
+}
+
 /// Mounted under a user location, as GIO requires before it shows a mount.
 fn user_mount(path: &Path) -> bool {
     let home = std::env::var_os("HOME").map(PathBuf::from);
@@ -133,6 +142,8 @@ pub fn list(connection: &Connection) -> Result<Vec<Volume>> {
             kind: Kind::Disk,
             state,
             source: Source::Block { object: path.to_string(), crypto: crypto.map(|crypto| crypto.to_string()) },
+            device: byte_text(physical, "PreferredDevice"),
+            fs_type: property::<&str>(&block, "IdType").filter(|kind| !kind.is_empty()).map(str::to_string),
             ejectable,
         });
     }

@@ -292,7 +292,7 @@ impl Workspace {
         .detach();
     }
 
-    /// Sends every pane that was inside the removed volume back to This PC.
+    /// Sends every pane that was inside the removed volume back to the Overview.
     fn leave_volume(&mut self, volume: &Volume, cx: &mut Context<Self>) {
         let Some(point) = volume.mount_point() else { return };
         let inside: Vec<PaneTarget> = self

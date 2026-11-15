@@ -1,4 +1,4 @@
-//! `lib/components/Sidebar.svelte`: Drives, Places, Trash and Favorites.
+//! `lib/components/Sidebar.svelte`: Drives (the Overview, the system and every device), Places, Trash and Favorites.
 
 use gpui::{div, prelude::*, px, Context, SharedString};
 
@@ -20,6 +20,7 @@ struct NavItem {
 
 fn place_icon(name: &str) -> &'static str {
     match name.to_lowercase().as_str() {
+        "home" => "home",
         "desktop" => "monitor",
         "downloads" => "download",
         "documents" => "file-text",
@@ -55,9 +56,14 @@ impl Workspace {
         )
     }
 
-    fn nav_item(&self, id: String, item: NavItem, current: &str, cx: &mut Context<Self>) -> impl IntoElement {
+    /// A row that opens `item`, with a usage bar when it is a drive.
+    fn nav_item(&self, id: String, item: NavItem, usage: Option<f64>, current: &str, cx: &mut Context<Self>) -> impl IntoElement {
         let path = item.path;
-        let row = components::NavItem::new(SharedString::from(id.clone()), item.name, item.icon).active(is_active(current, &path)).on_click({
+        let mut row = components::NavItem::new(SharedString::from(id.clone()), item.name, item.icon).active(is_active(current, &path));
+        if let Some(usage) = usage {
+            row = row.usage(usage);
+        }
+        let row = row.on_click({
             let path = path.clone();
             cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx))
         });
@@ -91,15 +97,21 @@ impl Workspace {
             crate::pane::Load::Loaded(roots) => roots,
             _ => &[],
         };
-        let drives = std::iter::once(NavItem { name: "This PC".into(), path: String::new(), icon: "server" })
-            .chain(roots.iter().filter(|root| root.kind != RootKind::Place).map(|root| NavItem {
-                name: root.display_name().to_string().into(),
-                path: root.name.clone(),
-                icon: "hard-drive",
+        let usage = |name: &str| match &pane.drives {
+            crate::pane::Load::Loaded(drives) => drives.iter().find(|drive| drive.name == name).map(|drive| drive.used_pct),
+            _ => None,
+        };
+        let mut drives = std::iter::once((NavItem { name: "Overview".into(), path: String::new(), icon: "server" }, None))
+            .chain(roots.iter().filter(|root| root.kind != RootKind::Place).map(|root| {
+                let item = NavItem { name: root.display_name().to_string().into(), path: root.name.clone(), icon: "hard-drive" };
+                (item, usage(&root.name))
             }))
             .enumerate()
-            .map(|(index, item)| self.nav_item(format!("drive-{index}"), item, &current, cx))
+            .map(|(index, (item, usage))| self.nav_item(format!("drive-{index}"), item, usage, &current, cx).into_any_element())
             .collect::<Vec<_>>();
+        if pane.api.is_local() {
+            drives.extend(self.device_rows(cx).into_iter().map(IntoElement::into_any_element));
+        }
         let places = roots
             .iter()
             .filter(|root| root.kind == RootKind::Place)
@@ -109,7 +121,7 @@ impl Workspace {
                 icon: place_icon(&root.name),
             })
             .enumerate()
-            .map(|(index, item)| self.nav_item(format!("place-{index}"), item, &current, cx))
+            .map(|(index, item)| self.nav_item(format!("place-{index}"), item, None, &current, cx))
             .collect::<Vec<_>>();
         let favorites = self
             .favorites
@@ -154,7 +166,6 @@ impl Workspace {
             .bg(self.shell_background())
             .child(self.section("Drives", cx).children(drives))
             .when(!places.is_empty(), |sidebar| sidebar.child(self.section("Places", cx).children(places)))
-            .when(pane.api.is_local() && self.devices.volumes().next().is_some(), |sidebar| sidebar.child(self.render_devices(cx)))
             .when(pane.api.is_local(), |sidebar| {
                 // trash-2 has the lines of a full bin; trash is the empty one.
                 let row = components::NavItem::new("trash", "Trash", if self.trash_full { "trash-2" } else { "trash" })

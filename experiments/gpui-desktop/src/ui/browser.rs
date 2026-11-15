@@ -29,31 +29,31 @@ impl Workspace {
             self.render_trash(cx).into_any_element()
         } else {
             match (&pane.listing, pane.current_view_mode()) {
-            (Listing::Root, mode) => match &pane.drives {
-                Load::Loading => div()
-                    .p(px(24.))
-                    .text_sm_tw()
-                    .text_color(c(TEXT_SECONDARY))
-                    .child("Loading drives...")
-                    .into_any_element(),
-                Load::Failed(error) => div()
+            (Listing::Root, mode) => match (&pane.drives, self.storage(pane)) {
+                (Load::Failed(error), _) => div()
                     .p(px(24.))
                     .text_sm_tw()
                     .text_color(c(TEXT_SECONDARY))
                     .child(error.clone())
                     .into_any_element(),
-                Load::Loaded(drives) if drives.is_empty() => div()
+                (_, None) => div()
+                    .p(px(24.))
+                    .text_sm_tw()
+                    .text_color(c(TEXT_SECONDARY))
+                    .child("Loading drives...")
+                    .into_any_element(),
+                (_, Some(drives)) if drives.is_empty() => div()
                     .p(px(24.))
                     .text_sm_tw()
                     .text_color(c(TEXT_SECONDARY))
                     .child("No configured storage found")
                     .into_any_element(),
-                Load::Loaded(drives) => match mode {
+                (_, Some(drives)) => match mode {
                     ViewMode::Grid => self
-                        .render_drive_cards(drives, window, cx)
+                        .render_drive_cards(&drives, window, cx)
                         .into_any_element(),
                     ViewMode::List => self
-                        .render_drive_list(drives, window, cx)
+                        .render_drive_list(&drives, window, cx)
                         .into_any_element(),
                 },
             },

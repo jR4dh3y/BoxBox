@@ -136,7 +136,7 @@ impl Workspace {
             div()
                 .text_13()
                 .whitespace_nowrap()
-                .child("This PC")
+                .child("Overview")
                 .into_any_element()
         } else {
             self.render_crumbs(target, crumbs, window, cx).into_any_element()
@@ -155,14 +155,14 @@ impl Workspace {
             .py(px(4.))
             .child(
                 div()
-                    .id("home")
+                    .id("overview")
                     .size(px(18.))
                     .flex_none()
                     .flex()
                     .items_center()
                     .justify_center()
                     .cursor_pointer()
-                    .child(icon("home", 14., c(TEXT_SECONDARY)))
+                    .child(icon("server", 14., c(TEXT_SECONDARY)))
                     .on_click(cx.listener(|this, _, _, cx| this.navigate(String::new(), cx))),
             )
             .child(content).into_any_element()
@@ -471,7 +471,7 @@ impl Workspace {
                     .flex()
                     .flex_none()
                     .gap(px(4.))
-                    // At This PC nothing can be created, so the add button is disabled.
+                    // At the Overview nothing can be created, so the add button is disabled.
                     .child(
                         div()
                             .relative()

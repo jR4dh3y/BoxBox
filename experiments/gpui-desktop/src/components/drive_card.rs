@@ -1,10 +1,9 @@
 //! `lib/components/DriveCard.svelte`, and the usage bar and label that the
-//! This PC list shares with it.
+//! Overview table shares with it.
 
 use gpui::{div, prelude::*, px, AlignItems, App, ClickEvent, ElementId, FontWeight, Rgba, SharedString, Window};
 
 use super::{ProgressBar, ProgressSize, ProgressVariant, Type};
-use crate::api::DriveStats;
 use crate::format::file_size;
 use crate::theme::*;
 use crate::ui::{icon, TextScale};
@@ -32,17 +31,44 @@ pub fn usage_text(used_pct: f64) -> impl IntoElement {
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
+/// A mounted filesystem's size, in bytes.
+#[derive(Clone, Copy)]
+pub struct Usage {
+    pub total: u64,
+    pub used: u64,
+    pub free: u64,
+    pub pct: f64,
+}
+
+/// What a drive shows under its name: how full it is, or why that is unknown.
+#[derive(Clone)]
+pub enum DriveState {
+    Usage(Usage),
+    Status(SharedString),
+}
+
+/// What the Overview knows about one drive or device.
+#[derive(Clone)]
+pub struct DriveInfo {
+    pub name: SharedString,
+    pub glyph: &'static str,
+    pub state: DriveState,
+    pub read_only: bool,
+    pub device: Option<String>,
+    pub fs_type: Option<String>,
+}
+
 #[derive(IntoElement)]
 pub struct DriveCard {
     id: ElementId,
-    drive: DriveStats,
+    drive: DriveInfo,
     accent: Rgba,
     mono: SharedString,
     on_click: Option<ClickHandler>,
 }
 
 impl DriveCard {
-    pub fn new(id: impl Into<ElementId>, drive: DriveStats, accent: Rgba, mono: SharedString) -> Self {
+    pub fn new(id: impl Into<ElementId>, drive: DriveInfo, accent: Rgba, mono: SharedString) -> Self {
         Self { id: id.into(), drive, accent, mono, on_click: None }
     }
 
@@ -55,6 +81,13 @@ impl DriveCard {
 impl RenderOnce for DriveCard {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let accent = self.accent;
+        let drive = self.drive;
+        let usage = match &drive.state {
+            DriveState::Usage(usage) => Some(*usage),
+            DriveState::Status(_) => None,
+        };
+        let device = drive.device.clone().filter(|device| !device.is_empty());
+        let fs_type = drive.fs_type.clone().filter(|fs| !fs.is_empty());
         div()
             .id(self.id)
             .flex_1()
@@ -81,7 +114,7 @@ impl RenderOnce for DriveCard {
                     })
                     .rounded(px(4.))
                     .bg(c(SURFACE_ELEVATED))
-                    .child(icon("hard-drive", 22., c(TEXT_SECONDARY))),
+                    .child(icon(drive.glyph, 22., c(if usage.is_some() { TEXT_SECONDARY } else { TEXT_MUTED }))),
             )
             .child(
                 div()
@@ -95,78 +128,53 @@ impl RenderOnce for DriveCard {
                             .flex()
                             .items_start()
                             .gap(px(8.))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .text_sm_tw()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(self.drive.display_name().to_string()),
-                            )
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .rounded(px(4.))
-                                    .bg(c(SURFACE_ELEVATED))
-                                    .px(px(8.))
-                                    .py(px(2.))
-                                    .text_xs_tw()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .whitespace_nowrap()
-                                    .text_color(c(TEXT_SECONDARY))
-                                    .child(file_size(self.drive.total_bytes)),
-                            ),
+                            .child(div().flex_1().min_w_0().text_sm_tw().font_weight(FontWeight::MEDIUM).child(drive.name.clone()))
+                            .when_some(usage, |row, usage| {
+                                row.child(
+                                    div()
+                                        .flex_none()
+                                        .rounded(px(4.))
+                                        .bg(c(SURFACE_ELEVATED))
+                                        .px(px(8.))
+                                        .py(px(2.))
+                                        .text_xs_tw()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .whitespace_nowrap()
+                                        .text_color(c(TEXT_SECONDARY))
+                                        .child(file_size(usage.total)),
+                                )
+                            }),
                     )
                     .child(
                         div()
                             .flex()
                             .text_xs_tw()
                             .text_color(c(TEXT_MUTED))
-                            .child(format!(
-                                "{} used · {} free",
-                                file_size(self.drive.used_bytes),
-                                file_size(self.drive.free_bytes)
-                            ))
-                            .when(self.drive.read_only, |line| {
-                                line.child(
-                                    div().ml(px(4.)).text_color(c(WARNING)).child("· Read-only"),
-                                )
-                            }),
+                            .child(match &drive.state {
+                                DriveState::Usage(usage) => format!("{} used · {} free", file_size(usage.used), file_size(usage.free)).into(),
+                                DriveState::Status(status) => status.clone(),
+                            })
+                            .when(drive.read_only, |line| line.child(div().ml(px(4.)).text_color(c(WARNING)).child("· Read-only"))),
                     )
-                    .when_some(
-                        self.drive.device.clone().filter(|device| !device.is_empty()),
-                        |info, device| {
-                            info.child(
-                                div()
-                                    .flex()
-                                    .min_w_0()
-                                    .overflow_hidden()
-                                    .whitespace_nowrap()
-                                    .text_11()
-                                    .text_color(c(TEXT_MUTED))
-                                    .child(div().font_family(self.mono.clone()).child(device))
-                                    .when_some(
-                                        self.drive.fs_type.clone().filter(|fs| !fs.is_empty()),
-                                        |line, fs| {
-                                            line.child(
-                                                div()
-                                                    .text_color(c(TEXT_SECONDARY))
-                                                    .child(format!("\u{a0}· {fs}")),
-                                            )
-                                        },
-                                    ),
-                            )
-                        },
-                    )
-                    .child(
-                        div()
-                            .mt(px(2.))
-                            .flex()
-                            .items_center()
-                            .gap(px(12.))
-                            .child(usage_bar(self.drive.used_pct))
-                            .child(usage_text(self.drive.used_pct)),
-                    ),
+                    .when(device.is_some() || fs_type.is_some(), |info| {
+                        info.child(
+                            div()
+                                .flex()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_11()
+                                .text_color(c(TEXT_MUTED))
+                                .when_some(device.clone(), |line, device| line.child(div().font_family(self.mono.clone()).child(device)))
+                                .when_some(fs_type, |line, fs| {
+                                    let fs = if device.is_some() { format!("\u{a0}· {fs}") } else { fs };
+                                    line.child(div().text_color(c(TEXT_SECONDARY)).child(fs))
+                                }),
+                        )
+                    })
+                    .when_some(usage, |info, usage| {
+                        info.child(div().mt(px(2.)).flex().items_center().gap(px(12.)).child(usage_bar(usage.pct)).child(usage_text(usage.pct)))
+                    }),
             )
             .when_some(self.on_click, |card, handler| card.on_click(handler))
     }

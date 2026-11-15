@@ -57,6 +57,10 @@ pub struct Volume {
     pub kind: Kind,
     pub state: State,
     pub source: Source,
+    /// The block device, such as `/dev/sda1`; GVfs locations have none.
+    pub device: Option<String>,
+    /// The filesystem, or the GVfs backend such as `mtp` or `smb-share`.
+    pub fs_type: Option<String>,
     /// Removable media or a drive that can be ejected; otherwise it can only be unmounted.
     pub ejectable: bool,
 }

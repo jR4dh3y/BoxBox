@@ -18,7 +18,7 @@ pub(crate) struct HistoryMenu {
     pub position: Point<Pixels>,
 }
 
-/// Whether a folder in history can still be opened. This PC always can.
+/// Whether a folder in history can still be opened. The Overview always can.
 fn exists(api: &Api, path: &str) -> bool {
     if path.is_empty() {
         return true;
@@ -92,7 +92,7 @@ impl Workspace {
     /// A place's name in the history menu: its folder name, or the drive's.
     pub(crate) fn place_label(&self, target: PaneTarget, path: &str) -> String {
         if path.is_empty() {
-            return "This PC".into();
+            return "Overview".into();
         }
         if !path.contains('/') {
             if let Some(crate::pane::Load::Loaded(roots)) = self.pane_by_id(target.0).map(|pane| &pane.roots) {

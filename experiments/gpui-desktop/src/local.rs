@@ -47,18 +47,13 @@ impl LocalFiles {
         let mut mounts = vec![Mount {
             point: MountPoint {
                 name: "files".into(),
-                label: Some("Files".into()),
+                label: Some("System".into()),
                 kind: RootKind::Drive,
             },
             path: filesystem,
         }];
-        add_mount(
-            &mut mounts,
-            "home",
-            Some("Home"),
-            RootKind::Drive,
-            home.clone(),
-        );
+        // Home is a folder on the system drive, not a drive of its own.
+        add_mount(&mut mounts, "home", Some("Home"), RootKind::Place, home.clone());
         for (name, label, config_key, fallback) in [
             ("desktop", "Desktop", "XDG_DESKTOP_DIR", "Desktop"),
             ("documents", "Documents", "XDG_DOCUMENTS_DIR", "Documents"),
@@ -112,12 +107,13 @@ impl LocalFiles {
         })
     }
 
-    /// The mounts, with Recent first among the places and Network last. Those two
-    /// are listings, not folders.
+    /// The mounts, with Home then Recent first among the places and Network last.
+    /// Recent and Network are listings, not folders.
     pub fn roots(&self) -> Result<Vec<MountPoint>> {
         let place = |name: &str, label: &str| MountPoint { name: name.into(), label: Some(label.into()), kind: RootKind::Place };
         let (drives, places): (Vec<_>, Vec<_>) = self.mounts.iter().map(|mount| mount.point.clone()).partition(|point| point.kind == RootKind::Drive);
-        Ok(drives.into_iter().chain([place(RECENT, "Recent")]).chain(places).chain([place(NETWORK, "Network")]).collect())
+        let (home, places): (Vec<_>, Vec<_>) = places.into_iter().partition(|point| point.name == "home");
+        Ok(drives.into_iter().chain(home).chain([place(RECENT, "Recent")]).chain(places).chain([place(NETWORK, "Network")]).collect())
     }
 
     pub fn drives(&self) -> Result<Vec<DriveStats>> {
