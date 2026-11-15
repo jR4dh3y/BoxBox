@@ -19,7 +19,22 @@ pub struct FileInfo {
     pub path: String,
     pub size: u64,
     pub is_dir: bool,
-    pub mod_time: String,
+    /// Milliseconds since the Unix epoch. A number, not the server's RFC 3339
+    /// text: a 20,000-entry folder sorted by date parsed every one of them.
+    #[serde(default, deserialize_with = "rfc3339_millis")]
+    pub mod_time: Option<i64>,
+}
+
+pub fn mod_time(time: std::time::SystemTime) -> Option<i64> {
+    match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(after) => i64::try_from(after.as_millis()).ok(),
+        Err(before) => i64::try_from(before.duration().as_millis()).ok().map(|millis| -millis),
+    }
+}
+
+fn rfc3339_millis<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<i64>, D::Error> {
+    let text = Option::<String>::deserialize(deserializer)?;
+    Ok(text.and_then(|text| chrono::DateTime::parse_from_rfc3339(&text).ok()).map(|date| date.timestamp_millis()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -572,7 +587,7 @@ mod tests {
             path: String::new(),
             size: 12,
             is_dir: false,
-            mod_time: String::new(),
+            mod_time: None,
         }
     }
 
@@ -584,6 +599,17 @@ mod tests {
         })
         .unwrap();
         assert_eq!(items[0].path, "media/My Photos/été #1.txt");
+    }
+
+    #[test]
+    fn reads_the_servers_modified_time() {
+        let item: FileInfo = serde_json::from_str(r#"{"name":"a","size":1,"isDir":false,"modTime":"2024-11-05T10:20:30.5+01:00"}"#).unwrap();
+        assert_eq!(item.mod_time, Some(1_730_798_430_500));
+        let item: FileInfo = serde_json::from_str(r#"{"name":"a","size":1,"isDir":false,"modTime":""}"#).unwrap();
+        assert_eq!(item.mod_time, None);
+        let item: FileInfo = serde_json::from_str(r#"{"name":"a","size":1,"isDir":false}"#).unwrap();
+        assert_eq!(item.mod_time, None);
+        assert_eq!(mod_time(std::time::UNIX_EPOCH - std::time::Duration::from_millis(5)), Some(-5));
     }
 
     #[test]

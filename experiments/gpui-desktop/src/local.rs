@@ -14,10 +14,8 @@ use std::ffi::CString;
 use std::fs::{self, OpenOptions};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::time::SystemTime;
 
 use anyhow::{bail, ensure, Context as _, Result};
-use chrono::{DateTime, Utc};
 
 use crate::api::{DriveStats, FileInfo, MountPoint, RootKind, TrashItem};
 
@@ -133,16 +131,18 @@ impl LocalFiles {
             _ => {}
         }
         let (mount, directory) = self.resolve_directory(path)?;
-        let mut entries = fs::read_dir(&directory)
+        let entries = fs::read_dir(&directory)
             .with_context(|| format!("cannot list {}", path))?
             .map(|entry| entry.map_err(anyhow::Error::from))
             .collect::<Result<Vec<_>>>()?;
-        entries.sort_by_key(|entry| entry.file_name());
-        map_entries(&entries, |entry| self.info_for_entry(mount, path, entry))
+        let mut items = map_entries(&entries, |entry| self.info_for_entry(mount, path, entry))
             .into_iter()
             // Deleted since the folder was read, as happens in a busy Downloads.
             .filter(|result| !matches!(result, Err(error) if is_not_found(error)))
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        // By the names already read: `DirEntry::file_name` allocates on every call.
+        items.sort_unstable_by(|left, right| left.name.cmp(&right.name));
+        Ok(items)
     }
 
     pub fn create_directory(&self, parent: &str, name: &str) -> Result<FileInfo> {
@@ -233,7 +233,7 @@ impl LocalFiles {
         // A drive or place itself, named as the sidebar names it.
         if let Some(mount) = self.mounts.iter().find(|mount| mount.point.name == path) {
             let metadata = fs::metadata(&mount.path).with_context(|| format!("cannot inspect {path}"))?;
-            let mod_time = metadata.modified().map(format_time).unwrap_or_default();
+            let mod_time = metadata.modified().ok().and_then(crate::api::mod_time);
             return Ok(FileInfo { name: mount.point.display_name().to_string(), path: path.to_string(), size: metadata.len(), is_dir: true, mod_time });
         }
         let (mount, real) = self.resolve_entry(path)?;
@@ -521,10 +521,7 @@ impl LocalFiles {
         } else {
             entry_metadata
         };
-        let mod_time = metadata
-            .modified()
-            .map(format_time)
-            .unwrap_or_default();
+        let mod_time = metadata.modified().ok().and_then(crate::api::mod_time);
         let virtual_path = if parent.is_empty() {
             format!("{}/{}", mount.point.name, name)
         } else {
@@ -580,7 +577,7 @@ pub const NETWORK: &str = "network";
 fn network_entries() -> Result<Vec<FileInfo>> {
     Ok(network::browse()?
         .into_iter()
-        .map(|server| FileInfo { name: format!("{} ({})", server.name, server.kind), path: server.uri, size: 0, is_dir: true, mod_time: String::new() })
+        .map(|server| FileInfo { name: format!("{} ({})", server.name, server.kind), path: server.uri, size: 0, is_dir: true, mod_time: None })
         .collect())
 }
 
@@ -657,10 +654,6 @@ fn parent_of_virtual(path: &str) -> &str {
 
 fn is_not_found(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| cause.downcast_ref::<std::io::Error>().is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound))
-}
-
-fn format_time(time: SystemTime) -> String {
-    DateTime::<Utc>::from(time).to_rfc3339()
 }
 
 fn skip_search_directory(mount: &Mount, path: &Path) -> bool {

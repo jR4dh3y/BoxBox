@@ -671,7 +671,7 @@ mod tests {
             path: format!("d/{name}"),
             size: 10,
             is_dir: false,
-            mod_time: String::new(),
+            mod_time: None,
         }
     }
 

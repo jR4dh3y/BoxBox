@@ -14,7 +14,7 @@ const THUMBNAIL_CACHE_CAPACITY: usize = 512;
 pub(crate) struct ThumbnailKey {
     pub provider: FavoriteProvider,
     pub path: String,
-    pub mod_time: String,
+    pub mod_time: Option<i64>,
     pub size: u64,
 }
 
@@ -23,7 +23,7 @@ impl ThumbnailKey {
         Self {
             provider: FavoriteProvider::for_api(api),
             path: item.path.clone(),
-            mod_time: item.mod_time.clone(),
+            mod_time: item.mod_time,
             size: item.size,
         }
     }

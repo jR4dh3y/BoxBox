@@ -9,7 +9,6 @@ use std::{
 };
 
 use anyhow::{bail, Context as _, Result};
-use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -657,11 +656,7 @@ fn new_upload_id() -> String {
 }
 
 fn file_info_from_metadata(name: &str, path: &str, metadata: &fs::Metadata) -> FileInfo {
-    let mod_time = metadata
-        .modified()
-        .ok()
-        .map(|time| DateTime::<Utc>::from(time).to_rfc3339())
-        .unwrap_or_default();
+    let mod_time = metadata.modified().ok().and_then(super::mod_time);
     FileInfo {
         name: name.to_owned(),
         path: path.to_owned(),

@@ -2,8 +2,6 @@
 
 use std::cmp::Ordering;
 
-use chrono::DateTime;
-
 use crate::api::FileInfo;
 
 /// Serialised with the settings file's labels.
@@ -69,17 +67,12 @@ impl Sort {
 /// Folders lead every sort. Size and time sort by value, and their ties by
 /// ascending natural name; name and type sort by name in `dir`. Paths break
 /// remaining ties, so repeated reads keep one order.
-///
-/// Keys are read once per item rather than once per comparison: parsing the
-/// timestamp inside the comparator made 100k files take 240 ms.
 pub fn sort_files(items: &mut Vec<FileInfo>, sort: Sort) {
     let by_value = matches!(sort.field, SortField::Size | SortField::Modified);
     let value = |item: &FileInfo| -> i64 {
         match sort.field {
             SortField::Size => i64::try_from(item.size).unwrap_or(i64::MAX),
-            SortField::Modified => DateTime::parse_from_rfc3339(&item.mod_time)
-                .map(|date| date.timestamp_millis())
-                .unwrap_or(0),
+            SortField::Modified => item.mod_time.unwrap_or(0),
             SortField::Name | SortField::Type => 0,
         }
     };
@@ -155,7 +148,7 @@ mod tests {
             path: name.into(),
             size,
             is_dir,
-            mod_time: String::new(),
+            mod_time: None,
         }
     }
 

@@ -244,7 +244,7 @@ mod tests {
 
     fn hit(path: &str, rank: Rank) -> Hit {
         let name = path.rsplit('/').next().unwrap().to_string();
-        Hit { item: FileInfo { name, path: path.into(), size: 0, is_dir: false, mod_time: String::new() }, rank, depth: path.matches('/').count() }
+        Hit { item: FileInfo { name, path: path.into(), size: 0, is_dir: false, mod_time: None }, rank, depth: path.matches('/').count() }
     }
 
     #[test]

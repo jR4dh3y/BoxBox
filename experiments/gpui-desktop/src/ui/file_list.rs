@@ -72,7 +72,7 @@ impl Workspace {
             .details(
                 if is_dir { "Folder".into() } else { type_description(&item.name) },
                 if is_dir { "—".into() } else { file_size(item.size) },
-                file_date(&item.mod_time),
+                file_date(item.mod_time),
             )
             .selected(pane.is_selected(&item.path))
             .active(pane.active == Some(index))

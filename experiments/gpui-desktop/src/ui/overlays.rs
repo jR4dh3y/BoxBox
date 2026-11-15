@@ -215,7 +215,7 @@ impl Workspace {
                     // The walk counts the folder itself.
                     rows.push(("Contents", counted(totals.files, "file", totals.folders.saturating_sub(1), "folder")));
                 }
-                rows.push(("Modified", file_date(&item.mod_time).to_string()));
+                rows.push(("Modified", file_date(item.mod_time).to_string()));
                 match &properties.ownership {
                     Some(Load::Loaded(ownership)) => {
                         rows.push(("Permissions", format!("{} ({:o})", permission_string(ownership.mode), ownership.mode & 0o7777)));

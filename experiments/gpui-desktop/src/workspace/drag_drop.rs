@@ -309,7 +309,7 @@ mod tests {
     use super::*;
 
     fn item(path: &str, is_dir: bool) -> FileInfo {
-        FileInfo { name: path.rsplit('/').next().unwrap().into(), path: path.into(), size: 0, is_dir, mod_time: String::new() }
+        FileInfo { name: path.rsplit('/').next().unwrap().into(), path: path.into(), size: 0, is_dir, mod_time: None }
     }
 
     #[test]

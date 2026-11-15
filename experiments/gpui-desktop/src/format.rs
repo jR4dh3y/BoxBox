@@ -17,8 +17,8 @@ pub fn file_size(bytes: u64) -> String {
 }
 
 /// `formatFileDate`: "Today 3:04 PM", "Nov 5", or "Nov 5, 2024".
-pub fn file_date(raw: &str) -> String {
-    let Ok(date) = DateTime::parse_from_rfc3339(raw) else {
+pub fn file_date(mod_time: Option<i64>) -> String {
+    let Some(date) = mod_time.and_then(DateTime::from_timestamp_millis) else {
         return "-".into();
     };
     let date = date.with_timezone(&Local);
