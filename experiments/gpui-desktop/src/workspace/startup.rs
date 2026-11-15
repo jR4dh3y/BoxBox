@@ -1,0 +1,141 @@
+//! The first folder and the drive list, read while GPUI starts.
+//!
+//! GPUI's start-up holds the UI thread for most of a launch, and work spawned from
+//! the window begins only after the first frame. Reading on a thread started before
+//! GPUI lets the first frame show the folder instead of an empty pane.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use anyhow::Result;
+use async_channel::{Receiver, TryRecvError};
+use gpui::Context;
+
+use super::{launch_path, preference_sort, PaneTarget, Preferences, Workspace};
+use crate::api::{Api, DriveStats, FileInfo, MountPoint};
+use crate::pane::View;
+
+/// What `Workspace::new` starts from.
+pub struct Startup {
+    pub(super) api: Arc<Api>,
+    pub(super) preferences: Preferences,
+    /// The virtual path to open; empty for the drive list.
+    pub(super) path: String,
+    pub(super) prefetch: Option<Prefetch>,
+}
+
+pub(super) struct Prefetch {
+    listing: Receiver<ListingRead>,
+    drives: Receiver<DrivesRead>,
+}
+
+/// A folder's entries, `arrange`d, and what the pane needs to know about the folder.
+pub(super) struct ListingRead {
+    pub(super) items: Result<Vec<FileInfo>>,
+    pub(super) real: Option<PathBuf>,
+    pub(super) writable: bool,
+}
+
+pub(super) struct DrivesRead {
+    pub(super) roots: Result<Vec<MountPoint>>,
+    pub(super) drives: Result<Vec<DriveStats>>,
+}
+
+impl Startup {
+    /// Starts reading the launch folder and the drives at once.
+    pub fn prefetch(api: Api, argument: &str) -> Self {
+        let mut start = Self::deferred(api, argument);
+        let (listing_sender, listing) = async_channel::bounded(1);
+        let (drives_sender, drives) = async_channel::bounded(1);
+        let api = start.api.clone();
+        let path = start.path.clone();
+        let view = View {
+            sort: preference_sort(&start.preferences),
+            show_hidden_files: start.preferences.show_hidden_files,
+            ranked: false,
+        };
+        let reader = std::thread::Builder::new().name("first listing".into()).spawn(move || {
+            // The drives come first: a large folder would hold them back.
+            let _ = drives_sender.try_send(read_drives(&api));
+            if !path.is_empty() {
+                let _ = listing_sender.try_send(read_listing(&api, &path, view));
+            }
+            // glibc keeps what this thread and the stat threads freed in their own
+            // arenas: 2.4 MB after a 20,000-entry folder.
+            // SAFETY: malloc_trim only returns free memory to the system.
+            unsafe { libc::malloc_trim(0) };
+        });
+        start.prefetch = reader.is_ok().then_some(Prefetch { listing, drives });
+        start
+    }
+
+    /// Reads nothing until the window asks, as tests need.
+    pub fn deferred(api: Api, argument: &str) -> Self {
+        let api = Arc::new(api);
+        let path = launch_path(&api, argument);
+        Self { api, preferences: Preferences::load(), path, prefetch: None }
+    }
+}
+
+/// Runs off the UI thread.
+pub(super) fn read_listing(api: &Api, path: &str, view: View) -> ListingRead {
+    let items = api.list(path).map(|items| {
+        let _span = crate::profile::span("arrange").with(|| format!("{} entries", items.len()));
+        crate::pane::arrange(items, view)
+    });
+    let real = api.local_path(path).ok().flatten();
+    // A local listing with no folder behind it, such as Recent, takes nothing.
+    let writable = match &real {
+        Some(real) => crate::local::writable(real),
+        None => !api.is_local(),
+    };
+    ListingRead { items, real, writable }
+}
+
+/// Runs off the UI thread.
+pub(super) fn read_drives(api: &Api) -> DrivesRead {
+    DrivesRead { roots: api.roots(), drives: api.drives() }
+}
+
+impl Workspace {
+    /// Applies what the start-up thread read, or waits for it. A read that never
+    /// arrives (its thread failed) falls back to the usual load.
+    pub(super) fn receive_prefetch(&mut self, prefetch: Prefetch, cx: &mut Context<Self>) {
+        let target = PaneTarget(0);
+        let journey = crate::profile::journey("load drives", String::new);
+        receive(self, prefetch.drives, cx, move |this, read, cx| match read {
+            Some(read) => this.apply_drives(target, read, journey, cx),
+            None => this.load_drives(target, cx),
+        });
+        let Some(pane) = self.pane_mut_by_id(target.0) else { return };
+        let generation = pane.begin_load();
+        if pane.is_at_root() {
+            return;
+        }
+        let view = pane.view();
+        let journey = crate::profile::journey("open folder", || format!("{}  (start-up)", pane.path));
+        receive(self, prefetch.listing, cx, move |this, read, cx| match read {
+            Some(read) => this.apply_listing(target, generation, view, read, journey, cx),
+            None => this.load_pane(target, cx),
+        });
+    }
+}
+
+/// Calls `apply` now when the value is ready, else once it arrives.
+fn receive<T: 'static>(
+    this: &mut Workspace,
+    receiver: Receiver<T>,
+    cx: &mut Context<Workspace>,
+    apply: impl FnOnce(&mut Workspace, Option<T>, &mut Context<Workspace>) + 'static,
+) {
+    match receiver.try_recv() {
+        Ok(value) => apply(this, Some(value), cx),
+        Err(TryRecvError::Closed) => apply(this, None, cx),
+        Err(TryRecvError::Empty) => cx
+            .spawn(async move |this, cx| {
+                let value = receiver.recv().await.ok();
+                this.update(cx, |this, cx| apply(this, value, cx)).ok();
+            })
+            .detach(),
+    }
+}

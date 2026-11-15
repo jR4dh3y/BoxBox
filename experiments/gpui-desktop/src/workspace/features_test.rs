@@ -41,7 +41,7 @@ pub(super) fn open<'a>(cx: &'a mut TestAppContext, files: &[&str]) -> (Entity<Wo
     cx.update(bind_keys);
     cx.update(crate::components::text_field_bind_keys);
     let (view, cx) = cx.add_window_view(|window, cx| {
-        Workspace::new(api, Fonts { sans: "sans-serif".into(), mono: "monospace".into() }, "home".into(), window, cx)
+        Workspace::new(startup::Startup::deferred(api, "home"), Fonts { sans: "sans-serif".into(), mono: "monospace".into() }, window, cx)
     });
     cx.update(|_, app| {
         view.update(app, |workspace, cx| {

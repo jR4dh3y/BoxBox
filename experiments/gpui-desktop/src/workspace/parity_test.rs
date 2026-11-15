@@ -85,9 +85,9 @@ fn desktop_workflow(cx: &mut TestAppContext) {
     let local = api.is_local();
     cx.update(bind_keys);
     cx.update(crate::components::text_field_bind_keys);
-    let (view, cx) = cx.add_window_view(|window, cx| Workspace::new(api, Fonts {
+    let (view, cx) = cx.add_window_view(|window, cx| Workspace::new(startup::Startup::deferred(api, "home"), Fonts {
         sans: "sans-serif".into(), mono: "monospace".into(),
-    }, "home".into(), window, cx));
+    }, window, cx));
     cx.update(|_, app| view.update(app, |workspace, _| {
         workspace.preferences = Preferences::default();
         workspace.desktop_settings = DesktopSettings::default();

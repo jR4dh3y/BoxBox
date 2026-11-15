@@ -51,14 +51,15 @@ fn main() {
         return;
     }
     profile::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    // Sets environment variables, so it runs before the threads below read theirs.
+    #[cfg(target_os = "linux")]
+    let vulkan_drivers = {
+        let _span = profile::span("follow compositor GPU");
+        render_gpu::follow_compositor()
+    };
     // Overlaps GPUI's own start-up; the window needs the result only once it opens.
     let fonts = std::thread::Builder::new().name("fonts".into()).spawn(system_fonts::resolve).expect("cannot start a thread");
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    #[cfg(target_os = "linux")]
-    {
-        let _span = profile::span("follow compositor GPU");
-        render_gpu::follow_compositor();
-    }
     let token = std::env::var("BOXBOX_TOKEN")
         .ok()
         .filter(|token| !token.is_empty());
@@ -109,6 +110,11 @@ fn main() {
         }
     };
 
+    // Reads the launch folder and drives during GPUI's start-up, ready for the first frame.
+    let start = workspace::startup::Startup::prefetch(api, &initial_path);
+    // Last of the threads: it holds the dynamic loader's lock while it works.
+    #[cfg(target_os = "linux")]
+    render_gpu::preload(vulkan_drivers);
     let platform_init = profile::span("GPUI platform init");
     Application::new()
         .with_assets(assets::Assets)
@@ -137,7 +143,7 @@ fn main() {
                     drag_out::init(window, cx);
                     cx.new(|cx| {
                         let _span = profile::span("Workspace::new");
-                        let mut workspace = Workspace::new(api, fonts, initial_path, window, cx);
+                        let mut workspace = Workspace::new(start, fonts, window, cx);
                         if let Some(launches) = launches {
                             workspace.receive_launches(launches, window, cx);
                         }

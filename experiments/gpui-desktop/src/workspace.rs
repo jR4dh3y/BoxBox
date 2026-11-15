@@ -38,6 +38,7 @@ pub(crate) mod bookmarks;
 pub(crate) mod templates;
 pub(crate) mod item_actions;
 pub(crate) mod run;
+pub(crate) mod startup;
 pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;
@@ -294,18 +295,10 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    pub fn new(
-        api: Api,
-        fonts: Fonts,
-        initial_path: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(start: startup::Startup, fonts: Fonts, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);
-        let preferences = Preferences::load();
-        let api = Arc::new(api);
-        let initial_path = launch_path(&api, &initial_path);
+        let startup::Startup { api, preferences, path: initial_path, prefetch } = start;
         let initial_pane = Pane::with_api(
             0,
             initial_path,
@@ -424,8 +417,13 @@ impl Workspace {
         };
         workspace.reload_wallpaper(cx);
         workspace.warm_wallpaper(window, cx);
-        workspace.load_drives(PaneTarget(0), cx);
-        workspace.load_pane(PaneTarget(0), cx);
+        match prefetch {
+            Some(prefetch) => workspace.receive_prefetch(prefetch, cx),
+            None => {
+                workspace.load_drives(PaneTarget(0), cx);
+                workspace.load_pane(PaneTarget(0), cx);
+            }
+        }
         workspace.start_directory_watches(cx);
         workspace.start_device_watch(cx);
         workspace.watch_trash(cx);
@@ -531,27 +529,25 @@ impl Workspace {
         let api = pane.api.clone();
         let journey = crate::profile::journey("load drives", String::new);
         cx.spawn(async move |this, cx| {
-            let (roots, drives) = cx
-                .background_executor()
-                .spawn(async move { (api.roots(), api.drives()) })
-                .await;
-            this.update(cx, |this, cx| {
-                if let Some(pane) = this.pane_mut_by_id(target.0) {
-                    pane.roots = match roots {
-                        Ok(roots) => Load::Loaded(roots),
-                        Err(error) => Load::Failed(format!("{error:#}")),
-                    };
-                    pane.drives = match drives {
-                        Ok(drives) => Load::Loaded(drives),
-                        Err(error) => Load::Failed(format!("{error:#}")),
-                    };
-                    crate::profile::ready(journey);
-                    cx.notify();
-                }
-            })
-            .ok();
+            let read = cx.background_executor().spawn(async move { startup::read_drives(&api) }).await;
+            this.update(cx, |this, cx| this.apply_drives(target, read, journey, cx)).ok();
         })
         .detach();
+    }
+
+    fn apply_drives(&mut self, target: PaneTarget, read: startup::DrivesRead, journey: Option<crate::profile::Journey>, cx: &mut Context<Self>) {
+        if let Some(pane) = self.pane_mut_by_id(target.0) {
+            pane.roots = match read.roots {
+                Ok(roots) => Load::Loaded(roots),
+                Err(error) => Load::Failed(format!("{error:#}")),
+            };
+            pane.drives = match read.drives {
+                Ok(drives) => Load::Loaded(drives),
+                Err(error) => Load::Failed(format!("{error:#}")),
+            };
+            crate::profile::ready(journey);
+            cx.notify();
+        }
     }
 
     #[track_caller]
@@ -571,40 +567,40 @@ impl Workspace {
         let journey = crate::profile::journey("open folder", || format!("{path}  ({}:{})", caller.file(), caller.line()));
         let queued = crate::profile::span("listing queued");
         cx.spawn(async move |this, cx| {
-            let result = cx
+            let read = cx
                 .background_executor()
                 .spawn(async move {
                     drop(queued);
-                    let items = api.list(&path).map(|items| {
-                        let _span = crate::profile::span("arrange").with(|| format!("{} entries", items.len()));
-                        crate::pane::arrange(items, view)
-                    });
-                    let real = api.local_path(&path).ok().flatten();
-                    // A local listing with no folder behind it, such as Recent, takes nothing.
-                    let writable = match &real {
-                        Some(real) => crate::local::writable(real),
-                        None => !api.is_local(),
-                    };
-                    (items, real, writable)
+                    startup::read_listing(&api, &path, view)
                 })
                 .await;
-            this.update(cx, |this, cx| {
-                if let Some(pane) = this.pane_mut_by_id(target.0) {
-                    if pane.generation == generation {
-                        pane.writable = result.2;
-                        pane.real_path = result.1.clone();
-                        let _span = crate::profile::span("apply listing");
-                        let stale = pane.finish_load(result.0, view);
-                        if let Some(path) = result.1 { this.directory_watches.watch(target.0, path); }
-                        if stale { this.resort(target, cx); }
-                        crate::profile::ready(journey);
-                        cx.notify();
-                    }
-                }
-            })
-            .ok();
+            this.update(cx, |this, cx| this.apply_listing(target, generation, view, read, journey, cx)).ok();
         })
         .detach();
+    }
+
+    /// Shows a listing unless the pane moved on since it was requested.
+    fn apply_listing(
+        &mut self,
+        target: PaneTarget,
+        generation: u64,
+        view: crate::pane::View,
+        read: startup::ListingRead,
+        journey: Option<crate::profile::Journey>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pane) = self.pane_mut_by_id(target.0) else { return };
+        if pane.generation != generation {
+            return;
+        }
+        pane.writable = read.writable;
+        pane.real_path = read.real.clone();
+        let _span = crate::profile::span("apply listing");
+        let stale = pane.finish_load(read.items, view);
+        if let Some(path) = read.real { self.directory_watches.watch(target.0, path); }
+        if stale { self.resort(target, cx); }
+        crate::profile::ready(journey);
+        cx.notify();
     }
 
     /// Writes a settings file on a background thread. `done` runs on the UI thread
