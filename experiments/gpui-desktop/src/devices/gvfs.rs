@@ -16,7 +16,7 @@ use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Structure, Value};
 
 pub use prompt::{Answer, Prompt, Prompts};
 
-use super::{reason, Kind, Source, State, Update, Volume};
+use super::{reason, Kind, Source, Space, State, Update, Volume};
 
 const DAEMON: &str = "org.gtk.vfs.Daemon";
 const TRACKER_PATH: &str = "/org/gtk/vfs/mounttracker";
@@ -56,7 +56,7 @@ fn tracker(connection: &Connection) -> Result<Proxy<'static>> {
 /// A mount's spec keys as text, such as `type=mtp, host=…`.
 type Spec = HashMap<String, String>;
 
-fn volume(mount: MountInfo) -> Option<(Volume, Spec)> {
+fn volume(connection: &Connection, mount: MountInfo) -> Option<(Volume, Spec)> {
     let (daemon, object, name, _, _, _, _, _, _, fuse, (_, spec), _) = mount;
     let point = PathBuf::from(text(&fuse));
     // A mount without a folder cannot be browsed by path.
@@ -65,17 +65,35 @@ fn volume(mount: MountInfo) -> Option<(Volume, Spec)> {
     }
     let spec: Spec = spec.into_iter().filter_map(|(key, value)| Some((key, text(&<Vec<u8>>::try_from(value).ok()?)))).collect();
     let kind = spec.get("type").cloned().unwrap_or_default();
+    let mut state = super::mounted(point, false);
+    // FUSE reports no size for some backends, such as a phone's; the backend itself does.
+    if let State::Mounted { space: space @ None, .. } = &mut state {
+        *space = backend_space(connection, &daemon, &object);
+    }
     let volume = Volume {
         id: format!("gvfs:{daemon}{object}"),
         name,
         kind: if matches!(kind.as_str(), "mtp" | "gphoto2" | "afc") { Kind::Phone } else { Kind::Network },
-        state: super::mounted(point, false),
+        state,
         source: Source::GvfsMount { daemon, object: object.to_string() },
         device: None,
         fs_type: Some(kind).filter(|kind| !kind.is_empty()),
+        size: None,
         ejectable: false,
     };
     Some((volume, spec))
+}
+
+/// `Mount.QueryFilesystemInfo` on the mount's root: for a phone, every storage together.
+fn backend_space(connection: &Connection, daemon: &str, object: &str) -> Option<Space> {
+    let info: Vec<(String, u32, OwnedValue)> = Proxy::new(connection, daemon.to_string(), object.to_string(), MOUNT)
+        .ok()?
+        .call("QueryFilesystemInfo", &(spec::bytestring("/"), "filesystem::size,filesystem::free"))
+        .map_err(|error| log::info!("{object} did not report its size: {error}"))
+        .ok()?;
+    let value = |name: &str| info.iter().find(|(key, _, _)| key == name).and_then(|(_, _, value)| u64::try_from(value).ok());
+    let total = value("filesystem::size").filter(|total| *total > 0)?;
+    Some(Space { total, free: value("filesystem::free").unwrap_or(0).min(total) })
 }
 
 /// Whether a monitor's device is the one a mount serves: GIO's shadow-mount match,
@@ -121,6 +139,7 @@ fn unmounted(connection: &Connection, monitor: &str) -> Result<Vec<Volume>> {
                 fs_type: uri.split_once("://").map(|(scheme, _)| scheme.to_string()),
                 source: Source::GvfsVolume { uri },
                 device: None,
+                size: None,
                 ejectable: false,
             })
         })
@@ -131,7 +150,7 @@ fn unmounted(connection: &Connection, monitor: &str) -> Result<Vec<Volume>> {
 pub fn list(connection: &Connection) -> Result<Vec<Volume>> {
     let _span = crate::profile::span("gvfs.list");
     let mounts: Vec<MountInfo> = tracker(connection)?.call("ListMounts2", &(true,)).context("GVfs did not list its mounts")?;
-    let mut mounted: Vec<(Volume, Spec)> = mounts.into_iter().filter_map(volume).collect();
+    let mut mounted: Vec<(Volume, Spec)> = mounts.into_iter().filter_map(|mount| volume(connection, mount)).collect();
     let mut volumes = Vec::new();
     for monitor in monitors() {
         match unmounted(connection, &monitor) {
@@ -160,7 +179,11 @@ pub fn watch(sender: async_channel::Sender<Update>) {
         .spawn(move || {
             let send = |connection: &Connection| sender.send_blocking(Update::Gvfs(list(connection).map_err(|error| format!("{error:#}")))).is_ok();
             let run = || -> Result<()> {
-                let connection = Connection::session().context("cannot reach the session bus")?;
+                // A phone that stops answering must not hold the list up for D-Bus's 25 seconds.
+                let connection = zbus::blocking::connection::Builder::session()?
+                    .method_timeout(Duration::from_secs(3))
+                    .build()
+                    .context("cannot reach the session bus")?;
                 if !send(&connection) {
                     return Ok(());
                 }

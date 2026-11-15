@@ -3,7 +3,7 @@
 use gpui::{div, prelude::*, px, Context, FontWeight, Window};
 
 use super::{icon, TextScale};
-use crate::components::{usage_bar, usage_text, DriveCard, DriveState};
+use crate::components::{usage_bar, usage_text, DriveCard};
 use crate::format::file_size;
 use crate::workspace::overview::Storage;
 use crate::theme::*;
@@ -119,10 +119,7 @@ impl Workspace {
         let rows = drives.iter().enumerate().map(|(index, drive)| {
             let open = drive.clone();
             let drive = drive.info();
-            let usage = match &drive.state {
-                DriveState::Usage(usage) => Some(*usage),
-                DriveState::Status(_) => None,
-            };
+            let usage = drive.state.usage();
             let mono = self.fonts.mono.clone();
             let detail = |text: Option<String>| text.filter(|text| !text.is_empty()).unwrap_or("—".into());
             div()
@@ -141,24 +138,27 @@ impl Workspace {
                         .items_center()
                         .gap(px(8.))
                         .child(icon(drive.glyph, 16., c(if usage.is_some() { TEXT_SECONDARY } else { TEXT_MUTED })))
-                        .child(div().min_w_0().truncate().child(drive.name.clone()))
+                        .child(div().min_w_0().truncate().when(usage.is_none(), |name| name.text_color(c(TEXT_MUTED))).child(drive.name.clone()))
                         .when(drive.read_only, |n| n.child(div().flex_none().text_xs_tw().text_color(c(WARNING)).child("Read-only"))),
                 )
                 .when(wide, |row| {
                     row.child(grow(cell(), 1., 140.).font_family(mono.clone()).text_size(px(12.)).text_color(c(TEXT_MUTED)).child(detail(drive.device.clone())))
                         .child(fixed(cell(), 104.).font_family(mono).text_size(px(12.)).text_color(c(TEXT_SECONDARY)).child(detail(drive.fs_type.clone())))
                 })
-                .child(fixed(cell(), 96.).flex().justify_end().text_color(c(TEXT_SECONDARY)).child(usage.map_or("—".into(), |usage| file_size(usage.total))))
+                .child(fixed(cell(), 96.).flex().justify_end().text_color(c(TEXT_SECONDARY)).child(drive.state.size().map_or("—".into(), file_size)))
                 .when(medium, |row| row.child(fixed(cell(), 96.).flex().justify_end().text_color(c(TEXT_SECONDARY)).child(usage.map_or("—".into(), |usage| file_size(usage.free)))))
-                .child(match &drive.state {
-                    DriveState::Usage(usage) => used_col(cell())
+                // An unknown usage keeps the column's empty track, as the cards do.
+                .child(
+                    used_col(cell())
                         .flex()
                         .items_center()
                         .gap(px(12.))
-                        .child(usage_bar(usage.pct))
-                        .child(div().w(px(44.)).flex().justify_end().child(usage_text(usage.pct))),
-                    DriveState::Status(status) => used_col(cell()).text_color(c(TEXT_MUTED)).child(status.clone()),
-                })
+                        .child(usage_bar(usage.map_or(0., |usage| usage.pct)))
+                        .child(div().w(px(44.)).flex().justify_end().text_color(c(TEXT_MUTED)).child(match usage {
+                            Some(usage) => usage_text(usage.pct).into_any_element(),
+                            None => "—".into_any_element(),
+                        })),
+                )
                 .on_click(cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
                     if event.click_count() >= 2 {
                         this.open_storage(open.clone(), window, cx);

@@ -121,7 +121,8 @@ pub fn list(connection: &Connection) -> Result<Vec<Volume>> {
         let ejectable = removable || property::<bool>(&drive, "Ejectable").unwrap_or(false);
         let label = property::<&str>(&block, "IdLabel").filter(|label| !label.is_empty());
         let hint = property::<&str>(&block, "HintName").filter(|name| !name.is_empty());
-        let size = size_label(property::<u64>(&block, "Size").unwrap_or(0));
+        let bytes = property::<u64>(&block, "Size").filter(|bytes| *bytes > 0);
+        let size = size_label(bytes.unwrap_or(0));
         let read_only = property::<bool>(&block, "ReadOnly").unwrap_or(false);
 
         let (state, fallback) = if let Some(filesystem) = interfaces(path, FILESYSTEM) {
@@ -144,6 +145,7 @@ pub fn list(connection: &Connection) -> Result<Vec<Volume>> {
             source: Source::Block { object: path.to_string(), crypto: crypto.map(|crypto| crypto.to_string()) },
             device: byte_text(physical, "PreferredDevice"),
             fs_type: property::<&str>(&block, "IdType").filter(|kind| !kind.is_empty()).map(str::to_string),
+            size: bytes,
             ejectable,
         });
     }

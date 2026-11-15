@@ -37,15 +37,16 @@ impl Storage {
                 fs_type: drive.fs_type.clone(),
             },
             Storage::Volume(volume) => {
+                let status = |status: &'static str| DriveState::Status { status: status.into(), size: volume.size };
                 let (state, read_only) = match &volume.state {
                     State::Mounted { space: Some(space), read_only, .. } if space.total > 0 => {
                         let used = space.total.saturating_sub(space.free);
                         let pct = used as f64 * 100. / space.total as f64;
                         (DriveState::Usage(Usage { total: space.total, used, free: space.free, pct }), *read_only)
                     }
-                    State::Mounted { read_only, .. } => (DriveState::Status("Connected".into()), *read_only),
-                    State::Unmounted => (DriveState::Status("Not mounted".into()), false),
-                    State::Locked => (DriveState::Status("Encrypted".into()), false),
+                    State::Mounted { read_only, .. } => (status("Connected"), *read_only),
+                    State::Unmounted => (status("Not mounted"), false),
+                    State::Locked => (status("Encrypted"), false),
                 };
                 DriveInfo {
                     name: volume.name.clone().into(),

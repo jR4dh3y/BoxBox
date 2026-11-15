@@ -40,11 +40,28 @@ pub struct Usage {
     pub pct: f64,
 }
 
-/// What a drive shows under its name: how full it is, or why that is unknown.
+/// What a drive shows under its name: how full it is, or why that is unknown,
+/// with its size when the partition table gives it.
 #[derive(Clone)]
 pub enum DriveState {
     Usage(Usage),
-    Status(SharedString),
+    Status { status: SharedString, size: Option<u64> },
+}
+
+impl DriveState {
+    pub fn usage(&self) -> Option<Usage> {
+        match self {
+            DriveState::Usage(usage) => Some(*usage),
+            DriveState::Status { .. } => None,
+        }
+    }
+
+    pub fn size(&self) -> Option<u64> {
+        match self {
+            DriveState::Usage(usage) => Some(usage.total),
+            DriveState::Status { size, .. } => *size,
+        }
+    }
 }
 
 /// What the Overview knows about one drive or device.
@@ -82,10 +99,7 @@ impl RenderOnce for DriveCard {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let accent = self.accent;
         let drive = self.drive;
-        let usage = match &drive.state {
-            DriveState::Usage(usage) => Some(*usage),
-            DriveState::Status(_) => None,
-        };
+        let usage = drive.state.usage();
         let device = drive.device.clone().filter(|device| !device.is_empty());
         let fs_type = drive.fs_type.clone().filter(|fs| !fs.is_empty());
         div()
@@ -129,7 +143,7 @@ impl RenderOnce for DriveCard {
                             .items_start()
                             .gap(px(8.))
                             .child(div().flex_1().min_w_0().text_sm_tw().font_weight(FontWeight::MEDIUM).child(drive.name.clone()))
-                            .when_some(usage, |row, usage| {
+                            .when_some(drive.state.size(), |row, size| {
                                 row.child(
                                     div()
                                         .flex_none()
@@ -141,7 +155,7 @@ impl RenderOnce for DriveCard {
                                         .font_weight(FontWeight::MEDIUM)
                                         .whitespace_nowrap()
                                         .text_color(c(TEXT_SECONDARY))
-                                        .child(file_size(usage.total)),
+                                        .child(file_size(size)),
                                 )
                             }),
                     )
@@ -152,7 +166,7 @@ impl RenderOnce for DriveCard {
                             .text_color(c(TEXT_MUTED))
                             .child(match &drive.state {
                                 DriveState::Usage(usage) => format!("{} used · {} free", file_size(usage.used), file_size(usage.free)).into(),
-                                DriveState::Status(status) => status.clone(),
+                                DriveState::Status { status, .. } => status.clone(),
                             })
                             .when(drive.read_only, |line| line.child(div().ml(px(4.)).text_color(c(WARNING)).child("· Read-only"))),
                     )
@@ -172,8 +186,10 @@ impl RenderOnce for DriveCard {
                                 }),
                         )
                     })
-                    .when_some(usage, |info, usage| {
-                        info.child(div().mt(px(2.)).flex().items_center().gap(px(12.)).child(usage_bar(usage.pct)).child(usage_text(usage.pct)))
+                    // An empty track when the usage is unknown, so every card has the same rows.
+                    .child(match usage {
+                        Some(usage) => div().mt(px(2.)).flex().items_center().gap(px(12.)).child(usage_bar(usage.pct)).child(usage_text(usage.pct)),
+                        None => div().mt(px(2.)).flex().items_center().child(usage_bar(0.)),
                     }),
             )
             .when_some(self.on_click, |card, handler| card.on_click(handler))

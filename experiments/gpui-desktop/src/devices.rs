@@ -61,6 +61,8 @@ pub struct Volume {
     pub device: Option<String>,
     /// The filesystem, or the GVfs backend such as `mtp` or `smb-share`.
     pub fs_type: Option<String>,
+    /// The partition's size, known before it is mounted; GVfs devices have none.
+    pub size: Option<u64>,
     /// Removable media or a drive that can be ejected; otherwise it can only be unmounted.
     pub ejectable: bool,
 }
