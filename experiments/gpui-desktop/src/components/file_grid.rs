@@ -68,6 +68,8 @@ pub struct FileTile {
     thumbnail: Option<Arc<RenderImage>>,
     /// The icon theme's image, drawn without a frame when there is no thumbnail.
     image: Option<Arc<RenderImage>>,
+    tint: Option<u32>,
+    emblem: Option<&'static str>,
     selected: bool,
     active: bool,
     cut: bool,
@@ -89,6 +91,8 @@ impl FileTile {
             detail: SharedString::default(),
             thumbnail: None,
             image: None,
+            tint: None,
+            emblem: None,
             selected: false,
             active: false,
             cut: false,
@@ -120,6 +124,13 @@ impl FileTile {
 
     pub fn thumbnail(mut self, thumbnail: Option<Arc<RenderImage>>) -> Self {
         self.thumbnail = thumbnail;
+        self
+    }
+
+    /// BoxBox's own glyph: its kind's colour and a special folder's emblem.
+    pub fn tint(mut self, tint: Option<u32>, emblem: Option<&'static str>) -> Self {
+        self.tint = tint;
+        self.emblem = emblem;
         self
     }
 
@@ -172,9 +183,9 @@ impl RenderOnce for FileTile {
         let Selection { background, hover, accent } = self.selection;
         let metrics = self.metrics;
         let group = SharedString::from(format!("file-tile-{}", self.id));
-        let tone = if self.is_dir { FOLDER } else { TEXT_SECONDARY };
+        let tone = c(self.tint.unwrap_or(if self.is_dir { FOLDER } else { TEXT_SECONDARY }));
         // A theme icon already says "folder"; the name keeps the text colour, as in Thunar.
-        let folder_name = self.is_dir && self.image.is_none();
+        let folder_name = self.is_dir && self.image.is_none() && self.tint.is_none();
         // As tall as the zoom step says. A thumbnail sits in thumbnailClass's frame
         // (rounded border bg-surface-primary); an icon stands on its own, as in Thunar.
         let preview = div()
@@ -193,7 +204,7 @@ impl RenderOnce for FileTile {
                     .bg(c(SURFACE_PRIMARY))
                     .child(img(image).size_full().object_fit(ObjectFit::Cover)),
                 (None, Some(image)) => slot.child(img(image).size(px(metrics.theme_icon()))),
-                (None, None) => slot.child(thin_icon(self.icon, metrics.icon, c(tone))),
+                (None, None) => slot.child(super::file_list::emblemed(thin_icon(self.icon, metrics.icon, tone), self.emblem, metrics.icon, tone)),
             });
         let label = div()
             .w_full()
@@ -202,7 +213,8 @@ impl RenderOnce for FileTile {
             .overflow_hidden()
             .map(|label| match self.editor {
                 Some(editor) => label.child(div().text_size(px(13.)).child(editor)),
-                // text-[13px] leading-4, two lines at most
+                // text-[13px] leading-4, two lines at most, and always two lines tall, so
+                // the size under it lines up across a row (issue #186).
                 None => label.child(
                     div()
                         .w_full()
@@ -210,6 +222,7 @@ impl RenderOnce for FileTile {
                         .text_size(px(13.))
                         .line_height(px(16.))
                         .line_clamp(2)
+                        .h(px(32.))
                         .text_color(c(if folder_name { FOLDER } else { TEXT_PRIMARY }))
                         .child(self.name),
                 ),

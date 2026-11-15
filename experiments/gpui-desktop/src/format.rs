@@ -275,42 +275,129 @@ pub fn type_description(name: &str) -> String {
     known.into()
 }
 
+/// What a file is, for BoxBox's own icons: a glyph each, and a colour per group.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Folder,
+    Code,
+    Script,
+    Config,
+    Web,
+    Data,
+    Database,
+    Diff,
+    Image,
+    Video,
+    Audio,
+    Pdf,
+    Document,
+    Text,
+    Sheet,
+    Slides,
+    Archive,
+    Package,
+    Disc,
+    Font,
+    Key,
+    Other,
+}
+
+const SCRIPT: &[&str] = &["sh", "bash", "zsh", "fish", "ps1", "bat", "cmd"];
+const CONFIG: &[&str] = &["ini", "conf", "cfg", "env", "cmake", "gradle"];
+const PACKAGE: &[&str] = &["deb", "rpm", "appimage", "flatpak", "snap", "apk", "msi", "jar"];
+const DISC: &[&str] = &["iso", "img", "dmg"];
+const FONT: &[&str] = &["ttf", "otf", "woff", "woff2"];
+const KEY: &[&str] = &["pem", "key", "crt", "cer", "pub", "asc", "gpg", "p12"];
+const DATABASE: &[&str] = &["db", "sqlite", "sqlite3"];
+
+impl Kind {
+    pub fn of(name: &str, is_dir: bool) -> Self {
+        if is_dir {
+            return Self::Folder;
+        }
+        let lower = name.to_lowercase();
+        let ext = extension(name).to_lowercase();
+        if ext.is_empty() {
+            return match lower.as_str() {
+                "makefile" | "gnumakefile" | "dockerfile" | "cmakelists.txt" => Self::Config,
+                _ if lower.starts_with("id_") => Self::Key,
+                _ if SHELL_DOTFILES.contains(&lower.as_str()) => Self::Script,
+                _ if CONFIG_DOTFILES.contains(&lower.as_str()) || is_single_dotfile(&lower) => Self::Config,
+                _ if SPECIAL_CODE_FILENAMES.contains(&lower.as_str()) => Self::Code,
+                _ => Self::Other,
+            };
+        }
+        let is = |list: &[&str]| list.contains(&ext.as_str());
+        match () {
+            _ if ext == "pdf" => Self::Pdf,
+            _ if ext == "diff" || ext == "patch" => Self::Diff,
+            _ if is(SCRIPT) => Self::Script,
+            _ if is(CONFIG) => Self::Config,
+            _ if is(IMAGE) => Self::Image,
+            _ if is(VIDEO) => Self::Video,
+            _ if is(AUDIO) => Self::Audio,
+            _ if is(CODE) => Self::Code,
+            _ if is(PACKAGE) => Self::Package,
+            _ if is(ARCHIVE) => Self::Archive,
+            _ if is(DISC) => Self::Disc,
+            _ if is(FONT) => Self::Font,
+            _ if is(KEY) => Self::Key,
+            _ if is(DATABASE) => Self::Database,
+            _ if is(SPREADSHEET) => Self::Sheet,
+            _ if is(PRESENTATION) => Self::Slides,
+            _ if is(DOCUMENT) || ext == "ipynb" => Self::Document,
+            _ if is(TEXT) => Self::Text,
+            _ if is(WEB) || is(STYLE) => Self::Web,
+            _ if is(DATA) => Self::Data,
+            _ => Self::Other,
+        }
+    }
+
+    /// The Lucide glyph.
+    pub fn glyph(self) -> &'static str {
+        match self {
+            Self::Folder => "folder",
+            Self::Code => "file-code",
+            Self::Script => "file-terminal",
+            Self::Config => "file-cog",
+            Self::Web => "globe",
+            Self::Data => "file-json",
+            Self::Database => "database",
+            Self::Diff => "file-diff",
+            Self::Image => "file-image",
+            Self::Video => "file-play",
+            Self::Audio => "file-music",
+            Self::Pdf | Self::Document | Self::Text => "file-text",
+            Self::Sheet => "file-spreadsheet",
+            Self::Slides => "presentation",
+            Self::Archive => "file-archive",
+            Self::Package => "file-box",
+            Self::Disc => "disc-3",
+            Self::Font => "file-type",
+            Self::Key => "file-key",
+            Self::Other => "file",
+        }
+    }
+
+    /// The colour of its group in the tinted set; `None` keeps the plain grey.
+    pub fn tint(self) -> Option<u32> {
+        match self {
+            Self::Code | Self::Script | Self::Web | Self::Data | Self::Database => Some(0x60a5fa),
+            Self::Image => Some(0x2dd4bf),
+            Self::Video => Some(0xa78bfa),
+            Self::Audio => Some(0xfb923c),
+            Self::Pdf => Some(0xf87171),
+            Self::Sheet => Some(0x4ade80),
+            Self::Slides => Some(0xfb7185),
+            Self::Archive | Self::Package => Some(0xfbbf24),
+            Self::Folder | Self::Config | Self::Diff | Self::Document | Self::Text | Self::Disc | Self::Font | Self::Key | Self::Other => None,
+        }
+    }
+}
+
 /// `getFileIcon`, as an icon asset name.
 pub fn file_icon(name: &str, is_dir: bool) -> &'static str {
-    if is_dir {
-        return "folder";
-    }
-    let ext = extension(name);
-    if ext.is_empty() {
-        let lower = name.to_lowercase();
-        let code = SPECIAL_CODE_FILENAMES.contains(&lower.as_str()) || is_single_dotfile(&lower);
-        return if code { "file-code" } else { "file" };
-    }
-    let ext = ext.as_str();
-    let is = |list: &[&str]| list.contains(&ext);
-    if is(IMAGE) {
-        "file-image"
-    } else if is(VIDEO) {
-        "file-video"
-    } else if is(AUDIO) {
-        "file-audio"
-    } else if is(CODE) {
-        "file-code"
-    } else if is(ARCHIVE) {
-        "file-archive"
-    } else if is(SPREADSHEET) {
-        "file-spreadsheet"
-    } else if is(DOCUMENT) || is(PRESENTATION) || ext == "ipynb" || ext == "pdf" || is(TEXT) {
-        "file-text"
-    } else if is(WEB) {
-        "globe"
-    } else if is(STYLE) {
-        "palette"
-    } else if is(DATA) {
-        "file-json"
-    } else {
-        "file"
-    }
+    Kind::of(name, is_dir).glyph()
 }
 
 #[cfg(test)]
@@ -334,6 +421,11 @@ mod tests {
         assert_eq!(type_description("x.weird"), "WEIRD File");
         assert_eq!(file_icon("photo.JPG", false), "file-image");
         assert_eq!(file_icon("data.yml", false), "file-json");
+        assert_eq!(file_icon("run.sh", false), "file-terminal");
+        assert_eq!(file_icon("clip.MP4", false), "file-play");
+        assert_eq!(file_icon("ubuntu.iso", false), "disc-3");
+        assert_eq!(file_icon("id_ed25519", false), "file-key");
+        assert_eq!(Kind::of("report.pdf", false).tint(), Some(0xf87171));
         assert_eq!(file_icon("docs", true), "folder");
     }
 }

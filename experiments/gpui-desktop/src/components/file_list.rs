@@ -153,6 +153,8 @@ pub struct FileRow {
     icon: &'static str,
     /// The icon theme's image, drawn in place of `icon` once it is made.
     image: Option<std::sync::Arc<RenderImage>>,
+    tint: Option<u32>,
+    emblem: Option<&'static str>,
     kind: SharedString,
     size: SharedString,
     modified: SharedString,
@@ -195,6 +197,8 @@ impl FileRow {
             is_dir,
             icon: "file",
             image: None,
+            tint: None,
+            emblem: None,
             kind: SharedString::default(),
             size: SharedString::default(),
             modified: SharedString::default(),
@@ -208,6 +212,13 @@ impl FileRow {
             decorate: None,
             editor: None,
         }
+    }
+
+    /// BoxBox's own glyph: its kind's colour and a special folder's emblem.
+    pub fn tint(mut self, tint: Option<u32>, emblem: Option<&'static str>) -> Self {
+        self.tint = tint;
+        self.emblem = emblem;
+        self
     }
 
     pub fn image(mut self, image: Option<std::sync::Arc<RenderImage>>) -> Self {
@@ -289,9 +300,9 @@ impl RenderOnce for FileRow {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let Selection { background, hover, accent } = self.selection;
         let secondary = c(if self.selected { TEXT_PRIMARY } else { TEXT_SECONDARY });
-        let tone = if self.is_dir { FOLDER } else { TEXT_SECONDARY };
+        let tone = c(self.tint.unwrap_or(if self.is_dir { FOLDER } else { TEXT_SECONDARY }));
         // A theme icon already says "folder"; the name keeps the text colour, as in Thunar.
-        let folder_name = self.is_dir && self.image.is_none();
+        let folder_name = self.is_dir && self.image.is_none() && self.tint.is_none();
         let group = SharedString::from(format!("file-icon-{}", self.id));
         let has_checkbox = self.checkbox.is_some();
         let ListMetrics { row_height, icon: glyph_size } = self.metrics;
@@ -308,7 +319,7 @@ impl RenderOnce for FileRow {
             .map(|glyph| match self.image {
                 // Theme icons are full pictures and fill the slot; glyphs keep their margin.
                 Some(image) => glyph.child(img(image).size(px(slot_size))),
-                None => glyph.child(icon(self.icon, glyph_size, c(tone))),
+                None => glyph.child(emblemed(icon(self.icon, glyph_size, tone), self.emblem, glyph_size, tone)),
             });
         let slot = div()
             .id("icon")
@@ -380,4 +391,13 @@ impl RenderOnce for FileRow {
 /// The 16px selection checkbox of rows and tiles.
 pub(super) fn checkbox(checked: bool, accent: Rgba) -> Stateful<Div> {
     super::check::checkbox(checked, accent, 16.).id("check").cursor_pointer()
+}
+
+/// A folder glyph with a small one inside its body, as a special folder's mark.
+pub(super) fn emblemed(glyph: gpui::Svg, emblem: Option<&'static str>, size: f32, color: Rgba) -> Div {
+    let frame = div().relative().size(px(size)).flex_none().child(glyph);
+    match emblem {
+        Some(emblem) => frame.child(div().absolute().left(px(size * 0.3)).top(px(size * 0.36)).child(icon(emblem, size * 0.4, color))),
+        None => frame,
+    }
 }

@@ -57,7 +57,7 @@ impl Workspace {
 
     /// The theme's icon for `item` drawn at `size`, once it is made.
     pub(crate) fn item_icon(&self, api: &Api, item: &FileInfo, size: f32) -> Option<Arc<RenderImage>> {
-        if self.preferences.file_icons == crate::workspace::IconStyle::BoxBox {
+        if self.preferences.file_icons != crate::workspace::IconStyle::System {
             return None;
         }
         match self.file_icons.slots.get(&self.file_icons.key(api, item, size)) {
@@ -68,7 +68,7 @@ impl Workspace {
 
     /// Starts making the icon of a pane's entry, drawn at `size`, if no one has.
     pub(crate) fn request_entry_icon(&mut self, target: PaneTarget, index: usize, size: f32, cx: &mut Context<Self>) {
-        if self.preferences.file_icons == crate::workspace::IconStyle::BoxBox {
+        if self.preferences.file_icons != crate::workspace::IconStyle::System {
             return;
         }
         let Some(pane) = self.pane_by_id(target.0) else { return };
@@ -106,5 +106,45 @@ impl Workspace {
             .ok();
         })
         .detach();
+    }
+}
+
+/// The small glyph a special folder carries inside BoxBox's folder icon.
+fn emblem(theme_icon: &str) -> Option<&'static str> {
+    Some(match theme_icon {
+        "user-home" => "home",
+        "user-desktop" => "monitor",
+        "folder-documents" => "file-text",
+        "folder-download" => "download",
+        "folder-music" => "music",
+        "folder-pictures" => "image",
+        "folder-videos" => "video",
+        "folder-templates" => "layout-template",
+        "folder-publicshare" => "share-2",
+        _ => return None,
+    })
+}
+
+/// How BoxBox's own icon for an entry looks.
+pub(crate) struct GlyphStyle {
+    pub glyph: &'static str,
+    /// Overrides the plain grey (or folder colour) when tinted.
+    pub tint: Option<u32>,
+    pub emblem: Option<&'static str>,
+}
+
+impl Workspace {
+    /// BoxBox's glyph for `item`: tinted by kind in the tinted set, where
+    /// folders take the accent and every kind's colour turns with it.
+    pub(crate) fn glyph_style(&self, api: &Api, item: &FileInfo) -> GlyphStyle {
+        let kind = crate::format::Kind::of(&item.name, item.is_dir);
+        let special = if item.is_dir && api.is_local() { self.file_icons.special.get(&item.path).copied() } else { None };
+        let accent = self.accent_hex();
+        let tint = match (self.preferences.file_icons, kind) {
+            (crate::workspace::IconStyle::Tinted, crate::format::Kind::Folder) => Some(accent),
+            (crate::workspace::IconStyle::Tinted, kind) => kind.tint().map(|tint| super::palette::follow_accent(tint, accent)),
+            _ => None,
+        };
+        GlyphStyle { glyph: kind.glyph(), tint, emblem: special.and_then(emblem) }
     }
 }

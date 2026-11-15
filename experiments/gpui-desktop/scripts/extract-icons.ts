@@ -13,7 +13,9 @@ const ICONS = [
 	'AlertTriangle', 'AppWindow', 'CheckCircle', 'ClipboardPaste', 'Copy', 'ExternalLink', 'Info',
 	'Check', 'Pencil', 'Scissors', 'XCircle', 'FilePlus', 'FolderPlus', 'Pin', 'PinOff', 'Share2', 'FolderInput',
 	'Smartphone', 'Lock', 'PencilOff', 'Trash', 'Link', 'Send', 'Archive', 'Clock', 'Network', 'LayoutTemplate',
-	'SquareTerminal', 'Play', 'Bookmark', 'LayoutDashboard'
+	'SquareTerminal', 'Play', 'Bookmark', 'LayoutDashboard',
+	'FileTerminal', 'FileCog', 'FileMusic', 'FilePlay', 'FileType', 'FileKey', 'FileLock', 'FileBox',
+	'Presentation', 'Disc3', 'Database', 'FileDiff', 'FolderDown', 'FolderSymlink'
 ];
 
 const root = join(import.meta.dir, '../../../frontend/node_modules/lucide-svelte/dist');

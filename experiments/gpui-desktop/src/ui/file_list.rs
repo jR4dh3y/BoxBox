@@ -6,7 +6,7 @@ use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context};
 use super::{icon, TextScale};
 use crate::components::{FileListHeader, FileRow, Selection};
 use crate::api::FileInfo;
-use crate::format::{display_name, file_date, file_icon, file_size, type_description};
+use crate::format::{display_name, file_date, file_size, type_description};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
 use crate::workspace::operations::{ClipboardMode, PaneTarget};
@@ -74,8 +74,10 @@ impl Workspace {
         let item = pane.items.get(index)?;
         let (path, is_dir) = (item.path.clone(), item.is_dir);
         let folder = DropTarget::Folder { pane: target, path: path.clone() };
+        let style = self.glyph_style(&pane.api, item);
         let row = FileRow::new(("row", index), display_name(&item.name, is_dir, self.preferences.show_file_extensions), is_dir, self.selection_style())
-            .icon(file_icon(&item.name, is_dir))
+            .icon(style.glyph)
+            .tint(style.tint, style.emblem)
             .image(self.item_icon(&pane.api, item, crate::components::ListMetrics::new(self.preferences.list_zoom).icon + 4.))
             .location(if pane.shows_locations() { crate::search::location(&pane.path, &item.path).to_string() } else { String::new() })
             .details(

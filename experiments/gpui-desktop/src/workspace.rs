@@ -102,16 +102,18 @@ impl StartLocation {
 }
 
 /// Where file and folder icons come from: the desktop's icon theme, as other
-/// Linux file managers draw them, or BoxBox's own line icons.
+/// Linux file managers draw them, or BoxBox's own line icons, tinted by kind
+/// (following the accent) or all grey.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum IconStyle {
     #[default]
     System,
-    BoxBox,
+    Tinted,
+    Grey,
 }
 
 impl IconStyle {
-    pub const OPTIONS: [(Self, &'static str); 2] = [(Self::System, "System theme"), (Self::BoxBox, "BoxBox")];
+    pub const OPTIONS: [(Self, &'static str); 3] = [(Self::System, "System theme"), (Self::Tinted, "BoxBox, tinted"), (Self::Grey, "BoxBox, grey")];
 }
 
 impl Default for Preferences {

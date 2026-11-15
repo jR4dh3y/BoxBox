@@ -5,7 +5,7 @@ use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, Window};
 
 use super::{icon, TextScale};
 use crate::components::FileTile;
-use crate::format::{display_name, file_icon, file_size};
+use crate::format::{display_name, file_size};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
 use crate::workspace::operations::PaneTarget;
@@ -76,13 +76,15 @@ impl Workspace {
         let (path, is_dir) = (item.path.clone(), item.is_dir);
         let thumbnail = self.thumbnail(&pane.api, &item);
         let folder = DropTarget::Folder { pane: target, path: path.clone() };
+        let style = self.glyph_style(&pane.api, &item);
         let tile = FileTile::new(
             ("tile", index),
             display_name(&item.name, is_dir, self.preferences.show_file_extensions),
             is_dir,
             self.selection_style(),
         )
-        .icon(file_icon(&item.name, is_dir))
+        .icon(style.glyph)
+        .tint(style.tint, style.emblem)
         .image(self.item_icon(&pane.api, &item, crate::components::GridMetrics::new(self.preferences.grid_zoom).theme_icon()))
         .detail(match (pane.shows_locations(), is_dir) {
             // A search result says where it is; a file in its folder, how big.
