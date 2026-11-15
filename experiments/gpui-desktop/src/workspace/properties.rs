@@ -38,6 +38,8 @@ pub(crate) struct Ownership {
     pub editable: bool,
     pub accessed: Option<i64>,
     pub created: Option<i64>,
+    /// Whether execute applies: a folder, or a file that can run.
+    pub runnable: bool,
     /// Where a symbolic link points; a link has no permissions of its own.
     pub link_target: Option<String>,
 }
@@ -112,79 +114,39 @@ impl Workspace {
     }
 }
 
-/// Who a permission is for: the bits of each, as a shift of `rwx` (0o7).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Class {
-    Owner = 6,
-    Group = 3,
-    Others = 0,
-}
+/// Owner, group and others, each with its read, write and execute bits.
+pub(crate) const CLASSES: [(&str, [u32; 3]); 3] = [("owner", [0o400, 0o200, 0o100]), ("group", [0o040, 0o020, 0o010]), ("others", [0o004, 0o002, 0o001])];
 
-/// What one class may do, as Nautilus names it. A file's execute bit is the
-/// separate "Run as a program"; a folder's is part of its access.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Access {
-    None,
-    Read,
-    ReadWrite,
-    /// Folders: `r--`, `r-x` and `rwx`.
-    List,
-    Open,
-    Full,
-    /// Any other combination, which the menu does not offer.
-    Custom,
-}
+/// Types that run: programs, scripts, AppImages and launchers.
+const PROGRAMS: [&str; 7] = [
+    "application/x-executable",
+    "application/x-pie-executable",
+    "application/x-sharedlib",
+    "application/x-shellscript",
+    "application/vnd.appimage",
+    "application/x-desktop",
+    "application/x-ms-dos-executable",
+];
 
-impl Access {
-    pub const FILE: [(Self, &'static str); 3] = [(Self::None, "None"), (Self::Read, "Read only"), (Self::ReadWrite, "Read & write")];
-    pub const FOLDER: [(Self, &'static str); 4] =
-        [(Self::None, "None"), (Self::List, "List files only"), (Self::Open, "Access files"), (Self::Full, "Create and delete")];
-
-    pub fn of(mode: u32, class: Class, folder: bool) -> Self {
-        let bits = (mode >> class as u32) & 0o7;
-        match (folder, bits) {
-            (false, bits) => match bits & 0o6 {
-                0 => Self::None,
-                0o4 => Self::Read,
-                0o6 => Self::ReadWrite,
-                _ => Self::Custom,
-            },
-            (true, 0) => Self::None,
-            (true, 0o4) => Self::List,
-            (true, 0o5) => Self::Open,
-            (true, 0o7) => Self::Full,
-            (true, _) => Self::Custom,
+/// Whether execute means anything for a file: it is marked so already, its
+/// type is a program or script, or it starts like one (`#!` or ELF).
+fn runnable(path: &Path, mode: u32) -> bool {
+    if mode & 0o111 != 0 {
+        return true;
+    }
+    if let Some(mime) = crate::local::mime::from_name(path) {
+        if PROGRAMS.contains(&mime.as_str()) || crate::local::mime::icon_names(&mime).iter().any(|name| name == "text-x-script") {
+            return true;
         }
     }
-
-    /// `mode` with this access for `class`; a file keeps its execute bit.
-    fn apply(self, mode: u32, class: Class) -> u32 {
-        let (bits, keep) = match self {
-            Self::None => (0, 0o1),
-            Self::Read => (0o4, 0o1),
-            Self::ReadWrite => (0o6, 0o1),
-            Self::List => (0o4, 0),
-            Self::Open => (0o5, 0),
-            Self::Full => (0o7, 0),
-            Self::Custom => return mode,
-        };
-        let shift = class as u32;
-        (mode & !(0o7 << shift)) | (bits << shift) | (mode & (keep << shift))
-    }
-}
-
-/// "Run as a program": execute for each class that may read, or for none.
-pub(crate) fn runs(mode: u32) -> bool {
-    mode & 0o111 != 0
+    let mut head = [0u8; 4];
+    std::fs::File::open(path).and_then(|mut file| std::io::Read::read_exact(&mut file, &mut head)).is_ok_and(|()| head.starts_with(b"#!") || head == *b"\x7fELF")
 }
 
 impl Workspace {
-    pub(crate) fn set_access(&mut self, class: Class, access: Access, cx: &mut Context<Self>) {
-        self.change_mode(|mode| access.apply(mode, class), cx);
-    }
-
-    pub(crate) fn set_runs(&mut self, run: bool, cx: &mut Context<Self>) {
-        self.change_mode(|mode| if run { mode | ((mode & 0o444) >> 2) } else { mode & !0o111 }, cx);
+    /// One part of the permissions control: flips `bit`.
+    pub(crate) fn toggle_permission(&mut self, bit: u32, cx: &mut Context<Self>) {
+        self.change_mode(|mode| mode ^ bit, cx);
     }
 
     /// Changes the mode at once, as Nautilus and Thunar do, then reads it back.
@@ -280,6 +242,7 @@ fn ownership(path: &Path) -> anyhow::Result<Ownership> {
         editable: link_target.is_none() && (me == 0 || me == metadata.uid()),
         accessed: millis(metadata.accessed()),
         created: millis(metadata.created()),
+        runnable: metadata.is_dir() || (metadata.is_file() && runnable(path, metadata.mode())),
         link_target,
     })
 }
@@ -387,17 +350,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn access_levels_read_and_set_the_mode() {
-        assert_eq!(Access::of(0o640, Class::Owner, false), Access::ReadWrite);
-        assert_eq!(Access::of(0o640, Class::Group, false), Access::Read);
-        assert_eq!(Access::of(0o640, Class::Others, false), Access::None);
-        assert_eq!(Access::of(0o620, Class::Group, false), Access::Custom);
-        assert_eq!(Access::of(0o750, Class::Group, true), Access::Open);
-        // A file keeps whether it runs; a folder's access sets all three bits.
-        assert_eq!(Access::Read.apply(0o755, Class::Owner), 0o555);
-        assert_eq!(Access::None.apply(0o755, Class::Others), 0o751);
-        assert_eq!(Access::Full.apply(0o700, Class::Group), 0o770);
-        assert_eq!(Access::List.apply(0o755, Class::Others), 0o754);
+    fn only_things_that_run_offer_run() {
+        let root = std::env::temp_dir().join(format!("boxbox-runnable-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = |name: &str, bytes: &[u8]| {
+            let path = root.join(name);
+            std::fs::write(&path, bytes).unwrap();
+            path
+        };
+        assert!(!runnable(&file("clip.mp4", b"\0\0\0\x18ftyp"), 0o644));
+        assert!(!runnable(&file("notes.md", b"# hi"), 0o644));
+        assert!(runnable(&file("tool", b"#!/bin/sh\n"), 0o644), "a shebang runs");
+        assert!(runnable(&file("app", b"\x7fELF\x02"), 0o644), "an ELF program runs");
+        assert!(runnable(&file("odd.mp4", b""), 0o755), "already marked to run");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

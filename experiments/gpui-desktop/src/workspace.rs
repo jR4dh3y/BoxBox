@@ -78,6 +78,7 @@ pub(crate) struct Preferences {
     pub default_sort_direction: SortDir,
     pub default_view: ViewMode,
     pub start_location: StartLocation,
+    pub file_icons: IconStyle,
     pub hardware_acceleration: bool,
     /// Zoom steps of the list and the grid (`ListMetrics`, `GridMetrics`).
     pub list_zoom: u8,
@@ -100,6 +101,19 @@ impl StartLocation {
     pub const OPTIONS: [(Self, &'static str); 3] = [(Self::Overview, "Overview"), (Self::Home, "Home folder"), (Self::Last, "Last location")];
 }
 
+/// Where file and folder icons come from: the desktop's icon theme, as other
+/// Linux file managers draw them, or BoxBox's own line icons.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum IconStyle {
+    #[default]
+    System,
+    BoxBox,
+}
+
+impl IconStyle {
+    pub const OPTIONS: [(Self, &'static str); 2] = [(Self::System, "System theme"), (Self::BoxBox, "BoxBox")];
+}
+
 impl Default for Preferences {
     fn default() -> Self {
         Self {
@@ -112,6 +126,7 @@ impl Default for Preferences {
             default_sort_direction: SortDir::Desc,
             default_view: ViewMode::List,
             start_location: StartLocation::Overview,
+            file_icons: IconStyle::System,
             hardware_acceleration: true,
             list_zoom: 1,
             grid_zoom: 1,

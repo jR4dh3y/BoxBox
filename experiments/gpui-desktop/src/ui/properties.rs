@@ -5,10 +5,10 @@
 use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton, SharedString};
 
 use super::thin_icon;
-use crate::components::{Button, ButtonVariant, Modal, Toggle, Type};
+use crate::components::{Button, ButtonVariant, Modal, Type};
 use crate::format::{file_icon, file_size, full_date, type_description};
 use crate::theme::*;
-use crate::workspace::properties::{permission_string, runs, Access, Class, Ownership, Totals};
+use crate::workspace::properties::{permission_string, Ownership, Totals, CLASSES};
 use crate::workspace::{Load, Workspace};
 
 /// A row: the label left, the value right.
@@ -115,34 +115,64 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// Owner, group and others with what each may do, then "Run as a program"
-    /// for a file or "Apply to contents" for a folder, and the mode as `ls` shows it.
-    /// Only the owner may change them; for anyone else they are text.
+    /// Owner, group and others, each with Read, Write and Run (Open for a
+    /// folder) as one control; Run only where something can run. Then "Apply
+    /// to contents" for a folder, and the mode as `ls` shows it. Only the owner
+    /// can change them; for anyone else the control is dimmed.
     fn permission_rows(&self, ownership: &Ownership, cx: &mut Context<Self>) -> Vec<gpui::Div> {
         let folder = ownership.is_dir();
-        let options: &'static [(Access, &'static str)] = if folder { &Access::FOLDER } else { &Access::FILE };
-        let mut class_row = |label: &'static str, who: Option<&str>, class: Class, id: &'static str, on_change: fn(&mut Workspace, Access, &mut Context<Workspace>)| {
-            let access = Access::of(ownership.mode, class, folder);
-            let label = div().flex().gap(px(6.)).child(label).when_some(who.map(str::to_string), |label, who| label.child(div().text_color(c(TEXT_PRIMARY)).child(who)));
-            match ownership.editable {
-                true => row(label, self.select(id, access, options, 160., cx, on_change)),
-                false => row(label, text(options.iter().find(|(option, _)| *option == access).map_or("Custom", |(_, name)| name).to_string())),
-            }
-        };
-        let mut rows = vec![
-            class_row("Owner", Some(&ownership.owner), Class::Owner, "permission-owner", |this, access, cx| this.set_access(Class::Owner, access, cx)),
-            class_row("Group", Some(&ownership.group), Class::Group, "permission-group", |this, access, cx| this.set_access(Class::Group, access, cx)),
-            class_row("Others", None, Class::Others, "permission-others", |this, access, cx| this.set_access(Class::Others, access, cx)),
-        ];
-        if ownership.editable && !folder {
-            let workspace = cx.entity().downgrade();
-            rows.push(row(
-                "Run as a program",
-                div().debug_selector(|| "permission-run".into()).child(Toggle::new("permission-run", runs(ownership.mode)).on_change(move |run, _, _, cx| {
-                    workspace.update(cx, |this, cx| this.set_runs(run, cx)).ok();
-                })),
-            ));
-        }
+        let names = ["Read", "Write", if folder { "Open" } else { "Run" }];
+        let parts = if ownership.runnable { 3 } else { 2 };
+        let accent = self.accent_hex();
+        let mut rows: Vec<gpui::Div> = CLASSES
+            .iter()
+            .map(|(class, bits)| {
+                let who = match *class {
+                    "owner" => Some(ownership.owner.clone()),
+                    "group" => Some(ownership.group.clone()),
+                    _ => None,
+                };
+                let label = div()
+                    .flex()
+                    .gap(px(6.))
+                    .child(match *class { "owner" => "Owner", "group" => "Group", _ => "Others" })
+                    .when_some(who, |label, who| label.child(div().text_color(c(TEXT_PRIMARY)).child(who)));
+                let segments = bits.iter().zip(names).take(parts).map(|(bit, name)| {
+                    let (bit, on) = (*bit, ownership.mode & *bit != 0);
+                    div()
+                        .id(SharedString::from(format!("permission-{class}-{bit:o}")))
+                        .debug_selector(move || format!("permission-{bit:o}"))
+                        .w(px(52.))
+                        .h(px(22.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(4.))
+                        .text_size(px(12.))
+                        .map(|part| match on {
+                            true => part.bg(alpha(accent, 0.22)).border_1().border_color(alpha(accent, 0.45)).text_color(c(TEXT_PRIMARY)),
+                            false => part.text_color(c(TEXT_MUTED)),
+                        })
+                        .when(ownership.editable, |part| {
+                            part.cursor_pointer()
+                                .when(!on, |part| part.hover(|style| style.bg(c(SURFACE_TERTIARY)).text_color(c(TEXT_SECONDARY))))
+                                .on_click(cx.listener(move |this, _, _, cx| this.toggle_permission(bit, cx)))
+                        })
+                        .child(name)
+                });
+                let control = div()
+                    .flex()
+                    .gap(px(2.))
+                    .p(px(2.))
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(c(BORDER_SECONDARY))
+                    .bg(c(SURFACE_PRIMARY))
+                    .when(!ownership.editable, |control| control.opacity(0.6))
+                    .children(segments);
+                row(label, control)
+            })
+            .collect();
         if ownership.editable && folder {
             rows.push(row(
                 "Everything inside",

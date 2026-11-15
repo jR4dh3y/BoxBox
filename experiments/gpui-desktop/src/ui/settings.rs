@@ -17,7 +17,7 @@ use crate::settings_state::{
     ShareListState, WallpaperFit,
 };
 use crate::theme::*;
-use crate::workspace::{Preferences, SettingsSection, StartLocation, Workspace};
+use crate::workspace::{IconStyle, Preferences, SettingsSection, StartLocation, Workspace};
 
 /// Which settings text field a dialog input uses.
 #[derive(Clone, Copy)]
@@ -141,6 +141,10 @@ impl Workspace {
                     this.commit_preferences(cx);
                 },
             )),
+            SettingsRow::new("File icons").control(self.select("setting-icons", p.file_icons, &IconStyle::OPTIONS, 160., cx, |this, value, cx| {
+                this.preferences.file_icons = value;
+                this.commit_preferences(cx);
+            })),
         ])
     }
 

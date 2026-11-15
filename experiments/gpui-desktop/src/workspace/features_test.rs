@@ -1294,19 +1294,19 @@ fn properties_change_permissions(cx: &mut TestAppContext) {
     click(cx, Box::leak(format!("row-0-{c}").into_boxed_str()));
     cx.simulate_keystrokes("alt-enter");
     settle(cx);
-    // Run as a program, then the group may write: each change is a chmod.
-    click(cx, "permission-run");
+    // A text file cannot run, so it offers no Run.
+    assert!(cx.debug_bounds("permission-100").is_none());
+    // Group may write, then others may not read: each click is a chmod.
+    click(cx, "permission-20");
     cx.run_until_parked();
-    assert_eq!(mode(&fixture.root.join("c.txt")), 0o755);
+    assert_eq!(mode(&fixture.root.join("c.txt")), 0o664);
     settle(cx);
-    click(cx, "permission-group");
-    settle(cx);
-    click(cx, "permission-group-2");
+    click(cx, "permission-4");
     cx.run_until_parked();
-    assert_eq!(mode(&fixture.root.join("c.txt")), 0o775);
+    assert_eq!(mode(&fixture.root.join("c.txt")), 0o660);
     view.read_with(cx, |workspace, _| {
         let Some(Load::Loaded(ownership)) = &workspace.properties.as_ref().unwrap().ownership else { panic!("read back") };
-        assert_eq!(ownership.mode & 0o7777, 0o775);
+        assert_eq!(ownership.mode & 0o7777, 0o660);
     });
     cx.simulate_keystrokes("escape");
 

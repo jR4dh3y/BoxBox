@@ -1,6 +1,7 @@
 //! The window's theme icons: one image per icon key and pixel size, made off
 //! the UI thread the first time a row or tile asks. Views read what is ready
-//! and draw their own glyph until then, or when the theme has no icon.
+//! and draw their own glyph until then, when the theme has no icon, or when
+//! Settings ask for BoxBox's icons.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -56,6 +57,9 @@ impl Workspace {
 
     /// The theme's icon for `item` drawn at `size`, once it is made.
     pub(crate) fn item_icon(&self, api: &Api, item: &FileInfo, size: f32) -> Option<Arc<RenderImage>> {
+        if self.preferences.file_icons == crate::workspace::IconStyle::BoxBox {
+            return None;
+        }
         match self.file_icons.slots.get(&self.file_icons.key(api, item, size)) {
             Some(Slot::Ready(image)) => Some(image.clone()),
             _ => None,
@@ -64,6 +68,9 @@ impl Workspace {
 
     /// Starts making the icon of a pane's entry, drawn at `size`, if no one has.
     pub(crate) fn request_entry_icon(&mut self, target: PaneTarget, index: usize, size: f32, cx: &mut Context<Self>) {
+        if self.preferences.file_icons == crate::workspace::IconStyle::BoxBox {
+            return;
+        }
         let Some(pane) = self.pane_by_id(target.0) else { return };
         let Some(item) = pane.items.get(index) else { return };
         let key = self.file_icons.key(&pane.api, item, size);
