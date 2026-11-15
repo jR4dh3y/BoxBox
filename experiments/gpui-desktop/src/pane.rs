@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use gpui::{Modifiers, UniformListScrollHandle};
+use gpui::{Modifiers, Pixels, Point, UniformListScrollHandle};
 
 use crate::api::{Api, DriveStats, FileInfo, MountPoint};
 use crate::search;
@@ -17,6 +17,18 @@ use crate::sort::{sort_files, Sort};
 pub struct Place {
     pub api: Arc<Api>,
     pub path: String,
+    /// How the folder looked when the pane left it; not part of what the place is.
+    pub view: ViewMemo,
+}
+
+/// A folder's selection, cursor and scroll position, kept in history so Back and
+/// Forward return to them, as other file managers do.
+#[derive(Clone, Default, Debug)]
+pub struct ViewMemo {
+    selected: HashSet<String>,
+    active: Option<String>,
+    list_offset: Point<Pixels>,
+    grid_offset: Point<Pixels>,
 }
 
 impl PartialEq for Place {
@@ -161,6 +173,8 @@ pub struct Pane {
     pub search_generation: u64,
     pub list_scroll: UniformListScrollHandle,
     pub grid_scroll: UniformListScrollHandle,
+    /// A history entry's view, put back when its listing arrives.
+    restore: Option<ViewMemo>,
 }
 
 impl Pane {
@@ -222,6 +236,7 @@ impl Pane {
             search_generation: 0,
             list_scroll: UniformListScrollHandle::new(),
             grid_scroll: UniformListScrollHandle::new(),
+            restore: None,
         }
     }
 
@@ -244,12 +259,36 @@ impl Pane {
     }
 
     pub fn place(&self) -> Place {
-        Place { api: self.api.clone(), path: self.path.clone() }
+        Place { api: self.api.clone(), path: self.path.clone(), view: ViewMemo::default() }
+    }
+
+    fn view_memo(&self) -> ViewMemo {
+        let offset = |handle: &UniformListScrollHandle| handle.0.borrow().base_handle.offset();
+        ViewMemo {
+            selected: self.selected.clone(),
+            active: self.active.and_then(|index| self.items.get(index)).map(|item| item.path.clone()),
+            list_offset: offset(&self.list_scroll),
+            grid_offset: offset(&self.grid_scroll),
+        }
+    }
+
+    /// Puts back a folder's selection, cursor and scroll position once its
+    /// entries are in; an entry gone since is left out.
+    fn restore_view(&mut self, memo: ViewMemo) {
+        self.selected = memo.selected.into_iter().filter(|path| self.index_of(path).is_some()).collect();
+        self.active = memo.active.and_then(|path| self.index_of(&path));
+        self.anchor = self.active;
+        self.set_scroll(memo.list_offset, memo.grid_offset);
+    }
+
+    fn set_scroll(&self, list: Point<Pixels>, grid: Point<Pixels>) {
+        self.list_scroll.0.borrow().base_handle.set_offset(list);
+        self.grid_scroll.0.borrow().base_handle.set_offset(grid);
     }
 
     /// Opens `path` on `api`, which may be another provider than the current one.
     pub fn navigate_to(&mut self, api: Arc<Api>, path: String) -> Moved {
-        let place = Place { api, path };
+        let place = Place { api, path, view: ViewMemo::default() };
         if place == self.place() {
             return Moved::No;
         }
@@ -261,8 +300,13 @@ impl Pane {
 
     /// Makes `place` current and returns the place it replaces.
     fn enter(&mut self, place: Place) -> Place {
-        let previous = Place { api: std::mem::replace(&mut self.api, place.api), path: std::mem::replace(&mut self.path, place.path) };
+        let view = self.view_memo();
+        let previous = Place { api: std::mem::replace(&mut self.api, place.api), path: std::mem::replace(&mut self.path, place.path), view };
         self.reset();
+        // A folder opens at its top; one from history goes back to where it was
+        // once its entries load, since an empty list cannot hold a scroll position.
+        self.set_scroll(Point::default(), Point::default());
+        self.restore = Some(place.view);
         previous
     }
 
@@ -340,6 +384,9 @@ impl Pane {
                     self.folder_items = Arc::new(items);
                 } else {
                     self.replace_items(items);
+                    if let Some(memo) = self.restore.take() {
+                        self.restore_view(memo);
+                    }
                 }
                 self.listing = Listing::Loaded;
                 view != self.view()
@@ -737,6 +784,37 @@ mod tests {
     }
 
     #[test]
+    fn back_returns_to_the_selection_cursor_and_scroll_it_left() {
+        let mut pane = Pane::new(0, String::new(), false, Sort::default(), ViewMode::List);
+        assert!(pane.navigate("d".into()));
+        load(&mut pane, vec![file("a"), file("b"), file("c")]);
+        pane.click(0, Modifiers::default());
+        pane.click(2, Modifiers { control: true, ..Default::default() });
+        let scrolled = gpui::point(gpui::px(0.), gpui::px(-480.));
+        pane.list_scroll.0.borrow().base_handle.set_offset(scrolled);
+        let offset = |pane: &Pane| pane.list_scroll.0.borrow().base_handle.offset();
+
+        // A folder opened from here starts at its top, with nothing selected.
+        assert!(pane.navigate("e".into()));
+        assert_eq!(offset(&pane), gpui::Point::default());
+        load(&mut pane, vec![file("x")]);
+        assert!(pane.selected.is_empty());
+
+        // Back: once the entries are in, the same two are selected, the cursor is
+        // on the last one clicked, and the list is where it was. "a" went meanwhile.
+        assert_eq!(pane.travel(true, 1, &[]), Moved::Within);
+        assert_eq!(offset(&pane), gpui::Point::default(), "an empty list cannot hold the position yet");
+        load(&mut pane, vec![file("b"), file("c")]);
+        assert_eq!(pane.selected, HashSet::from(["d/c".to_string()]));
+        assert_eq!(pane.active.map(|index| pane.items[index].name.as_str()), Some("c"));
+        assert_eq!(offset(&pane), scrolled);
+
+        // Refreshing keeps them too.
+        load(&mut pane, vec![file("b"), file("c"), file("d")]);
+        assert_eq!(pane.selected, HashSet::from(["d/c".to_string()]));
+    }
+
+    #[test]
     fn history_and_selection() {
         let mut pane = Pane::new(0, String::new(), false, Sort::default(), ViewMode::List);
         assert!(pane.navigate("d".into()));
@@ -793,7 +871,7 @@ mod tests {
         for path in ["a", "b", "c", "d"] {
             pane.navigate(path.into());
         }
-        let gone = [Place { api: pane.api.clone(), path: "c".into() }];
+        let gone = [Place { api: pane.api.clone(), path: "c".into(), view: ViewMemo::default() }];
         assert_eq!(pane.travel(true, 1, &gone), Moved::Within);
         assert_eq!(pane.path, "b");
         let paths = |places: Vec<Place>| places.into_iter().map(|place| place.path).collect::<Vec<_>>();
