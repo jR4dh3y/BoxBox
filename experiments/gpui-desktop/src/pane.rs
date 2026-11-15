@@ -303,10 +303,9 @@ impl Pane {
         let view = self.view_memo();
         let previous = Place { api: std::mem::replace(&mut self.api, place.api), path: std::mem::replace(&mut self.path, place.path), view };
         self.reset();
-        // A folder opens at its top; one from history goes back to where it was
-        // once its entries load, since an empty list cannot hold a scroll position.
+        // A folder opens at its top; `travel` puts one from history back.
         self.set_scroll(Point::default(), Point::default());
-        self.restore = Some(place.view);
+        self.restore = None;
         previous
     }
 
@@ -337,8 +336,11 @@ impl Pane {
         for _ in 1..steps {
             skipped.push(from.pop().expect("checked above"));
         }
-        let destination = from.pop().expect("checked above");
+        let mut destination = from.pop().expect("checked above");
+        let view = std::mem::take(&mut destination.view);
         let previous = self.enter(destination);
+        // Where it was, once its entries load: an empty list cannot hold a scroll position.
+        self.restore = Some(view);
         let to = if back { &mut self.forward } else { &mut self.back };
         to.push(previous.clone());
         to.extend(skipped);
