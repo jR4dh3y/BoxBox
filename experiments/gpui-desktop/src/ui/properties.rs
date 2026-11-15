@@ -1,19 +1,36 @@
-//! Properties: the item with its type and size, its dates and place, and for a
-//! local item a permissions grid that changes the mode when a box is clicked.
-//! Several items show their counts and total size.
+//! Properties: the item's name and icon in the title, then rows with the label
+//! on the left and the value on the right, in groups: what it is, when it
+//! changed, and for a local item who may use it, changed from the row itself.
 
-use gpui::{div, prelude::*, px, AnyElement, Context, FontWeight, MouseButton};
+use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton, SharedString};
 
 use super::thin_icon;
-use crate::components::check::checkbox;
-use crate::components::{Button, ButtonVariant, Modal, Type};
+use crate::components::{Button, ButtonVariant, Modal, Toggle, Type};
 use crate::format::{file_icon, file_size, full_date, type_description};
 use crate::theme::*;
-use crate::workspace::properties::{permission_string, Ownership, Totals};
+use crate::workspace::properties::{permission_string, runs, Access, Class, Ownership, Totals};
 use crate::workspace::{Load, Workspace};
 
-/// Owner, group and others, with the read, write and execute bits of each.
-const CLASSES: [(&str, [u32; 3]); 3] = [("owner", [0o400, 0o200, 0o100]), ("group", [0o040, 0o020, 0o010]), ("others", [0o004, 0o002, 0o001])];
+/// A row: the label left, the value right.
+fn row(label: impl IntoElement, value: impl IntoElement) -> gpui::Div {
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(16.))
+        .min_h(px(30.))
+        .child(div().flex_none().flex().gap(px(6.)).text_color(c(TEXT_SECONDARY)).child(label))
+        .child(div().min_w_0().flex().justify_end().text_color(c(TEXT_PRIMARY)).child(value))
+}
+
+fn text(value: String) -> gpui::Div {
+    div().min_w_0().truncate().child(value)
+}
+
+/// Rows under a divider, except the first group.
+fn group(first: bool, rows: Vec<gpui::Div>) -> gpui::Div {
+    div().flex().flex_col().px(px(16.)).py(px(6.)).when(!first, |group| group.border_t_1().border_color(c(BORDER_SECONDARY))).children(rows)
+}
 
 impl Workspace {
     pub(crate) fn render_properties(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -28,86 +45,56 @@ impl Workspace {
             Some(Load::Loaded(ownership)) => Some(ownership),
             _ => None,
         };
-        let remote = !properties.provider_label.is_empty() && properties.provider_label != "Local storage";
-        let mut body = div().flex().flex_col().type_13();
-        let rows: Vec<(&str, String)> = match properties.items.as_slice() {
+        let remote = properties.provider_label != "Local storage";
+        let (title, glyph, groups) = match properties.items.as_slice() {
             [item] => {
                 let kind = if item.is_dir { "Folder".to_string() } else { type_description(&item.name).to_string() };
-                let summary = match (item.is_dir, &properties.totals) {
+                let mut about = vec![row("Type", text(kind)), row("Size", text(size))];
+                if let (true, Load::Loaded(Totals { files, folders, .. })) = (item.is_dir, &properties.totals) {
                     // The walk counts the folder itself.
-                    (true, Load::Loaded(Totals { files, folders, .. })) => format!("{kind} · {size} · {}", counted(*files, "file", folders.saturating_sub(1), "folder")),
-                    _ => format!("{kind} · {size}"),
-                };
-                body = body.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(12.))
-                        .pb(px(14.))
-                        .child(
-                            div()
-                                .size(px(40.))
-                                .flex_none()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(4.))
-                                .bg(c(SURFACE_SECONDARY))
-                                .child(thin_icon(file_icon(&item.name, item.is_dir), 22., c(TEXT_SECONDARY))),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .child(div().font_weight(FontWeight::SEMIBOLD).text_color(c(TEXT_PRIMARY)).child(item.name.clone()))
-                                .child(div().text_size(px(12.)).text_color(c(TEXT_SECONDARY)).child(summary)),
-                        ),
-                );
+                    about.push(row("Contents", text(counted(*files, "file", folders.saturating_sub(1), "folder"))));
+                }
                 let location = match ownership.and_then(|ownership| ownership.path.parent()) {
                     Some(folder) => home_relative(folder),
                     None => parent(&item.path),
                 };
-                let mut rows = vec![("Location", location)];
+                about.push(row("Location", text(location)));
                 if let Some(target) = ownership.and_then(|ownership| ownership.link_target.clone()) {
-                    rows.push(("Link to", target));
+                    about.push(row("Link to", text(target)));
                 }
-                rows.push(("Modified", full_date(item.mod_time)));
+                if remote {
+                    about.push(row("Server", text(properties.provider_label.clone())));
+                }
+                let mut dates = vec![row("Modified", text(full_date(item.mod_time)))];
                 if let Some(ownership) = ownership {
-                    rows.push(("Accessed", full_date(ownership.accessed)));
-                    rows.push(("Created", full_date(ownership.created)));
+                    dates.push(row("Accessed", text(full_date(ownership.accessed))));
+                    dates.push(row("Created", text(full_date(ownership.created))));
                 }
-                if let Some(Load::Failed(error)) = &properties.ownership {
-                    rows.push(("Permissions", error.clone()));
+                let mut groups = vec![about, dates];
+                match (&properties.ownership, ownership) {
+                    (_, Some(ownership)) if ownership.link_target.is_none() => groups.push(self.permission_rows(ownership, cx)),
+                    (Some(Load::Failed(error)), _) => groups.push(vec![row("Permissions", text(error.clone()))]),
+                    _ => {}
                 }
-                rows
+                (item.name.clone(), file_icon(&item.name, item.is_dir), groups)
             }
             items => {
                 let folders = items.iter().filter(|item| item.is_dir).count();
-                let mut rows = vec![("Selected", format!("{} items", items.len())), ("Folders", folders.to_string()), ("Size", size)];
+                let mut about = vec![row("Folders", text(folders.to_string())), row("Files", text((items.len() - folders).to_string())), row("Size", text(size))];
                 if let Load::Loaded(totals) = &properties.totals {
-                    rows.push(("Contents", counted(totals.files, "file", totals.folders, "folder")));
+                    about.push(row("Contents", text(counted(totals.files, "file", totals.folders, "folder"))));
                 }
                 let location = parent(&items[0].path);
                 if items.iter().all(|item| parent(&item.path) == location) {
-                    rows.push(("Location", location));
+                    about.push(row("Location", text(location)));
                 }
-                rows
+                if remote {
+                    about.push(row("Server", text(properties.provider_label.clone())));
+                }
+                (format!("{} items", items.len()), "copy", vec![about])
             }
         };
-        let mut rows = rows;
-        if remote {
-            rows.push(("Server", properties.provider_label.clone()));
-        }
-        body = body.child(div().flex().flex_col().gap(px(10.)).children(rows.into_iter().map(|(label, value)| {
-            div()
-                .flex()
-                .gap(px(16.))
-                .child(div().w(px(88.)).flex_none().text_color(c(TEXT_SECONDARY)).child(label))
-                .child(div().flex_1().min_w_0().text_color(c(TEXT_PRIMARY)).child(value))
-        })));
-        if let Some(ownership) = ownership.filter(|ownership| ownership.link_target.is_none()) {
-            body = body.child(self.permissions_grid(ownership, cx));
-        }
+        let body = div().flex().flex_col().py(px(4.)).type_13().children(groups.into_iter().enumerate().map(|(index, rows)| group(index == 0, rows)));
         div()
             .id("properties-overlay")
             .debug_selector(|| "properties-overlay".into())
@@ -116,7 +103,9 @@ impl Workspace {
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
                 Modal::new()
-                    .title("Properties")
+                    .title(title)
+                    .leading(thin_icon(glyph, 18., c(TEXT_SECONDARY)))
+                    .padded(false)
                     .on_close(cx.listener(|this, _, _, cx| {
                         this.properties = None;
                         cx.notify();
@@ -126,86 +115,76 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// Read, Write and Execute (Access for a folder) for the owner, the group
-    /// and everyone else, with the mode in octal. Only the owner can change it.
-    fn permissions_grid(&self, ownership: &Ownership, cx: &mut Context<Self>) -> impl IntoElement {
-        let accent = c(self.accent_hex());
+    /// Owner, group and others with what each may do, then "Run as a program"
+    /// for a file or "Apply to contents" for a folder, and the mode as `ls` shows it.
+    /// Only the owner may change them; for anyone else they are text.
+    fn permission_rows(&self, ownership: &Ownership, cx: &mut Context<Self>) -> Vec<gpui::Div> {
         let folder = ownership.is_dir();
-        let busy = self.operation_status.is_busy();
-        let column = |label: &'static str| div().w(px(56.)).flex().justify_center().text_size(px(12.)).text_color(c(TEXT_SECONDARY)).child(label);
-        let header = div()
-            .flex()
-            .items_center()
-            .h(px(24.))
-            .child(div().flex_1().font_weight(FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child("Permissions"))
-            .child(column("Read"))
-            .child(column("Write"))
-            .child(column(if folder { "Access" } else { "Execute" }));
-        let rows = CLASSES.iter().map(|(class, bits)| {
-            let who = match *class {
-                "owner" => Some(ownership.owner.clone()),
-                "group" => Some(ownership.group.clone()),
-                _ => None,
-            };
-            let label = div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .gap(px(6.))
-                .truncate()
-                .child(div().text_color(c(TEXT_PRIMARY)).child(who.clone().unwrap_or_else(|| "Others".into())))
-                .when(who.is_some(), |label| label.child(div().text_color(c(TEXT_MUTED)).child(*class)));
-            let boxes = bits.iter().map(|bit| {
-                let (bit, checked) = (*bit, ownership.mode & *bit != 0);
-                let mark = checkbox(checked, accent, 15.).when(!ownership.editable, |mark| mark.opacity(0.5));
-                div()
-                    .id(gpui::SharedString::from(format!("permission-{class}-{bit:o}")))
-                    .debug_selector(move || format!("permission-{bit:o}"))
-                    .w(px(56.))
-                    .h(px(28.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .when(ownership.editable, |cell| cell.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| this.toggle_permission(bit, cx))))
-                    .child(mark)
-            });
-            div().flex().items_center().child(label).children(boxes)
-        });
-        div()
-            .mt(px(14.))
-            .pt(px(12.))
-            .border_t_1()
-            .border_color(c(BORDER_SECONDARY))
-            .child(header)
-            .children(rows)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .pt(px(8.))
-                    .child(div().font_family(self.fonts.mono.clone()).text_size(px(12.)).text_color(c(TEXT_MUTED)).child(format!("{}  {:03o}", permission_string(ownership.mode), ownership.mode & 0o7777)))
-                    .when(folder && ownership.editable, |row| {
-                        row.child(
-                            Button::new("permissions-apply-inside")
-                                .label("Apply to contents")
-                                .variant(ButtonVariant::Secondary)
-                                .disabled(busy)
-                                .on_click(cx.listener(|this, _, _, cx| this.apply_permissions_to_contents(cx))),
-                        )
-                    }),
-            )
+        let options: &'static [(Access, &'static str)] = if folder { &Access::FOLDER } else { &Access::FILE };
+        let mut class_row = |label: &'static str, who: Option<&str>, class: Class, id: &'static str, on_change: fn(&mut Workspace, Access, &mut Context<Workspace>)| {
+            let access = Access::of(ownership.mode, class, folder);
+            let label = div().flex().gap(px(6.)).child(label).when_some(who.map(str::to_string), |label, who| label.child(div().text_color(c(TEXT_PRIMARY)).child(who)));
+            match ownership.editable {
+                true => row(label, self.select(id, access, options, 160., cx, on_change)),
+                false => row(label, text(options.iter().find(|(option, _)| *option == access).map_or("Custom", |(_, name)| name).to_string())),
+            }
+        };
+        let mut rows = vec![
+            class_row("Owner", Some(&ownership.owner), Class::Owner, "permission-owner", |this, access, cx| this.set_access(Class::Owner, access, cx)),
+            class_row("Group", Some(&ownership.group), Class::Group, "permission-group", |this, access, cx| this.set_access(Class::Group, access, cx)),
+            class_row("Others", None, Class::Others, "permission-others", |this, access, cx| this.set_access(Class::Others, access, cx)),
+        ];
+        if ownership.editable && !folder {
+            let workspace = cx.entity().downgrade();
+            rows.push(row(
+                "Run as a program",
+                div().debug_selector(|| "permission-run".into()).child(Toggle::new("permission-run", runs(ownership.mode)).on_change(move |run, _, _, cx| {
+                    workspace.update(cx, |this, cx| this.set_runs(run, cx)).ok();
+                })),
+            ));
+        }
+        if ownership.editable && folder {
+            rows.push(row(
+                "Everything inside",
+                Button::new("permissions-apply-inside")
+                    .label("Apply to contents")
+                    .variant(ButtonVariant::Secondary)
+                    .disabled(self.operation_status.is_busy())
+                    .on_click(cx.listener(|this, _, _, cx| this.apply_permissions_to_contents(cx))),
+            ));
+        }
+        rows.push(row(
+            "Mode",
+            div()
+                .font_family(self.fonts.mono.clone())
+                .text_size(px(12.))
+                .text_color(c(TEXT_SECONDARY))
+                .child(SharedString::from(format!("{}  {:03o}", permission_string(ownership.mode), ownership.mode & 0o7777))),
+        ));
+        rows
     }
 }
 
 /// `~/code/BoxBox` for a folder under the home folder.
 fn home_relative(folder: &std::path::Path) -> String {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    match home.as_deref().and_then(|home| folder.strip_prefix(home).ok()) {
+    let path = match home.as_deref().and_then(|home| folder.strip_prefix(home).ok()) {
         Some(rest) if rest.as_os_str().is_empty() => "~".into(),
         Some(rest) => format!("~/{}", rest.display()),
         None => folder.display().to_string(),
+    };
+    keep_end(path, 44)
+}
+
+/// A long path loses its start, at a folder boundary, so the folder it names shows.
+fn keep_end(path: String, limit: usize) -> String {
+    let count = path.chars().count();
+    if count <= limit {
+        return path;
     }
+    let tail: String = path.chars().skip(count - limit).collect();
+    let tail = tail.find('/').map_or(tail.as_str(), |slash| &tail[slash..]);
+    format!("…{tail}")
 }
 
 /// "3 files, 1 folder".

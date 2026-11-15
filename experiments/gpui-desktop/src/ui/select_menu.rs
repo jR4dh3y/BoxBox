@@ -16,7 +16,8 @@ impl Workspace {
         cx: &mut Context<Self>,
         on_change: fn(&mut Workspace, T, &mut Context<Workspace>),
     ) -> impl IntoElement {
-        let label = options.iter().find(|(option, _)| *option == value).map_or("", |(_, label)| label);
+        // A value with no option, such as unusual permissions, reads as Custom.
+        let label = options.iter().find(|(option, _)| *option == value).map_or("Custom", |(_, label)| label);
         let open = self.open_select == Some(id);
         div()
             .relative()

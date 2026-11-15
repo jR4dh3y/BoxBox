@@ -21,6 +21,8 @@ pub enum ModalSize {
 #[derive(IntoElement)]
 pub struct Modal {
     title: Option<SharedString>,
+    /// Drawn before the title, such as the icon of the item a dialog is about.
+    leading: Option<AnyElement>,
     size: ModalSize,
     padded: bool,
     body: Vec<AnyElement>,
@@ -31,11 +33,16 @@ pub struct Modal {
 
 impl Modal {
     pub fn new() -> Self {
-        Self { title: None, size: ModalSize::Md, padded: true, body: Vec::new(), footer: Vec::new(), on_close: None, close_selector: None }
+        Self { title: None, leading: None, size: ModalSize::Md, padded: true, body: Vec::new(), footer: Vec::new(), on_close: None, close_selector: None }
     }
 
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
         self.title = Some(title.into());
+        self
+    }
+
+    pub fn leading(mut self, element: impl IntoElement) -> Self {
+        self.leading = Some(element.into_any_element());
         self
     }
 
@@ -136,12 +143,20 @@ impl RenderOnce for Modal {
                                 .pl(px(16.))
                                 .child(
                                     div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(8.))
                                         .min_w_0()
-                                        .truncate()
-                                        .type_sm()
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .text_color(c(TEXT_PRIMARY))
-                                        .child(title),
+                                        .children(self.leading)
+                                        .child(
+                                            div()
+                                                .min_w_0()
+                                                .truncate()
+                                                .type_sm()
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(c(TEXT_PRIMARY))
+                                                .child(title),
+                                        ),
                                 )
                                 .child(close),
                         )

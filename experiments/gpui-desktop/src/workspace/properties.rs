@@ -112,13 +112,86 @@ impl Workspace {
     }
 }
 
+/// Who a permission is for: the bits of each, as a shift of `rwx` (0o7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Class {
+    Owner = 6,
+    Group = 3,
+    Others = 0,
+}
+
+/// What one class may do, as Nautilus names it. A file's execute bit is the
+/// separate "Run as a program"; a folder's is part of its access.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Access {
+    None,
+    Read,
+    ReadWrite,
+    /// Folders: `r--`, `r-x` and `rwx`.
+    List,
+    Open,
+    Full,
+    /// Any other combination, which the menu does not offer.
+    Custom,
+}
+
+impl Access {
+    pub const FILE: [(Self, &'static str); 3] = [(Self::None, "None"), (Self::Read, "Read only"), (Self::ReadWrite, "Read & write")];
+    pub const FOLDER: [(Self, &'static str); 4] =
+        [(Self::None, "None"), (Self::List, "List files only"), (Self::Open, "Access files"), (Self::Full, "Create and delete")];
+
+    pub fn of(mode: u32, class: Class, folder: bool) -> Self {
+        let bits = (mode >> class as u32) & 0o7;
+        match (folder, bits) {
+            (false, bits) => match bits & 0o6 {
+                0 => Self::None,
+                0o4 => Self::Read,
+                0o6 => Self::ReadWrite,
+                _ => Self::Custom,
+            },
+            (true, 0) => Self::None,
+            (true, 0o4) => Self::List,
+            (true, 0o5) => Self::Open,
+            (true, 0o7) => Self::Full,
+            (true, _) => Self::Custom,
+        }
+    }
+
+    /// `mode` with this access for `class`; a file keeps its execute bit.
+    fn apply(self, mode: u32, class: Class) -> u32 {
+        let (bits, keep) = match self {
+            Self::None => (0, 0o1),
+            Self::Read => (0o4, 0o1),
+            Self::ReadWrite => (0o6, 0o1),
+            Self::List => (0o4, 0),
+            Self::Open => (0o5, 0),
+            Self::Full => (0o7, 0),
+            Self::Custom => return mode,
+        };
+        let shift = class as u32;
+        (mode & !(0o7 << shift)) | (bits << shift) | (mode & (keep << shift))
+    }
+}
+
+/// "Run as a program": execute for each class that may read, or for none.
+pub(crate) fn runs(mode: u32) -> bool {
+    mode & 0o111 != 0
+}
+
 impl Workspace {
-    /// A box of the permissions grid: flips `bit` at once, as Nautilus and
-    /// Thunar do, then reads the mode back.
-    pub(crate) fn toggle_permission(&mut self, bit: u32, cx: &mut Context<Self>) {
+    pub(crate) fn set_access(&mut self, class: Class, access: Access, cx: &mut Context<Self>) {
+        self.change_mode(|mode| access.apply(mode, class), cx);
+    }
+
+    pub(crate) fn set_runs(&mut self, run: bool, cx: &mut Context<Self>) {
+        self.change_mode(|mode| if run { mode | ((mode & 0o444) >> 2) } else { mode & !0o111 }, cx);
+    }
+
+    /// Changes the mode at once, as Nautilus and Thunar do, then reads it back.
+    fn change_mode(&mut self, change: impl FnOnce(u32) -> u32, cx: &mut Context<Self>) {
         let Some(state) = self.properties.as_ref() else { return };
         let Some(Load::Loaded(shown_mode)) = &state.ownership else { return };
-        let (path, mode, shown) = (shown_mode.path.clone(), (shown_mode.mode ^ bit) & 0o7777, state.cancel.clone());
+        let (path, mode, shown) = (shown_mode.path.clone(), change(shown_mode.mode) & 0o7777, state.cancel.clone());
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move { chmod(&path, mode).and_then(|()| ownership(&path)) }).await;
             this.update(cx, |this, cx| {
@@ -312,6 +385,20 @@ fn remote_totals(api: &Api, items: &[FileInfo], cancel: &AtomicBool) -> Option<T
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn access_levels_read_and_set_the_mode() {
+        assert_eq!(Access::of(0o640, Class::Owner, false), Access::ReadWrite);
+        assert_eq!(Access::of(0o640, Class::Group, false), Access::Read);
+        assert_eq!(Access::of(0o640, Class::Others, false), Access::None);
+        assert_eq!(Access::of(0o620, Class::Group, false), Access::Custom);
+        assert_eq!(Access::of(0o750, Class::Group, true), Access::Open);
+        // A file keeps whether it runs; a folder's access sets all three bits.
+        assert_eq!(Access::Read.apply(0o755, Class::Owner), 0o555);
+        assert_eq!(Access::None.apply(0o755, Class::Others), 0o751);
+        assert_eq!(Access::Full.apply(0o700, Class::Group), 0o770);
+        assert_eq!(Access::List.apply(0o755, Class::Others), 0o754);
+    }
 
     #[test]
     fn permissions_read_like_ls() {
