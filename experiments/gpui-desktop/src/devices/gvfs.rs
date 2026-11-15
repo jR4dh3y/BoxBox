@@ -56,7 +56,7 @@ fn tracker(connection: &Connection) -> Result<Proxy<'static>> {
 /// A mount's spec keys as text, such as `type=mtp, host=…`.
 type Spec = HashMap<String, String>;
 
-fn volume(connection: &Connection, mount: MountInfo) -> Option<(Volume, Spec)> {
+fn volume(connection: &Connection, mount: MountInfo, sizes: Sizes) -> Option<(Volume, Spec)> {
     let (daemon, object, name, _, _, _, _, _, _, fuse, (_, spec), _) = mount;
     let point = PathBuf::from(text(&fuse));
     // A mount without a folder cannot be browsed by path.
@@ -65,11 +65,14 @@ fn volume(connection: &Connection, mount: MountInfo) -> Option<(Volume, Spec)> {
     }
     let spec: Spec = spec.into_iter().filter_map(|(key, value)| Some((key, text(&<Vec<u8>>::try_from(value).ok()?)))).collect();
     let kind = spec.get("type").cloned().unwrap_or_default();
-    let mut state = super::mounted(point, false);
-    // FUSE reports no size for some backends, such as a phone's; the backend itself does.
-    if let State::Mounted { space: space @ None, .. } = &mut state {
-        *space = backend_space(connection, &daemon, &object);
-    }
+    // The size comes from the backend over D-Bus, never through the FUSE folder:
+    // a busy or locked phone holds a FUSE call in the kernel until it answers,
+    // and a process with a thread there cannot even exit.
+    let space = match sizes {
+        Sizes::Ask => backend_space(connection, &daemon, &object),
+        Sizes::Skip => None,
+    };
+    let state = State::Mounted { point, space, read_only: false };
     let volume = Volume {
         id: format!("gvfs:{daemon}{object}"),
         name,
@@ -146,11 +149,20 @@ fn unmounted(connection: &Connection, monitor: &str) -> Result<Vec<Volume>> {
         .collect())
 }
 
+/// Whether a listing asks each mount's backend for its size. A phone that is
+/// locked or waiting for "allow file transfer" takes the full D-Bus timeout to
+/// fail, so the list goes out first without sizes and again with them.
+#[derive(Clone, Copy)]
+pub enum Sizes {
+    Skip,
+    Ask,
+}
+
 /// Mounted locations, then plugged-in devices that are not mounted, each sorted by name.
-pub fn list(connection: &Connection) -> Result<Vec<Volume>> {
+pub fn list(connection: &Connection, sizes: Sizes) -> Result<Vec<Volume>> {
     let _span = crate::profile::span("gvfs.list");
     let mounts: Vec<MountInfo> = tracker(connection)?.call("ListMounts2", &(true,)).context("GVfs did not list its mounts")?;
-    let mut mounted: Vec<(Volume, Spec)> = mounts.into_iter().filter_map(|mount| volume(connection, mount)).collect();
+    let mut mounted: Vec<(Volume, Spec)> = mounts.into_iter().filter_map(|mount| volume(connection, mount, sizes)).collect();
     let mut volumes = Vec::new();
     for monitor in monitors() {
         match unmounted(connection, &monitor) {
@@ -177,7 +189,8 @@ pub fn watch(sender: async_channel::Sender<Update>) {
     std::thread::Builder::new()
         .name("gvfs".into())
         .spawn(move || {
-            let send = |connection: &Connection| sender.send_blocking(Update::Gvfs(list(connection).map_err(|error| format!("{error:#}")))).is_ok();
+            let send_list = |connection: &Connection, sizes| sender.send_blocking(Update::Gvfs(list(connection, sizes).map_err(|error| format!("{error:#}")))).is_ok();
+            let send = |connection: &Connection| send_list(connection, Sizes::Skip) && send_list(connection, Sizes::Ask);
             let run = || -> Result<()> {
                 // A phone that stops answering must not hold the list up for D-Bus's 25 seconds.
                 let connection = zbus::blocking::connection::Builder::session()?
