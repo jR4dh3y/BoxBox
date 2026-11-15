@@ -77,13 +77,16 @@ pub fn launch(path: &Path) -> Result<()> {
         bail!("{} is not a trusted launcher", path.display());
     }
     let entry = DesktopEntry::read(path).context("cannot read the launcher")?;
-    if entry.value("Terminal") == "true" {
-        bail!("this launcher runs in a terminal, which BoxBox cannot open yet");
-    }
     let argv = exec_argv(entry.value("Exec"), entry.value("Name"), entry.value("Icon"), path).context("the launcher's Exec line cannot be read")?;
-    let (program, arguments) = argv.split_first().context("the launcher's Exec line is empty")?;
-    let mut command = Command::new(program);
-    command.args(arguments);
+    anyhow::ensure!(!argv.is_empty(), "the launcher's Exec line is empty");
+    let mut command = match entry.value("Terminal") == "true" {
+        true => in_terminal(&argv).context("this launcher runs in a terminal, and no terminal was found; set $TERMINAL or install xdg-terminal-exec")?,
+        false => {
+            let mut command = Command::new(&argv[0]);
+            command.args(&argv[1..]);
+            command
+        }
+    };
     match entry.value("Path") {
         "" => {}
         folder => {
@@ -98,6 +101,45 @@ fn name_of(path: &Path) -> String {
         Runnable::Launcher { name, .. } => name,
         _ => String::new(),
     }
+}
+
+/// Terminals by the option that makes them run a command, most common first.
+/// Each takes the command as the rest of its arguments.
+const TERMINALS: &[(&str, &[&str])] = &[
+    ("kgx", &["--"]),
+    ("gnome-terminal", &["--"]),
+    ("konsole", &["-e"]),
+    ("xfce4-terminal", &["-x"]),
+    ("kitty", &[]),
+    ("foot", &[]),
+    ("alacritty", &["-e"]),
+    ("wezterm", &["start", "--"]),
+    ("ghostty", &["-e"]),
+    ("xterm", &["-e"]),
+];
+
+/// `argv` in the user's terminal: the default from `xdg-terminal-exec` (the
+/// proposed freedesktop default-terminal spec), else `$TERMINAL`, else the
+/// first installed terminal known here.
+fn in_terminal(argv: &[String]) -> Option<Command> {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    in_terminal_with(argv, std::env::var("TERMINAL").ok(), &|name| std::env::split_paths(&path).any(|folder| executable(&folder.join(name))))
+}
+
+fn in_terminal_with(argv: &[String], variable: Option<String>, installed: &dyn Fn(&str) -> bool) -> Option<Command> {
+    let (program, before): (String, &[&str]) = if installed("xdg-terminal-exec") {
+        ("xdg-terminal-exec".into(), &[])
+    } else if let Some(terminal) = variable.filter(|terminal| !terminal.trim().is_empty()) {
+        // A known terminal keeps its own option; anything else gets the common `-e`.
+        let options = TERMINALS.iter().find(|(name, _)| Path::new(&terminal).file_name().is_some_and(|file| file == *name)).map_or(&["-e"][..], |(_, options)| options);
+        (terminal, options)
+    } else {
+        let (name, options) = TERMINALS.iter().find(|(name, _)| installed(name))?;
+        ((*name).into(), *options)
+    };
+    let mut command = Command::new(program);
+    command.args(before).args(argv);
+    Some(command)
 }
 
 /// Spawns `command` and reaps it when it exits, so it never lingers as a zombie.
@@ -211,6 +253,22 @@ pub fn scratch(name: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_terminal_launcher_opens_in_the_users_terminal() {
+        let argv = ["htop".to_string(), "-d".into(), "10".into()];
+        let run = |variable: Option<&str>, installed: &[&str]| {
+            let command = in_terminal_with(&argv, variable.map(str::to_string), &|name| installed.contains(&name))?;
+            let mut line = vec![command.get_program().to_string_lossy().into_owned()];
+            line.extend(command.get_args().map(|arg| arg.to_string_lossy().into_owned()));
+            Some(line.join(" "))
+        };
+        assert_eq!(run(Some("kitty"), &["xdg-terminal-exec", "xterm"]).as_deref(), Some("xdg-terminal-exec htop -d 10"), "the default terminal first");
+        assert_eq!(run(Some("/usr/bin/wezterm"), &["xterm"]).as_deref(), Some("/usr/bin/wezterm start -- htop -d 10"), "$TERMINAL with its own option");
+        assert_eq!(run(Some("myterm"), &[]).as_deref(), Some("myterm -e htop -d 10"));
+        assert_eq!(run(None, &["xterm", "kitty"]).as_deref(), Some("kitty htop -d 10"));
+        assert_eq!(run(Some(" "), &[]), None, "nothing to run it in");
+    }
 
     #[test]
     fn exec_lines_split_and_expand_like_the_spec() {
