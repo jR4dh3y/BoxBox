@@ -121,12 +121,6 @@ impl Storage {
         }
     }
 
-    /// Whether opening it does anything: a remembered drive opens once its
-    /// server answers, and until then only a failed connection can be retried.
-    pub fn opens(&self) -> bool {
-        !matches!(self, Storage::Remembered { wait: Wait::Since(_), .. })
-    }
-
     /// Whether the pane is on this entry: the same provider, at or under its drive.
     pub fn holds(&self, workspace: &Workspace, api: &Arc<Api>, path: &str) -> bool {
         let under = |root: &str| path == root || path.starts_with(&format!("{root}/"));
@@ -168,7 +162,11 @@ impl Workspace {
                 storage.push(Storage::Server { server: server.clone(), status, reason });
                 continue;
             }
-            storage.extend(remembered.iter().map(|drive| Storage::Remembered { server: server.clone(), drive: drive.clone(), status, reason: reason.clone(), wait }));
+            storage.extend(remembered.iter().map(|drive| {
+                // The one the user opened says it is on its way.
+                let status = if self.servers.is_wanted(&server.id, Some(&drive.name)) { "Opening…" } else { status };
+                Storage::Remembered { server: server.clone(), drive: drive.clone(), status, reason: reason.clone(), wait }
+            }));
         }
         Some(storage)
     }
@@ -181,7 +179,9 @@ impl Workspace {
             }
             Storage::Volume(volume) => self.open_volume(volume, window, cx),
             Storage::ServerDrive { api, drive, .. } => self.navigate_to(self.active_pane, api, drive.name, cx),
-            Storage::Server { server, .. } | Storage::Remembered { server, .. } => self.connect_server(server, true, cx),
+            Storage::Server { server, .. } => self.connect_server(server, true, cx),
+            // Opens when the server answers, or tries a failed one again.
+            Storage::Remembered { server, drive, .. } => self.open_server_drive_when_ready(server, Some(drive.name), cx),
         }
     }
 }

@@ -106,11 +106,7 @@ impl Workspace {
                     Some(wait) => row.waiting(wait),
                     None => row,
                 };
-                match entry.opens() {
-                    true => row.on_click(cx.listener(move |this, _, window, cx| this.open_storage(entry.clone(), window, cx))),
-                    false => row.disabled(true),
-                }
-                .into_any_element()
+                row.on_click(cx.listener(move |this, _, window, cx| this.open_storage(entry.clone(), window, cx))).into_any_element()
             })
             .collect()
     }

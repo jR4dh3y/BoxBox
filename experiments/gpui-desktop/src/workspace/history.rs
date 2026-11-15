@@ -31,6 +31,7 @@ impl Workspace {
     /// Moves `steps` existing places back or forward in a pane's history, dropping
     /// the places on the way that no longer exist.
     pub(crate) fn travel(&mut self, target: PaneTarget, back: bool, steps: usize, cx: &mut Context<Self>) {
+        self.servers.forget_wanted();
         let Some(pane) = self.pane_by_id(target.0) else { return };
         let (backward, forward) = pane.history();
         let places = if back { backward } else { forward };

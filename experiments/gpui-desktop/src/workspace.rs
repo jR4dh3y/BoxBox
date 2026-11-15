@@ -793,6 +793,8 @@ impl Workspace {
 
     /// Opens `path` on `api` in a pane, moving it to that provider if it is another.
     pub(crate) fn navigate_to(&mut self, target: PaneTarget, api: Arc<Api>, path: String, cx: &mut Context<Self>) {
+        // Going somewhere drops a server drive still waiting to open.
+        self.servers.forget_wanted();
         self.trash_open = false;
         self.trash_error = None;
         if let Some(pane) = self.pane_mut_by_id(target.0) {

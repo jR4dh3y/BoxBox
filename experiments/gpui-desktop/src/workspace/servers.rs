@@ -14,7 +14,7 @@ use gpui::Context;
 use crate::api::{Api, DriveStats, Unauthorized};
 use crate::settings_state::{SavedConnection, SettingsDialog};
 use crate::ui::SettingsField;
-use crate::workspace::{SettingsSection, Workspace};
+use crate::workspace::{PaneTarget, SettingsSection, Workspace};
 
 pub(crate) enum ServerState {
     Connecting { since: Instant },
@@ -55,11 +55,21 @@ pub(crate) fn load_remembered() -> Remembered {
     std::fs::read(crate::persist::SERVER_DRIVES.path()).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
 }
 
+/// A drive the user opened before its server answered. It opens when the
+/// server does, unless the pane went somewhere else first.
+pub(crate) struct Wanted {
+    pub server: String,
+    /// None for the server's first drive.
+    pub drive: Option<String>,
+    pub pane: PaneTarget,
+}
+
 /// Each saved connection's state, by its id.
 #[derive(Default)]
 pub(crate) struct Servers {
     states: HashMap<String, ServerState>,
     remembered: Remembered,
+    wanted: Option<Wanted>,
 }
 
 impl Servers {
@@ -76,6 +86,16 @@ impl Servers {
         self.remembered = remembered;
     }
 
+    /// Whether this drive is waiting to open; `None` asks about the first.
+    pub fn is_wanted(&self, server: &str, drive: Option<&str>) -> bool {
+        self.wanted.as_ref().is_some_and(|wanted| wanted.server == server && wanted.drive.as_deref() == drive)
+    }
+
+    /// Drops a waiting open: the user went elsewhere.
+    pub fn forget_wanted(&mut self) {
+        self.wanted = None;
+    }
+
     #[cfg(test)]
     pub fn set(&mut self, id: &str, state: ServerState) {
         self.states.insert(id.to_string(), state);
@@ -83,7 +103,7 @@ impl Servers {
 }
 
 enum Connected {
-    Ready(Api, Vec<DriveStats>),
+    Ready(Arc<Api>, Vec<DriveStats>),
     NeedsPairing(String),
 }
 
@@ -100,7 +120,7 @@ fn connect(connection: &SavedConnection) -> Result<Connected> {
     };
     let api = Api::new(&connection.url, Some(credential));
     match api.drives() {
-        Ok(drives) => Ok(Connected::Ready(api, drives)),
+        Ok(drives) => Ok(Connected::Ready(Arc::new(api), drives)),
         Err(error) => match error.downcast_ref::<Unauthorized>() {
             Some(Unauthorized(message)) => Ok(Connected::NeedsPairing(format!("The server no longer accepts this computer ({message}). Pair it again."))),
             None => Err(error),
@@ -134,63 +154,85 @@ impl Workspace {
         }
     }
 
+    /// Opens a server's drive in the active pane: now when the server has
+    /// answered, else as soon as it does. A server that failed is tried again.
+    pub(crate) fn open_server_drive_when_ready(&mut self, connection: SavedConnection, drive: Option<String>, cx: &mut Context<Self>) {
+        if let Some(ServerState::Ready { api, drives }) = self.servers.states.get(&connection.id) {
+            let drive = drive.or_else(|| drives.first().map(|drive| drive.name.clone())).unwrap_or_default();
+            self.open_server_drive(self.active_pane, api.clone(), drive, cx);
+            return;
+        }
+        self.servers.wanted = Some(Wanted { server: connection.id.clone(), drive, pane: self.active_pane });
+        cx.notify();
+        self.connect_server(connection, false, cx);
+    }
+
     /// Connects a saved server. When `open`, the user asked for it: its first
     /// drive opens, or Settings asks for a pairing code, or the failure shows.
     pub(crate) fn connect_server(&mut self, connection: SavedConnection, open: bool, cx: &mut Context<Self>) {
-        match self.servers.states.get(&connection.id) {
-            Some(ServerState::Connecting { .. }) => return,
-            Some(ServerState::Ready { api, drives }) if open => {
-                let (api, first) = (api.clone(), drives.first().map(|drive| drive.name.clone()).unwrap_or_default());
-                self.open_server_drive(api, first, cx);
-                return;
-            }
-            _ => {}
+        if open {
+            self.open_server_drive_when_ready(connection, None, cx);
+            return;
+        }
+        if let Some(ServerState::Connecting { .. }) = self.servers.states.get(&connection.id) {
+            return;
         }
         self.servers.states.insert(connection.id.clone(), ServerState::Connecting { since: Instant::now() });
         cx.notify();
         cx.spawn(async move |this, cx| {
             let connecting = connection.clone();
             let result = cx.background_executor().spawn(async move { connect(&connecting) }).await;
-            this.update(cx, |this, cx| {
-                // Removed while it connected.
-                if !this.desktop_settings.connections.iter().any(|saved| saved.id == connection.id) {
-                    this.servers.states.remove(&connection.id);
-                    return;
-                }
-                let state = match result {
-                    Ok(Connected::Ready(api, drives)) => {
-                        this.remember(&connection.id, &drives, cx);
-                        let api = Arc::new(api);
-                        if open {
-                            let first = drives.first().map(|drive| drive.name.clone()).unwrap_or_default();
-                            this.open_server_drive(api.clone(), first, cx);
-                        }
-                        ServerState::Ready { api, drives }
-                    }
-                    Ok(Connected::NeedsPairing(reason)) => {
-                        if open {
-                            this.ask_to_pair(connection.clone(), reason.clone(), cx);
-                        }
-                        ServerState::NeedsPairing(reason)
-                    }
-                    Err(error) => {
-                        let message = format!("{error:#}");
-                        if open {
-                            let shown = format!("Could not open {}: {message}", connection.name);
-                            match this.settings_open {
-                                true => this.settings_panel.error = Some(shown),
-                                false => this.report(Err(shown), cx),
-                            }
-                        }
-                        ServerState::Offline(message)
-                    }
-                };
-                this.servers.states.insert(connection.id, state);
-                cx.notify();
-            })
-            .ok();
+            this.update(cx, |this, cx| this.connected(connection, result, cx)).ok();
         })
         .detach();
+    }
+
+    /// A server answered, or failed to. A drive the user opened while it
+    /// connected opens now; a failure they were waiting on is shown.
+    fn connected(&mut self, connection: SavedConnection, result: Result<Connected>, cx: &mut Context<Self>) {
+        // Removed while it connected.
+        if !self.desktop_settings.connections.iter().any(|saved| saved.id == connection.id) {
+            self.servers.states.remove(&connection.id);
+            return;
+        }
+        let wanted = self.servers.wanted.take_if(|wanted| wanted.server == connection.id);
+        let state = match result {
+            Ok(Connected::Ready(api, drives)) => {
+                self.remember(&connection.id, &drives, cx);
+                if let Some(wanted) = wanted {
+                    // A remembered drive the server no longer has opens its first.
+                    let drive = wanted.drive.filter(|name| drives.iter().any(|drive| &drive.name == name));
+                    let drive = drive.or_else(|| drives.first().map(|drive| drive.name.clone())).unwrap_or_default();
+                    self.open_server_drive(wanted.pane, api.clone(), drive, cx);
+                }
+                ServerState::Ready { api, drives }
+            }
+            Ok(Connected::NeedsPairing(reason)) => {
+                if wanted.is_some() {
+                    self.ask_to_pair(connection.clone(), reason.clone(), cx);
+                }
+                ServerState::NeedsPairing(reason)
+            }
+            Err(error) => {
+                let message = format!("{error:#}");
+                if wanted.is_some() {
+                    let shown = format!("Could not open {}: {message}", connection.name);
+                    match self.settings_open {
+                        true => self.settings_panel.error = Some(shown),
+                        false => self.report(Err(shown), cx),
+                    }
+                }
+                ServerState::Offline(message)
+            }
+        };
+        self.servers.states.insert(connection.id, state);
+        cx.notify();
+    }
+
+    /// What `connect` gives when the server lists `drives`, without the network.
+    #[cfg(test)]
+    pub(crate) fn server_answered(&mut self, connection: SavedConnection, api: Arc<Api>, drives: Vec<DriveStats>, cx: &mut Context<Self>) {
+        self.connected(connection, Ok(Connected::Ready(api, drives)), cx);
     }
 
     /// Keeps the drives a server just listed for the next start-up, when they
@@ -219,11 +261,11 @@ impl Workspace {
         self.connect_server(connection, open, cx);
     }
 
-    /// Opens a server's drive in the active pane, closing Settings if it was the way there.
-    pub(crate) fn open_server_drive(&mut self, api: Arc<Api>, drive: String, cx: &mut Context<Self>) {
+    /// Opens a server's drive in a pane, closing Settings if it was the way there.
+    pub(crate) fn open_server_drive(&mut self, target: PaneTarget, api: Arc<Api>, drive: String, cx: &mut Context<Self>) {
         self.settings_open = false;
         self.settings_panel.dialog = None;
-        self.navigate_to(self.active_pane, api, drive, cx);
+        self.navigate_to(target, api, drive, cx);
     }
 
     /// Settings, at the pairing dialog, which is where codes are entered.

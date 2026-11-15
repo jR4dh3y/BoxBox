@@ -48,11 +48,8 @@ impl Workspace {
 
     fn render_drive_card(&self, index: usize, drive: &Storage, cx: &mut Context<Self>) -> impl IntoElement {
         let open = drive.clone();
-        let card = DriveCard::new(("drive-card", index), drive.info(), c(self.accent_hex()), self.fonts.mono.clone());
-        match drive.opens() {
-            true => card.on_click(cx.listener(move |this, _, window, cx| this.open_storage(open.clone(), window, cx))),
-            false => card,
-        }
+        DriveCard::new(("drive-card", index), drive.info(), c(self.accent_hex()), self.fonts.mono.clone())
+            .on_click(cx.listener(move |this, _, window, cx| this.open_storage(open.clone(), window, cx)))
     }
 
     pub(crate) fn render_drive_list(
@@ -121,7 +118,6 @@ impl Workspace {
 
         let rows = drives.iter().enumerate().map(|(index, drive)| {
             let open = drive.clone();
-            let opens = drive.opens();
             let drive = drive.info();
             let usage = drive.state.usage();
             let wait = drive.state.wait();
@@ -168,7 +164,7 @@ impl Workspace {
                         })),
                 )
                 .on_click(cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
-                    if opens && event.click_count() >= 2 {
+                    if event.click_count() >= 2 {
                         this.open_storage(open.clone(), window, cx);
                     }
                 }))

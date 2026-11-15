@@ -417,7 +417,7 @@ fn remembered_server_drives_hold_their_places_until_the_server_answers(cx: &mut 
     use crate::settings_state::SavedConnection;
     use servers::ServerState;
     let (view, cx, _fixture) = open(cx, &["a.txt"]);
-    let pico = SavedConnection { id: "pico".into(), name: "pico".into(), url: "http://pico:8080".into() };
+    let pico = SavedConnection { id: "pico".into(), name: "pico".into(), url: "http://127.0.0.1:9".into() };
     view.update(cx, |workspace, cx| {
         workspace.desktop_settings.connections.push(pico.clone());
         // What the last run saw, as the start-up thread reads it back.
@@ -432,36 +432,55 @@ fn remembered_server_drives_hold_their_places_until_the_server_answers(cx: &mut 
         workspace.navigate(String::new(), cx);
     });
     settle(cx);
-    let entries = |view: &Entity<Workspace>, cx: &mut VisualTestContext| -> Vec<(String, bool)> {
+    // Each entry's name, and its status while its usage is unknown.
+    let entries = |view: &Entity<Workspace>, cx: &mut VisualTestContext| -> Vec<(String, String)> {
         view.read_with(cx, |workspace, _| {
-            workspace.storage().unwrap().iter().filter(|entry| !matches!(entry, overview::Storage::Volume(_))).map(|entry| (entry.info().name.to_string(), entry.opens())).collect()
+            let storage = workspace.storage().unwrap().into_iter().filter(|entry| !matches!(entry, overview::Storage::Volume(_)));
+            storage.map(|entry| (entry.info().name.to_string(), entry.info().state.status().map(|status| status.to_string()).unwrap_or_default())).collect()
         })
     };
-    assert_eq!(entries(&view, cx), [("Home".into(), true), ("root".into(), false), ("gdrive-radheykalra901".into(), false)], "remembered drives wait, unopenable");
+    let named = |pairs: &[(&str, &str)]| pairs.iter().map(|(name, status)| (name.to_string(), status.to_string())).collect::<Vec<_>>();
+    assert_eq!(entries(&view, cx), named(&[("Home", ""), ("root", "Connecting…"), ("gdrive-radheykalra901", "Connecting…")]));
     // The second server row's label, which a shift in the rows above would move.
     let card = |cx: &mut VisualTestContext| cx.debug_bounds("server-1-detail").unwrap();
     let waiting = card(cx);
 
-    // The server answers with the same drives: they take the places the remembered ones held.
-    let api = Arc::new(Api::new("http://pico:8080", None));
-    view.update(cx, |workspace, cx| {
-        workspace.servers.set("pico", ServerState::Ready { api, drives: vec![server_drive("root"), server_drive("gdrive-radheykalra901")] });
-        cx.notify();
-    });
+    // Opened while the server connects, the drive says so and opens once it answers.
+    let open = |view: &Entity<Workspace>, cx: &mut VisualTestContext, index: usize| {
+        let entry = view.read_with(cx, |workspace, _| workspace.storage().unwrap().into_iter().filter(|entry| !matches!(entry, overview::Storage::Volume(_))).nth(index).unwrap());
+        cx.update(|window, app| view.update(app, |workspace, cx| workspace.open_storage(entry, window, cx)));
+    };
+    open(&view, cx, 2);
+    assert_eq!(entries(&view, cx)[2].1, "Opening…");
+    view.read_with(cx, |workspace, _| assert!(workspace.pane().is_at_root(), "nothing to open yet"));
+    let api = Arc::new(Api::new("http://127.0.0.1:9", None));
+    let drives = vec![server_drive("root"), server_drive("gdrive-radheykalra901")];
+    view.update(cx, |workspace, cx| workspace.server_answered(pico.clone(), api.clone(), drives.clone(), cx));
     settle(cx);
-    assert_eq!(entries(&view, cx), [("Home".into(), true), ("root".into(), true), ("gdrive-radheykalra901".into(), true)]);
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.pane().path, "gdrive-radheykalra901");
+        assert!(Arc::ptr_eq(&workspace.pane().api, &api));
+    });
+    // The server's drives took the places the remembered ones held.
+    assert_eq!(entries(&view, cx), named(&[("Home", ""), ("root", ""), ("gdrive-radheykalra901", "")]));
     assert_eq!(card(cx), waiting, "nothing moved");
 
-    // A server that cannot be reached keeps them, dimmed, and opening one retries.
+    // Going elsewhere before the server answers drops the waiting open.
+    view.update(cx, |workspace, cx| {
+        workspace.navigate(String::new(), cx);
+        workspace.servers.set("pico", ServerState::Connecting { since: std::time::Instant::now() });
+    });
+    open(&view, cx, 1);
+    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
+    view.update(cx, |workspace, cx| workspace.server_answered(pico.clone(), api.clone(), drives.clone(), cx));
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home", "the late answer did not take the pane away"));
+
+    // A server that cannot be reached keeps them, dimmed with the reason.
     view.update(cx, |workspace, cx| {
         workspace.servers.set("pico", ServerState::Offline("connection refused".into()));
         cx.notify();
     });
-    assert_eq!(entries(&view, cx), [("Home".into(), true), ("root".into(), true), ("gdrive-radheykalra901".into(), true)]);
-    view.read_with(cx, |workspace, _| {
-        let storage = workspace.storage().unwrap();
-        assert!(storage.iter().any(|entry| matches!(entry, overview::Storage::Remembered { status: "Can’t reach the server", .. })));
-    });
+    assert_eq!(entries(&view, cx), named(&[("Home", ""), ("root", "Can’t reach the server"), ("gdrive-radheykalra901", "Can’t reach the server")]));
 
     // Without a snapshot a server is one entry, as before.
     view.update(cx, |workspace, _| workspace.servers.set_remembered(Default::default()));
