@@ -911,6 +911,24 @@ impl Workspace {
     }
 
     pub(crate) fn open_tab_with(&mut self, api: Arc<Api>, path: String, cx: &mut Context<Self>) {
+        let target = self.push_tab(api, path);
+        self.active_tab = self.tabs.len() - 1;
+        self.active_pane = target;
+        self.trash_open = false;
+        self.load_drives(target, cx);
+        self.load_pane(target, cx);
+        cx.notify();
+    }
+
+    /// A new tab behind the current one, as Ctrl with a middle-click opens.
+    pub(crate) fn open_tab_in_background(&mut self, api: Arc<Api>, path: String, cx: &mut Context<Self>) {
+        let target = self.push_tab(api, path);
+        self.load_drives(target, cx);
+        self.load_pane(target, cx);
+        cx.notify();
+    }
+
+    fn push_tab(&mut self, api: Arc<Api>, path: String) -> PaneTarget {
         let id = self.next_pane_id;
         self.next_pane_id += 1;
         self.tabs.push(Pane::with_api(
@@ -921,12 +939,7 @@ impl Workspace {
             preference_sort(&self.preferences),
             preference_view(&self.preferences),
         ));
-        self.active_tab = self.tabs.len() - 1;
-        self.active_pane = PaneTarget(id);
-        self.trash_open = false;
-        self.load_drives(PaneTarget(id), cx);
-        self.load_pane(PaneTarget(id), cx);
-        cx.notify();
+        PaneTarget(id)
     }
 
     pub(crate) fn close_tab_at(&mut self, index: usize, cx: &mut Context<Self>) {

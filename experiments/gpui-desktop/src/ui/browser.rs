@@ -101,6 +101,14 @@ impl Workspace {
                 // Rows stop the event, so this is empty space: the menu is for the folder.
                 this.show_folder_context_menu(target, event.position, cx);
             }))
+            // A mouse's side buttons go back and forward in the pane under the pointer,
+            // which the capture above made active.
+            .on_mouse_down(gpui::MouseButton::Navigate(gpui::NavigationDirection::Back), cx.listener(|this, _, window, cx| {
+                this.back(&crate::workspace::Back, window, cx);
+            }))
+            .on_mouse_down(gpui::MouseButton::Navigate(gpui::NavigationDirection::Forward), cx.listener(|this, _, window, cx| {
+                this.forward(&crate::workspace::Forward, window, cx);
+            }))
             .flex()
             .flex_col()
             .flex_1()

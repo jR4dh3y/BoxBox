@@ -105,13 +105,15 @@ impl Workspace {
             this.show_item_context_menu(target, index, event.position, cx);
             cx.stop_propagation();
         });
+        let tab = path.clone();
+        let on_middle = cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| this.middle_click_folder(target, tab.clone(), event, cx));
         let on_click = cx.listener(move |this, event: &ClickEvent, window, cx| {
             this.active_pane = target;
             this.activate_list_item(index, &path, is_dir, event, window, cx)
         });
         Some(tile.decorate(move |tile| {
             let tile = crate::drag_out::draggable(tile, target, index, workspace.clone(), api);
-            let tile = if is_dir { drop_zone(tile, folder, workspace) } else { tile };
+            let tile = if is_dir { drop_zone(tile, folder, workspace).on_mouse_down(gpui::MouseButton::Middle, on_middle) } else { tile };
             tile.on_mouse_down(gpui::MouseButton::Right, on_menu)
                 .on_click(on_click)
         }))

@@ -38,6 +38,16 @@ impl Workspace {
         }
     }
 
+    /// A middle-click on a folder: a new tab, behind the current one with Ctrl.
+    pub(crate) fn middle_click_folder(&mut self, pane: PaneTarget, path: String, event: &gpui::MouseDownEvent, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        let Some(api) = self.pane_by_id(pane.0).map(|pane| pane.api.clone()) else { return };
+        match event.modifiers.control {
+            true => self.open_tab_in_background(api, path, cx),
+            false => self.open_tab_with(api, path, cx),
+        }
+    }
+
     /// Properties of a folder known only by its path.
     pub(crate) fn folder_properties(&mut self, pane: PaneTarget, path: String, cx: &mut Context<Self>) {
         let Some(api) = self.pane_by_id(pane.0).map(|pane| pane.api.clone()) else { return };

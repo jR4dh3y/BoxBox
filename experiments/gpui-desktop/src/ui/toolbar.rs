@@ -240,9 +240,8 @@ impl Workspace {
                         .hover(|style| style.text_color(c(WHITE)).underline())
                         .on_click(cx.listener(move |this, _, _, cx| this.navigate_in(target, open.clone(), cx))),
                 })
-                .on_mouse_down(gpui::MouseButton::Middle, cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    this.open_in_new_tab(target, tab.clone(), cx);
+                .on_mouse_down(gpui::MouseButton::Middle, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                    this.middle_click_folder(target, tab.clone(), event, cx);
                 }))
                 .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
                     cx.stop_propagation();

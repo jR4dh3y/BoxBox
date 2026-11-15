@@ -488,6 +488,39 @@ fn remembered_server_drives_hold_their_places_until_the_server_answers(cx: &mut 
 }
 
 #[gpui::test]
+fn middle_click_opens_a_folder_in_a_tab_and_side_buttons_go_back(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["docs/", "music/", "a.txt"]);
+    let press = |cx: &mut VisualTestContext, selector: &'static str, button: MouseButton, modifiers: Modifiers| {
+        let at = cx.debug_bounds(selector).unwrap().center();
+        cx.simulate_mouse_down(at, button, modifiers);
+        cx.simulate_mouse_up(at, button, modifiers);
+        cx.run_until_parked();
+    };
+    let tabs = |view: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |workspace, _| (workspace.tabs.iter().map(|pane| pane.path.clone()).collect::<Vec<_>>(), workspace.active_tab))
+    };
+    // Sorted by name: docs, music, a.txt.
+    press(cx, "row-0-0", MouseButton::Middle, Modifiers::default());
+    assert_eq!(tabs(&view, cx), (vec!["home".to_string(), "home/docs".to_string()], 1), "a new tab, in front");
+    view.update(cx, |workspace, cx| workspace.activate_tab(0, cx));
+    settle(cx);
+    press(cx, "row-0-1", MouseButton::Middle, Modifiers::control());
+    assert_eq!(tabs(&view, cx), (vec!["home".to_string(), "home/docs".to_string(), "home/music".to_string()], 0), "with Ctrl, behind");
+    // A file is not a folder: nothing opens.
+    press(cx, "row-0-2", MouseButton::Middle, Modifiers::default());
+    assert_eq!(tabs(&view, cx).0.len(), 3);
+
+    // The mouse's side buttons go back and forward.
+    view.update(cx, |workspace, cx| workspace.navigate("home/docs".into(), cx));
+    settle(cx);
+    let pane = || "browser-pane-0";
+    press(cx, pane(), MouseButton::Navigate(gpui::NavigationDirection::Back), Modifiers::default());
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home"));
+    press(cx, pane(), MouseButton::Navigate(gpui::NavigationDirection::Forward), Modifiers::default());
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home/docs"));
+}
+
+#[gpui::test]
 fn the_last_location_is_kept_for_the_next_launch(cx: &mut TestAppContext) {
     let (view, cx, fixture) = open(cx, &["docs/a.txt"]);
     let api = Api::local_with_root(fixture.root.clone()).unwrap();
