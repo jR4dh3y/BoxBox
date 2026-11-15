@@ -30,9 +30,22 @@ impl Drop for PropertiesState {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Ownership {
+    pub path: PathBuf,
     pub mode: u32,
     pub owner: String,
     pub group: String,
+    /// Only the owner, or root, may change the permissions.
+    pub editable: bool,
+    pub accessed: Option<i64>,
+    pub created: Option<i64>,
+    /// Where a symbolic link points; a link has no permissions of its own.
+    pub link_target: Option<String>,
+}
+
+impl Ownership {
+    pub fn is_dir(&self) -> bool {
+        self.mode & libc::S_IFMT == libc::S_IFDIR
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -99,10 +112,103 @@ impl Workspace {
     }
 }
 
+impl Workspace {
+    /// A box of the permissions grid: flips `bit` at once, as Nautilus and
+    /// Thunar do, then reads the mode back.
+    pub(crate) fn toggle_permission(&mut self, bit: u32, cx: &mut Context<Self>) {
+        let Some(state) = self.properties.as_ref() else { return };
+        let Some(Load::Loaded(shown_mode)) = &state.ownership else { return };
+        let (path, mode, shown) = (shown_mode.path.clone(), (shown_mode.mode ^ bit) & 0o7777, state.cancel.clone());
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { chmod(&path, mode).and_then(|()| ownership(&path)) }).await;
+            this.update(cx, |this, cx| {
+                match result {
+                    Ok(read) => {
+                        if let Some(state) = this.properties.as_mut().filter(|state| Arc::ptr_eq(&state.cancel, &shown)) {
+                            state.ownership = Some(Load::Loaded(read));
+                        }
+                    }
+                    Err(error) => this.report(Err(format!("Could not change the permissions: {error:#}")), cx),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Gives everything inside the folder its permissions: folders the same,
+    /// files the same without execute, unless they were programs already.
+    pub(crate) fn apply_permissions_to_contents(&mut self, cx: &mut Context<Self>) {
+        let Some(Load::Loaded(ownership)) = self.properties.as_ref().and_then(|state| state.ownership.as_ref()) else { return };
+        let (root, mode) = (ownership.path.clone(), ownership.mode & 0o7777);
+        let generation = self.begin_operation("Applying permissions…");
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { apply_below(&root, mode) }).await;
+            this.update(cx, |this, cx| {
+                let result = result.map(|failed| {
+                    if failed > 0 {
+                        this.report(Err(format!("{failed} items inside kept their permissions: they are not yours")), cx);
+                    }
+                });
+                this.finish_operation(generation, result, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+}
+
+fn chmod(path: &Path, mode: u32) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+/// Returns how many items could not be changed. Links are not followed.
+fn apply_below(root: &Path, mode: u32) -> anyhow::Result<usize> {
+    use std::os::unix::fs::MetadataExt as _;
+    let mut failed = 0;
+    let mut pending: Vec<PathBuf> = std::fs::read_dir(root)?.flatten().map(|entry| entry.path()).collect();
+    while let Some(path) = pending.pop() {
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else { continue };
+        let wanted = if metadata.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&path) {
+                pending.extend(entries.flatten().map(|entry| entry.path()));
+            }
+            mode
+        } else if metadata.is_file() {
+            // A program stays one, with the folder's execute bits.
+            if metadata.mode() & 0o100 != 0 { mode } else { mode & !0o111 }
+        } else {
+            continue;
+        };
+        if metadata.mode() & 0o7777 != wanted && chmod(&path, wanted).is_err() {
+            failed += 1;
+        }
+    }
+    Ok(failed)
+}
+
 fn ownership(path: &Path) -> anyhow::Result<Ownership> {
     use std::os::unix::fs::MetadataExt as _;
     let metadata = std::fs::symlink_metadata(path)?;
-    Ok(Ownership { mode: metadata.mode(), owner: user_name(metadata.uid()), group: group_name(metadata.gid()) })
+    let millis = |time: std::io::Result<std::time::SystemTime>| {
+        time.ok().and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).map(|since| since.as_millis() as i64)
+    };
+    // SAFETY: geteuid cannot fail.
+    let me = unsafe { libc::geteuid() };
+    let link_target = metadata.file_type().is_symlink().then(|| std::fs::read_link(path).map(|target| target.display().to_string()).unwrap_or_default());
+    Ok(Ownership {
+        path: path.to_path_buf(),
+        mode: metadata.mode(),
+        owner: user_name(metadata.uid()),
+        group: group_name(metadata.gid()),
+        editable: link_target.is_none() && (me == 0 || me == metadata.uid()),
+        accessed: millis(metadata.accessed()),
+        created: millis(metadata.created()),
+        link_target,
+    })
 }
 
 /// The account name for `uid`, or the number when the system has none.

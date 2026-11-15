@@ -13,6 +13,7 @@ mod open_with;
 mod operations;
 mod overlays;
 mod place_menu;
+mod properties;
 mod pointer;
 mod select_menu;
 mod settings;

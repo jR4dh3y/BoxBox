@@ -72,9 +72,8 @@ Most valuable first.
   space; names valid on FAT/exFAT targets.
 - Bulk rename for several items: replace (regex), case, insert, numbering,
   remove, date, with a preview that catches collisions.
-- Permissions and owner editor in Properties, optionally recursive.
-- Properties: image dimensions, EXIF date and camera, MIME type, link target,
-  all dates, free space; values selectable. (Folder size and counts are done.)
+- Properties: image dimensions, EXIF date and camera, MIME type,
+  free space, a group picker; values selectable. (Folder size and counts, all dates, link target and the permissions grid are done.)
 - Reorder tabs; restore tabs and split panes on launch.
 - Details view: choose, resize and reorder columns (owner, permissions, MIME
   type, created, accessed), remembered per folder.
@@ -246,7 +245,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Templates | — | ✓ `workspace/templates.rs`: "New from Template" in the folder and + menus; the copy opens for renaming |
 | Item menu | — | ✓ `workspace/item_actions.rs`: Open in New Tab, Compress (ZIP); no "Create Link" beside the item (links are made where they are dropped), and Open With, Open in Terminal and Properties each have their own icon; Send To (Desktop, removable drives, mail through the Email portal; mail untested, as it opens the mail app) |
 | Running files | — | ✓ `launch.rs`, `workspace/run.rs`: executable scripts and programs ask first; launchers run when trusted (executable or installed) and ask otherwise; a `Terminal=true` launcher runs in the default terminal (`xdg-terminal-exec`, then `$TERMINAL`, then a common one) |
-| Properties | — | ✓ `workspace/properties.rs`: permissions, owner and group; for several items or a folder, counts and total size, read off the UI thread |
+| Properties | — | ✓ `workspace/properties.rs`, `ui/properties.rs`: the item with its type and size, location, link target, modified, accessed and created; a Read/Write/Execute grid (Access for folders) for owner, group and others that chmods on click, for the owner only, with the mode as `ls` and octal show it; "Apply to contents" gives a folder's mode to everything inside (files lose execute unless they were programs). For several items or a folder, counts and total size, read off the UI thread |
 
 ## Search
 

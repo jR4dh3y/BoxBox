@@ -1283,3 +1283,42 @@ fn a_drive_keeps_the_name_given_it(cx: &mut TestAppContext) {
     assert_eq!(shown(&view, cx).0, "own");
     assert_eq!(DriveNames::load().name(&key, "home"), "home");
 }
+
+#[gpui::test]
+fn properties_change_permissions(cx: &mut TestAppContext) {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (view, cx, fixture) = open(cx, &["docs/inner/a.sh", "docs/b.txt", "c.txt"]);
+    let mode = |path: &std::path::Path| fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+    set_mode(&fixture.root.join("c.txt"), 0o644);
+    let c = names(&view, cx).iter().position(|name| name == "c.txt").unwrap();
+    click(cx, Box::leak(format!("row-0-{c}").into_boxed_str()));
+    cx.simulate_keystrokes("alt-enter");
+    settle(cx);
+    // Owner's execute, then group's write: each click is a chmod.
+    click(cx, "permission-100");
+    cx.run_until_parked();
+    assert_eq!(mode(&fixture.root.join("c.txt")), 0o744);
+    settle(cx);
+    click(cx, "permission-20");
+    cx.run_until_parked();
+    assert_eq!(mode(&fixture.root.join("c.txt")), 0o764);
+    view.read_with(cx, |workspace, _| {
+        let Some(Load::Loaded(ownership)) = &workspace.properties.as_ref().unwrap().ownership else { panic!("read back") };
+        assert_eq!(ownership.mode & 0o7777, 0o764);
+    });
+    cx.simulate_keystrokes("escape");
+
+    // A folder's mode reaches everything inside; files keep whether they run.
+    set_mode(&fixture.root.join("docs/inner/a.sh"), 0o755);
+    set_mode(&fixture.root.join("docs/b.txt"), 0o644);
+    set_mode(&fixture.root.join("docs"), 0o750);
+    let docs = names(&view, cx).iter().position(|name| name == "docs").unwrap();
+    click(cx, Box::leak(format!("row-0-{docs}").into_boxed_str()));
+    cx.simulate_keystrokes("alt-enter");
+    settle(cx);
+    click(cx, "permissions-apply-inside");
+    cx.run_until_parked();
+    assert_eq!(mode(&fixture.root.join("docs/inner")), 0o750);
+    assert_eq!(mode(&fixture.root.join("docs/inner/a.sh")), 0o750);
+    assert_eq!(mode(&fixture.root.join("docs/b.txt")), 0o640);
+}

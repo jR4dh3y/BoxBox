@@ -348,3 +348,11 @@ pub fn display_name(name: &str, is_dir: bool, show_extensions: bool) -> String {
         .map(|(stem, _)| stem.to_string())
         .unwrap_or_else(|| name.to_string())
 }
+
+/// "13 Nov 2026, 15:31": the whole date, for Properties.
+pub fn full_date(millis: Option<i64>) -> String {
+    match millis.and_then(DateTime::from_timestamp_millis) {
+        Some(date) => date.with_timezone(&Local).format("%-d %b %Y, %H:%M").to_string(),
+        None => "—".into(),
+    }
+}
