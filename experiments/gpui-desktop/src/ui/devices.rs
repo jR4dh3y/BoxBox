@@ -30,8 +30,8 @@ fn summary(volume: &Volume) -> String {
 }
 
 impl Workspace {
-    /// Each volume: a usage bar when mounted, dimmed when not, and a button to
-    /// eject or unmount.
+    /// Each volume: dimmed when not mounted, with a button to eject or unmount.
+    /// How full it is shows on the Overview.
     pub(crate) fn device_rows(&self, cx: &mut Context<Self>) -> Vec<gpui::Div> {
         let busy = self.devices.busy;
         self.devices.volumes().enumerate().map(|(index, volume)| {
@@ -43,14 +43,8 @@ impl Workspace {
                 .tooltip(summary(volume))
                 .on_click(cx.listener(move |this, _, window, cx| this.open_volume(open.clone(), window, cx)));
             match &volume.state {
-                State::Mounted { space, read_only, .. } => {
-                    if let Some(space) = space {
-                        row = row.usage((space.total - space.free) as f64 * 100. / space.total as f64);
-                    }
-                    if *read_only {
-                        row = row.badge("pencil-off");
-                    }
-                }
+                State::Mounted { read_only: true, .. } => row = row.badge("pencil-off"),
+                State::Mounted { .. } => {}
                 State::Unmounted | State::Locked => row = row.muted(true),
             }
             if volume.removable() {

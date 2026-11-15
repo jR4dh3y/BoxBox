@@ -162,7 +162,7 @@ impl Workspace {
                     .items_center()
                     .justify_center()
                     .cursor_pointer()
-                    .child(icon("server", 14., c(TEXT_SECONDARY)))
+                    .child(icon("layout-dashboard", 14., c(TEXT_SECONDARY)))
                     .on_click(cx.listener(|this, _, _, cx| this.navigate(String::new(), cx))),
             )
             .child(content).into_any_element()
@@ -387,7 +387,7 @@ impl Workspace {
             .enumerate()
             .map(|(index, place)| {
                 MenuItem::action(("history", index), self.place_label(target, place))
-                    .icon(if place.is_empty() { "server" } else { "folder" })
+                    .icon(if place.is_empty() { "layout-dashboard" } else { "folder" })
                     .on_select(cx.listener(move |this, _, _, cx| {
                         this.history_menu = None;
                         this.travel(target, back, index + 1, cx);

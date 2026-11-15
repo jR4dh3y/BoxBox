@@ -56,14 +56,9 @@ impl Workspace {
         )
     }
 
-    /// A row that opens `item`, with a usage bar when it is a drive.
-    fn nav_item(&self, id: String, item: NavItem, usage: Option<f64>, current: &str, cx: &mut Context<Self>) -> impl IntoElement {
+    fn nav_item(&self, id: String, item: NavItem, current: &str, cx: &mut Context<Self>) -> impl IntoElement {
         let path = item.path;
-        let mut row = components::NavItem::new(SharedString::from(id.clone()), item.name, item.icon).active(is_active(current, &path));
-        if let Some(usage) = usage {
-            row = row.usage(usage);
-        }
-        let row = row.on_click({
+        let row = components::NavItem::new(SharedString::from(id.clone()), item.name, item.icon).active(is_active(current, &path)).on_click({
             let path = path.clone();
             cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx))
         });
@@ -97,17 +92,14 @@ impl Workspace {
             crate::pane::Load::Loaded(roots) => roots,
             _ => &[],
         };
-        let usage = |name: &str| match &pane.drives {
-            crate::pane::Load::Loaded(drives) => drives.iter().find(|drive| drive.name == name).map(|drive| drive.used_pct),
-            _ => None,
-        };
-        let mut drives = std::iter::once((NavItem { name: "Overview".into(), path: String::new(), icon: "server" }, None))
-            .chain(roots.iter().filter(|root| root.kind != RootKind::Place).map(|root| {
-                let item = NavItem { name: root.display_name().to_string().into(), path: root.name.clone(), icon: "hard-drive" };
-                (item, usage(&root.name))
+        let mut drives = std::iter::once(NavItem { name: "Overview".into(), path: String::new(), icon: "layout-dashboard" })
+            .chain(roots.iter().filter(|root| root.kind != RootKind::Place).map(|root| NavItem {
+                name: root.display_name().to_string().into(),
+                path: root.name.clone(),
+                icon: "hard-drive",
             }))
             .enumerate()
-            .map(|(index, (item, usage))| self.nav_item(format!("drive-{index}"), item, usage, &current, cx).into_any_element())
+            .map(|(index, item)| self.nav_item(format!("drive-{index}"), item, &current, cx).into_any_element())
             .collect::<Vec<_>>();
         if pane.api.is_local() {
             drives.extend(self.device_rows(cx).into_iter().map(IntoElement::into_any_element));
@@ -121,7 +113,7 @@ impl Workspace {
                 icon: place_icon(&root.name),
             })
             .enumerate()
-            .map(|(index, item)| self.nav_item(format!("place-{index}"), item, None, &current, cx))
+            .map(|(index, item)| self.nav_item(format!("place-{index}"), item, &current, cx))
             .collect::<Vec<_>>();
         let favorites = self
             .favorites

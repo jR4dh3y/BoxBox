@@ -95,7 +95,6 @@ pub struct NavItem {
     disabled: bool,
     muted: bool,
     drop_target: bool,
-    usage: Option<f64>,
     badge: Option<&'static str>,
     tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
@@ -113,7 +112,6 @@ impl NavItem {
             disabled: false,
             muted: false,
             drop_target: false,
-            usage: None,
             badge: None,
             tooltip: None,
             on_click: None,
@@ -151,12 +149,6 @@ impl NavItem {
     /// Dims the row: a device that is present but not mounted.
     pub fn muted(mut self, muted: bool) -> Self {
         self.muted = muted;
-        self
-    }
-
-    /// A thin bar under the label showing how full a mounted device is, 0–100.
-    pub fn usage(mut self, used_pct: f64) -> Self {
-        self.usage = Some(used_pct);
         self
     }
 
@@ -212,17 +204,10 @@ impl RenderOnce for NavItem {
                     .flex_1()
                     .min_w_0()
                     .flex()
-                    .flex_col()
-                    .gap(px(3.))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .child(div().min_w_0().truncate().when(self.muted, |label| label.text_color(c(TEXT_MUTED))).child(self.label))
-                            .when_some(self.badge, |label, glyph| label.child(icon(glyph, 12., c(TEXT_MUTED)))),
-                    )
-                    .when_some(self.usage, |column, used_pct| column.child(div().flex().child(super::usage_bar(used_pct)))),
+                    .items_center()
+                    .gap(px(6.))
+                    .child(div().min_w_0().truncate().when(self.muted, |label| label.text_color(c(TEXT_MUTED))).child(self.label))
+                    .when_some(self.badge, |label, glyph| label.child(icon(glyph, 12., c(TEXT_MUTED)))),
             )
             .when_some(self.tooltip, |row, text| row.tooltip(super::Tooltip::text(text)))
             .when_some(self.trailing, |row, (glyph, label, handler)| {
