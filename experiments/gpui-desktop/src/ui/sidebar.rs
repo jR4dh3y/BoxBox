@@ -188,6 +188,7 @@ impl Workspace {
 
         div()
             .id("sidebar")
+            .debug_selector(|| "sidebar".into())
             .w(px(SIDEBAR_WIDTH))
             .min_w(px(SIDEBAR_WIDTH))
             .h_full()

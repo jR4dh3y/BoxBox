@@ -189,6 +189,7 @@ impl RenderOnce for NavItem {
         // bg-transparent win, so only the white text shows. Match what renders.
         let text = if self.active { WHITE } else { TEXT_PRIMARY };
         let group = SharedString::from(format!("nav-{}", self.id));
+        let detail_selector = format!("{}-detail", self.id);
         // w-full flex items-center gap-2.5 py-1.5 px-3 pl-5 text-[13px] (pr-9 with an action)
         div()
             .id(self.id)
@@ -214,10 +215,19 @@ impl RenderOnce for NavItem {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .child(div().min_w_0().truncate().when(self.muted, |label| label.text_color(c(TEXT_MUTED))).child(self.label))
+                    // With a detail the name takes the room left, so the detail sits at
+                    // the row's end however long the name is.
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .when(self.detail.is_some() && self.badge.is_none(), |label| label.flex_1())
+                            .when(self.muted, |label| label.text_color(c(TEXT_MUTED)))
+                            .child(self.label),
+                    )
                     .when_some(self.badge, |label, glyph| label.child(icon(glyph, 12., c(TEXT_MUTED))))
                     .when_some(self.detail, |label, detail| {
-                        label.child(div().ml_auto().flex_none().max_w(px(80.)).truncate().type_11().text_color(c(TEXT_MUTED)).child(detail))
+                        label.child(div().ml_auto().flex_none().max_w(px(80.)).truncate().type_11().text_color(c(TEXT_MUTED)).debug_selector(move || detail_selector).child(detail))
                     }),
             )
             .when_some(self.tooltip, |row, text| row.tooltip(super::Tooltip::text(text)))

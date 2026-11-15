@@ -389,6 +389,26 @@ fn servers_drives_sit_beside_this_computers(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_long_server_drive_name_is_cut_before_its_server(cx: &mut TestAppContext) {
+    use crate::settings_state::SavedConnection;
+    use servers::ServerState;
+    let (view, cx, _fixture) = open(cx, &["a.txt"]);
+    let server = Arc::new(Api::new("http://pico:8080", None));
+    let drive = |name: &str| crate::api::DriveStats { name: name.into(), label: None, device: None, fs_type: None, total_bytes: 100, free_bytes: 60, used_bytes: 40, used_pct: 40., read_only: false };
+    view.update(cx, |workspace, cx| {
+        workspace.desktop_settings.connections.push(SavedConnection { id: "pico".into(), name: "pico".into(), url: "http://pico:8080".into() });
+        workspace.servers.set("pico", ServerState::Ready { api: server.clone(), drives: vec![drive("root"), drive("gdrive-radheykalra901-with-a-very-long-name")] });
+        cx.notify();
+    });
+    settle(cx);
+    let sidebar = cx.debug_bounds("sidebar").unwrap();
+    let short = cx.debug_bounds("server-0-detail").unwrap();
+    let long = cx.debug_bounds("server-1-detail").unwrap();
+    assert_eq!(long.right(), short.right(), "both server labels end at the same place");
+    assert!(long.right() <= sidebar.right(), "{long:?} inside {sidebar:?}");
+}
+
+#[gpui::test]
 fn the_trash_notice_undoes_its_move(cx: &mut TestAppContext) {
     let (_view, cx, fixture) = open(cx, &["docs/", "b.txt"]);
     drag(cx, "row-0-1", "sidebar-trash");
