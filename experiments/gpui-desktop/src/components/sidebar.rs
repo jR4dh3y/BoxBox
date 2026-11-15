@@ -96,6 +96,7 @@ pub struct NavItem {
     muted: bool,
     drop_target: bool,
     badge: Option<&'static str>,
+    detail: Option<SharedString>,
     tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
     trailing: Option<(&'static str, SharedString, ClickHandler)>,
@@ -113,6 +114,7 @@ impl NavItem {
             muted: false,
             drop_target: false,
             badge: None,
+            detail: None,
             tooltip: None,
             on_click: None,
             trailing: None,
@@ -155,6 +157,12 @@ impl NavItem {
     /// A small glyph after the label, such as the read-only mark.
     pub fn badge(mut self, icon: &'static str) -> Self {
         self.badge = Some(icon);
+        self
+    }
+
+    /// Muted text at the row's end, such as the server a drive is on.
+    pub fn detail(mut self, text: impl Into<SharedString>) -> Self {
+        self.detail = Some(text.into());
         self
     }
 
@@ -207,7 +215,10 @@ impl RenderOnce for NavItem {
                     .items_center()
                     .gap(px(6.))
                     .child(div().min_w_0().truncate().when(self.muted, |label| label.text_color(c(TEXT_MUTED))).child(self.label))
-                    .when_some(self.badge, |label, glyph| label.child(icon(glyph, 12., c(TEXT_MUTED)))),
+                    .when_some(self.badge, |label, glyph| label.child(icon(glyph, 12., c(TEXT_MUTED))))
+                    .when_some(self.detail, |label, detail| {
+                        label.child(div().ml_auto().flex_none().max_w(px(80.)).truncate().type_11().text_color(c(TEXT_MUTED)).child(detail))
+                    }),
             )
             .when_some(self.tooltip, |row, text| row.tooltip(super::Tooltip::text(text)))
             .when_some(self.trailing, |row, (glyph, label, handler)| {

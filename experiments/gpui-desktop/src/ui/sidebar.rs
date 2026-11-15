@@ -7,6 +7,7 @@ use crate::api::RootKind;
 use crate::components::{self, SidebarSection};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
+use crate::workspace::overview::Storage;
 use crate::drag_out::DragPreview;
 use crate::workspace::bookmarks::FavoriteDrag;
 use crate::workspace::place_menu::Place;
@@ -56,16 +57,54 @@ impl Workspace {
         )
     }
 
+    /// A row for a drive or place of the window's own provider. While the pane is
+    /// on a server it still opens here, but takes no drops and has no menu, which
+    /// act on the pane's provider.
     fn nav_item(&self, id: String, item: NavItem, current: &str, cx: &mut Context<Self>) -> impl IntoElement {
         let path = item.path;
-        let row = components::NavItem::new(SharedString::from(id.clone()), item.name, item.icon).active(is_active(current, &path)).on_click({
+        let home = std::sync::Arc::ptr_eq(&self.pane().api, &self.home.api);
+        let row = components::NavItem::new(SharedString::from(id.clone()), item.name, item.icon).active(home && is_active(current, &path)).on_click({
             let path = path.clone();
-            cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx))
+            cx.listener(move |this, _, _, cx| {
+                let api = this.home.api.clone();
+                this.navigate_to(this.active_pane, api, path.clone(), cx);
+            })
         });
+        let selector = move || format!("sidebar-{id}");
+        if !home {
+            return div().child(row).debug_selector(selector);
+        }
         let menu = Place::Folder { pane: self.active_pane, path: path.clone() };
         // Recent and Network are listings: nothing is dropped into them.
         let folder = (path != crate::local::RECENT && path != crate::local::NETWORK).then(|| path.clone());
-        self.sidebar_row(row, folder, menu, cx).debug_selector(move || format!("sidebar-{id}"))
+        self.sidebar_row(row, folder, menu, cx).debug_selector(selector)
+    }
+
+    /// Each paired server's drives, or one row for a server that has none to show yet.
+    fn server_rows(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let pane = self.pane();
+        let storage = self.storage().unwrap_or_default();
+        storage
+            .into_iter()
+            .filter(|entry| matches!(entry, Storage::ServerDrive { .. } | Storage::Server { .. }))
+            .enumerate()
+            .map(|(index, entry)| {
+                let info = entry.info();
+                let (detail, waiting, tooltip) = match &entry {
+                    Storage::ServerDrive { server, .. } => (server.name.clone(), false, server.url.clone()),
+                    Storage::Server { server, status, reason } => ((*status).to_string(), true, reason.clone().unwrap_or_else(|| server.url.clone())),
+                    _ => unreachable!("filtered above"),
+                };
+                let active = entry.holds(self, &pane.api, &pane.path);
+                components::NavItem::new(SharedString::from(format!("server-{index}")), info.name, "server")
+                    .detail(detail)
+                    .muted(waiting)
+                    .active(active)
+                    .tooltip(tooltip)
+                    .on_click(cx.listener(move |this, _, window, cx| this.open_storage(entry.clone(), window, cx)))
+                    .into_any_element()
+            })
+            .collect()
     }
 
     /// A sidebar row with its right-click menu, taking files dropped into `folder`.
@@ -88,7 +127,9 @@ impl Workspace {
         let pane = self.pane();
         let current = pane.path.clone();
         let provider = crate::workspace::favorites::FavoriteProvider::for_api(&pane.api);
-        let roots: &[crate::api::MountPoint] = match &pane.roots {
+        let home_provider = crate::workspace::favorites::FavoriteProvider::for_api(&self.home.api);
+        // The window's own drives and places, whatever provider the pane is on.
+        let roots: &[crate::api::MountPoint] = match &self.home.roots {
             crate::pane::Load::Loaded(roots) => roots,
             _ => &[],
         };
@@ -101,17 +142,10 @@ impl Workspace {
             .enumerate()
             .map(|(index, item)| self.nav_item(format!("drive-{index}"), item, &current, cx).into_any_element())
             .collect::<Vec<_>>();
-        if pane.api.is_local() {
+        if self.home.api.is_local() {
             drives.extend(self.device_rows(cx).into_iter().map(IntoElement::into_any_element));
-            drives.extend(self.desktop_settings.connections.iter().map(|connection| {
-                let open = connection.clone();
-                components::NavItem::new(SharedString::from(format!("server-{}", connection.id)), connection.name.clone(), "server")
-                    .disabled(self.settings_panel.busy)
-                    .tooltip(connection.url.clone())
-                    .on_click(cx.listener(move |this, _, _, cx| this.connect_server(open.clone(), cx)))
-                    .into_any_element()
-            }));
         }
+        drives.extend(self.server_rows(cx));
         let places = roots
             .iter()
             .filter(|root| root.kind == RootKind::Place)
@@ -130,7 +164,7 @@ impl Workspace {
             .enumerate()
             // A bookmark of a drive or place, such as GTK's default Documents or Music, is
             // already in the sidebar; it stays in the file for other apps.
-            .filter(|(_, favorite)| favorite.provider != provider || !roots.iter().any(|root| root.name == favorite.path))
+            .filter(|(_, favorite)| favorite.provider != home_provider || !roots.iter().any(|root| root.name == favorite.path))
             .map(|(index, favorite)| {
                 let row = components::NavItem::new(SharedString::from(format!("favorite-{index}")), favorite.name.clone(), "star")
                     .trailing("x", format!("Unpin {}", favorite.name), cx.listener(move |this, _, _, cx| this.remove_favorite(index, cx)))

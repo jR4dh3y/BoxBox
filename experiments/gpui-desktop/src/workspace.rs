@@ -228,6 +228,10 @@ pub struct Workspace {
     pub(crate) dialog_error: Option<String>,
     pub(crate) notices: notifications::Notices,
     pub(crate) devices: devices::Devices,
+    /// The window's own provider and its drives, which the Overview and sidebar
+    /// show whatever provider a pane is on.
+    pub(crate) home: overview::Home,
+    pub(crate) servers: servers::Servers,
     pub(crate) drag_drop: drag_drop::DragDrop,
     /// The sign-in dialog's fields: user, domain and the masked password.
     pub(crate) device_fields: [Entity<TextField>; 3],
@@ -364,6 +368,8 @@ impl Workspace {
             dialog_error: None,
             notices: Default::default(),
             devices: Default::default(),
+            home: overview::Home::new(api.clone()),
+            servers: Default::default(),
             drag_drop: Default::default(),
             device_fields,
             pending_credential_focus: false,
@@ -428,6 +434,7 @@ impl Workspace {
         workspace.load_pane(PaneTarget(0), cx);
         workspace.start_directory_watches(cx);
         workspace.start_device_watch(cx);
+        workspace.connect_servers(cx);
         workspace.watch_trash(cx);
         workspace.load_bookmarks(cx);
         workspace
@@ -536,18 +543,25 @@ impl Workspace {
                 .spawn(async move { (api.roots(), api.drives()) })
                 .await;
             this.update(cx, |this, cx| {
-                if let Some(pane) = this.pane_mut_by_id(target.0) {
-                    pane.roots = match roots {
-                        Ok(roots) => Load::Loaded(roots),
-                        Err(error) => Load::Failed(format!("{error:#}")),
-                    };
-                    pane.drives = match drives {
-                        Ok(drives) => Load::Loaded(drives),
-                        Err(error) => Load::Failed(format!("{error:#}")),
-                    };
-                    crate::profile::ready(journey);
-                    cx.notify();
+                let roots = match roots {
+                    Ok(roots) => Load::Loaded(roots),
+                    Err(error) => Load::Failed(format!("{error:#}")),
+                };
+                let drives = match drives {
+                    Ok(drives) => Load::Loaded(drives),
+                    Err(error) => Load::Failed(format!("{error:#}")),
+                };
+                let Some(pane) = this.pane_by_id(target.0) else { return };
+                // The window's own drives, for the Overview and the sidebar.
+                if Arc::ptr_eq(&pane.api, &this.home.api) {
+                    this.home.roots = roots.clone();
+                    this.home.drives = drives.clone();
                 }
+                let Some(pane) = this.pane_mut_by_id(target.0) else { return };
+                pane.roots = roots;
+                pane.drives = drives;
+                crate::profile::ready(journey);
+                cx.notify();
             })
             .ok();
         })
@@ -769,13 +783,23 @@ impl Workspace {
             self.connect_location(target, path, cx);
             return;
         }
+        // The Overview belongs to the window's own provider; a folder, to the pane's.
+        let api = match path.is_empty() {
+            true => Some(self.home.api.clone()),
+            false => self.pane_by_id(target.0).map(|pane| pane.api.clone()),
+        };
+        if let Some(api) = api {
+            self.navigate_to(target, api, path, cx);
+        }
+    }
+
+    /// Opens `path` on `api` in a pane, moving it to that provider if it is another.
+    pub(crate) fn navigate_to(&mut self, target: PaneTarget, api: Arc<Api>, path: String, cx: &mut Context<Self>) {
         self.trash_open = false;
         self.trash_error = None;
-        if self
-            .pane_mut_by_id(target.0)
-            .is_some_and(|pane| pane.navigate(path))
-        {
-            self.load_pane(target, cx);
+        if let Some(pane) = self.pane_mut_by_id(target.0) {
+            let moved = pane.navigate_to(api, path);
+            self.after_move(target, moved, cx);
         }
         cx.notify();
     }
@@ -816,9 +840,10 @@ impl Workspace {
         self.open_tab(String::new(), cx);
     }
 
-    /// Opens a new tab at a virtual path, on the active provider.
+    /// Opens a new tab at a virtual path, on the active provider; the Overview is
+    /// always the window's own.
     pub(crate) fn open_tab(&mut self, path: String, cx: &mut Context<Self>) {
-        let api = self.active_api();
+        let api = if path.is_empty() { self.home.api.clone() } else { self.active_api() };
         self.open_tab_with(api, path, cx);
     }
 

@@ -17,7 +17,6 @@ use crate::settings_state::{
     ShareListState, WallpaperFit,
 };
 use crate::theme::*;
-use crate::workspace::servers::Opened;
 use crate::workspace::{Preferences, SettingsSection, Workspace};
 
 /// Which settings text field a dialog input uses.
@@ -314,7 +313,7 @@ impl Workspace {
     }
 
     /// Opens a settings dialog with its fields' starting text, focusing the first.
-    fn open_settings_dialog(&mut self, dialog: SettingsDialog, texts: &[(SettingsField, String)], cx: &mut Context<Self>) {
+    pub(crate) fn open_settings_dialog(&mut self, dialog: SettingsDialog, texts: &[(SettingsField, String)], cx: &mut Context<Self>) {
         self.settings_panel.error = None;
         self.settings_panel.dialog = Some(dialog);
         for (field, text) in texts {
@@ -584,62 +583,20 @@ impl Workspace {
 
     fn connect_saved_connection(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(connection) = self.desktop_settings.connections.get(index).cloned() {
-            self.connect_server(connection, cx);
+            self.settings_panel.error = None;
+            self.connect_server(connection, true, cx);
         }
     }
 
-    /// Opens a saved server with its keyring credential, or asks for a pairing
-    /// code in Settings, where the pairing dialog lives.
-    pub(crate) fn connect_server(&mut self, connection: SavedConnection, cx: &mut Context<Self>) {
-        if self.settings_panel.busy {
-            return;
-        }
-        self.settings_panel.busy = true;
-        self.settings_panel.error = None;
-        cx.notify();
-        cx.spawn(async move |this, cx| {
-            let opening = connection.clone();
-            let result = cx.background_executor().spawn(async move { crate::workspace::servers::open(&opening) }).await;
-            this.update(cx, |this, cx| {
-                this.settings_panel.busy = false;
-                match result {
-                    Ok(Opened::Ready(api)) => this.show_server(api, cx),
-                    Ok(Opened::NeedsPairing(reason)) => {
-                        this.settings_open = true;
-                        this.settings_section = SettingsSection::Connections;
-                        this.open_settings_dialog(SettingsDialog::Pair { connection, reason }, &[(SettingsField::Code, String::new())], cx)
-                    }
-                    Err(error) => {
-                        let message = format!("Could not open {}: {error:#}", connection.name);
-                        // Opened from Settings, the error shows there; from the Overview, as a notice.
-                        match this.settings_open {
-                            true => this.settings_panel.error = Some(message),
-                            false => this.report(Err(message), cx),
-                        }
-                    }
-                }
-                cx.notify();
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn show_server(&mut self, api: Api, cx: &mut Context<Self>) {
-        self.settings_panel.dialog = None;
-        self.settings_open = false;
-        self.open_provider(api, cx);
-    }
-
-    /// Pairs in the background. On success `done` runs with the open server;
-    /// on failure the dialog comes back with the server's reason.
+    /// Pairs in the background. On success `done` runs with the paired
+    /// connection; on failure the dialog comes back with the server's reason.
     fn pair_connection(
         &mut self,
         connection: SavedConnection,
         code: String,
         dialog: SettingsDialog,
         cx: &mut Context<Self>,
-        done: impl FnOnce(&mut Self, SavedConnection, Api, &mut Context<Self>) + 'static,
+        done: impl FnOnce(&mut Self, SavedConnection, &mut Context<Self>) + 'static,
     ) {
         self.settings_panel.busy = true;
         self.settings_panel.error = None;
@@ -651,10 +608,10 @@ impl Workspace {
             this.update(cx, |this, cx| {
                 this.settings_panel.busy = false;
                 match result {
-                    Ok(api) => {
+                    Ok(()) => {
                         // The code is spent; it does not stay in the field.
                         this.settings_field(SettingsField::Code).clone().update(cx, |field, cx| field.set_text("", 0..0, cx));
-                        done(this, connection, api, cx);
+                        done(this, connection, cx);
                     }
                     Err(error) => this.settings_panel.error = Some(format!("Could not pair with {}: {error:#}", connection.url)),
                 }
@@ -684,18 +641,7 @@ impl Workspace {
             let connection = self.desktop_settings.connections.remove(index);
             self.settings_panel.dialog = None;
             self.save_desktop_settings(cx);
-            cx.spawn(async move |this, cx| {
-                let name = connection.name.clone();
-                let result = cx.background_executor().spawn(async move { crate::workspace::servers::forget(&connection) }).await;
-                if let Err(error) = result {
-                    this.update(cx, |this, cx| {
-                        this.settings_panel.error = Some(format!("Removed {name}, but its credential is still in the keyring: {error:#}"));
-                        cx.notify();
-                    })
-                    .ok();
-                }
-            })
-            .detach();
+            self.forget_server(connection, cx);
         }
         cx.notify();
     }
@@ -747,13 +693,12 @@ impl Workspace {
             self.settings_panel.dialog = None;
             return;
         }
+        // A new server opens once paired; an edited one only reconnects.
         let adding = index.is_none();
-        self.pair_connection(connection, code, SettingsDialog::EditConnection { index }, cx, move |this, connection, api, cx| {
-            this.keep_connection(connection, cx);
-            match adding {
-                true => this.show_server(api, cx),
-                false => this.settings_panel.dialog = None,
-            }
+        self.pair_connection(connection, code, SettingsDialog::EditConnection { index }, cx, move |this, connection, cx| {
+            this.keep_connection(connection.clone(), cx);
+            this.settings_panel.dialog = None;
+            this.reconnect_server(connection, adding, cx);
         });
     }
 
@@ -781,7 +726,10 @@ impl Workspace {
                         return;
                     }
                     let dialog = SettingsDialog::Pair { connection: connection.clone(), reason };
-                    self.pair_connection(connection, code, dialog, cx, |this, _, api, cx| this.show_server(api, cx));
+                    self.pair_connection(connection, code, dialog, cx, |this, connection, cx| {
+                        this.settings_panel.dialog = None;
+                        this.reconnect_server(connection, true, cx);
+                    });
                 }
             }
             Some(SettingsDialog::CreateShare { .. }) => self.create_share(cx),

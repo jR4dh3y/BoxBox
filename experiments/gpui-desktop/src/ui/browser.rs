@@ -29,7 +29,7 @@ impl Workspace {
             self.render_trash(cx).into_any_element()
         } else {
             match (&pane.listing, pane.current_view_mode()) {
-            (Listing::Root, mode) => match (&pane.drives, self.storage(pane)) {
+            (Listing::Root, mode) => match (&self.home.drives, self.storage()) {
                 (Load::Failed(error), _) => div()
                     .p(px(24.))
                     .text_sm_tw()

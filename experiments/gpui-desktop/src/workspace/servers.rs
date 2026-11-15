@@ -1,16 +1,48 @@
-//! Paired BoxBox servers. A server pairs with this computer once, by the code
-//! its Settings → Account show; the credential it returns lives in the
-//! keyring, under the saved connection's id. These calls block (HTTP, D-Bus,
-//! perhaps a keyring unlock prompt), so they run off the UI thread.
+//! Paired BoxBox servers, whose drives sit beside this computer's in the
+//! Overview and the sidebar. A server pairs with this computer once, by the
+//! code its Settings → Account show; the credential it returns lives in the
+//! keyring, under the saved connection's id. Connecting blocks (HTTP, D-Bus,
+//! perhaps a keyring unlock prompt), so it runs off the UI thread.
+
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::Result;
+use gpui::Context;
 
-use crate::api::{Api, Unauthorized};
-use crate::settings_state::SavedConnection;
+use crate::api::{Api, DriveStats, Unauthorized};
+use crate::settings_state::{SavedConnection, SettingsDialog};
+use crate::ui::SettingsField;
+use crate::workspace::{SettingsSection, Workspace};
 
-pub(crate) enum Opened {
-    Ready(Api),
+pub(crate) enum ServerState {
+    Connecting,
+    Ready { api: Arc<Api>, drives: Vec<DriveStats> },
     /// No credential, or the server refused it; a new pairing code fixes both.
+    NeedsPairing(String),
+    /// The server could not be reached or failed.
+    Offline(String),
+}
+
+/// Each saved connection's state, by its id.
+#[derive(Default)]
+pub(crate) struct Servers {
+    states: HashMap<String, ServerState>,
+}
+
+impl Servers {
+    pub fn state(&self, id: &str) -> Option<&ServerState> {
+        self.states.get(id)
+    }
+
+    #[cfg(test)]
+    pub fn set(&mut self, id: &str, state: ServerState) {
+        self.states.insert(id.to_string(), state);
+    }
+}
+
+enum Connected {
+    Ready(Api, Vec<DriveStats>),
     NeedsPairing(String),
 }
 
@@ -20,35 +52,145 @@ fn client_name() -> String {
     if host.is_empty() { "BoxBox for Linux".into() } else { format!("BoxBox on {host}") }
 }
 
-/// The saved connection with its keyring credential, once the server accepts it.
-pub(crate) fn open(connection: &SavedConnection) -> Result<Opened> {
+/// The saved connection with its keyring credential, and its drives once the server accepts it.
+fn connect(connection: &SavedConnection) -> Result<Connected> {
     let Some(credential) = crate::secrets::lookup(&connection.id)? else {
-        return Ok(Opened::NeedsPairing("This computer is not paired with the server yet.".into()));
+        return Ok(Connected::NeedsPairing("This computer is not paired with the server yet.".into()));
     };
     let api = Api::new(&connection.url, Some(credential));
-    match api.roots() {
-        Ok(_) => Ok(Opened::Ready(api)),
+    match api.drives() {
+        Ok(drives) => Ok(Connected::Ready(api, drives)),
         Err(error) => match error.downcast_ref::<Unauthorized>() {
-            Some(Unauthorized(message)) => Ok(Opened::NeedsPairing(format!("The server no longer accepts this computer ({message}). Pair it again."))),
+            Some(Unauthorized(message)) => Ok(Connected::NeedsPairing(format!("The server no longer accepts this computer ({message}). Pair it again."))),
             None => Err(error),
         },
     }
 }
 
-/// Redeems a pairing code and keeps the credential, returning the open server.
-pub(crate) fn pair(connection: &SavedConnection, code: &str) -> Result<Api> {
+/// Redeems a pairing code and keeps the credential in the keyring.
+pub(crate) fn pair(connection: &SavedConnection, code: &str) -> Result<()> {
     let credential = Api::redeem(&connection.url, code.trim(), &client_name())?;
-    crate::secrets::store(&connection.id, &format!("BoxBox server “{}”", connection.name), &credential)?;
-    Ok(Api::new(&connection.url, Some(credential)))
+    crate::secrets::store(&connection.id, &format!("BoxBox server “{}”", connection.name), &credential)
 }
 
 /// Asks the server to forget this computer, then drops the credential. The
 /// server may be gone, so only the keyring has to succeed.
-pub(crate) fn forget(connection: &SavedConnection) -> Result<()> {
+fn forget(connection: &SavedConnection) -> Result<()> {
     if let Some(credential) = crate::secrets::lookup(&connection.id)? {
         if let Err(error) = Api::new(&connection.url, Some(credential)).revoke_self() {
             log::info!("{} did not revoke this computer: {error:#}", connection.url);
         }
     }
     crate::secrets::delete(&connection.id)
+}
+
+impl Workspace {
+    /// Connects every saved server in the background, so their drives appear
+    /// once each answers.
+    pub(crate) fn connect_servers(&mut self, cx: &mut Context<Self>) {
+        for connection in self.desktop_settings.connections.clone() {
+            self.connect_server(connection, false, cx);
+        }
+    }
+
+    /// Connects a saved server. When `open`, the user asked for it: its first
+    /// drive opens, or Settings asks for a pairing code, or the failure shows.
+    pub(crate) fn connect_server(&mut self, connection: SavedConnection, open: bool, cx: &mut Context<Self>) {
+        match self.servers.states.get(&connection.id) {
+            Some(ServerState::Connecting) => return,
+            Some(ServerState::Ready { api, drives }) if open => {
+                let (api, first) = (api.clone(), drives.first().map(|drive| drive.name.clone()).unwrap_or_default());
+                self.open_server_drive(api, first, cx);
+                return;
+            }
+            _ => {}
+        }
+        self.servers.states.insert(connection.id.clone(), ServerState::Connecting);
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let connecting = connection.clone();
+            let result = cx.background_executor().spawn(async move { connect(&connecting) }).await;
+            this.update(cx, |this, cx| {
+                // Removed while it connected.
+                if !this.desktop_settings.connections.iter().any(|saved| saved.id == connection.id) {
+                    this.servers.states.remove(&connection.id);
+                    return;
+                }
+                let state = match result {
+                    Ok(Connected::Ready(api, drives)) => {
+                        let api = Arc::new(api);
+                        if open {
+                            let first = drives.first().map(|drive| drive.name.clone()).unwrap_or_default();
+                            this.open_server_drive(api.clone(), first, cx);
+                        }
+                        ServerState::Ready { api, drives }
+                    }
+                    Ok(Connected::NeedsPairing(reason)) => {
+                        if open {
+                            this.ask_to_pair(connection.clone(), reason.clone(), cx);
+                        }
+                        ServerState::NeedsPairing(reason)
+                    }
+                    Err(error) => {
+                        let message = format!("{error:#}");
+                        if open {
+                            let shown = format!("Could not open {}: {message}", connection.name);
+                            match this.settings_open {
+                                true => this.settings_panel.error = Some(shown),
+                                false => this.report(Err(shown), cx),
+                            }
+                        }
+                        ServerState::Offline(message)
+                    }
+                };
+                this.servers.states.insert(connection.id, state);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Connects again from scratch, as after pairing gave a new credential.
+    pub(crate) fn reconnect_server(&mut self, connection: SavedConnection, open: bool, cx: &mut Context<Self>) {
+        self.servers.states.remove(&connection.id);
+        self.connect_server(connection, open, cx);
+    }
+
+    /// Opens a server's drive in the active pane, closing Settings if it was the way there.
+    pub(crate) fn open_server_drive(&mut self, api: Arc<Api>, drive: String, cx: &mut Context<Self>) {
+        self.settings_open = false;
+        self.settings_panel.dialog = None;
+        self.navigate_to(self.active_pane, api, drive, cx);
+    }
+
+    /// Settings, at the pairing dialog, which is where codes are entered.
+    pub(crate) fn ask_to_pair(&mut self, connection: SavedConnection, reason: String, cx: &mut Context<Self>) {
+        self.settings_open = true;
+        self.settings_section = SettingsSection::Connections;
+        self.open_settings_dialog(SettingsDialog::Pair { connection, reason }, &[(SettingsField::Code, String::new())], cx);
+    }
+
+    /// Drops a removed server: its panes go back to the Overview, and the
+    /// server and the keyring forget this computer.
+    pub(crate) fn forget_server(&mut self, connection: SavedConnection, cx: &mut Context<Self>) {
+        if let Some(ServerState::Ready { api, .. }) = self.servers.states.remove(&connection.id) {
+            let inside: Vec<_> = self.tabs.iter().chain(self.split_panes.values()).filter(|pane| Arc::ptr_eq(&pane.api, &api)).map(|pane| super::PaneTarget(pane.id)).collect();
+            for target in inside {
+                self.navigate_in(target, String::new(), cx);
+            }
+        }
+        cx.spawn(async move |this, cx| {
+            let name = connection.name.clone();
+            let result = cx.background_executor().spawn(async move { forget(&connection) }).await;
+            if let Err(error) = result {
+                this.update(cx, |this, cx| {
+                    this.settings_panel.error = Some(format!("Removed {name}, but its credential is still in the keyring: {error:#}"));
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
 }
