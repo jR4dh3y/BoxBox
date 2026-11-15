@@ -778,6 +778,26 @@ impl Workspace {
         cx.notify();
     }
 
+    /// `navigate_in` with the folder already read.
+    fn navigate_with(
+        &mut self,
+        target: PaneTarget,
+        path: String,
+        view: crate::pane::View,
+        read: startup::ListingRead,
+        journey: Option<crate::profile::Journey>,
+        cx: &mut Context<Self>,
+    ) {
+        self.trash_open = false;
+        self.trash_error = None;
+        let Some(pane) = self.pane_mut_by_id(target.0) else { return };
+        if pane.navigate(path) {
+            let generation = pane.begin_load();
+            self.apply_listing(target, generation, view, read, journey, cx);
+        }
+        cx.notify();
+    }
+
     pub(crate) fn back(&mut self, _: &Back, _: &mut Window, cx: &mut Context<Self>) {
         if self.trash_open {
             self.trash_open = false;

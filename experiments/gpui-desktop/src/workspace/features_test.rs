@@ -102,6 +102,27 @@ fn a_read_only_folder_refuses_changes_with_a_notice(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_typed_location_opens_with_its_listing_and_a_wrong_one_stays_to_be_fixed(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["docs/b.txt", "docs/a.txt", "top.txt"]);
+    cx.simulate_keystrokes("ctrl-l h o m e / m i s s i n g enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.location_editor.is_some());
+        assert_eq!(workspace.pane().path, "home");
+    });
+    cx.simulate_keystrokes("ctrl-l h o m e / d o c s enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.location_editor.is_none());
+        assert_eq!(workspace.pane().path, "home/docs");
+    });
+    assert_eq!(names(&view, cx), ["a.txt", "b.txt"]);
+    cx.simulate_keystrokes("alt-left");
+    cx.run_until_parked();
+    assert_eq!(names(&view, cx), ["docs", "top.txt"]);
+}
+
+#[gpui::test]
 fn pasting_with_nothing_copied_says_so(cx: &mut TestAppContext) {
     let (view, cx, _fixture) = open(cx, &["a.txt"]);
     cx.simulate_keystrokes("ctrl-v");

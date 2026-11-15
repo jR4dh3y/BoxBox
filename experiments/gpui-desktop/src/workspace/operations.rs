@@ -360,24 +360,31 @@ impl Workspace {
             self.set_operation_error("The destination pane is no longer open.", cx);
             return;
         };
+        let Some(view) = self.pane_by_id(target.0).map(|pane| pane.view()) else { return };
         let generation = self.begin_operation(format!("Opening {path}…"));
+        let journey = crate::profile::journey("open folder", || format!("{path}  (location)"));
         let validation_api = api.clone();
         cx.spawn(async move |this, cx| {
+            // The listing that proves the path opens is the one the pane shows.
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    if !path.is_empty() {
-                        validation_api
-                            .list(&path)
-                            .with_context(|| format!("cannot open {path}"))?;
+                    if path.is_empty() {
+                        return Ok((path, None));
                     }
-                    Ok(path)
+                    let mut read = super::startup::read_listing(&validation_api, &path, view);
+                    let items = std::mem::replace(&mut read.items, Ok(Vec::new())).with_context(|| format!("cannot open {path}"))?;
+                    read.items = Ok(items);
+                    Ok((path, Some(read)))
                 })
                 .await;
             let _ = this.update(cx, |this, cx| match result {
-                Ok(path) if this.mutation_generation == generation => {
+                Ok((path, read)) if this.mutation_generation == generation => {
                     this.location_editor = None;
-                    this.navigate_in(target, path, cx);
+                    match read {
+                        Some(read) => this.navigate_with(target, path, view, read, journey, cx),
+                        None => this.navigate_in(target, path, cx),
+                    }
                     this.finish_operation(generation, Ok(()), cx);
                 }
                 Err(error) => {
