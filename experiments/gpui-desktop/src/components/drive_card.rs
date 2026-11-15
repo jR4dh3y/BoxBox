@@ -187,9 +187,13 @@ impl RenderOnce for DriveCard {
                         )
                     })
                     // An empty track when the usage is unknown, so every card has the same rows.
-                    .child(match usage {
-                        Some(usage) => div().mt(px(2.)).flex().items_center().gap(px(12.)).child(usage_bar(usage.pct)).child(usage_text(usage.pct)),
-                        None => div().mt(px(2.)).flex().items_center().child(usage_bar(0.)),
+                    // The row is as tall as the percentage's line either way, so the bars line up.
+                    .child({
+                        let row = div().mt(px(2.)).h(px(16.5)).flex().items_center().gap(px(12.));
+                        match usage {
+                            Some(usage) => row.child(usage_bar(usage.pct)).child(usage_text(usage.pct)),
+                            None => row.child(usage_bar(0.)),
+                        }
                     }),
             )
             .when_some(self.on_click, |card, handler| card.on_click(handler))
