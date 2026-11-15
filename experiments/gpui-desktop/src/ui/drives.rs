@@ -174,7 +174,8 @@ impl Workspace {
             .id("drive-list")
             .size_full()
             .overflow_y_scroll()
-            .bg(c(SURFACE_PRIMARY))
+            // As the file list: see-through over a wallpaper or a transparent window.
+            .bg(self.file_background())
             .child(header)
             .children(rows)
     }

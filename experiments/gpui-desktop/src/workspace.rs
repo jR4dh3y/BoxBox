@@ -473,7 +473,13 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             while let Ok(argument) = launches.recv().await {
                 let opened = this.update_in(cx, |this, window, cx| {
-                    let path = launch_path(&this.active_api(), &argument);
+                    // A launch without a folder, as the file-manager key sends, opens
+                    // the start location, as a new window would.
+                    let path = match (argument.is_empty(), this.preferences.start_location) {
+                        (false, _) => launch_path(&this.active_api(), &argument),
+                        (true, StartLocation::Last) => this.last_location.clone().unwrap_or_default(),
+                        (true, start) => startup::start_path(&this.home.api, start),
+                    };
                     this.open_tab(path, cx);
                     window.activate_window();
                 });

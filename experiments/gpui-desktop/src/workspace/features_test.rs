@@ -521,6 +521,28 @@ fn middle_click_opens_a_folder_in_a_tab_and_side_buttons_go_back(cx: &mut TestAp
 }
 
 #[gpui::test]
+fn a_launch_without_a_folder_opens_the_start_location_in_the_open_window(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["docs/a.txt", "music/"]);
+    let (sender, launches) = async_channel::unbounded();
+    cx.update(|window, app| view.update(app, |workspace, cx| workspace.receive_launches(launches, window, cx)));
+    view.update(cx, |workspace, cx| {
+        workspace.preferences.start_location = StartLocation::Last;
+        workspace.navigate("home/docs".into(), cx);
+    });
+    cx.run_until_parked();
+    sender.send_blocking(String::new()).unwrap();
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home/docs", "the file-manager key: the last location"));
+    // A folder given at launch still wins.
+    sender.send_blocking("home/music".into()).unwrap();
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.pane().path, "home/music");
+        assert_eq!(workspace.tabs.len(), 3);
+    });
+}
+
+#[gpui::test]
 fn the_last_location_is_kept_for_the_next_launch(cx: &mut TestAppContext) {
     let (view, cx, fixture) = open(cx, &["docs/a.txt"]);
     let api = Api::local_with_root(fixture.root.clone()).unwrap();
