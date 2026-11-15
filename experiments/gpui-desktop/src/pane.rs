@@ -727,6 +727,22 @@ impl Pane {
         self.selected = self.items.iter().map(|item| item.path.clone()).collect();
     }
 
+    /// Selects what was not selected, and only that.
+    pub fn invert_selection(&mut self) {
+        self.selected = self.items.iter().map(|item| item.path.clone()).filter(|path| !self.selected.contains(path)).collect();
+    }
+
+    /// Selects the entries whose names match, in place of the selection, which
+    /// stays as it was when nothing matches. Returns how many matched.
+    pub fn select_matching(&mut self, matches: impl Fn(&str) -> bool) -> usize {
+        let matched: HashSet<String> = self.items.iter().filter(|item| matches(&item.name)).map(|item| item.path.clone()).collect();
+        let count = matched.len();
+        if count > 0 {
+            self.selected = matched;
+        }
+        count
+    }
+
     pub fn clear_selection(&mut self) {
         self.selected.clear();
         self.anchor = None;

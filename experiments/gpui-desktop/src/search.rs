@@ -108,6 +108,16 @@ fn rank_text(name: &str, text: &str) -> Option<Rank> {
     Some(if starts_word { Rank::Word } else { Rank::Inside })
 }
 
+/// Select by Pattern: a pattern with `*` or `?` must match the whole name;
+/// plain text matches anywhere in it. Case is ignored either way.
+pub fn matches_pattern(pattern: &str, name: &str) -> bool {
+    let (pattern, name) = (pattern.trim().to_lowercase(), name.to_lowercase());
+    match pattern.contains(['*', '?']) {
+        true => glob(&pattern.chars().collect::<Vec<_>>(), &name.chars().collect::<Vec<_>>()),
+        false => !pattern.is_empty() && name.contains(&pattern),
+    }
+}
+
 /// `*` matches any run of characters and `?` exactly one.
 fn glob(pattern: &[char], name: &[char]) -> bool {
     let (mut p, mut n) = (0, 0);
@@ -235,6 +245,16 @@ mod tests {
         assert_eq!(rank("tax 2024", "tax return.pdf"), None);
         assert_eq!(rank("re tax", "tax return.pdf"), Some(Rank::Word));
         assert_eq!(rank("   ", "anything"), None);
+    }
+
+    #[test]
+    fn a_selection_pattern_is_a_glob_or_plain_text() {
+        assert!(matches_pattern("*.JPG", "photo.jpg"));
+        assert!(!matches_pattern("*.jpg", "photo.jpg.bak"), "a glob covers the whole name");
+        assert!(matches_pattern("img_??", "IMG_01"));
+        assert!(matches_pattern("hot", "Photo.jpg"), "plain text matches anywhere");
+        assert!(!matches_pattern("  ", "anything"));
+        assert!(matches_pattern("*", ".hidden"));
     }
 
     #[test]

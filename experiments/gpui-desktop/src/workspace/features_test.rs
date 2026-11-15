@@ -944,6 +944,39 @@ fn delete_names_one_item_or_counts_and_lists_several(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn select_by_pattern_and_invert(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.jpg", "b.JPG", "c.txt", "notes.md"]);
+    let selected = |view: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        let mut names: Vec<String> = view.read_with(cx, |workspace, _| workspace.pane().selected_items().into_iter().map(|item| item.name).collect());
+        names.sort();
+        names
+    };
+    cx.simulate_keystrokes("ctrl-s");
+    view.read_with(cx, |workspace, app| {
+        assert_eq!(workspace.operation_dialog.as_ref().map(|dialog| dialog.title()), Some("Select by Pattern"));
+        assert_eq!(workspace.dialog_field.read(app).text(), "*");
+    });
+    // The offered pattern is selected, so typing replaces it.
+    cx.simulate_keystrokes("* . j p g enter");
+    assert_eq!(selected(&view, cx), ["a.jpg", "b.JPG"], "case is ignored");
+    view.read_with(cx, |workspace, _| assert!(workspace.operation_dialog.is_none()));
+
+    cx.simulate_keystrokes("ctrl-i");
+    assert_eq!(selected(&view, cx), ["c.txt", "notes.md"]);
+
+    // Nothing matching keeps the dialog, and the selection, as they were.
+    cx.simulate_keystrokes("ctrl-s z z z enter");
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.operation_dialog.is_some());
+        assert_eq!(workspace.dialog_error.as_deref(), Some("Nothing here matches “zzz”"));
+    });
+    assert_eq!(selected(&view, cx), ["c.txt", "notes.md"]);
+    // Plain text matches anywhere in the name.
+    cx.simulate_keystrokes("ctrl-a o t e enter");
+    assert_eq!(selected(&view, cx), ["notes.md"]);
+}
+
+#[gpui::test]
 fn shift_delete_deletes_for_good_after_asking(cx: &mut TestAppContext) {
     let (view, cx, fixture) = open(cx, &["a.txt", "docs/b.txt"]);
     // Sorted by name: docs, a.txt.

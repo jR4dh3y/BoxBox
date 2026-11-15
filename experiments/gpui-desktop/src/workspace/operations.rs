@@ -49,25 +49,32 @@ impl FileClipboard {
     }
 }
 
-/// The name dialog for something new in a folder.
+/// The one-field dialog: a name for something new in a folder, or a pattern
+/// to select by.
 pub(crate) struct OperationDialog {
     pub target_id: usize,
-    pub parent: String,
-    pub folder: bool,
+    pub kind: DialogKind,
+}
+
+pub(crate) enum DialogKind {
+    New { parent: String, folder: bool },
+    SelectPattern,
 }
 
 impl OperationDialog {
     pub fn title(&self) -> &'static str {
-        if self.folder { "New folder" } else { "New file" }
-    }
-
-    /// The name the field starts with, before a taken one is numbered.
-    pub fn suggestion(&self) -> &'static str {
-        if self.folder { "New folder" } else { "untitled.txt" }
+        match self.kind {
+            DialogKind::New { folder: true, .. } => "New folder",
+            DialogKind::New { folder: false, .. } => "New file",
+            DialogKind::SelectPattern => "Select by Pattern",
+        }
     }
 
     pub fn confirm_label(&self) -> &'static str {
-        "Create"
+        match self.kind {
+            DialogKind::New { .. } => "Create",
+            DialogKind::SelectPattern => "Select",
+        }
     }
 }
 
@@ -179,7 +186,7 @@ impl Workspace {
             return;
         }
         let pane = self.pane();
-        self.open_dialog(OperationDialog { target_id: pane.id, parent: pane.path.clone(), folder: true }, window, cx);
+        self.open_dialog(OperationDialog { target_id: pane.id, kind: DialogKind::New { parent: pane.path.clone(), folder: true } }, window, cx);
     }
 
     pub(crate) fn create_file(
@@ -195,7 +202,7 @@ impl Workspace {
             return;
         }
         let pane = self.pane();
-        self.open_dialog(OperationDialog { target_id: pane.id, parent: pane.path.clone(), folder: false }, window, cx);
+        self.open_dialog(OperationDialog { target_id: pane.id, kind: DialogKind::New { parent: pane.path.clone(), folder: false } }, window, cx);
     }
 
     pub(crate) fn rename_selected(
@@ -218,11 +225,23 @@ impl Workspace {
         self.start_rename(self.active_pane, items.remove(0), window, cx);
     }
 
-    /// Opens the name dialog with a free name, its part before the extension selected.
+    /// Opens the dialog: a new item's field holds a free name with the part before
+    /// the extension selected; the pattern field holds the last pattern, selected.
     fn open_dialog(&mut self, dialog: OperationDialog, window: &mut Window, cx: &mut Context<Self>) {
-        let taken: HashSet<String> = self.pane_by_id(dialog.target_id).map(|pane| pane.items.iter().map(|item| item.name.clone()).collect()).unwrap_or_default();
-        let text = super::names::unused_name(dialog.suggestion(), dialog.folder, &|name| taken.contains(name));
-        let selection = 0..super::names::basename_end(&text, dialog.folder);
+        let (text, selection) = match &dialog.kind {
+            DialogKind::New { folder, .. } => {
+                let taken: HashSet<String> = self.pane_by_id(dialog.target_id).map(|pane| pane.items.iter().map(|item| item.name.clone()).collect()).unwrap_or_default();
+                let suggestion = if *folder { "New folder" } else { "untitled.txt" };
+                let text = super::names::unused_name(suggestion, *folder, &|name| taken.contains(name));
+                let end = super::names::basename_end(&text, *folder);
+                (text, 0..end)
+            }
+            DialogKind::SelectPattern => {
+                let text = self.last_pattern.clone();
+                let end = text.len();
+                (text, 0..end)
+            }
+        };
         self.operation_dialog = Some(dialog);
         self.dialog_error = None;
         self.context_menu = None;
@@ -269,6 +288,36 @@ impl Workspace {
             InputEvent::Changed => {}
         }
     }
+    /// Ctrl+S: asks for a pattern, then selects the entries it matches.
+    pub(crate) fn open_select_pattern(&mut self, _: &SelectPattern, window: &mut Window, cx: &mut Context<Self>) {
+        if self.trash_open || self.pane().is_at_root() {
+            return;
+        }
+        self.open_dialog(OperationDialog { target_id: self.active_pane.0, kind: DialogKind::SelectPattern }, window, cx);
+    }
+
+    /// Ctrl+I.
+    pub(crate) fn invert_selection(&mut self, _: &InvertSelection, _: &mut Window, cx: &mut Context<Self>) {
+        if self.trash_open || self.pane().is_at_root() {
+            return;
+        }
+        self.pane_mut().invert_selection();
+        cx.notify();
+    }
+
+    /// Selects what `pattern` matches; a pattern that matches nothing keeps the
+    /// dialog open to be changed.
+    fn select_pattern(&mut self, dialog: OperationDialog, pattern: String, cx: &mut Context<Self>) {
+        let Some(pane) = self.pane_mut_by_id(dialog.target_id) else { return };
+        if pane.select_matching(|name| crate::search::matches_pattern(&pattern, name)) == 0 {
+            self.dialog_error = Some(if pattern.is_empty() { "Type a pattern, such as *.jpg".into() } else { format!("Nothing here matches “{pattern}”") });
+            self.operation_dialog = Some(dialog);
+        } else {
+            self.last_pattern = pattern;
+        }
+        cx.notify();
+    }
+
     fn submit_operation_dialog(&mut self, cx: &mut Context<Self>) {
         let Some(dialog) = self.operation_dialog.take() else {
             return;
@@ -278,13 +327,19 @@ impl Workspace {
             self.set_operation_error("The destination pane is no longer open.", cx);
             return;
         };
+        let (parent, folder) = match &dialog.kind {
+            DialogKind::New { parent, folder } => (parent.clone(), *folder),
+            DialogKind::SelectPattern => {
+                self.select_pattern(dialog, input, cx);
+                return;
+            }
+        };
         if let Some(problem) = super::names::name_problem(&input, pane.items.iter().map(|item| item.name.as_str())) {
             self.operation_dialog = Some(dialog);
             self.dialog_error = Some(problem);
             cx.notify();
             return;
         }
-        let OperationDialog { parent, folder, .. } = dialog;
         let generation = self.begin_operation(format!("Creating {input}…"));
         let refresh_api = api.clone();
         cx.spawn(async move |this, cx| {

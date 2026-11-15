@@ -32,6 +32,8 @@ const GROUPS: [(&str, &[(&str, &str)]); 3] = [
             ("F2", "Rename in place"),
             ("Delete", "Trash locally; delete on a server"),
             ("Shift + Delete", "Delete permanently, without Trash"),
+            ("Ctrl + S", "Select by pattern, such as *.jpg"),
+            ("Ctrl + I", "Invert selection"),
             ("Ctrl + B", "Pin to Favorites"),
             ("Drag", "Move to a folder; copy to another disk"),
             ("Ctrl · Shift + Drag", "Copy · Move"),

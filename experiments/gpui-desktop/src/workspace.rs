@@ -151,6 +151,8 @@ actions!(
         RenameSelected,
         DeleteSelected,
         DeletePermanently,
+        SelectPattern,
+        InvertSelection,
         DownloadSelected,
         CopySelected,
         CutSelected,
@@ -193,6 +195,9 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("f2", RenameSelected, context),
         KeyBinding::new("delete", DeleteSelected, context),
         KeyBinding::new("shift-delete", DeletePermanently, context),
+        // Typing in a field does not reach these.
+        KeyBinding::new("ctrl-s", SelectPattern, Some("BrowseWorkspace && !TextField")),
+        KeyBinding::new("ctrl-i", InvertSelection, Some("BrowseWorkspace && !TextField")),
         KeyBinding::new("ctrl-d", DownloadSelected, context),
         KeyBinding::new("ctrl-c", CopySelected, context),
         KeyBinding::new("ctrl-x", CutSelected, context),
@@ -253,6 +258,8 @@ pub struct Workspace {
     pub(crate) servers: servers::Servers,
     /// The active pane's place as last written for "Start location: Last location".
     last_location: Option<String>,
+    /// What Select by Pattern last selected with, offered again.
+    pub(crate) last_pattern: String,
     pub(crate) drag_drop: drag_drop::DragDrop,
     /// The sign-in dialog's fields: user, domain and the masked password.
     pub(crate) device_fields: [Entity<TextField>; 3],
@@ -385,6 +392,7 @@ impl Workspace {
             home: overview::Home::new(api.clone()),
             servers: Default::default(),
             last_location,
+            last_pattern: "*".into(),
             drag_drop: Default::default(),
             device_fields,
             pending_credential_focus: false,
@@ -1301,6 +1309,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::rename_selected))
             .on_action(cx.listener(Self::delete_selected))
             .on_action(cx.listener(Self::delete_permanently))
+            .on_action(cx.listener(Self::open_select_pattern))
+            .on_action(cx.listener(Self::invert_selection))
             .on_action(cx.listener(Self::download_selected))
             .on_action(cx.listener(Self::copy_selected))
             .on_action(cx.listener(Self::cut_selected))
