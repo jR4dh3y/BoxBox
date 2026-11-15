@@ -112,6 +112,7 @@ pub(crate) static PREFERENCES: LazyLock<Store> = LazyLock::new(|| Store::new("se
 pub(crate) static DESKTOP_SETTINGS: LazyLock<Store> = LazyLock::new(|| Store::new("desktop-settings.json"));
 pub(crate) static FAVORITES: LazyLock<Store> = LazyLock::new(|| Store::new("favorites.json"));
 pub(crate) static LAST_LOCATION: LazyLock<Store> = LazyLock::new(|| Store::at(state_dir().join("last-location")));
+pub(crate) static FOLDER_VIEWS: LazyLock<Store> = LazyLock::new(|| Store::at(state_dir().join("folder-views.json")));
 pub(crate) static SERVER_DRIVES: LazyLock<Store> = LazyLock::new(|| Store::at(cache_dir().join("server-drives.json")));
 
 #[cfg(test)]

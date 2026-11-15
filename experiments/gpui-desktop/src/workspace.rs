@@ -47,6 +47,7 @@ pub(crate) mod appearance;
 mod palette;
 pub(crate) mod zoom;
 pub(crate) mod band;
+pub(crate) mod folder_views;
 use appearance::WallpaperState;
 
 use favorites::{Favorite, FavoriteProvider, Favorites};
@@ -276,6 +277,7 @@ pub struct Workspace {
     pub(crate) zoom_scroll: f32,
     /// A rubber-band press or drag in a pane.
     pub(crate) band: Option<band::Band>,
+    pub(crate) folder_views: folder_views::FolderViews,
     pub(crate) drag_drop: drag_drop::DragDrop,
     /// The sign-in dialog's fields: user, domain and the masked password.
     pub(crate) device_fields: [Entity<TextField>; 3],
@@ -345,9 +347,9 @@ impl Workspace {
     pub fn new(start: startup::Startup, fonts: Fonts, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);
-        let startup::Startup { api, preferences, path: initial_path, fallback, prefetch } = start;
+        let startup::Startup { api, preferences, folder_views, path: initial_path, fallback, prefetch } = start;
         let last_location = Some(initial_path.clone());
-        let initial_pane = Pane::with_api(
+        let mut initial_pane = Pane::with_api(
             0,
             initial_path,
             api.clone(),
@@ -355,6 +357,9 @@ impl Workspace {
             preference_sort(&preferences),
             preference_view(&preferences),
         );
+        if !initial_pane.is_at_root() {
+            initial_pane.view_mode = folder_views.get(&api, &initial_pane.path, preference_view(&preferences));
+        }
         let dialog_field = cx.new(|cx| TextField::new("", cx));
         let rename_field = cx.new(|cx| TextField::new("", cx));
         let rename_focus = gpui::Focusable::focus_handle(rename_field.read(cx), cx);
@@ -411,6 +416,7 @@ impl Workspace {
             last_pattern: "*".into(),
             zoom_scroll: 0.,
             band: None,
+            folder_views,
             drag_drop: Default::default(),
             device_fields,
             pending_credential_focus: false,
@@ -638,6 +644,7 @@ impl Workspace {
     fn load_pane(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
         let caller = std::panic::Location::caller();
         self.remember_location(target, cx);
+        self.apply_folder_view(target);
         let Some(pane) = self.pane_mut_by_id(target.0) else {
             return;
         };
@@ -816,6 +823,9 @@ impl Workspace {
                 }
                 hidden_changed |= pane.apply_preferences(show_hidden_files, sort, view);
             }
+        }
+        for id in &ids {
+            self.apply_folder_view(PaneTarget(*id));
         }
         self.save_preferences(cx);
         for target in resorted {

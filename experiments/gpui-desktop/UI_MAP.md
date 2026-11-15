@@ -81,7 +81,7 @@ Most valuable first.
 - Reorder tabs; restore tabs and split panes on launch.
 - Details view: choose, resize and reorder columns (owner, permissions, MIME
   type, created, accessed), remembered per folder.
-- Per-folder view and sort.
+- Per-folder sort.
 - Hover a folder row while dragging to open it (crumbs already do);
   autoscroll at the edges; Link on drop, and Ask on right-drag.
 - Middle-ellipsis for long names, keeping the extension.
@@ -238,6 +238,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | History | — | ✓ `workspace/history.rs`: right-click Back or Forward for the places; places that no longer exist are skipped and dropped; the mouse's side buttons go back and forward in the pane under the pointer; Back and Forward return to the folder's selection, cursor and scroll position (`pane::ViewMemo`), and a newly opened folder starts at its top |
 | Tabs from a folder | — | ✓ a middle-click on a folder row, tile or crumb opens it in a new tab; with Ctrl, behind the current one |
 | Start location | — | ✓ Settings → General: the Overview, the home folder or the last location (kept in `$XDG_STATE_HOME/boxbox-gpui/last-location`); a remembered folder that is gone starts on the Overview |
+| Per-folder view | — | ✓ `workspace/folder_views.rs`: List or Grid picked in the status bar sticks to that folder (by server and path, in `$XDG_STATE_HOME/boxbox-gpui/folder-views.json`, read before the first frame); other folders open in the default view from Settings, and picking the default forgets the folder |
 | Zoom | — | ✓ `workspace/zoom.rs`: Ctrl+plus, Ctrl+minus, Ctrl+wheel (capture phase, so the list does not scroll), Ctrl+0 resets; the list (4 steps) and the grid (5) keep their own step in the preferences, and replace the old Compact rows setting; large grid steps ask for 256 px thumbnails. Ctrl+wheel tested only with a simulated event |
 | Rubber-band selection | — | ✓ `workspace/band.rs`, `ui/pointer.rs`: a drag from empty space selects every row or tile it touches (hit-tested by arithmetic on the uniform layout), Ctrl or Shift adds, past the edge it scrolls; a click on empty space clears the selection. Toasts and transfers occlude, so clicks on them stay theirs |
 | Select by pattern | — | ✓ Ctrl+S: `*` and `?` match the whole name, plain text anywhere, case ignored (`search::matches_pattern`); Ctrl+I inverts the selection |

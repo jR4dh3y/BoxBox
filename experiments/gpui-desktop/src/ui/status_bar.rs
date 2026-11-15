@@ -40,6 +40,7 @@ impl Workspace {
                 let active = mode == target;
                 div()
                     .id(id)
+                    .debug_selector(move || id.to_string())
                     .size(px(22.))
                     .flex()
                     .items_center()
@@ -53,7 +54,7 @@ impl Workspace {
                         c(if active { TEXT_PRIMARY } else { TEXT_MUTED }),
                     ))
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.pane_mut().set_view_mode(target);
+                        this.choose_view_mode(this.active_pane, target, cx);
                         cx.notify();
                     }))
             };

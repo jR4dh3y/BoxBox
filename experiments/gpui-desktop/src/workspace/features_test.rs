@@ -1179,3 +1179,37 @@ fn zoom_steps_the_view_and_ctrl_zero_resets_it(cx: &mut TestAppContext) {
         assert_eq!(workspace.pane().current_view_mode(), ViewMode::Grid);
     });
 }
+
+#[gpui::test]
+fn a_folder_keeps_the_view_picked_in_it(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["photos/a.jpg", "photos/trip/b.jpg", "notes.txt"]);
+    let mode = |view: &Entity<Workspace>, cx: &mut VisualTestContext| view.read_with(cx, |workspace, _| workspace.pane().current_view_mode());
+    view.update(cx, |workspace, cx| workspace.navigate("home/photos".into(), cx));
+    cx.run_until_parked();
+    click(cx, "view-grid");
+    assert_eq!(mode(&view, cx), ViewMode::Grid);
+
+    // A folder never set opens in the default view, and its parent keeps its own.
+    view.update(cx, |workspace, cx| workspace.navigate("home/photos/trip".into(), cx));
+    cx.run_until_parked();
+    assert_eq!(mode(&view, cx), ViewMode::List);
+    cx.simulate_keystrokes("alt-left");
+    cx.run_until_parked();
+    assert_eq!(mode(&view, cx), ViewMode::Grid);
+    cx.simulate_keystrokes("alt-up");
+    cx.run_until_parked();
+    assert_eq!(mode(&view, cx), ViewMode::List);
+
+    // The next window opens the folder in its view: the choice is written to disk.
+    let api = Api::local_with_root(fixture.root.clone()).unwrap();
+    let kept = super::folder_views::FolderViews::load();
+    assert_eq!(kept.get(&api, "home/photos", ViewMode::List), ViewMode::Grid);
+    assert_eq!(kept.get(&api, "home", ViewMode::List), ViewMode::List);
+
+    // Picking the default again forgets the folder.
+    view.update(cx, |workspace, cx| workspace.navigate("home/photos".into(), cx));
+    cx.run_until_parked();
+    click(cx, "view-list");
+    cx.run_until_parked();
+    assert_eq!(super::folder_views::FolderViews::load().encode(), b"{}");
+}
