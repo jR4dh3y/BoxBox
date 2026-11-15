@@ -3,6 +3,7 @@
 
 use gpui::{div, prelude::*, px, AlignItems, App, ClickEvent, ElementId, FontWeight, Rgba, SharedString, Window};
 
+use super::skeleton::{self, Wait};
 use super::{ProgressBar, ProgressSize, ProgressVariant, Type};
 use crate::format::file_size;
 use crate::theme::*;
@@ -46,13 +47,16 @@ pub struct Usage {
 pub enum DriveState {
     Usage(Usage),
     Status { status: SharedString, size: Option<u64> },
+    /// A drive remembered from the last run whose usage is on its way, or will
+    /// not come until the user acts; its usage shows as a placeholder.
+    Pending { status: SharedString, wait: Wait },
 }
 
 impl DriveState {
     pub fn usage(&self) -> Option<Usage> {
         match self {
             DriveState::Usage(usage) => Some(*usage),
-            DriveState::Status { .. } => None,
+            DriveState::Status { .. } | DriveState::Pending { .. } => None,
         }
     }
 
@@ -60,6 +64,21 @@ impl DriveState {
         match self {
             DriveState::Usage(usage) => Some(usage.total),
             DriveState::Status { size, .. } => *size,
+            DriveState::Pending { .. } => None,
+        }
+    }
+
+    pub fn status(&self) -> Option<&SharedString> {
+        match self {
+            DriveState::Usage(_) => None,
+            DriveState::Status { status, .. } | DriveState::Pending { status, .. } => Some(status),
+        }
+    }
+
+    pub fn wait(&self) -> Option<Wait> {
+        match self {
+            DriveState::Pending { wait, .. } => Some(*wait),
+            DriveState::Usage(_) | DriveState::Status { .. } => None,
         }
     }
 }
@@ -102,6 +121,8 @@ impl RenderOnce for DriveCard {
         let accent = self.accent;
         let drive = self.drive;
         let usage = drive.state.usage();
+        let wait = drive.state.wait();
+        let pulse_id = ElementId::Name(format!("{:?}-pulse", self.id).into());
         let device = drive.device.clone().filter(|device| !device.is_empty());
         let fs_type = drive.fs_type.clone().filter(|fs| !fs.is_empty());
         div()
@@ -115,8 +136,7 @@ impl RenderOnce for DriveCard {
             .border_color(c(BORDER_PRIMARY))
             .bg(c(SURFACE_SECONDARY))
             .p(px(16.))
-            .cursor_pointer()
-            .hover(move |style| style.border_color(accent).bg(c(SURFACE_TERTIARY)))
+            .when(self.on_click.is_some(), |card| card.cursor_pointer().hover(move |style| style.border_color(accent).bg(c(SURFACE_TERTIARY))))
             .child(
                 div()
                     .size(px(88.))
@@ -144,7 +164,15 @@ impl RenderOnce for DriveCard {
                             .flex()
                             .items_start()
                             .gap(px(8.))
-                            .child(div().flex_1().min_w_0().text_sm_tw().font_weight(FontWeight::MEDIUM).child(drive.name.clone()))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_sm_tw()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .when(wait.is_some(), |name| name.text_color(c(TEXT_SECONDARY)))
+                                    .child(drive.name.clone()),
+                            )
                             .when_some(drive.state.size(), |row, size| {
                                 row.child(
                                     div()
@@ -166,9 +194,9 @@ impl RenderOnce for DriveCard {
                             .flex()
                             .text_xs_tw()
                             .text_color(c(TEXT_MUTED))
-                            .child(match &drive.state {
-                                DriveState::Usage(usage) => format!("{} used · {} free", file_size(usage.used), file_size(usage.free)).into(),
-                                DriveState::Status { status, .. } => status.clone(),
+                            .child(match (&drive.state, drive.state.status()) {
+                                (DriveState::Usage(usage), _) => format!("{} used · {} free", file_size(usage.used), file_size(usage.free)).into(),
+                                (_, status) => status.cloned().unwrap_or_default(),
                             })
                             .when(drive.read_only, |line| line.child(div().ml(px(4.)).text_color(c(WARNING)).child("· Read-only"))),
                     )
@@ -196,9 +224,10 @@ impl RenderOnce for DriveCard {
                     // The row is as tall as the percentage's line either way, so the bars line up.
                     .child({
                         let row = div().mt(px(2.)).h(px(16.5)).flex().items_center().gap(px(12.));
-                        match usage {
-                            Some(usage) => row.child(usage_bar(usage.pct)).child(usage_text(usage.pct)),
-                            None => row.child(usage_bar(0.)),
+                        match (usage, wait) {
+                            (Some(usage), _) => row.child(usage_bar(usage.pct)).child(usage_text(usage.pct)),
+                            (None, Some(wait)) => row.child(skeleton::bar(pulse_id, 4., wait)),
+                            (None, None) => row.child(usage_bar(0.)),
                         }
                     }),
             )

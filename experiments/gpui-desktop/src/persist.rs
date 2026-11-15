@@ -18,6 +18,15 @@ pub(crate) fn config_dir() -> PathBuf {
         .join("boxbox-gpui")
 }
 
+/// What can be rebuilt, under `$XDG_CACHE_HOME/boxbox-gpui`.
+pub(crate) fn cache_dir() -> PathBuf {
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("boxbox-gpui")
+}
+
 /// Writes through a temporary file and a rename, so a crash leaves the old or the new file.
 pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
     static TEMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -65,7 +74,11 @@ pub(crate) enum Written {
 
 impl Store {
     fn new(name: &str) -> Self {
-        Self { path: config_dir().join(name), latest: Arc::default(), lock: Arc::default() }
+        Self::at(config_dir().join(name))
+    }
+
+    fn at(path: PathBuf) -> Self {
+        Self { path, latest: Arc::default(), lock: Arc::default() }
     }
 
     pub(crate) fn path(&self) -> &Path {
@@ -89,6 +102,7 @@ impl Store {
 pub(crate) static PREFERENCES: LazyLock<Store> = LazyLock::new(|| Store::new("settings.json"));
 pub(crate) static DESKTOP_SETTINGS: LazyLock<Store> = LazyLock::new(|| Store::new("desktop-settings.json"));
 pub(crate) static FAVORITES: LazyLock<Store> = LazyLock::new(|| Store::new("favorites.json"));
+pub(crate) static SERVER_DRIVES: LazyLock<Store> = LazyLock::new(|| Store::at(cache_dir().join("server-drives.json")));
 
 #[cfg(test)]
 mod tests {

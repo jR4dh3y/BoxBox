@@ -2,6 +2,7 @@
 
 use gpui::{div, prelude::*, px, AnyElement, App, ClickEvent, ElementId, FontWeight, SharedString, Window};
 
+use super::skeleton::{self, Wait};
 use super::{Type, ROUNDED};
 use crate::theme::*;
 use crate::ui::icon;
@@ -94,6 +95,7 @@ pub struct NavItem {
     active: bool,
     disabled: bool,
     muted: bool,
+    wait: Option<Wait>,
     drop_target: bool,
     badge: Option<&'static str>,
     detail: Option<SharedString>,
@@ -112,6 +114,7 @@ impl NavItem {
             active: false,
             disabled: false,
             muted: false,
+            wait: None,
             drop_target: false,
             badge: None,
             detail: None,
@@ -145,6 +148,12 @@ impl NavItem {
     /// A dragged item is over this entry and would be dropped into its folder.
     pub fn drop_target(mut self, drop_target: bool) -> Self {
         self.drop_target = drop_target;
+        self
+    }
+
+    /// A remembered entry whose details are on their way: its name pulses.
+    pub fn waiting(mut self, wait: Wait) -> Self {
+        self.wait = Some(wait);
         self
     }
 
@@ -190,6 +199,7 @@ impl RenderOnce for NavItem {
         let text = if self.active { WHITE } else { TEXT_PRIMARY };
         let group = SharedString::from(format!("nav-{}", self.id));
         let detail_selector = format!("{}-detail", self.id);
+        let pulse_id = ElementId::Name(format!("{}-pulse", self.id).into());
         // w-full flex items-center gap-2.5 py-1.5 px-3 pl-5 text-[13px] (pr-9 with an action)
         div()
             .id(self.id)
@@ -217,14 +227,18 @@ impl RenderOnce for NavItem {
                     .gap(px(6.))
                     // With a detail the name takes the room left, so the detail sits at
                     // the row's end however long the name is.
-                    .child(
-                        div()
+                    .child({
+                        let label = div()
                             .min_w_0()
                             .truncate()
                             .when(self.detail.is_some() && self.badge.is_none(), |label| label.flex_1())
                             .when(self.muted, |label| label.text_color(c(TEXT_MUTED)))
-                            .child(self.label),
-                    )
+                            .child(self.label);
+                        match self.wait {
+                            Some(wait) => skeleton::pulse(pulse_id, label, wait),
+                            None => label.into_any_element(),
+                        }
+                    })
                     .when_some(self.badge, |label, glyph| label.child(icon(glyph, 12., c(TEXT_MUTED))))
                     .when_some(self.detail, |label, detail| {
                         label.child(div().ml_auto().flex_none().max_w(px(80.)).truncate().type_11().text_color(c(TEXT_MUTED)).debug_selector(move || detail_selector).child(detail))

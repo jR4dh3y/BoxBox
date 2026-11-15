@@ -86,23 +86,31 @@ impl Workspace {
         let storage = self.storage().unwrap_or_default();
         storage
             .into_iter()
-            .filter(|entry| matches!(entry, Storage::ServerDrive { .. } | Storage::Server { .. }))
+            .filter(|entry| matches!(entry, Storage::ServerDrive { .. } | Storage::Server { .. } | Storage::Remembered { .. }))
             .enumerate()
             .map(|(index, entry)| {
                 let info = entry.info();
                 let (detail, waiting, tooltip) = match &entry {
                     Storage::ServerDrive { server, .. } => (server.name.clone(), false, server.url.clone()),
                     Storage::Server { server, status, reason } => ((*status).to_string(), true, reason.clone().unwrap_or_else(|| server.url.clone())),
+                    Storage::Remembered { server, status, reason, .. } => (server.name.clone(), true, reason.clone().unwrap_or_else(|| (*status).to_string())),
                     _ => unreachable!("filtered above"),
                 };
                 let active = entry.holds(self, &pane.api, &pane.path);
-                components::NavItem::new(SharedString::from(format!("server-{index}")), info.name, "server")
+                let row = components::NavItem::new(SharedString::from(format!("server-{index}")), info.name, "server")
                     .detail(detail)
                     .muted(waiting)
                     .active(active)
-                    .tooltip(tooltip)
-                    .on_click(cx.listener(move |this, _, window, cx| this.open_storage(entry.clone(), window, cx)))
-                    .into_any_element()
+                    .tooltip(tooltip);
+                let row = match info.state.wait() {
+                    Some(wait) => row.waiting(wait),
+                    None => row,
+                };
+                match entry.opens() {
+                    true => row.on_click(cx.listener(move |this, _, window, cx| this.open_storage(entry.clone(), window, cx))),
+                    false => row.disabled(true),
+                }
+                .into_any_element()
             })
             .collect()
     }

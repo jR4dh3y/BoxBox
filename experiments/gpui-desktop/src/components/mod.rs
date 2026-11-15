@@ -15,6 +15,7 @@ mod progress_bar;
 mod select;
 mod settings;
 mod sidebar;
+pub mod skeleton;
 mod text_field;
 mod toast;
 mod toggle;

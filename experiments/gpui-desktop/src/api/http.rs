@@ -23,6 +23,7 @@ const MAX_TEXT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_ERROR_BYTES: usize = 64 * 1024;
 const MAX_THUMBNAIL_BYTES: usize = 32 * 1024 * 1024;
 const UPLOAD_CHUNK_SIZE: usize = 1024 * 1024;
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const COPY_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const COPY_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 static NEXT_UPLOAD_ID: AtomicU64 = AtomicU64::new(1);
@@ -44,7 +45,9 @@ impl RemoteApi {
         Self {
             server_url,
             api_base,
-            agent: ureq::AgentBuilder::new().build(),
+            // An unreachable server otherwise waits on the system's TCP timeout,
+            // about two minutes, with its drives shown as connecting.
+            agent: ureq::AgentBuilder::new().timeout_connect(CONNECT_TIMEOUT).build(),
             job_agent: ureq::AgentBuilder::new()
                 .timeout(Duration::from_secs(30))
                 .build(),

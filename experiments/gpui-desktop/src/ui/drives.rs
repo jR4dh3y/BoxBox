@@ -3,7 +3,7 @@
 use gpui::{div, prelude::*, px, Context, FontWeight, Window};
 
 use super::{icon, TextScale};
-use crate::components::{usage_bar, usage_text, DriveCard};
+use crate::components::{skeleton, usage_bar, usage_text, DriveCard};
 use crate::format::file_size;
 use crate::workspace::overview::Storage;
 use crate::theme::*;
@@ -48,8 +48,11 @@ impl Workspace {
 
     fn render_drive_card(&self, index: usize, drive: &Storage, cx: &mut Context<Self>) -> impl IntoElement {
         let open = drive.clone();
-        DriveCard::new(("drive-card", index), drive.info(), c(self.accent_hex()), self.fonts.mono.clone())
-            .on_click(cx.listener(move |this, _, window, cx| this.open_storage(open.clone(), window, cx)))
+        let card = DriveCard::new(("drive-card", index), drive.info(), c(self.accent_hex()), self.fonts.mono.clone());
+        match drive.opens() {
+            true => card.on_click(cx.listener(move |this, _, window, cx| this.open_storage(open.clone(), window, cx))),
+            false => card,
+        }
     }
 
     pub(crate) fn render_drive_list(
@@ -118,8 +121,10 @@ impl Workspace {
 
         let rows = drives.iter().enumerate().map(|(index, drive)| {
             let open = drive.clone();
+            let opens = drive.opens();
             let drive = drive.info();
             let usage = drive.state.usage();
+            let wait = drive.state.wait();
             let mono = self.fonts.mono.clone();
             let detail = |text: Option<String>| text.filter(|text| !text.is_empty()).unwrap_or("—".into());
             div()
@@ -153,14 +158,17 @@ impl Workspace {
                         .flex()
                         .items_center()
                         .gap(px(12.))
-                        .child(usage_bar(usage.map_or(0., |usage| usage.pct)))
+                        .child(match wait {
+                            Some(wait) => skeleton::bar(("drive-row-pulse", index), 4., wait),
+                            None => usage_bar(usage.map_or(0., |usage| usage.pct)).into_any_element(),
+                        })
                         .child(div().w(px(44.)).flex().justify_end().text_color(c(TEXT_MUTED)).child(match usage {
                             Some(usage) => usage_text(usage.pct).into_any_element(),
                             None => "—".into_any_element(),
                         })),
                 )
                 .on_click(cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
-                    if event.click_count() >= 2 {
+                    if opens && event.click_count() >= 2 {
                         this.open_storage(open.clone(), window, cx);
                     }
                 }))

@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Result;
 use gpui::Context;
@@ -16,7 +17,7 @@ use crate::ui::SettingsField;
 use crate::workspace::{SettingsSection, Workspace};
 
 pub(crate) enum ServerState {
-    Connecting,
+    Connecting { since: Instant },
     Ready { api: Arc<Api>, drives: Vec<DriveStats> },
     /// No credential, or the server refused it; a new pairing code fixes both.
     NeedsPairing(String),
@@ -24,15 +25,55 @@ pub(crate) enum ServerState {
     Offline(String),
 }
 
+/// A server's drive as it was last seen: what the Overview and the sidebar
+/// show of it while the server connects again, so they keep their places.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct RememberedDrive {
+    pub name: String,
+    pub label: Option<String>,
+    pub device: Option<String>,
+    pub fs_type: Option<String>,
+}
+
+impl RememberedDrive {
+    fn of(drive: &DriveStats) -> Self {
+        Self { name: drive.name.clone(), label: drive.label.clone(), device: drive.device.clone(), fs_type: drive.fs_type.clone() }
+    }
+
+    pub fn display_name(&self) -> &str {
+        self.label.as_deref().unwrap_or(&self.name)
+    }
+}
+
+/// Each saved connection's drives as last seen, by its id.
+pub(crate) type Remembered = HashMap<String, Vec<RememberedDrive>>;
+
+/// Reads the drives remembered from the last run. Call off the UI thread; a
+/// missing or unreadable file remembers nothing.
+pub(crate) fn load_remembered() -> Remembered {
+    let _span = crate::profile::span("load remembered drives");
+    std::fs::read(crate::persist::SERVER_DRIVES.path()).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+}
+
 /// Each saved connection's state, by its id.
 #[derive(Default)]
 pub(crate) struct Servers {
     states: HashMap<String, ServerState>,
+    remembered: Remembered,
 }
 
 impl Servers {
     pub fn state(&self, id: &str) -> Option<&ServerState> {
         self.states.get(id)
+    }
+
+    /// The drives a server had when last seen; empty when none are known.
+    pub fn remembered(&self, id: &str) -> &[RememberedDrive] {
+        self.remembered.get(id).map_or(&[], Vec::as_slice)
+    }
+
+    pub fn set_remembered(&mut self, remembered: Remembered) {
+        self.remembered = remembered;
     }
 
     #[cfg(test)]
@@ -97,7 +138,7 @@ impl Workspace {
     /// drive opens, or Settings asks for a pairing code, or the failure shows.
     pub(crate) fn connect_server(&mut self, connection: SavedConnection, open: bool, cx: &mut Context<Self>) {
         match self.servers.states.get(&connection.id) {
-            Some(ServerState::Connecting) => return,
+            Some(ServerState::Connecting { .. }) => return,
             Some(ServerState::Ready { api, drives }) if open => {
                 let (api, first) = (api.clone(), drives.first().map(|drive| drive.name.clone()).unwrap_or_default());
                 self.open_server_drive(api, first, cx);
@@ -105,7 +146,7 @@ impl Workspace {
             }
             _ => {}
         }
-        self.servers.states.insert(connection.id.clone(), ServerState::Connecting);
+        self.servers.states.insert(connection.id.clone(), ServerState::Connecting { since: Instant::now() });
         cx.notify();
         cx.spawn(async move |this, cx| {
             let connecting = connection.clone();
@@ -118,6 +159,7 @@ impl Workspace {
                 }
                 let state = match result {
                     Ok(Connected::Ready(api, drives)) => {
+                        this.remember(&connection.id, &drives, cx);
                         let api = Arc::new(api);
                         if open {
                             let first = drives.first().map(|drive| drive.name.clone()).unwrap_or_default();
@@ -151,6 +193,26 @@ impl Workspace {
         .detach();
     }
 
+    /// Keeps the drives a server just listed for the next start-up, when they
+    /// changed. Only a server that answered is remembered, never a failure.
+    pub(crate) fn remember(&mut self, id: &str, drives: &[DriveStats], cx: &mut Context<Self>) {
+        let drives: Vec<_> = drives.iter().map(RememberedDrive::of).collect();
+        if self.servers.remembered.get(id) == Some(&drives) {
+            return;
+        }
+        self.servers.remembered.insert(id.to_string(), drives);
+        self.save_remembered(cx);
+    }
+
+    fn save_remembered(&self, cx: &mut Context<Self>) {
+        let Ok(bytes) = serde_json::to_vec(&self.servers.remembered) else { return };
+        self.persist(&crate::persist::SERVER_DRIVES, bytes, cx, |_, result, _| {
+            if let Err(error) = result {
+                log::debug!("{error}");
+            }
+        });
+    }
+
     /// Connects again from scratch, as after pairing gave a new credential.
     pub(crate) fn reconnect_server(&mut self, connection: SavedConnection, open: bool, cx: &mut Context<Self>) {
         self.servers.states.remove(&connection.id);
@@ -174,6 +236,9 @@ impl Workspace {
     /// Drops a removed server: its panes go back to the Overview, and the
     /// server and the keyring forget this computer.
     pub(crate) fn forget_server(&mut self, connection: SavedConnection, cx: &mut Context<Self>) {
+        if self.servers.remembered.remove(&connection.id).is_some() {
+            self.save_remembered(cx);
+        }
         if let Some(ServerState::Ready { api, .. }) = self.servers.states.remove(&connection.id) {
             let inside: Vec<_> = self.tabs.iter().chain(self.split_panes.values()).filter(|pane| Arc::ptr_eq(&pane.api, &api)).map(|pane| super::PaneTarget(pane.id)).collect();
             for target in inside {

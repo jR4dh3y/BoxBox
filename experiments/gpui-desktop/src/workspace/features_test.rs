@@ -408,6 +408,66 @@ fn a_long_server_drive_name_is_cut_before_its_server(cx: &mut TestAppContext) {
     assert!(long.right() <= sidebar.right(), "{long:?} inside {sidebar:?}");
 }
 
+fn server_drive(name: &str) -> crate::api::DriveStats {
+    crate::api::DriveStats { name: name.into(), label: None, device: Some(format!("/srv/{name}")), fs_type: Some("ext4".into()), total_bytes: 100, free_bytes: 60, used_bytes: 40, used_pct: 40., read_only: false }
+}
+
+#[gpui::test]
+fn remembered_server_drives_hold_their_places_until_the_server_answers(cx: &mut TestAppContext) {
+    use crate::settings_state::SavedConnection;
+    use servers::ServerState;
+    let (view, cx, _fixture) = open(cx, &["a.txt"]);
+    let pico = SavedConnection { id: "pico".into(), name: "pico".into(), url: "http://pico:8080".into() };
+    view.update(cx, |workspace, cx| {
+        workspace.desktop_settings.connections.push(pico.clone());
+        // What the last run saw, as the start-up thread reads it back.
+        workspace.remember("pico", &[server_drive("root"), server_drive("gdrive-radheykalra901")], cx);
+    });
+    // The snapshot is written off the UI thread.
+    cx.run_until_parked();
+    view.update(cx, |workspace, cx| {
+        workspace.servers.set_remembered(Default::default());
+        workspace.servers.set_remembered(servers::load_remembered());
+        workspace.servers.set("pico", ServerState::Connecting { since: std::time::Instant::now() });
+        workspace.navigate(String::new(), cx);
+    });
+    settle(cx);
+    let entries = |view: &Entity<Workspace>, cx: &mut VisualTestContext| -> Vec<(String, bool)> {
+        view.read_with(cx, |workspace, _| {
+            workspace.storage().unwrap().iter().filter(|entry| !matches!(entry, overview::Storage::Volume(_))).map(|entry| (entry.info().name.to_string(), entry.opens())).collect()
+        })
+    };
+    assert_eq!(entries(&view, cx), [("Home".into(), true), ("root".into(), false), ("gdrive-radheykalra901".into(), false)], "remembered drives wait, unopenable");
+    // The second server row's label, which a shift in the rows above would move.
+    let card = |cx: &mut VisualTestContext| cx.debug_bounds("server-1-detail").unwrap();
+    let waiting = card(cx);
+
+    // The server answers with the same drives: they take the places the remembered ones held.
+    let api = Arc::new(Api::new("http://pico:8080", None));
+    view.update(cx, |workspace, cx| {
+        workspace.servers.set("pico", ServerState::Ready { api, drives: vec![server_drive("root"), server_drive("gdrive-radheykalra901")] });
+        cx.notify();
+    });
+    settle(cx);
+    assert_eq!(entries(&view, cx), [("Home".into(), true), ("root".into(), true), ("gdrive-radheykalra901".into(), true)]);
+    assert_eq!(card(cx), waiting, "nothing moved");
+
+    // A server that cannot be reached keeps them, dimmed, and opening one retries.
+    view.update(cx, |workspace, cx| {
+        workspace.servers.set("pico", ServerState::Offline("connection refused".into()));
+        cx.notify();
+    });
+    assert_eq!(entries(&view, cx), [("Home".into(), true), ("root".into(), true), ("gdrive-radheykalra901".into(), true)]);
+    view.read_with(cx, |workspace, _| {
+        let storage = workspace.storage().unwrap();
+        assert!(storage.iter().any(|entry| matches!(entry, overview::Storage::Remembered { status: "Can’t reach the server", .. })));
+    });
+
+    // Without a snapshot a server is one entry, as before.
+    view.update(cx, |workspace, _| workspace.servers.set_remembered(Default::default()));
+    assert_eq!(entries(&view, cx).len(), 2);
+}
+
 #[gpui::test]
 fn the_trash_notice_undoes_its_move(cx: &mut TestAppContext) {
     let (_view, cx, fixture) = open(cx, &["docs/", "b.txt"]);

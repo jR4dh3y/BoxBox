@@ -25,6 +25,7 @@ pub struct Startup {
 }
 
 pub(super) struct Prefetch {
+    remembered: Receiver<super::servers::Remembered>,
     listing: Receiver<ListingRead>,
     drives: Receiver<DrivesRead>,
 }
@@ -45,6 +46,7 @@ impl Startup {
     /// Starts reading the launch folder and the drives at once.
     pub fn prefetch(api: Api, argument: &str) -> Self {
         let mut start = Self::deferred(api, argument);
+        let (remembered_sender, remembered) = async_channel::bounded(1);
         let (listing_sender, listing) = async_channel::bounded(1);
         let (drives_sender, drives) = async_channel::bounded(1);
         let api = start.api.clone();
@@ -55,6 +57,8 @@ impl Startup {
             ranked: false,
         };
         let reader = std::thread::Builder::new().name("first listing".into()).spawn(move || {
+            // A small file, which lays out the servers' drives before they answer.
+            let _ = remembered_sender.try_send(super::servers::load_remembered());
             // The drives come first: a large folder would hold them back.
             let _ = drives_sender.try_send(read_drives(&api));
             if !path.is_empty() {
@@ -63,7 +67,7 @@ impl Startup {
             // What this thread and the stat threads freed: 2.4 MB for 20,000 entries.
             crate::heap::release_freed();
         });
-        start.prefetch = reader.is_ok().then_some(Prefetch { listing, drives });
+        start.prefetch = reader.is_ok().then_some(Prefetch { remembered, listing, drives });
         start
     }
 
@@ -100,6 +104,10 @@ impl Workspace {
     /// arrives (its thread failed) falls back to the usual load.
     pub(super) fn receive_prefetch(&mut self, prefetch: Prefetch, cx: &mut Context<Self>) {
         let target = PaneTarget(0);
+        receive(self, prefetch.remembered, cx, |this, remembered, cx| {
+            this.servers.set_remembered(remembered.unwrap_or_default());
+            cx.notify();
+        });
         let journey = crate::profile::journey("load drives", String::new);
         receive(self, prefetch.drives, cx, move |this, read, cx| match read {
             Some(read) => this.apply_drives(target, read, journey, cx),
