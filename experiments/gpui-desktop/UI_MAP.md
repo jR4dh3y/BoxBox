@@ -67,9 +67,6 @@ Linux file manager does, not commitments.
 
 Most valuable first.
 
-- Transfer conflicts: Replace, Rename, Merge folders, Apply to all; retry or
-  skip a failed item instead of stopping the batch; warn when the target lacks
-  space; names valid on FAT/exFAT targets.
 - Bulk rename for several items: replace (regex), case, insert, numbering,
   remove, date, with a preview that catches collisions.
 - Properties: image dimensions, EXIF date and camera, MIME type,
@@ -137,7 +134,7 @@ threads (`thumbnail_queue.rs`). Installed freedesktop thumbnailers are still to 
 |---|---|---|---|---|
 | `desktop/TrashPage.svelte` | Trash, restore, delete forever | keep | ✓ `trash.rs` | ✓ `local/trash.rs`, `ui/browser.rs` |
 | `desktop/TransferJobs.svelte` | transfer progress, cancel | keep | ✓ `jobs.rs`, `sse.rs` | ◐ coarse status |
-| `desktop/TransferConflictDialog.svelte` | Skip or Keep both | keep | ✓ `clipboard.rs` | ✗ conflicts fail |
+| `desktop/TransferConflictDialog.svelte` | Skip or Keep both | keep | ✓ `clipboard.rs` | ✓ `transfer.rs`, `workspace/transfers.rs`, `ui/transfer_question.rs`: a paste or drop runs on its own thread and asks as it goes, as Thunar does. A taken name: Skip, Rename (to `name (copy N)`, shown), Replace, or Merge for two folders, which asks again for names that meet inside; the dialog compares both sides' size and date. A failed item: Retry or Skip, and the rest go on. "Do this for the rest" remembers the answer for later items of the same kind. Before starting, too little free space asks to go on anyway. On FAT and exFAT drives, names lose `"*/:<>?\|`, control characters and trailing dots or spaces, inside folders too. A copy pasted into its own folder is named without asking; a move to another filesystem on the same provider copies, then removes the original. The ✕ or Escape cancels the transfer |
 | `desktop/OpenWithDialog.svelte`, `desktop/ApplicationIcon.svelte` | Open With, set default | keep | ✓ `desktop.rs` | ✓ `open_with.rs`, `ui/open_with.rs`; icons from the desktop's icon theme and its parents (`icon_theme.rs`, theme name from the settings portal); "Use as default" beside Open |
 | `desktop/DesktopUndoShortcut.svelte` | Ctrl+Z | keep | ✓ `undo.rs` | ✗ |
 | `desktop/FileChooser.svelte`, `desktop/ChooserLocations.svelte`, `routes/chooser/+page.svelte` | system file picker | keep (portal) | ✗ | ✗ |

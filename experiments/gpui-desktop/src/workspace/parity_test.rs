@@ -145,7 +145,7 @@ fn desktop_workflow(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("ctrl-shift-n d e s t enter");
     cx.simulate_keystrokes("ctrl-l h o m e / d e s t enter");
     cx.simulate_keystrokes("ctrl-v");
-    cx.run_until_parked();
+    super::features_test::wait_for_transfers(&view, cx);
     assert_eq!(fs::read_to_string(fixture.join("dest/renamed.txt")).unwrap(), "hello");
     if !local {
         let row = cx.debug_bounds("row-0-0").unwrap();

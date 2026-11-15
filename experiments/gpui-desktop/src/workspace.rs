@@ -43,6 +43,7 @@ pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;
 pub(crate) mod thumbnails;
+pub(crate) mod transfers;
 pub(crate) mod appearance;
 mod palette;
 pub(crate) mod zoom;
@@ -299,7 +300,7 @@ pub struct Workspace {
     pub(crate) file_clipboard: Option<FileClipboard>,
     /// What this app last put on the system clipboard, to tell it from other apps' copies.
     pub(crate) published_files: Option<crate::os_clipboard::Files>,
-    pub(crate) transfer_conflicts: Option<operations::TransferConflicts>,
+    pub(crate) transfer_question: Option<transfers::PendingQuestion>,
     pub(crate) confirm: Option<confirm::Confirm>,
     /// The last move to Trash or rename, for Ctrl+Z.
     pub(crate) last_undo: Option<undo::Undo>,
@@ -443,7 +444,7 @@ impl Workspace {
             .collect(),
             file_clipboard: None,
             published_files: None,
-            transfer_conflicts: None,
+            transfer_question: None,
             confirm: None,
             last_undo: None,
             shortcuts_open: false,
@@ -1171,7 +1172,7 @@ impl Workspace {
         // Escape closes the topmost dialog first, as the web Modal does.
         if self.confirm.is_some() { self.answer(false, cx); }
         else if self.devices.prompt.is_some() { self.cancel_credentials(window, cx); }
-        else if self.transfer_conflicts.take().is_some() {}
+        else if self.transfer_question.is_some() { self.answer_transfer(crate::transfer::Answer::Cancel, cx); }
         else if self.shortcuts_open { self.shortcuts_open = false; }
         else if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
         else if self.properties.take().is_some() || self.context_menu.take().is_some() {}
@@ -1392,7 +1393,7 @@ impl Render for Workspace {
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
             .child(self.render_notices(cx))
             .when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)))
-            .when(self.transfer_conflicts.is_some(), |root| root.child(self.render_conflicts(cx)))
+            .when(self.transfer_question.is_some(), |root| root.child(self.render_transfer_question(cx)))
             .when(self.confirm.is_some(), |root| root.child(self.render_confirm(cx)))
             .when(self.shortcuts_open, |root| root.child(self.render_shortcuts(cx)))
             .when(self.devices.prompt.is_some(), |root| root.child(self.render_credentials(window, cx)))

@@ -3,10 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+    sync::Arc,
 };
 
 use anyhow::{anyhow, bail, Context as _};
@@ -108,15 +105,6 @@ pub(crate) struct ContextMenuState {
     pub target_id: usize,
     pub items: Vec<FileInfo>,
     pub position: gpui::Point<gpui::Pixels>,
-}
-
-/// A paste waiting on the conflict dialog.
-pub(crate) struct TransferConflicts {
-    pub target: PaneTarget,
-    pub clipboard: FileClipboard,
-    pub planned: Vec<PlannedTransfer>,
-    pub destination: Arc<Api>,
-    pub parent: String,
 }
 
 #[derive(Clone)]
@@ -609,7 +597,6 @@ impl Workspace {
             os_clipboard::FileOp::Copy => ClipboardMode::Copy,
             os_clipboard::FileOp::Cut => ClipboardMode::Cut,
         };
-        let count = virtual_paths.len();
         let api = destination.clone();
         cx.spawn(async move |this, cx| {
             let entries = cx
@@ -622,7 +609,7 @@ impl Workspace {
                 })
                 .await;
             this.update(cx, |this, cx| match entries {
-                Ok(entries) => this.run_paste(target, FileClipboard { mode, entries }, destination, parent, count, cx),
+                Ok(entries) => this.run_paste(target, FileClipboard { mode, entries }, destination, parent, cx),
                 Err(error) => this.report(Err(format!("Could not paste: {error:#}")), cx),
             })
             .ok();
@@ -662,123 +649,17 @@ impl Workspace {
             && clipboard.entries.iter().any(|entry| {
                 !entry.api.is_local() && !same_provider(&entry.api, &destination)
             });
-        let count = clipboard.entries.len();
         if requires_confirmation {
             let confirm = Confirm::new(
                 "Move from a remote provider?",
                 "This copies the items, then permanently deletes the remote originals.",
                 "Move",
-                move |this, cx| this.run_paste(target, clipboard, destination, parent, count, cx),
+                move |this, cx| this.run_paste(target, clipboard, destination, parent, cx),
             );
             self.ask(confirm, cx);
         } else {
-            self.run_paste(target, clipboard, destination, parent, count, cx);
+            self.run_paste(target, clipboard, destination, parent, cx);
         }
-    }
-
-    /// Plans the paste in the background; conflicts go to the dialog, the rest runs.
-    fn run_paste(
-        &mut self,
-        target: PaneTarget,
-        clipboard: FileClipboard,
-        destination: Arc<Api>,
-        parent: String,
-        count: usize,
-        cx: &mut Context<Self>,
-    ) {
-        if self.operation_status.is_busy() {
-            return;
-        }
-        let generation = self.begin_operation(format!("Checking {count} item(s)…"));
-        let (plan_clipboard, plan_destination, plan_parent) = (clipboard.clone(), destination.clone(), parent.clone());
-        cx.spawn(async move |this, cx| {
-            let plan = cx
-                .background_executor()
-                .spawn(async move { plan_transfer(&plan_clipboard, &plan_destination, &plan_parent) })
-                .await;
-            this.update(cx, move |this, cx| {
-                if this.mutation_generation != generation {
-                    return;
-                }
-                match plan {
-                    Err(error) => this.finish_operation(generation, Err(error), cx),
-                    Ok(planned) if planned.iter().any(|plan| plan.keep_both.is_some()) => {
-                        this.operation_status = OperationStatus::Idle;
-                        this.transfer_conflicts = Some(TransferConflicts { target, clipboard, planned, destination, parent });
-                        cx.notify();
-                    }
-                    Ok(planned) => this.execute_paste(target, clipboard, planned, destination, parent, cx),
-                }
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    /// Continues a paste once each conflict is skipped or kept.
-    pub(crate) fn resolve_conflicts(&mut self, cx: &mut Context<Self>) {
-        if let Some(TransferConflicts { target, clipboard, planned, destination, parent }) = self.transfer_conflicts.take() {
-            if planned.iter().all(|plan| plan.keep_both.is_some() && !plan.keep) {
-                self.report(Ok(()), cx);
-                return;
-            }
-            self.execute_paste(target, clipboard, planned, destination, parent, cx);
-        }
-    }
-
-    fn execute_paste(
-        &mut self,
-        target: PaneTarget,
-        clipboard: FileClipboard,
-        planned: Vec<PlannedTransfer>,
-        destination: Arc<Api>,
-        parent: String,
-        cx: &mut Context<Self>,
-    ) {
-        let generation = self.begin_operation(format!("Transferring {} item(s)…", planned.len()));
-        let title = match planned.as_slice() {
-            [plan] => plan.keep_both.clone().filter(|_| plan.keep).unwrap_or_else(|| plan.entry.item.name.clone()),
-            planned => format!("{} items", planned.len()),
-        };
-        let folder = parent.rsplit('/').next().unwrap_or(&parent).to_string();
-        let (job, progress) = self.start_job(title, folder, clipboard.mode == ClipboardMode::Cut, cx);
-        let mut affected = Vec::<Arc<Api>>::new();
-        for api in clipboard.entries.iter().map(|entry| &entry.api).chain(std::iter::once(&destination)) {
-            if !affected.iter().any(|known| same_provider(known, api)) {
-                affected.push(api.clone());
-            }
-        }
-        let mode = clipboard.mode;
-        let moved = clipboard;
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    progress.scope(|| {
-                        for plan in &planned {
-                            if let Ok(Some(path)) = plan.entry.api.local_path(&plan.entry.item.path) {
-                                crate::progress::measure(&path);
-                            }
-                        }
-                        transfer_planned(mode, &planned, &destination, &parent).map(|_| ())
-                    })
-                })
-                .await;
-            let _ = this.update(cx, move |this, cx| {
-                for api in affected {
-                    this.refresh_provider(api, cx);
-                }
-                // A cut is spent once pasted; a drag leaves the clipboard alone.
-                if result.is_ok() && mode == ClipboardMode::Cut && this.file_clipboard.as_ref().is_some_and(|held| held.same_items(&moved)) {
-                    this.file_clipboard = None;
-                }
-                this.finish_transfer(job, generation, result, cx);
-                if this.pane_by_id(target.0).is_none() {
-                    this.report(Err("The destination pane was closed during the transfer.".into()), cx);
-                }
-            });
-        })
-        .detach();
     }
 
     pub(crate) fn paste_clipboard(
@@ -1077,7 +958,7 @@ impl Workspace {
             [path] => path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default(),
             paths => format!("{} items", paths.len()),
         };
-        let folder = parent.rsplit('/').next().unwrap_or(&parent).to_string();
+        let folder = self.folder_label(&api, &parent);
         let (job, progress) = self.start_job(title, folder, false, cx);
         let refresh_api = api.clone();
         cx.spawn(async move |this, cx| {
@@ -1522,12 +1403,6 @@ impl Workspace {
     }
 }
 
-fn parent_path(path: &str) -> &str {
-    path.rsplit_once('/')
-        .map(|(parent, _)| parent)
-        .unwrap_or("")
-}
-
 fn destination_path(parent: &str, name: &str) -> String {
     if parent.is_empty() {
         name.to_string()
@@ -1535,155 +1410,8 @@ fn destination_path(parent: &str, name: &str) -> String {
         format!("{parent}/{name}")
     }
 }
-pub(crate) fn same_provider(left: &Api, right: &Api) -> bool {
-    FavoriteProvider::for_api(left) == FavoriteProvider::for_api(right)
-}
 
-
-/// One clipboard item in a paste: where it goes, or why it does not.
-#[derive(Clone)]
-pub(crate) struct PlannedTransfer {
-    pub entry: ClipboardEntry,
-    /// `Some(name)` when the name is taken: the "Keep both" name.
-    pub keep_both: Option<String>,
-    /// The user's choice for a conflict; conflicts are skipped unless kept.
-    pub keep: bool,
-}
-
-/// `planTransfers`: lists the destination once and names conflicts uniquely. A cut
-/// back into its own folder is dropped, as there is nothing to move.
-fn plan_transfer(clipboard: &FileClipboard, destination: &Arc<Api>, parent: &str) -> anyhow::Result<Vec<PlannedTransfer>> {
-    if clipboard.entries.is_empty() {
-        bail!("The file clipboard is empty");
-    }
-    if parent.is_empty() {
-        bail!("Choose a destination folder before pasting");
-    }
-    let existing = destination.list(parent).with_context(|| format!("cannot inspect destination {parent}"))?;
-    let mut taken: HashSet<String> = existing.into_iter().map(|item| item.name).collect();
-    let mut planned = Vec::new();
-    for entry in &clipboard.entries {
-        let same = same_provider(&entry.api, destination);
-        if entry.item.is_dir && same && (parent == entry.item.path || parent.starts_with(&format!("{}/", entry.item.path))) {
-            bail!("A folder cannot be copied or moved into itself");
-        }
-        if clipboard.mode == ClipboardMode::Cut && same && parent_path(&entry.item.path) == parent {
-            continue;
-        }
-        let keep_both = taken.contains(&entry.item.name).then(|| keep_both_name(&entry.item.name, &taken));
-        taken.insert(keep_both.clone().unwrap_or_else(|| entry.item.name.clone()));
-        planned.push(PlannedTransfer { entry: entry.clone(), keep_both, keep: false });
-    }
-    if planned.is_empty() {
-        bail!("All selected items are already in this folder");
-    }
-    Ok(planned)
-}
-
-/// `stem (copy N).ext`, counting from 1; the extension is the last dot not at either end.
-pub(crate) fn keep_both_name(name: &str, taken: &HashSet<String>) -> String {
-    let (stem, extension) = match name.rfind('.') {
-        Some(dot) if dot > 0 && dot < name.len() - 1 => (&name[..dot], &name[dot..]),
-        _ => (name, ""),
-    };
-    (1..).map(|number| format!("{stem} (copy {number}){extension}")).find(|candidate| !taken.contains(candidate)).unwrap_or_default()
-}
-
-/// Runs a plan: each item to its own name, or its keep-both name, or skipped.
-/// Returns how many items were transferred.
-fn transfer_planned(mode: ClipboardMode, planned: &[PlannedTransfer], destination: &Arc<Api>, parent: &str) -> anyhow::Result<usize> {
-    let temp_root = create_transfer_temp_dir()?;
-    let mut transfer_number = 0usize;
-    let mut moved = Vec::new();
-    for plan in planned {
-        let name = match (&plan.keep_both, plan.keep) {
-            (None, _) => plan.entry.item.name.clone(),
-            (Some(name), true) => name.clone(),
-            (Some(_), false) => continue,
-        };
-        let entry = &plan.entry;
-        if same_provider(&entry.api, destination) {
-            let target = destination_path(parent, &name);
-            match mode {
-                ClipboardMode::Copy => {
-                    destination.copy(&entry.item.path, &target).with_context(|| format!("cannot copy {}", entry.item.name))?;
-                }
-                ClipboardMode::Cut => {
-                    destination.rename(&entry.item.path, &target).with_context(|| format!("cannot move {}", entry.item.name))?;
-                }
-            }
-        } else {
-            transfer_between_providers(&entry.api, destination, &entry.item, &name, parent, &temp_root.0, &mut transfer_number)?;
-            moved.push(entry);
-        }
-    }
-    // Across providers a cut is a copy, then the originals go: to Trash locally,
-    // permanently on a server.
-    if mode == ClipboardMode::Cut {
-        for entry in moved {
-            if entry.api.is_local() {
-                entry.api.move_to_trash(&entry.item.path).with_context(|| format!("cannot move {} to Trash", entry.item.name))?;
-            } else {
-                entry.api.delete(&entry.item.path, true).with_context(|| format!("cannot permanently delete {}", entry.item.name))?;
-            }
-        }
-    }
-    Ok(planned.iter().filter(|plan| plan.keep_both.is_none() || plan.keep).count())
-}
-
-/// Copies `item` into `parent` as `name`, which differs from its own name for "Keep both".
-fn transfer_between_providers(
-    source: &Arc<Api>,
-    destination: &Arc<Api>,
-    item: &FileInfo,
-    name: &str,
-    parent: &str,
-    temp_root: &Path,
-    transfer_number: &mut usize,
-) -> anyhow::Result<()> {
-    if item.is_dir {
-        destination
-            .create_directory(parent, name)
-            .with_context(|| format!("cannot create folder {name}"))?;
-        let child_parent = destination_path(parent, name);
-        let children = source
-            .list(&item.path)
-            .with_context(|| format!("cannot list source folder {}", item.path))?;
-        for child in children {
-            transfer_between_providers(source, destination, &child, &child.name, &child_parent, temp_root, transfer_number)?;
-        }
-    } else {
-        // Imports take the file's own name, so a renamed copy is staged under its new name.
-        let local = source.local_path(&item.path).with_context(|| format!("cannot resolve source {}", item.path))?;
-        let transfer_dir = temp_root.join(transfer_number.to_string());
-        *transfer_number += 1;
-        fs::create_dir(&transfer_dir)?;
-        let staged = match local {
-            Some(path) if name == item.name => path,
-            Some(path) => {
-                let staged = transfer_dir.join(name);
-                fs::copy(&path, &staged).with_context(|| format!("cannot stage {}", item.name))?;
-                staged
-            }
-            None => {
-                let downloaded = source.download(item, &transfer_dir).with_context(|| format!("cannot download {}", item.name))?;
-                if !downloaded.starts_with(&transfer_dir) || !downloaded.is_file() {
-                    bail!("provider returned an unexpected download path for {}", item.name);
-                }
-                if name == item.name {
-                    downloaded
-                } else {
-                    let renamed = transfer_dir.join(name);
-                    fs::rename(&downloaded, &renamed)?;
-                    renamed
-                }
-            }
-        };
-        destination.import_file(&staged, parent).with_context(|| format!("cannot import {}", item.name))?;
-        let _ = fs::remove_dir_all(transfer_dir);
-    }
-    Ok(())
-}
+pub(crate) use crate::transfer::same_provider;
 
 /// Drops the paths that already sit directly in `folder`: dropping a file where it is does nothing.
 pub(crate) fn outside_folder(folder: &Path, paths: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -1743,37 +1471,6 @@ fn import_path_recursive(api: &Arc<Api>, path: &Path, parent: &str) -> anyhow::R
     Ok(())
 }
 
-struct TransferTempDir(PathBuf);
-
-impl Drop for TransferTempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-fn create_transfer_temp_dir() -> anyhow::Result<TransferTempDir> {
-    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
-    for _ in 0..100 {
-        let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "boxbox-transfer-{}-{id}",
-            std::process::id()
-        ));
-        let mut builder = fs::DirBuilder::new();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
-        }
-        match builder.create(&path) {
-            Ok(()) => return Ok(TransferTempDir(path)),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error.into()),
-        }
-    }
-    bail!("could not allocate a temporary transfer directory")
-}
-
 fn open_terminal(directory: &Path) -> anyhow::Result<()> {
     #[cfg(target_os = "linux")]
     {
@@ -1818,34 +1515,5 @@ mod transfer_tests {
             outside_folder(Path::new("/a/b"), paths.to_vec()),
             [PathBuf::from("/a/other/there.txt"), PathBuf::from("/a/b/sub/deep.txt")]
         );
-    }
-
-    #[test]
-    fn keep_both_names_count_past_taken_copies() {
-        let taken: HashSet<String> = ["a.txt", "a (copy 1).txt"].map(String::from).into();
-        assert_eq!(keep_both_name("a.txt", &taken), "a (copy 2).txt");
-        assert_eq!(keep_both_name(".env", &HashSet::new()), ".env (copy 1)");
-        assert_eq!(keep_both_name("archive.tar.gz", &HashSet::new()), "archive.tar (copy 1).gz");
-    }
-
-    #[test]
-    fn a_copy_into_its_own_folder_conflicts_and_keeps_both() {
-        let root = std::env::temp_dir().join(format!("boxbox-transfer-{}", std::process::id()));
-        fs::create_dir_all(root.join("dir")).unwrap();
-        fs::write(root.join("dir/note.txt"), "hi").unwrap();
-        let api = Arc::new(Api::local_with_root(root.clone()).unwrap());
-        let item = api.stat("home/dir/note.txt").unwrap();
-        let clipboard = FileClipboard { mode: ClipboardMode::Copy, entries: vec![ClipboardEntry { api: api.clone(), item }] };
-        let mut planned = plan_transfer(&clipboard, &api, "home/dir").unwrap();
-        assert_eq!(planned[0].keep_both.as_deref(), Some("note (copy 1).txt"));
-        // Skipped by default.
-        assert_eq!(transfer_planned(ClipboardMode::Copy, &planned, &api, "home/dir").unwrap(), 0);
-        planned[0].keep = true;
-        assert_eq!(transfer_planned(ClipboardMode::Copy, &planned, &api, "home/dir").unwrap(), 1);
-        assert_eq!(fs::read_to_string(root.join("dir/note (copy 1).txt")).unwrap(), "hi");
-        // A cut back into its own folder has nothing to do.
-        let cut = FileClipboard { mode: ClipboardMode::Cut, ..clipboard };
-        assert!(plan_transfer(&cut, &api, "home/dir").is_err());
-        let _ = fs::remove_dir_all(root);
     }
 }

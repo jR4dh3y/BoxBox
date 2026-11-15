@@ -648,7 +648,7 @@ fn breadcrumbs_open_tabs_take_drops_and_fold_long_paths(cx: &mut TestAppContext)
     let first = cx.debug_bounds("crumb-1-1").unwrap().center();
     cx.simulate_mouse_down(first, MouseButton::Right, Modifiers::default());
     click(cx, "place-paste");
-    cx.run_until_parked();
+    wait_for_transfers(&view, cx);
     assert!(fixture.root.join("a-rather-long-folder-name/x.txt").is_file());
 
     // A row dropped onto a crumb moves into that folder; resting on a crumb opens it.
@@ -678,7 +678,7 @@ fn breadcrumbs_open_tabs_take_drops_and_fold_long_paths(cx: &mut TestAppContext)
     cx.simulate_mouse_move(inside, Some(MouseButton::Left), Modifiers::default());
     cx.update(|_, _| {});
     cx.simulate_mouse_up(inside, MouseButton::Left, Modifiers::default());
-    cx.run_until_parked();
+    wait_for_transfers(&view, cx);
     assert!(fixture.root.join("yet-another-long-folder").is_dir(), "the drop lands in the opened folder");
 
     // A narrow window hides the first crumbs behind "…", which lists them.
@@ -796,7 +796,7 @@ fn sidebar_entries_have_menus(cx: &mut TestAppContext) {
     let favorite = cx.debug_bounds("favorite-row-0").unwrap().center();
     cx.simulate_mouse_down(favorite, MouseButton::Right, Modifiers::default());
     click(cx, "place-paste");
-    cx.run_until_parked();
+    wait_for_transfers(&view, cx);
     assert!(fixture.root.join("docs/a.txt").is_file());
     cx.simulate_mouse_down(favorite, MouseButton::Right, Modifiers::default());
     click(cx, "place-unpin");
@@ -1323,4 +1323,56 @@ fn properties_change_permissions(cx: &mut TestAppContext) {
     assert_eq!(mode(&fixture.root.join("docs/inner")), 0o750);
     assert_eq!(mode(&fixture.root.join("docs/inner/a.sh")), 0o750);
     assert_eq!(mode(&fixture.root.join("docs/b.txt")), 0o640);
+}
+
+/// Transfers run on a thread of their own; this waits until the window has
+/// heard the last one finish.
+pub(super) fn wait_for_transfers(view: &Entity<Workspace>, cx: &mut VisualTestContext) {
+    for _ in 0..500 {
+        cx.run_until_parked();
+        let running = view.read_with(cx, |workspace, _| workspace.operation_status.is_busy() || workspace.jobs.iter().any(|job| matches!(job.state, super::jobs::JobState::Running)));
+        if !running {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("a transfer did not finish");
+}
+
+#[gpui::test]
+fn a_paste_asks_about_a_taken_name(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a.txt", "b.txt", "dst/a.txt", "dst/b.txt"]);
+    // Copy both files, then paste into a folder that has both.
+    view.update(cx, |workspace, _| {
+        let files: Vec<String> = workspace.pane().items.iter().filter(|item| !item.is_dir).map(|item| item.path.clone()).collect();
+        workspace.pane_mut().selected = files.into_iter().collect();
+    });
+    cx.simulate_keystrokes("ctrl-c");
+    view.update(cx, |workspace, cx| workspace.navigate("home/dst".into(), cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("ctrl-v");
+    let asked = |view: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        for _ in 0..300 {
+            cx.run_until_parked();
+            if view.read_with(cx, |workspace, _| workspace.transfer_question.is_some()) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("the transfer did not ask");
+    };
+    asked(&view, cx);
+    view.read_with(cx, |workspace, _| {
+        let pending = workspace.transfer_question.as_ref().unwrap();
+        assert!(matches!(&pending.question, crate::transfer::Question::Conflict { name, .. } if name == "a.txt"));
+        assert!(pending.more, "a second item follows, so Apply to all is offered");
+    });
+    settle(cx);
+    // Rename for this one and the rest.
+    click(cx, "transfer-apply-all");
+    click(cx, "transfer-rename");
+    wait_for_transfers(&view, cx);
+    assert!(fixture.root.join("dst/a (copy 1).txt").is_file());
+    assert!(fixture.root.join("dst/b (copy 1).txt").is_file());
+    assert_eq!(fs::read_to_string(fixture.root.join("dst/a.txt")).unwrap(), "dst/a.txt");
 }

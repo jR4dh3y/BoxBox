@@ -10,6 +10,7 @@ mod instance;
 mod drag_out;
 mod file_icons;
 mod format;
+mod transfer;
 mod heap;
 mod icon_theme;
 mod local;
