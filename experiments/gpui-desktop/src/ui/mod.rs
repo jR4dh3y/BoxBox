@@ -5,6 +5,7 @@ mod transfer_question;
 mod confirm;
 mod devices;
 mod drives;
+mod drop_menu;
 mod file_grid;
 mod file_list;
 mod jobs;

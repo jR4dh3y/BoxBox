@@ -311,6 +311,7 @@ pub struct Workspace {
     pub(crate) context_menu: Option<ContextMenuState>,
     pub(crate) history_menu: Option<history::HistoryMenu>,
     pub(crate) place_menu: Option<place_menu::PlaceMenu>,
+    pub(crate) drop_menu: Option<drag_drop::DropMenu>,
     /// Each pane's breadcrumb row width in the last frame, to fit its crumbs.
     pub(crate) path_bar_widths: std::rc::Rc<std::cell::RefCell<HashMap<usize, f32>>>,
     /// The pane whose toolbar "+" menu is open.
@@ -454,6 +455,7 @@ impl Workspace {
             context_menu: None,
             history_menu: None,
             place_menu: None,
+            drop_menu: None,
             path_bar_widths: Default::default(),
             add_menu: None,
             open_select: None,
@@ -1175,7 +1177,7 @@ impl Workspace {
         else if self.transfer_question.is_some() { self.answer_transfer(crate::transfer::Answer::Cancel, cx); }
         else if self.shortcuts_open { self.shortcuts_open = false; }
         else if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
-        else if self.properties.take().is_some() || self.context_menu.take().is_some() {}
+        else if self.properties.take().is_some() || self.context_menu.take().is_some() || self.drop_menu.take().is_some() {}
         // With nothing selected, Escape leaves the search, as it does in the field.
         else if self.pane().selected.is_empty() && self.pane().is_searching() { self.pane_mut().clear_search(); }
         else { self.pane_mut().clear_selection(); }
@@ -1390,6 +1392,7 @@ impl Render for Workspace {
             .when(self.context_menu.is_some(), |root| root.child(self.render_context_menu(cx)))
             .when(self.history_menu.is_some(), |root| root.child(self.render_history_menu(cx)))
             .when(self.place_menu.is_some(), |root| root.child(self.render_place_menu(cx)))
+            .when(self.drop_menu.is_some(), |root| root.child(self.render_drop_menu(cx)))
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
             .child(self.render_notices(cx))
             .when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)))

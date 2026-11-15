@@ -32,8 +32,12 @@ pub(crate) enum DropTarget {
     Crumb { pane: PaneTarget, path: String },
 }
 
-/// How long a drag rests on a breadcrumb before it opens, as GTK's path bar does.
+/// How long a drag rests on a breadcrumb, folder or place before it opens, as
+/// GTK's path bar and Thunar's folders do.
 const HOVER_OPEN: std::time::Duration = std::time::Duration::from_millis(700);
+/// Near the top or bottom of a list, a drag scrolls it; deeper in, faster.
+const SCROLL_EDGE: f32 = 40.;
+const MAX_SCROLL_STEP: f32 = 16.;
 
 /// The items being dragged, taken when the drag starts so a refresh cannot change them.
 pub(crate) struct DragSource {
@@ -48,19 +52,42 @@ pub(crate) struct DragDrop {
     /// The innermost zone seen during the current pointer move.
     candidate: Option<DropTarget>,
     settling: bool,
+    /// The pane under the pointer and where it is, for scrolling at the edges.
+    pointer: Option<(PaneTarget, Point<Pixels>)>,
+    scrolling: bool,
 }
 
-/// What the modifier keys ask for, as in other Linux file managers.
+/// A drop that asked what to do: the menu at the drop point.
+pub(crate) struct DropMenu {
+    pub source: DragSource,
+    pub pane: PaneTarget,
+    pub destination: Arc<Api>,
+    pub folder: String,
+    pub position: Point<Pixels>,
+    /// Whether moving and linking are possible here; copying always is.
+    pub can_move: bool,
+    pub can_link: bool,
+}
+
+/// What the modifier keys ask for, as GTK file managers read them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Request {
     /// Move on the same filesystem, copy to another.
     Auto,
     Copy,
     Move,
+    /// Ctrl+Shift: a link to each item.
+    Link,
+    /// Alt: a menu of Move, Copy and Link at the drop.
+    Ask,
 }
 
 fn request(modifiers: Modifiers) -> Request {
-    if modifiers.control {
+    if modifiers.alt {
+        Request::Ask
+    } else if modifiers.control && modifiers.shift {
+        Request::Link
+    } else if modifiers.control {
         Request::Copy
     } else if modifiers.shift {
         Request::Move
@@ -107,7 +134,7 @@ pub(crate) fn drop_zone<E: InteractiveElement>(element: E, target: DropTarget, w
         move |event, window, cx| {
             if event.bounds.contains(&event.event.position) {
                 let position = event.event.position;
-                workspace.update(cx, |this, _| this.offer_drop(origin, target.clone(), position, window)).ok();
+                workspace.update(cx, |this, cx| this.offer_drop(origin, target.clone(), position, window, cx)).ok();
             }
         }
     }
@@ -126,7 +153,8 @@ impl Workspace {
         items
     }
 
-    /// Opens a breadcrumb's folder if the drag is still on it after a moment.
+    /// Opens a breadcrumb, folder or sidebar place if the drag is still on it
+    /// after a moment, so a drag can go deeper without letting go.
     fn open_on_hover(&mut self, target: DropTarget, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(HOVER_OPEN).await;
@@ -134,13 +162,62 @@ impl Workspace {
                 if this.drag_drop.hover.as_ref() != Some(&target) || !cx.has_active_drag() {
                     return;
                 }
-                if let DropTarget::Crumb { pane, path } = target {
-                    if this.pane_by_id(pane.0).is_some_and(|found| found.path != path) {
-                        this.navigate_in(pane, path, cx);
-                    }
+                let (pane, path) = match target {
+                    DropTarget::Crumb { pane, path } | DropTarget::Folder { pane, path } => (pane, path),
+                    DropTarget::Place { path } => (this.active_pane, path),
+                    DropTarget::Pane(_) | DropTarget::Trash => return,
+                };
+                if this.pane_by_id(pane.0).is_some_and(|found| found.path != path) {
+                    this.navigate_in(pane, path, cx);
                 }
             })
             .ok();
+        })
+        .detach();
+    }
+
+    /// While a drag is near the top or bottom of a pane, scrolls it each frame.
+    fn scroll_drag_edges(&mut self, cx: &mut Context<Self>) {
+        if std::mem::replace(&mut self.drag_drop.scrolling, true) {
+            return;
+        }
+        cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(std::time::Duration::from_millis(16)).await;
+            let alive = this
+                .update(cx, |this, cx| {
+                    if !cx.has_active_drag() {
+                        this.drag_drop.scrolling = false;
+                        this.drag_drop.pointer = None;
+                        return false;
+                    }
+                    let Some((target, pointer)) = this.drag_drop.pointer else { return true };
+                    let Some(pane) = this.pane_by_id(target.0) else { return true };
+                    let handle = match pane.current_view_mode() {
+                        ViewMode::List => pane.list_scroll.0.borrow().base_handle.clone(),
+                        ViewMode::Grid => pane.grid_scroll.0.borrow().base_handle.clone(),
+                    };
+                    let viewport = handle.bounds();
+                    let (top, bottom) = (f32::from(pointer.y - viewport.top()), f32::from(viewport.bottom() - pointer.y));
+                    let step = if top < SCROLL_EDGE && top >= 0. {
+                        -(SCROLL_EDGE - top) / SCROLL_EDGE * MAX_SCROLL_STEP
+                    } else if bottom < SCROLL_EDGE && bottom >= 0. {
+                        (SCROLL_EDGE - bottom) / SCROLL_EDGE * MAX_SCROLL_STEP
+                    } else {
+                        return true;
+                    };
+                    let offset = handle.offset();
+                    let lowest = -f32::from(handle.max_offset().height);
+                    let y = (f32::from(offset.y) - step).clamp(lowest, 0.);
+                    if y != f32::from(offset.y) {
+                        handle.set_offset(gpui::point(offset.x, gpui::px(y)));
+                        cx.notify();
+                    }
+                    true
+                })
+                .unwrap_or(false);
+            if !alive {
+                break;
+            }
         })
         .detach();
     }
@@ -154,6 +231,8 @@ impl Workspace {
     /// and settle once every zone has had its say.
     pub(crate) fn track_drag(&mut self, cx: &mut Context<Self>) {
         self.drag_drop.candidate = None;
+        // A pane under the pointer sets it again; off every pane, nothing scrolls.
+        self.drag_drop.pointer = None;
         if std::mem::replace(&mut self.drag_drop.settling, true) {
             return;
         }
@@ -164,8 +243,8 @@ impl Workspace {
                     this.drag_drop.settling = false;
                     let candidate = this.drag_drop.candidate.take();
                     if this.drag_drop.hover != candidate {
-                        if let Some(DropTarget::Crumb { pane, path }) = &candidate {
-                            this.open_on_hover(DropTarget::Crumb { pane: *pane, path: path.clone() }, cx);
+                        if let Some(target @ (DropTarget::Crumb { .. } | DropTarget::Folder { .. } | DropTarget::Place { .. })) = &candidate {
+                            this.open_on_hover(target.clone(), cx);
                         }
                         this.drag_drop.hover = candidate;
                         cx.notify();
@@ -176,7 +255,11 @@ impl Workspace {
     }
 
     /// A zone under the pointer. Zones report outermost first, so the last valid one wins.
-    fn offer_drop(&mut self, origin: Origin, target: DropTarget, position: Point<Pixels>, window: &Window) {
+    fn offer_drop(&mut self, origin: Origin, target: DropTarget, position: Point<Pixels>, window: &Window, cx: &mut Context<Self>) {
+        if let DropTarget::Pane(pane) | DropTarget::Folder { pane, .. } = &target {
+            self.drag_drop.pointer = Some((*pane, position));
+            self.scroll_drag_edges(cx);
+        }
         // A row scrolled half under the header still has bounds there.
         if let DropTarget::Folder { pane, .. } = &target {
             let visible = self.pane_by_id(pane.0).is_some_and(|pane| {
@@ -221,10 +304,17 @@ impl Workspace {
         let (Some(source), Some((_, api, folder))) = (&self.drag_drop.source, self.drop_destination(target)) else {
             return false;
         };
-        accepts(&source.items, same_provider(&source.api, &api), &folder, request != Request::Copy)
+        let same = same_provider(&source.api, &api);
+        match request {
+            Request::Link => links(&source.api, &api) && takes_files(&folder),
+            // The menu offers a copy, which any folder takes.
+            Request::Ask | Request::Copy => accepts(&source.items, same, &folder, false),
+            Request::Move | Request::Auto => accepts(&source.items, same, &folder, true),
+        }
     }
 
-    /// The button came up over the window: move or copy the items to the hover target.
+    /// The button came up over the window: move, copy or link the items to the
+    /// hover target, or ask which.
     pub(crate) fn drop_items(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (source, target) = (self.drag_drop.source.take(), self.drag_drop.hover.take());
         let (Some(source), Some(target)) = (source, target) else { return };
@@ -236,26 +326,100 @@ impl Workspace {
         let Some((pane, destination, folder)) = self.drop_destination(&target) else { return };
         let same = same_provider(&source.api, &destination);
         // The keys may have changed since the pointer last moved.
-        if !accepts(&source.items, same, &folder, request != Request::Copy) {
-            return;
+        match request {
+            Request::Link if links(&source.api, &destination) && takes_files(&folder) => {
+                self.link_items(source, destination, folder, cx);
+            }
+            Request::Ask if accepts(&source.items, same, &folder, false) => {
+                self.drop_menu = Some(DropMenu {
+                    can_move: accepts(&source.items, same, &folder, true),
+                    can_link: links(&source.api, &destination),
+                    source,
+                    pane,
+                    destination,
+                    folder,
+                    position: window.mouse_position(),
+                });
+                cx.notify();
+            }
+            Request::Copy if accepts(&source.items, same, &folder, false) => {
+                self.drop_with(pane, source, destination, folder, ClipboardMode::Copy, cx);
+            }
+            Request::Move if accepts(&source.items, same, &folder, true) => {
+                self.drop_with(pane, source, destination, folder, ClipboardMode::Cut, cx);
+            }
+            Request::Auto if accepts(&source.items, same, &folder, true) => {
+                let first = source.items.first().map(|item| item.path.clone()).unwrap_or_default();
+                let (from, to, inside) = (source.api.clone(), destination.clone(), folder.clone());
+                cx.spawn(async move |this, cx| {
+                    let one_filesystem = same && cx.background_executor().spawn(async move { same_filesystem(&from, &first, &to, &inside) }).await;
+                    let mode = if one_filesystem { ClipboardMode::Cut } else { ClipboardMode::Copy };
+                    this.update(cx, |this, cx| this.drop_with(pane, source, destination, folder, mode, cx)).ok();
+                })
+                .detach();
+            }
+            _ => {}
         }
-        let entries: Vec<ClipboardEntry> = source.items.into_iter().map(|item| ClipboardEntry { api: source.api.clone(), item }).collect();
-        let first = entries.first().map(|entry| entry.item.path.clone()).unwrap_or_default();
-        let (from, to) = (source.api, destination.clone());
+    }
+
+    pub(crate) fn drop_with(&mut self, pane: PaneTarget, source: DragSource, destination: Arc<Api>, folder: String, mode: ClipboardMode, cx: &mut Context<Self>) {
+        let entries = source.items.into_iter().map(|item| ClipboardEntry { api: source.api.clone(), item }).collect();
+        self.start_transfer(pane, FileClipboard { mode, entries }, destination, folder, cx);
+    }
+
+    /// A link to each item in `folder`, under the item's name, or a free one
+    /// when it is taken. The new links are selected.
+    pub(crate) fn link_items(&mut self, source: DragSource, destination: Arc<Api>, folder: String, cx: &mut Context<Self>) {
+        let generation = self.begin_operation("Creating links…");
+        let api = destination.clone();
         cx.spawn(async move |this, cx| {
-            let mode = match request {
-                Request::Copy => ClipboardMode::Copy,
-                Request::Move => ClipboardMode::Cut,
-                Request::Auto => {
-                    let (to, folder) = (to.clone(), folder.clone());
-                    let one_filesystem = same && cx.background_executor().spawn(async move { same_filesystem(&from, &first, &to, &folder) }).await;
-                    if one_filesystem { ClipboardMode::Cut } else { ClipboardMode::Copy }
-                }
-            };
-            this.update(cx, |this, cx| this.start_transfer(pane, FileClipboard { mode, entries }, to, folder, cx)).ok();
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut taken: std::collections::HashSet<String> = api.list(&folder)?.into_iter().map(|item| item.name).collect();
+                    let mut made = Vec::new();
+                    for item in &source.items {
+                        let name = match taken.contains(&item.name) {
+                            true => crate::transfer::keep_both_name(&item.name, &taken),
+                            false => item.name.clone(),
+                        };
+                        let link = if folder.is_empty() { name.clone() } else { format!("{folder}/{name}") };
+                        api.create_link(&item.path, &link)?;
+                        taken.insert(name);
+                        made.push(link);
+                    }
+                    anyhow::Ok(made)
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                let result = result.map(|made| {
+                    if let Some(pane) = this.tabs.iter_mut().chain(this.split_panes.values_mut()).find(|pane| made.first().is_some_and(|link| parent(link) == pane.path)) {
+                        pane.selected = made.into_iter().collect();
+                    }
+                });
+                this.refresh_provider(destination, cx);
+                this.finish_operation(generation, result, cx);
+            })
+            .ok();
         })
         .detach();
     }
+
+    /// The Alt-drop menu's choice.
+    pub(crate) fn choose_drop(&mut self, choice: Option<ClipboardMode>, link: bool, cx: &mut Context<Self>) {
+        let Some(menu) = self.drop_menu.take() else { return };
+        match (choice, link) {
+            (_, true) => self.link_items(menu.source, menu.destination, menu.folder, cx),
+            (Some(mode), false) => self.drop_with(menu.pane, menu.source, menu.destination, menu.folder, mode, cx),
+            (None, false) => {}
+        }
+        cx.notify();
+    }
+}
+
+/// Links point at real paths, so both ends must be on this computer.
+fn links(source: &Api, destination: &Api) -> bool {
+    source.is_local() && destination.is_local()
 }
 
 impl Workspace {
@@ -340,9 +504,11 @@ mod tests {
     }
 
     #[test]
-    fn control_copies_and_shift_moves() {
+    fn control_copies_shift_moves_both_link_and_alt_asks() {
         assert_eq!(request(Modifiers::default()), Request::Auto);
         assert_eq!(request(Modifiers { control: true, ..Default::default() }), Request::Copy);
         assert_eq!(request(Modifiers { shift: true, ..Default::default() }), Request::Move);
+        assert_eq!(request(Modifiers { control: true, shift: true, ..Default::default() }), Request::Link);
+        assert_eq!(request(Modifiers { alt: true, control: true, ..Default::default() }), Request::Ask);
     }
 }

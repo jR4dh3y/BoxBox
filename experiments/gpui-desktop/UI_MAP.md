@@ -74,8 +74,8 @@ Most valuable first.
 - Reorder tabs; restore tabs and split panes on launch.
 - Details view: choose, resize and reorder columns (owner, permissions, MIME
   type, created, accessed), remembered per folder.
-- Hover a folder row while dragging to open it (crumbs already do);
-  autoscroll at the edges; Link on drop, and Ask on right-drag.
+- Ask on a right-button drag: GPUI 0.2.2 starts drags only with the left
+  button and keeps its drag state private, so Alt-drag asks instead.
 - Middle-ellipsis for long names, keeping the extension.
 - Undo for copy, move, create and link as well as Trash and rename; Redo.
 - Transfer pause and resume, current file, rate and time left.
@@ -219,7 +219,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Single instance, launch opens a tab | ✓ `instance.rs` | ✓ `instance.rs` (from PR #226); real paths and `file://` URIs open their folder |
 | Live folder refresh | ✓ `watch.rs` (server stream) | ✓ `workspace/watching.rs` (inotify) |
 | Drag out | ◐ X11 only | ✓ `drag_out/`: XDND on X11; on Wayland `drag_out/wayland.rs` starts a `wl_data_device` drag on GPUI's own connection once the pointer leaves the window (run on sway only; no drag icon outside the window); it takes a new pointer when the seat regains one |
-| Drag inside the window | ✓ `dnd.rs` | ✓ `workspace/drag_drop.rs`: onto a folder row or tile, a pane or a sidebar entry; moves on one filesystem and copies to another, Ctrl copies, Shift moves; an item refuses itself, its own inside and the folder it is in; the target under the pointer is highlighted |
+| Drag inside the window | ✓ `dnd.rs` | ✓ `workspace/drag_drop.rs`: onto a folder row or tile, a pane or a sidebar entry; moves on one filesystem and copies to another, Ctrl copies, Shift moves, Ctrl+Shift links (by full path, under the item's name or a free one; local only) and Alt asks with a Move Here, Copy Here, Link Here, Cancel menu at the drop; resting 0.7 s on a folder row, tile, crumb or sidebar place opens it and the drag goes on; within 40 px of a list's or grid's top or bottom it scrolls, faster nearer the edge; an item refuses itself, its own inside and the folder it is in; the target under the pointer is highlighted |
 | Drop in from other apps | ✓ `dnd.rs` | ✓ the same targets and highlight as a drag inside the window; files are copied, since GPUI does not report the action the other app offered |
 | OS file clipboard (GNOME copied-files, uri-list) | ✓ claimed, through the server | ✓ `os_clipboard.rs`: owns the Wayland clipboard via data-control (not GNOME); `xclip` on X11 |
 | Devices: mount, unlock, eject | ✓ `devices.rs` (server) | ✓ `devices/udisks.rs`: UDisks2 over D-Bus (`zbus`), live, with LUKS unlock and lock. `devices/gvfs.rs`: GVfs mounts and volume monitors over D-Bus; `smb://`, `sftp://`, `ftp://` and `mtp://` typed in the location bar mount and open, and a backend's password or host-key question opens a dialog. Rows show a usage bar, a read-only mark and a dimmed unmounted state. Run against a Samba share, an SSH login and a LUKS loop image; a phone mounted by location is merged with its MTP volume (one row, the volume's name) |

@@ -1376,3 +1376,76 @@ fn a_paste_asks_about_a_taken_name(cx: &mut TestAppContext) {
     assert!(fixture.root.join("dst/b (copy 1).txt").is_file());
     assert_eq!(fs::read_to_string(fixture.root.join("dst/a.txt")).unwrap(), "dst/a.txt");
 }
+
+#[gpui::test]
+fn a_drag_opens_folders_it_rests_on_and_links_or_asks(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a.txt", "b.txt", "docs/inner/"]);
+    let center = |cx: &mut VisualTestContext, selector: &'static str| cx.debug_bounds(selector).unwrap().center();
+    let row_of = |view: &Entity<Workspace>, cx: &mut VisualTestContext, name: &str| -> &'static str {
+        let index = names(view, cx).iter().position(|found| found == name).unwrap();
+        Box::leak(format!("row-0-{index}").into_boxed_str())
+    };
+    let (a, docs) = (row_of(&view, cx, "a.txt"), row_of(&view, cx, "docs"));
+    let (start, folder) = (center(cx, a), center(cx, docs));
+
+    // Rest on the docs row: it opens, and the drag goes on inside it.
+    let link = Modifiers { control: true, shift: true, ..Default::default() };
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(start + gpui::point(gpui::px(10.), gpui::px(10.)), Some(MouseButton::Left), Modifiers::default());
+    cx.simulate_mouse_move(folder, Some(MouseButton::Left), Modifiers::default());
+    cx.simulate_mouse_move(folder + gpui::point(gpui::px(1.), gpui::px(0.)), Some(MouseButton::Left), Modifiers::default());
+    cx.update(|_, _| {});
+    cx.executor().advance_clock(std::time::Duration::from_millis(800));
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home/docs", "resting on a folder opens it"));
+
+    // Ctrl+Shift on release: a link to the file, by its full path.
+    let pane = cx.debug_bounds("browser-pane-0").unwrap();
+    let empty = gpui::point(pane.center().x, pane.bottom() - gpui::px(60.));
+    cx.simulate_mouse_move(empty, Some(MouseButton::Left), link);
+    cx.update(|_, _| {});
+    cx.simulate_mouse_up(empty, MouseButton::Left, link);
+    cx.run_until_parked();
+    assert_eq!(fs::read_link(fixture.root.join("docs/a.txt")).unwrap(), fixture.root.join("a.txt"));
+
+    // Alt asks at the drop; Copy Here copies.
+    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
+    cx.run_until_parked();
+    let (b, docs) = (row_of(&view, cx, "b.txt"), row_of(&view, cx, "docs"));
+    let (start, folder) = (center(cx, b), center(cx, docs));
+    let ask = Modifiers { alt: true, ..Default::default() };
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(start + gpui::point(gpui::px(10.), gpui::px(10.)), Some(MouseButton::Left), ask);
+    cx.simulate_mouse_move(folder, Some(MouseButton::Left), ask);
+    cx.simulate_mouse_move(folder + gpui::point(gpui::px(1.), gpui::px(0.)), Some(MouseButton::Left), ask);
+    cx.update(|_, _| {});
+    cx.simulate_mouse_up(folder, MouseButton::Left, ask);
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert!(workspace.drop_menu.is_some(), "Alt asks what to do"));
+    click(cx, "drop-copy");
+    wait_for_transfers(&view, cx);
+    assert!(fixture.root.join("docs/b.txt").is_file());
+    assert!(fixture.root.join("b.txt").is_file(), "a copy leaves the original");
+}
+
+#[gpui::test]
+fn a_drag_near_the_bottom_scrolls_the_list(cx: &mut TestAppContext) {
+    let files: Vec<String> = (0..80).map(|index| format!("file-{index:02}.txt")).collect();
+    let files: Vec<&str> = files.iter().map(String::as_str).collect();
+    let (view, cx, _fixture) = open(cx, &files);
+    let offset = |view: &Entity<Workspace>, cx: &mut VisualTestContext| view.read_with(cx, |workspace, _| f32::from(workspace.pane().list_scroll.0.borrow().base_handle.offset().y));
+    let start = cx.debug_bounds("row-0-0").unwrap().center();
+    let viewport = view.read_with(cx, |workspace, _| workspace.pane().list_scroll.0.borrow().base_handle.bounds());
+    let near_bottom = gpui::point(start.x, viewport.bottom() - gpui::px(8.));
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(start + gpui::point(gpui::px(10.), gpui::px(10.)), Some(MouseButton::Left), Modifiers::default());
+    cx.simulate_mouse_move(near_bottom, Some(MouseButton::Left), Modifiers::default());
+    cx.update(|_, _| {});
+    assert_eq!(offset(&view, cx), 0.);
+    for _ in 0..10 {
+        cx.executor().advance_clock(std::time::Duration::from_millis(16));
+        cx.run_until_parked();
+    }
+    assert!(offset(&view, cx) < 0., "held near the bottom edge, the list scrolls down");
+    cx.simulate_mouse_up(near_bottom, MouseButton::Left, Modifiers::default());
+}

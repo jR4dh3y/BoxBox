@@ -338,9 +338,13 @@ impl LocalFiles {
     pub fn create_link(&self, target: &str, link: &str) -> Result<()> {
         let (_, entry) = self.resolve_entry(target)?;
         let (_, parent, name) = self.resolve_destination(link)?;
-        ensure!(entry.parent() == Some(parent.as_path()), "a link is made next to its target");
-        let target_name = entry.file_name().context("the target has no name")?;
-        std::os::unix::fs::symlink(target_name, parent.join(name)).with_context(|| format!("cannot create a link to {target}"))
+        // Beside its target a link holds just the name, so the pair can move together;
+        // elsewhere it holds the full path, as Thunar's do.
+        let points_to = match entry.parent() == Some(parent.as_path()) {
+            true => PathBuf::from(entry.file_name().context("the target has no name")?),
+            false => entry.clone(),
+        };
+        std::os::unix::fs::symlink(points_to, parent.join(name)).with_context(|| format!("cannot create a link to {target}"))
     }
 
     /// Import a selected local file or directory into an existing virtual directory.
