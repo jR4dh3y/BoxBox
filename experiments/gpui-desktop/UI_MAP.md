@@ -30,8 +30,7 @@ Linux file manager does, not commitments.
 
 ### Parity with the Electrobun app
 
-- Tabs and status bar on shared components. Status bar: selected count of
-  total and selected size.
+- Tabs and status bar on shared components.
 - Shared freedesktop thumbnails (`~/.cache/thumbnails`, with `fail/boxbox`
   records), and an icon when a thumbnail fails. Images decode in-process;
   videos and other types run the installed `.thumbnailer` entries
@@ -52,18 +51,16 @@ Linux file manager does, not commitments.
 - Register as the default folder handler (`inode/directory`,
   `x-scheme-handler/file`), opt-in.
 - Drive context menu: Rename and Reset Name, with stored drive names.
-- Shift+Delete deletes permanently outside Trash; Delete in Trash deletes.
+- Delete in Trash deletes: the Trash page has per-row buttons, no selection.
 - After a cut is pasted, clear the OS clipboard if it still holds that cut.
 - Clipboard on GNOME: data-control is not offered there, so copy and paste
   with other apps fail.
 - Transfers: per-item progress, dismiss and clear finished jobs.
-- Keep the selection and scroll position across refresh and Back.
 - Folder load errors through `LoadError` with Retry; a delayed spinner (150 ms)
   and a shared `Spinner`; an indeterminate `ProgressBar`.
 - Modals close the top dialog on Escape and on a backdrop click, and restore
   focus; context menus close on Escape or an outside click and stay inside
   the window.
-- At most four toasts at once.
 - Restore from Trash recreates missing parent folders; Trash lists folders
   first, then newest; refuse Trash on network filesystems.
 - Open With: app icons from the current icon theme, not only hicolor.
@@ -83,8 +80,6 @@ Most valuable first.
 - Permissions and owner editor in Properties, optionally recursive.
 - Properties: image dimensions, EXIF date and camera, MIME type, link target,
   all dates, free space; values selectable. (Folder size and counts are done.)
-- Mouse Back/Forward buttons; middle-click on a folder row opens it in a new
-  tab; Ctrl with it opens in the background.
 - Reorder tabs; restore tabs and split panes on launch.
 - Details view: choose, resize and reorder columns (owner, permissions, MIME
   type, created, accessed), remembered per folder.
@@ -244,7 +239,11 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Wayland rendering | ◐ untested | ✓ native on Niri, Hyprland and sway; `render_gpu.rs` draws on the compositor's GPU (`linux-dmabuf` main device) instead of the first Vulkan device. Run on a live Hyprland session and in nested niri; a Niri session on real hardware was not run. GPUI 0.2.2 still panics if a new keyboard sends modifiers before its keymap (`wayland/client.rs:1267`), and drops the first key of a newly added keyboard; both seen only with `wtype` virtual keyboards |
 | Keyboard focus movement, type-ahead | ✗ | ✓ `workspace/keyboard.rs`: arrows (by row in the grid), Home, End, Page Up/Down; Shift extends, Ctrl moves the cursor alone, Ctrl+Space toggles; Menu and Shift+F10; type-ahead with a 1 s pause; the cursor scrolls into view |
 | Read-only folders | — | ✓ checked with `access(2)` on load; New, Rename, Cut, Paste and Delete say "This location is read-only or unavailable" |
-| History | — | ✓ `workspace/history.rs`: right-click Back or Forward for the places; places that no longer exist are skipped and dropped |
+| History | — | ✓ `workspace/history.rs`: right-click Back or Forward for the places; places that no longer exist are skipped and dropped; the mouse's side buttons go back and forward in the pane under the pointer; Back and Forward return to the folder's selection, cursor and scroll position (`pane::ViewMemo`), and a newly opened folder starts at its top |
+| Tabs from a folder | — | ✓ a middle-click on a folder row, tile or crumb opens it in a new tab; with Ctrl, behind the current one |
+| Start location | — | ✓ Settings → General: the Overview, the home folder or the last location (kept in `$XDG_STATE_HOME/boxbox-gpui/last-location`); a remembered folder that is gone starts on the Overview |
+| Delete permanently | — | ✓ Shift+Delete, always after asking; Delete and Shift+Delete do nothing while the Trash page shows |
+| Server drives at launch | — | ✓ each server's drives as last seen (`$XDG_CACHE_HOME/boxbox-gpui/server-drives.json`) stand in place with a pulsing usage placeholder (`components/skeleton.rs`) until the server answers; one opened meanwhile opens when it does |
 | Breadcrumbs | — | ✓ `ui/toolbar.rs` `render_crumbs`: menu (Open in New Tab, Paste Into Folder, Properties), middle-click, drops, open after 0.7 s of dragging, "…" for crumbs that do not fit, full path on hover |
 | Places | — | ✓ Recent (`recently-used.xbel`), Templates, Network (Avahi over D-Bus; untested here, as Avahi is disabled on this machine), Desktop; every sidebar entry has a menu (`ui/place_menu.rs`) |
 | Favorites | — | ✓ local favorites are the GTK bookmarks file, shared with other file managers and watched; server favorites stay in BoxBox's file; drag to reorder |
