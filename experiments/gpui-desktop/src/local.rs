@@ -6,7 +6,9 @@ pub mod network;
 mod recent;
 mod search;
 mod trash;
+mod mime;
 pub mod thumbnails;
+mod thumbnailers;
 
 use std::ffi::CString;
 use std::fs::{self, OpenOptions};

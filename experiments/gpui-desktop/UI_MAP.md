@@ -32,8 +32,12 @@ Linux file manager does, not commitments.
 
 - Tabs and status bar on shared components. Status bar: selected count of
   total and selected size.
-- Shared freedesktop thumbnails (`~/.cache/thumbnails`, installed
-  thumbnailers), and an icon when a thumbnail fails.
+- Shared freedesktop thumbnails (`~/.cache/thumbnails`, with `fail/boxbox`
+  records), and an icon when a thumbnail fails. Images decode in-process;
+  videos and other types run the installed `.thumbnailer` entries
+  (`local/thumbnailers.rs`, type from the shared-mime-info globs in
+  `local/mime.rs`), three at a time with a 10 s limit. Not sandboxed with
+  bwrap yet, as GNOME does.
 - Location editor: suggestions (120 ms, folders only, hidden only when shown
   or typed `.`), Up/Down, Tab or Right to complete; `~` and `file://` input; a
   typed file path opens its folder and selects the file; click on the blank

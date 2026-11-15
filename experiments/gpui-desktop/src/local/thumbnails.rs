@@ -10,9 +10,14 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use md5::{Digest, Md5};
 
+use super::thumbnailers::Failure;
+
 /// The standard's sizes, smallest first.
 const FLAVORS: [(&str, u32); 4] = [("normal", 128), ("large", 256), ("x-large", 512), ("xx-large", 1024)];
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+const FAIL_DIR: &str = "fail/boxbox";
+/// How long a file must be unchanged before a failure to thumbnail it is recorded.
+const SETTLED: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// A PNG that covers `width` x `height`, from the cache when it is current.
 pub fn thumbnail(path: &Path, width: u32, height: u32) -> Result<Vec<u8>> {
@@ -32,7 +37,33 @@ fn cache_root() -> Option<PathBuf> {
 }
 
 fn render(path: &Path, width: u32, height: u32) -> Result<Vec<u8>> {
-    boxbox_thumbnail::thumbnail_path(path, width, height).with_context(|| format!("cannot create thumbnail for {}", path.display()))
+    render_with(path, width, height).map_err(|failure| match failure {
+        Failure::Failed(error) => error,
+        Failure::TimedOut => anyhow::anyhow!("the thumbnailer ran out of time"),
+    })
+}
+
+/// Images decode here. Everything else goes to the system thumbnailer for its
+/// type, as other file managers do, and to the built-in renderer (PDF pages,
+/// audio waveforms) only when no thumbnailer takes it.
+fn render_with(path: &Path, width: u32, height: u32) -> Result<Vec<u8>, Failure> {
+    let builtin = || {
+        boxbox_thumbnail::thumbnail_path(path, width, height).with_context(|| format!("cannot create thumbnail for {}", path.display()))
+    };
+    let mime = super::mime::from_name(path);
+    let thumbnailer = mime.as_deref().and_then(super::thumbnailers::find);
+    let image = mime.as_deref().is_some_and(|mime| mime.starts_with("image/"));
+    let Some(thumbnailer) = thumbnailer.filter(|_| !image || builtin_fails(path, width, height)) else {
+        return Ok(builtin()?);
+    };
+    let bytes = thumbnailer.run(path, &file_uri(path), width.max(height))?;
+    // Normalised to a bounded PNG, whatever the thumbnailer wrote.
+    Ok(boxbox_thumbnail::thumbnail_bytes(&bytes, width, height).with_context(|| format!("cannot read the thumbnail made for {}", path.display()))?)
+}
+
+/// An image format the built-in decoder does not know, such as HEIF or SVG.
+fn builtin_fails(path: &Path, width: u32, height: u32) -> bool {
+    matches!(boxbox_thumbnail::thumbnail_path(path, width, height), Err(boxbox_thumbnail::ThumbnailError::UnsupportedFormat))
 }
 
 fn cached(root: &Path, path: &Path, size: u32) -> Result<Vec<u8>> {
@@ -47,20 +78,48 @@ fn cached(root: &Path, path: &Path, size: u32) -> Result<Vec<u8>> {
             return Ok(bytes);
         }
     }
+    let failures = root.join(FAIL_DIR);
+    if fs::read(failures.join(&name)).is_ok_and(|bytes| is_current(&bytes, &uri, &metadata)) {
+        anyhow::bail!("{} could not be thumbnailed before", path.display());
+    }
     let (directory, pixels) = FLAVORS[flavor];
-    let mut bytes = render(path, pixels, pixels)?;
     let attributes = [
         ("Thumb::URI", uri),
         ("Thumb::MTime", metadata.mtime().to_string()),
         ("Thumb::Size", metadata.size().to_string()),
         ("Software", "BoxBox".to_string()),
     ];
+    let mut bytes = match render_with(path, pixels, pixels) {
+        Ok(bytes) => bytes,
+        Err(Failure::TimedOut) => anyhow::bail!("the thumbnailer for {} ran out of time", path.display()),
+        Err(Failure::Failed(error)) => {
+            // A file still being written may succeed once it is whole.
+            let settled = metadata.modified().ok().and_then(|modified| modified.elapsed().ok()).is_some_and(|age| age > SETTLED);
+            if settled {
+                mark_failed(&failures, &name, &attributes);
+            }
+            return Err(error);
+        }
+    };
     if insert_text(&mut bytes, &attributes) {
         if let Err(error) = store(&root.join(directory), &name, &bytes) {
             log::debug!("cannot cache the thumbnail of {}: {error:#}", path.display());
         }
     }
     Ok(bytes)
+}
+
+/// The standard's per-application failure record: a 1x1 PNG with the file's
+/// URI and mtime, so the same unchanged file is not tried again.
+fn mark_failed(directory: &Path, name: &str, attributes: &[(&str, String)]) {
+    let mut png = Vec::new();
+    let pixel = image::RgbaImage::new(1, 1);
+    if pixel.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).is_err() || !insert_text(&mut png, attributes) {
+        return;
+    }
+    if let Err(error) = store(directory, name, &png) {
+        log::debug!("cannot record a failed thumbnail: {error:#}");
+    }
 }
 
 /// `g_filename_to_uri`: the bytes GLib leaves unescaped, so our names match other apps'.
