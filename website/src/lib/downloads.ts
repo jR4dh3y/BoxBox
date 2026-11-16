@@ -11,20 +11,6 @@ export function parseTotalDownloads(html: string): number | null {
   return match?.[1] ? Number(match[1]) : null;
 }
 
-/** What the API returns; anything else is treated as no answer. */
-export function parseDownloadsPayload(payload: unknown): number | null {
-  if (typeof payload !== "object" || payload === null || !("total" in payload)) return null;
-  const { total } = payload;
-  return typeof total === "number" && Number.isSafeInteger(total) && total >= 0 ? total : null;
-}
-
-/** 21287 reads as "21k"; rounding down never claims a download that did not happen. */
-export function formatDownloads(total: number): string {
-  if (total < 1000) return String(total);
-  if (total < 1_000_000) return `${Math.floor(total / 1000)}k`;
-  return `${(Math.floor(total / 100_000) / 10).toString()}M`;
-}
-
 /** The last good number keeps being served if GitHub is slow or changes its page. */
 export async function getTotalDownloads(): Promise<number | null> {
   const now = Date.now();

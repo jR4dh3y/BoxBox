@@ -1,0 +1,52 @@
+---
+// The coding agents the setup prompt works with, as one overlapping stack.
+// Logos are from @lobehub/icons (MIT).
+import antigravity from '../assets/agents/antigravity.svg?raw';
+import claude from '../assets/agents/claude.svg?raw';
+import codex from '../assets/agents/codex.svg?raw';
+import cursor from '../assets/agents/cursor.svg?raw';
+import grok from '../assets/agents/grok.svg?raw';
+import opencode from '../assets/agents/opencode.svg?raw';
+
+const agents = [
+  { name: 'Claude Code', svg: claude },
+  { name: 'Codex CLI', svg: codex },
+  { name: 'OpenCode', svg: opencode },
+  { name: 'Cursor', svg: cursor },
+  { name: 'Grok CLI', svg: grok },
+  { name: 'Antigravity', svg: antigravity },
+];
+---
+
+<span class="agent-logos" aria-hidden="true">
+  {agents.map((agent) => <span class="agent-logo" title={agent.name} set:html={agent.svg} />)}
+</span>
+
+<style>
+  .agent-logos {
+    display: inline-flex;
+    flex-shrink: 0;
+    line-height: 0;
+  }
+
+  .agent-logo {
+    display: inline-flex;
+    width: 1.75rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #0d0d0d;
+    border-radius: 999px;
+    background: var(--color-surface-elevated);
+    color: var(--color-text-primary);
+  }
+
+  .agent-logo + .agent-logo { margin-left: -0.5rem; }
+
+  .agent-logo :global(svg) {
+    width: 60%;
+    height: 60%;
+    fill: currentColor;
+  }
+</style>

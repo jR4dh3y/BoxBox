@@ -4,12 +4,30 @@
 // change and the command follows, with the setup script it runs a click away.
 // The other is a prompt to hand to an agent. The author's taped-up note, in
 // the same handwriting as the doodle in the nav, says why BoxBox exists.
-import { Bot, Copy, X } from '@lucide/astro';
+import { Copy, X } from '@lucide/astro';
+import AgentLogos from './AgentLogos.astro';
+import { codeToHtml } from 'shiki';
 import setupScript from '../../public/install.sh?raw';
 import { defaultChoices, installCommandParts } from '../lib/installScript';
 
 const parts = installCommandParts(defaultChoices);
 const scriptLines = setupScript.trimEnd().split('\n');
+// Comment lines are the explanation, so they are tagged to stay bright.
+const scriptHtml = await codeToHtml(setupScript.trimEnd(), {
+  lang: 'bash',
+  theme: 'github-dark-default',
+  transformers: [
+    {
+      pre(node) {
+        this.addClassToHast(node, 'mock-scrollbar');
+        node.properties.tabindex = '0';
+      },
+      line(node, line) {
+        if (scriptLines[line - 1]?.trimStart().startsWith('#')) node.properties['data-comment'] = '';
+      },
+    },
+  ],
+});
 const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only', role: 'textbox', spellcheck: 'false', autocapitalize: 'off' } as const;
 ---
 
@@ -18,7 +36,7 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
     <p class="closing-lead">Convinced enough to try it?</p>
     <h2 class="font-display">Point it at a folder.</h2>
     <p class="mt-6 max-w-md text-lg leading-relaxed text-text-secondary">
-      BoxBox runs in a single container, without root, and leaves your files exactly where they are. One command sets it up. One command, <code class="closing-code">docker compose down</code>, stops it.
+      BoxBox runs in a single container, without root, and leaves your files exactly where they are.
     </p>
 
     <figure id="sticky-note" class="closing-note">
@@ -45,16 +63,13 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
       </div>
     </div>
 
-    <div class="closing-or" aria-hidden="true"><span>or</span></div>
+    <div class="closing-or" aria-hidden="true"><span style="height: 1px; flex: 1; background: var(--color-border-primary);"></span><span>or</span></div>
 
-    <div>
-      <div class="closing-actions">
-        <button id="install-agent" type="button" class="closing-button"><Bot class="h-4 w-4 shrink-0" aria-hidden="true" /><span>Have your agent set this up for you?</span></button>
-      </div>
-      <p class="mt-3 max-w-md text-sm leading-relaxed text-text-muted">
-        Copies a prompt. Your agent looks at your machine, asks you what it needs to know, and sets BoxBox up from the project's own docs.
-      </p>
-    </div>
+
+    <p class="mb-3 flex items-center gap-3 text-sm text-text-muted"><AgentLogos /><span>Claude Code, Codex, Cursor and more</span></p>
+    <p class="leading-relaxed text-text-secondary">
+      <button id="install-agent" type="button" class="closing-agent">Have your agent set this up</button>: it copies a prompt, and your agent looks at your machine, asks what it needs to know, and sets BoxBox up from the project's own docs.
+    </p>
   </div>
 </div>
 
@@ -63,11 +78,11 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
     <span id="install-reader-title">install.sh, {scriptLines.length} lines. Lines starting with # are explanations.</span>
     <button id="install-reader-close" type="button" aria-label="Close"><X class="h-4 w-4" aria-hidden="true" /></button>
   </div>
-  <pre class="mock-scrollbar" tabindex="0"><code>{scriptLines.map((line) => <span data-comment={line.trimStart().startsWith('#') ? '' : undefined}>{line + '\n'}</span>)}</code></pre>
+  <Fragment set:html={scriptHtml} />
 </dialog>
 
 <script>
-  import { formatDownloads, parseDownloadsPayload } from '../lib/downloads';
+  import { formatCount, parseCountPayload } from '../lib/counts';
   import { agentPrompt, defaultChoices, installCommand, installCommandParts, parseFolder, parsePort, parseUser, type InstallChoices } from '../lib/installScript';
   import { attachStickyNote } from '../lib/stickyNote';
 
@@ -81,8 +96,8 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
     fetch('/api/downloads.json')
       .then((response) => (response.ok ? response.json() : null))
       .then((payload: unknown) => {
-        const total = parseDownloadsPayload(payload);
-        if (total !== null) downloads.textContent = formatDownloads(total);
+        const total = parseCountPayload(payload);
+        if (total !== null) downloads.textContent = formatCount(total);
       })
       .catch(() => undefined);
   }
@@ -183,8 +198,29 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
       });
     }
 
+    // The agent link sits inside a sentence, so its words never change; a tip
+    // above it says what happened without reflowing the line.
+    function copyLink(link: HTMLElement, text: () => string, done: string) {
+      let reset: number | undefined;
+      link.addEventListener('click', async () => {
+        window.clearTimeout(reset);
+        let tip = done;
+        try {
+          await navigator.clipboard.writeText(text());
+        } catch {
+          tip = 'Copying was blocked by the browser';
+        }
+        link.dataset.tip = tip;
+        link.toggleAttribute('data-copied', tip === done);
+        reset = window.setTimeout(() => {
+          delete link.dataset.tip;
+          link.removeAttribute('data-copied');
+        }, 3000);
+      });
+    }
+
     copyButton(copy, () => installCommand(choices), 'Copied. Paste it in a terminal');
-    copyButton(agent, () => agentPrompt, 'Paste it to your agent');
+    copyLink(agent, () => agentPrompt, 'Copied. Paste it to your agent');
   }
 </script>
 
@@ -238,8 +274,6 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
     background: color-mix(in srgb, var(--color-danger) 16%, transparent);
     color: #ff8a95;
   }
-
-  .closing-code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; color: var(--color-text-primary); }
 
   .closing-ways { margin-top: 4rem; }
 
@@ -301,6 +335,43 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
 
   .closing-read:hover { color: #fff; }
 
+  /* The agent route is a sentence; its opening words are the button. */
+  .closing-agent {
+    position: relative;
+    color: var(--color-accent);
+    font-weight: 600;
+    white-space: nowrap;
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 4px;
+    transition: color 200ms ease;
+  }
+
+  .closing-agent:hover { color: #fff; }
+  .closing-agent[data-copied] { color: var(--color-success); }
+
+  .closing-agent[data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 0.5rem);
+    left: 0;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--color-border-primary);
+    border-radius: 6px;
+    background: var(--color-surface-secondary);
+    color: var(--color-text-primary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: closing-tip 180ms ease-out;
+  }
+
+  @keyframes closing-tip {
+    from { opacity: 0; transform: translateY(3px); }
+  }
+
   /* The whole setup script, opened over the page for anyone who wants to
      see what they are about to run. Its comments are the readable part. */
   .closing-reader {
@@ -345,7 +416,7 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
 
   .closing-reader-bar button:hover { background: var(--color-surface-elevated); color: #fff; }
 
-  .closing-reader pre {
+  .closing-reader :global(pre) {
     flex: 1;
     overflow: auto;
     padding: 1.1rem;
@@ -354,7 +425,8 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
     line-height: 1.7;
   }
 
-  .closing-reader [data-comment] { color: var(--color-text-primary); }
+  .closing-reader :global(pre.shiki) { background: transparent !important; }
+  .closing-reader :global([data-comment] span) { color: var(--color-text-primary) !important; }
 
   /* The two ways in share one button; the filled one is the direct route. */
   .closing-button {
