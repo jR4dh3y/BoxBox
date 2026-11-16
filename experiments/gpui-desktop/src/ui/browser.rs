@@ -50,10 +50,10 @@ impl Workspace {
                     .into_any_element(),
                 (_, Some(drives)) => match mode {
                     ViewMode::Grid => self
-                        .render_drive_cards(&drives, window, cx)
+                        .render_drive_cards(target, &drives, window, cx)
                         .into_any_element(),
                     ViewMode::List => self
-                        .render_drive_list(&drives, window, cx)
+                        .render_drive_list(target, &drives, window, cx)
                         .into_any_element(),
                 },
             },
@@ -132,15 +132,24 @@ impl Workspace {
             })
             .child(
                 div()
-                    .relative()
                     .flex()
-                    .flex_col()
                     .flex_1()
                     .min_h_0()
-                    .overflow_hidden()
-                    .child(content)
-                    // The folder this pane shows would take the drop.
-                    .when(dropping, |content| content.child(div().absolute().inset_0().border_2().border_color(c(self.accent_hex())))),
+                    .child(
+                        div()
+                            .relative()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .min_h_0()
+                            .overflow_hidden()
+                            .child(content)
+                            // The folder this pane shows would take the drop.
+                            .when(dropping, |content| content.child(div().absolute().inset_0().border_2().border_color(c(self.accent_hex())))),
+                    )
+                    // Under the toolbar of the rightmost pane, as in Dolphin.
+                    .when(self.preferences.details_panel && self.is_rightmost_pane(target), |row| row.child(self.render_details(cx))),
             )
             .when(!self.trash_open, |browser| {
                 browser.child(self.render_status_bar(target, cx))

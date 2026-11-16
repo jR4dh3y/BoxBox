@@ -91,7 +91,7 @@ impl Workspace {
             ViewMode::List => (Layout::List { row: self.list_metrics().row_height }, pane.list_scroll.0.borrow().base_handle.clone()),
             ViewMode::Grid => {
                 let metrics = self.grid_metrics();
-                (Layout::Grid { metrics, columns: metrics.columns(self.browser_width(window)) }, pane.grid_scroll.0.borrow().base_handle.clone())
+                (Layout::Grid { metrics, columns: metrics.columns(self.pane_width(target, window)) }, pane.grid_scroll.0.borrow().base_handle.clone())
             }
         };
         Some((layout, handle.bounds(), handle.offset()))

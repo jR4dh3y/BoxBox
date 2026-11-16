@@ -103,7 +103,7 @@ impl Workspace {
             }
             ViewMode::Grid => {
                 let metrics = self.grid_metrics();
-                let columns = metrics.columns(self.browser_width(window));
+                let columns = metrics.columns(self.pane_width(target, window));
                 let height = pane.grid_scroll.0.borrow().base_handle.bounds().size.height;
                 let rows = (f32::from(height) / metrics.row_height).floor() as usize;
                 (columns, columns * rows.max(1))

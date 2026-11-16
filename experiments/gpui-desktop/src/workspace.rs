@@ -543,13 +543,19 @@ impl Workspace {
         if self.split_panes.contains_key(&self.tabs[self.active_tab].id) { (width - 1.) / 2. } else { width }
     }
 
+    /// The width a pane's list or grid gets: its share of the window, less the Details panel beside it.
+    pub(crate) fn pane_width(&self, target: PaneTarget, window: &Window) -> f32 {
+        let details = self.preferences.details_panel && self.is_rightmost_pane(target);
+        self.browser_width(window) - if details { crate::ui::DETAILS_WIDTH + 1. } else { 0. }
+    }
+
     /// Scrolls the item at `index` into view in its pane's list or grid.
     pub(crate) fn reveal(&self, target: PaneTarget, index: usize, window: &Window) {
         let Some(pane) = self.pane_by_id(target.0) else { return };
         match pane.current_view_mode() {
             ViewMode::List => pane.list_scroll.scroll_to_item(index, gpui::ScrollStrategy::Top),
             ViewMode::Grid => {
-                let columns = self.grid_metrics().columns(self.browser_width(window));
+                let columns = self.grid_metrics().columns(self.pane_width(target, window));
                 pane.grid_scroll.scroll_to_item(index / columns.max(1), gpui::ScrollStrategy::Top);
             }
         }
@@ -558,6 +564,12 @@ impl Workspace {
     pub(crate) fn toggle_details(&mut self, _: &ToggleDetails, _: &mut Window, cx: &mut Context<Self>) {
         self.preferences.details_panel = !self.preferences.details_panel;
         self.commit_preferences(cx);
+    }
+
+    /// The pane at the window's right edge: the split's second pane, or the only one.
+    pub(crate) fn is_rightmost_pane(&self, target: PaneTarget) -> bool {
+        let primary = self.tabs[self.active_tab].id;
+        target.0 == self.split_panes.get(&primary).map_or(primary, |pane| pane.id)
     }
 
     pub(crate) fn pane(&self) -> &Pane {
@@ -1413,7 +1425,7 @@ impl Render for Workspace {
                     .min_w_0()
                     .min_h_0()
                     .child(self.render_tabs(cx))
-                    .child(div().flex().flex_1().min_h_0().min_w_0().child(browsers).when(self.preferences.details_panel, |row| row.child(self.render_details(cx)))),
+                    .child(browsers),
             )
             .when(self.settings_open, |root| {
                 root.child(self.render_settings(window, cx))

@@ -8,17 +8,19 @@ use crate::format::file_size;
 use crate::workspace::overview::Storage;
 use crate::workspace::place_menu::Place;
 use crate::theme::*;
+use crate::workspace::operations::PaneTarget;
 use crate::workspace::Workspace;
 
 impl Workspace {
     pub(crate) fn render_drive_cards(
         &self,
+        target: PaneTarget,
         drives: &[Storage],
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         // `@min-[49rem]:grid-cols-2 @min-[74rem]:grid-cols-3`, against the content box inside p-6.
-        let width = self.browser_width(window) - 48.;
+        let width = self.pane_width(target, window) - 48.;
         let columns = if width >= 1184. {
             3
         } else if width >= 784. {
@@ -70,11 +72,12 @@ impl Workspace {
 
     pub(crate) fn render_drive_list(
         &self,
+        target: PaneTarget,
         drives: &[Storage],
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let width = self.browser_width(window);
+        let width = self.pane_width(target, window);
         // Container breakpoints @sm (24rem) and @3xl (48rem) choose the columns.
         let wide = width >= 768.;
         let medium = width >= 384.;

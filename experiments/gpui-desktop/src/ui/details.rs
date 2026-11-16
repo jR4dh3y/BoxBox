@@ -1,27 +1,46 @@
-//! The Details panel at the window's right, as Dolphin's Information panel
-//! (F11): the active pane's selection, or the folder when nothing is selected.
+//! The Details panel under the toolbar, as Dolphin's Information panel (F11):
+//! the active pane's selection, or the folder when nothing is selected. A
+//! centred preview and name, then label and value rows as in Properties.
 
 use gpui::{div, img, prelude::*, px, AnyElement, Context, ObjectFit, SharedString};
 
-use super::{icon, thin_icon, TextScale};
+use super::{thin_icon, TextScale};
 use crate::api::FileInfo;
 use crate::components::{emblemed, EntryIcon};
 use crate::format::{file_size, full_date, type_description};
 use crate::theme::*;
-use crate::workspace::{ToggleDetails, Workspace};
+use crate::workspace::Workspace;
 
-pub(crate) const DETAILS_WIDTH: f32 = 280.;
-const PREVIEW_HEIGHT: f32 = 160.;
-const ICON_SIZE: f32 = 96.;
+pub(crate) const DETAILS_WIDTH: f32 = 260.;
+const PREVIEW_HEIGHT: f32 = 128.;
+const ICON_SIZE: f32 = 64.;
 
-/// A label over its value.
-fn field(label: &'static str, value: impl Into<SharedString>) -> gpui::Div {
+/// The label left, the value right.
+fn row(label: &'static str, value: impl Into<SharedString>) -> gpui::Div {
+    div()
+        .flex()
+        .items_start()
+        .justify_between()
+        .gap(px(12.))
+        .py(px(4.))
+        .child(div().flex_none().text_color(c(TEXT_SECONDARY)).child(label))
+        .child(div().min_w_0().text_right().text_color(c(TEXT_PRIMARY)).child(value.into()))
+}
+
+/// Rows under a divider.
+fn rows(children: Vec<gpui::Div>) -> gpui::Div {
+    div().mt(px(14.)).pt(px(10.)).border_t_1().border_color(c(BORDER_SECONDARY)).flex().flex_col().children(children)
+}
+
+/// The name and a line under it, centred.
+fn title(name: impl Into<SharedString>, under: impl Into<SharedString>) -> gpui::Div {
     div()
         .flex()
         .flex_col()
-        .gap(px(2.))
-        .child(div().text_color(c(TEXT_SECONDARY)).child(label))
-        .child(div().text_color(c(TEXT_PRIMARY)).child(value.into()))
+        .items_center()
+        .text_center()
+        .child(div().w_full().text_13().font_weight(gpui::FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child(name.into()))
+        .child(div().mt(px(2.)).text_color(c(TEXT_SECONDARY)).child(under.into()))
 }
 
 fn parent(path: &str) -> String {
@@ -29,7 +48,7 @@ fn parent(path: &str) -> String {
 }
 
 impl Workspace {
-    /// What the panel will draw for a single item: its thumbnail, or its icon at the panel's size.
+    /// Starts making what the panel draws for a single item: its thumbnail and its icon.
     pub(crate) fn request_details_preview(&mut self, cx: &mut Context<Self>) {
         if !self.preferences.details_panel || self.trash_open {
             return;
@@ -43,13 +62,13 @@ impl Workspace {
         self.request_item_icon(&api, &item, ICON_SIZE, cx);
     }
 
-    pub(crate) fn render_details(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_details(&self, _: &mut Context<Self>) -> AnyElement {
         let pane = self.pane();
         let selected = if self.trash_open { Vec::new() } else { pane.selected_items() };
         let body = match selected.as_slice() {
-            [item] => self.single_details(item).into_any_element(),
-            [] => self.folder_details().into_any_element(),
-            items => many_details(items).into_any_element(),
+            [item] => self.single_details(item),
+            [] => self.folder_details(),
+            items => many_details(items),
         };
         div()
             .id("details-panel")
@@ -57,128 +76,97 @@ impl Workspace {
             .w(px(DETAILS_WIDTH))
             .flex_none()
             .h_full()
-            .flex()
-            .flex_col()
             .border_l_1()
             .border_color(c(BORDER_SECONDARY))
-            .bg(self.shell_background())
-            .child(
-                div()
-                    .h(px(41.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px(px(16.))
-                    .border_b_1()
-                    .border_color(c(BORDER_SECONDARY))
-                    .text_13()
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .child("Details")
-                    .child(
-                        div()
-                            .id("details-close")
-                            .rounded(px(4.))
-                            .p(px(4.))
-                            .cursor_pointer()
-                            .hover(|style| style.bg(c(SURFACE_ELEVATED)))
-                            .child(icon("x", 16., c(TEXT_SECONDARY)))
-                            .on_click(cx.listener(|this, _, window, cx| this.toggle_details(&ToggleDetails, window, cx))),
-                    ),
-            )
-            .child(div().id("details-body").flex_1().min_h_0().overflow_y_scroll().p(px(16.)).text_xs_tw().child(body))
+            .bg(self.chrome_background())
+            .overflow_y_scroll()
+            .p(px(14.))
+            .text_xs_tw()
+            .child(body)
             .into_any_element()
     }
 
-    fn single_details(&self, item: &FileInfo) -> gpui::Div {
+    fn preview(&self, item: &FileInfo) -> gpui::Div {
         let pane = self.pane();
-        let preview = div().h(px(PREVIEW_HEIGHT)).w_full().flex().items_center().justify_center().overflow_hidden().rounded(px(8.));
-        let preview = match self.thumbnail(&pane.api, item) {
-            Some(image) => preview.bg(c(SURFACE_SECONDARY)).child(img(image).size_full().object_fit(ObjectFit::Contain)),
+        let frame = div().h(px(PREVIEW_HEIGHT)).w_full().flex().items_center().justify_center().overflow_hidden().rounded(px(6.));
+        match self.thumbnail(&pane.api, item) {
+            Some(image) => frame.child(img(image).size_full().object_fit(ObjectFit::Contain)),
             None => match self.item_icon(&pane.api, item, ICON_SIZE) {
-                EntryIcon::Theme(image) => preview.child(img(image).size(px(ICON_SIZE))),
-                EntryIcon::Waiting => preview,
+                EntryIcon::Theme(image) => frame.child(img(image).size(px(ICON_SIZE))),
+                EntryIcon::Waiting => frame,
                 EntryIcon::Glyph => {
                     let style = self.glyph_style(&pane.api, item);
                     let tone = c(style.tint.unwrap_or(if item.is_dir { FOLDER } else { TEXT_SECONDARY }));
-                    preview.child(emblemed(thin_icon(style.glyph, ICON_SIZE, tone), style.emblem, ICON_SIZE, tone))
+                    frame.child(emblemed(thin_icon(style.glyph, ICON_SIZE, tone), style.emblem, ICON_SIZE, tone))
                 }
             },
-        };
+        }
+    }
+
+    fn single_details(&self, item: &FileInfo) -> gpui::Div {
         let kind = if item.is_dir { "Folder".to_string() } else { type_description(&item.name) };
-        div()
-            .flex()
-            .flex_col()
-            .child(preview)
-            .child(div().mt(px(16.)).text_sm_tw().font_weight(gpui::FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child(item.name.clone()))
-            .child(div().mt(px(2.)).text_color(c(TEXT_SECONDARY)).child(kind))
-            .child(
-                div()
-                    .mt(px(20.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(14.))
-                    .when(!item.is_dir, |rows| rows.child(field("Size", file_size(item.size))))
-                    .child(field("Modified", full_date(item.mod_time)))
-                    .child(field("Location", self.location_label(&parent(&item.path)))),
-            )
+        let mut details = Vec::new();
+        if !item.is_dir {
+            details.push(row("Size", file_size(item.size)));
+        }
+        details.push(row("Modified", full_date(item.mod_time)));
+        details.push(row("Location", self.location_label(&parent(&item.path))));
+        div().flex().flex_col().child(self.preview(item)).child(div().mt(px(10.)).child(title(item.name.clone(), kind))).child(rows(details))
     }
 
     fn folder_details(&self) -> gpui::Div {
         let pane = self.pane();
-        let (name, count) = if self.trash_open {
-            ("Trash".to_string(), None)
+        let (name, under) = if self.trash_open {
+            ("Trash".to_string(), String::new())
         } else if pane.is_at_root() {
-            ("Overview".to_string(), None)
+            ("Overview".to_string(), String::new())
         } else {
-            (self.location_label(&pane.path), Some(pane.items.len()))
+            (self.location_label(&pane.path), counted(pane.items.len(), "item"))
         };
         div()
             .flex()
             .flex_col()
-            .gap(px(2.))
-            .child(div().text_sm_tw().font_weight(gpui::FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child(name))
-            .when_some(count, |folder, count| folder.child(div().text_color(c(TEXT_SECONDARY)).child(items_label(count))))
-            .child(div().mt(px(16.)).text_color(c(TEXT_MUTED)).child("Select an item to see its details."))
+            .child(title(name, under))
+            .child(div().mt(px(14.)).text_center().text_color(c(TEXT_MUTED)).child("Select an item to see its details."))
     }
 
     /// A virtual path as the path bar names it: the drive or place, then the folders under it.
     fn location_label(&self, path: &str) -> String {
         let crumbs = self.breadcrumbs(self.active_pane);
-        let root = crumbs.first().map(|crumb| (crumb.label.clone(), crumb.path.clone()));
-        match root {
-            Some((label, root)) if path == root || path.starts_with(&format!("{root}/")) => format!("{label}{}", &path[root.len()..]),
+        match crumbs.first() {
+            Some(root) if path == root.path || path.starts_with(&format!("{}/", root.path)) => format!("{}{}", root.label, &path[root.path.len()..]),
             _ => path.to_string(),
         }
     }
 }
 
 fn many_details(items: &[FileInfo]) -> gpui::Div {
+    const LISTED: usize = 50;
     let folders = items.iter().filter(|item| item.is_dir).count();
     let files = items.len() - folders;
     let bytes: u64 = items.iter().filter(|item| !item.is_dir).map(|item| item.size).sum();
+    let mut details = vec![row("Files", files.to_string()), row("Folders", folders.to_string())];
+    details.push(row(if folders > 0 { "Size of files" } else { "Size" }, file_size(bytes)));
     div()
         .flex()
         .flex_col()
-        .child(div().text_sm_tw().font_weight(gpui::FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child(format!("{} items selected", items.len())))
-        .child(div().mt(px(2.)).text_color(c(TEXT_SECONDARY)).child(format!("{} · {}", counted(files, "file"), counted(folders, "folder"))))
-        .child(div().mt(px(20.)).child(field(if folders > 0 { "Size of the files" } else { "Size" }, file_size(bytes))))
+        .child(title(format!("{} items selected", items.len()), ""))
+        .child(rows(details))
         .child(
             div()
-                .mt(px(20.))
+                .mt(px(14.))
+                .pt(px(10.))
+                .border_t_1()
+                .border_color(c(BORDER_SECONDARY))
                 .flex()
                 .flex_col()
-                .gap(px(6.))
+                .gap(px(4.))
                 .text_color(c(TEXT_SECONDARY))
-                .children(items.iter().take(50).map(|item| div().truncate().child(item.name.clone())))
-                .when(items.len() > 50, |list| list.child(div().text_color(c(TEXT_MUTED)).child(format!("and {} more", items.len() - 50)))),
+                .children(items.iter().take(LISTED).map(|item| div().truncate().child(item.name.clone())))
+                .when(items.len() > LISTED, |list| list.child(div().text_color(c(TEXT_MUTED)).child(format!("and {} more", items.len() - LISTED)))),
         )
 }
 
 fn counted(count: usize, noun: &str) -> String {
     format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
-}
-
-fn items_label(count: usize) -> String {
-    counted(count, "item")
 }

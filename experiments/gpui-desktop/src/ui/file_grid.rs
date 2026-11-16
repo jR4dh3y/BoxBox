@@ -27,7 +27,7 @@ impl Workspace {
                 .child(div().text_13().text_color(c(TEXT_MUTED)).child(message))
                 .into_any_element();
         }
-        let columns = metrics.columns(self.browser_width(window));
+        let columns = metrics.columns(self.pane_width(target, window));
         let rows = pane.items.len().div_ceil(columns);
         div()
             .relative()

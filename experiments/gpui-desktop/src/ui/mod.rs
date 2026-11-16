@@ -30,6 +30,7 @@ use gpui::{px, svg, Rgba, Styled, Svg};
 
 /// Sidebar width (`w-[220px]`), which panes subtract for their layout breakpoints.
 pub const SIDEBAR_WIDTH: f32 = 220.;
+pub(crate) use details::DETAILS_WIDTH;
 
 /// A Lucide icon at `size` px, tinted like `currentColor`.
 pub fn icon(name: &str, size: f32, color: Rgba) -> Svg {

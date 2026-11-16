@@ -102,7 +102,7 @@ impl Workspace {
                 let metrics = self.grid_metrics();
                 let offset = pane.grid_scroll.0.borrow().base_handle.offset();
                 let row = (-f32::from(offset.y) / metrics.row_height).floor().max(0.) as usize;
-                row * metrics.columns(self.browser_width(window))
+                row * metrics.columns(self.pane_width(target, window))
             }
         }
     }
@@ -114,7 +114,7 @@ impl Workspace {
             ViewMode::List => (pane.list_scroll.0.borrow().base_handle.clone(), index as f32 * self.list_metrics().row_height),
             ViewMode::Grid => {
                 let metrics = self.grid_metrics();
-                let row = index / metrics.columns(self.browser_width(window));
+                let row = index / metrics.columns(self.pane_width(target, window));
                 (pane.grid_scroll.0.borrow().base_handle.clone(), row as f32 * metrics.row_height)
             }
         };
