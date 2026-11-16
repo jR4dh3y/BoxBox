@@ -1,10 +1,11 @@
 ---
 import { GitFork } from '@lucide/astro';
+import Wordmark from './Wordmark.astro';
 ---
 
 <header class="relative z-20 mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-5 md:px-8">
   <a href="/" aria-label="BoxBox home" class="inline-flex min-h-11 items-center">
-    <img src="/logo-wordmark.svg" alt="BoxBox" width="930" height="256" class="h-7 w-auto" />
+    <Wordmark id="nav-logo" class="h-7 w-auto" />
   </a>
   <nav aria-label="Primary" class="flex items-center gap-1 text-sm font-medium text-text-secondary">
     <a href="#features" class="hidden min-h-11 items-center rounded px-3 transition-colors hover:text-white sm:inline-flex">Features</a>

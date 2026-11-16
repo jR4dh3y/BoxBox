@@ -12,36 +12,27 @@ export interface Props {
   color: string;
 }
 
-const { 
-  path, 
-  total, 
-  used, 
-  free, 
-  device, 
-  fs, 
-  percent, 
-  color
-} = Astro.props;
+const { path, total, used, free, device, fs, percent, color } = Astro.props;
 ---
 
-<div class="flex items-center gap-4 p-4 bg-surface-secondary/82 border border-border-primary rounded-xl w-full transition-colors cursor-pointer group backdrop-blur-sm hover:border-border-focus/60">
-  <div class="shrink-0 w-[84px] h-[84px] flex items-center justify-center rounded-lg bg-surface-elevated/85 text-text-secondary transition-colors group-hover:text-[#e0e0e0]">
-    <Server class="w-7 h-7" />
+<button type="button" data-action="go" data-path={path} class="group flex w-full items-center gap-4 rounded-xl border border-border-primary bg-surface-secondary/82 p-4 text-left backdrop-blur-sm transition-colors hover:border-border-focus/60">
+  <div class="flex h-[84px] w-[84px] shrink-0 items-center justify-center rounded-lg bg-surface-elevated/85 text-text-secondary transition-colors group-hover:text-[#e0e0e0]">
+    <Server class="h-7 w-7" />
   </div>
-  <div class="flex-1 min-w-0 flex flex-col justify-center">
-    <div class="flex items-center justify-between gap-2 mb-1">
-      <span class="text-[14px] font-medium text-[#e0e0e0] truncate tracking-wide">{path}</span>
-      <span class="px-2 py-0.5 rounded bg-surface-elevated/85 text-[11px] text-text-secondary">{total}</span>
+  <div class="flex min-w-0 flex-1 flex-col justify-center">
+    <div class="mb-1 flex items-center justify-between gap-2">
+      <span class="truncate text-[14px] font-medium tracking-wide text-[#e0e0e0]">{path}</span>
+      <span class="rounded bg-surface-elevated/85 px-2 py-0.5 text-[11px] text-text-secondary">{total}</span>
     </div>
-    <div class="text-[12px] text-[#888888] mb-1">{used} used &middot; {free} free</div>
-    <div class="text-[11px] text-text-muted font-mono truncate mb-3">
+    <div class="mb-1 text-[12px] text-[#888888]">{used} used &middot; {free} free</div>
+    <div class="mb-3 truncate font-mono text-[11px] text-text-muted">
       {device} &middot; {fs}
     </div>
     <div class="flex items-center gap-3">
-      <div class="flex-1 bg-[#333333] rounded-full h-[3px] overflow-hidden">
+      <div class="h-[3px] flex-1 overflow-hidden rounded-full bg-[#333333]">
         <div class="h-full rounded-full transition-[background-color,width] duration-700 ease-out" style={`background-color: ${color}; width: ${percent}%`}></div>
       </div>
-      <span class="text-[11px] shrink-0 transition-colors duration-700 ease-out" style={`color: ${color}`}>{percent}%</span>
+      <span class="shrink-0 text-[11px] transition-colors duration-700 ease-out" style={`color: ${color}`}>{percent}%</span>
     </div>
   </div>
-</div>
+</button>

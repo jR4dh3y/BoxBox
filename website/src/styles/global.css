@@ -277,3 +277,10 @@ button.word-box[aria-pressed='true'] {
   background: var(--color-accent);
   color: #0d0d0d;
 }
+
+/* Panels in the interface preview arrive with a small lift. */
+@keyframes demo-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+}
+
+.demo-pop { animation: demo-pop 220ms cubic-bezier(0.16, 1, 0.3, 1); }

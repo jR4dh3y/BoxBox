@@ -1,0 +1,194 @@
+---
+// A working preview of the BoxBox interface over sample files. This renders
+// the chrome and the icons; lib/demo/app.ts brings it to life.
+import DriveCard from './DriveCard.astro';
+import type { IconName } from '../lib/demo/dom';
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  Download,
+  ExternalLink,
+  FilePlus,
+  FileText,
+  Folder,
+  FolderUp,
+  HardDrive,
+  House,
+  Image,
+  LayoutGrid,
+  List,
+  LoaderCircle,
+  Lock,
+  Monitor,
+  Music,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Server,
+  Settings,
+  Share2,
+  Star,
+  Trash2,
+  Upload,
+  Video,
+  X,
+  ZoomIn,
+  ZoomOut
+} from '@lucide/astro';
+
+interface Props {
+  id: string;
+  class?: string;
+}
+
+const { id, class: className } = Astro.props;
+
+// Cloned by the script for everything it draws after load.
+const icons: Record<IconName, typeof Server> = {
+  check: Check,
+  'chevron-left': ChevronLeft,
+  'chevron-right': ChevronRight,
+  copy: Copy,
+  download: Download,
+  'external-link': ExternalLink,
+  'file-text': FileText,
+  folder: Folder,
+  house: House,
+  loader: LoaderCircle,
+  lock: Lock,
+  'rotate-ccw': RotateCcw,
+  share: Share2,
+  star: Star,
+  trash: Trash2,
+  x: X,
+  'zoom-in': ZoomIn,
+  'zoom-out': ZoomOut
+};
+
+const drives = [
+  { path: 'root', total: '217.97 GB', used: '105.22 GB', free: '101.61 GB', device: '/dev/sda2', fs: 'ext4', percent: 48.3 },
+  { path: 'storage', total: '223.57 GB', used: '211.18 GB', free: '12.39 GB', device: '/dev/sdc1', fs: 'fuseblk', percent: 94.5 },
+  { path: 'archive', total: '101.56 TB', used: '61.24 TB', free: '40.32 TB', device: 'archive_remote:', fs: 'fuse.rclone', percent: 60.3 },
+  { path: 'backups', total: '5 TB', used: '59.67 GB', free: '4.94 TB', device: 'backups_remote:', fs: 'fuse.rclone', percent: 1.2 },
+  { path: 'home', total: '217.97 GB', used: '105.22 GB', free: '101.61 GB', device: '/dev/sda2', fs: 'ext4', percent: 48.3 }
+];
+
+const sections = [
+  {
+    title: 'Drives',
+    items: [
+      { icon: Server, label: 'This Server', path: '' },
+      { icon: HardDrive, label: 'storage', path: 'storage' },
+      { icon: HardDrive, label: 'archive', path: 'archive' },
+      { icon: HardDrive, label: 'backups', path: 'backups' }
+    ]
+  },
+  {
+    title: 'Places',
+    items: [
+      { icon: Monitor, label: 'Desktop', path: 'home/Desktop' },
+      { icon: Download, label: 'Downloads', path: 'home/Downloads' },
+      { icon: FileText, label: 'Documents', path: 'home/Documents' },
+      { icon: Music, label: 'Music', path: 'home/Music' },
+      { icon: Image, label: 'Pictures', path: 'home/Pictures' },
+      { icon: Video, label: 'Videos', path: 'home/Videos' }
+    ]
+  }
+];
+
+const sectionTitle = 'flex w-full items-center gap-1.5 px-3 py-2.5 text-[11px] font-medium tracking-wide text-text-secondary uppercase hover:text-text-primary';
+const toolButton = 'h-7 w-7 shrink-0 items-center justify-center rounded text-text-secondary transition-colors hover:bg-surface-elevated hover:text-text-primary disabled:cursor-not-allowed disabled:text-text-disabled disabled:hover:bg-transparent';
+const viewButton = 'flex h-5 w-5 items-center justify-center rounded-sm text-text-muted hover:text-text-secondary aria-pressed:bg-surface-elevated aria-pressed:text-text-primary';
+---
+
+<div id={id} tabindex="-1" class:list={['@container relative isolate overflow-hidden text-left outline-none font-sans text-[13px] text-text-primary', className]}>
+  <div data-part="app" class="relative z-10 flex h-full w-full bg-[#161616]/55 backdrop-blur-[2px]">
+    <div class="hidden w-[220px] min-w-[220px] flex-col border-r border-[#2a2a2a] bg-[#1e1e1e]/78 backdrop-blur-md @2xl:flex">
+      {sections.map((section) => (
+        <div class="border-b border-border-secondary">
+          <button type="button" data-action="section" aria-expanded="true" class={`group ${sectionTitle}`}>
+            <ChevronDown class="h-3.5 w-3.5 transition-transform group-aria-[expanded=false]:-rotate-90" />
+            <span>{section.title}</span>
+          </button>
+          <div class="pb-2">
+            {section.items.map((item) => (
+              <button type="button" data-action="go" data-nav data-path={item.path} data-active={item.path === '' ? '' : undefined} class="flex w-full items-center gap-2.5 px-3 py-1.5 pl-5 text-text-primary hover:bg-surface-secondary data-active:bg-selection data-active:text-white">
+                <item.icon class="h-4 w-4 opacity-80" />
+                <span class="flex-1 text-left">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div class="flex-1 border-b border-border-secondary">
+        <button type="button" data-action="section" aria-expanded="true" class={`group ${sectionTitle}`}>
+          <ChevronDown class="h-3.5 w-3.5 transition-transform group-aria-[expanded=false]:-rotate-90" />
+          <span>Favorites</span>
+        </button>
+        <div data-part="favorites">
+          <div class="px-5 py-2 text-xs text-text-muted italic">No favorites yet</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex min-w-0 flex-1 flex-col bg-[#161616]/45 backdrop-blur-sm">
+      <div class="flex h-14 shrink-0 items-center gap-3 border-b border-[#2a2a2a] bg-[#1e1e1e]/82 px-4 backdrop-blur-md">
+        <div class="flex items-center gap-0.5">
+          <button type="button" data-action="back" aria-label="Back" disabled class={`${toolButton} flex`}><ChevronLeft class="h-[18px] w-[18px]" /></button>
+          <button type="button" data-action="forward" aria-label="Forward" disabled class={`${toolButton} flex`}><ChevronRight class="h-[18px] w-[18px]" /></button>
+          <button type="button" data-action="up" aria-label="Up one folder" disabled class={`${toolButton} flex`}><ChevronUp class="h-[18px] w-[18px]" /></button>
+        </div>
+
+        <div class="flex h-8 min-w-0 flex-1 items-center overflow-hidden rounded border border-border-primary bg-surface-secondary px-2">
+          <button type="button" data-action="go" data-path="" aria-label="This Server" class="mr-1 flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary hover:text-accent">
+            <House class="h-3.5 w-3.5" />
+          </button>
+          <div data-part="crumbs" class="flex min-w-0 items-center gap-0.5">
+            <span class="px-1">This Server</span>
+          </div>
+        </div>
+
+        <label class="hidden h-8 w-56 shrink-0 items-center gap-2 rounded border border-border-primary bg-surface-secondary px-2 text-text-muted focus-within:border-border-focus @5xl:flex">
+          <Search class="h-3.5 w-3.5 shrink-0" />
+          <input data-part="search" type="search" placeholder="Search files and folders..." aria-label="Search files and folders" class="w-full min-w-0 bg-transparent text-text-primary outline-none placeholder:text-text-muted" />
+        </label>
+
+        <div class="flex items-center gap-1">
+          <button type="button" data-action="upload-files" aria-label="Upload files" title="Upload files" disabled class={`${toolButton} hidden @md:flex`}><Upload class="h-4 w-4" /></button>
+          <button type="button" data-action="upload-folder" aria-label="Upload folder" title="Upload folder" disabled class={`${toolButton} flex`}><FolderUp class="h-4 w-4" /></button>
+          <button type="button" data-action="new-file" aria-label="New file" title="New file" disabled class={`${toolButton} flex`}><FilePlus class="h-4 w-4" /></button>
+          <button type="button" data-action="refresh" aria-label="Refresh" title="Refresh" class={`${toolButton} hidden @md:flex`}><RefreshCw class="h-4 w-4" /></button>
+          <button type="button" data-action="themes" aria-label="Theme" title="Theme" class={`${toolButton} flex`}><Settings class="h-4 w-4" /></button>
+        </div>
+      </div>
+
+      <div class="mock-scrollbar flex-1 overflow-y-auto bg-surface-primary/35 p-4 backdrop-blur-[1.5px] @2xl:p-6">
+        <div data-part="drives" class="grid grid-cols-1 gap-4 @4xl:grid-cols-2 @6xl:grid-cols-3 data-list:grid-cols-1">
+          {drives.map((drive) => <DriveCard {...drive} color={drive.percent > 90 ? '#ef4165' : 'var(--color-accent)'} />)}
+        </div>
+        <div data-part="listing" hidden></div>
+      </div>
+
+      <div class="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border-secondary bg-surface-primary/70 px-4 text-[11px] text-text-secondary backdrop-blur-md">
+        <span data-part="status" class="flex items-center truncate">{drives.length} items</span>
+        <div class="flex items-center gap-2">
+          <div data-part="selection" class="flex items-center gap-0.5"></div>
+          <div class="flex gap-0.5 rounded border border-border-primary bg-surface-secondary p-0.5">
+            <button type="button" data-action="view" data-view="list" aria-label="List view" aria-pressed="false" class={viewButton}><List class="h-3.5 w-3.5" /></button>
+            <button type="button" data-action="view" data-view="grid" aria-label="Grid view" aria-pressed="true" class={viewButton}><LayoutGrid class="h-3.5 w-3.5" /></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div data-part="toast" hidden role="status" class="demo-pop absolute right-3 bottom-12 z-20 w-[calc(100%-1.5rem)] max-w-[360px] overflow-hidden rounded-lg border border-border-primary bg-surface-secondary/92 backdrop-blur-md @2xl:right-6" style="box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);"></div>
+  <div data-part="guest" hidden class="absolute inset-0 z-30 flex flex-col bg-[#10131a]"></div>
+  <div data-part="overlay" hidden class="absolute inset-0 z-40 flex items-center justify-center p-3 @2xl:p-6"></div>
+
+  {Object.entries(icons).map(([name, Icon]) => <template data-icon={name}><Icon /></template>)}
+</div>
