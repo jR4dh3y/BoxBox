@@ -132,3 +132,14 @@ export function search(root: Folder, query: string): Located[] {
   visit(root, '');
   return matches;
 }
+
+// The labels the app's Type column gives the sample's files (frontend/src/lib/utils/fileTypes.ts).
+const TYPE_LABELS: Record<string, string> = { jpg: 'JPEG Image', yml: 'YAML', md: 'Markdown', txt: 'Text File', log: 'Log File', conf: 'Config File' };
+
+export function typeOf(entry: Entry): string {
+  if (entry.kind === 'folder') return 'Folder';
+  const dot = entry.name.lastIndexOf('.');
+  if (dot <= 0) return 'File';
+  const extension = entry.name.slice(dot + 1).toLowerCase();
+  return TYPE_LABELS[extension] ?? `${extension.toUpperCase()} File`;
+}

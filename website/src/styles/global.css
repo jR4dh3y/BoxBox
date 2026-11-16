@@ -28,6 +28,8 @@
 	--color-accent-muted: #2d4a6f;
 
 	/* Semantic colors */
+	/* Fixed blue for neutral status, as in the app; it does not follow the accent. */
+	--color-info: #4a9eff;
 	--color-danger: #dc3545;
 	--color-danger-hover: #b02a37;
 	--color-success: #10b981;

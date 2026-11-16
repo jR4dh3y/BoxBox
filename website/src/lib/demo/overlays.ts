@@ -194,17 +194,20 @@ export function shareOverlay(icon: Icon, name: string, links: ShareLink[], copie
   ];
 }
 
-export type MenuItem = { label: string; action: string; icon: IconName };
+export type MenuItem = { label: string; action: string; icon: IconName; disabled?: boolean };
+export type MenuEntry = MenuItem | 'separator';
 
 /** `x` and `y` are in the preview's own pixels, from its top-left corner. */
-export function contextMenu(icon: Icon, x: number, y: number, items: MenuItem[]): Node[] {
+export function contextMenu(icon: Icon, x: number, y: number, items: MenuEntry[]): Node[] {
   return [
     backdrop(''),
     el(
       'div',
       { role: 'menu', style: `left: ${x}px; top: ${y}px`, class: 'demo-pop absolute w-44 overflow-hidden rounded-md border border-border-primary bg-surface-secondary py-1 shadow-2xl' },
       ...items.map((item) =>
-        el('button', { type: 'button', role: 'menuitem', 'data-action': item.action, class: 'flex w-full items-center gap-2.5 px-3 py-1.5 text-left hover:bg-selection' }, icon(item.icon, 'h-3.5 w-3.5 text-text-secondary'), item.label)
+        item === 'separator'
+          ? el('div', { role: 'separator', class: 'my-1 border-t border-border-primary' })
+          : el('button', { type: 'button', role: 'menuitem', 'data-action': item.action, disabled: item.disabled, class: 'flex w-full items-center gap-2.5 px-3 py-1.5 text-left enabled:hover:bg-selection disabled:text-text-disabled' }, icon(item.icon, 'h-3.5 w-3.5 text-text-secondary'), item.label)
       )
     )
   ];
@@ -215,7 +218,7 @@ export function themePicker(themes: readonly Theme[], active: Theme): Node[] {
     backdrop(''),
     el(
       'div',
-      { role: 'dialog', 'aria-label': 'Theme', class: 'demo-pop absolute top-14 right-3 w-48 overflow-hidden rounded-md border border-border-primary bg-surface-secondary py-2 shadow-2xl' },
+      { role: 'dialog', 'aria-label': 'Theme', class: 'demo-pop absolute top-11 right-3 w-48 overflow-hidden rounded-md border border-border-primary bg-surface-secondary py-2 shadow-2xl' },
       el('div', { class: 'px-3 pb-1.5 text-[11px] font-medium tracking-wide text-text-secondary uppercase' }, 'Theme'),
       ...themes.map((theme, index) =>
         el(

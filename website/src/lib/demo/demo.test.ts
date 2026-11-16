@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { filesUnder, find, folderAt, formatBytes, placeFile, remove, search, uniqueName, type Folder, type TextFile } from "./fs";
+import { filesUnder, find, folderAt, formatBytes, placeFile, remove, search, typeOf, uniqueName, type Folder, type TextFile } from "./fs";
 import { back, canGoForward, currentPath, forward, visit } from "./history";
 import { tokenizeYamlLine } from "./highlight";
 import { advance, progressOf, type Upload } from "./upload";
@@ -69,4 +69,11 @@ test("yaml lines split into keys and values", () => {
   assert.deepEqual(tokenizeYamlLine("  image: a:b").map((token) => token.kind), ["plain", "key", "plain", "value"]);
   assert.deepEqual(tokenizeYamlLine('      - "8080:8080"'), [{ text: "      - ", kind: "plain" }, { text: '"8080:8080"', kind: "value" }]);
   assert.deepEqual(tokenizeYamlLine("# note"), [{ text: "# note", kind: "comment" }]);
+});
+
+test("the Type column names files the way the app does", () => {
+  assert.equal(typeOf({ kind: "folder", name: "Pictures", children: [] }), "Folder");
+  assert.equal(typeOf(note("docker-compose.yml")), "YAML");
+  assert.equal(typeOf(note("playlist.m3u")), "M3U File");
+  assert.equal(typeOf(note("fstab")), "File");
 });

@@ -1,38 +1,30 @@
 ---
-import { Server } from '@lucide/astro';
+// Mirrors the app's DriveCard.svelte.
+import { HardDrive } from '@lucide/astro';
+import { usageClasses, type Drive } from '../lib/demo/drives';
 
-export interface Props {
-  path: string;
-  total: string;
-  used: string;
-  free: string;
-  device: string;
-  fs: string;
-  percent: number;
-  color: string;
-}
+type Props = Drive;
 
-const { path, total, used, free, device, fs, percent, color } = Astro.props;
+const { path, total, used, free, device, fs, percent } = Astro.props;
+const usage = usageClasses(percent);
 ---
 
-<button type="button" data-action="go" data-path={path} class="group flex w-full items-center gap-4 rounded-xl border border-border-primary bg-surface-secondary/82 p-4 text-left backdrop-blur-sm transition-colors hover:border-border-focus/60">
-  <div class="flex h-[84px] w-[84px] shrink-0 items-center justify-center rounded-lg bg-surface-elevated/85 text-text-secondary transition-colors group-hover:text-[#e0e0e0]">
-    <Server class="h-7 w-7" />
+<button type="button" data-action="go" data-path={path} class="flex w-full flex-wrap items-stretch gap-3 rounded-lg border border-border-primary bg-surface-secondary/82 p-4 text-left backdrop-blur-sm transition-colors duration-150 hover:border-border-focus hover:bg-surface-tertiary/90">
+  <div class="flex size-22 shrink-0 items-center justify-center self-center rounded bg-surface-elevated/85 text-text-secondary">
+    <HardDrive class="h-[22px] w-[22px]" />
   </div>
-  <div class="flex min-w-0 flex-1 flex-col justify-center">
-    <div class="mb-1 flex items-center justify-between gap-2">
-      <span class="truncate text-[14px] font-medium tracking-wide text-[#e0e0e0]">{path}</span>
-      <span class="rounded bg-surface-elevated/85 px-2 py-0.5 text-[11px] text-text-secondary">{total}</span>
+  <div class="flex min-w-0 flex-1 basis-40 flex-col gap-1.5">
+    <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
+      <span class="min-w-0 flex-1 basis-36 text-sm font-medium break-words text-text-primary">{path}</span>
+      <span class="inline-flex shrink-0 items-center rounded bg-surface-elevated/85 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-text-secondary">{total}</span>
     </div>
-    <div class="mb-1 text-[12px] text-[#888888]">{used} used &middot; {free} free</div>
-    <div class="mb-3 truncate font-mono text-[11px] text-text-muted">
-      {device} &middot; {fs}
-    </div>
-    <div class="flex items-center gap-3">
-      <div class="h-[3px] flex-1 overflow-hidden rounded-full bg-[#333333]">
-        <div class="h-full rounded-full transition-[background-color,width] duration-700 ease-out" style={`background-color: ${color}; width: ${percent}%`}></div>
+    <div class="text-xs text-text-muted">{used} used &middot; {free} free</div>
+    <div class="truncate text-[11px] text-text-muted"><span class="font-mono">{device}</span><span class="text-text-secondary"> &middot; {fs}</span></div>
+    <div class="mt-0.5 flex items-center gap-3">
+      <div class="h-1 flex-1 overflow-hidden rounded-full bg-surface-elevated">
+        <div class:list={['h-full rounded-full', usage.bar]} style={`width: ${percent}%`}></div>
       </div>
-      <span class="shrink-0 text-[11px] transition-colors duration-700 ease-out" style={`color: ${color}`}>{percent}%</span>
+      <span class:list={['shrink-0 text-[11px] font-medium', usage.text]}>{percent.toFixed(1)}%</span>
     </div>
   </div>
 </button>

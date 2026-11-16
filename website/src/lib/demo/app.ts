@@ -5,9 +5,10 @@
 import { activeTheme, onThemeChange, pinTheme, themes } from '../siteTheme';
 import { el, fill, iconButton, iconsFrom, part, type Icon } from './dom';
 import { downloadFile } from './download';
-import { ancestors, baseName, entryBytes, filesUnder, find, folderAt, formatBytes, joinPath, mountOf, parentPath, placeFile, remove, search, sorted, uniqueName, type Entry, type FileEntry, type Located } from './fs';
+import { ancestors, baseName, entryBytes, filesUnder, find, folderAt, formatBytes, joinPath, mountOf, parentPath, placeFile, remove, search, sorted, typeOf, uniqueName, type Entry, type FileEntry, type Located } from './fs';
 import { back, canGoBack, canGoForward, currentPath, forward, visit, type History } from './history';
-import { contextMenu, editorOverlay, previewOverlay, shareOverlay, themePicker, type Editor, type EditorStatus, type MenuItem } from './overlays';
+import { drives } from './drives';
+import { contextMenu, editorOverlay, previewOverlay, shareOverlay, themePicker, type Editor, type EditorStatus, type MenuEntry, type MenuItem } from './overlays';
 import { picture } from './pictures';
 import { createSampleFs, readOnlyMounts } from './sample';
 import { sharePage } from './sharePage';
@@ -29,6 +30,7 @@ type Overlay =
   | { kind: 'preview'; path: string; zoom: number }
   | { kind: 'share'; path: string; copied: string | null }
   | { kind: 'menu'; path: string; x: number; y: number }
+  | { kind: 'add'; x: number; y: number }
   | { kind: 'themes' };
 
 type Surface = { kind: 'app' } | { kind: 'guest'; token: string; open: number };
@@ -52,7 +54,9 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
   const toastPart = part(root, 'toast', HTMLElement);
   const crumbsPart = part(root, 'crumbs', HTMLElement);
   const drivesPart = part(root, 'drives', HTMLElement);
+  const driveListPart = part(root, 'drive-list', HTMLElement);
   const listingPart = part(root, 'listing', HTMLElement);
+  const searchBox = part(root, 'search-box', HTMLElement);
   const statusPart = part(root, 'status', HTMLElement);
   const selectionPart = part(root, 'selection', HTMLElement);
   const favoritesPart = part(root, 'favorites', HTMLElement);
@@ -102,20 +106,37 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
     );
   }
 
+  // The app's list columns (FileList.svelte), less Modified: the sample tree has no dates.
+  const listColumns = 'grid grid-cols-[minmax(0,1fr)_28%_18%]';
+
+  function listHeader(): HTMLElement {
+    const searching = query.trim() !== '';
+    return el(
+      'div',
+      { class: `${listColumns} sticky top-0 z-[5] h-8 items-center border-b border-border-primary bg-surface-secondary/90 text-[13px] font-medium whitespace-nowrap text-text-secondary backdrop-blur-md select-none` },
+      el('span', { class: 'px-3' }, 'Name'),
+      el('span', { class: 'px-3' }, searching ? 'Location' : 'Type'),
+      el('span', { class: 'px-3 text-right' }, 'Size')
+    );
+  }
+
   function row(item: Located): HTMLElement {
+    const searching = query.trim() !== '';
+    const second = searching ? parentPath(item.path) : typeOf(item.entry);
+    const size = item.entry.kind === 'folder' ? '—' : formatBytes(entryBytes(item.entry));
     return el(
       'button',
-      { type: 'button', 'data-action': 'entry', 'data-path': item.path, 'aria-pressed': String(selected === item.path), class: 'flex w-full items-center gap-3 rounded px-2 py-1.5 text-left hover:bg-surface-secondary/70 aria-pressed:bg-selection/80' },
-      el('span', { class: 'flex h-6 w-8 shrink-0 items-center justify-center overflow-hidden rounded-sm' }, thumbnail(item.entry, 'h-4 w-4')),
-      el('span', { class: 'flex-1 truncate' }, item.entry.name),
-      el('span', { class: 'shrink-0 text-[11px] text-text-muted' }, detail(item))
+      { type: 'button', 'data-action': 'entry', 'data-path': item.path, 'aria-pressed': String(selected === item.path), class: `${listColumns} h-8 w-full items-center text-left text-[13px] transition-colors duration-50 hover:bg-surface-secondary/70 aria-pressed:bg-selection aria-pressed:hover:bg-selection-hover` },
+      el('span', { class: 'flex min-w-0 items-center gap-2 px-3' }, el('span', { class: 'flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-sm' }, thumbnail(item.entry, 'h-4 w-4')), el('span', { class: 'truncate text-text-primary' }, item.entry.name)),
+      el('span', { class: 'truncate px-3 text-text-secondary in-aria-pressed:text-text-primary' }, second),
+      el('span', { class: 'truncate px-3 text-right text-text-secondary tabular-nums in-aria-pressed:text-text-primary' }, size)
     );
   }
 
   function renderListing() {
     const atServer = location() === '' && query.trim() === '';
-    drivesPart.hidden = !atServer;
-    drivesPart.toggleAttribute('data-list', view === 'list');
+    drivesPart.hidden = !atServer || view === 'list';
+    driveListPart.hidden = !atServer || view === 'grid';
     listingPart.hidden = atServer;
     if (atServer) return;
     const items = listed();
@@ -124,8 +145,13 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
       listingPart.replaceChildren(query.trim() === '' ? 'This folder is empty.' : `Nothing matches “${query.trim()}”.`);
       return;
     }
-    listingPart.className = view === 'grid' ? 'grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] content-start gap-2' : 'flex flex-col';
-    listingPart.replaceChildren(...items.map(view === 'grid' ? tile : row));
+    if (view === 'grid') {
+      listingPart.className = 'grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] content-start gap-2 p-3';
+      listingPart.replaceChildren(...items.map(tile));
+    } else {
+      listingPart.className = 'flex min-w-0 flex-col';
+      listingPart.replaceChildren(listHeader(), ...items.map(row));
+    }
   }
 
   // ---- the chrome around it ------------------------------------------------
@@ -139,22 +165,19 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
   function renderChrome() {
     const path = location();
     const crumb = (label: string, target: string, last: boolean) =>
-      el('button', { type: 'button', 'data-action': 'go', 'data-path': target, class: `truncate rounded px-1 hover:text-accent ${last ? 'text-text-primary' : 'shrink-0 text-text-secondary'}` }, label);
+      el('button', { type: 'button', 'data-action': 'go', 'data-path': target, class: last ? 'truncate text-text-primary' : 'shrink-0 text-text-secondary hover:text-white hover:underline' }, label);
     const trail = ancestors(path);
     fill(
       crumbsPart,
       ...(trail.length === 0
         ? [crumb('This Server', '', true)]
-        : trail.flatMap((target, index) => [index > 0 && el('span', { class: 'text-text-muted' }, '/'), crumb(baseName(target), target, index === trail.length - 1)]))
+        : trail.flatMap((target, index) => [index > 0 && el('span', { class: 'text-xs text-text-muted' }, '/'), crumb(baseName(target), target, index === trail.length - 1)]))
     );
 
     setDisabled('back', !canGoBack(history));
     setDisabled('forward', !canGoForward(history));
-    setDisabled('up', path === '');
-    const busy = toast.kind === 'uploading';
-    setDisabled('upload-files', !writable(path) || busy);
-    setDisabled('upload-folder', !writable(path) || busy);
-    setDisabled('new-file', !writable(path));
+    setDisabled('add', !writable(path));
+    searchBox.hidden = path === '';
 
     root.querySelectorAll<HTMLElement>('[data-nav]').forEach((item) => item.toggleAttribute('data-active', item.dataset.path === path));
     root.querySelectorAll<HTMLElement>('[data-view]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.view === view)));
@@ -174,7 +197,7 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
   }
 
   function renderStatus() {
-    const count = location() === '' && query.trim() === '' ? drivesPart.childElementCount : listed().length;
+    const count = location() === '' && query.trim() === '' ? drives.length : listed().length;
     const noun = query.trim() === '' ? 'item' : 'result';
     fill(
       statusPart,
@@ -182,6 +205,19 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
       !writable(location()) && location() !== '' && el('span', { class: 'ml-3 inline-flex items-center gap-1 text-text-muted' }, icon('lock', 'h-3 w-3'), 'Read-only')
     );
     selectionPart.replaceChildren(...(selected ? menuItems(selected).map((item) => iconButton(icon(item.icon, 'h-3.5 w-3.5'), item.label, { 'data-action': item.action, 'data-path': selected ?? '', class: 'flex h-6 w-6 items-center justify-center rounded text-text-secondary hover:bg-surface-elevated hover:text-text-primary' })) : []));
+  }
+
+  /** The toolbar's "+" menu, as in the app's AddMenu. */
+  function addItems(): MenuEntry[] {
+    const canCreate = writable(location());
+    const canUpload = canCreate && toast.kind !== 'uploading';
+    return [
+      { label: 'New folder', action: 'new-folder', icon: 'folder-plus', disabled: !canCreate },
+      { label: 'New file', action: 'new-file', icon: 'file-plus', disabled: !canCreate },
+      'separator',
+      { label: 'Upload files', action: 'upload-files', icon: 'upload', disabled: !canUpload },
+      { label: 'Upload folder', action: 'upload-folder', icon: 'folder-up', disabled: !canUpload }
+    ];
   }
 
   function menuItems(path: string): MenuItem[] {
@@ -217,6 +253,8 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
       nodes = shareOverlay(icon, entry.name, links.filter((link) => link.path === path), overlay.copied, Date.now());
     } else if (overlay.kind === 'menu' && entry) {
       nodes = contextMenu(icon, overlay.x, overlay.y, menuItems(overlay.path));
+    } else if (overlay.kind === 'add') {
+      nodes = contextMenu(icon, overlay.x, overlay.y, addItems());
     } else if (overlay.kind === 'themes') {
       nodes = themePicker(themes, activeTheme());
     }
@@ -414,7 +452,6 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
       history = forward(history);
       arrive();
     },
-    up: () => go(parentPath(location())),
     view: (target) => {
       view = target.dataset.view === 'list' ? 'list' : 'grid';
       renderChrome();
@@ -544,6 +581,26 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
       target.firstElementChild?.animate({ transform: ['rotate(0)', 'rotate(360deg)'] }, { duration: 500, easing: 'ease-out' });
       render();
     },
+    add: (target) => {
+      if (overlay.kind === 'add') {
+        setOverlay({ kind: 'none' });
+        return;
+      }
+      // The preview may be drawn scaled; the menu is placed in its own pixels.
+      const box = root.getBoundingClientRect();
+      const button = target.getBoundingClientRect();
+      const scale = box.width / root.offsetWidth || 1;
+      setOverlay({ kind: 'add', x: Math.min((button.left - box.left) / scale, root.offsetWidth - 184), y: (button.bottom - box.top) / scale + 4 });
+    },
+    'new-folder': () => {
+      const folder = folderAt(fs, location());
+      if (!folder || !writable(location())) return;
+      const name = uniqueName(folder, 'New folder');
+      folder.children.push({ kind: 'folder', name, children: [] });
+      selected = joinPath(location(), name);
+      overlay = { kind: 'none' };
+      render();
+    },
     'new-file': () => {
       const folder = folderAt(fs, location());
       if (!folder || !writable(location())) return;
@@ -552,8 +609,16 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
       open(joinPath(location(), name));
       editor?.textarea.focus();
     },
-    'upload-files': () => upload(location(), 'IMG_2041.jpg', ['IMG_2041.jpg']),
-    'upload-folder': () => upload(location(), 'summer-photos', SAMPLE_FOLDER),
+    'upload-files': () => {
+      overlay = { kind: 'none' };
+      renderOverlay();
+      upload(location(), 'IMG_2041.jpg', ['IMG_2041.jpg']);
+    },
+    'upload-folder': () => {
+      overlay = { kind: 'none' };
+      renderOverlay();
+      upload(location(), 'summer-photos', SAMPLE_FOLDER);
+    },
     'toast-close': dismissToast
   };
 
