@@ -383,12 +383,13 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
         const parent = parentPath(step.upload.items[0]?.relPath ?? '');
         toast = { kind: 'uploaded', label: step.upload.label, count: step.upload.items.length, path: parent ? joinPath(target, parent) : target };
         renderToast();
-        // The open overlay is left alone: redrawing it would drop an editor's
-        // caret or reset a share dialog's choices.
         renderChrome();
         renderListing();
         renderStatus();
         renderSurface();
+        // Only overlays that show upload results and hold no input are
+        // redrawn; an editor would lose its caret, a share dialog its choices.
+        if (overlay.kind === 'add' || overlay.kind === 'preview') renderOverlay();
         return;
       }
       toast = { kind: 'uploading', upload: step.upload };
