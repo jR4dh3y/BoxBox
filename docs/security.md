@@ -113,6 +113,8 @@ If you use Traefik or another reverse proxy, add routing and TLS configuration a
 
 Forwarded client-IP headers are ignored unless the direct proxy IP/CIDR is configured in `trusted_proxies` or `BOXBOX_TRUSTED_PROXIES`.
 
+Set `public_url` behind a proxy. Otherwise share link previews build their absolute URLs from the request's `Host` and `X-Forwarded-Proto`.
+
 ## Upload Safety
 
 Chunked uploads are assembled in `/tmp/boxbox` by default and moved into the final destination when complete. Configure enough disk space for temporary chunks:
@@ -140,6 +142,7 @@ Share links expose one file or a folder tree to anyone holding the token URL:
 - Full-access links also allow folder creation and empty file edits. Folder creation uses an opened filesystem root to confine mutations if another writer swaps a parent directory for a symlink.
 - Anyone holding an active share link can view the owner's stored wallpaper. The browser keeps the wallpaper owner marker and cancels pending synchronization when the authenticated session ends.
 - Recipient metadata responses never include mount names or internal paths.
+- Share pages carry link-preview tags with the shared file or folder name, so pasting a link into a chat app shows that name, and an image share's thumbnail, to the app's preview service. Inactive links get generic tags only.
 - The share store directory is restricted to owner access (`0700`) and its token-bearing `shares.json` file to `0600`, including existing stores when the service initializes.
 - Before downgrading to a version predating split upload/delete permissions, back up `shares.json`; older versions cannot preserve the new per-link permissions and upload caps if they rewrite the store.
 

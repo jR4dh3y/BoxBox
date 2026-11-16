@@ -156,3 +156,32 @@ func TestValidateRejectsUnknownMountKind(t *testing.T) {
 		t.Fatalf("Validate() = %v, want a kind error", err)
 	}
 }
+
+func TestValidatePublicURL(t *testing.T) {
+	base := ServerConfig{
+		JWTSecret:   "0123456789abcdef0123456789abcdef",
+		Users:       map[string]string{"admin": validTestBcryptHash},
+		MountPoints: []MountPoint{{Name: "data", Path: "/data"}},
+		Port:        80,
+		MaxUploadMB: 1,
+		ChunkSizeMB: 1,
+	}
+	for value, ok := range map[string]bool{
+		"":                               true,
+		"https://files.example.com":      true,
+		"https://files.example.com/":     true,
+		"http://192.168.1.5:8080":        true,
+		"ftp://files.example.com":        false,
+		"files.example.com":              false,
+		"https://files.example.com/box":  false,
+		"https://files.example.com/?a=1": false,
+		"https://files.example.com/#x":   false,
+		"https://user@files.example.com": false,
+	} {
+		cfg := base
+		cfg.PublicURL = value
+		if err := cfg.Validate(); (err == nil) != ok {
+			t.Errorf("Validate(public_url=%q) = %v, want ok=%v", value, err, ok)
+		}
+	}
+}

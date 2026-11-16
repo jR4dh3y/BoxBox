@@ -355,6 +355,7 @@ GET /api/v1/share/{token}/preview
 GET /api/v1/share/{token}/items?path=reports
 GET /api/v1/share/{token}/archive?path=reports
 GET /api/v1/share/{token}/wallpaper
+GET /api/v1/share/{token}/thumbnail
 POST /api/v1/share/{token}/folders?path=reports/new-folder
 POST /api/v1/share/{token}/upload?path=reports/new.txt
 DELETE /api/v1/share/{token}/items?path=reports/old.txt
@@ -365,6 +366,10 @@ Folder item paths are relative to the share root. Archive downloads include only
 Unknown, expired, and revoked tokens all return the same `404`, so recipients cannot distinguish between them. Requests the share's permissions do not allow return `403`.
 
 Folder creation requires `manage` and a writable mount. It creates missing parents below the shared root and returns `201` with `{"success": true}`. Traversal outside the shared root is denied.
+
+The thumbnail endpoint serves the link-preview image for a file share: a JPEG of at most 1200 px for JPEG, PNG, GIF and WebP files, or the default `og-default.png` when the file is not a renderable image or is a folder. It sends an `ETag`, answers `If-None-Match` with `304`, and uses `Cache-Control: no-cache` so revocation takes effect at once.
+
+The share page itself, `GET /s/{token}`, is the app document with Open Graph and Twitter card tags added for link-preview crawlers: the file or folder name, a short description, the page URL and the preview image. Unknown, expired and revoked tokens, and any lookup error, get the same generic tags without a name. Over the share rate limit, the page still loads with the generic tags.
 
 The wallpaper endpoint serves the owner's image with the sandboxed content policy and returns `404` when no image is stored. Share metadata optionally includes `wallpaper` with `mode`, `frostedGlass`, and a numeric `version` for cache invalidation.
 

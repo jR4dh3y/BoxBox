@@ -70,6 +70,7 @@ mount_points:
 | `rate_limit_rps` | `2` | Auth endpoint requests per second per client IP. |
 | `allowed_origins` | `[]` | WebSocket origin allow-list. Empty enforces same-origin; `*` explicitly allows all. |
 | `trusted_proxies` | `[]` | Proxy IPs/CIDRs allowed to supply client-IP headers. |
+| `public_url` | `""` | External origin, such as `https://files.example.com`, used for absolute URLs in share link previews. Empty derives it from each request's `Host` and `X-Forwarded-Proto`. Must have no path: BoxBox is served from the root of its origin. |
 | `allow_root_mount` | `false` | Explicit override required for a mount resolving to `/`. |
 | `max_upload_mb` | `10240` | Maximum upload size in MiB. |
 | `chunk_size_mb` | `10` | Chunk size in MiB that the browser uses for uploads. Lower it when a reverse proxy limits request body size. |
@@ -114,6 +115,7 @@ Environment overrides use the `BOXBOX_` prefix:
 | `BOXBOX_CHUNK_SIZE_MB` | `chunk_size_mb` |
 | `BOXBOX_ALLOWED_ORIGINS` | `allowed_origins`, comma-separated |
 | `BOXBOX_TRUSTED_PROXIES` | `trusted_proxies`, comma-separated CIDRs |
+| `BOXBOX_PUBLIC_URL` | `public_url` |
 | `BOXBOX_ALLOW_ROOT_MOUNT` | `allow_root_mount` |
 | `BOXBOX_DATA_DIR` | `data_dir` |
 | `BOXBOX_USERS_<username>` | `users.<username>` |

@@ -337,3 +337,19 @@ func clearConfigEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadReadsPublicURLFromEnvironment(t *testing.T) {
+	clearConfigEnv(t)
+	configPath := writeMinimalConfig(t)
+	t.Setenv("BOXBOX_JWT_SECRET", "boxbox-secret-at-least-thirty-two-bytes")
+	t.Setenv("BOXBOX_USERS_admin", testHashA)
+	t.Setenv("BOXBOX_PUBLIC_URL", "https://share.example.com/")
+
+	result, err := LoadWithReport(configPath)
+	if err != nil {
+		t.Fatalf("LoadWithReport() error = %v", err)
+	}
+	if result.Config.PublicURL != "https://share.example.com" {
+		t.Fatalf("PublicURL = %q, want trailing slash trimmed", result.Config.PublicURL)
+	}
+}

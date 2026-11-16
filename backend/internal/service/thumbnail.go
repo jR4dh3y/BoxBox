@@ -21,13 +21,16 @@ var (
 
 const (
 	maxThumbnailSourceBytes = 64 << 20
-	// At most 128 MiB per 32 MP RGBA decode; two render slots bound peak source pixels.
+	// At most 128 MiB per 32 MP RGBA decode; the file and share services' three slots bound peak source pixels.
 	maxThumbnailSourcePixels = 32_000_000
 	maxThumbnailDimension    = 8192
 	maxThumbnailOutput       = 512
 	maxConcurrentThumbnails  = 2
-	maxThumbnailCacheEntries = 128
-	maxThumbnailCacheBytes   = 16 << 20
+	// Link-preview crawlers want at least 600 px wide for a large card.
+	maxShareThumbnailOutput      = 1200
+	maxConcurrentShareThumbnails = 1
+	maxThumbnailCacheEntries     = 128
+	maxThumbnailCacheBytes       = 16 << 20
 )
 
 type Thumbnail struct {
@@ -42,11 +45,14 @@ type ThumbnailService interface {
 // A renderer receives a source already opened and confined by FileStreamer.
 type ThumbnailRenderer func(context.Context, File, *model.FileInfo, int, int) ([]byte, error)
 
+type thumbnailOpener func(context.Context, string) (File, *model.FileInfo, error)
+
 type thumbnailService struct {
-	files  FileStreamer
-	slots  chan struct{}
-	cache  *thumbnailCache
-	render ThumbnailRenderer
+	open      thumbnailOpener
+	slots     chan struct{}
+	cache     *thumbnailCache
+	render    ThumbnailRenderer
+	maxOutput int
 }
 
 func NewThumbnailService(files FileStreamer) ThumbnailService {
@@ -55,10 +61,23 @@ func NewThumbnailService(files FileStreamer) ThumbnailService {
 
 func NewThumbnailServiceWithRenderer(files FileStreamer, render ThumbnailRenderer) ThumbnailService {
 	return &thumbnailService{
-		files:  files,
-		slots:  make(chan struct{}, maxConcurrentThumbnails),
-		cache:  newThumbnailCache(),
-		render: render,
+		open:      files.OpenFile,
+		slots:     make(chan struct{}, maxConcurrentThumbnails),
+		cache:     newThumbnailCache(),
+		render:    render,
+		maxOutput: maxThumbnailOutput,
+	}
+}
+
+// NewShareThumbnailService renders link-preview images for single-file shares, keyed by share token.
+// It has its own slot and cache so public requests cannot stall or evict file-browser thumbnails.
+func NewShareThumbnailService(shares ShareService) ThumbnailService {
+	return &thumbnailService{
+		open:      shares.OpenForRecipient,
+		slots:     make(chan struct{}, maxConcurrentShareThumbnails),
+		cache:     newThumbnailCache(),
+		render:    renderImageThumbnail,
+		maxOutput: maxShareThumbnailOutput,
 	}
 }
 
@@ -76,14 +95,14 @@ func (s *thumbnailService) Render(
 		return nil, ctx.Err()
 	}
 
-	file, info, err := s.files.OpenFile(ctx, path)
+	file, info, err := s.open(ctx, path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	width = min(maxThumbnailOutput, max(16, width))
-	height = min(maxThumbnailOutput, max(16, height))
+	width = min(s.maxOutput, max(16, width))
+	height = min(s.maxOutput, max(16, height))
 	key := thumbnailCacheKey{
 		path:    path,
 		modTime: info.ModTime.UnixNano(),

@@ -111,6 +111,7 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 		"chunk_size_mb",
 		"data_dir",
 		"allow_root_mount",
+		"public_url",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind environment variable %q: %w", key, err)
@@ -178,6 +179,7 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	cfg.PublicURL = strings.TrimSuffix(cfg.PublicURL, "/")
 
 	// Resolve once before filesystem adapters interpret persistence paths.
 	if cfg.DataDir == "" {

@@ -9,11 +9,22 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
+	"path/filepath"
+	"strings"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 )
+
+// RendersImageThumbnail reports whether a file name has an extension the pure-Go renderer decodes.
+func RendersImageThumbnail(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+		return true
+	}
+	return false
+}
 
 func renderImageThumbnail(ctx context.Context, file File, info *model.FileInfo, width, height int) ([]byte, error) {
 	if info.Size < 0 || info.Size > maxThumbnailSourceBytes {

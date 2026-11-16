@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"net/netip"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -73,6 +74,7 @@ type ServerConfig struct {
 	AllowedOrigins []string          `mapstructure:"allowed_origins"` // WebSocket/CORS allowed origins
 	TrustedProxies []string          `mapstructure:"trusted_proxies"` // CIDRs allowed to supply forwarding headers
 	RateLimitRPS   float64           `mapstructure:"rate_limit_rps"`  // Auth endpoint rate limit (requests per second)
+	PublicURL      string            `mapstructure:"public_url"`      // external origin for share link previews; "" derives it per request
 }
 
 // Validate checks that the configuration is valid
@@ -85,6 +87,10 @@ func (c *ServerConfig) Validate() error {
 	}
 	if strings.Contains(strings.ToLower(c.JWTSecret), "change-me") {
 		return fmt.Errorf("jwt_secret must be changed from the placeholder value")
+	}
+
+	if err := validatePublicURL(c.PublicURL); err != nil {
+		return err
 	}
 
 	if len(c.Users) == 0 {
@@ -165,4 +171,17 @@ func resolvesToFilesystemRoot(path string) bool {
 	}
 	volume := filepath.VolumeName(absolute)
 	return filepath.Clean(absolute) == filepath.Clean(volume+string(filepath.Separator))
+}
+
+// validatePublicURL accepts an origin only: BoxBox serves its app and API from the root path.
+func validatePublicURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return fmt.Errorf("public_url must be an http(s) origin such as https://files.example.com, without a path, query or fragment")
+	}
+	return nil
 }

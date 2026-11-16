@@ -23,6 +23,10 @@ allowed_origins: []
 # Forwarding headers are ignored unless the direct peer is in this CIDR list.
 trusted_proxies: []
 
+# External origin for share link previews, e.g. https://files.example.com.
+# Empty derives it from each request; set it behind a reverse proxy.
+public_url: ""
+
 # Upload settings
 max_upload_mb: 10240  # 10GB max upload size
 chunk_size_mb: 10     # 10MB chunk size for browser uploads
