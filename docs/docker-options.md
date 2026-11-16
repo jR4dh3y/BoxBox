@@ -61,7 +61,7 @@ docker run -d \
 
 Open `http://localhost:8080` and sign in as `admin` with the plaintext password used to generate the hash. The port is bound to `127.0.0.1`, so only this machine can reach it.
 
-The container runs as UID/GID `10001:10001`, so that identity must be able to read the mounted home folder; a `0700` home owned by your user shows as empty. Either grant it access (see [Permission notes](docker.md#permission-notes)) or run as yourself with `--user "$(id -u):$(id -g)"`.
+The container runs as UID/GID `10001:10001`, so that identity must be able to read the mounted home folder; a `0700` home owned by your user shows as empty. Grant that identity access to the folder (see [Permission notes](docker.md#permission-notes)). Do not change `--user` here: the `boxbox-data` and `boxbox-temp` volumes belong to `10001`, and BoxBox stops at startup if it cannot set up `/data`.
 
 ## Local Source Builds
 
