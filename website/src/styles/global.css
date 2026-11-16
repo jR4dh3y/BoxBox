@@ -286,3 +286,9 @@ button.word-box[aria-pressed='true'] {
 }
 
 .demo-pop { animation: demo-pop 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+
+.dot-grid {
+  background-image: radial-gradient(rgb(255 255 255 / 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
+}
