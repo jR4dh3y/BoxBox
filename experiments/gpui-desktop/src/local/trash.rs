@@ -49,7 +49,11 @@ pub(super) fn list(
             let Some(stored_name) = info_name.strip_suffix(".trashinfo") else {
                 continue;
             };
-            validate_leaf(Path::new(stored_name))?;
+            // One bad entry is skipped, as Nautilus does; it must not hide the rest.
+            if let Err(error) = validate_leaf(Path::new(stored_name)) {
+                log::warn!("skipping Trash entry {}: {error:#}", info_path.display());
+                continue;
+            }
             let data_name = PathBuf::from(stored_name);
             let data_path = files.join(&data_name);
             let data_metadata = match fs::symlink_metadata(&data_path) {
@@ -57,12 +61,17 @@ pub(super) fn list(
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(error) => return Err(error.into()),
             };
-            let (original_path, deleted_at) = parse_info(&info_path, root.relative_base.as_deref())?;
-            let name = original_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .context("Trash original name is not valid UTF-8")?
-                .to_owned();
+            let parsed = parse_info(&info_path, root.relative_base.as_deref()).and_then(|(original_path, deleted_at)| {
+                let name = original_path.file_name().and_then(|name| name.to_str()).context("Trash original name is not valid UTF-8")?.to_owned();
+                Ok((original_path, deleted_at, name))
+            });
+            let (original_path, deleted_at, name) = match parsed {
+                Ok(parsed) => parsed,
+                Err(error) => {
+                    log::warn!("skipping Trash entry {}: {error:#}", info_path.display());
+                    continue;
+                }
+            };
             items.push(TrashItem {
                 id: item_id(&root.path, &data_name),
                 name,
@@ -544,13 +553,15 @@ fn local_trash_root(mountpoint: &Path) -> Result<TrashRoot> {
     })
 }
 
+/// gio and other apps write `.trashinfo` as 0644; the 0700 Trash folder already keeps
+/// others out, so only a file others could write is refused.
 fn parse_info(path: &Path, relative_base: Option<&Path>) -> Result<(PathBuf, String)> {
     let metadata = fs::symlink_metadata(path)?;
     ensure!(
         !metadata.file_type().is_symlink()
             && metadata.is_file()
             && owned_by_current_user(&metadata)
-            && mode(&metadata) & 0o077 == 0,
+            && mode(&metadata) & 0o022 == 0,
         "unsafe Trash metadata {}",
         path.display()
     );
@@ -566,7 +577,7 @@ fn parse_info(path: &Path, relative_base: Option<&Path>) -> Result<(PathBuf, Str
     ensure!(
         opened.is_file()
             && owned_by_current_user(&opened)
-            && mode(&opened) & 0o077 == 0,
+            && mode(&opened) & 0o022 == 0,
         "unsafe Trash metadata {}",
         path.display()
     );
@@ -937,5 +948,25 @@ mod tests {
         std::fs::create_dir_all(&root.0).unwrap();
         super::list(&[], &root.0, true).unwrap();
         assert!(!super::has_items(&root.0, true));
+    }
+
+    /// Other apps write `.trashinfo` as 0644, and a broken entry is skipped, not fatal.
+    #[test]
+    fn readable_trashinfo_lists_and_a_broken_one_is_skipped() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let root = Root(std::env::temp_dir().join(format!("boxbox-trash-info-{}", std::process::id())));
+        let trash = root.0.join("Trash");
+        for dir in ["files", "info"] {
+            std::fs::create_dir_all(trash.join(dir)).unwrap();
+            std::fs::set_permissions(trash.join(dir), std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(trash.join("files/a.txt"), "a").unwrap();
+        std::fs::write(trash.join("info/a.txt.trashinfo"), "[Trash Info]\nPath=/tmp/a.txt\nDeletionDate=2026-09-27T20:38:21\n").unwrap();
+        std::fs::set_permissions(trash.join("info/a.txt.trashinfo"), std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::write(trash.join("files/b.txt"), "b").unwrap();
+        std::fs::write(trash.join("info/b.txt.trashinfo"), "[Trash Info]\nDeletionDate=2026-09-27T20:38:21\n").unwrap();
+        let listed = super::list(&[], &root.0, false).unwrap();
+        assert_eq!(listed.iter().map(|item| item.name.as_str()).collect::<Vec<_>>(), ["a.txt"]);
     }
 }
