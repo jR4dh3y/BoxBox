@@ -79,10 +79,12 @@ impl Workspace {
             .border_l_1()
             .border_color(c(BORDER_SECONDARY))
             .bg(self.chrome_background())
+            .flex()
+            .flex_col()
             .overflow_y_scroll()
-            .p(px(14.))
             .text_xs_tw()
-            .child(body)
+            // Auto margins centre it in the panel's height; a long list falls back to the top and scrolls.
+            .child(div().my_auto().flex_none().p(px(14.)).child(body))
             .into_any_element()
     }
 
