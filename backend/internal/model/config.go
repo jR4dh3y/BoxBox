@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -182,6 +183,12 @@ func validatePublicURL(raw string) error {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
 		u.User != nil || strings.ContainsAny(raw, "?#") || (u.Path != "" && u.Path != "/") {
 		return fmt.Errorf("public_url must be an http(s) origin such as https://files.example.com, without a path, query or fragment")
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("public_url port must be between 1 and 65535")
+		}
 	}
 	return nil
 }

@@ -369,6 +369,8 @@ Folder creation requires `manage` and a writable mount. It creates missing paren
 
 The thumbnail endpoint serves the link-preview image for a file share: a JPEG of at most 1200 px for JPEG, PNG, GIF and WebP files, or the default `og-default.png` when the file is not a renderable image or is a folder. It sends an `ETag`, answers `If-None-Match` with `304`, and uses `Cache-Control: no-cache` so revocation takes effect at once.
 
+File-browser and share image renders share a 256 MiB budget for decoded pixels and scaling workspace. An image whose estimated workspace exceeds that budget uses the default share preview; other renders wait for memory or request cancellation. The existing source limits of 64 MiB, 32 million pixels, and 8192 pixels per dimension also apply.
+
 The share page itself, `GET /s/{token}`, is the app document with Open Graph and Twitter card tags added for link-preview crawlers: the file or folder name, a short description, the page URL and the preview image. Unknown, expired and revoked tokens, and any lookup error, get the same generic tags without a name. Over the share rate limit, the page still loads with the generic tags.
 
 The wallpaper endpoint serves the owner's image with the sandboxed content policy and returns `404` when no image is stored. Share metadata optionally includes `wallpaper` with `mode`, `frostedGlass`, and a numeric `version` for cache invalidation.

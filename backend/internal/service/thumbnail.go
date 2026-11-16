@@ -21,7 +21,7 @@ var (
 
 const (
 	maxThumbnailSourceBytes = 64 << 20
-	// At most 128 MiB per 32 MP RGBA decode; the file and share services' three slots bound peak source pixels.
+	// A separate shared memory budget accounts for high bit depth and scaling workspace.
 	maxThumbnailSourcePixels = 32_000_000
 	maxThumbnailDimension    = 8192
 	maxThumbnailOutput       = 512
@@ -70,7 +70,7 @@ func NewThumbnailServiceWithRenderer(files FileStreamer, render ThumbnailRendere
 }
 
 // NewShareThumbnailService renders link-preview images for single-file shares, keyed by share token.
-// It has its own slot and cache so public requests cannot stall or evict file-browser thumbnails.
+// Request slots and caches stay separate; image decoders share a memory budget.
 func NewShareThumbnailService(shares ShareService) ThumbnailService {
 	return &thumbnailService{
 		open:      shares.OpenForRecipient,

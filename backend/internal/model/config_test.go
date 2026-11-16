@@ -167,18 +167,21 @@ func TestValidatePublicURL(t *testing.T) {
 		ChunkSizeMB: 1,
 	}
 	for value, ok := range map[string]bool{
-		"":                               true,
-		"https://files.example.com":      true,
-		"https://files.example.com/":     true,
-		"http://192.168.1.5:8080":        true,
-		"ftp://files.example.com":        false,
-		"files.example.com":              false,
-		"https://files.example.com/box":  false,
-		"https://files.example.com/?a=1": false,
-		"https://files.example.com/#x":   false,
-		"https://files.example.com?":     false,
-		"https://files.example.com#":     false,
-		"https://user@files.example.com": false,
+		"":                                true,
+		"https://files.example.com":       true,
+		"https://files.example.com/":      true,
+		"http://192.168.1.5:8080":         true,
+		"https://files.example.com:65535": true,
+		"https://files.example.com:65536": false,
+		"https://files.example.com:0":     false,
+		"ftp://files.example.com":         false,
+		"files.example.com":               false,
+		"https://files.example.com/box":   false,
+		"https://files.example.com/?a=1":  false,
+		"https://files.example.com/#x":    false,
+		"https://files.example.com?":      false,
+		"https://files.example.com#":      false,
+		"https://user@files.example.com":  false,
 	} {
 		cfg := base
 		cfg.PublicURL = value

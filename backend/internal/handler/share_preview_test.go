@@ -253,9 +253,25 @@ func TestSharePreviewImage(t *testing.T) {
 	}
 
 	for _, path := range []string{"media/file.txt", "media/broken.jpg", "media/shared"} {
-		rec = thumbnailRequest(f, share(path), "")
+		token := share(path)
+		rec = thumbnailRequest(f, token, "")
 		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" || !bytes.Equal(rec.Body.Bytes(), testDefaultImage) {
 			t.Errorf("%s fallback = %d %q", path, rec.Code, rec.Header().Get("Content-Type"))
+		}
+		fallbackETag := rec.Header().Get("ETag")
+		rec = thumbnailRequest(f, token, fallbackETag)
+		if fallbackETag == "" || rec.Code != http.StatusNotModified || rec.Header().Get("ETag") != fallbackETag || rec.Body.Len() != 0 {
+			t.Fatalf("%s conditional fallback = %d %v", path, rec.Code, rec.Header())
+		}
+		link, err := f.shares.ResolveForRecipient(token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.shares.Revoke("owner", link.ID); err != nil {
+			t.Fatal(err)
+		}
+		if rec = thumbnailRequest(f, token, fallbackETag); rec.Code != http.StatusNotFound {
+			t.Fatalf("%s revoked fallback = %d, want 404", path, rec.Code)
 		}
 	}
 

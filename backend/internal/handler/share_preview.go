@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -39,6 +41,7 @@ type SharePreviewHandler struct {
 	document     PreviewDocument
 	publicURL    string
 	defaultImage []byte
+	defaultETag  string
 }
 
 // NewSharePreviewHandler builds the handler. publicURL is an origin without a trailing slash, or "" to derive it per request.
@@ -50,6 +53,7 @@ func NewSharePreviewHandler(shares service.ShareService, document PreviewDocumen
 		document:     document,
 		publicURL:    publicURL,
 		defaultImage: defaultImage,
+		defaultETag:  fmt.Sprintf(`"%x"`, sha256.Sum256(defaultImage)),
 	}
 }
 
@@ -235,6 +239,11 @@ func (h *SharePreviewHandler) Image(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 	case h.defaultImage != nil && (errors.Is(err, service.ErrThumbnailUnsupported) ||
 		errors.Is(err, service.ErrThumbnailTooLarge) || errors.Is(err, service.ErrNotFile)):
+		w.Header().Set("ETag", h.defaultETag)
+		if ifNoneMatch == h.defaultETag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("Content-Length", strconv.Itoa(len(h.defaultImage)))
 		_, _ = w.Write(h.defaultImage)
