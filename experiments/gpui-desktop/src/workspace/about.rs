@@ -5,13 +5,16 @@ use gpui::Context;
 
 use super::{Load, Workspace};
 
+/// The square the logo is drawn in, in pixels at scale 1.
+pub(crate) const LOGO_SIZE: f32 = 56.;
 pub(crate) const REPOSITORY: &str = "https://github.com/jR4dh3y/BoxBox";
 /// From `.github/FUNDING.yml`.
 pub(crate) const SPONSOR: &str = "https://github.com/sponsors/jR4dh3y";
 pub(crate) const ISSUES: &str = "https://github.com/jR4dh3y/BoxBox/issues";
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AboutInfo {
+    /// The BoxBox logo at device pixels.
+    pub logo: Option<std::sync::Arc<gpui::RenderImage>>,
     /// When the running binary was written, in milliseconds since the epoch.
     pub installed: Option<i64>,
     /// `PRETTY_NAME` from os-release.
@@ -45,7 +48,8 @@ fn pretty_name(os_release: &str) -> Option<String> {
         .filter(|name| !name.is_empty())
 }
 
-fn read() -> AboutInfo {
+fn read(logo_pixels: u32) -> AboutInfo {
+    let logo = crate::file_icons::svg_image(crate::assets::LOGO, logo_pixels).map_err(|error| log::warn!("BoxBox logo: {error:#}")).ok();
     let installed = std::env::current_exe()
         .and_then(std::fs::metadata)
         .and_then(|metadata| metadata.modified())
@@ -53,7 +57,7 @@ fn read() -> AboutInfo {
         .and_then(crate::api::mod_time);
     // os-release(5): /etc first, then the vendor's copy.
     let system = ["/etc/os-release", "/usr/lib/os-release"].iter().find_map(|path| std::fs::read_to_string(path).ok()).and_then(|text| pretty_name(&text));
-    AboutInfo { installed, system }
+    AboutInfo { logo, installed, system }
 }
 
 impl Workspace {
@@ -62,8 +66,9 @@ impl Workspace {
             return;
         }
         self.about = Some(Load::Loading);
+        let logo_pixels = (LOGO_SIZE * self.file_icons.scale.max(1.)).ceil() as u32;
         cx.spawn(async move |this, cx| {
-            let info = cx.background_executor().spawn(async move { read() }).await;
+            let info = cx.background_executor().spawn(async move { read(logo_pixels) }).await;
             this.update(cx, |this, cx| {
                 this.about = Some(Load::Loaded(info));
                 cx.notify();

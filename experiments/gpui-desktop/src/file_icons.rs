@@ -70,23 +70,40 @@ pub fn render(key: &IconKey, size: u32) -> Option<Arc<RenderImage>> {
     rasterize(&path, size).map_err(|error| log::debug!("{}: {error:#}", path.display())).ok()
 }
 
+/// An SVG centred in a `size` pixel square, as GPUI's BGRA pixels. Also the
+/// BoxBox logo, which GPUI's own SVG loader refuses.
+pub fn svg_image(bytes: &[u8], size: u32) -> anyhow::Result<Arc<RenderImage>> {
+    Ok(bgra(svg_pixels(bytes, size)?))
+}
+
+fn svg_pixels(bytes: &[u8], size: u32) -> anyhow::Result<image::RgbaImage> {
+    let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())?;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size).context("empty icon size")?;
+    let natural = tree.size();
+    let scale = size as f32 / natural.width().max(natural.height());
+    let offset = |length: f32| (size as f32 - length * scale) / 2.;
+    let transform = resvg::tiny_skia::Transform::from_scale(scale, scale).post_translate(offset(natural.width()), offset(natural.height()));
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    // tiny-skia keeps premultiplied pixels; GPUI takes them straight.
+    let straight: Vec<u8> = pixmap.pixels().iter().flat_map(|pixel| {
+        let color = pixel.demultiply();
+        [color.red(), color.green(), color.blue(), color.alpha()]
+    }).collect();
+    image::RgbaImage::from_raw(size, size, straight).context("icon pixels")
+}
+
+fn bgra(mut pixels: image::RgbaImage) -> Arc<RenderImage> {
+    for pixel in pixels.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    Arc::new(RenderImage::new(vec![image::Frame::new(pixels)]))
+}
+
 /// An SVG drawn at `size`, or a PNG scaled down to it, as GPUI's BGRA pixels.
 fn rasterize(path: &Path, size: u32) -> anyhow::Result<Arc<RenderImage>> {
     let bytes = std::fs::read(path)?;
-    let mut pixels = if path.extension().is_some_and(|extension| extension == "svg") {
-        let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default())?;
-        let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size).context("empty icon size")?;
-        let natural = tree.size();
-        let scale = size as f32 / natural.width().max(natural.height());
-        let offset = |length: f32| (size as f32 - length * scale) / 2.;
-        let transform = resvg::tiny_skia::Transform::from_scale(scale, scale).post_translate(offset(natural.width()), offset(natural.height()));
-        resvg::render(&tree, transform, &mut pixmap.as_mut());
-        // tiny-skia keeps premultiplied pixels; GPUI takes them straight.
-        let straight: Vec<u8> = pixmap.pixels().iter().flat_map(|pixel| {
-            let color = pixel.demultiply();
-            [color.red(), color.green(), color.blue(), color.alpha()]
-        }).collect();
-        image::RgbaImage::from_raw(size, size, straight).context("icon pixels")?
+    let pixels = if path.extension().is_some_and(|extension| extension == "svg") {
+        svg_pixels(&bytes, size)?
     } else {
         let decoded = image::load_from_memory(&bytes)?.into_rgba8();
         // Never scaled up: a small PNG stays sharp at its own size.
@@ -95,10 +112,7 @@ fn rasterize(path: &Path, size: u32) -> anyhow::Result<Arc<RenderImage>> {
             false => decoded,
         }
     };
-    for pixel in pixels.chunks_exact_mut(4) {
-        pixel.swap(0, 2);
-    }
-    Ok(Arc::new(RenderImage::new(vec![image::Frame::new(pixels)])))
+    Ok(bgra(pixels))
 }
 
 #[cfg(test)]
