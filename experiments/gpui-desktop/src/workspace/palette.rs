@@ -33,33 +33,3 @@ pub(crate) fn wallpaper_accent(image: &DynamicImage) -> Option<u32> {
 fn distance(left: Lab, right: Lab) -> f64 {
     (left.l - right.l).powi(2) + (left.a - right.a).powi(2) + (left.b - right.b).powi(2)
 }
-
-/// `color` turned around the hue circle as far as `accent` is from BoxBox's
-/// default blue, keeping its own chroma and tone: the tinted icons keep their
-/// distinct hues, and the whole set follows the accent, also one taken from
-/// the wallpaper. The default accent leaves every colour as it is.
-pub(crate) fn follow_accent(color: u32, accent: u32) -> u32 {
-    const DEFAULT: u32 = crate::settings_state::AccentColor::Blue.hex();
-    if accent == DEFAULT {
-        return color;
-    }
-    let hct = |hex: u32| Hct::new(Argb::new(255, (hex >> 16) as u8, (hex >> 8) as u8, hex as u8));
-    let (own, from, to) = (hct(color), hct(DEFAULT), hct(accent));
-    let hue = (own.get_hue() + to.get_hue() - from.get_hue()).rem_euclid(360.);
-    let shifted = Argb::from(Hct::from(hue, own.get_chroma(), own.get_tone()));
-    u32::from(shifted.red) << 16 | u32::from(shifted.green) << 8 | u32::from(shifted.blue)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tints_turn_with_the_accent_and_stay_apart() {
-        let blue = crate::settings_state::AccentColor::Blue.hex();
-        assert_eq!(follow_accent(0xf87171, blue), 0xf87171);
-        let (red, green) = (follow_accent(0xf87171, 0xf39c12), follow_accent(0x4ade80, 0xf39c12));
-        assert_ne!(red, 0xf87171, "another accent moves the colour");
-        assert_ne!(red, green, "kinds keep apart");
-    }
-}

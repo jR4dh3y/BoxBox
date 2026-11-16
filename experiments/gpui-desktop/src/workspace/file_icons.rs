@@ -11,6 +11,7 @@ use gpui::{Context, RenderImage};
 use super::operations::PaneTarget;
 use super::Workspace;
 use crate::api::{Api, FileInfo};
+use crate::components::EntryIcon;
 use crate::file_icons::{bucket, IconKey};
 
 /// Enough for every type in a few folders at two zoom steps; past it, all are
@@ -55,14 +56,16 @@ impl Workspace {
         .detach();
     }
 
-    /// The theme's icon for `item` drawn at `size`, once it is made.
-    pub(crate) fn item_icon(&self, api: &Api, item: &FileInfo, size: f32) -> Option<Arc<RenderImage>> {
+    /// What `item`'s icon slot shows at `size`: the theme's icon, nothing while
+    /// it is made, or BoxBox's glyph when the theme has none or BoxBox's set is chosen.
+    pub(crate) fn item_icon(&self, api: &Api, item: &FileInfo, size: f32) -> EntryIcon {
         if self.preferences.file_icons != crate::workspace::IconStyle::System {
-            return None;
+            return EntryIcon::Glyph;
         }
         match self.file_icons.slots.get(&self.file_icons.key(api, item, size)) {
-            Some(Slot::Ready(image)) => Some(image.clone()),
-            _ => None,
+            Some(Slot::Ready(image)) => EntryIcon::Theme(image.clone()),
+            Some(Slot::Missing) => EntryIcon::Glyph,
+            Some(Slot::Pending) | None => EntryIcon::Waiting,
         }
     }
 
@@ -134,15 +137,15 @@ pub(crate) struct GlyphStyle {
 }
 
 impl Workspace {
-    /// BoxBox's glyph for `item`: tinted by kind in the tinted set, where
-    /// folders take the accent and every kind's colour turns with it.
+    /// BoxBox's glyph for `item`: in the tinted set folders take the accent
+    /// and every other kind keeps its own colour.
     pub(crate) fn glyph_style(&self, api: &Api, item: &FileInfo) -> GlyphStyle {
         let kind = crate::format::Kind::of(&item.name, item.is_dir);
         let special = if item.is_dir && api.is_local() { self.file_icons.special.get(&item.path).copied() } else { None };
         let accent = self.accent_hex();
         let tint = match (self.preferences.file_icons, kind) {
             (crate::workspace::IconStyle::Tinted, crate::format::Kind::Folder) => Some(accent),
-            (crate::workspace::IconStyle::Tinted, kind) => kind.tint().map(|tint| super::palette::follow_accent(tint, accent)),
+            (crate::workspace::IconStyle::Tinted, kind) => kind.tint(),
             _ => None,
         };
         GlyphStyle { glyph: kind.glyph(), tint, emblem: special.and_then(emblem) }

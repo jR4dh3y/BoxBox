@@ -144,6 +144,16 @@ pub struct Selection {
     pub accent: Rgba,
 }
 
+/// What stands in an entry's icon slot.
+#[derive(Clone)]
+pub enum EntryIcon {
+    /// BoxBox's own glyph.
+    Glyph,
+    /// A theme icon is being made; the slot stays empty so BoxBox's glyph never flashes first.
+    Waiting,
+    Theme(std::sync::Arc<RenderImage>),
+}
+
 #[derive(IntoElement)]
 pub struct FileRow {
     id: ElementId,
@@ -151,8 +161,7 @@ pub struct FileRow {
     location: SharedString,
     is_dir: bool,
     icon: &'static str,
-    /// The icon theme's image, drawn in place of `icon` once it is made.
-    image: Option<std::sync::Arc<RenderImage>>,
+    image: EntryIcon,
     tint: Option<u32>,
     emblem: Option<&'static str>,
     kind: SharedString,
@@ -196,7 +205,7 @@ impl FileRow {
             location: SharedString::default(),
             is_dir,
             icon: "file",
-            image: None,
+            image: EntryIcon::Glyph,
             tint: None,
             emblem: None,
             kind: SharedString::default(),
@@ -221,7 +230,7 @@ impl FileRow {
         self
     }
 
-    pub fn image(mut self, image: Option<std::sync::Arc<RenderImage>>) -> Self {
+    pub fn image(mut self, image: EntryIcon) -> Self {
         self.image = image;
         self
     }
@@ -316,8 +325,9 @@ impl RenderOnce for FileRow {
             .when(has_checkbox && !self.selected, |el| el.group_hover(group.clone(), |style| style.invisible()))
             .map(|glyph| match self.image {
                 // Theme icons are full pictures and fill the slot; glyphs keep their margin.
-                Some(image) => glyph.child(img(image).size(px(slot_size))),
-                None => glyph.child(emblemed(icon(self.icon, glyph_size, tone), self.emblem, glyph_size, tone)),
+                EntryIcon::Theme(image) => glyph.child(img(image).size(px(slot_size))),
+                EntryIcon::Waiting => glyph,
+                EntryIcon::Glyph => glyph.child(emblemed(icon(self.icon, glyph_size, tone), self.emblem, glyph_size, tone)),
             });
         let slot = div()
             .id("icon")

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use gpui::{div, img, prelude::*, px, AnyElement, App, ClickEvent, Div, ElementId, ObjectFit, RenderImage, SharedString, Stateful, Window};
 
-use super::file_list::{checkbox, Selection};
+use super::file_list::{checkbox, EntryIcon, Selection};
 use super::ROUNDED;
 use crate::theme::*;
 use crate::ui::thin_icon;
@@ -65,8 +65,7 @@ pub struct FileTile {
     icon: &'static str,
     detail: SharedString,
     thumbnail: Option<Arc<RenderImage>>,
-    /// The icon theme's image, drawn without a frame when there is no thumbnail.
-    image: Option<Arc<RenderImage>>,
+    image: EntryIcon,
     tint: Option<u32>,
     emblem: Option<&'static str>,
     selected: bool,
@@ -89,7 +88,7 @@ impl FileTile {
             icon: "file",
             detail: SharedString::default(),
             thumbnail: None,
-            image: None,
+            image: EntryIcon::Glyph,
             tint: None,
             emblem: None,
             selected: false,
@@ -133,7 +132,7 @@ impl FileTile {
         self
     }
 
-    pub fn image(mut self, image: Option<Arc<RenderImage>>) -> Self {
+    pub fn image(mut self, image: EntryIcon) -> Self {
         self.image = image;
         self
     }
@@ -200,8 +199,9 @@ impl RenderOnce for FileTile {
                     .border_color(c(BORDER_PRIMARY))
                     .bg(c(SURFACE_PRIMARY))
                     .child(img(image).size_full().object_fit(ObjectFit::Cover)),
-                (None, Some(image)) => slot.child(img(image).size(px(metrics.theme_icon()))),
-                (None, None) => slot.child(super::file_list::emblemed(thin_icon(self.icon, metrics.theme_icon(), tone), self.emblem, metrics.theme_icon(), tone)),
+                (None, EntryIcon::Theme(image)) => slot.child(img(image).size(px(metrics.theme_icon()))),
+                (None, EntryIcon::Waiting) => slot,
+                (None, EntryIcon::Glyph) => slot.child(super::file_list::emblemed(thin_icon(self.icon, metrics.theme_icon(), tone), self.emblem, metrics.theme_icon(), tone)),
             });
         let label = div()
             .w_full()
