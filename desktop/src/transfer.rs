@@ -139,8 +139,13 @@ impl Run<'_> {
         let target = join(parent, &name);
         let same = same_provider(source, self.dest());
         if let Ok(existing) = self.dest().stat(&target) {
+            let itself = same && (existing.path == item.path || same_local_file(source, &item.path, &target));
+            // Moved to where it already is, perhaps by another path: nothing to do.
+            if itself && self.job.mode == Mode::Move {
+                return Ok(());
+            }
             // A copy pasted where its original is: Nautilus names it, without asking.
-            let answer = if same && (existing.path == item.path || same_local_file(source, &item.path, &target)) {
+            let answer = if itself {
                 Answer::Rename
             } else {
                 self.conflict(item, &existing, parent, &name, more)?
@@ -597,6 +602,16 @@ mod tests {
         run(&job(&api, Mode::Copy, &["dst/a.txt"], "alias"), &ask).unwrap();
         assert_eq!(fs::read_to_string(root.0.join("dst/a.txt")).unwrap(), "dst/a.txt");
         assert!(root.0.join("dst/a (copy 1).txt").exists());
+    }
+
+    #[test]
+    fn moving_a_file_onto_itself_by_another_path_leaves_it() {
+        let (root, api) = fixture(&["dst/a.txt"]);
+        std::os::unix::fs::symlink(root.0.join("dst"), root.0.join("alias")).unwrap();
+        let ask = |_: Question, _| panic!("nothing to ask");
+        assert_eq!(run(&job(&api, Mode::Move, &["dst/a.txt"], "alias"), &ask).unwrap(), Outcome::default());
+        assert!(root.0.join("dst/a.txt").exists());
+        assert!(!root.0.join("dst/a (copy 1).txt").exists());
     }
 
     #[test]

@@ -1624,3 +1624,24 @@ fn clicks_in_the_second_pane_select_there(cx: &mut TestAppContext) {
         assert!(workspace.tabs[0].selected.is_empty(), "the first pane keeps its selection");
     });
 }
+
+#[gpui::test]
+fn permission_clicks_are_all_written_after_properties_closes(cx: &mut TestAppContext) {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (view, cx, fixture) = open(cx, &["a.txt"]);
+    let file = fixture.root.join("a.txt");
+    set_mode(&file, 0o644);
+    view.update(cx, |workspace, cx| {
+        let item = workspace.pane().items[0].clone();
+        workspace.show_properties(PaneTarget(0), vec![item], cx);
+    });
+    cx.run_until_parked();
+    // The second click waits for the first write; then the dialog closes.
+    view.update(cx, |workspace, cx| {
+        workspace.toggle_permission(0o040, cx);
+        workspace.toggle_permission(0o004, cx);
+        workspace.properties = None;
+    });
+    cx.run_until_parked();
+    assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
+}

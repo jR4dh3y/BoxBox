@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context as _;
 use gpui::Context;
@@ -20,9 +20,15 @@ pub(crate) struct PropertiesState {
     /// Everything inside the folders, plus the selected files.
     pub totals: Load<Totals>,
     cancel: Arc<AtomicBool>,
-    /// A permission write is running; the newest mode clicked meanwhile waits here.
-    writing: bool,
-    queued_mode: Option<u32>,
+    /// Shared with the write in flight, which outlives the dialog.
+    writes: Arc<Mutex<ModeWrites>>,
+}
+
+/// Permission writes run one at a time; the newest mode clicked meanwhile waits in `next`.
+#[derive(Default)]
+struct ModeWrites {
+    running: bool,
+    next: Option<u32>,
 }
 
 impl Drop for PropertiesState {
@@ -76,8 +82,7 @@ impl Workspace {
             totals: if needs_walk { Load::Loading } else { Load::Loaded(Totals { files: 1, folders: 0, bytes: items[0].size }) },
             items: items.clone(),
             cancel: cancel.clone(),
-            writing: false,
-            queued_mode: None,
+            writes: Arc::default(),
         });
         self.context_menu = None;
         cx.notify();
@@ -168,35 +173,47 @@ impl Workspace {
         let mode = change(shown_mode.mode & 0o7777) & 0o7777;
         shown_mode.mode = (shown_mode.mode & !0o7777) | mode;
         let path = shown_mode.path.clone();
-        if state.writing {
-            state.queued_mode = Some(mode);
-            cx.notify();
-            return;
-        }
-        state.writing = true;
-        let shown = state.cancel.clone();
+        let (shown, writes) = (state.cancel.clone(), state.writes.clone());
         cx.notify();
-        self.write_mode(path, mode, shown, cx);
-    }
-
-    fn write_mode(&mut self, path: PathBuf, mode: u32, shown: Arc<AtomicBool>, cx: &mut Context<Self>) {
+        {
+            let mut queue = writes.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if queue.running {
+                queue.next = Some(mode);
+                return;
+            }
+            queue.running = true;
+        }
+        // The task, not the dialog, owns the queue: closing Properties still writes every click.
         cx.spawn(async move |this, cx| {
-            let (written, read, path) = cx
+            let (failed, read) = cx
                 .background_executor()
-                .spawn(async move { (chmod(&path, mode), ownership(&path), path) })
+                .spawn(async move {
+                    let mut mode = mode;
+                    let mut failed = None;
+                    loop {
+                        if let Err(error) = chmod(&path, mode) {
+                            failed = Some(format!("{error:#}"));
+                        }
+                        let mut queue = writes.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                        match queue.next.take() {
+                            Some(next) => mode = next,
+                            None => {
+                                queue.running = false;
+                                break;
+                            }
+                        }
+                    }
+                    (failed, ownership(&path))
+                })
                 .await;
             this.update(cx, |this, cx| {
-                if let Err(error) = written {
-                    this.report(Err(format!("Could not change the permissions: {error:#}")), cx);
+                if let Some(error) = failed {
+                    this.report(Err(format!("Could not change the permissions: {error}")), cx);
                 }
-                let Some(state) = this.properties.as_mut().filter(|state| Arc::ptr_eq(&state.cancel, &shown)) else { return };
-                if let Some(next) = state.queued_mode.take() {
-                    this.write_mode(path, next, shown, cx);
-                    return;
-                }
-                state.writing = false;
-                if let Ok(read) = read {
-                    state.ownership = Some(Load::Loaded(read));
+                if let Some(state) = this.properties.as_mut().filter(|state| Arc::ptr_eq(&state.cancel, &shown)) {
+                    if let Ok(read) = read {
+                        state.ownership = Some(Load::Loaded(read));
+                    }
                 }
                 cx.notify();
             })
