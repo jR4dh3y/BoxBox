@@ -13,9 +13,10 @@ export class LoginMethodsStore {
 		try {
 			this.state = { kind: 'ready', methods: await fetch() };
 		} catch (error) {
-			// Older servers have no config route; the password form is what they accept.
+			// Older servers answer a missing route with 404 or the HTML app shell.
 			this.state =
-				error instanceof ApiRequestError && error.status === 404
+				error instanceof ApiRequestError &&
+				(error.status === 404 || (error.status === 200 && error.code === 'INVALID_RESPONSE'))
 					? { kind: 'ready', methods: { kind: 'password' } }
 					: { kind: 'error' };
 		}

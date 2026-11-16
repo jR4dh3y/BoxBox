@@ -40,8 +40,13 @@ test('sso error codes map to fixed messages', () => {
 test('login methods fall back to password only when the configuration route is missing', async () => {
 	const store = new LoginMethodsStore();
 	assert.equal(store.state.kind, 'loading');
-	await store.load(() => Promise.reject(new ApiRequestError('Not found', 404, 'NOT_FOUND')));
-	assert.deepEqual(store.state, { kind: 'ready', methods: { kind: 'password' } });
+	for (const error of [
+		new ApiRequestError('Not found', 404, 'NOT_FOUND'),
+		new ApiRequestError('Unexpected response from server', 200, 'INVALID_RESPONSE')
+	]) {
+		await store.load(() => Promise.reject(error));
+		assert.deepEqual(store.state, { kind: 'ready', methods: { kind: 'password' } });
+	}
 	await store.load(() => Promise.resolve({ kind: 'sso', providerName: 'SSO' }));
 	assert.deepEqual(store.state, { kind: 'ready', methods: { kind: 'sso', providerName: 'SSO' } });
 });
