@@ -19,6 +19,10 @@
 </p>
 
 <p align="center">
+  <a href="https://trendshift.io/repositories/47720?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-47720" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/47720/daily?language=Go" alt="jR4dh3y%2FBoxBox | Trendshift" width="250" height="55"/></a>
+</p>
+
+<p align="center">
   <a href="https://boxbox.radhey.dev">Website</a> ·
   <a href="https://boxbox.radhey.dev/download/">Downloads</a> ·
   <a href="https://boxbox.radhey.dev/docs/desktop/">Linux desktop</a> ·
@@ -110,7 +114,7 @@ Dockerfile    Unified frontend/backend production image
 
 ## Documentation
 
-Full documentation lives at [boxbox.radhey.dev/docs](https://boxbox.radhey.dev/docs/). Release and upgrade notes are in [docs/release.md](docs/release.md).
+Full documentation lives at [boxbox.radhey.dev/docs](https://boxbox.radhey.dev/docs/). Release and upgrade notes are in [docs/release-notes.md](docs/release-notes.md).
 
 ## License
 

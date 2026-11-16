@@ -1,0 +1,44 @@
+---
+// Privacy, terms and security share one page: the download page's back link
+// and heading, a reading column, and the site footer. The main stays
+// transparent so the layout's dot grid shows through.
+import { ArrowLeft } from '@lucide/astro';
+import Layout from './Layout.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  heading: string;
+  updated: string;
+}
+
+const { title, description, heading, updated } = Astro.props;
+---
+
+<Layout title={title} description={description}>
+  <main class="relative z-10 mx-auto w-full max-w-6xl flex-1 px-5 pt-10 pb-24 md:pt-16">
+    <a href="/" class="inline-flex min-h-11 items-center gap-2 text-sm text-text-secondary hover:text-white"><ArrowLeft class="h-4 w-4" /> BoxBox home</a>
+    <h1 class="mt-10 text-5xl font-bold tracking-tight text-white md:text-7xl">{heading}</h1>
+    <p class="mt-4 text-sm text-text-muted">Last updated: {updated}</p>
+    <div class="policy mt-14 border-t border-border-primary pt-10">
+      <slot />
+    </div>
+  </main>
+  <SiteFooter />
+</Layout>
+
+<style>
+  .policy :global(section + section) { margin-top: 2.5rem; }
+  .policy :global(h2) { margin-bottom: 0.75rem; color: var(--color-text-primary); font-size: 1.25rem; font-weight: 600; }
+  .policy :global(p),
+  .policy :global(li) { color: var(--color-text-secondary); line-height: 1.75; }
+  .policy :global(p + p),
+  .policy :global(p + ul),
+  .policy :global(ul + p) { margin-top: 0.75rem; }
+  .policy :global(ul) { padding-left: 1.25rem; list-style: disc; }
+  .policy :global(li + li) { margin-top: 0.35rem; }
+  .policy :global(a) { color: var(--color-accent); transition: color 150ms ease; }
+  .policy :global(a:hover) { color: #fff; }
+  .policy :global(strong) { color: var(--color-text-primary); font-weight: 600; }
+</style>

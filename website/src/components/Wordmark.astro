@@ -1,0 +1,33 @@
+---
+// The BoxBox wordmark, inline so it takes the page's accent colour. `id` keeps
+// the mask and symbol unique when a page draws the logo more than once.
+interface Props {
+  id: string;
+  class?: string;
+}
+
+const { id, class: className } = Astro.props;
+---
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 930 256" fill="none" role="img" aria-label="BoxBox" class:list={['text-accent', className]}>
+  <defs>
+    <mask id={`${id}-mask`} maskUnits="userSpaceOnUse" x="0" y="0" width="480" height="256">
+      <rect width="480" height="256" fill="#fff" />
+      <rect x="80" y="68" width="40" height="28" rx="8" fill="#000" />
+      <rect x="80" y="160" width="64" height="28" rx="8" fill="#000" />
+      <circle cx="58" cy="82" r="6" fill="#000" />
+      <circle cx="58" cy="174" r="6" fill="#000" />
+    </mask>
+    <g id={`${id}-box`} fill="currentColor">
+      <g mask={`url(#${id}-mask)`}>
+        <path d="M40 40H124a20 20 0 0 1 20 20V104a20 20 0 0 1-20 20H40Z" />
+        <path d="M40 136H148a20 20 0 0 1 20 20V196a20 20 0 0 1-20 20H40Z" />
+      </g>
+      <rect x="206" y="110" width="92" height="92" rx="26" fill="none" stroke="currentColor" stroke-width="28" />
+      <circle cx="252" cy="156" r="9" />
+      <path d="M348 110 428 202M428 110 348 202" fill="none" stroke="currentColor" stroke-width="28" stroke-linecap="round" />
+    </g>
+  </defs>
+  <use href={`#${id}-box`} />
+  <use href={`#${id}-box`} x="448" />
+</svg>

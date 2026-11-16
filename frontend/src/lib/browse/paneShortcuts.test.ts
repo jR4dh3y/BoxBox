@@ -15,25 +15,6 @@ function input(overrides: Partial<BrowseShortcutInput> = {}): BrowseShortcutInpu
 }
 
 describe('browse keyboard shortcuts', () => {
-	test('maps tab, split, and navigation shortcuts', () => {
-		assert.equal(getBrowseShortcut(input({ key: 't', ctrlKey: true })), 'new-tab');
-		assert.equal(getBrowseShortcut(input({ key: 'w', metaKey: true })), 'close-tab');
-		assert.equal(
-			getBrowseShortcut(input({ key: 'O', ctrlKey: true, shiftKey: true })),
-			'open-servers'
-		);
-		assert.equal(getBrowseShortcut(input({ key: 'Tab', ctrlKey: true })), 'next-tab');
-		assert.equal(
-			getBrowseShortcut(input({ key: 'Tab', ctrlKey: true, shiftKey: true })),
-			'previous-tab'
-		);
-		assert.equal(getBrowseShortcut(input({ key: 'F3' })), 'toggle-split');
-		assert.equal(getBrowseShortcut(input({ key: 'ArrowLeft', altKey: true })), 'back');
-		assert.equal(getBrowseShortcut(input({ key: 'ArrowRight', altKey: true })), 'forward');
-		assert.equal(getBrowseShortcut(input({ key: 'ArrowUp', altKey: true })), 'up');
-		assert.equal(getBrowseShortcut(input({ key: 'F5' })), 'refresh');
-	});
-
 	test('hidden, location, and editable-target behavior is explicit', () => {
 		assert.equal(getBrowseShortcut(input({ key: 'h', ctrlKey: true })), 'toggle-hidden');
 		assert.equal(

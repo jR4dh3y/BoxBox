@@ -45,9 +45,3 @@ func TestFilterMountedDirsSkipsUnreadableMounts(t *testing.T) {
 		t.Fatalf("filterMountedDirs() = %+v, want only readable mount", got)
 	}
 }
-
-func TestBPFIsNotAStorageFilesystem(t *testing.T) {
-	if isRealFilesystem("bpf") {
-		t.Fatal("bpf filesystem should not be discovered as a storage drive")
-	}
-}

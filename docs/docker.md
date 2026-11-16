@@ -56,111 +56,11 @@ docker pull ghcr.io/jr4dh3y/boxbox:v0.3.1
 
 Stable release tags update `latest`. Prerelease tags such as `v0.3.1-rc.1` publish versioned images without moving `latest`, nightly builds publish to the dedicated `boxbox-nightly` package, and test branch images publish under branch-scoped tags in the `boxbox-branch` package, such as `ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change`.
 
-See [Release workflow](/docs/release/) for the full test-branch and stable-release process.
+See [Release workflow](release.md) for the full test-branch and stable-release process.
 
-If you are upgrading an older deployment that still uses `FM_*`, `filemanager`, or `filemanager-*` names, see the `v0.2.0` notes in [Release workflow](/docs/release/). The `scripts/check-0.2-migration.sh` helper is check-only and prints the manual changes without editing files or Docker volumes.
+If you are upgrading an older deployment that still uses `FM_*`, `filemanager`, or `filemanager-*` names, see the `v0.2.0` notes in [Release notes](release-notes.md#v0-2-0-upgrade-notes). The `scripts/check-0.2-migration.sh` helper is check-only and prints the manual changes without editing files or Docker volumes.
 
-## Optional: Reverse Proxy or Traefik
-
-The default compose file uses normal host port binding and does not require Traefik. If you want to put BoxBox behind Traefik, remove the `ports` entry, attach the service to your Traefik network, and add labels for your router.
-
-```yaml
-services:
-  boxbox:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.boxbox.rule=Host(`boxbox.example.test`)"
-      - "traefik.http.routers.boxbox.entrypoints=web"
-      - "traefik.http.services.boxbox.loadbalancer.server.port=8080"
-    networks:
-      - proxy
-
-networks:
-  proxy:
-    external: true
-```
-
-For public or semi-public access, put TLS and access controls on your reverse proxy before exposing BoxBox beyond a trusted network.
-
-## Alternative: Simple Local Container
-
-Use this path when you want a quick local test without Compose. It still uses the published GHCR image.
-
-```bash
-mkdir -p boxbox
-cd boxbox
-
-cat > config.yaml <<'EOF'
-port: 8080
-host: "0.0.0.0"
-jwt_secret: "replace-this-with-a-long-random-secret"
-mount_points:
-  - name: "home"
-    path: "/home/user"
-    read_only: false
-EOF
-
-docker pull ghcr.io/jr4dh3y/boxbox:v0.3.1
-
-docker run -d \
-  --name boxbox \
-  --user 10001:10001 \
-  --cap-drop ALL \
-  --security-opt no-new-privileges:true \
-  -p 8080:8080 \
-  -e BOXBOX_JWT_SECRET="$(openssl rand -base64 32)" \
-  -e BOXBOX_USERS_admin='paste-a-bcrypt-hash-here' \
-  -v "$PWD/config.yaml:/app/config.yaml:ro" \
-  -v "$HOME:/home/user" \
-  -v boxbox-data:/data \
-  -v boxbox-temp:/tmp/boxbox \
-  ghcr.io/jr4dh3y/boxbox:v0.3.1
-```
-
-Open `http://localhost:8080` and sign in as `admin` with the plaintext password used to generate the hash.
-
-## Alternative: Local Source Builds
-
-Cloning the repository is supported, but it is not the preferred deployment method. Use this path only when you want to build the image from source instead of pulling the published GHCR image.
-
-```bash
-git clone https://github.com/jR4dh3y/BoxBox.git
-cd BoxBox
-docker build -t boxbox:local .
-```
-
-For compose, set `BOXBOX_IMAGE=boxbox:local` in `.env`, then run `docker compose up -d`.
-
-## Volumes
-
-The default compose file mounts:
-
-| Host path | Container path | Why |
-| --- | --- | --- |
-| `./backend/config.yaml` | `/app/config.yaml` | Runtime configuration. |
-| `/media/devmon` | `/media/devmon` | Auto-discovered removable drives. |
-| `${HOME_PATH}` or host `$HOME` | `/home/user` | User home directory browsing. |
-| `${DESKTOP_PATH}` or `$HOME/Desktop` | `/home/user/Desktop` | Desktop sidebar shortcut. |
-| `${DOWNLOADS_PATH}` or `$HOME/Downloads` | `/home/user/Downloads` | Downloads sidebar shortcut. |
-| `${DOCUMENTS_PATH}` or `$HOME/Documents` | `/home/user/Documents` | Documents sidebar shortcut. |
-| `${MUSIC_PATH}` or `$HOME/Music` | `/home/user/Music` | Music sidebar shortcut. |
-| `${PICTURES_PATH}` or `$HOME/Pictures` | `/home/user/Pictures` | Pictures sidebar shortcut. |
-| `${VIDEOS_PATH}` or `$HOME/Videos` | `/home/user/Videos` | Videos sidebar shortcut. |
-| `boxbox-temp` | `/tmp/boxbox` | Chunked upload assembly. |
-| `boxbox-data` | `/data` | Persistent app data, including custom drive names. |
-
-Use `:ro` on a volume or `read_only: true` in `config.yaml` when a path should never be modified through BoxBox.
-
-The sidebar's default folders are configured as normal mount points named `desktop`, `downloads`, `documents`, `music`, `pictures`, and `videos`. To remap one shortcut, set the matching host path in `.env` and restart, for example `DOWNLOADS_PATH=/srv/incoming`. Do not use `~` in `.env`; use an absolute path like `/home/alex/Downloads`.
-
-## Mount Propagation
-
-The compose file uses `rslave` for host mount paths so new host mounts can appear inside the container. This matters for removable drives and some NAS/rclone mounts.
-
-```yaml
-volumes:
-  - /media/devmon:/media/devmon:rslave
-```
+For a reverse proxy, a single `docker run` container, local source builds, volumes and mount propagation, see [Docker options](docker-options.md).
 
 ## Updating
 
@@ -188,7 +88,7 @@ docker rm boxbox
 # Re-run the docker run command with the same volumes and env values.
 ```
 
-For the `v0.3.1` security release, read the upgrade and session-registry guidance in [Release workflow](/docs/release/#v031-security-release).
+For the `v0.3.1` security release, read the upgrade and session-registry guidance in [Release notes](release-notes.md#v0-3-1-security-release).
 
 ## Health and Logs
 

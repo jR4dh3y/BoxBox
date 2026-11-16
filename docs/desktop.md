@@ -79,7 +79,7 @@ bun run build:desktop
 bun run install:desktop
 ```
 
-Source builds need Go, Bun and Rust in addition to the native build libraries. Use [Development](/docs/development/) for development commands and [the paired-client API](/docs/connect-api/) for the authorization contract.
+Source builds need Go, Bun and Rust in addition to the native build libraries. Use [Development](development.md) for development commands and [the paired-client API](connect-api.md) for the authorization contract.
 
 ## AppImage builds
 
@@ -106,7 +106,7 @@ Open, Save and folder dialogs for portal-aware applications such as browsers.
 Making BoxBox the default folder handler alone does not change their file dialogs.
 Direct toolkit and custom choosers remain application-owned.
 
-See [the desktop guide](../desktop/README.md#use-boxbox-as-other-applications-file-chooser)
+See [the desktop guide](https://github.com/jR4dh3y/BoxBox/blob/master/desktop/README.md#use-boxbox-as-other-applications-file-chooser)
 for registration, safe opt-in, undo, supported options and window-manager limits.
 The backend handles only FileChooser; ScreenCast, screenshots and other portal
 interfaces continue using their configured backends. No host defaults are changed

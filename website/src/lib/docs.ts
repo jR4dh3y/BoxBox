@@ -46,28 +46,54 @@ const docNav = [
   { slug: "desktop", title: "Linux Desktop", description: "Download, install, pair, update and remove the Linux desktop app." },
   { slug: "connect-api", title: "Paired Client API", description: "Authorize desktop devices and revoke server access." },
   {
+    slug: "docker-options",
+    title: "Docker Options",
+    description:
+      "Reverse proxy, single-container and source-build setups, volumes, and mount propagation.",
+  },
+  {
     slug: "release",
     title: "Release Workflow",
     description:
       "Use test branches, test GHCR images, and stable tags without moving latest too early.",
   },
   {
+    slug: "release-notes",
+    title: "Release Notes",
+    description: "What changed in each release and what to do when you upgrade.",
+  },
+  {
     slug: "configuration",
     title: "Configuration",
     description:
-      "Configure users, mount points, origins, upload limits, ports, and environment overrides.",
+      "Configure users, origins, upload limits, ports, and environment overrides.",
+  },
+  {
+    slug: "mounts",
+    title: "Mount Points",
+    description:
+      "Choose the folders BoxBox shows: drives, places, read-only mounts, and Docker paths.",
   },
   {
     slug: "api",
     title: "API Reference",
     description:
-      "REST endpoints, chunked uploads, streaming previews, background jobs, and WebSocket messages.",
+      "Base URLs, authentication, errors, and an index of the endpoint pages.",
   },
+  { slug: "api-files", title: "Files API", description: "List mounts and folders, read file info, and create, move or delete entries." },
+  { slug: "api-transfers", title: "Downloads and Uploads", description: "Download files, archive folders, stream previews, and upload in chunks." },
+  { slug: "api-shares", title: "Share Links API", description: "Create, list, update and revoke share links, and the recipient endpoints." },
+  { slug: "api-system", title: "Jobs, Settings and WebSocket", description: "Background jobs, server settings, and the live event stream." },
   {
     slug: "development",
     title: "Development",
     description:
       "Run the Go backend, SvelteKit app, and Astro website locally.",
+  },
+  {
+    slug: "testing",
+    title: "Testing and CI",
+    description: "Test and validate changes locally, and how CI picks the checks a change needs.",
   },
   {
     slug: "security",
@@ -85,11 +111,37 @@ const docNav = [
     slug: "troubleshooting",
     title: "Troubleshooting",
     description:
-      "Fix common deployment, login, mount, upload, preview, and WebSocket issues.",
+      "Fix problems starting BoxBox and signing in.",
   },
-] satisfies DocNavItem[];
+  {
+    slug: "troubleshooting-files",
+    title: "Files and Sharing Problems",
+    description: "Fix mount, permission, upload, preview, share link, and WebSocket issues.",
+  },
+] as const satisfies readonly DocNavItem[];
 
-const docMeta = new Map(docNav.map(({ slug, ...meta }) => [slug, meta]));
+type DocSlug = (typeof docNav)[number]["slug"];
+
+export type DocNavSection = {
+  title: string;
+  items: DocNavItem[];
+};
+
+/** The sidebar's sections, in order. Every page in docNav belongs to exactly one. */
+const docSections: { title: string; slugs: DocSlug[] }[] = [
+  { title: "Get started", slugs: ["index", "quickstart", "docker", "docker-options", "desktop"] },
+  {
+    title: "Run it",
+    slugs: ["configuration", "mounts", "security", "troubleshooting", "troubleshooting-files", "release-notes"],
+  },
+  {
+    title: "Reference",
+    slugs: ["api", "api-files", "api-transfers", "api-shares", "api-system", "connect-api", "architecture"],
+  },
+  { title: "Contribute", slugs: ["development", "testing", "release"] },
+];
+
+const docMeta = new Map<string, Omit<DocNavItem, "slug">>(docNav.map(({ slug, ...meta }) => [slug, meta]));
 
 marked.setOptions({
   gfm: true,
@@ -157,6 +209,17 @@ const highlightedSanitizeOptions = {
 export function getDocNav(): DocNavItem[] {
   const available = new Set(getDocSlugs());
   return docNav.filter((doc) => available.has(doc.slug));
+}
+
+/** The available pages, grouped for the sidebar; empty sections are left out. */
+export function getDocSections(): DocNavSection[] {
+  const pages = new Map(getDocNav().map((doc) => [doc.slug, doc]));
+  return docSections
+    .map(({ title, slugs }) => ({
+      title,
+      items: slugs.flatMap((slug) => pages.get(slug) ?? []),
+    }))
+    .filter((section) => section.items.length > 0);
 }
 
 export function getDocSlugs(): string[] {
