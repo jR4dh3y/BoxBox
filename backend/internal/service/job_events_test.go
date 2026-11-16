@@ -2,10 +2,11 @@ package service
 
 import (
 	"context"
-	"github.com/jR4dh3y/BoxBox/backend/internal/model"
-	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
 	"testing"
 	"time"
+
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
 )
 
 func TestJobEventsOwnerIsolationAndSnapshot(t *testing.T) {
@@ -25,21 +26,31 @@ func TestJobEventsOwnerIsolationAndSnapshot(t *testing.T) {
 		t.Fatal("owner leak")
 	default:
 	}
+}
+
+// A full watcher is dropped and closed so slow readers reconnect instead of blocking Publish.
+func TestJobEventsPublishClosesOverflowedWatcher(t *testing.T) {
+	var events JobEvents
+	updates, stop := events.Watch(authcontext.WithUsername(context.Background(), "alice"))
+	defer stop()
 	for i := 0; i < 129; i++ {
-		events.Publish(job)
+		events.Publish(model.Job{ID: "one", Owner: "alice"})
 	}
 	timeout := time.NewTimer(time.Second)
 	defer timeout.Stop()
-drain:
+	received := 0
 	for {
 		select {
-		case _, ok := <-alice:
+		case _, ok := <-updates:
 			if !ok {
-				break drain
+				if received != 128 {
+					t.Fatalf("received %d buffered updates before close, want 128", received)
+				}
+				return
 			}
+			received++
 		case <-timeout.C:
-			t.Fatal("overflowed subscriber channel did not close")
+			t.Fatal("overflowed watcher channel did not close")
 		}
 	}
-	stopAlice()
 }

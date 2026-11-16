@@ -24,7 +24,7 @@ class CIScopeTest(unittest.TestCase):
             "frontend/src/lib/stores/jobs.test.ts": {"frontend"},
             "frontend/src/lib/stores/websocket.test.svelte.ts": {"frontend"},
             "frontend/test/preload.ts": {"frontend"},
-            "frontend/scripts/perf/backend.ts": {"backend", "backend_perf"},
+            "frontend/scripts/perf/backend.ts": {"backend", "backend_perf", "frontend"},
             "frontend/scripts/perf/common.ts": BROWSER | {"backend", "backend_perf"},
             "frontend/scripts/perf/desktop-connectivity.ts": BROWSER,
             "frontend/scripts/perf/fixtures/slow-jobs.go": BROWSER,

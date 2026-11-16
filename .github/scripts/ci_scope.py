@@ -61,6 +61,8 @@ def affected_jobs(paths):
             else:
                 jobs.update(SCOPES)
         elif path.startswith("frontend/scripts/perf/"):
+            # The frontend job owns perf:check, the only typecheck of these scripts.
+            jobs.add("frontend")
             if name != "backend.ts":
                 jobs.update(BROWSER)
             if name in {"backend.ts", "common.ts", "gates.ts"}:
