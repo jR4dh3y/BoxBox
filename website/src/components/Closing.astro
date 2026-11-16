@@ -151,8 +151,11 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
 
       word.addEventListener('input', () => {
         const next = choose(word.dataset.choice, word.textContent ?? '');
-        word.toggleAttribute('aria-invalid', next === null);
-        if (next === null) return;
+        if (next === null) {
+          word.setAttribute('aria-invalid', 'true');
+          return;
+        }
+        word.removeAttribute('aria-invalid');
         choices = next;
         render();
       });

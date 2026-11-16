@@ -58,18 +58,26 @@ import DemoApp from './DemoApp.astro';
       });
     });
     walkApp.addEventListener('pointerdown', endTour);
-    walkApp.addEventListener('keydown', endTour);
+    walkApp.addEventListener('focusin', endTour);
 
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const observer = reduceMotion || !('IntersectionObserver' in window) ? undefined : new IntersectionObserver((entries) => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    reduceMotion.addEventListener('change', () => { if (reduceMotion.matches) endTour(); });
+    const observer = reduceMotion.matches || !('IntersectionObserver' in window) ? undefined : new IntersectionObserver((entries) => {
       const visible = entries.some((entry) => entry.isIntersecting);
       window.clearInterval(tour);
       tour = visible ? window.setInterval(() => show((current + 1) % words.length), 3600) : undefined;
     }, { threshold: 0.5 });
     observer?.observe(walkthrough);
 
-    const fromHash = window.location.hash === '#sharing' ? words.findIndex((word) => word.id === 'sharing') : -1;
-    show(Math.max(fromHash, 0));
+    // "#sharing" links, on load or from elsewhere on the page, pick the share
+    // scene the way a click on that word does.
+    const sharing = words.findIndex((word) => word.id === 'sharing');
+    window.addEventListener('hashchange', () => {
+      if (window.location.hash !== '#sharing') return;
+      endTour();
+      show(sharing);
+    });
+    show(window.location.hash === '#sharing' ? sharing : 0);
   }
 </script>
 
@@ -108,6 +116,11 @@ import DemoApp from './DemoApp.astro';
     width: 100%;
     height: 100%;
     zoom: 0.72;
+  }
+
+  /* A landscape phone has no room to pin the preview over the text. */
+  @media (max-width: 1023px) and (min-aspect-ratio: 4 / 5) {
+    .walk-stage { position: static; }
   }
 
   @media (min-width: 1024px) {

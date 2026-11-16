@@ -335,6 +335,8 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
     max-width: none;
     margin: 0;
     padding: 1rem;
+    /* Wrapped captions on a small screen can still outgrow it. */
+    overflow-y: auto;
   }
 
   #demo[data-theater]::before {
@@ -349,6 +351,13 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
   #demo[data-theater] #demo-stage {
     width: min(100%, calc((100dvh - 6rem) * 16 / 9));
     transition: none;
+  }
+
+  /* Below md the live preview has a fixed height rather than a ratio. */
+  #demo[data-theater] :global(#hero-app) { height: min(600px, calc(100dvh - 8rem)); }
+
+  @media (min-width: 768px) {
+    #demo[data-theater] :global(#hero-app) { height: auto; }
   }
 
   @keyframes theater-dim {

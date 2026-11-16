@@ -150,8 +150,9 @@ const viewButton = 'flex h-5.5 w-5.5 items-center justify-center rounded-sm text
           </div>
         </div>
 
-        <!-- As in the app, search is for folders; This Server has none to search. -->
-        <label data-part="search-box" hidden class="flex w-28 min-w-28 shrink items-center gap-2 rounded border border-border-primary bg-surface-secondary px-2 py-1 text-text-muted focus-within:border-border-focus @lg:w-48 @3xl:w-64 @5xl:w-96">
+        <!-- As in the app, search is for folders; This Server has none to search.
+             A phone-width preview shows only its icon until it is focused. -->
+        <label data-part="search-box" hidden class="flex w-28 min-w-28 shrink items-center overflow-hidden @max-sm:w-8 @max-sm:min-w-8 @max-sm:focus-within:w-28 @max-sm:focus-within:min-w-28 gap-2 rounded border border-border-primary bg-surface-secondary px-2 py-1 text-text-muted focus-within:border-border-focus @lg:w-48 @3xl:w-64 @5xl:w-96">
           <Search class="h-3.5 w-3.5 shrink-0" />
           <input data-part="search" type="search" placeholder="Search files and folders..." aria-label="Search files and folders" class="w-full min-w-0 bg-transparent text-text-primary outline-none placeholder:text-text-muted" />
         </label>

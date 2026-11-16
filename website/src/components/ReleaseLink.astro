@@ -1,7 +1,8 @@
 ---
 // The latest release, as a "What's new" link in the nav. It reads the
 // server-side cached endpoint so page views do not spend the GitHub API's
-// unauthenticated limit, and stays hidden until it knows the version.
+// unauthenticated limit, and stays hidden until it knows the version. Phones
+// leave it out so the nav fits on one row.
 ---
 
 <a
@@ -10,9 +11,9 @@
   target="_blank"
   rel="noopener"
   hidden
-  class="inline-flex min-h-11 shrink-0 items-center px-3 whitespace-nowrap text-text-primary transition-colors hover:text-white"
+  class="hidden min-h-11 shrink-0 sm:inline-flex items-center px-3 whitespace-nowrap text-text-primary transition-colors hover:text-white"
 >
-  <span class="underline decoration-accent decoration-[1.5px] underline-offset-[6px]"><span class="hidden sm:inline">What’s new in </span><span id="release-link-version"></span></span>
+  <span class="underline decoration-accent decoration-[1.5px] underline-offset-[6px]">What’s new in <span id="release-link-version"></span></span>
 </a>
 
 <script>

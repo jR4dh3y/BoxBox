@@ -74,12 +74,15 @@ import SiteFooter from '../components/SiteFooter.astro';
     leaving.animate({ transform: ['translateY(0)', 'translateY(-110%)'] }, timing).finished.then(() => leaving.remove());
   }
 
-  if (frame && word && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  // Turning on reduced motion while the page is open stops the names too.
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  if (frame && word && !reduceMotion.matches) {
     let index = 0;
-    window.setInterval(() => {
+    const timer = window.setInterval(() => {
       index = (index + 1) % names.length;
       slideTo(frame, word, names[index]);
     }, 3000);
+    reduceMotion.addEventListener('change', () => window.clearInterval(timer), { once: true });
   }
 </script>
 

@@ -61,6 +61,19 @@ export function attachStickyNote(note: HTMLElement, bounds: HTMLElement): void {
     frame = settled ? 0 : window.requestAnimationFrame(step);
   }
 
+  // How far the note may travel before any edge leaves its bounds.
+  function measureLimits() {
+    const rect = note.getBoundingClientRect();
+    const area = bounds.getBoundingClientRect();
+    const right = Math.min(area.right, document.documentElement.clientWidth);
+    limits = {
+      minX: x + Math.max(area.left, 0) - rect.left,
+      maxX: x + right - rect.right,
+      minY: y + area.top - rect.top,
+      maxY: y + area.bottom - rect.bottom
+    };
+  }
+
   function wake() {
     if (frame === 0) frame = window.requestAnimationFrame(step);
   }
@@ -104,17 +117,7 @@ export function attachStickyNote(note: HTMLElement, bounds: HTMLElement): void {
     note.toggleAttribute('data-held', true);
     grabX = event.pageX - x;
     grabY = event.pageY - y;
-
-    // How far the note may travel before any edge leaves its bounds.
-    const rect = note.getBoundingClientRect();
-    const area = bounds.getBoundingClientRect();
-    const right = Math.min(area.right, document.documentElement.clientWidth);
-    limits = {
-      minX: x + Math.max(area.left, 0) - rect.left,
-      maxX: x + right - rect.right,
-      minY: y + area.top - rect.top,
-      maxY: y + area.bottom - rect.bottom
-    };
+    measureLimits();
     targetLift = 1;
     wake();
   });
@@ -132,5 +135,17 @@ export function attachStickyNote(note: HTMLElement, bounds: HTMLElement): void {
 
   note.addEventListener('pointerup', release);
   note.addEventListener('pointercancel', release);
+
+  // A layout change can move the bounds out from under a dragged note, so it
+  // is pulled back inside them.
+  window.addEventListener('resize', () => {
+    if (held || (x === 0 && y === 0)) return;
+    measureLimits();
+    // An empty range (note larger than its bounds) sends it home.
+    const fits = limits.minX <= limits.maxX && limits.minY <= limits.maxY;
+    targetX = x = fits ? clamp(x, limits.minX, limits.maxX) : 0;
+    targetY = y = fits ? clamp(y, limits.minY, limits.maxY) : 0;
+    render();
+  });
   render();
 }

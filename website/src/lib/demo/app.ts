@@ -239,6 +239,7 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
   }
 
   function renderOverlay() {
+    const opening = overlayPart.hidden;
     editor = undefined;
     const entry = 'path' in overlay ? find(fs, overlay.path) : undefined;
     let nodes: Node[] = [];
@@ -260,6 +261,12 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
     }
     overlayPart.hidden = nodes.length === 0;
     overlayPart.replaceChildren(...nodes);
+    // Keyboard users follow an overlay they opened. The walkthrough opens
+    // them on a timer too, and must not pull focus in from the page.
+    if (opening && !overlayPart.hidden && root.contains(document.activeElement)) {
+      overlayPart.querySelector<HTMLElement>('button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])')?.focus({ preventScroll: true });
+    }
+    appPart.inert = !overlayPart.hidden || !guestPart.hidden;
   }
 
   function guestFiles(link: ShareLink): Located<FileEntry>[] {
@@ -279,7 +286,7 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
       surface = { kind: 'app' };
       guestPart.hidden = true;
       guestPart.replaceChildren();
-      appPart.inert = false;
+      appPart.inert = !overlayPart.hidden;
       return;
     }
     guestPart.hidden = false;
@@ -363,12 +370,24 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
       if (toast.kind !== 'uploading') return;
       const step = advance(toast.upload, Math.ceil(uploadBytes(toast.upload) / UPLOAD_TICKS));
       const target = step.upload.target;
+      // The visitor may delete the folder an upload is going into.
+      if (!folderAt(fs, target)) {
+        dismissToast();
+        return;
+      }
       for (const item of step.finished) placeFile(fs, target, item.relPath, item.file);
       if (progressOf(step.upload).done) {
-        const first = step.upload.items[0];
-        toast = { kind: 'uploaded', label: step.upload.label, count: step.upload.items.length, path: first ? joinPath(target, parentPath(first.relPath)) : target };
+        const parent = parentPath(step.upload.items[0]?.relPath ?? '');
+        toast = { kind: 'uploaded', label: step.upload.label, count: step.upload.items.length, path: parent ? joinPath(target, parent) : target };
         renderToast();
-        render();
+        // Redrawing an open editor would drop the visitor's caret.
+        if (overlay.kind === 'editor') {
+          renderChrome();
+          renderListing();
+          renderStatus();
+        } else {
+          render();
+        }
         return;
       }
       toast = { kind: 'uploading', upload: step.upload };
@@ -598,6 +617,9 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
       const name = uniqueName(folder, 'New folder');
       folder.children.push({ kind: 'folder', name, children: [] });
       selected = joinPath(location(), name);
+      // A search would hide the folder that was just made and selected.
+      query = '';
+      searchInput.value = '';
       overlay = { kind: 'none' };
       render();
     },
