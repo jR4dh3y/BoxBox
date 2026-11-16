@@ -101,15 +101,8 @@ impl Workspace {
                     .cursor_pointer()
                     .hover(|style| style.bg(c(SURFACE_ELEVATED)))
             })
-            .child(icon(
-                glyph,
-                size,
-                c(if enabled {
-                    TEXT_SECONDARY
-                } else {
-                    TEXT_DISABLED
-                }),
-            ))
+            // Translucent rather than TEXT_DISABLED's fixed grey, which vanishes on a wallpaper.
+            .child(icon(glyph, size, if enabled { c(TEXT_SECONDARY) } else { alpha(WHITE, 0.3) }))
     }
 
     fn render_path_bar(&self, target: PaneTarget, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
