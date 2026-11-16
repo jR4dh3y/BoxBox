@@ -149,7 +149,7 @@ Common providers, as a starting point; they have not each been tested with BoxBo
 
 Only one provider can be configured. OAuth2-only logins without OpenID Connect, such as GitHub, and reverse-proxy header login (forward auth) are not supported.
 
-A sign-in stays valid for the normal 7-day rolling refresh, even after the user is removed at the provider. Remove the name from BoxBox and restart to end it. Single sign-on is ignored in `--dev` and desktop mode.
+A sign-in stays valid for the normal 7-day rolling refresh, even after the user is removed at the provider. Remove the name from BoxBox and restart to end it. Single sign-on settings are ignored before validation in `--dev` and desktop mode, so incomplete provider settings do not block local startup.
 
 ## Environment Variables
 

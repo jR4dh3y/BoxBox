@@ -46,7 +46,7 @@ func newOIDCFixture(t *testing.T, redirectURL string, mutate func(*service.AuthS
 	r := chi.NewRouter()
 	r.Route("/api/v1/auth", func(r chi.Router) {
 		r.Get("/config", AuthConfig(AuthConfigResponse{PasswordLogin: true, OIDC: &AuthConfigOIDC{Name: "Authelia"}}))
-		NewAuthHandler(auth).RegisterRoutes(r)
+		NewAuthHandler(auth, redirectURL).RegisterRoutes(r)
 		NewOIDCHandler(flow, auth, redirectURL).RegisterRoutes(r)
 	})
 	return oidcFixture{issuer: issuer, router: r, auth: auth}
@@ -192,6 +192,14 @@ func TestOIDCHTTPSRedirectUsesHostPrefixedSecureCookies(t *testing.T) {
 	rec := f.do(t, http.MethodGet, callback, flow)
 	if refresh := cookieNamed(rec, refreshCookieName); refresh == nil || !refresh.Secure {
 		t.Fatalf("refresh cookie = %#v, want Secure", refresh)
+	}
+	rec = f.do(t, http.MethodPost, "http://boxbox.test/api/v1/auth/refresh", cookieNamed(rec, refreshCookieName))
+	if refresh := cookieNamed(rec, refreshCookieName); rec.Code != http.StatusOK || refresh == nil || !refresh.Secure {
+		t.Fatalf("refreshed cookie = %#v, status %d, want Secure", refresh, rec.Code)
+	}
+	rec = f.do(t, http.MethodPost, "http://boxbox.test/api/v1/auth/logout", cookieNamed(rec, refreshCookieName))
+	if cleared := cookieNamed(rec, refreshCookieName); rec.Code != http.StatusOK || cleared == nil || !cleared.Secure || cleared.MaxAge >= 0 {
+		t.Fatalf("logout cookie = %#v, status %d, want Secure deletion", cleared, rec.Code)
 	}
 	// A cookie planted by a sibling domain cannot use the __Host- name, so it is ignored.
 	_, callback = f.startSignIn(t, "__Host-boxbox_oidc_flow")

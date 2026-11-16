@@ -56,7 +56,7 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	// Load configuration
-	loadResult, err := config.LoadWithReport(*configPath)
+	loadResult, err := config.LoadWithReport(*configPath, localIdentity)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
@@ -72,10 +72,8 @@ func main() {
 		cfg.TrustedProxies = nil
 	}
 
-	if localIdentity && cfg.OIDC.Enabled() {
-		// The desktop host gate and dev auth bypass leave no external callback to serve.
-		log.Warn().Msg("OIDC sign-in is configured but ignored in development and desktop mode")
-		cfg.OIDC = model.OIDCConfig{}
+	if localIdentity {
+		log.Info().Msg("OIDC sign-in is disabled in development and desktop mode")
 	}
 
 	for _, warning := range loadResult.Warnings {
@@ -249,7 +247,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 	})
 
 	// Create handlers
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthHandler(authService, cfg.OIDC.RedirectURL)
 	fileHandler := handler.NewFileHandler(fileService)
 	thumbnails := service.NewThumbnailService(fileService)
 	if desktopMode {

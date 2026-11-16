@@ -34,7 +34,7 @@ func TestAuthRefreshTokenUsesHttpOnlyCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create auth service: %v", err)
 	}
-	handler := NewAuthHandler(auth)
+	handler := NewAuthHandler(auth, "")
 
 	loginRequest := httptest.NewRequest(
 		http.MethodPost,
@@ -165,7 +165,7 @@ func TestAuthLogoutRevokesEveryAccessTokenForOnlyThatSession(t *testing.T) {
 }
 
 func TestAuthRejectsCrossOriginCookieRequests(t *testing.T) {
-	handler := NewAuthHandler(nil)
+	handler := NewAuthHandler(nil, "")
 	request := httptest.NewRequest(http.MethodPost, "https://boxbox.example/api/v1/auth/refresh", nil)
 	request.Header.Set("Origin", "https://evil.example")
 	response := httptest.NewRecorder()
@@ -370,7 +370,7 @@ func TestAuthPersistenceFailuresPreserveOrClearCookieByOutcome(t *testing.T) {
 }
 
 func TestAuthCookieSecurityAndOriginBoundaries(t *testing.T) {
-	handler := NewAuthHandler(nil)
+	handler := NewAuthHandler(nil, "")
 	for _, testCase := range []struct {
 		name       string
 		request    *http.Request
@@ -497,7 +497,7 @@ func newAuthHandler(t *testing.T, fsys filesystem.FS, dataDir string) (service.A
 	if err != nil {
 		t.Fatalf("create auth service: %v", err)
 	}
-	return auth, NewAuthHandler(auth)
+	return auth, NewAuthHandler(auth, "")
 }
 
 func authConfig(t *testing.T, dataDir string) service.AuthServiceConfig {

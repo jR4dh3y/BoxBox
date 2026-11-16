@@ -23,7 +23,7 @@ func TestLoadUsesBoxBoxEnvironmentPrefix(t *testing.T) {
 	t.Setenv("BOXBOX_ALLOWED_ORIGINS", "https://boxbox.example.com, *.internal.example.com ")
 	t.Setenv("BOXBOX_PORT", "9090")
 
-	result, err := LoadWithReport(configPath)
+	result, err := LoadWithReport(configPath, false)
 	if err != nil {
 		t.Fatalf("LoadWithReport() error = %v", err)
 	}
@@ -60,7 +60,7 @@ func TestLoadSupportsLegacyFMEnvironmentAliases(t *testing.T) {
 	t.Setenv("FM_MAX_UPLOAD_MB", "2048")
 	t.Setenv("FM_CHUNK_SIZE_MB", "11")
 
-	result, err := LoadWithReport(configPath)
+	result, err := LoadWithReport(configPath, false)
 	if err != nil {
 		t.Fatalf("LoadWithReport() error = %v", err)
 	}
@@ -121,7 +121,7 @@ func TestLoadPrefersBoxBoxEnvironmentOverLegacyAliases(t *testing.T) {
 	t.Setenv("FM_PORT", "9091")
 	t.Setenv("BOXBOX_PORT", "9092")
 
-	result, err := LoadWithReport(configPath)
+	result, err := LoadWithReport(configPath, false)
 	if err != nil {
 		t.Fatalf("LoadWithReport() error = %v", err)
 	}
@@ -188,7 +188,7 @@ mount_points:
 	result, err := loadWithReport("", []configSearchPath{
 		{Path: newConfigDir},
 		{Path: legacyConfigDir, Legacy: true, Replacement: filepath.Join(newConfigDir, "config.yaml")},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("loadWithReport() error = %v", err)
 	}
@@ -350,7 +350,7 @@ func TestLoadReadsOIDCFromEnvironment(t *testing.T) {
 	t.Setenv("BOXBOX_OIDC_USERS", "Carol, dave")
 	t.Setenv("BOXBOX_OIDC_DISABLE_PASSWORD_LOGIN", "true")
 
-	result, err := LoadWithReport(configPath)
+	result, err := LoadWithReport(configPath, false)
 	if err != nil {
 		t.Fatalf("LoadWithReport() error = %v", err)
 	}
@@ -360,5 +360,23 @@ func TestLoadReadsOIDCFromEnvironment(t *testing.T) {
 		!reflect.DeepEqual(oidc.Users, []string{"Carol", "dave"}) ||
 		!reflect.DeepEqual(oidc.Scopes, []string{"openid", "profile", "email"}) {
 		t.Fatalf("OIDC = %+v", oidc)
+	}
+}
+
+func TestLocalIdentityIgnoresIncompleteOIDC(t *testing.T) {
+	clearConfigEnv(t)
+	configPath := writeMinimalConfig(t)
+	t.Setenv("BOXBOX_JWT_SECRET", "boxbox-secret-at-least-thirty-two-bytes")
+	t.Setenv("BOXBOX_USERS_admin", testHashA)
+	t.Setenv("BOXBOX_OIDC_ISSUER_URL", "https://auth.example.com")
+	if _, err := LoadWithReport(configPath, false); err == nil {
+		t.Fatal("server mode accepted incomplete OIDC configuration")
+	}
+	result, err := LoadWithReport(configPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Config.OIDC.Enabled() || result.Config.OIDC.DisablePasswordLogin {
+		t.Fatal("local mode retained OIDC settings")
 	}
 }

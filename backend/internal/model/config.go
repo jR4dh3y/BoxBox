@@ -105,6 +105,18 @@ func (c *ServerConfig) Validate() error {
 			return fmt.Errorf("password for user %q must be a bcrypt hash ($2a$, $2b$, or $2y$)", username)
 		}
 	}
+	if c.OIDC.DisablePasswordLogin && len(c.OIDC.Users) == 0 {
+		usableAccount := false
+		for username := range c.Users {
+			if ValidUsername(username) {
+				usableAccount = true
+				break
+			}
+		}
+		if !usableAccount {
+			return fmt.Errorf("at least one usable OIDC account is required when password login is disabled")
+		}
+	}
 
 	if len(c.MountPoints) == 0 {
 		return fmt.Errorf("at least one mount_point is required")

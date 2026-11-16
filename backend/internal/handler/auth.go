@@ -13,13 +13,16 @@ import (
 
 // AuthHandler handles authentication-related HTTP requests
 type AuthHandler struct {
-	authService service.AuthService
+	authService   service.AuthService
+	secureCookies bool
 }
 
-// NewAuthHandler creates a new auth handler
-func NewAuthHandler(authService service.AuthService) *AuthHandler {
+// NewAuthHandler keeps the configured HTTPS callback policy across cookie rotation and deletion.
+func NewAuthHandler(authService service.AuthService, redirectURL string) *AuthHandler {
+	parsed, err := url.Parse(redirectURL)
 	return &AuthHandler{
-		authService: authService,
+		authService:   authService,
+		secureCookies: err == nil && parsed.Scheme == "https",
 	}
 }
 
@@ -70,7 +73,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setRefreshCookie(w, tokenPair.RefreshToken, tokenPair.RefreshExpiresAt, requestIsHTTPS(r))
+	setRefreshCookie(w, tokenPair.RefreshToken, tokenPair.RefreshExpiresAt, h.secureCookies || requestIsHTTPS(r))
 	resp := LoginResponse{
 		AccessToken: tokenPair.AccessToken,
 		ExpiresAt:   tokenPair.ExpiresAt.Format(time.RFC3339),
@@ -88,7 +91,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	refreshToken, err := h.refreshTokenFromCookie(r)
 	if err != nil {
-		clearRefreshCookie(w, requestIsHTTPS(r))
+		clearRefreshCookie(w, h.secureCookies || requestIsHTTPS(r))
 		HandleServiceError(w, service.ErrInvalidToken)
 		return
 	}
@@ -97,13 +100,13 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	tokenPair, err := h.authService.Refresh(r.Context(), refreshToken)
 	if err != nil {
 		if isTerminalAuthError(err) {
-			clearRefreshCookie(w, requestIsHTTPS(r))
+			clearRefreshCookie(w, h.secureCookies || requestIsHTTPS(r))
 		}
 		HandleServiceError(w, err)
 		return
 	}
 
-	setRefreshCookie(w, tokenPair.RefreshToken, tokenPair.RefreshExpiresAt, requestIsHTTPS(r))
+	setRefreshCookie(w, tokenPair.RefreshToken, tokenPair.RefreshExpiresAt, h.secureCookies || requestIsHTTPS(r))
 	resp := LoginResponse{
 		AccessToken: tokenPair.AccessToken,
 		ExpiresAt:   tokenPair.ExpiresAt.Format(time.RFC3339),
@@ -121,20 +124,20 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	refreshToken, err := h.refreshTokenFromCookie(r)
 	if err != nil {
-		clearRefreshCookie(w, requestIsHTTPS(r))
+		clearRefreshCookie(w, h.secureCookies || requestIsHTTPS(r))
 		HandleServiceError(w, service.ErrInvalidToken)
 		return
 	}
 
 	if err := h.authService.Logout(r.Context(), refreshToken); err != nil {
 		if isTerminalAuthError(err) {
-			clearRefreshCookie(w, requestIsHTTPS(r))
+			clearRefreshCookie(w, h.secureCookies || requestIsHTTPS(r))
 		}
 		HandleServiceError(w, err)
 		return
 	}
 
-	clearRefreshCookie(w, requestIsHTTPS(r))
+	clearRefreshCookie(w, h.secureCookies || requestIsHTTPS(r))
 	writeJSON(w, map[string]string{"message": "Logged out successfully"}, http.StatusOK)
 }
 

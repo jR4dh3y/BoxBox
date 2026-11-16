@@ -174,6 +174,16 @@ func TestValidateOIDC(t *testing.T) {
 	}{
 		{name: "off"},
 		{name: "on", edit: func(c *OIDCConfig) { *c = enabled }},
+		{name: "unusable password account with password login disabled", users: map[string]string{strings.Repeat("a", 65): validTestBcryptHash}, edit: func(c *OIDCConfig) {
+			*c = enabled
+			c.DisablePasswordLogin = true
+		}, wantErr: "at least one usable OIDC account"},
+		{name: "long password account remains usable with password login", users: map[string]string{strings.Repeat("a", 65): validTestBcryptHash}, edit: func(c *OIDCConfig) { *c = enabled }},
+		{name: "valid sso account alongside unusable password account", users: map[string]string{strings.Repeat("a", 65): validTestBcryptHash}, edit: func(c *OIDCConfig) {
+			*c = enabled
+			c.DisablePasswordLogin = true
+			c.Users = []string{"carol"}
+		}},
 		{name: "sso-only accounts without password users", users: map[string]string{}, edit: func(c *OIDCConfig) {
 			*c = enabled
 			c.Users = []string{"carol"}

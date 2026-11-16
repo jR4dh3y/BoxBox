@@ -79,7 +79,19 @@
 			{/await}
 		</div>
 
-		{#if methods === null}
+		{#if loginMethods.state.kind === 'error'}
+			<div class="flex h-[74px] w-full flex-col items-center justify-center gap-2">
+				<p class="text-center text-[13px] text-danger" role="alert">
+					Couldn't load sign-in options.
+				</p>
+				<button
+					type="button"
+					class="cursor-pointer text-[13px] text-accent hover:underline disabled:opacity-60"
+					disabled={authBusy}
+					onclick={() => loginMethods.load()}>Retry</button
+				>
+			</div>
+		{:else if methods === null}
 			<!-- Holds the form's place, so a hidden password form never flashes or shifts the page. -->
 			<div class="h-[74px] w-full"></div>
 		{:else if methods.kind !== 'sso'}
@@ -147,7 +159,10 @@
 			<a
 				href={SSO_LOGIN_PATH}
 				rel="external"
-				onclick={clearError}
+				onclick={(event) => {
+					if (authBusy) event.preventDefault();
+					else clearError();
+				}}
 				aria-disabled={authBusy}
 				class="flex h-9 w-full items-center justify-center rounded border border-border-primary bg-surface-secondary text-[13px] text-text-primary transition-colors hover:bg-surface-elevated focus:border-border-focus focus:outline-none {authBusy
 					? 'pointer-events-none opacity-60'

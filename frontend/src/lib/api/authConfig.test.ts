@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { parseLoginMethods } from './authConfig';
 import { ssoErrorMessage } from '../auth/ssoError';
 import { LoginMethodsStore } from '../auth/loginMethods.svelte';
+import { ApiRequestError } from './client';
 
 test('auth config parses into the sign-in methods the server accepts', () => {
 	assert.deepEqual(parseLoginMethods({ passwordLogin: true, oidc: null }), { kind: 'password' });
@@ -36,11 +37,29 @@ test('sso error codes map to fixed messages', () => {
 	assert.equal(ssoErrorMessage('toString'), 'Sign-in failed. Try again.');
 });
 
-test('login methods fall back to the password form when the config cannot be read', async () => {
+test('login methods fall back to password only when the configuration route is missing', async () => {
 	const store = new LoginMethodsStore();
 	assert.equal(store.state.kind, 'loading');
-	await store.load(() => Promise.reject(new Error('404')));
+	await store.load(() => Promise.reject(new ApiRequestError('Not found', 404, 'NOT_FOUND')));
 	assert.deepEqual(store.state, { kind: 'ready', methods: { kind: 'password' } });
 	await store.load(() => Promise.resolve({ kind: 'sso', providerName: 'SSO' }));
 	assert.deepEqual(store.state, { kind: 'ready', methods: { kind: 'sso', providerName: 'SSO' } });
+});
+
+test('login methods expose temporary failures and retry without advertising password login', async () => {
+	for (const error of [
+		new TypeError('Network failed'),
+		new ApiRequestError('Unavailable', 503, 'UNAVAILABLE'),
+		new Error('Invalid auth config')
+	]) {
+		const store = new LoginMethodsStore();
+		await store.load(() => Promise.reject(error));
+		assert.deepEqual(store.state, { kind: 'error' });
+		const retry = store.load(() => {
+			assert.equal(store.state.kind, 'loading');
+			return Promise.resolve({ kind: 'sso', providerName: 'SSO' });
+		});
+		await retry;
+		assert.deepEqual(store.state, { kind: 'ready', methods: { kind: 'sso', providerName: 'SSO' } });
+	}
 });

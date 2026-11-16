@@ -54,7 +54,7 @@ var defaultConfigSearchPaths = []configSearchPath{
 
 // Load reads configuration from file and environment variables
 func Load(configPath string) (*model.ServerConfig, error) {
-	result, err := LoadWithReport(configPath)
+	result, err := LoadWithReport(configPath, false)
 	if err != nil {
 		return nil, err
 	}
@@ -63,11 +63,12 @@ func Load(configPath string) (*model.ServerConfig, error) {
 
 // LoadWithReport reads configuration from file and environment variables,
 // returning deprecated migration inputs that should be surfaced to operators.
-func LoadWithReport(configPath string) (*LoadResult, error) {
-	return loadWithReport(configPath, defaultConfigSearchPaths)
+// Local identity modes discard OIDC settings before validation.
+func LoadWithReport(configPath string, localIdentity bool) (*LoadResult, error) {
+	return loadWithReport(configPath, defaultConfigSearchPaths, localIdentity)
 }
 
-func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadResult, error) {
+func loadWithReport(configPath string, searchPaths []configSearchPath, localIdentity bool) (*LoadResult, error) {
 	v := viper.New()
 	warnings := make([]MigrationWarning, 0)
 
@@ -191,6 +192,10 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 		cfg.OIDC.Scopes = splitEnvList(scopes)
 	}
 
+	if localIdentity {
+		// Local modes have no external callback and never use provider credentials.
+		cfg.OIDC = model.OIDCConfig{}
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
