@@ -183,8 +183,6 @@ impl RenderOnce for FileTile {
         let metrics = self.metrics;
         let group = SharedString::from(format!("file-tile-{}", self.id));
         let tone = c(self.tint.unwrap_or(if self.is_dir { FOLDER } else { TEXT_SECONDARY }));
-        // A theme icon already says "folder"; the name keeps the text colour, as in Thunar.
-        let folder_name = self.is_dir && self.image.is_none() && self.tint.is_none();
         // As tall as the zoom step says. A thumbnail sits in thumbnailClass's frame
         // (rounded border bg-surface-primary); an icon stands on its own, as in Thunar.
         let preview = div()
@@ -222,7 +220,7 @@ impl RenderOnce for FileTile {
                         .line_height(px(16.))
                         .line_clamp(2)
                         .h(px(32.))
-                        .text_color(c(if folder_name { FOLDER } else { TEXT_PRIMARY }))
+                        .text_color(c(TEXT_PRIMARY))
                         .child(self.name),
                 ),
             })

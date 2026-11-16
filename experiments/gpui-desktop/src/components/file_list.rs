@@ -301,8 +301,6 @@ impl RenderOnce for FileRow {
         let Selection { background, hover, accent } = self.selection;
         let secondary = c(if self.selected { TEXT_PRIMARY } else { TEXT_SECONDARY });
         let tone = c(self.tint.unwrap_or(if self.is_dir { FOLDER } else { TEXT_SECONDARY }));
-        // A theme icon already says "folder"; the name keeps the text colour, as in Thunar.
-        let folder_name = self.is_dir && self.image.is_none() && self.tint.is_none();
         let group = SharedString::from(format!("file-icon-{}", self.id));
         let has_checkbox = self.checkbox.is_some();
         let ListMetrics { row_height, icon: glyph_size } = self.metrics;
@@ -374,7 +372,7 @@ impl RenderOnce for FileRow {
                     .map(|cell| match self.editor {
                         Some(editor) => cell.child(div().flex_1().min_w_0().child(editor)),
                         None => cell
-                            .child(text(self.name).flex_shrink_0().max_w(relative(0.7)).when(folder_name, |name| name.text_color(c(FOLDER))))
+                            .child(text(self.name).flex_shrink_0().max_w(relative(0.7)))
                             .child(text(self.location).flex_1().text_color(c(TEXT_MUTED))),
                     }),
             )
