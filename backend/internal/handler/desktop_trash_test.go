@@ -14,10 +14,12 @@ import (
 )
 
 type stubDesktopTrashService struct {
-	items     []service.DesktopTrashItem
-	trashItem service.DesktopTrashItem
-	err       error
-	path      string
+	items      []service.DesktopTrashItem
+	trashItem  service.DesktopTrashItem
+	err        error
+	path       string
+	restoredID string
+	deletedID  string
 }
 
 func (s *stubDesktopTrashService) List(context.Context) ([]service.DesktopTrashItem, error) {
@@ -29,11 +31,13 @@ func (s *stubDesktopTrashService) Trash(_ context.Context, path string) (service
 	return s.trashItem, s.err
 }
 
-func (s *stubDesktopTrashService) Restore(context.Context, string) error {
+func (s *stubDesktopTrashService) Restore(_ context.Context, id string) error {
+	s.restoredID = id
 	return s.err
 }
 
-func (s *stubDesktopTrashService) Delete(context.Context, string) error {
+func (s *stubDesktopTrashService) Delete(_ context.Context, id string) error {
+	s.deletedID = id
 	return s.err
 }
 
@@ -72,6 +76,31 @@ func TestDesktopTrashHandlerRoutesListAndMove(t *testing.T) {
 	}
 	if err := json.NewDecoder(move.Body).Decode(&moveBody); err != nil || moveBody.Item.ID != item.ID {
 		t.Fatalf("move body = %#v, error = %v", moveBody, err)
+	}
+}
+
+func TestDesktopTrashHandlerRestoreAndDeleteForwardID(t *testing.T) {
+	for _, tc := range []struct {
+		path string
+		got  func(*stubDesktopTrashService) string
+	}{
+		{path: "/trash/restore", got: func(s *stubDesktopTrashService) string { return s.restoredID }},
+		{path: "/trash/delete", got: func(s *stubDesktopTrashService) string { return s.deletedID }},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			stub := &stubDesktopTrashService{}
+			recorder := httptest.NewRecorder()
+			desktopTrashRouter(stub).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(`{"id":"entry-1"}`)))
+			if recorder.Code != http.StatusOK || tc.got(stub) != "entry-1" {
+				t.Fatalf("status=%d id=%q", recorder.Code, tc.got(stub))
+			}
+			var response struct {
+				OK bool `json:"ok"`
+			}
+			if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil || !response.OK {
+				t.Fatalf("response = %#v, error = %v", response, err)
+			}
+		})
 	}
 }
 
