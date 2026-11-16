@@ -383,14 +383,12 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
         const parent = parentPath(step.upload.items[0]?.relPath ?? '');
         toast = { kind: 'uploaded', label: step.upload.label, count: step.upload.items.length, path: parent ? joinPath(target, parent) : target };
         renderToast();
-        // Redrawing an open editor would drop the visitor's caret.
-        if (overlay.kind === 'editor') {
-          renderChrome();
-          renderListing();
-          renderStatus();
-        } else {
-          render();
-        }
+        // The open overlay is left alone: redrawing it would drop an editor's
+        // caret or reset a share dialog's choices.
+        renderChrome();
+        renderListing();
+        renderStatus();
+        renderSurface();
         return;
       }
       toast = { kind: 'uploading', upload: step.upload };
@@ -690,7 +688,7 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
   });
 
   onThemeChange(() => {
-    if (overlay.kind === 'themes') renderOverlay();
+    if (overlay.kind === 'themes') keepingFocus(() => renderOverlay());
   });
 
   render();

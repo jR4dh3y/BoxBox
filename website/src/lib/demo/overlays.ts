@@ -170,7 +170,7 @@ export function shareOverlay(icon: Icon, name: string, links: ShareLink[], copie
         links.length > 0 &&
           el(
             'div',
-            { class: 'overflow-hidden rounded border border-border-primary' },
+            { class: 'overflow-x-auto rounded border border-border-primary' },
             el(
               'table',
               { class: 'w-full text-[12px]' },
