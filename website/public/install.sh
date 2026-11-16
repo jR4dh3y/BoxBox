@@ -133,11 +133,23 @@ say "Step 2 of 5: downloading BoxBox's Docker files into \"$DIR\""
 
 # Never overwrite an existing setup: its .env holds your login and secret.
 [ ! -e "$DIR/.env" ] || stop "BoxBox is already set up in \"$DIR\". To change a setting, edit \"$DIR/.env\". To start over, delete that folder first."
+# Any other file there could be a setup you care about, so only an empty or
+# new folder is used.
+if [ -e "$DIR" ] && { [ ! -d "$DIR" ] || [ -n "$(ls -A "$DIR")" ]; }; then
+  stop "\"$DIR\" already exists and is not empty. Pick a new name with --dir, or empty that folder first."
+fi
 
 mkdir -p "$DIR/backend"
 cd "$DIR"
 curl -fsSL "$SOURCE/docker-compose.yml" -o docker-compose.yml || stop "Could not download docker-compose.yml. Check your internet connection."
 curl -fsSL "$SOURCE/backend/config.yaml" -o backend/config.yaml || stop "Could not download config.yaml. Check your internet connection."
+# The project's files also hand BoxBox every disk under /media/devmon. This
+# setup shows only the folder you chose, so that disk mount is removed.
+sed '\|^[[:space:]]*- /media/devmon:/media/devmon|d' docker-compose.yml > docker-compose.yml.new
+mv docker-compose.yml.new docker-compose.yml
+awk '/^  - name: "drives"$/ { skip = 1; next } skip && /^[[:space:]]*$/ { skip = 0; next } !skip' backend/config.yaml > backend/config.yaml.new
+mv backend/config.yaml.new backend/config.yaml
+! grep -q '/media/devmon' docker-compose.yml backend/config.yaml || stop "Could not limit BoxBox to $FOLDER. Nothing was started."
 note "Downloaded docker-compose.yml and backend/config.yaml."
 
 # -----------------------------------------------------------------------------
