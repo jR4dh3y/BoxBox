@@ -23,6 +23,10 @@ import (
 // Leave room in the shipped 512 MiB container for caches, other requests, and GC.
 const maxThumbnailRenderBytes = 256 << 20
 
+// x/image v0.47 permits 2600 full Huffman groups, also for compressed WebP alpha.
+// Include retained trees and their temporary construction buffers, beyond source pixels.
+const webpDecoderAllowance = 224 << 20
+
 var thumbnailMemory = semaphore.NewWeighted(maxThumbnailRenderBytes)
 
 // RendersImageThumbnail reports whether a file name has an extension the pure-Go renderer decodes.
@@ -64,6 +68,9 @@ func renderImageThumbnail(ctx context.Context, file File, info *model.FileInfo, 
 	// Each CatmullRom scratch pixel holds four float64 channels.
 	memory := sourceWidth*sourceHeight*bytesPerPixel +
 		scratchPixels*32 + outputWidth*outputHeight*4 + (2 << 20)
+	if format == "webp" {
+		memory += webpDecoderAllowance
+	}
 	if memory > maxThumbnailRenderBytes {
 		return nil, ErrThumbnailTooLarge
 	}
