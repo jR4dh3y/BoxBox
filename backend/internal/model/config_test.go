@@ -176,6 +176,8 @@ func TestValidatePublicURL(t *testing.T) {
 		"https://files.example.com/box":  false,
 		"https://files.example.com/?a=1": false,
 		"https://files.example.com/#x":   false,
+		"https://files.example.com?":     false,
+		"https://files.example.com#":     false,
 		"https://user@files.example.com": false,
 	} {
 		cfg := base

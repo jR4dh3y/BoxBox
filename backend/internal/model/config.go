@@ -180,7 +180,7 @@ func validatePublicURL(raw string) error {
 	}
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
-		u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		u.User != nil || strings.ContainsAny(raw, "?#") || (u.Path != "" && u.Path != "/") {
 		return fmt.Errorf("public_url must be an http(s) origin such as https://files.example.com, without a path, query or fragment")
 	}
 	return nil
