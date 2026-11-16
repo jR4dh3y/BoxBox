@@ -1,14 +1,15 @@
 ---
 import Layout from './Layout.astro';
-import { ArrowLeft, GitFork } from '@lucide/astro';
-import type { DocHeading, DocNavItem, DocPage } from '../lib/docs';
+import { ArrowLeft } from '@lucide/astro';
+import GitHubLink from '../components/GitHubLink.astro';
+import type { DocHeading, DocNavSection, DocPage } from '../lib/docs';
 
 interface Props {
 	doc: DocPage;
-	nav: DocNavItem[];
+	sections: DocNavSection[];
 }
 
-const { doc, nav } = Astro.props;
+const { doc, sections } = Astro.props;
 
 function hrefFor(slug: string) {
 	return slug === 'index' ? '/docs/' : `/docs/${slug}/`;
@@ -23,37 +24,37 @@ function hrefFor(slug: string) {
           <ArrowLeft class="h-4 w-4" />
           <img src="/logo-boxbox-3d.svg" alt="BoxBox" width="570" height="410" class="h-9 w-auto" />
         </a>
-        <div class="flex items-center gap-2">
-          <a
-            href="https://github.com/jR4dh3y/BoxBox"
-            target="_blank"
-            class="flex items-center gap-2 rounded border border-border-primary bg-surface-secondary px-3 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:border-border-focus hover:text-white"
-          >
-            <GitFork class="h-4 w-4" />
-            GitHub
-          </a>
-        </div>
+        <nav aria-label="Primary" class="flex items-center text-sm font-medium text-text-secondary">
+          <GitHubLink />
+        </nav>
       </div>
     </header>
 
     <div class="mx-auto grid max-w-360 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_240px]">
       <aside class="min-w-0 border-b border-border-primary bg-[#101010] lg:sticky lg:top-[calc(3.5rem_+_1px)] lg:h-[calc(100vh_-_3.5rem_-_1px)] lg:border-b-0 lg:border-r lg:bg-transparent">
-        <nav class="min-w-0 px-4 py-4 lg:py-8" aria-label="Documentation">
-          <div class="mb-3 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">Documentation</div>
-          <div class="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
-            {nav.map((item) => (
-              <a
-                href={hrefFor(item.slug)}
-                class={`shrink-0 rounded px-3 py-2 text-sm font-semibold transition-colors lg:shrink ${
-                  item.slug === doc.slug
-                    ? 'bg-accent-solid text-white'
-                    : 'text-text-secondary hover:bg-surface-secondary hover:text-white'
-                }`}
-              >
-                {item.title}
-              </a>
-            ))}
-          </div>
+        <nav class="min-w-0 px-4 py-4 lg:overflow-y-auto lg:py-8" aria-label="Documentation">
+          {sections.map((section) => (
+            <div class="mb-5 last:mb-0">
+              <div class="px-3 py-2 text-sm font-semibold text-text-primary">{section.title}</div>
+              <ul class="ml-3 flex flex-col border-l border-border-primary">
+                {section.items.map((item) => (
+                  <li>
+                    <a
+                      href={hrefFor(item.slug)}
+                      aria-current={item.slug === doc.slug ? 'page' : undefined}
+                      class={`-ml-px block border-l py-1.5 pr-3 pl-4 text-sm transition-colors ${
+                        item.slug === doc.slug
+                          ? 'border-white font-medium text-white'
+                          : 'border-transparent text-text-secondary hover:border-text-muted hover:text-white'
+                      }`}
+                    >
+                      {item.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </nav>
       </aside>
 
@@ -77,8 +78,8 @@ function hrefFor(slug: string) {
                 <a
                   href={`#${heading.id}`}
                   data-toc-link={heading.id}
-                  class={`toc-link block rounded border-l border-transparent py-1 pl-3 text-sm leading-snug text-text-secondary transition-colors hover:text-white ${
-                    heading.depth === 3 ? 'pl-4' : ''
+                  class={`toc-link block py-1 text-sm leading-snug text-text-secondary transition-colors hover:text-white ${
+                    heading.depth === 3 ? 'pl-3' : ''
                   }`}
                 >
                   {heading.text}

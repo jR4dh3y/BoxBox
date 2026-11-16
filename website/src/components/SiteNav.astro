@@ -1,5 +1,5 @@
 ---
-import { Star } from '@lucide/astro';
+import GitHubLink from './GitHubLink.astro';
 import ReleaseLink from './ReleaseLink.astro';
 import Wordmark from './Wordmark.astro';
 ---
@@ -12,10 +12,7 @@ import Wordmark from './Wordmark.astro';
     <ReleaseLink />
     <a href="/docs/" class="inline-flex min-h-11 items-center rounded px-3 transition-colors hover:text-white">Docs</a>
     <span class="relative">
-      <a href="https://github.com/jR4dh3y/BoxBox" target="_blank" rel="noopener" class="inline-flex min-h-11 items-center gap-2 rounded px-3 transition-colors hover:text-white">
-        GitHub
-        <span id="nav-stars" hidden class="inline-flex items-center gap-1 tabular-nums"><Star class="h-3.5 w-3.5" aria-hidden="true" /><span id="nav-stars-count"></span><span class="sr-only"> stars</span></span>
-      </a>
+      <GitHubLink />
       <span class="star-doodle" aria-hidden="true">
         <svg class="star-doodle-arrow" width="40" height="42" viewBox="0 0 40 42" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <path pathLength="1" d="M31 40c3-11 0-23-15-32" />
@@ -32,24 +29,6 @@ import Wordmark from './Wordmark.astro';
   </nav>
 </header>
 
-<script>
-  import { formatCount, parseCountPayload } from '../lib/counts';
-
-  // The link reads "GitHub" alone until the star count is known.
-  const stars = document.getElementById('nav-stars');
-  const count = document.getElementById('nav-stars-count');
-  if (stars && count) {
-    fetch('/api/stars.json')
-      .then((response) => (response.ok ? response.json() : null))
-      .then((payload: unknown) => {
-        const total = parseCountPayload(payload);
-        if (total === null) return;
-        count.textContent = formatCount(total);
-        stars.hidden = false;
-      })
-      .catch(() => undefined);
-  }
-</script>
 
 <style>
   /* A handwritten note under the GitHub link, on its right side. */
