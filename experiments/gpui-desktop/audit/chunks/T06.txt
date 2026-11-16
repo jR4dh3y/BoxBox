@@ -1,3 +1,0 @@
-/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-file.c
-/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-folder.c
-/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-gdk-extensions.c

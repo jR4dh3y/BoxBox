@@ -1,10 +1,9 @@
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { expandRuntimeArchive } from "../desktop/scripts/runtimeArchive";
 
-const tooling = resolve(import.meta.dir, "..");
-const root = resolve(process.env.BOXBOX_SOURCE_ROOT ?? tooling);
+// The release tag's source; the packaging tools may come from a newer revision.
+const root = resolve(process.env.BOXBOX_SOURCE_ROOT ?? join(import.meta.dir, ".."));
 if (
   process.platform !== "linux" ||
   (process.arch !== "x64" && process.arch !== "arm64")
@@ -24,65 +23,28 @@ if (!tool)
 const runtimeFile = process.env.APPIMAGE_RUNTIME;
 if (!runtimeFile)
   throw new Error("APPIMAGE_RUNTIME must name the verified type2 runtime");
+const binary = join(root, "desktop/target/release/boxbox-gpui");
+const header = Buffer.from(await Bun.file(binary).slice(0, 64).arrayBuffer());
+if (
+  header.subarray(0, 4).toString() !== "\x7fELF" ||
+  header.readUInt16LE(18) !== (process.arch === "x64" ? 62 : 183)
+)
+  throw new Error("Desktop binary is missing or for another architecture");
 const output = join(root, "dist/appimages");
 await mkdir(output, { recursive: true });
 const stage = await mkdtemp(join(output, ".stage-"));
 try {
   const appdir = join(stage, "BoxBox.AppDir");
-  await mkdir(appdir);
-  const bundle = join(
-    root,
-    `desktop/build/stable-linux-${process.arch}/BoxBox`,
-  );
-  const metadata: unknown = JSON.parse(
-    await readFile(join(bundle, "Resources/metadata.json"), "utf8"),
-  );
-  if (
-    typeof metadata !== "object" ||
-    metadata === null ||
-    !("hash" in metadata) ||
-    typeof metadata.hash !== "string" ||
-    !/^[A-Za-z0-9_-]+$/.test(metadata.hash)
-  )
-    throw new Error("Invalid stable runtime metadata");
-  const runtime = await expandRuntimeArchive(
-    join(bundle, "Resources", `${metadata.hash}.tar.zst`),
-    appdir,
-  );
-  const identity: unknown = JSON.parse(
-    await readFile(join(runtime, "Resources/version.json"), "utf8"),
-  );
-  if (
-    typeof identity !== "object" ||
-    identity === null ||
-    !("version" in identity) ||
-    identity.version !== version ||
-    !("channel" in identity) ||
-    identity.channel !== "stable"
-  )
-    throw new Error("Stable runtime does not match the release version");
-  for (const binary of [
-    "bin/bun",
-    "bin/electrobun-launcher",
-    "Resources/app/boxbox-server",
-  ]) {
-    const header = Buffer.from(
-      await Bun.file(join(runtime, binary)).slice(0, 64).arrayBuffer(),
-    );
-    if (
-      header.subarray(0, 4).toString() !== "\x7fELF" ||
-      header.readUInt16LE(18) !== (process.arch === "x64" ? 62 : 183)
-    )
-      throw new Error(`Wrong native architecture: ${binary}`);
-  }
-  await cp(join(tooling, "desktop/assets/AppRun"), join(appdir, "AppRun"));
-  const template = await readFile(
-    join(root, "desktop/assets/boxbox.desktop"),
+  await mkdir(join(appdir, "usr/bin"), { recursive: true });
+  await cp(binary, join(appdir, "usr/bin/boxbox-files"));
+  await symlink("usr/bin/boxbox-files", join(appdir, "AppRun"));
+  const entry = await readFile(
+    join(root, "desktop/packaging/io.boxbox.files.desktop"),
     "utf8",
   );
   await writeFile(
-    join(appdir, "io.boxbox.desktop"),
-    template.replace("@EXEC@", "AppRun"),
+    join(appdir, "io.boxbox.files.desktop"),
+    entry.replace("@EXEC@", "boxbox-files"),
   );
   const icon = Bun.spawn(
     [
@@ -92,7 +54,7 @@ try {
       "--height",
       "256",
       "--output",
-      join(appdir, "io.boxbox.desktop.png"),
+      join(appdir, "io.boxbox.files.png"),
       join(root, "frontend/static/logo-boxbox-3d.svg"),
     ],
     { stdout: "inherit", stderr: "inherit" },

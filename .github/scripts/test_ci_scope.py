@@ -21,7 +21,7 @@ class CIScopeTest(unittest.TestCase):
             "website/src/pages/index.astro": {"website"},
             "docs/index.md": {"website"},
             "docs/api.md": {"website"},
-            "desktop/src/app.ts": {"desktop"},
+            "desktop/src/main.rs": {"desktop"},
             "bun.lock": {"frontend", "website", "desktop", "docker"},
             "Dockerfile": {"docker"},
             ".github/workflows/ci.yml": set(JOBS),
@@ -37,7 +37,7 @@ class CIScopeTest(unittest.TestCase):
                 self.assertEqual(affected_jobs([path]), expected)
 
     def test_mixed_changes_union_dependencies(self):
-        self.assertEqual(affected_jobs(["README.md", "website/src/a.astro", "desktop/src/app.ts"]), {"website", "desktop"})
+        self.assertEqual(affected_jobs(["README.md", "website/src/a.astro", "desktop/src/main.rs"]), {"website", "desktop"})
 
     def test_unavailable_diff_fails_open(self):
         self.assertIsNone(changed_paths("0" * 40, "head"))

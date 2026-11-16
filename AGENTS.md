@@ -2,13 +2,13 @@
 
 BoxBox is a self-hosted file manager. A Go API server (`backend/`) embeds a SvelteKit app (`frontend/`).
 
-The root scripts also run the Electrobun CEF app (`desktop/`) and marketing site (`website/`). Install JS dependencies in each package with `bun install --cwd frontend`, `bun install --cwd desktop`, or `bun install --cwd website`. Each package has its own `bun.lock`. Go dependencies remain in `backend/go.mod`.
+The root scripts also run the native desktop file manager (`desktop/`, Rust and GPUI) and the marketing site (`website/`). Install JS dependencies with `bun install --cwd frontend` or `bun install --cwd website`. Each package has its own `bun.lock`. Go dependencies remain in `backend/go.mod`; Rust dependencies in `desktop/Cargo.lock`.
 
 Read the code that runs before you change it. Prefer the smallest complete change.
 
 ## Commands
 
-- Desktop, from the root: `bun run dev:desktop`, `bun run build:desktop`, `bun run check:desktop`, and `bun run test:desktop`. Desktop builds include the Go server and embedded frontend. See `desktop/README.md` for Linux prerequisites and remote mode.
+- Desktop, from the root: `bun run dev:desktop`, `bun run build:desktop`, `bun run check:desktop`, and `bun run test:desktop`. They wrap `cargo` in `desktop/`. See `desktop/README.md` for Linux prerequisites and remote mode.
 
 - Backend, from `backend/`: `go vet ./...` and `go test ./...`. The service tests take about 80 seconds. Add `-race` for concurrency changes.
 - Frontend, from `frontend/`: `bun run format`, `bun run check`, `bun run lint`, `bun run test`, `bun run build`. Tests use `node:test` and run under `bun test`. A test that imports `.svelte.ts` code needs the preload in `frontend/test/`, which `bun run test` already uses.
@@ -38,15 +38,15 @@ Read the code that runs before you change it. Prefer the smallest complete chang
 - A method that an `$effect` calls must not read the state it changes. Wrap that read in `untrack`.
 - The browse page is wired from `lib/browse/`: location, data, actions, uploads and selection.
 
-## Native file manager (GPUI)
+## Desktop file manager (GPUI)
 
-`experiments/gpui-desktop/` is a native Linux file manager that looks like BoxBox. It is not a port of the web app or of the Electrobun desktop app.
+`desktop/` is a native Linux file manager that looks like BoxBox. It is not a port of the web app or of the Electrobun app it replaced.
 
 - Build each feature the way a native file manager does: talk to the system directly (D-Bus services such as UDisks2 and GVfs, Wayland protocols, freedesktop specs, the kernel). Do not copy how the Go server or the Electrobun host did it, and do not shell out to a command-line tool where the system offers an API.
 - Follow Linux file manager behaviour (Thunar, Nautilus, Dolphin) when it differs from the web UI. The web UI sets the look, not the behaviour.
 - Hand files to their native apps instead of rebuilding web previews or editors.
 - Keep filesystem, D-Bus, process and sorting work off the UI thread.
-- `experiments/gpui-desktop/UI_MAP.md` lists what exists and what is left.
+- `desktop/UI_MAP.md` lists what exists and what is left.
 
 ## Performance
 

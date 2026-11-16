@@ -59,6 +59,3 @@ vendor/
 /sec-audit.md
 /sec-audit-2026-08-07.md
 
-# Electrobun generated files
-/.hutch/
-/build/

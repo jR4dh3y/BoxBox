@@ -1,113 +1,87 @@
 # Linux desktop app
 
-BoxBox Desktop manages files on your Linux computer and on paired BoxBox servers. Local browsing works without Docker or a separately deployed server. The app bundles Chromium and a private local backend.
+BoxBox Files is a native Linux file manager with the BoxBox look. It manages the files on your computer directly and browses paired BoxBox servers. It needs no Docker, browser engine or local server.
+
+It replaced the Electrobun desktop app shipped in v0.3.2. Settings from that app are not carried over.
 
 ## Supported systems
 
-Desktop builds target **Linux with glibc**, built on Ubuntu 24.04. The original desktop archive supports x86_64; the AppImage workflow provides x86_64 and ARM64 builds. Windows, macOS, 32-bit ARM and Alpine/musl desktop packages are not provided. The server remains available for Linux amd64 and arm64.
+Desktop builds target **Linux with glibc**, built on Ubuntu 24.04. The archive and the AUR package are x86_64; AppImages are x86_64 and ARM64. It runs as a native Wayland client (tested on Niri, Hyprland and sway) or on X11. Windows, macOS, 32-bit ARM and musl are not provided. The server remains available for Linux amd64 and arm64.
 
-Install these runtime libraries on Ubuntu 24.04:
+It draws with Vulkan. On Ubuntu 24.04 install:
 
 ```bash
-sudo apt install libgtk-3-0t64 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2 xdg-utils
+sudo apt install libvulkan1 mesa-vulkan-drivers libxkbcommon0 libxkbcommon-x11-0 libwayland-client0 libfontconfig1 libfreetype6 libglib2.0-bin
 ```
 
-For clipboard integration on Wayland, install `wl-clipboard`; on X11, install `xclip`. Interoperable cut/copy also uses Python 3, PyGObject and GTK 4 (`python3-gi gir1.2-gtk-4.0`). Without them, file copy can fall back to URI lists, while cut reports the missing capability. Open With application icons use Python 3, PyGObject and GTK 3 (`python3-gi gir1.2-gtk-3.0`); missing or unreadable icons use a generic application icon. The optional "Use as default" choice updates the local user's MIME association through GIO when opening a local file. FFmpeg and Poppler (`ffmpeg poppler-utils`) enable video/audio and PDF thumbnails; missing helpers leave file icons.
+Optional, for the features that use them:
 
-Other glibc distributions need equivalent packages. Choose an asset for your architecture; distro compatibility depends on those runtime libraries.
+- `udisks2`: disks and removable drives in the sidebar, with mount, unlock and eject.
+- `gvfs` and `gvfs-backends`: phones (MTP) and network locations (`smb://`, `sftp://`, `ftp://`).
+- `xclip`: the file clipboard on X11. Wayland needs nothing extra.
+- `ffmpeg` and `poppler-utils`: video and PDF thumbnails.
+- A Secret Service keyring, such as GNOME Keyring or KeePassXC: saved server credentials.
+
+On a laptop with two GPUs it draws on the GPU the compositor uses. Set `ZED_DEVICE_ID` to a PCI device ID to pick one yourself.
 
 ## Download and install
 
-Arch Linux users can install the native desktop package from AUR after the GitHub publishing workflow completes:
+Arch Linux users can install from the AUR:
 
 ```bash
 paru -S boxbox-bin
 ```
 
-The package uses the x86_64 desktop archive, installs a `boxbox` command and desktop entry, and updates through `paru`. It does not install an AppImage. Its launcher creates a temporary writable runtime for renderer settings and removes it after exit; allow space for an expanded Chromium bundle. Preferences and paired servers remain in the usual user data directory. Set the default file manager explicitly with `xdg-mime default io.boxbox.desktop inode/directory x-scheme-handler/file`.
-
-Open [Downloads](/download/) and choose the **desktop** package. If the latest release has no desktop asset yet, the page links to the source-build instructions instead. The standalone server tarballs are different downloads.
-
-For v0.3.2, download `boxbox-desktop-v0.3.2-linux-amd64.tar.gz` and `SHA256SUMS` from the same [GitHub release](https://github.com/jR4dh3y/BoxBox/releases). Verify before extracting:
+Otherwise, open [Downloads](/download/) or the [GitHub release](https://github.com/jR4dh3y/BoxBox/releases) and download `boxbox-desktop-v<version>-linux-amd64.tar.gz` with `SHA256SUMS`. Verify, extract and install:
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
-tar -xzf boxbox-desktop-v0.3.2-linux-amd64.tar.gz
-cd boxbox-desktop-v0.3.2-linux-amd64
+tar -xzf boxbox-desktop-v<version>-linux-amd64.tar.gz
+cd boxbox-desktop-v<version>-linux-amd64
 ./install.sh
 ```
 
-Check that verification reports `OK` for the desktop archive. Run the installer **without sudo**. It uses the included runtime: Go and Bun do not need to be installed. Installation adds BoxBox to your application menu and registers folder/file URL handling, but leaves your default file manager unchanged. To opt in explicitly:
+Run the installer **without sudo**. It puts `boxbox-files` in `~/.local/bin` and adds a desktop entry and icon under `~/.local/share`. It leaves your default file manager unchanged. To make BoxBox Files the default folder handler:
 
 ```bash
 ./install.sh --set-default
 ```
 
-The app installs under `${XDG_DATA_HOME:-$HOME/.local/share}/boxbox`; preferences and server profiles live separately under the app's `io.boxbox.desktop/stable` data directory. Use a writable installation: changing hardware acceleration updates the runtime's startup configuration.
+To update, install a newer archive the same way. To remove it, run `./install.sh --uninstall`. Settings in `~/.config/boxbox-gpui` and saved state in `~/.local/state/boxbox-gpui` are kept; delete them yourself to start fresh.
+
+### AppImage
+
+Each release also has `boxbox-desktop-v<version>-x86_64.AppImage` and `boxbox-desktop-v<version>-aarch64.AppImage`, each with a `.sha256` file:
+
+```sh
+sha256sum --check boxbox-desktop-v<version>-x86_64.AppImage.sha256
+chmod +x boxbox-desktop-v<version>-x86_64.AppImage
+./boxbox-desktop-v<version>-x86_64.AppImage
+```
+
+If FUSE is unavailable, add `--appimage-extract-and-run`. AppImages do not install a desktop entry or change the default file manager. The host still needs the Vulkan and windowing libraries above.
 
 ## Local files and connected servers
 
-- Browse local drives and standard home folders. Files open in their OS default app; **Open with** lists installed file-capable applications.
-- Use tabs, split panes, native clipboard operations and local Trash. Restore moves an item back; permanently deleting it is irreversible.
-- Copy between local folders and paired servers, or between paired servers, with live transfer status. Cross-source moves are rejected; copy first and delete the source only after checking the result.
-- Download and Share apply to server files, not files on this computer. Read-only locations keep mutation actions disabled.
+- Browse drives, home folders, disks, phones and network shares. Type `smb://server/share`, `sftp://user@host/path` or `ftp://host` in the location bar (Ctrl+L) to mount and open one.
+- Use tabs, split panes, list and grid views, search, favorites (shared with other file managers through the GTK bookmarks file) and the freedesktop Trash.
+- Files open in their default app; **Open with** lists the installed apps that take the file. Drag files out of the window into other apps.
 
 To connect a server:
 
-1. Run a BoxBox server with the pairing API: v0.3.2 or newer, or a recent nightly containing it. Older public releases do not provide pairing.
-2. Open the server in your browser over HTTPS with a trusted certificate. In **Settings → Account → Pair a desktop**, confirm your password and generate a single-use code.
-3. In the desktop app, open **Settings → Connections → Add server**, enter its HTTPS address and code, and pair it.
+1. Run a BoxBox server with the pairing API (v0.3.2 or newer). Reach any server beyond your own machine over HTTPS with a trusted certificate; the pairing code and credential travel with each request.
+2. In the server's web UI, open **Settings → Account → Pair a desktop**, confirm your password and generate a single-use code.
+3. In BoxBox Files, open **Settings → Connections** (Ctrl+Shift+O), enter the server's address and the code.
 
-Remote credentials stay in the local backend. The server can revoke the paired device from Account settings. An expired or revoked connection needs pairing again; an offline server can be retried. Removing a desktop connection removes its saved local profile, not files on that server.
+The credential is stored in your keyring through the Secret Service. Saved servers connect in the background at launch, and their drives join the sidebar and Overview. Removing a connection revokes it on the server and forgets it here; it does not touch files on the server.
 
-## Appearance and rendering
+## Build from source
 
-Appearance includes wallpaper fit, frosted glass, custom or sampled accents, and optional component tint from your wallpaper. Tint does not change the blue/orange/red drive-usage status colours. The desktop-only **Hardware acceleration** setting takes effect after fully closing and reopening the app.
-
-## Update, remove or build from source
-
-Close all BoxBox windows before updating. Extract the new release and run its `./install.sh` again. The installer replaces only an app directory marked as its own; preferences, paired servers and wallpapers remain in the separate app data directory. This release uses manual updates, not an automatic update feed.
-
-To remove the app, delete the managed `boxbox` installation directory, its `applications/io.boxbox.desktop` desktop entry, and `icons/hicolor/scalable/apps/io.boxbox.desktop.svg` under your XDG data home. Leave `io.boxbox.desktop/stable` in place to retain settings and paired-server data. If you made BoxBox the default file manager, choose a replacement in your desktop settings before removing it.
-
-To build instead of downloading, install the prerequisites in the [desktop README](https://github.com/jR4dh3y/BoxBox/blob/master/desktop/README.md), then run:
+Install Rust, Bun and the development packages for the libraries above (on Ubuntu: `libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig-dev libfreetype-dev`), then run:
 
 ```bash
-bun install --cwd frontend --frozen-lockfile
-bun install --cwd desktop --frozen-lockfile
 bun run build:desktop
 bun run install:desktop
 ```
 
-Source builds need Go, Bun and Rust in addition to the native build libraries. Use [Development](/docs/development/) for development commands and [the paired-client API](/docs/connect-api/) for the authorization contract.
-
-## AppImage builds
-
-The **Publish desktop AppImages** GitHub Actions workflow builds the desktop natively on Ubuntu 24.04 for x86_64 and ARM64. It attaches `boxbox-desktop-v<version>-x86_64.AppImage` and `boxbox-desktop-v<version>-aarch64.AppImage`, each with a `.sha256` file, after both builds and native launch checks pass. ARM64 is 64-bit ARM; 32-bit ARM is not supported.
-
-Download the AppImage and its checksum from the same GitHub release, then run:
-
-```sh
-sha256sum --check boxbox-desktop-v0.3.2-x86_64.AppImage.sha256
-chmod +x boxbox-desktop-v0.3.2-x86_64.AppImage
-./boxbox-desktop-v0.3.2-x86_64.AppImage
-```
-
-Use `aarch64` in both filenames on ARM64. The host still needs the GTK 3, WebKitGTK 4.1 and Ayatana AppIndicator libraries listed above. If FUSE is unavailable, use `./boxbox-desktop-v0.3.2-x86_64.AppImage --appimage-extract-and-run`.
-
-The launcher copies its runtime into a private temporary directory so renderer settings remain writable. Allow space for the expanded Chromium bundle and expect a copy on each launch. The copy is removed when the launcher exits. Preferences and paired servers remain in the normal BoxBox data directory. AppImages do not install desktop associations or change the default file manager. Close BoxBox before switching between an installed archive and an AppImage; both share the same app identity.
-
-Maintainers can run the workflow manually with an existing release tag to add AppImages to a previously published release. New published releases trigger it automatically. Existing release assets are never overwritten. This workflow is separate from the GHCR server images and the archive package workflow.
-
-## Other applications' file dialogs
-
-BoxBox Desktop includes an opt-in Linux FileChooser portal backend. It can provide
-Open, Save and folder dialogs for portal-aware applications such as browsers.
-Making BoxBox the default folder handler alone does not change their file dialogs.
-Direct toolkit and custom choosers remain application-owned.
-
-See [the desktop guide](../desktop/README.md#use-boxbox-as-other-applications-file-chooser)
-for registration, safe opt-in, undo, supported options and window-manager limits.
-The backend handles only FileChooser; ScreenCast, screenshots and other portal
-interfaces continue using their configured backends. No host defaults are changed
-by building, installing or launching BoxBox normally.
+See the [desktop README](https://github.com/jR4dh3y/BoxBox/blob/master/desktop/README.md) for development, profiling and tests, and [the paired-client API](/docs/connect-api/) for the authorization contract.

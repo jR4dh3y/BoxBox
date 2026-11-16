@@ -20,7 +20,7 @@ Make sure `$GOPATH/bin` is on your `PATH`.
 ```text
 backend/      Go API server and embedded static host
 frontend/     SvelteKit app compiled to static files
-desktop/      Electrobun Linux client with bundled CEF
+desktop/      Native Linux file manager (Rust, GPUI)
 website/      Astro marketing site
 docs/         Markdown project documentation
 scripts/      Local development helpers

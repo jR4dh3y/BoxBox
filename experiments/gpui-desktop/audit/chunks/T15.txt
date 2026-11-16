@@ -1,3 +1,0 @@
-/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-tree-model.c
-/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-tree-pane.c
-/home/radhey/.t3/worktrees/BoxBox/gpui-native/experiments/reference/thunar/thunar/thunar-tree-view-model.c

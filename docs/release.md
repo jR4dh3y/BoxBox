@@ -2,17 +2,17 @@
 
 Use this workflow to keep stable releases and nightly builds in separate GHCR packages while still getting automatic nightly and branch images for testing.
 
-## v0.3.2 Desktop Release
+## Desktop and server packages
 
-The next release adds the Linux x86_64 desktop app alongside the existing amd64/arm64 server packages. Check [Downloads](/download/) for published assets; the website does not offer a desktop link until a real release asset exists. See [Linux Desktop](/docs/desktop/) for dependencies and pairing.
+Each release ships the Linux x86_64 desktop app, BoxBox Files, alongside the amd64/arm64 server packages. v0.3.2 shipped the Electrobun app; later releases ship the native GPUI app from `desktop/`. See [Linux Desktop](/docs/desktop/) for dependencies and pairing.
 
-`VERSION` is the release source of truth and also sets the Electrobun app version. Build the full distribution locally with:
+`VERSION` is the release source of truth; the desktop app's About page reads it when the checkout has no tags. Build the full distribution locally with:
 
 ```bash
 bun scripts/package-release.ts
 ```
 
-This builds the desktop runtime, a self-contained installer archive, both standalone server targets, `SHA256SUMS` and `release-manifest.json` under `dist/release/`. Every packaging run builds the desktop from the current checkout so its manifest cannot describe a stale bundle. A local working-tree build is marked dirty in its manifest; official tag builds require clean source.
+This builds the desktop binary and its installer archive, both standalone server targets, `SHA256SUMS` and `release-manifest.json` under `dist/release/`. Every packaging run builds the desktop from the current checkout so its manifest cannot describe a stale bundle. A local working-tree build is marked dirty in its manifest; official tag builds require clean source.
 
 For a public stable release, merge both the desktop PR and its website/release follow-up into master first. Set `VERSION` to the intended version, keep `docs/releases/v0.3.2.md` current, and tag the tested master commit with `v0.3.2`. The release workflow verifies that the tag matches VERSION and belongs to master. It validates the server, website, Docker build, desktop tests and artifacts before publishing. The GitHub release stays a draft while files upload, then becomes public only after the Docker image succeeds. Published releases are not overwritten.
 
@@ -286,12 +286,12 @@ Set `VERSION` to `0.3.2-rc.1` and add matching release notes before creating tha
 
 ## Desktop AppImages
 
-After GitHub downloads are published, the release workflow calls [Publish desktop AppImages](../.github/workflows/appimages.yml). Native Ubuntu 24.04 runners build x86_64 and ARM64 desktop AppImages and verify CEF launch, folder handoff and shutdown before uploading both architectures and their `.sha256` files. This job does not modify the GHCR images or existing archive checksums.
+After GitHub downloads are published, the release workflow calls [Publish desktop AppImages](../.github/workflows/appimages.yml). Native Ubuntu 24.04 runners build x86_64 and ARM64 desktop AppImages and launch each one under Xvfb with software Vulkan until it paints a folder, before uploading both architectures and their `.sha256` files. This job does not modify the GHCR images or existing archive checksums.
 
-For an existing release such as `v0.3.2`, manually run **Publish desktop AppImages** and provide that tag. Packaging tools come from the workflow revision; application code comes from the release tag. Uploads refuse to overwrite existing assets. If a run fails before uploading, fix the failure and rerun it. See the [desktop guide](desktop.md#appimage-builds) for runtime dependencies and launch instructions.
+For an existing release that ships the GPUI app, manually run **Publish desktop AppImages** and provide that tag. Tags up to `v0.3.2` hold the Electrobun app and cannot be packaged by the current tools. Packaging tools come from the workflow revision; application code comes from the release tag. Uploads refuse to overwrite existing assets. If a run fails before uploading, fix the failure and rerun it. See the [desktop guide](desktop.md#appimage) for runtime dependencies and launch instructions.
 
 ## AUR publishing
 
-Stable releases also call **Publish AUR package**, which generates `boxbox-bin` metadata from the published desktop archive and its SHA-256 checksum. GitHub Actions builds the package in an Arch Linux container, runs namcap, and pushes the packaging files to `aur.archlinux.org/boxbox-bin.git`. Packaging templates live in `packaging/aur/`; the launcher and desktop entry reuse the desktop sources. Only x86_64 is supported because the desktop archive is x86_64.
+Stable releases also call **Publish AUR package**, which generates `boxbox-bin` metadata from the published desktop archive and its SHA-256 checksum. GitHub Actions builds the package in an Arch Linux container, runs namcap, and pushes the packaging files to `aur.archlinux.org/boxbox-bin.git`. The template lives in `packaging/aur/PKGBUILD` and installs the binary, desktop entry and icon from the release archive. Only x86_64 is supported because the desktop archive is x86_64.
 
-The repository secret `AUR_SSH_PRIVATE_KEY` must contain a key authorized for the AUR maintainer account. The workflow uses an SSH agent and the pinned AUR host key; it does not commit credentials. Publishing occurs only through GitHub Actions. Use the workflow's manual tag input to publish an existing stable release such as `v0.3.2`. Prereleases do not update AUR. Install or update with `paru -S boxbox-bin`.
+The repository secret `AUR_SSH_PRIVATE_KEY` must contain a key authorized for the AUR maintainer account. The workflow uses an SSH agent and the pinned AUR host key; it does not commit credentials. Publishing occurs only through GitHub Actions. Use the workflow's manual tag input to publish an existing stable release that ships the GPUI app. Prereleases do not update AUR. Install or update with `paru -S boxbox-bin`.
