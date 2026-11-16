@@ -114,7 +114,7 @@ Dockerfile    Unified frontend/backend production image
 
 ## Documentation
 
-Full documentation lives at [boxbox.radhey.dev/docs](https://boxbox.radhey.dev/docs/). Release and upgrade notes are in [docs/release.md](docs/release.md).
+Full documentation lives at [boxbox.radhey.dev/docs](https://boxbox.radhey.dev/docs/). Release and upgrade notes are in [docs/release-notes.md](docs/release-notes.md).
 
 ## License
 
