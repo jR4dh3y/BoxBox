@@ -151,24 +151,23 @@ If you used old Docker named volumes, copy them manually only when you are ready
 OLD_DATA=filemanager-data   NEW_DATA=boxbox-data
 OLD_TEMP=filemanager-temp   NEW_TEMP=boxbox-temp
 
-docker compose down
-
-docker volume inspect "$OLD_DATA" >/dev/null &&
+docker compose down &&
+  docker volume inspect "$OLD_DATA" >/dev/null &&
   docker volume create "$NEW_DATA" &&
   docker run --rm \
     -v "$OLD_DATA":/from:ro \
     -v "$NEW_DATA":/to \
-    alpine sh -c 'cd /from && cp -a . /to'
-
-docker volume inspect "$OLD_TEMP" >/dev/null &&
+    alpine sh -c 'cd /from && cp -a . /to' &&
+  docker volume inspect "$OLD_TEMP" >/dev/null &&
   docker volume create "$NEW_TEMP" &&
   docker run --rm \
     -v "$OLD_TEMP":/from:ro \
     -v "$NEW_TEMP":/to \
-    alpine sh -c 'cd /from && cp -a . /to'
-
-docker compose up -d
+    alpine sh -c 'cd /from && cp -a . /to' &&
+  docker compose up -d
 ```
+
+The commands are chained, so the first failure stops the rest and the new deployment does not start.
 
 Old `filemanager-*` volumes are not deleted. Do not start with the new Compose volume names unless every needed copy command succeeds. If a copy fails, the old `filemanager-*` volume remains the source of truth; the new `boxbox-*` target may be partial, so remove and recreate the partial target or copy into a fresh target before starting the new Compose config.
 
