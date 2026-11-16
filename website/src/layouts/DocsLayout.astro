@@ -150,9 +150,13 @@ function hrefFor(slug: string) {
     }
 
     // The sidebar persists across pages, so its current-page mark is moved here.
+    // "/docs/api" and "/docs/api/" are the same page.
+    const withoutSlash = (path: string) => path.replace(/\/+$/, '');
+
     function markCurrentDoc() {
+      const here = withoutSlash(window.location.pathname);
       for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-doc-link]')) {
-        if (link.pathname === window.location.pathname) link.setAttribute('aria-current', 'page');
+        if (withoutSlash(link.pathname) === here) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
       }
     }
