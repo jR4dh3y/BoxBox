@@ -37,6 +37,33 @@ function freePort(): Promise<number> {
     });
   });
 }
+/**
+ * An `Exec` value as a launcher reads it: the value's string escapes, then
+ * double-quoted arguments with `\` escapes, with field codes dropped and `%%` as `%`.
+ */
+function execArgv(value: string): string[] {
+  const text = value.replace(/\\(.)/g, (_, next: string) =>
+    next === "s" ? " " : next === "n" ? "\n" : next === "t" ? "\t" : next === "r" ? "\r" : next,
+  );
+  const argv: string[] = [];
+  let word: string | undefined;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === '"') {
+      word ??= "";
+      for (index++; index < text.length && text[index] !== '"'; index++)
+        word += text[index] === "\\" ? text[++index] : text[index];
+    } else if (char === " ") {
+      if (word !== undefined) argv.push(word);
+      word = undefined;
+    } else word = (word ?? "") + char;
+  }
+  if (word !== undefined) argv.push(word);
+  return argv
+    .filter((arg) => !/^%[fFuUick]$/.test(arg))
+    .map((arg) => arg.replaceAll("%%", "%"));
+}
+
 /** Runs the standalone server in loopback dev mode and checks it serves the API and embedded UI. */
 async function checkServer(binary: string, data: string): Promise<void> {
   const port = await freePort();
@@ -137,7 +164,14 @@ try {
   const binary = join(home, "bin/boxbox-files");
   assert.ok(((await stat(binary)).mode & 0o111) !== 0, "binary is executable");
   const entry = join(home, "data/applications/io.boxbox.files.desktop");
-  assert.ok((await readFile(entry, "utf8")).includes(`Exec=${binary} %U`));
+  const exec = (await readFile(entry, "utf8")).match(/^Exec=(.*)$/m)?.[1];
+  assert.ok(exec, "the entry has an Exec line");
+  const argv = execArgv(exec);
+  assert.deepEqual(argv, [binary], "Exec names the installed binary, spaces included");
+  // Launch what the menu would, headless: the profile summary of an empty trace.
+  const trace = join(stage, "empty-trace.json");
+  await writeFile(trace, "[\n");
+  await run([binary, "--profile-summary", trace], env);
   assert.ok(
     await Bun.file(
       join(home, "data/icons/hicolor/scalable/apps/io.boxbox.files.svg"),
@@ -161,7 +195,7 @@ try {
     "update and uninstall keep user settings",
   );
   console.log(
-    "PASS: all package checksums; server architectures; standalone server serves the API and embedded UI; desktop installs without sudo, leaves the default handler, and keeps settings across update and uninstall",
+    "PASS: all package checksums; server architectures; standalone server serves the API and embedded UI; desktop installs without sudo, its menu entry launches the binary, it leaves the default handler, and keeps settings across update and uninstall",
   );
 } finally {
   await rm(stage, { recursive: true, force: true });

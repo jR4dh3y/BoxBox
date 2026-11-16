@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::local::LocalFiles;
@@ -214,13 +214,16 @@ impl Api {
         }
     }
 
-    /// Resolve a virtual local path. Remote paths are owned by the server.
-    /// One local entry's details. Remote providers are reached by listing instead.
+    /// One entry's details. A server has no single-entry call, so its entry is
+    /// found in the parent's listing; a drive itself has no parent to list.
     pub fn stat(&self, path: &str) -> Result<FileInfo> {
         let _span = crate::profile::span("api.stat").with(|| path.to_string());
         match &self.provider {
             Provider::Local(local) => local.stat(path),
-            Provider::Remote(_) => anyhow::bail!("{path} is not on this computer"),
+            Provider::Remote(remote) => {
+                let (parent, name) = path.rsplit_once('/').with_context(|| format!("{path} is a drive, not an entry"))?;
+                remote.list(parent)?.into_iter().find(|item| item.name == name).with_context(|| format!("{path} does not exist"))
+            }
         }
     }
 

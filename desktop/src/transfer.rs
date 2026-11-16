@@ -459,6 +459,46 @@ mod tests {
         (RefCell::new(Vec::new()), RefCell::new(answers.into_iter()))
     }
 
+    /// A server whose `media` folder holds `a.txt`; sends each request line it gets.
+    fn server_with_a_txt() -> (String, std::sync::mpsc::Receiver<String>) {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (requests, received) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { return };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                while reader.read_line(&mut String::new()).is_ok_and(|read| read > 2) {}
+                let body = r#"{"path":"media","items":[{"name":"a.txt","size":7,"isDir":false}]}"#;
+                let _ = requests.send(line.trim().to_string());
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        (url, received)
+    }
+
+    #[test]
+    fn a_name_taken_on_a_server_asks_first() {
+        let (_root, local) = fixture(&["a.txt"]);
+        let (url, requests) = server_with_a_txt();
+        let server = Arc::new(Api::new(&url, None));
+        let item = local.stat("home/a.txt").unwrap();
+        let job = Job { mode: Mode::Copy, items: vec![(local.clone(), item)], destination: server, parent: "media".into() };
+        let (asked, answers) = scripted(vec![(Answer::Skip, false)]);
+        let ask = |question: Question, _| {
+            asked.borrow_mut().push(question);
+            answers.borrow_mut().next().unwrap()
+        };
+        let outcome = run(&job, &ask).unwrap();
+        assert!(matches!(&asked.borrow()[..], [Question::Conflict { name, existing, .. }] if name == "a.txt" && existing.size == 7));
+        assert_eq!(outcome, Outcome { done: 0, skipped: 1 });
+        let sent: Vec<String> = requests.try_iter().collect();
+        assert!(sent.iter().all(|line| line.starts_with("GET ")), "skipped, so nothing was sent: {sent:?}");
+    }
+
     #[test]
     fn conflicts_skip_rename_replace_and_apply_to_all() {
         let (root, api) = fixture(&["src/a.txt", "src/b.txt", "src/c.txt", "dst/a.txt", "dst/b.txt", "dst/c.txt"]);

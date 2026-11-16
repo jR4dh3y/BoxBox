@@ -204,9 +204,15 @@ impl RemoteApi {
                 JobState::Pending | JobState::Running => {}
             }
             let now = Instant::now();
+            // The user's Cancel, between polls: the server's job stops too.
+            if let Err(cancelled) = crate::progress::check() {
+                if let Err(error) = self.cancel_job(&job.id) {
+                    log::warn!("the server did not cancel copy job {}: {error:#}", job.id);
+                }
+                return Err(cancelled);
+            }
             if now >= deadline {
-                let endpoint = format!("/jobs/{}", encode_component(&job.id));
-                match self.mutate_empty_with_agent(&self.job_agent, "DELETE", &endpoint, None) {
+                match self.cancel_job(&job.id) {
                     Ok(()) => anyhow::bail!(
                         "copy did not finish before the 30-minute timeout; server cancellation was requested"
                     ),
@@ -219,6 +225,12 @@ impl RemoteApi {
             let endpoint = format!("/jobs/{}", encode_component(&job.id));
             job = self.get_with_agent(&self.job_agent, &endpoint)?;
         }
+    }
+
+    /// `DELETE /jobs/{id}`: asks the server to stop a job.
+    fn cancel_job(&self, id: &str) -> Result<()> {
+        let endpoint = format!("/jobs/{}", encode_component(id));
+        self.mutate_empty_with_agent(&self.job_agent, "DELETE", &endpoint, None)
     }
 
     pub(super) fn import_file(&self, source: &Path, parent: &str) -> Result<FileInfo> {
@@ -695,4 +707,59 @@ enum JobState {
 #[derive(Debug, Deserialize)]
 struct UploadResponse {
     complete: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::sync::mpsc;
+
+    use super::*;
+
+    /// A server whose copy job never finishes; sends each request line it gets.
+    fn endless_copy_server() -> (String, mpsc::Receiver<String>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (requests, received) = mpsc::channel();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { return };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                let mut length = 0;
+                let mut header = String::new();
+                while reader.read_line(&mut header).is_ok_and(|read| read > 2) {
+                    if let Some(value) = header.to_ascii_lowercase().strip_prefix("content-length:") {
+                        length = value.trim().parse().unwrap_or(0);
+                    }
+                    header.clear();
+                }
+                reader.by_ref().take(length).read_to_end(&mut Vec::new()).unwrap();
+                let body = if line.starts_with("DELETE") { "" } else { r#"{"id":"j1","state":"running"}"# };
+                // Reported before the reply, so the client cannot finish first.
+                if requests.send(line.trim().to_string()).is_err() {
+                    return;
+                }
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        (url, received)
+    }
+
+    #[test]
+    fn cancel_stops_a_server_copy_and_its_job() {
+        let (url, requests) = endless_copy_server();
+        let remote = RemoteApi::new(&url, None);
+        let progress = crate::progress::Progress::default();
+        let cancel = progress.clone();
+        let copy = thread::spawn(move || progress.scope(|| remote.copy("media/a", "media/b")));
+        assert!(requests.recv().unwrap().starts_with("POST /api/v1/jobs "));
+        assert!(requests.recv().unwrap().starts_with("GET /api/v1/jobs/j1 "), "it polls the job");
+        cancel.cancel();
+        let error = copy.join().unwrap().expect_err("a cancelled copy fails");
+        assert_eq!(error.to_string(), "Cancelled");
+        let asked: Vec<String> = requests.try_iter().collect();
+        assert!(asked.iter().any(|line| line.starts_with("DELETE /api/v1/jobs/j1 ")), "the server's job was cancelled: {asked:?}");
+    }
 }

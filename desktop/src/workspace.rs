@@ -529,12 +529,14 @@ impl Workspace {
                 let opened = this.update_in(cx, |this, window, cx| {
                     // A launch without a folder, as the file-manager key sends, opens
                     // the start location, as a new window would.
+                    // A launch names a place on this computer, even while a pane is on a server.
+                    let home = this.home.api.clone();
                     let path = match (argument.is_empty(), this.preferences.start_location) {
-                        (false, _) => launch_path(&this.active_api(), &argument),
+                        (false, _) => launch_path(&home, &argument),
                         (true, StartLocation::Last) => this.last_location.clone().unwrap_or_default(),
-                        (true, start) => startup::start_path(&this.home.api, start),
+                        (true, start) => startup::start_path(&home, start),
                     };
-                    this.open_tab(path, cx);
+                    this.open_tab_with(home, path, cx);
                     window.activate_window();
                 });
                 if opened.is_err() {

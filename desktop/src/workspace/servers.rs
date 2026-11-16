@@ -4,7 +4,7 @@
 //! keyring, under the saved connection's id. Connecting blocks (HTTP, D-Bus,
 //! perhaps a keyring unlock prompt), so it runs off the UI thread.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -70,8 +70,9 @@ pub(crate) struct Servers {
     states: HashMap<String, ServerState>,
     remembered: Remembered,
     wanted: Option<Wanted>,
-    /// Drive lists Refresh asked for that have not arrived.
-    refreshing: usize,
+    /// Servers whose drive list Refresh asked for and has not arrived. One at a
+    /// time per server, so an older answer cannot land after a newer one.
+    refreshing: HashSet<String>,
 }
 
 impl Servers {
@@ -95,7 +96,7 @@ impl Servers {
 
     /// Whether any server is connecting or listing its drives again.
     pub fn busy(&self) -> bool {
-        self.refreshing > 0 || self.states.values().any(|state| matches!(state, ServerState::Connecting { .. }))
+        !self.refreshing.is_empty() || self.states.values().any(|state| matches!(state, ServerState::Connecting { .. }))
     }
 
     /// Drops a waiting open: the user went elsewhere.
@@ -250,6 +251,7 @@ impl Workspace {
         for connection in self.desktop_settings.connections.clone() {
             let api = match self.servers.states.get(&connection.id) {
                 Some(ServerState::Connecting { .. }) => continue,
+                Some(ServerState::Ready { .. }) if self.servers.refreshing.contains(&connection.id) => continue,
                 Some(ServerState::Ready { api, .. }) => api.clone(),
                 _ => {
                     self.servers.states.remove(&connection.id);
@@ -257,12 +259,12 @@ impl Workspace {
                     continue;
                 }
             };
-            self.servers.refreshing += 1;
+            self.servers.refreshing.insert(connection.id.clone());
             cx.spawn(async move |this, cx| {
                 let listing = api.clone();
                 let result = cx.background_executor().spawn(async move { listing.drives() }).await;
                 this.update(cx, |this, cx| {
-                    this.servers.refreshing -= 1;
+                    this.servers.refreshing.remove(&connection.id);
                     cx.notify();
                     // Removed, or reconnected with another credential, meanwhile.
                     let current = matches!(this.servers.states.get(&connection.id), Some(ServerState::Ready { api: now, .. }) if Arc::ptr_eq(now, &api));
@@ -325,16 +327,23 @@ impl Workspace {
 
     /// Drops a removed server: its panes go back to the Overview, and the
     /// server and the keyring forget this computer.
+    /// Sends every pane on this server back to the Overview. By address, not by
+    /// `Api`: after a failed refresh or a new pairing, open panes hold an `Api`
+    /// the server's state no longer has.
+    pub(crate) fn leave_server(&mut self, connection: &SavedConnection, cx: &mut Context<Self>) {
+        let Some(url) = Api::new(&connection.url, None).server_url().map(str::to_string) else { return };
+        let inside: Vec<_> = self.tabs.iter().chain(self.split_panes.values()).filter(|pane| pane.api.server_url() == Some(url.as_str())).map(|pane| super::PaneTarget(pane.id)).collect();
+        for target in inside {
+            self.navigate_in(target, String::new(), cx);
+        }
+    }
+
     pub(crate) fn forget_server(&mut self, connection: SavedConnection, cx: &mut Context<Self>) {
         if self.servers.remembered.remove(&connection.id).is_some() {
             self.save_remembered(cx);
         }
-        if let Some(ServerState::Ready { api, .. }) = self.servers.states.remove(&connection.id) {
-            let inside: Vec<_> = self.tabs.iter().chain(self.split_panes.values()).filter(|pane| Arc::ptr_eq(&pane.api, &api)).map(|pane| super::PaneTarget(pane.id)).collect();
-            for target in inside {
-                self.navigate_in(target, String::new(), cx);
-            }
-        }
+        self.servers.states.remove(&connection.id);
+        self.leave_server(&connection, cx);
         cx.spawn(async move |this, cx| {
             let name = connection.name.clone();
             let result = cx.background_executor().spawn(async move { forget(&connection) }).await;

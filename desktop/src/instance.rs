@@ -33,7 +33,30 @@ pub fn claim(argument: &str) -> Result<Instance> {
     claim_at(&socket_path(), argument)
 }
 
+/// An exclusive `flock` beside the socket, held from the connect attempt to the
+/// bind, so two launches at once cannot both find no window and both start one.
+/// Released when dropped; by then a listener is bound and later launches find it.
+struct ClaimLock {
+    _held: std::fs::File,
+}
+
+impl ClaimLock {
+    fn take(socket: &std::path::Path) -> Result<Self> {
+        use std::os::fd::AsRawFd as _;
+        let file = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(socket.with_extension("lock"))?;
+        // SAFETY: the descriptor is open for as long as `file` lives.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+            return Err(std::io::Error::last_os_error()).context("cannot lock the instance socket");
+        }
+        Ok(Self { _held: file })
+    }
+}
+
 fn claim_at(socket: &std::path::Path, argument: &str) -> Result<Instance> {
+    let dir = socket.parent().context("socket directory")?;
+    std::fs::create_dir_all(dir)?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    let _lock = ClaimLock::take(socket)?;
     if let Ok(mut stream) = UnixStream::connect(socket) {
         writeln!(stream, "{}", serde_json::to_string(argument)?)?;
         let mut reply = String::new();
@@ -42,9 +65,6 @@ fn claim_at(socket: &std::path::Path, argument: &str) -> Result<Instance> {
             return Ok(Instance::Forwarded);
         }
     }
-    let dir = socket.parent().context("socket directory")?;
-    std::fs::create_dir_all(dir)?;
-    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
     // Nothing answered, so a socket file left behind belongs to a crashed window.
     std::fs::remove_file(socket).ok();
     let listener = UnixListener::bind(socket).with_context(|| format!("cannot listen on {}", socket.display()))?;
@@ -77,6 +97,29 @@ mod tests {
         let Instance::Primary(launches, _) = claim_at(&socket, "").unwrap() else { panic!("the first claim owns the socket") };
         assert!(matches!(claim_at(&socket, "/home/me/Documents").unwrap(), Instance::Forwarded));
         assert_eq!(launches.recv_blocking().unwrap(), "/home/me/Documents");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn launches_at_once_start_one_window() {
+        let dir = std::env::temp_dir().join(format!("boxbox-instance-race-{}", std::process::id()));
+        let socket = dir.join("instance.sock");
+        for round in 0..20 {
+            std::fs::remove_dir_all(&dir).ok();
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+            let claims: Vec<_> = (0..8)
+                .map(|_| {
+                    let (socket, barrier) = (socket.clone(), barrier.clone());
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        claim_at(&socket, "x").unwrap()
+                    })
+                })
+                .collect();
+            let claims: Vec<_> = claims.into_iter().map(|claim| claim.join().unwrap()).collect();
+            let primaries = claims.iter().filter(|claim| matches!(claim, Instance::Primary(..))).count();
+            assert_eq!(primaries, 1, "round {round}: one window, the rest handed over");
+        }
         std::fs::remove_dir_all(dir).ok();
     }
 }

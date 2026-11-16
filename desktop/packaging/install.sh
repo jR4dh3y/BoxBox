@@ -28,7 +28,15 @@ esac
 
 install -Dm755 "$(first "$base/boxbox-files" "$base/../target/release/boxbox-gpui")" "$bin/boxbox-files"
 mkdir -p "$(dirname "$desktop")"
-sed "s|@EXEC@|$bin/boxbox-files|" "$base/io.boxbox.files.desktop" >"$desktop"
+# Desktop Entry quoting: inside double quotes, \ " ` $ take a backslash; then the
+# value's own string escaping doubles every backslash; % is written %%.
+exec_path=$(printf '%s' "$bin/boxbox-files" | sed -e 's/[\\"`$]/\\&/g' -e 's/\\/\\\\/g' -e 's/%/%%/g')
+while IFS= read -r line; do
+	case $line in
+	Exec=@EXEC@*) printf 'Exec="%s"%s\n' "$exec_path" "${line#Exec=@EXEC@}" ;;
+	*) printf '%s\n' "$line" ;;
+	esac
+done <"$base/io.boxbox.files.desktop" >"$desktop"
 install -Dm644 "$(first "$base/io.boxbox.files.svg" "$base/../../frontend/static/logo-boxbox-3d.svg")" "$icon"
 command -v update-desktop-database >/dev/null && update-desktop-database "$data/applications" || true
 if [ "${1:-}" = --set-default ]; then

@@ -487,14 +487,18 @@ fn remembered_server_drives_hold_their_places_until_the_server_answers(cx: &mut 
     assert_eq!(entries(&view, cx).len(), 2);
 }
 
-/// Answers `/api/v1/files/stats` with each body in turn, one per request.
-fn stats_server(bodies: Vec<String>) -> String {
+/// Answers `/api/v1/files/stats` with each body in turn, one per request, and
+/// counts the requests.
+fn stats_server(bodies: Vec<String>) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
     use std::io::{BufRead, BufReader, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
+    let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = hits.clone();
     std::thread::spawn(move || {
         for body in bodies {
             let Ok((mut stream, _)) = listener.accept() else { return };
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let mut request = String::new();
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             reader.read_line(&mut request).unwrap();
@@ -503,7 +507,7 @@ fn stats_server(bodies: Vec<String>) -> String {
             write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
         }
     });
-    url
+    (url, hits)
 }
 
 #[gpui::test]
@@ -513,7 +517,7 @@ fn refresh_on_the_overview_lists_a_servers_drives_again(cx: &mut TestAppContext)
     let (view, cx, _fixture) = open(cx, &["a.txt"]);
     let drive = |name: &str, free: u64| format!(r#"{{"name":"{name}","totalBytes":100,"freeBytes":{free},"usedBytes":{},"usedPct":{}}}"#, 100 - free, 100 - free);
     let listed = format!(r#"{{"drives":[{},{}]}}"#, drive("media", 20), drive("usb", 90));
-    let url = stats_server(vec![listed.clone(), listed]);
+    let (url, hits) = stats_server(vec![listed.clone(), listed.clone(), listed]);
     let server = Arc::new(Api::new(&url, None));
     view.update(cx, |workspace, cx| {
         workspace.desktop_settings.connections.push(SavedConnection { id: "nas".into(), name: "nas".into(), url: url.clone() });
@@ -538,13 +542,17 @@ fn refresh_on_the_overview_lists_a_servers_drives_again(cx: &mut TestAppContext)
     settle(cx);
     assert_eq!(drives(&view, cx), [("media".to_string(), 20), ("usb".to_string(), 90)]);
     view.read_with(cx, |workspace, _| assert!(!workspace.servers.busy()));
-    // The icon waits on a listing still out.
+    // The icon waits on a listing still out, and a second Refresh meanwhile
+    // asks nothing, so an older answer cannot land after a newer one.
+    let before = hits.load(std::sync::atomic::Ordering::SeqCst);
     view.update(cx, |workspace, cx| {
         workspace.refresh_servers(cx);
         assert!(workspace.servers.busy(), "the server is listing its drives");
+        workspace.refresh_servers(cx);
     });
     settle(cx);
     view.read_with(cx, |workspace, _| assert!(!workspace.servers.busy()));
+    assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), before + 1, "one listing at a time");
     // Done, it finishes its turn and stops.
     std::thread::sleep(std::time::Duration::from_millis(750));
     view.read_with(cx, |workspace, _| assert_eq!(workspace.refresh_turn(workspace.active_pane), None));
@@ -553,6 +561,27 @@ fn refresh_on_the_overview_lists_a_servers_drives_again(cx: &mut TestAppContext)
         _ => None,
     }).collect();
     assert_eq!(names, ["media", "usb"]);
+}
+
+#[gpui::test]
+fn leaving_a_server_closes_its_tabs_even_after_it_went_offline(cx: &mut TestAppContext) {
+    use crate::settings_state::SavedConnection;
+    use servers::ServerState;
+    let (view, cx, _fixture) = open(cx, &["a.txt"]);
+    let nas = SavedConnection { id: "nas".into(), name: "nas".into(), url: "http://127.0.0.1:9/".into() };
+    // The tab holds the `Api` it opened with; the state lost it when a refresh failed.
+    let server = Arc::new(Api::new("http://127.0.0.1:9", None));
+    view.update(cx, |workspace, cx| {
+        workspace.desktop_settings.connections.push(nas.clone());
+        workspace.navigate_to(workspace.active_pane, server.clone(), "media".into(), cx);
+        workspace.servers.set("nas", ServerState::Offline("connection refused".into()));
+    });
+    view.read_with(cx, |workspace, _| assert!(Arc::ptr_eq(&workspace.pane().api, &server)));
+    view.update(cx, |workspace, cx| workspace.leave_server(&nas, cx));
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.pane().is_at_root(), "the tab went back to the Overview");
+        assert!(Arc::ptr_eq(&workspace.pane().api, &workspace.home.api));
+    });
 }
 
 #[gpui::test]
@@ -607,6 +636,23 @@ fn a_launch_without_a_folder_opens_the_start_location_in_the_open_window(cx: &mu
     view.read_with(cx, |workspace, _| {
         assert_eq!(workspace.pane().path, "home/music");
         assert_eq!(workspace.tabs.len(), 3);
+    });
+}
+
+#[gpui::test]
+fn a_launch_opens_this_computers_folder_while_a_pane_is_on_a_server(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["docs/a.txt"]);
+    let (sender, launches) = async_channel::unbounded();
+    cx.update(|window, app| view.update(app, |workspace, cx| workspace.receive_launches(launches, window, cx)));
+    let server = Arc::new(Api::new("http://127.0.0.1:9", None));
+    view.update(cx, |workspace, cx| workspace.navigate_to(workspace.active_pane, server.clone(), "media".into(), cx));
+    cx.run_until_parked();
+    // As `xdg-open` hands over a real folder.
+    sender.send_blocking(fixture.root.join("docs").to_string_lossy().into_owned()).unwrap();
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.pane().path, "home/docs");
+        assert!(Arc::ptr_eq(&workspace.pane().api, &workspace.home.api), "on this computer, not the server");
     });
 }
 
