@@ -51,6 +51,7 @@ pub(crate) mod band;
 pub(crate) mod file_icons;
 pub(crate) mod folder_views;
 pub(crate) mod drive_names;
+pub(crate) mod about;
 use appearance::WallpaperState;
 
 use favorites::{Favorite, FavoriteProvider, Favorites};
@@ -65,6 +66,7 @@ pub(crate) enum SettingsSection {
     Appearance,
     Links,
     Connections,
+    About,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -348,6 +350,8 @@ pub struct Workspace {
     /// The accent field holds text that is not a colour.
     pub(crate) accent_invalid: bool,
     pub(crate) properties: Option<PropertiesState>,
+    /// Settings → About's facts, once asked for.
+    pub(crate) about: Option<Load<about::AboutInfo>>,
     pub(crate) thumbnail_cache: ThumbnailCache,
     pub(crate) file_icons: file_icons::FileIcons,
     pub(crate) favorites: Favorites,
@@ -485,6 +489,7 @@ impl Workspace {
             pending_field_focus: None,
             accent_invalid: false,
             properties: None,
+            about: None,
             thumbnail_cache: ThumbnailCache::default(),
             file_icons: Default::default(),
             favorites: Favorites::load(),
@@ -1290,6 +1295,9 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.settings_section = section;
+        if section == SettingsSection::About {
+            self.load_about(cx);
+        }
         cx.notify();
     }
 }

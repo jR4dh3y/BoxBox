@@ -1486,6 +1486,7 @@ impl Workspace {
             SettingsSection::Appearance => self.render_appearance_settings(window, cx).into_any_element(),
             SettingsSection::Links => self.render_share_management(cx).into_any_element(),
             SettingsSection::Connections => self.render_connections(cx).into_any_element(),
+            SettingsSection::About => self.render_about(cx).into_any_element(),
         };
         // nav: w-40 flex-col gap-0.5 border-r p-2, with Reset to defaults at the foot
         let nav = div()
@@ -1501,6 +1502,7 @@ impl Workspace {
             .child(self.settings_tab("settings-appearance", "Appearance", SettingsSection::Appearance, cx))
             .child(self.settings_tab("settings-links", "Shared links", SettingsSection::Links, cx))
             .child(self.settings_tab("settings-connections", "Connections", SettingsSection::Connections, cx))
+            .child(self.settings_tab("settings-about", "About", SettingsSection::About, cx))
             .child(div().flex_1())
             .child(
                 SettingsTab::new("settings-reset-button", "Reset to defaults", self.selection_color(false))

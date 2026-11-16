@@ -1,6 +1,7 @@
 //! Generates, so the native app cannot drift from the web app:
 //! - the colour tokens, from the `@theme` block of `frontend/src/routes/layout.css`;
 //! - the embedded icon table, from what `scripts/extract-icons.ts` wrote to `assets/icons`.
+//! - `BOXBOX_VERSION`, from `git describe`, for Settings → About.
 
 use std::{env, fs, path::Path};
 
@@ -44,6 +45,28 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     fs::write(Path::new(&out_dir).join("tokens.rs"), out).unwrap();
     icons(Path::new(&out_dir));
+    version();
+}
+
+/// `BOXBOX_VERSION` for About: `git describe` (`v0.3.2-169-g094620b`), or the crate's version outside a checkout.
+fn version() {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .map(|text| text.trim().to_string())
+    };
+    // A commit or checkout moves HEAD's reflog, so the version follows it.
+    for path in ["HEAD", "logs/HEAD"] {
+        if let Some(path) = git(&["rev-parse", "--git-path", path]) {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
+    let version = git(&["describe", "--tags", "--always", "--dirty"]).unwrap_or_else(|| env::var("CARGO_PKG_VERSION").unwrap());
+    println!("cargo:rustc-env=BOXBOX_VERSION={version}");
 }
 
 fn icons(out_dir: &Path) {

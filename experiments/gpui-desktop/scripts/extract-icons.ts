@@ -15,7 +15,7 @@ const ICONS = [
 	'Smartphone', 'Lock', 'PencilOff', 'Trash', 'Link', 'Send', 'Archive', 'Clock', 'Network', 'LayoutTemplate',
 	'SquareTerminal', 'Play', 'Bookmark', 'LayoutDashboard',
 	'FileTerminal', 'FileCog', 'FileMusic', 'FilePlay', 'FileType', 'FileKey', 'FileLock', 'FileBox',
-	'Presentation', 'Disc3', 'Database', 'FileDiff', 'FolderDown', 'FolderSymlink'
+	'Presentation', 'Disc3', 'Database', 'FileDiff', 'FolderDown', 'FolderSymlink', 'Heart'
 ];
 
 const root = join(import.meta.dir, '../../../frontend/node_modules/lucide-svelte/dist');
