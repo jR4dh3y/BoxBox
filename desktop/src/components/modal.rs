@@ -96,7 +96,7 @@ impl RenderOnce for Modal {
             .rounded(px(ROUNDED))
             .text_color(c(TEXT_SECONDARY))
             .cursor_pointer()
-            .hover(|style| style.bg(c(SURFACE_ELEVATED)).text_color(c(TEXT_PRIMARY)))
+            .hover(|style| style.bg(c(SURFACE_ELEVATED)).text_color(c(TEXT_PRIMARY))).active(crate::components::pressed)
             .child(icon("x", 16., c(TEXT_SECONDARY)))
             .when_some(self.close_selector, |el, selector| el.debug_selector(move || selector.to_string()))
             .when_some(self.on_close, |el, handler| el.on_click(handler));

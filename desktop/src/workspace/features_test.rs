@@ -512,7 +512,8 @@ fn refresh_on_the_overview_lists_a_servers_drives_again(cx: &mut TestAppContext)
     use servers::ServerState;
     let (view, cx, _fixture) = open(cx, &["a.txt"]);
     let drive = |name: &str, free: u64| format!(r#"{{"name":"{name}","totalBytes":100,"freeBytes":{free},"usedBytes":{},"usedPct":{}}}"#, 100 - free, 100 - free);
-    let url = stats_server(vec![format!(r#"{{"drives":[{},{}]}}"#, drive("media", 20), drive("usb", 90))]);
+    let listed = format!(r#"{{"drives":[{},{}]}}"#, drive("media", 20), drive("usb", 90));
+    let url = stats_server(vec![listed.clone(), listed]);
     let server = Arc::new(Api::new(&url, None));
     view.update(cx, |workspace, cx| {
         workspace.desktop_settings.connections.push(SavedConnection { id: "nas".into(), name: "nas".into(), url: url.clone() });
@@ -533,8 +534,20 @@ fn refresh_on_the_overview_lists_a_servers_drives_again(cx: &mut TestAppContext)
 
     // A drive added on the server, and the space another lost, show after Refresh.
     click(cx, "toolbar-refresh");
+    view.read_with(cx, |workspace, _| assert!(workspace.refresh_turn(workspace.active_pane).is_some(), "the Refresh icon turns"));
     settle(cx);
     assert_eq!(drives(&view, cx), [("media".to_string(), 20), ("usb".to_string(), 90)]);
+    view.read_with(cx, |workspace, _| assert!(!workspace.servers.busy()));
+    // The icon waits on a listing still out.
+    view.update(cx, |workspace, cx| {
+        workspace.refresh_servers(cx);
+        assert!(workspace.servers.busy(), "the server is listing its drives");
+    });
+    settle(cx);
+    view.read_with(cx, |workspace, _| assert!(!workspace.servers.busy()));
+    // Done, it finishes its turn and stops.
+    std::thread::sleep(std::time::Duration::from_millis(750));
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.refresh_turn(workspace.active_pane), None));
     let names: Vec<String> = view.read_with(cx, |workspace, _| workspace.storage().unwrap()).into_iter().filter_map(|entry| match entry {
         overview::Storage::ServerDrive { drive, .. } => Some(drive.name),
         _ => None,

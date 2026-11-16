@@ -108,7 +108,7 @@ impl RenderOnce for SettingsTab {
                 true => tab.bg(self.selection).text_color(c(WHITE)),
                 false => tab
                     .text_color(c(TEXT_SECONDARY))
-                    .hover(|style| style.bg(c(SURFACE_ELEVATED)).text_color(c(TEXT_PRIMARY))),
+                    .hover(|style| style.bg(c(SURFACE_ELEVATED)).text_color(c(TEXT_PRIMARY))).active(crate::components::pressed),
             })
             .child(self.label)
             .when_some(self.on_click, |tab, handler| tab.on_click(handler))

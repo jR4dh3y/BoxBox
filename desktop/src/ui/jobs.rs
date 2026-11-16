@@ -78,7 +78,7 @@ impl Workspace {
                             .rounded(px(4.))
                             .bg(c(SURFACE_ELEVATED))
                             .cursor_pointer()
-                            .hover(|style| style.bg(alpha(DANGER, 0.2)))
+                            .hover(|style| style.bg(alpha(DANGER, 0.2))).active(crate::components::pressed)
                             .child(div().group_hover(group.clone(), |style| style.invisible()).child(icon(glyph, 16., c(TEXT_SECONDARY))))
                             .child(div().absolute().invisible().group_hover(group, |style| style.visible()).child(icon("x", 16., c(DANGER))))
                             .on_click(cx.listener(move |this, _, _, cx| this.cancel_or_dismiss_job(id, cx))),
@@ -157,7 +157,7 @@ impl Workspace {
                                 .text_xs_tw()
                                 .text_color(c(TEXT_SECONDARY))
                                 .cursor_pointer()
-                                .hover(|style| style.bg(c(SURFACE_ELEVATED)).text_color(c(TEXT_PRIMARY)))
+                                .hover(|style| style.bg(c(SURFACE_ELEVATED)).text_color(c(TEXT_PRIMARY))).active(crate::components::pressed)
                                 .child("Clear finished")
                                 .on_click(cx.listener(|this, _, _, cx| this.clear_finished_jobs(cx))),
                         )

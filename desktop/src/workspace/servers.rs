@@ -70,6 +70,8 @@ pub(crate) struct Servers {
     states: HashMap<String, ServerState>,
     remembered: Remembered,
     wanted: Option<Wanted>,
+    /// Drive lists Refresh asked for that have not arrived.
+    refreshing: usize,
 }
 
 impl Servers {
@@ -89,6 +91,11 @@ impl Servers {
     /// Whether this drive is waiting to open; `None` asks about the first.
     pub fn is_wanted(&self, server: &str, drive: Option<&str>) -> bool {
         self.wanted.as_ref().is_some_and(|wanted| wanted.server == server && wanted.drive.as_deref() == drive)
+    }
+
+    /// Whether any server is connecting or listing its drives again.
+    pub fn busy(&self) -> bool {
+        self.refreshing > 0 || self.states.values().any(|state| matches!(state, ServerState::Connecting { .. }))
     }
 
     /// Drops a waiting open: the user went elsewhere.
@@ -250,10 +257,13 @@ impl Workspace {
                     continue;
                 }
             };
+            self.servers.refreshing += 1;
             cx.spawn(async move |this, cx| {
                 let listing = api.clone();
                 let result = cx.background_executor().spawn(async move { listing.drives() }).await;
                 this.update(cx, |this, cx| {
+                    this.servers.refreshing -= 1;
+                    cx.notify();
                     // Removed, or reconnected with another credential, meanwhile.
                     let current = matches!(this.servers.states.get(&connection.id), Some(ServerState::Ready { api: now, .. }) if Arc::ptr_eq(now, &api));
                     if !current {

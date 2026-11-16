@@ -151,7 +151,7 @@ impl Workspace {
                 .border_color(c(BORDER_SECONDARY))
                 .text_13()
                 .cursor_default()
-                .hover(|style| style.bg(c(SURFACE_SECONDARY)))
+                .hover(|style| style.bg(c(SURFACE_SECONDARY))).active(crate::components::pressed)
                 .child(
                     name_col(cell())
                         .flex()

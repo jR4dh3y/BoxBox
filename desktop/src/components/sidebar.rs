@@ -60,7 +60,7 @@ impl RenderOnce for SidebarSection {
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(c(TEXT_SECONDARY))
                         .cursor_pointer()
-                        .hover(|style| style.text_color(c(TEXT_PRIMARY)))
+                        .hover(|style| style.text_color(c(TEXT_PRIMARY))).active(crate::components::pressed)
                         .child(icon(
                             if self.collapsed { "chevron-right" } else { "chevron-down" },
                             14.,
@@ -215,7 +215,7 @@ impl RenderOnce for NavItem {
             .type_13()
             .text_color(c(text))
             .when(self.disabled, |row| row.opacity(0.5))
-            .when(!self.disabled, |row| row.cursor_pointer().hover(|style| style.bg(c(SURFACE_SECONDARY))))
+            .when(!self.disabled, |row| row.cursor_pointer().hover(|style| style.bg(c(SURFACE_SECONDARY))).active(crate::components::pressed))
             .when(self.drop_target, |row| row.bg(alpha(ACCENT, 0.25)))
             .child(icon(self.icon, 16., alpha(text, if self.muted { 0.5 } else if self.dim_icon { 0.8 } else { 1. })))
             .child(
@@ -261,7 +261,7 @@ impl RenderOnce for NavItem {
                         .invisible()
                         .group_hover(group, |style| style.visible())
                         .cursor_pointer()
-                        .hover(|style| style.bg(c(SURFACE_SECONDARY)))
+                        .hover(|style| style.bg(c(SURFACE_SECONDARY))).active(crate::components::pressed)
                         .child(icon(glyph, 14., c(TEXT_MUTED)))
                         .on_click(move |event, window, cx| {
                             cx.stop_propagation();

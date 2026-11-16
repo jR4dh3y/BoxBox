@@ -136,7 +136,7 @@ impl RenderOnce for DriveCard {
             .border_color(c(BORDER_PRIMARY))
             .bg(c(SURFACE_SECONDARY))
             .p(px(16.))
-            .when(self.on_click.is_some(), |card| card.cursor_pointer().hover(move |style| style.border_color(accent).bg(c(SURFACE_TERTIARY))))
+            .when(self.on_click.is_some(), |card| card.cursor_pointer().hover(move |style| style.border_color(accent).bg(c(SURFACE_TERTIARY))).active(crate::components::pressed))
             .child(
                 div()
                     .size(px(88.))

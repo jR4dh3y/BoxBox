@@ -35,6 +35,13 @@ pub use settings::{settings_rows, SettingsRow, SettingsTab};
 pub use text_field::{bind_keys as text_field_bind_keys, InputEvent, TextField};
 pub use sidebar::{NavItem, SidebarSection};
 pub use toast::{Toast, ToastKind};
+
+/// How a control looks while the pointer holds it down: dimmed, as a press
+/// shows in GTK and Qt. Pair it with `.active` wherever a control has `.hover`.
+pub fn pressed(style: gpui::StyleRefinement) -> gpui::StyleRefinement {
+    use gpui::Styled as _;
+    style.opacity(0.7)
+}
 pub use toggle::Toggle;
 pub use tooltip::{Tooltip, UiFont};
 

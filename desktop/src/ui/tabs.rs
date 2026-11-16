@@ -29,6 +29,7 @@ impl Workspace {
                         .text_xs_tw()
                         .truncate()
                         .cursor_pointer()
+                        .active(crate::components::pressed)
                         .child(title)
                         .on_click(cx.listener(move |this, _, _, cx| this.activate_tab(index, cx))),
                 )
@@ -38,6 +39,7 @@ impl Workspace {
                             .id(("close-tab", index))
                             .p(px(4.))
                             .cursor_pointer()
+                            .active(crate::components::pressed)
                             .child(icon("x", 12., c(TEXT_PRIMARY)))
                             .on_click(
                                 cx.listener(move |this, _, _, cx| this.close_tab_at(index, cx)),
@@ -63,6 +65,7 @@ impl Workspace {
                     .id("new-tab")
                     .p(px(4.))
                     .cursor_pointer()
+                    .active(crate::components::pressed)
                     .child(icon("plus", 14., c(TEXT_SECONDARY)))
                     .on_click(cx.listener(|this, _, window, cx| this.new_tab(&NewTab, window, cx))),
             )
@@ -73,6 +76,7 @@ impl Workspace {
                     .debug_selector(|| "toggle-split".into())
                     .p(px(4.))
                     .cursor_pointer()
+                    .active(crate::components::pressed)
                     .child(icon("columns-2", 14., c(TEXT_SECONDARY)))
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_split(&ToggleSplit, window, cx))),
             )

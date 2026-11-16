@@ -47,6 +47,7 @@ impl Workspace {
                     .justify_center()
                     .rounded(px(2.))
                     .cursor_pointer()
+                    .active(crate::components::pressed)
                     .when(active, |button| button.bg(c(SURFACE_ELEVATED)))
                     .child(icon(
                         glyph,

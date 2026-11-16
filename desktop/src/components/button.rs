@@ -120,6 +120,7 @@ impl RenderOnce for Button {
                         None => style,
                     }
                 })
+                .active(super::pressed)
             })
             .when(self.disabled, |el| el.opacity(0.5));
         // sm: h-7 px-2.5 text-xs gap-1 · md: h-8 px-3 text-[13px] gap-2

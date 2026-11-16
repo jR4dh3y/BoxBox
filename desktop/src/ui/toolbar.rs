@@ -88,6 +88,13 @@ impl Workspace {
         size: f32,
         enabled: bool,
     ) -> gpui::Stateful<gpui::Div> {
+        // Translucent rather than TEXT_DISABLED's fixed grey, which vanishes on a wallpaper.
+        let glyph = icon(glyph, size, if enabled { c(TEXT_SECONDARY) } else { alpha(WHITE, 0.3) });
+        Self::nav_shell(id, enabled).child(glyph)
+    }
+
+    /// A toolbar button around any icon.
+    fn nav_shell(id: &'static str, enabled: bool) -> gpui::Stateful<gpui::Div> {
         div()
             .id(id)
             .debug_selector(move || format!("toolbar-{id}"))
@@ -101,9 +108,18 @@ impl Workspace {
                 button
                     .cursor_pointer()
                     .hover(|style| style.bg(c(SURFACE_ELEVATED)))
+                    .active(crate::components::pressed)
             })
-            // Translucent rather than TEXT_DISABLED's fixed grey, which vanishes on a wallpaper.
-            .child(icon(glyph, size, if enabled { c(TEXT_SECONDARY) } else { alpha(WHITE, 0.3) }))
+    }
+
+    /// Refresh, whose icon turns while what it asked for loads.
+    fn refresh_button(&self, target: PaneTarget, enabled: bool, window: &mut Window) -> gpui::Stateful<gpui::Div> {
+        let Some(turn) = self.refresh_turn(target).filter(|_| enabled) else {
+            return self.nav_button("refresh", "refresh-cw", 16., enabled);
+        };
+        window.request_animation_frame();
+        let glyph = icon("refresh-cw", 16., c(TEXT_PRIMARY)).with_transformation(Transformation::rotate(percentage(turn)));
+        Self::nav_shell("refresh", enabled).child(glyph)
     }
 
     fn render_path_bar(&self, target: PaneTarget, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -200,7 +216,7 @@ impl Workspace {
                         .text_13()
                         .text_color(c(TEXT_SECONDARY))
                         .cursor_pointer()
-                        .hover(|style| style.bg(c(SURFACE_ELEVATED)))
+                        .hover(|style| style.bg(c(SURFACE_ELEVATED))).active(crate::components::pressed)
                         .child("…")
                         .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
                             cx.stop_propagation();
@@ -233,7 +249,7 @@ impl Workspace {
                         .flex_none()
                         .text_color(c(TEXT_SECONDARY))
                         .cursor_pointer()
-                        .hover(|style| style.text_color(c(WHITE)).underline())
+                        .hover(|style| style.text_color(c(WHITE)).underline()).active(crate::components::pressed)
                         .on_click(cx.listener(move |this, _, _, cx| this.navigate_in(target, open.clone(), cx))),
                 })
                 .on_mouse_down(gpui::MouseButton::Middle, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
@@ -484,7 +500,7 @@ impl Workspace {
                             .when(self.add_menu == Some(target), |slot| slot.child(div().absolute().top_0().left_0().child(self.render_add_menu(target, cx)))),
                     )
                     // Trash is watched, so it needs no Refresh.
-                    .child(self.nav_button("refresh", "refresh-cw", 16., !trash).when(!trash, |button| {
+                    .child(self.refresh_button(target, !trash, window).when(!trash, |button| {
                         button.on_click(cx.listener(|this, _, window, cx| this.refresh(&Refresh, window, cx)))
                     }))
                     .when(trash, |row| row.child(self.empty_trash_button(cx)))

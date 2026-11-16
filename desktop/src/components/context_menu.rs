@@ -97,7 +97,7 @@ impl MenuItem {
                 .type_13()
                 .whitespace_nowrap()
                 .text_color(c(if disabled { TEXT_DISABLED } else { TEXT_PRIMARY }))
-                .when(!disabled, |el| el.cursor_pointer().hover(|style| style.bg(c(SURFACE_SECONDARY))))
+                .when(!disabled, |el| el.cursor_pointer().hover(|style| style.bg(c(SURFACE_SECONDARY))).active(crate::components::pressed))
         };
         match self {
             // mx-2 my-1 h-px bg-border-secondary

@@ -47,6 +47,7 @@ pub(crate) mod transfers;
 pub(crate) mod appearance;
 mod palette;
 pub(crate) mod zoom;
+pub(crate) mod refreshing;
 pub(crate) mod band;
 pub(crate) mod file_icons;
 pub(crate) mod folder_views;
@@ -288,6 +289,8 @@ pub struct Workspace {
     /// show whatever provider a pane is on.
     pub(crate) home: overview::Home,
     pub(crate) servers: servers::Servers,
+    /// The toolbar Refresh that was pressed last, while its icon turns.
+    pub(crate) refreshing: Option<refreshing::Refreshing>,
     /// The active pane's place as last written for "Start location: Last location".
     last_location: Option<String>,
     /// What Select by Pattern last selected with, offered again.
@@ -435,6 +438,7 @@ impl Workspace {
             devices: Default::default(),
             home: overview::Home::new(api.clone()),
             servers: Default::default(),
+            refreshing: None,
             last_location,
             last_pattern: "*".into(),
             zoom_scroll: 0.,
@@ -972,6 +976,7 @@ impl Workspace {
             }
         } else {
             let target = self.active_pane;
+            self.refreshing = Some(refreshing::Refreshing::new(target));
             self.clear_thumbnails(cx);
             if self.pane().is_at_root() {
                 self.load_drives(target, cx);

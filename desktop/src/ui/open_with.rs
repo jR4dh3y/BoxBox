@@ -26,7 +26,7 @@ impl Workspace {
             .px(px(12.))
             .text_13()
             .cursor_pointer()
-            .map(|row| if selected { row.bg(self.selection_color(false)) } else { row.hover(|style| style.bg(c(SURFACE_SECONDARY))) })
+            .map(|row| if selected { row.bg(self.selection_color(false)) } else { row.hover(|style| style.bg(c(SURFACE_SECONDARY))).active(crate::components::pressed) })
             .child(check::radio(selected, accent))
             .child(
                 div().size(px(24.)).flex_none().flex().items_center().justify_center().map(|slot| match &app.icon {

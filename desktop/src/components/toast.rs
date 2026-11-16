@@ -79,7 +79,7 @@ impl RenderOnce for Toast {
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(c(ACCENT))
                         .cursor_pointer()
-                        .hover(|style| style.underline())
+                        .hover(|style| style.underline()).active(crate::components::pressed)
                         .child(label)
                         .on_click(handler),
                 )
@@ -92,7 +92,7 @@ impl RenderOnce for Toast {
                     .rounded(px(ROUNDED))
                     .p(px(2.))
                     .cursor_pointer()
-                    .hover(|style| style.bg(c(SURFACE_ELEVATED)))
+                    .hover(|style| style.bg(c(SURFACE_ELEVATED))).active(crate::components::pressed)
                     .child(icon("x", 14., c(TEXT_MUTED)))
                     .when_some(self.on_dismiss, |el, handler| el.on_click(handler)),
             )

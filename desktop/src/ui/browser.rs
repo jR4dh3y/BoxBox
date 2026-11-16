@@ -75,7 +75,7 @@ impl Workspace {
                         .px(px(12.))
                         .py(px(4.))
                         .cursor_pointer()
-                        .hover(|style| style.bg(c(SURFACE_SECONDARY)))
+                        .hover(|style| style.bg(c(SURFACE_SECONDARY))).active(crate::components::pressed)
                         .child("Retry")
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.refresh(&crate::workspace::Refresh, window, cx)
@@ -204,7 +204,7 @@ impl Workspace {
                         .px(px(12.))
                         .py(px(9.))
                         .rounded(px(4.))
-                        .hover(|style| style.bg(c(SURFACE_SECONDARY)))
+                        .hover(|style| style.bg(c(SURFACE_SECONDARY))).active(crate::components::pressed)
                         .child(icon(
                             if item.is_dir { "folder" } else { "file" },
                             18.,
@@ -232,7 +232,7 @@ impl Workspace {
                                 .rounded(px(4.))
                                 .cursor_pointer()
                                 .text_xs_tw()
-                                .hover(|style| style.bg(c(SURFACE_TERTIARY)))
+                                .hover(|style| style.bg(c(SURFACE_TERTIARY))).active(crate::components::pressed)
                                 .child(if can_restore { "Restore" } else { "Unavailable" })
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     if can_restore {
@@ -249,7 +249,7 @@ impl Workspace {
                                 .cursor_pointer()
                                 .text_xs_tw()
                                 .text_color(c(DANGER))
-                                .hover(|style| style.bg(c(SURFACE_TERTIARY)))
+                                .hover(|style| style.bg(c(SURFACE_TERTIARY))).active(crate::components::pressed)
                                 .debug_selector(|| format!("delete-trash-{}", deleted.name))
                                 .child("Delete")
                                 .on_click(cx.listener(move |this, _, _, cx| this.delete_trash_item(deleted.clone(), cx))),

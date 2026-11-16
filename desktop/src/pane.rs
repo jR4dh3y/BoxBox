@@ -169,6 +169,8 @@ pub struct Pane {
     pub active: Option<usize>,
     /// Bumped per request, so a late response for an old folder is ignored.
     pub generation: u64,
+    /// A folder listing was asked for and has not arrived.
+    pub busy: bool,
     /// Bumped per input change and request, so a late search response is ignored.
     pub search_generation: u64,
     pub list_scroll: UniformListScrollHandle,
@@ -233,6 +235,7 @@ impl Pane {
             anchor: None,
             active: None,
             generation: 0,
+            busy: false,
             search_generation: 0,
             list_scroll: UniformListScrollHandle::new(),
             grid_scroll: UniformListScrollHandle::new(),
@@ -371,6 +374,7 @@ impl Pane {
 
     pub fn begin_load(&mut self) -> u64 {
         self.generation += 1;
+        self.busy = !self.is_at_root();
         if !self.is_at_root() && self.items.is_empty() {
             self.listing = Listing::Loading;
         }
@@ -380,6 +384,7 @@ impl Pane {
     /// Takes entries `arrange`d off the UI thread. Returns whether the view changed while
     /// they were prepared, so the caller should sort again.
     pub fn finish_load(&mut self, result: anyhow::Result<Vec<FileInfo>>, view: View) -> bool {
+        self.busy = false;
         match result {
             Ok(items) => {
                 if self.is_searching() {
@@ -772,6 +777,18 @@ mod tests {
     fn found(pane: &mut Pane, items: Vec<FileInfo>) {
         let view = pane.search_view();
         assert!(!pane.finish_search(Ok(arrange(items, view)), view));
+    }
+
+    #[test]
+    fn a_folder_is_busy_from_its_request_until_its_listing() {
+        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
+        pane.begin_load();
+        assert!(pane.busy);
+        pane.finish_load(Err(anyhow::anyhow!("gone")), pane.view());
+        assert!(!pane.busy, "a failure ends it too");
+        let mut root = Pane::new(0, String::new(), false, Sort::default(), ViewMode::List);
+        root.begin_load();
+        assert!(!root.busy, "the Overview asks for no listing");
     }
 
     #[test]

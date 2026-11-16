@@ -155,7 +155,7 @@ impl Workspace {
                         })
                         .when(ownership.editable, |part| {
                             part.cursor_pointer()
-                                .when(!on, |part| part.hover(|style| style.bg(c(SURFACE_TERTIARY)).text_color(c(TEXT_SECONDARY))))
+                                .when(!on, |part| part.hover(|style| style.bg(c(SURFACE_TERTIARY)).text_color(c(TEXT_SECONDARY))).active(crate::components::pressed))
                                 .on_click(cx.listener(move |this, _, _, cx| this.toggle_permission(bit, cx)))
                         })
                         .child(name)
