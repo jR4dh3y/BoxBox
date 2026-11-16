@@ -90,6 +90,7 @@ impl Workspace {
     ) -> gpui::Stateful<gpui::Div> {
         div()
             .id(id)
+            .debug_selector(move || format!("toolbar-{id}"))
             .size(px(28.))
             .flex_none()
             .flex()

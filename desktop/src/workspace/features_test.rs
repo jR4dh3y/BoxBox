@@ -487,6 +487,61 @@ fn remembered_server_drives_hold_their_places_until_the_server_answers(cx: &mut 
     assert_eq!(entries(&view, cx).len(), 2);
 }
 
+/// Answers `/api/v1/files/stats` with each body in turn, one per request.
+fn stats_server(bodies: Vec<String>) -> String {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for body in bodies {
+            let Ok((mut stream, _)) = listener.accept() else { return };
+            let mut request = String::new();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            reader.read_line(&mut request).unwrap();
+            assert!(request.starts_with("GET /api/v1/files/stats "), "{request}");
+            while reader.read_line(&mut request).is_ok_and(|read| read > 2) {}
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        }
+    });
+    url
+}
+
+#[gpui::test]
+fn refresh_on_the_overview_lists_a_servers_drives_again(cx: &mut TestAppContext) {
+    use crate::settings_state::SavedConnection;
+    use servers::ServerState;
+    let (view, cx, _fixture) = open(cx, &["a.txt"]);
+    let drive = |name: &str, free: u64| format!(r#"{{"name":"{name}","totalBytes":100,"freeBytes":{free},"usedBytes":{},"usedPct":{}}}"#, 100 - free, 100 - free);
+    let url = stats_server(vec![format!(r#"{{"drives":[{},{}]}}"#, drive("media", 20), drive("usb", 90))]);
+    let server = Arc::new(Api::new(&url, None));
+    view.update(cx, |workspace, cx| {
+        workspace.desktop_settings.connections.push(SavedConnection { id: "nas".into(), name: "nas".into(), url: url.clone() });
+        workspace.servers.set("nas", ServerState::Ready { api: server.clone(), drives: vec![server_drive("media")] });
+        workspace.navigate(String::new(), cx);
+    });
+    settle(cx);
+    let drives = |view: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |workspace, _| match workspace.servers.state("nas") {
+            Some(ServerState::Ready { api, drives }) => {
+                assert!(Arc::ptr_eq(api, &server), "open panes keep their server");
+                drives.iter().map(|drive| (drive.name.clone(), drive.free_bytes)).collect::<Vec<_>>()
+            }
+            _ => panic!("the server stays connected"),
+        })
+    };
+    assert_eq!(drives(&view, cx), [("media".to_string(), 60)]);
+
+    // A drive added on the server, and the space another lost, show after Refresh.
+    click(cx, "toolbar-refresh");
+    settle(cx);
+    assert_eq!(drives(&view, cx), [("media".to_string(), 20), ("usb".to_string(), 90)]);
+    let names: Vec<String> = view.read_with(cx, |workspace, _| workspace.storage().unwrap()).into_iter().filter_map(|entry| match entry {
+        overview::Storage::ServerDrive { drive, .. } => Some(drive.name),
+        _ => None,
+    }).collect();
+    assert_eq!(names, ["media", "usb"]);
+}
+
 #[gpui::test]
 fn middle_click_opens_a_folder_in_a_tab_and_side_buttons_go_back(cx: &mut TestAppContext) {
     let (view, cx, _fixture) = open(cx, &["docs/", "music/", "a.txt"]);

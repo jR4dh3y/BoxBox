@@ -119,8 +119,15 @@ fn connect(connection: &SavedConnection) -> Result<Connected> {
         return Ok(Connected::NeedsPairing("This computer is not paired with the server yet.".into()));
     };
     let api = Api::new(&connection.url, Some(credential));
-    match api.drives() {
-        Ok(drives) => Ok(Connected::Ready(Arc::new(api), drives)),
+    let drives = api.drives();
+    listed(Arc::new(api), drives)
+}
+
+/// What a server's drive listing means: its drives, or a refused credential
+/// that a new pairing fixes, or a failure.
+fn listed(api: Arc<Api>, drives: Result<Vec<DriveStats>>) -> Result<Connected> {
+    match drives {
+        Ok(drives) => Ok(Connected::Ready(api, drives)),
         Err(error) => match error.downcast_ref::<Unauthorized>() {
             Some(Unauthorized(message)) => Ok(Connected::NeedsPairing(format!("The server no longer accepts this computer ({message}). Pair it again."))),
             None => Err(error),
@@ -227,6 +234,37 @@ impl Workspace {
         };
         self.servers.states.insert(connection.id, state);
         cx.notify();
+    }
+
+    /// Lists every server's drives again, as Refresh on the Overview asks: a
+    /// connected server keeps its `Api`, which open panes compare by identity;
+    /// one that failed or needs pairing is tried from scratch.
+    pub(crate) fn refresh_servers(&mut self, cx: &mut Context<Self>) {
+        for connection in self.desktop_settings.connections.clone() {
+            let api = match self.servers.states.get(&connection.id) {
+                Some(ServerState::Connecting { .. }) => continue,
+                Some(ServerState::Ready { api, .. }) => api.clone(),
+                _ => {
+                    self.servers.states.remove(&connection.id);
+                    self.connect_server(connection, false, cx);
+                    continue;
+                }
+            };
+            cx.spawn(async move |this, cx| {
+                let listing = api.clone();
+                let result = cx.background_executor().spawn(async move { listing.drives() }).await;
+                this.update(cx, |this, cx| {
+                    // Removed, or reconnected with another credential, meanwhile.
+                    let current = matches!(this.servers.states.get(&connection.id), Some(ServerState::Ready { api: now, .. }) if Arc::ptr_eq(now, &api));
+                    if !current {
+                        return;
+                    }
+                    this.connected(connection, listed(api, result), cx);
+                })
+                .ok();
+            })
+            .detach();
+        }
     }
 
     /// What `connect` gives when the server lists `drives`, without the network.

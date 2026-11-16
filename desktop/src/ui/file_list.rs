@@ -24,7 +24,7 @@ impl Workspace {
             .flex()
             .flex_col()
             .bg(self.file_background())
-            .child(FileListHeader::new(pane.sort).unsorted(pane.shows_ranked()).on_sort({
+            .child(FileListHeader::new(pane.sort).unsorted(pane.shows_ranked()).background(self.chrome_background()).on_sort({
                 let workspace = cx.entity().downgrade();
                 move |field, _, _, cx| {
                     let _ = workspace.update(cx, |this, cx| {

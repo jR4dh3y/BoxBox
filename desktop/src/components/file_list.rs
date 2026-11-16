@@ -63,11 +63,18 @@ pub struct FileListHeader {
     sort: Sort,
     unsorted: bool,
     on_sort: Option<SortHandler>,
+    background: Rgba,
 }
 
 impl FileListHeader {
     pub fn new(sort: Sort) -> Self {
-        Self { sort, unsorted: false, on_sort: None }
+        Self { sort, unsorted: false, on_sort: None, background: c(SURFACE_SECONDARY) }
+    }
+
+    /// The window's chrome colour, which is translucent over a wallpaper or the desktop.
+    pub fn background(mut self, background: Rgba) -> Self {
+        self.background = background;
+        self
     }
 
     /// The rows are in an order no column describes, such as search results by
@@ -95,7 +102,7 @@ impl RenderOnce for FileListHeader {
             .flex_none()
             .w_full()
             .h(px(HEADER_HEIGHT))
-            .bg(c(SURFACE_SECONDARY))
+            .bg(self.background)
             .border_b_1()
             .border_color(c(BORDER_PRIMARY))
             .text_size(px(13.))

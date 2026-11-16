@@ -120,7 +120,7 @@ impl Workspace {
             .items_center()
             .border_b_1()
             .border_color(c(BORDER_PRIMARY))
-            .bg(c(SURFACE_SECONDARY))
+            .bg(self.chrome_background())
             .text_13()
             .font_weight(FontWeight::MEDIUM)
             .text_color(c(TEXT_SECONDARY))

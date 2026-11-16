@@ -975,6 +975,8 @@ impl Workspace {
             self.clear_thumbnails(cx);
             if self.pane().is_at_root() {
                 self.load_drives(target, cx);
+                // The Overview lists every server's drives too.
+                self.refresh_servers(cx);
             } else {
                 self.load_pane(target, cx);
                 self.schedule_search_for(target.0, Duration::ZERO, cx);
