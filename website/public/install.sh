@@ -135,8 +135,10 @@ say "Step 2 of 5: downloading BoxBox's Docker files into \"$DIR\""
 [ ! -e "$DIR/.env" ] || stop "BoxBox is already set up in \"$DIR\". To change a setting, edit \"$DIR/.env\". To start over, delete that folder first."
 # Any other file there could be a setup you care about, so only an empty or
 # new folder is used.
-if [ -e "$DIR" ] && { [ ! -d "$DIR" ] || [ -n "$(ls -A "$DIR")" ]; }; then
-  stop "\"$DIR\" already exists and is not empty. Pick a new name with --dir, or empty that folder first."
+if [ -e "$DIR" ]; then
+  [ -d "$DIR" ] || stop "\"$DIR\" already exists and is not a folder. Pick a new name with --dir."
+  CONTENTS="$(ls -A "$DIR")" || stop "Could not look inside \"$DIR\". Pick a new name with --dir."
+  [ -z "$CONTENTS" ] || stop "\"$DIR\" already exists and is not empty. Pick a new name with --dir, or empty that folder first."
 fi
 
 mkdir -p "$DIR/backend"

@@ -238,7 +238,8 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
     return folder ? sorted(folder.children).filter((entry) => entry.kind === 'image').map((entry) => joinPath(parentPath(path), entry.name)) : [];
   }
 
-  function renderOverlay() {
+  /** focused: whether focus was in the preview before this redraw began. */
+  function renderOverlay(focused = root.contains(document.activeElement)) {
     const opening = overlayPart.hidden;
     editor = undefined;
     const entry = 'path' in overlay ? find(fs, overlay.path) : undefined;
@@ -263,8 +264,8 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
     overlayPart.replaceChildren(...nodes);
     // Keyboard users follow an overlay they opened. The walkthrough opens
     // them on a timer too, and must not pull focus in from the page.
-    if (opening && !overlayPart.hidden && root.contains(document.activeElement)) {
-      overlayPart.querySelector<HTMLElement>('button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])')?.focus({ preventScroll: true });
+    if (opening && !overlayPart.hidden && focused) {
+      overlayPart.querySelector<HTMLElement>(':is(button:not([disabled]), textarea, input, select, [tabindex]):not([tabindex="-1"])')?.focus({ preventScroll: true });
     }
     appPart.inert = !overlayPart.hidden || !guestPart.hidden;
   }
@@ -295,10 +296,12 @@ export function mountDemoApp(root: HTMLElement): DemoApp {
   }
 
   function render() {
+    // The listing redraw below drops focus from the button that was used.
+    const focused = root.contains(document.activeElement);
     renderChrome();
     renderListing();
     renderStatus();
-    renderOverlay();
+    renderOverlay(focused);
     renderSurface();
   }
 
