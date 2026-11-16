@@ -1,6 +1,6 @@
 ---
 import { GitFork } from '@lucide/astro';
-import ReleasePill from './ReleasePill.astro';
+import ReleaseLink from './ReleaseLink.astro';
 import Wordmark from './Wordmark.astro';
 ---
 
@@ -9,7 +9,7 @@ import Wordmark from './Wordmark.astro';
     <Wordmark id="nav-logo" class="h-7 w-auto" />
   </a>
   <nav aria-label="Primary" class="flex items-center gap-1 text-sm font-medium text-text-secondary">
-    <ReleasePill />
+    <ReleaseLink />
     <a href="/docs/" class="inline-flex min-h-11 items-center rounded px-3 transition-colors hover:text-white">Docs</a>
     <span class="relative">
       <a href="https://github.com/jR4dh3y/BoxBox" target="_blank" rel="noopener" class="inline-flex min-h-11 items-center gap-2 rounded px-3 transition-colors hover:text-white">
