@@ -45,9 +45,10 @@ func renderImageThumbnail(ctx context.Context, file File, info *model.FileInfo, 
 	if !thumbnailSourceWithinLimits(configuration.Width, configuration.Height) {
 		return nil, ErrThumbnailTooLarge
 	}
-	targetWidth, targetHeight := fitDimensions(configuration.Width, configuration.Height, width, height)
 	// Eight bytes per source pixel covers 16-bit PNGs and JPEG color conversion.
-	// CatmullRom also allocates targetWidth * sourceHeight four-float64 pixels.
+	// Bound workspace for any frame inside the canvas; GIF frames can have a different aspect ratio.
+	outputWidth, outputHeight := int64(min(width, configuration.Width)), int64(min(height, configuration.Height))
+	scratchPixels := min(outputWidth*int64(configuration.Height), outputHeight*int64(configuration.Width))
 	sourceWidth, sourceHeight, bytesPerPixel := int64(configuration.Width), int64(configuration.Height), int64(8)
 	if format == "jpeg" {
 		progressive, err := progressiveJPEG(file)
@@ -60,9 +61,9 @@ func renderImageThumbnail(ctx context.Context, file File, info *model.FileInfo, 
 			bytesPerPixel += 16
 		}
 	}
+	// Each CatmullRom scratch pixel holds four float64 channels.
 	memory := sourceWidth*sourceHeight*bytesPerPixel +
-		int64(targetWidth)*int64(configuration.Height)*32 +
-		int64(targetWidth)*int64(targetHeight)*4 + (2 << 20)
+		scratchPixels*32 + outputWidth*outputHeight*4 + (2 << 20)
 	if memory > maxThumbnailRenderBytes {
 		return nil, ErrThumbnailTooLarge
 	}
@@ -83,6 +84,7 @@ func renderImageThumbnail(ctx context.Context, file File, info *model.FileInfo, 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	targetWidth, targetHeight := fitDimensions(source.Bounds().Dx(), source.Bounds().Dy(), width, height)
 	target := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
 	draw.CatmullRom.Scale(target, target.Bounds(), source, source.Bounds(), draw.Over, nil)
 	var output bytes.Buffer

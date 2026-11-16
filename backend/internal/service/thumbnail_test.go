@@ -85,6 +85,30 @@ func TestThumbnailServiceRendersCameraPhotoAboveLegacyPixelLimit(t *testing.T) {
 	}
 }
 
+func TestThumbnailServiceFitsGIFFirstFrameRatherThanCanvas(t *testing.T) {
+	fsys, files := newThumbnailTestFiles(t)
+	palette := color.Palette{color.Black, color.White}
+	frame := image.NewPaletted(image.Rect(50, 50, 350, 150), palette)
+	var encoded bytes.Buffer
+	if err := gif.EncodeAll(&encoded, &gif.GIF{
+		Image: []*image.Paletted{frame}, Delay: []int{0},
+		Config: image.Config{ColorModel: palette, Width: 400, Height: 400},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.WriteFile("/data/media/frame.gif", encoded.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	thumbnail, err := NewThumbnailService(files).Render(context.Background(), "media/frame.gif", 224, 144, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := jpeg.DecodeConfig(bytes.NewReader(thumbnail.Content))
+	if err != nil || decoded.Width != 224 || decoded.Height != 74 {
+		t.Fatalf("first-frame thumbnail = %+v, %v; want 224x74", decoded, err)
+	}
+}
+
 func TestThumbnailServiceRejectsSourcesOutsideResourceLimits(t *testing.T) {
 	t.Run("pixel count", func(t *testing.T) {
 		fsys, files := newThumbnailTestFiles(t)
