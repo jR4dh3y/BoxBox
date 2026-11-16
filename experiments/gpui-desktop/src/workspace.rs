@@ -85,6 +85,8 @@ pub(crate) struct Preferences {
     pub grid_zoom: u8,
     pub wallpaper_tint: bool,
     pub frosted_glass: bool,
+    /// The Details panel at the right (F11).
+    pub details_panel: bool,
 }
 
 /// What a window opens on when it is launched without a folder.
@@ -134,6 +136,7 @@ impl Default for Preferences {
             grid_zoom: 1,
             wallpaper_tint: false,
             frosted_glass: false,
+            details_panel: false,
         }
     }
 }
@@ -191,6 +194,7 @@ actions!(
         ZoomIn,
         ZoomOut,
         ZoomReset,
+        ToggleDetails,
     ]
 );
 
@@ -205,6 +209,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-shift-o", OpenConnections, context),
         KeyBinding::new("alt-enter", PropertiesSelected, context),
         KeyBinding::new("f3", ToggleSplit, context),
+        KeyBinding::new("f11", ToggleDetails, context),
         KeyBinding::new("backspace", Back, context),
         KeyBinding::new("alt-right", Forward, context),
         KeyBinding::new("f5", Refresh, context),
@@ -548,6 +553,11 @@ impl Workspace {
                 pane.grid_scroll.scroll_to_item(index / columns.max(1), gpui::ScrollStrategy::Top);
             }
         }
+    }
+
+    pub(crate) fn toggle_details(&mut self, _: &ToggleDetails, _: &mut Window, cx: &mut Context<Self>) {
+        self.preferences.details_panel = !self.preferences.details_panel;
+        self.commit_preferences(cx);
     }
 
     pub(crate) fn pane(&self) -> &Pane {
@@ -1309,6 +1319,7 @@ impl Render for Workspace {
         }
         self.start_pending_rename(window, cx);
         self.apply_window_background(window);
+        self.request_details_preview(cx);
         let primary = PaneTarget(self.tabs[self.active_tab].id);
         let mut browsers = div().flex().flex_1().min_h_0().min_w_0()
             .child(self.render_browser(primary, window, cx));
@@ -1336,6 +1347,7 @@ impl Render for Workspace {
                 let parent = this.pane().path.rsplit_once('/').map(|(parent, _)| parent).unwrap_or("").to_string();
                 this.navigate(parent, cx);
             }))
+            .on_action(cx.listener(Self::toggle_details))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| {
                 this.preferences.show_hidden_files = !this.preferences.show_hidden_files;
                 this.commit_preferences(cx);
@@ -1401,7 +1413,7 @@ impl Render for Workspace {
                     .min_w_0()
                     .min_h_0()
                     .child(self.render_tabs(cx))
-                    .child(browsers),
+                    .child(div().flex().flex_1().min_h_0().min_w_0().child(browsers).when(self.preferences.details_panel, |row| row.child(self.render_details(cx)))),
             )
             .when(self.settings_open, |root| {
                 root.child(self.render_settings(window, cx))

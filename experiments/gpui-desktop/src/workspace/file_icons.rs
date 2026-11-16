@@ -80,6 +80,15 @@ impl Workspace {
         self.request_icon(key, cx);
     }
 
+    /// Starts making the theme icon of `item` drawn at `size`, if no one has.
+    pub(crate) fn request_item_icon(&mut self, api: &Api, item: &FileInfo, size: f32, cx: &mut Context<Self>) {
+        if self.preferences.file_icons != crate::workspace::IconStyle::System {
+            return;
+        }
+        let key = self.file_icons.key(api, item, size);
+        self.request_icon(key, cx);
+    }
+
     fn request_icon(&mut self, key: (IconKey, u32), cx: &mut Context<Self>) {
         if self.file_icons.slots.contains_key(&key) {
             return;

@@ -13,11 +13,11 @@ use crate::theme::*;
 use crate::workspace::operations::PaneTarget;
 use crate::components::{ContextMenu, MenuItem, Tooltip};
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
-use crate::workspace::{Back, CreateFile, CreateFolder, Forward, OpenSettings, Refresh, Workspace};
+use crate::workspace::{Back, CreateFile, CreateFolder, Forward, OpenSettings, Refresh, ToggleDetails, Workspace};
 
 pub(crate) struct Crumb {
     pub label: String,
-    path: String,
+    pub path: String,
 }
 
 /// How many leading crumbs to hide behind "…" so the rest fit in `available`.
@@ -487,6 +487,12 @@ impl Workspace {
                         button.on_click(cx.listener(|this, _, window, cx| this.refresh(&Refresh, window, cx)))
                     }))
                     .when(trash, |row| row.child(self.empty_trash_button(cx)))
+                    .child(
+                        self.nav_button("details", "info", 16., true)
+                            .when(self.preferences.details_panel, |button| button.bg(c(SURFACE_ELEVATED)))
+                            .tooltip(crate::components::Tooltip::text("Details (F11)"))
+                            .on_click(cx.listener(|this, _, window, cx| this.toggle_details(&ToggleDetails, window, cx))),
+                    )
                     .child(self.nav_button("settings", "settings", 16., true).on_click(
                         cx.listener(|this, _, window, cx| {
                             this.open_settings(&OpenSettings, window, cx)

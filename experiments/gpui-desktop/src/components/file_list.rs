@@ -402,7 +402,7 @@ pub(super) fn checkbox(checked: bool, accent: Rgba) -> Stateful<Div> {
 }
 
 /// A folder glyph with a small one inside its body, as a special folder's mark.
-pub(super) fn emblemed(glyph: gpui::Svg, emblem: Option<&'static str>, size: f32, color: Rgba) -> Div {
+pub fn emblemed(glyph: gpui::Svg, emblem: Option<&'static str>, size: f32, color: Rgba) -> Div {
     let frame = div().relative().size(px(size)).flex_none().child(glyph);
     match emblem {
         Some(emblem) => frame.child(div().absolute().left(px(size * 0.3)).top(px(size * 0.36)).child(icon(emblem, size * 0.4, color))),

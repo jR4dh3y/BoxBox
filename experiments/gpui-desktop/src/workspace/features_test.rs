@@ -1449,3 +1449,18 @@ fn a_drag_near_the_bottom_scrolls_the_list(cx: &mut TestAppContext) {
     assert!(offset(&view, cx) < 0., "held near the bottom edge, the list scrolls down");
     cx.simulate_mouse_up(near_bottom, MouseButton::Left, Modifiers::default());
 }
+
+// F11 shows Details for the selection, as Dolphin's Information panel does, and hides it again.
+#[gpui::test]
+fn f11_shows_details_of_the_selection(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt"]);
+    assert!(cx.debug_bounds("details-panel").is_none());
+    cx.simulate_keystrokes("f11");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert!(workspace.preferences.details_panel));
+    click(cx, "row-0-0");
+    assert!(cx.debug_bounds("details-panel").is_some());
+    cx.simulate_keystrokes("f11");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert!(!workspace.preferences.details_panel));
+}

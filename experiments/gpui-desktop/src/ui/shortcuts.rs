@@ -54,6 +54,7 @@ const GROUPS: [(&str, &[(&str, &str)]); 3] = [
             ("Ctrl + Tab", "Next tab"),
             ("Ctrl + Shift + Tab", "Previous tab"),
             ("F3", "Toggle split pane"),
+            ("F11", "Show or hide Details"),
             ("Ctrl + ,", "Settings"),
             ("F1", "Show keyboard shortcuts"),
         ],

@@ -1,6 +1,7 @@
 //! Components, one per Svelte component they reproduce.
 
 mod browser;
+mod details;
 mod transfer_question;
 mod confirm;
 mod devices;
