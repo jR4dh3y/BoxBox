@@ -143,6 +143,15 @@ fi
 
 mkdir -p "$DIR/backend"
 cd "$DIR"
+# Until your settings are saved, a failed run removes what it made here, so
+# running the script again starts from an empty folder.
+SETUP="$PWD"
+discard_partial_setup() {
+  [ ! -e "$SETUP/.env" ] || return 0
+  rm -f "$SETUP/docker-compose.yml" "$SETUP/docker-compose.yml.new" "$SETUP/backend/config.yaml" "$SETUP/backend/config.yaml.new"
+  rmdir "$SETUP/backend" "$SETUP" 2>/dev/null || true
+}
+trap discard_partial_setup EXIT
 curl -fsSL "$SOURCE/docker-compose.yml" -o docker-compose.yml || stop "Could not download docker-compose.yml. Check your internet connection."
 curl -fsSL "$SOURCE/backend/config.yaml" -o backend/config.yaml || stop "Could not download config.yaml. Check your internet connection."
 # The project's files also hand BoxBox every disk under /media/devmon. This
@@ -152,6 +161,10 @@ mv docker-compose.yml.new docker-compose.yml
 awk '/^  - name: "drives"$/ { skip = 1; next } skip && /^[[:space:]]*$/ { skip = 0; next } !skip' backend/config.yaml > backend/config.yaml.new
 mv backend/config.yaml.new backend/config.yaml
 ! grep -q '/media/devmon' docker-compose.yml backend/config.yaml || stop "Could not limit BoxBox to $FOLDER. Nothing was started."
+# The version docker-compose.yml names. It is saved in .env so an update is
+# a deliberate one-line change, not a surprise on the next pull.
+IMAGE="$(grep -o 'ghcr\.io/jr4dh3y/boxbox:v[A-Za-z0-9._-]*' docker-compose.yml | head -n 1)"
+[ -n "$IMAGE" ] || stop "Could not find the BoxBox version in docker-compose.yml. Nothing was started."
 note "Downloaded docker-compose.yml and backend/config.yaml."
 
 # -----------------------------------------------------------------------------
@@ -222,6 +235,11 @@ HOST_PORT=${PORT}
 
 # The folder on this computer that BoxBox shows as "home".
 HOME_PATH=${FOLDER}
+
+# The BoxBox version to run. To update, change the version at the end (see
+# https://boxbox.radhey.dev/docs/release-notes/ first), then run
+# "docker compose pull && docker compose up -d" in this folder.
+BOXBOX_IMAGE=${IMAGE}
 EOF
 note "Saved."
 
@@ -239,4 +257,5 @@ note "Open:     http://localhost:${PORT}"
 note "Sign in:  ${USER_NAME}, with the password you just chose"
 note ""
 note "Stop it:    cd \"$PWD\" && docker compose down"
-note "Update it:  cd \"$PWD\" && docker compose pull && docker compose up -d"
+note "Update it:  set the new version in BOXBOX_IMAGE in \"$PWD/.env\","
+note "            then: cd \"$PWD\" && docker compose pull && docker compose up -d"
