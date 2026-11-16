@@ -1,66 +1,409 @@
 ---
-// The page ends with hero-sized type and a taped-up note from the author, in
-// the same handwriting as the doodle in the nav.
-import GetBoxBox from './GetBoxBox.astro';
+// The page ends with two ways in, side by side with the reasons to try it.
+// One is the visitor's own install command: three boxed words are theirs to
+// change and the command follows, with the setup script it runs a click away.
+// The other is a prompt to hand to an agent. The author's taped-up note, in
+// the same handwriting as the doodle in the nav, says why BoxBox exists.
+import { Bot, Copy, X } from '@lucide/astro';
+import setupScript from '../../public/install.sh?raw';
+import { defaultChoices, installCommandParts } from '../lib/installScript';
+
+const parts = installCommandParts(defaultChoices);
+const scriptLines = setupScript.trimEnd().split('\n');
+const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only', role: 'textbox', spellcheck: 'false', autocapitalize: 'off' } as const;
 ---
 
-<div class="closing">
+<div id="closing" class="closing">
   <div>
-    <h2 class="font-display">Go give your server a file manager.</h2>
-    <div class="mt-10"><GetBoxBox /></div>
-  </div>
+    <p class="closing-lead">Convinced enough to try it?</p>
+    <h2 class="font-display">Point it at a folder.</h2>
+    <p class="mt-6 max-w-md text-lg leading-relaxed text-text-secondary">
+      BoxBox runs in a single container, without root, and leaves your files exactly where they are. One command sets it up. One command, <code class="closing-code">docker compose down</code>, stops it.
+    </p>
 
-  <div class="closing-note-wall">
     <figure id="sticky-note" class="closing-note">
       <span class="closing-note-tape" aria-hidden="true"></span>
       <blockquote>
-        <p>I built this for my own homelab.</p>
-        <p>It's free and open source, so now it's yours too.</p>
-        <p>Found a bug? Tell me.</p>
+        <p>I kept hopping between file managers and none of them felt like home.</p>
+        <p>So I built my own, as an experiment.</p>
+        <p>It now has <span id="note-downloads">20k</span> downloads.</p>
       </blockquote>
       <figcaption>— jR4dh3y</figcaption>
     </figure>
   </div>
+
+  <div class="closing-ways">
+    <div>
+      <p class="closing-ask font-display">
+        Serve <span {...word} data-choice="folder" aria-label="Folder to serve">{defaultChoices.folder}</span> on port <span {...word} data-choice="port" aria-label="Port" inputmode="numeric">{defaultChoices.port}</span>, signed in as <span {...word} data-choice="user" aria-label="User name">{defaultChoices.user}</span>
+      </p>
+      <p class="mt-2 text-sm text-text-muted">Click a box to change it. Then run this on your server:</p>
+      <pre class="closing-command mock-scrollbar"><code id="install-command">{parts.map((part) => (part.chosen ? <span data-chosen>{part.text}</span> : part.text))}</code></pre>
+      <div class="closing-actions">
+        <button id="install-copy" type="button" class="closing-button closing-button-primary"><Copy class="h-4 w-4 shrink-0" aria-hidden="true" /><span>Copy the command</span></button>
+        <button id="install-read" type="button" class="closing-read">Read the script first</button>
+      </div>
+    </div>
+
+    <div class="closing-or" aria-hidden="true"><span>or</span></div>
+
+    <div>
+      <div class="closing-actions">
+        <button id="install-agent" type="button" class="closing-button"><Bot class="h-4 w-4 shrink-0" aria-hidden="true" /><span>Have your agent set this up for you?</span></button>
+      </div>
+      <p class="mt-3 max-w-md text-sm leading-relaxed text-text-muted">
+        Copies a prompt. Your agent looks at your machine, asks you what it needs to know, and sets BoxBox up from the project's own docs.
+      </p>
+    </div>
+  </div>
 </div>
 
+<dialog id="install-reader" class="closing-reader" aria-labelledby="install-reader-title">
+  <div class="closing-reader-bar">
+    <span id="install-reader-title">install.sh, {scriptLines.length} lines. Lines starting with # are explanations.</span>
+    <button id="install-reader-close" type="button" aria-label="Close"><X class="h-4 w-4" aria-hidden="true" /></button>
+  </div>
+  <pre class="mock-scrollbar" tabindex="0"><code>{scriptLines.map((line) => <span data-comment={line.trimStart().startsWith('#') ? '' : undefined}>{line + '\n'}</span>)}</code></pre>
+</dialog>
+
 <script>
+  import { formatDownloads, parseDownloadsPayload } from '../lib/downloads';
+  import { agentPrompt, defaultChoices, installCommand, installCommandParts, parseFolder, parsePort, parseUser, type InstallChoices } from '../lib/installScript';
   import { attachStickyNote } from '../lib/stickyNote';
 
   const note = document.getElementById('sticky-note');
   const bounds = note?.closest('section');
   if (note && bounds) attachStickyNote(note, bounds);
+
+  // The note is written with a round number; the real one replaces it.
+  const downloads = document.getElementById('note-downloads');
+  if (downloads) {
+    fetch('/api/downloads.json')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: unknown) => {
+        const total = parseDownloadsPayload(payload);
+        if (total !== null) downloads.textContent = formatDownloads(total);
+      })
+      .catch(() => undefined);
+  }
+
+  const reader = document.getElementById('install-reader');
+  if (reader instanceof HTMLDialogElement) {
+    document.getElementById('install-read')?.addEventListener('click', () => reader.showModal());
+    document.getElementById('install-reader-close')?.addEventListener('click', () => reader.close());
+    // A click on the dimmed page around the script closes it.
+    reader.addEventListener('click', (event) => {
+      if (event.target === reader) reader.close();
+    });
+  }
+
+  const closing = document.getElementById('closing');
+  const output = document.getElementById('install-command');
+  const copy = document.getElementById('install-copy');
+  const agent = document.getElementById('install-agent');
+
+  if (closing && output && copy && agent) {
+    let choices: InstallChoices = defaultChoices;
+
+    // Returns the choices with one word replaced, or null if it cannot be used.
+    function choose(name: string | undefined, text: string): InstallChoices | null {
+      if (name === 'folder') {
+        const folder = parseFolder(text);
+        return folder === null ? null : { ...choices, folder };
+      }
+      if (name === 'port') {
+        const port = parsePort(text);
+        return port === null ? null : { ...choices, port };
+      }
+      const user = parseUser(text);
+      return user === null ? null : { ...choices, user };
+    }
+
+    function render() {
+      output?.replaceChildren(
+        ...installCommandParts(choices).map((part) => {
+          if (!part.chosen) return part.text;
+          const span = document.createElement('span');
+          span.toggleAttribute('data-chosen', true);
+          span.textContent = part.text;
+          return span;
+        })
+      );
+    }
+
+    closing.querySelectorAll<HTMLElement>('[data-choice]').forEach((word) => {
+      const shown = () => String(choices[word.dataset.choice === 'folder' ? 'folder' : word.dataset.choice === 'port' ? 'port' : 'user']);
+
+      word.addEventListener('input', () => {
+        const next = choose(word.dataset.choice, word.textContent ?? '');
+        word.toggleAttribute('aria-invalid', next === null);
+        if (next === null) return;
+        choices = next;
+        render();
+      });
+      // A word left unusable goes back to the last one that worked.
+      word.addEventListener('blur', () => {
+        word.removeAttribute('aria-invalid');
+        word.textContent = shown();
+      });
+      word.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        word.blur();
+      });
+    });
+
+    // A button that has copied changes its words, and its width follows them,
+    // then it changes back.
+    function copyButton(button: HTMLElement, text: () => string, done: string) {
+      const label = button.querySelector('span');
+      const ask = label?.textContent ?? '';
+      let reset: number | undefined;
+
+      function morph(words: string, copied: boolean) {
+        if (!label) return;
+        const from = button.getBoundingClientRect().width;
+        label.textContent = words;
+        button.toggleAttribute('data-copied', copied);
+        const to = button.getBoundingClientRect().width;
+        const timing = { duration: 450, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' };
+        button.animate({ width: [`${from}px`, `${to}px`] }, timing);
+        label.animate({ opacity: [0, 1], transform: ['translateY(60%)', 'translateY(0)'] }, timing);
+      }
+
+      button.addEventListener('click', async () => {
+        window.clearTimeout(reset);
+        try {
+          await navigator.clipboard.writeText(text());
+          morph(done, true);
+        } catch {
+          morph('Copying was blocked by the browser', false);
+        }
+        reset = window.setTimeout(() => morph(ask, false), 5000);
+      });
+    }
+
+    copyButton(copy, () => installCommand(choices), 'Copied. Paste it in a terminal');
+    copyButton(agent, () => agentPrompt, 'Paste it to your agent');
+  }
 </script>
 
 <style>
   .closing h2 {
     max-width: 11ch;
-    font-size: clamp(2.75rem, 8.4vw, 6rem);
+    font-size: clamp(2.75rem, 6.6vw, 5rem);
     font-weight: 800;
     line-height: 0.98;
     letter-spacing: -0.035em;
     color: #fff;
   }
 
-  /* A note held to the page by one strip of tape. lib/stickyNote.ts moves
-     it; --lift is how far it is off the page, from 0 to 1. */
-  .closing-note-wall {
-    position: relative;
-    z-index: 5;
-    width: min(100%, 22rem);
-    margin: 4rem 0 0 0.5rem;
+  /* Asked in the author's handwriting, like the note below it. */
+  .closing-lead {
+    margin-bottom: 0.6rem;
+    font-family: 'Caveat', cursive;
+    font-size: 1.9rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--color-folder);
+    transform: rotate(-2deg);
+    transform-origin: left bottom;
   }
 
+  .closing-ask {
+    font-size: clamp(1.5rem, 2.4vw, 2rem);
+    font-weight: 700;
+    line-height: 1.5;
+    letter-spacing: -0.025em;
+    color: #fff;
+  }
+
+  /* A dashed box is a blank to fill in; the solid ones elsewhere are buttons. */
+  .closing-word {
+    min-width: 1.5ch;
+    border-style: dashed;
+    cursor: text;
+    outline: none;
+    transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+  }
+
+  .closing-word:hover,
+  .closing-word:focus {
+    border-style: solid;
+    background: color-mix(in srgb, var(--color-accent) 24%, transparent);
+  }
+
+  .closing-word[aria-invalid] {
+    border-color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+    color: #ff8a95;
+  }
+
+  .closing-code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; color: var(--color-text-primary); }
+
+  .closing-ways { margin-top: 4rem; }
+
+  /* The command sits on the page like a quoted line, not in another box. */
+  .closing-command {
+    overflow-x: auto;
+    margin-top: 1.1rem;
+    padding: 0.2rem 0 0.2rem 1.1rem;
+    border-left: 2px solid var(--color-accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.8;
+    color: var(--color-text-primary);
+    transition: border-color 700ms ease;
+  }
+
+  /* The command is redrawn by the page's script, so this reaches past the
+     component's own scope. */
+  .closing-command :global([data-chosen]) {
+    color: var(--color-accent);
+    font-weight: 500;
+    transition: color 700ms ease;
+  }
+
+  .closing-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.25rem;
+    margin-top: 1.25rem;
+  }
+
+  .closing-or {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 2.25rem 0 1rem;
+    font-family: 'Caveat', cursive;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--color-folder);
+  }
+
+  .closing-or::after {
+    content: '';
+    height: 1px;
+    flex: 1;
+    background: var(--color-border-primary);
+  }
+
+  .closing-read {
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    transition: color 200ms ease;
+  }
+
+  .closing-read:hover { color: #fff; }
+
+  /* The whole setup script, opened over the page for anyone who wants to
+     see what they are about to run. Its comments are the readable part. */
+  .closing-reader {
+    width: min(100vw - 2rem, 56rem);
+    max-width: none;
+    height: min(100dvh - 4rem, 48rem);
+    max-height: none;
+    margin: auto;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--color-border-primary);
+    border-radius: 14px;
+    background: #141414;
+    color: var(--color-text-muted);
+  }
+
+  .closing-reader[open] { display: flex; flex-direction: column; }
+  .closing-reader::backdrop { background: rgb(0 0 0 / 0.8); }
+
+  .closing-reader-bar {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.6rem 0.75rem 0.6rem 1.1rem;
+    border-bottom: 1px solid var(--color-border-secondary);
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+  }
+
+  .closing-reader-bar button {
+    display: inline-flex;
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--color-text-secondary);
+  }
+
+  .closing-reader-bar button:hover { background: var(--color-surface-elevated); color: #fff; }
+
+  .closing-reader pre {
+    flex: 1;
+    overflow: auto;
+    padding: 1.1rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 1.7;
+  }
+
+  .closing-reader [data-comment] { color: var(--color-text-primary); }
+
+  /* The two ways in share one button; the filled one is the direct route. */
+  .closing-button {
+    display: inline-flex;
+    max-width: 100%;
+    min-height: 2.9rem;
+    align-items: center;
+    gap: 0.55rem;
+    overflow: hidden;
+    padding: 0 1.1rem;
+    border: 2px solid var(--color-accent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    color: var(--color-accent);
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: background-color 250ms ease, color 250ms ease, border-color 250ms ease;
+  }
+
+  .closing-button:hover,
+  .closing-button[data-copied],
+  .closing-button-primary {
+    background: var(--color-accent);
+    color: #0d0d0d;
+  }
+
+  .closing-button-primary:hover {
+    border-color: #fff;
+    background: #fff;
+  }
+
+  /* A note held to the page by one strip of tape. lib/stickyNote.ts moves it; --lift is how far it is off the
+     page, from 0 to 1. */
   .closing-note {
     --lift: 0;
     position: relative;
+    z-index: 5;
     display: flex;
+    width: min(100%, 18rem);
     aspect-ratio: 1;
     flex-direction: column;
-    padding: 2.75rem 2rem 1.75rem;
+    margin: 3.5rem 0 0 0.5rem;
+    padding: 2.25rem 1.5rem 1.25rem;
     background: var(--color-folder);
     color: #1c1608;
     font-family: 'Caveat', cursive;
-    font-size: 1.9rem;
+    font-size: 1.45rem;
     font-weight: 700;
     line-height: 1.15;
     box-shadow: 0 calc(14px + var(--lift) * 34px) calc(20px + var(--lift) * 36px) calc(-12px + var(--lift) * 4px) rgb(0 0 0 / calc(0.85 - var(--lift) * 0.35));
@@ -76,32 +419,31 @@ import GetBoxBox from './GetBoxBox.astro';
 
   .closing-note-tape {
     position: absolute;
-    top: -0.85rem;
+    top: -0.75rem;
     left: 50%;
-    width: 6.5rem;
-    height: 1.8rem;
+    width: 5.5rem;
+    height: 1.6rem;
     background: rgb(255 255 255 / 0.3);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
     transform: translateX(-50%) rotate(-2deg);
   }
 
-  .closing-note p + p { margin-top: 0.7rem; }
+  .closing-note p + p { margin-top: 0.5rem; }
 
   .closing-note figcaption {
     margin-top: auto;
     text-align: right;
-    font-size: 2.1rem;
+    font-size: 1.6rem;
   }
 
   @media (min-width: 1024px) {
     .closing {
       display: grid;
-      width: 100%;
-      grid-template-columns: minmax(0, 1fr) 22rem;
-      align-items: center;
-      gap: 4rem;
+      grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
+      align-items: start;
+      gap: 5rem;
     }
 
-    .closing-note-wall { width: 100%; margin: 0; }
+    .closing-ways { margin-top: 3.25rem; }
   }
 </style>
