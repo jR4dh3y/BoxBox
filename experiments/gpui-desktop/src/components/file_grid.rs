@@ -19,7 +19,6 @@ pub struct GridMetrics {
     pub gap: f32,
     pub padding: f32,
     pub preview_height: f32,
-    pub icon: f32,
     /// The longest edge of a thumbnail drawn at this size.
     pub thumbnail: u32,
 }
@@ -27,18 +26,18 @@ pub struct GridMetrics {
 impl GridMetrics {
     /// Step 1 is the web app's `grid h-[164px] gap-x-3` in `p-3`; step 0 its compact one.
     pub const STEPS: [Self; 5] = [
-        Self { tile_width: 96., row_height: 136., gap: 8., padding: 8., preview_height: 56., icon: 24., thumbnail: 160 },
-        Self { tile_width: 112., row_height: 164., gap: 12., padding: 12., preview_height: 80., icon: 30., thumbnail: 160 },
-        Self { tile_width: 144., row_height: 196., gap: 12., padding: 12., preview_height: 112., icon: 42., thumbnail: 160 },
-        Self { tile_width: 192., row_height: 244., gap: 12., padding: 12., preview_height: 160., icon: 60., thumbnail: 256 },
-        Self { tile_width: 256., row_height: 308., gap: 12., padding: 12., preview_height: 224., icon: 84., thumbnail: 256 },
+        Self { tile_width: 96., row_height: 136., gap: 8., padding: 8., preview_height: 56., thumbnail: 160 },
+        Self { tile_width: 112., row_height: 164., gap: 12., padding: 12., preview_height: 80., thumbnail: 160 },
+        Self { tile_width: 144., row_height: 196., gap: 12., padding: 12., preview_height: 112., thumbnail: 160 },
+        Self { tile_width: 192., row_height: 244., gap: 12., padding: 12., preview_height: 160., thumbnail: 256 },
+        Self { tile_width: 256., row_height: 308., gap: 12., padding: 12., preview_height: 224., thumbnail: 256 },
     ];
 
     pub fn new(zoom: u8) -> Self {
         Self::STEPS[usize::from(zoom).min(Self::STEPS.len() - 1)]
     }
 
-    /// The edge of a theme icon: the preview box, less a margin, never wider than the tile.
+    /// The edge of an icon: the preview box, less a margin, never wider than the tile.
     pub fn theme_icon(&self) -> f32 {
         (self.preview_height - 8.).min(self.tile_width - 16.)
     }
@@ -204,7 +203,7 @@ impl RenderOnce for FileTile {
                     .bg(c(SURFACE_PRIMARY))
                     .child(img(image).size_full().object_fit(ObjectFit::Cover)),
                 (None, Some(image)) => slot.child(img(image).size(px(metrics.theme_icon()))),
-                (None, None) => slot.child(super::file_list::emblemed(thin_icon(self.icon, metrics.icon, tone), self.emblem, metrics.icon, tone)),
+                (None, None) => slot.child(super::file_list::emblemed(thin_icon(self.icon, metrics.theme_icon(), tone), self.emblem, metrics.theme_icon(), tone)),
             });
         let label = div()
             .w_full()
