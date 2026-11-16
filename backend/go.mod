@@ -3,6 +3,7 @@ module github.com/jR4dh3y/BoxBox/backend
 go 1.27.0
 
 require (
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/godbus/dbus/v5 v5.2.4
@@ -14,11 +15,13 @@ require (
 	github.com/spf13/viper v1.21.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/time v0.16.0
 )
 
 require (
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

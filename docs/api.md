@@ -40,6 +40,31 @@ The refresh token is not in the body. The server sets it as the `boxbox_refresh`
 
 Login creates a new session and saves it before returning the token pair. If the save fails before publication, login returns `500` without a token pair or `Set-Cookie` header. The browser's existing refresh cookie remains unchanged.
 
+With `oidc.disable_password_login`, login returns `403 PASSWORD_LOGIN_DISABLED`.
+
+### Sign-In Options
+
+```http
+GET /api/v1/auth/config
+```
+
+Public, and not rate-limited. The login page uses it to choose its controls:
+
+```json
+{ "passwordLogin": true, "oidc": { "name": "My SSO" } }
+```
+
+`oidc` is `null` when single sign-on is off.
+
+### Single Sign-On
+
+```http
+GET /api/v1/auth/oidc/login
+GET /api/v1/auth/oidc/callback
+```
+
+These routes exist only when OIDC is configured, and they are browser navigations, not API calls. `login` stores the sign-in state in a short-lived signed cookie and redirects to the provider. The provider redirects back to `callback`, which sets the same `boxbox_refresh` cookie as password login and redirects to `/browse`; the app then restores the session with `POST /api/v1/auth/refresh`. On failure, `callback` redirects to `/login?sso_error=<code>`, where the code is one of `provider_unavailable`, `flow_expired`, `denied`, `provider_error`, `identity_invalid`, `not_allowed` or `server_error`.
+
 ### Use an Access Token
 
 ```http

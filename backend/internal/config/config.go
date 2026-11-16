@@ -78,6 +78,9 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 	v.SetDefault("chunk_size_mb", DefaultChunkSizeMB)
 	v.SetDefault("rate_limit_rps", 2.0)
 	v.SetDefault("data_dir", DefaultDataDir)
+	v.SetDefault("oidc.provider_name", "SSO")
+	v.SetDefault("oidc.username_claim", "preferred_username")
+	v.SetDefault("oidc.scopes", []string{"openid", "profile", "email"})
 
 	if configPath == "" {
 		configPath = os.Getenv("CONFIG_PATH")
@@ -111,6 +114,13 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 		"chunk_size_mb",
 		"data_dir",
 		"allow_root_mount",
+		"oidc.issuer_url",
+		"oidc.client_id",
+		"oidc.client_secret",
+		"oidc.redirect_url",
+		"oidc.provider_name",
+		"oidc.username_claim",
+		"oidc.disable_password_login",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind environment variable %q: %w", key, err)
@@ -173,6 +183,12 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 	}
 	if proxies := os.Getenv("BOXBOX_TRUSTED_PROXIES"); proxies != "" {
 		cfg.TrustedProxies = splitEnvList(proxies)
+	}
+	if users := os.Getenv("BOXBOX_OIDC_USERS"); users != "" {
+		cfg.OIDC.Users = splitEnvList(users)
+	}
+	if scopes := os.Getenv("BOXBOX_OIDC_SCOPES"); scopes != "" {
+		cfg.OIDC.Scopes = splitEnvList(scopes)
 	}
 
 	if err := cfg.Validate(); err != nil {

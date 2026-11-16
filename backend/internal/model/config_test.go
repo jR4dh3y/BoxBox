@@ -156,3 +156,67 @@ func TestValidateRejectsUnknownMountKind(t *testing.T) {
 		t.Fatalf("Validate() = %v, want a kind error", err)
 	}
 }
+
+func TestValidateOIDC(t *testing.T) {
+	enabled := OIDCConfig{
+		IssuerURL:     "https://auth.example.com",
+		ClientID:      "boxbox",
+		RedirectURL:   "https://files.example.com/api/v1/auth/oidc/callback",
+		ProviderName:  "SSO",
+		UsernameClaim: "preferred_username",
+		Scopes:        []string{"openid", "profile"},
+	}
+	tests := []struct {
+		name    string
+		users   map[string]string
+		edit    func(*OIDCConfig)
+		wantErr string
+	}{
+		{name: "off"},
+		{name: "on", edit: func(c *OIDCConfig) { *c = enabled }},
+		{name: "sso-only accounts without password users", users: map[string]string{}, edit: func(c *OIDCConfig) {
+			*c = enabled
+			c.Users = []string{"carol"}
+		}},
+		{name: "no accounts at all", users: map[string]string{}, edit: func(c *OIDCConfig) { *c = enabled }, wantErr: "at least one user"},
+		{name: "settings without issuer", edit: func(c *OIDCConfig) { c.ClientID = "boxbox" }, wantErr: "issuer_url is required"},
+		{name: "relative issuer", edit: func(c *OIDCConfig) { *c = enabled; c.IssuerURL = "auth.example.com" }, wantErr: "issuer_url must be"},
+		{name: "missing client", edit: func(c *OIDCConfig) { *c = enabled; c.ClientID = "" }, wantErr: "client_id is required"},
+		{name: "missing redirect", edit: func(c *OIDCConfig) { *c = enabled; c.RedirectURL = "" }, wantErr: "redirect_url is required"},
+		{name: "prefixed redirect", edit: func(c *OIDCConfig) {
+			*c = enabled
+			c.RedirectURL = "https://files.example.com/boxbox/api/v1/auth/oidc/callback"
+		}, wantErr: "redirect_url must be"},
+		{name: "no openid scope", edit: func(c *OIDCConfig) { *c = enabled; c.Scopes = []string{"profile"} }, wantErr: "openid"},
+		{name: "blank claim", edit: func(c *OIDCConfig) { *c = enabled; c.UsernameClaim = " " }, wantErr: "username_claim"},
+		{name: "bad sso user", edit: func(c *OIDCConfig) { *c = enabled; c.Users = []string{" carol"} }, wantErr: "oidc.users[0]"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := ServerConfig{
+				JWTSecret:   "0123456789abcdef0123456789abcdef",
+				Users:       map[string]string{"admin": validTestBcryptHash},
+				MountPoints: []MountPoint{{Name: "data", Path: "/data"}},
+				Port:        80,
+				MaxUploadMB: 1,
+				ChunkSizeMB: 1,
+			}
+			if test.users != nil {
+				cfg.Users = test.users
+			}
+			if test.edit != nil {
+				test.edit(&cfg.OIDC)
+			}
+			err := cfg.Validate()
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("Validate() = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}

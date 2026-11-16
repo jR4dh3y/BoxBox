@@ -72,6 +72,12 @@ func main() {
 		cfg.TrustedProxies = nil
 	}
 
+	if localIdentity && cfg.OIDC.Enabled() {
+		// The desktop host gate and dev auth bypass leave no external callback to serve.
+		log.Warn().Msg("OIDC sign-in is configured but ignored in development and desktop mode")
+		cfg.OIDC = model.OIDCConfig{}
+	}
+
 	for _, warning := range loadResult.Warnings {
 		log.Warn().
 			Str("legacy", warning.Legacy).
@@ -175,12 +181,32 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 
 	// Create services
 	authService, err := service.NewAuthService(fs, service.AuthServiceConfig{
-		DataDir:   cfg.DataDir,
-		JWTSecret: cfg.JWTSecret,
-		Users:     cfg.Users,
+		DataDir:               cfg.DataDir,
+		JWTSecret:             cfg.JWTSecret,
+		Users:                 cfg.Users,
+		SSOUsers:              cfg.OIDC.Users,
+		PasswordLoginDisabled: cfg.OIDC.DisablePasswordLogin,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("initialize auth service: %w", err)
+	}
+	authConfig := handler.AuthConfigResponse{PasswordLogin: !cfg.OIDC.DisablePasswordLogin}
+	var oidcHandler *handler.OIDCHandler
+	if cfg.OIDC.Enabled() {
+		oidcService := service.NewOIDCService(service.OIDCServiceConfig{
+			IssuerURL:     cfg.OIDC.IssuerURL,
+			ClientID:      cfg.OIDC.ClientID,
+			ClientSecret:  cfg.OIDC.ClientSecret,
+			RedirectURL:   cfg.OIDC.RedirectURL,
+			UsernameClaim: cfg.OIDC.UsernameClaim,
+			Scopes:        cfg.OIDC.Scopes,
+			JWTSecret:     cfg.JWTSecret,
+		})
+		go oidcService.Warm()
+		oidcHandler = handler.NewOIDCHandler(oidcService, authService, cfg.OIDC.RedirectURL)
+		authConfig.OIDC = &handler.AuthConfigOIDC{Name: cfg.OIDC.ProviderName}
+		log.Info().Str("issuer", cfg.OIDC.IssuerURL).Int("sso_only_users", len(cfg.OIDC.Users)).
+			Bool("password_login", authConfig.PasswordLogin).Msg("OIDC sign-in enabled")
 	}
 	var connectService *service.ConnectService
 	if !devMode {
@@ -242,7 +268,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 	shareHandler := handler.NewShareHandler(shareService, settingsService, cfg.MaxUploadMB)
 
 	// Create router
-	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints, desktopMode, connectService)
+	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints, desktopMode, connectService, oidcHandler, authConfig)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -279,6 +305,8 @@ func createRouter(
 	mountPoints []model.MountPoint,
 	desktopMode bool,
 	connectService *service.ConnectService,
+	oidcHandler *handler.OIDCHandler,
+	authConfig handler.AuthConfigResponse,
 ) chi.Router {
 	r := chi.NewRouter()
 
@@ -307,8 +335,15 @@ func createRouter(
 		// Auth routes are rate-limited to prevent brute force attacks
 		r.Route("/auth", func(r chi.Router) {
 			r.Use(middleware.RejectClientCredentials)
-			r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
-			authHandler.RegisterRoutes(r)
+			// Constant and public: loading the login page must not spend the sign-in budget.
+			r.Get("/config", handler.AuthConfig(authConfig))
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
+				authHandler.RegisterRoutes(r)
+				if oidcHandler != nil {
+					oidcHandler.RegisterRoutes(r)
+				}
+			})
 		})
 		if connectService != nil {
 			connectHandler := handler.NewConnectHandler(connectService)

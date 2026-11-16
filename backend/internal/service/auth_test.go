@@ -315,3 +315,58 @@ func testPasswordHash(t *testing.T, password string) string {
 	}
 	return string(hash)
 }
+
+func TestLoginSSOAdmitsOnlyConfiguredAccounts(t *testing.T) {
+	cfg := testAuthConfig(t, filepath.Join(t.TempDir(), "data"))
+	cfg.SSOUsers = []string{"carol"}
+	auth := newTestAuthServiceWithConfig(t, cfg)
+	ctx := context.Background()
+
+	for _, username := range []string{"admin", "carol"} {
+		pair, err := auth.LoginSSO(ctx, username)
+		if err != nil {
+			t.Fatalf("LoginSSO(%q) error = %v", username, err)
+		}
+		if claims, err := auth.ValidateAccessToken(pair.AccessToken); err != nil || claims.Username != username {
+			t.Fatalf("access token for %q = %+v, %v", username, claims, err)
+		}
+		if _, err := auth.Refresh(ctx, pair.RefreshToken); err != nil {
+			t.Fatalf("Refresh for %q error = %v", username, err)
+		}
+	}
+	for _, username := range []string{"mallory", "", "Admin"} {
+		if _, err := auth.LoginSSO(ctx, username); !errors.Is(err, ErrSSOAccountNotAllowed) {
+			t.Fatalf("LoginSSO(%q) error = %v, want ErrSSOAccountNotAllowed", username, err)
+		}
+	}
+	if err := auth.VerifyPassword(ctx, "carol", "anything"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("SSO-only account passed password check: %v", err)
+	}
+}
+
+func TestSSOSessionEndsWhenAccountIsRemoved(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "data")
+	cfg := testAuthConfig(t, dataDir)
+	cfg.SSOUsers = []string{"carol"}
+	pair, err := newTestAuthServiceWithConfig(t, cfg).LoginSSO(context.Background(), "carol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.SSOUsers = nil
+	restarted := newTestAuthServiceWithConfig(t, cfg)
+	if _, err := restarted.ValidateAccessToken(pair.AccessToken); err == nil {
+		t.Fatal("token survived removal of the SSO account")
+	}
+}
+
+func TestPasswordLoginDisabled(t *testing.T) {
+	cfg := testAuthConfig(t, filepath.Join(t.TempDir(), "data"))
+	cfg.PasswordLoginDisabled = true
+	auth := newTestAuthServiceWithConfig(t, cfg)
+	if _, err := auth.Login(context.Background(), "admin", "correct-password"); !errors.Is(err, ErrPasswordLoginDisabled) {
+		t.Fatalf("Login error = %v, want ErrPasswordLoginDisabled", err)
+	}
+	if err := auth.VerifyPassword(context.Background(), "admin", "correct-password"); err != nil {
+		t.Fatalf("VerifyPassword for pairing error = %v", err)
+	}
+}

@@ -98,7 +98,58 @@ BOXBOX_USERS_admin='$2b$12$...'
 BOXBOX_USERS_radhey='$2b$12$...'
 ```
 
-Generate a hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`. If no users are configured, or a configured value is plaintext, BoxBox fails to start.
+Generate a hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`. If no users are configured, or a configured value is plaintext, BoxBox fails to start. With single sign-on enabled, accounts listed in `oidc.users` count, so a server can have no password users.
+
+YAML lowercases `users:` keys, so `Admin:` in YAML becomes the account `admin`. Names from `BOXBOX_USERS_<name>` and `oidc.users` keep their case.
+
+## Single Sign-On (OIDC)
+
+BoxBox can sign users in through any OpenID Connect provider: one that publishes `/.well-known/openid-configuration` and supports the authorization code flow. Nothing in BoxBox is specific to one provider. Sign-in is off until `oidc.issuer_url` is set, and password users keep working unless you turn them off.
+
+```yaml
+oidc:
+  issuer_url: "https://auth.example.com"
+  client_id: "boxbox"
+  client_secret: "..."
+  redirect_url: "https://files.example.com/api/v1/auth/oidc/callback"
+  provider_name: "My SSO"
+  users:
+    - carol
+```
+
+Register `redirect_url` as the client's redirect URI at the provider. Its path must be `/api/v1/auth/oidc/callback`; BoxBox runs at the root of its origin, so prefixes such as `/boxbox/` are not supported.
+
+The provider's `username_claim` value must exactly match a BoxBox account, either a password user from `users` or a name in `oidc.users`. Matching is case-sensitive. Any other account at the provider is refused and the server logs the name, so you can add it. A password user signs in the same way with either method. Use a claim the provider administrator controls; if users can rename themselves at the provider, one could take another account's name.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `oidc.issuer_url` | `""` (off) | Provider issuer. It must match the provider's `iss` exactly, including any trailing slash. |
+| `oidc.client_id` | Required | OAuth client ID. |
+| `oidc.client_secret` | `""` | Client secret. Leave empty for a public client; PKCE is always used. |
+| `oidc.redirect_url` | Required | Public callback URL, as above. |
+| `oidc.provider_name` | `SSO` | Button label: "Sign in with <name>". |
+| `oidc.username_claim` | `preferred_username` | Claim compared to account names. `email` also requires `email_verified`. BoxBox reads UserInfo when the ID token lacks the claim. |
+| `oidc.scopes` | `openid, profile, email` | Requested scopes; must include `openid`. |
+| `oidc.users` | `[]` | Accounts that sign in only through the provider. They cannot pair desktop clients, which asks for a password. |
+| `oidc.disable_password_login` | `false` | Hides the password form and rejects password login with `403`. If the provider is down, unset it and restart to sign in with a password. |
+
+Common providers, as a starting point; they have not each been tested with BoxBox. Check the issuer in your provider's discovery document, since it must match exactly:
+
+| Provider | `issuer_url` | `username_claim` |
+| --- | --- | --- |
+| Authelia | `https://auth.example.com` | `preferred_username` |
+| Authentik | `https://authentik.example.com/application/o/<app-slug>/` (trailing slash) | `preferred_username` |
+| Keycloak | `https://keycloak.example.com/realms/<realm>` | `preferred_username` |
+| Pocket ID | `https://id.example.com` | `preferred_username` |
+| Kanidm | `https://idm.example.com/oauth2/openid/<client-id>` | `preferred_username` |
+| Zitadel | `https://<instance>.zitadel.cloud` | `preferred_username` |
+| Google | `https://accounts.google.com` | `email` |
+| Microsoft Entra ID | `https://login.microsoftonline.com/<tenant-id>/v2.0` | `preferred_username` or `email` |
+| GitLab | `https://gitlab.com` | `preferred_username` |
+
+Only one provider can be configured. OAuth2-only logins without OpenID Connect, such as GitHub, and reverse-proxy header login (forward auth) are not supported.
+
+A sign-in stays valid for the normal 7-day rolling refresh, even after the user is removed at the provider. Remove the name from BoxBox and restart to end it. Single sign-on is ignored in `--dev` and desktop mode.
 
 ## Environment Variables
 
@@ -117,6 +168,15 @@ Environment overrides use the `BOXBOX_` prefix:
 | `BOXBOX_ALLOW_ROOT_MOUNT` | `allow_root_mount` |
 | `BOXBOX_DATA_DIR` | `data_dir` |
 | `BOXBOX_USERS_<username>` | `users.<username>` |
+| `BOXBOX_OIDC_ISSUER_URL` | `oidc.issuer_url` |
+| `BOXBOX_OIDC_CLIENT_ID` | `oidc.client_id` |
+| `BOXBOX_OIDC_CLIENT_SECRET` | `oidc.client_secret` |
+| `BOXBOX_OIDC_REDIRECT_URL` | `oidc.redirect_url` |
+| `BOXBOX_OIDC_PROVIDER_NAME` | `oidc.provider_name` |
+| `BOXBOX_OIDC_USERNAME_CLAIM` | `oidc.username_claim` |
+| `BOXBOX_OIDC_SCOPES` | `oidc.scopes`, comma-separated |
+| `BOXBOX_OIDC_USERS` | `oidc.users`, comma-separated |
+| `BOXBOX_OIDC_DISABLE_PASSWORD_LOGIN` | `oidc.disable_password_login` |
 
 `CONFIG_PATH` is also supported as a convenience for selecting the YAML file path.
 

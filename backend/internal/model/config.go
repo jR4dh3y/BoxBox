@@ -73,6 +73,7 @@ type ServerConfig struct {
 	AllowedOrigins []string          `mapstructure:"allowed_origins"` // WebSocket/CORS allowed origins
 	TrustedProxies []string          `mapstructure:"trusted_proxies"` // CIDRs allowed to supply forwarding headers
 	RateLimitRPS   float64           `mapstructure:"rate_limit_rps"`  // Auth endpoint rate limit (requests per second)
+	OIDC           OIDCConfig        `mapstructure:"oidc"`
 }
 
 // Validate checks that the configuration is valid
@@ -87,8 +88,11 @@ func (c *ServerConfig) Validate() error {
 		return fmt.Errorf("jwt_secret must be changed from the placeholder value")
 	}
 
-	if len(c.Users) == 0 {
-		return fmt.Errorf("at least one user is required")
+	if err := c.OIDC.validate(); err != nil {
+		return err
+	}
+	if len(c.Users) == 0 && !(c.OIDC.Enabled() && len(c.OIDC.Users) > 0) {
+		return fmt.Errorf("at least one user is required: configure users or oidc.users")
 	}
 	for username, password := range c.Users {
 		if username == "" {

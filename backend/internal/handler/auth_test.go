@@ -390,7 +390,7 @@ func TestAuthCookieSecurityAndOriginBoundaries(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			handler.setRefreshCookie(recorder, testCase.request, "opaque-test-value", time.Now().Add(time.Hour))
+			setRefreshCookie(recorder, "opaque-test-value", time.Now().Add(time.Hour), requestIsHTTPS(testCase.request))
 			cookie := onlyCookie(t, recorder)
 			if cookie.Secure != testCase.wantSecure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode {
 				t.Fatalf("cookie attributes = %#v", cookie)

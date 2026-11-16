@@ -24,4 +24,5 @@ const (
 	ErrCodeChecksumMismatch        = "CHECKSUM_MISMATCH"
 	ErrCodeInternalError           = "INTERNAL_ERROR"
 	ErrCodeSessionRecoveryRequired = "SESSION_RECOVERY_REQUIRED"
+	ErrCodePasswordLoginDisabled   = "PASSWORD_LOGIN_DISABLED"
 )

@@ -34,6 +34,18 @@ Deleting `auth-sessions.json` while the server is running does not clear the in-
 
 An older valid registry backup can revive its sessions, access tokens, and current refresh tokens. Rotate `BOXBOX_JWT_SECRET` after restoring one. If you downgrade to an older validator that ignores session IDs and the registry, rotate the secret because that validator may accept those tokens. Tokens without a session ID are rejected by the current server and are never enrolled automatically.
 
+## Single Sign-On Fails
+
+The login page shows a message for the `sso_error` code, and the server log has the cause.
+
+- `provider_unavailable`: BoxBox cannot reach `oidc.issuer_url` from its container, or the provider's issuer differs from it. Compare the `issuer` in `<issuer_url>/.well-known/openid-configuration` with the configured value, including any trailing slash.
+- `flow_expired`: sign-in took longer than 10 minutes, cookies are blocked, or BoxBox was opened at a different address than `oidc.redirect_url`, such as a LAN IP instead of the domain. Open BoxBox at the redirect URL's address.
+- `provider_error`: the provider rejected the request or the ID token. Check that the provider's redirect URI equals `oidc.redirect_url`, the client ID and secret, and the server clock.
+- `identity_invalid`: the provider sent no usable `oidc.username_claim`. Add the scope that carries it, or choose another claim.
+- `not_allowed`: the name is not a configured account. The log shows it; add it to `oidc.users`.
+
+If the provider is down and `oidc.disable_password_login` is set, unset it and restart to sign in with a password.
+
 ## Unreachable After Upgrading to v0.3.0
 
 `v0.3.0` changed the default container port from `80` to `8080`. If the container is healthy but the browser or reverse proxy cannot reach it, the port mapping and `config.yaml` disagree. Check which port the server bound:

@@ -45,6 +45,10 @@ func (s *testAuthService) Logout(ctx context.Context, refreshToken string) error
 	return nil
 }
 
+func (s *testAuthService) LoginSSO(ctx context.Context, username string) (*service.TokenPair, error) {
+	return nil, service.ErrSSOAccountNotAllowed
+}
+
 func (s *testAuthService) ValidateToken(tokenString string) (*service.Claims, error) {
 	return s.validateToken(tokenString, "")
 }

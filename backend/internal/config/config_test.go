@@ -337,3 +337,28 @@ func clearConfigEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadReadsOIDCFromEnvironment(t *testing.T) {
+	clearConfigEnv(t)
+	configPath := writeMinimalConfig(t)
+	t.Setenv("BOXBOX_JWT_SECRET", "boxbox-secret-at-least-thirty-two-bytes")
+	t.Setenv("BOXBOX_OIDC_ISSUER_URL", "https://auth.example.com")
+	t.Setenv("BOXBOX_OIDC_CLIENT_ID", "boxbox")
+	t.Setenv("BOXBOX_OIDC_CLIENT_SECRET", "secret")
+	t.Setenv("BOXBOX_OIDC_REDIRECT_URL", "https://files.example.com/api/v1/auth/oidc/callback")
+	t.Setenv("BOXBOX_OIDC_PROVIDER_NAME", "Authelia")
+	t.Setenv("BOXBOX_OIDC_USERS", "Carol, dave")
+	t.Setenv("BOXBOX_OIDC_DISABLE_PASSWORD_LOGIN", "true")
+
+	result, err := LoadWithReport(configPath)
+	if err != nil {
+		t.Fatalf("LoadWithReport() error = %v", err)
+	}
+	oidc := result.Config.OIDC
+	if !oidc.Enabled() || oidc.ClientID != "boxbox" || oidc.ClientSecret != "secret" || oidc.ProviderName != "Authelia" ||
+		!oidc.DisablePasswordLogin || oidc.UsernameClaim != "preferred_username" ||
+		!reflect.DeepEqual(oidc.Users, []string{"Carol", "dave"}) ||
+		!reflect.DeepEqual(oidc.Scopes, []string{"openid", "profile", "email"}) {
+		t.Fatalf("OIDC = %+v", oidc)
+	}
+}

@@ -27,6 +27,8 @@ var (
 	ErrTokenRevoked            = errors.New("token revoked")
 	ErrRefreshSuperseded       = errors.New("refresh token superseded")
 	ErrSessionRecoveryRequired = errors.New("session recovery required")
+	ErrPasswordLoginDisabled   = errors.New("password login is disabled")
+	ErrSSOAccountNotAllowed    = errors.New("account is not allowed to sign in")
 )
 
 type TokenType string
@@ -67,6 +69,8 @@ type AuthService interface {
 	ValidateAccessToken(tokenString string) (*Claims, error)
 	ValidateRefreshToken(tokenString string) (*Claims, error)
 	Logout(ctx context.Context, refreshToken string) error
+	// LoginSSO issues a session for a username the identity provider already authenticated.
+	LoginSSO(ctx context.Context, username string) (*TokenPair, error)
 	StartCleanup(ctx context.Context)
 	StopCleanup()
 }
@@ -76,7 +80,9 @@ type authService struct {
 	jwtSecret          []byte
 	accessTokenExpiry  time.Duration
 	refreshTokenExpiry time.Duration
-	users              map[string]string // username -> bcrypt password hash
+	users              map[string]string   // username -> bcrypt password hash
+	accounts           map[string]struct{} // users plus SSO-only accounts
+	passwordLoginOff   bool
 	dummyPasswordHash  []byte
 	fs                 filesystem.FS
 	sessionsPath       string
@@ -100,6 +106,9 @@ type AuthServiceConfig struct {
 	AccessTokenExpiry  time.Duration
 	RefreshTokenExpiry time.Duration
 	Users              map[string]string // username -> bcrypt password hash
+	// SSOUsers sign in only through the identity provider; they have no password.
+	SSOUsers              []string
+	PasswordLoginDisabled bool
 }
 
 // NewAuthService creates a new authentication service and loads its sessions.
@@ -131,6 +140,8 @@ func NewAuthService(fsys filesystem.FS, cfg AuthServiceConfig) (AuthService, err
 		accessTokenExpiry:  cfg.AccessTokenExpiry,
 		refreshTokenExpiry: cfg.RefreshTokenExpiry,
 		users:              cfg.Users,
+		accounts:           accountSet(cfg.Users, cfg.SSOUsers),
+		passwordLoginOff:   cfg.PasswordLoginDisabled,
 		dummyPasswordHash:  dummyHash,
 		fs:                 fsys,
 		sessionsPath:       filepath.Join(cfg.DataDir, config.AuthSessionsFileName),
@@ -146,6 +157,9 @@ func NewAuthService(fsys filesystem.FS, cfg AuthServiceConfig) (AuthService, err
 
 // Login authenticates a user and persists a new session before returning tokens.
 func (s *authService) Login(ctx context.Context, username, password string) (*TokenPair, error) {
+	if s.passwordLoginOff {
+		return nil, ErrPasswordLoginDisabled
+	}
 	if err := s.VerifyPassword(ctx, username, password); err != nil {
 		return nil, err
 	}
@@ -193,6 +207,28 @@ func (s *authService) VerifyPassword(ctx context.Context, username, password str
 	return nil
 }
 
+// LoginSSO issues the same session as a password login for a configured account.
+func (s *authService) LoginSSO(ctx context.Context, username string) (*TokenPair, error) {
+	if _, ok := s.accounts[username]; !ok {
+		return nil, ErrSSOAccountNotAllowed
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.loginLocked(username)
+}
+
+func accountSet(users map[string]string, ssoUsers []string) map[string]struct{} {
+	accounts := make(map[string]struct{}, len(users)+len(ssoUsers))
+	for username := range users {
+		accounts[username] = struct{}{}
+	}
+	for _, username := range ssoUsers {
+		accounts[username] = struct{}{}
+	}
+	return accounts
+}
+
 func (s *authService) loginLocked(username string) (*TokenPair, error) {
 	sessionID := uuid.New().String()
 	for {
@@ -231,7 +267,7 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (*TokenP
 	if err != nil {
 		return nil, err
 	}
-	if err := validateClaims(claims, TokenTypeRefresh, s.users); err != nil {
+	if err := validateClaims(claims, TokenTypeRefresh, s.accounts); err != nil {
 		return nil, err
 	}
 
@@ -285,7 +321,7 @@ func (s *authService) validateToken(tokenString string, expectedType TokenType) 
 	if err != nil {
 		return nil, err
 	}
-	if err := validateClaims(claims, expectedType, s.users); err != nil {
+	if err := validateClaims(claims, expectedType, s.accounts); err != nil {
 		return nil, err
 	}
 
@@ -326,7 +362,7 @@ func (s *authService) parseToken(tokenString string) (*Claims, error) {
 	return claims, nil
 }
 
-func validateClaims(claims *Claims, expectedType TokenType, users map[string]string) error {
+func validateClaims(claims *Claims, expectedType TokenType, accounts map[string]struct{}) error {
 	if claims.TokenType != TokenTypeAccess && claims.TokenType != TokenTypeRefresh {
 		return ErrInvalidToken
 	}
@@ -338,7 +374,7 @@ func validateClaims(claims *Claims, expectedType TokenType, users map[string]str
 		claims.UserID != generateUserID(claims.Username) {
 		return ErrInvalidToken
 	}
-	if _, configured := users[claims.Username]; !configured {
+	if _, configured := accounts[claims.Username]; !configured {
 		return ErrInvalidToken
 	}
 	return nil
@@ -392,7 +428,7 @@ func (s *authService) Logout(ctx context.Context, refreshToken string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateClaims(claims, TokenTypeRefresh, s.users); err != nil {
+	if err := validateClaims(claims, TokenTypeRefresh, s.accounts); err != nil {
 		return err
 	}
 

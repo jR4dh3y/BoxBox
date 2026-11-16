@@ -29,6 +29,9 @@ Before exposing BoxBox beyond your own machine:
 - `auth-revocations.json` is ignored and is not deleted. Its denylist cannot identify sessions to load. Legacy tokens without a session ID are rejected on first use and never auto-enrolled; users sign in again. A missing registry file or valid empty registry after restart rejects old tokens without requiring JWT-secret rotation solely because the registry was lost.
 - Restoring an older valid `auth-sessions.json` backup can revive sessions, access tokens, and their current refresh tokens. Rotate `BOXBOX_JWT_SECRET` after restoring a backup. An older validator that ignores session IDs and the registry may accept tokens after downgrade; rotate the secret if you downgrade.
 - After startup with a user removed from configuration, that user's tokens fail validation. Session deadlines preserve the existing sliding refresh lifetime and retain the longest existing deadline when configured token TTLs shrink.
+- Single sign-on uses the authorization code flow with PKCE, `state` and `nonce`. The ID token's signature, issuer, audience, expiry and `azp` are checked. The sign-in state lives in a signed, 10-minute, `HttpOnly`, `SameSite=Lax` cookie; with an `https` redirect URL it is a `__Host-` cookie, so a sibling subdomain cannot plant one. Redirects after sign-in go only to fixed paths.
+- A provider identity signs in only as an account already configured in `users` or `oidc.users`, matched exactly on `oidc.username_claim`. Choose a claim users cannot change at the provider.
+- `oidc.disable_password_login` rejects password login on the server, not only in the page.
 - Auth endpoints are rate-limited per client IP.
 - Repeated failures trigger exponential per-account lockouts.
 
