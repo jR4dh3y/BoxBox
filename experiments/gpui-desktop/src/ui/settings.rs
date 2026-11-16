@@ -141,10 +141,6 @@ impl Workspace {
                     this.commit_preferences(cx);
                 },
             )),
-            SettingsRow::new("File icons").control(self.select("setting-icons", p.file_icons, &IconStyle::OPTIONS, 160., cx, |this, value, cx| {
-                this.preferences.file_icons = value;
-                this.commit_preferences(cx);
-            })),
         ])
     }
 
@@ -208,6 +204,11 @@ impl Workspace {
                     ),
             ));
         }
+        // Selects are w-40.
+        rows.push(SettingsRow::new("File icons").control(self.select("setting-icons", preferences.file_icons, &IconStyle::OPTIONS, 160., cx, |this, value, cx| {
+            this.preferences.file_icons = value;
+            this.commit_preferences(cx);
+        })));
         rows.push(SettingsRow::new("Transparent background").control({
             let workspace = cx.entity().downgrade();
             Toggle::new("setting-transparent", settings.transparent).on_change(move |value, _, _, cx| {

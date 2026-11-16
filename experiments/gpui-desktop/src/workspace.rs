@@ -79,7 +79,6 @@ pub(crate) struct Preferences {
     pub default_view: ViewMode,
     pub start_location: StartLocation,
     pub file_icons: IconStyle,
-    pub hardware_acceleration: bool,
     /// Zoom steps of the list and the grid (`ListMetrics`, `GridMetrics`).
     pub list_zoom: u8,
     pub grid_zoom: u8,
@@ -131,7 +130,6 @@ impl Default for Preferences {
             default_view: ViewMode::List,
             start_location: StartLocation::Overview,
             file_icons: IconStyle::System,
-            hardware_acceleration: true,
             list_zoom: 1,
             grid_zoom: 1,
             wallpaper_tint: false,
