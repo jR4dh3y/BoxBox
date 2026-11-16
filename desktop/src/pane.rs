@@ -171,6 +171,8 @@ pub struct Pane {
     pub generation: u64,
     /// A folder listing was asked for and has not arrived.
     pub busy: bool,
+    /// The provider's drive list was asked for and has not arrived.
+    pub drives_busy: bool,
     /// Bumped per input change and request, so a late search response is ignored.
     pub search_generation: u64,
     pub list_scroll: UniformListScrollHandle,
@@ -236,6 +238,7 @@ impl Pane {
             active: None,
             generation: 0,
             busy: false,
+            drives_busy: false,
             search_generation: 0,
             list_scroll: UniformListScrollHandle::new(),
             grid_scroll: UniformListScrollHandle::new(),
@@ -403,6 +406,12 @@ impl Pane {
                 false
             }
         }
+    }
+
+    /// Whether anything this pane asked for is still out: its listing, its
+    /// drives, or a search.
+    pub fn loading(&self) -> bool {
+        self.busy || self.drives_busy || matches!(self.search, Search::Loading)
     }
 
     /// What `arrange` needs for a folder listing, read on the UI thread before work

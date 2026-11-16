@@ -639,9 +639,10 @@ impl Workspace {
     }
 
     fn load_drives(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
-        let Some(pane) = self.pane_by_id(target.0) else {
+        let Some(pane) = self.pane_mut_by_id(target.0) else {
             return;
         };
+        pane.drives_busy = true;
         let api = pane.api.clone();
         let journey = crate::profile::journey("load drives", String::new);
         cx.spawn(async move |this, cx| {
@@ -667,6 +668,7 @@ impl Workspace {
             self.home.drives = drives.clone();
         }
         let Some(pane) = self.pane_mut_by_id(target.0) else { return };
+        pane.drives_busy = false;
         pane.roots = roots;
         pane.drives = drives;
         crate::profile::ready(journey);
@@ -986,7 +988,10 @@ impl Workspace {
                 self.refresh_servers(cx);
             } else {
                 self.load_pane(target, cx);
-                self.schedule_search_for(target.0, Duration::ZERO, cx);
+                // Now rather than on the next tick, so Refresh's icon sees it start.
+                if self.pane_by_id(target.0).is_some_and(|pane| search::active_query(&pane.search_input).is_some()) {
+                    self.run_search(target.0, cx);
+                }
             }
         }
         cx.notify();

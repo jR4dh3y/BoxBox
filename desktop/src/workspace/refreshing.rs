@@ -47,8 +47,9 @@ impl Workspace {
     pub(crate) fn refresh_turn(&self, target: PaneTarget) -> Option<f32> {
         let refreshing = self.refreshing.as_ref().filter(|refreshing| refreshing.target == target)?;
         let pane = self.pane_by_id(target.0)?;
-        // The Overview waits on servers too; a folder on its own listing.
-        let busy = if pane.is_at_root() { self.servers.busy() } else { pane.busy };
+        // Everything Refresh started: the pane's listing, drives and search, and
+        // on the Overview every server's drives.
+        let busy = pane.loading() || (pane.is_at_root() && self.servers.busy());
         refreshing.turn(busy)
     }
 }

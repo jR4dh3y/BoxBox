@@ -564,6 +564,37 @@ fn refresh_on_the_overview_lists_a_servers_drives_again(cx: &mut TestAppContext)
 }
 
 #[gpui::test]
+fn refresh_waits_on_everything_it_started(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["docs/a.txt", "b.txt"]);
+    let refresh = |view: &Entity<Workspace>, cx: &mut VisualTestContext, check: fn(&Workspace)| {
+        cx.update(|window, app| {
+            view.update(app, |workspace, cx| {
+                workspace.refresh(&Refresh, window, cx);
+                check(workspace);
+                assert!(workspace.refresh_turn(workspace.active_pane).is_some());
+            })
+        });
+    };
+    // A folder with a search open: the listing and the search again.
+    view.update(cx, |workspace, _| workspace.pane_mut().search_input = "txt".into());
+    refresh(&view, cx, |workspace| {
+        assert!(workspace.pane().busy, "the listing");
+        assert!(matches!(workspace.pane().search, crate::pane::Search::Loading), "the search, at once");
+    });
+    settle(cx);
+    view.read_with(cx, |workspace, _| assert!(!workspace.pane().loading()));
+    // The Overview with no servers: this computer's drives.
+    view.update(cx, |workspace, cx| {
+        workspace.pane_mut().search_input.clear();
+        workspace.navigate(String::new(), cx);
+    });
+    settle(cx);
+    refresh(&view, cx, |workspace| assert!(workspace.pane().drives_busy, "this computer's drives"));
+    settle(cx);
+    view.read_with(cx, |workspace, _| assert!(!workspace.pane().loading()));
+}
+
+#[gpui::test]
 fn leaving_a_server_closes_its_tabs_even_after_it_went_offline(cx: &mut TestAppContext) {
     use crate::settings_state::SavedConnection;
     use servers::ServerState;
