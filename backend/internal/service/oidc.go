@@ -88,9 +88,10 @@ func (s *OIDCService) discover() (*oidc.Provider, error) {
 	if time.Since(s.lastAttempt) < oidcRetryInterval {
 		return nil, ErrOIDCUnavailable
 	}
-	s.lastAttempt = time.Now()
 	// A background context: the provider keeps this client for later key fetches.
 	provider, err := oidc.NewProvider(oidc.ClientContext(context.Background(), s.httpClient), s.cfg.IssuerURL)
+	// A slow failure must still leave a full cooldown for requests waiting on discovery.
+	s.lastAttempt = time.Now()
 	if err != nil {
 		return nil, errors.Join(ErrOIDCUnavailable, err)
 	}

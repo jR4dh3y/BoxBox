@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,6 +15,30 @@ import (
 )
 
 const testOIDCRedirect = "http://boxbox.test/api/v1/auth/oidc/callback"
+
+func TestOIDCDiscoveryCooldownStartsAfterFailure(t *testing.T) {
+	var requests atomic.Int32
+	failedAt := make(chan time.Time, 1)
+	issuer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		failedAt <- time.Now()
+		http.Error(w, "provider unavailable", http.StatusServiceUnavailable)
+	}))
+	defer issuer.Close()
+	svc := NewOIDCService(OIDCServiceConfig{IssuerURL: issuer.URL})
+	if _, _, err := svc.Begin(context.Background()); !errors.Is(err, ErrOIDCUnavailable) {
+		t.Fatalf("discovery error = %v", err)
+	}
+	if svc.lastAttempt.Before(<-failedAt) {
+		t.Fatal("discovery cooldown started before the provider failed")
+	}
+	if _, _, err := svc.Begin(context.Background()); !errors.Is(err, ErrOIDCUnavailable) {
+		t.Fatalf("cooldown error = %v", err)
+	}
+	if requests.Load() != 1 {
+		t.Fatal("discovery failure was not shared during cooldown")
+	}
+}
 
 func newTestOIDC(t *testing.T, claim string) (*OIDCService, *oidctest.Issuer) {
 	t.Helper()
