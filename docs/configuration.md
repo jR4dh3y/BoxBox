@@ -120,9 +120,9 @@ Environment overrides use the `BOXBOX_` prefix:
 
 `CONFIG_PATH` is also supported as a convenience for selecting the YAML file path.
 
-For `v0.2.0`, deprecated `FM_*` variables still work as aliases for older deployments. Rename them to `BOXBOX_*` before a future breaking release. If both old and new names are set, `BOXBOX_*` wins and the server logs a migration warning. See [Release notes](/docs/release-notes/#v0-2-0-upgrade-notes) for the full upgrade notes and the check-only migration helper.
+For `v0.2.0`, deprecated `FM_*` variables still work as aliases for older deployments. Rename them to `BOXBOX_*` before a future breaking release. If both old and new names are set, `BOXBOX_*` wins and the server logs a migration warning. See [Release notes](release-notes.md#v0-2-0-upgrade-notes) for the full upgrade notes and the check-only migration helper.
 
-Mount points, read-only mounts and Docker path mapping are covered in [Mount points](/docs/mounts/).
+Mount points, read-only mounts and Docker path mapping are covered in [Mount points](mounts.md).
 
 ## Restart After Changes
 

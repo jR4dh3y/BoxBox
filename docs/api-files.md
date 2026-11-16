@@ -1,6 +1,6 @@
 # Files API
 
-List mount points and directories, read file details, and create, rename, move or delete entries. All routes need an access token; see [API reference](/docs/api/).
+List mount points and directories, read file details, and create, rename, move or delete entries. All routes need an access token; see [API reference](api.md).
 
 ## List Mount Points
 

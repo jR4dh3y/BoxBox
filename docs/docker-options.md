@@ -1,6 +1,6 @@
 # Docker Options
 
-Other ways to run the container, and the details behind its volumes. For the standard Compose setup, see [Docker deployment](/docs/docker/).
+Other ways to run the container, and the details behind its volumes. For the standard Compose setup, see [Docker deployment](docker.md).
 
 ## Reverse Proxy or Traefik
 
@@ -49,7 +49,7 @@ docker run -d \
   --user 10001:10001 \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   -e BOXBOX_JWT_SECRET="$(openssl rand -base64 32)" \
   -e BOXBOX_USERS_admin='paste-a-bcrypt-hash-here' \
   -v "$PWD/config.yaml:/app/config.yaml:ro" \
@@ -59,7 +59,9 @@ docker run -d \
   ghcr.io/jr4dh3y/boxbox:v0.3.1
 ```
 
-Open `http://localhost:8080` and sign in as `admin` with the plaintext password used to generate the hash.
+Open `http://localhost:8080` and sign in as `admin` with the plaintext password used to generate the hash. The port is bound to `127.0.0.1`, so only this machine can reach it.
+
+The container runs as UID/GID `10001:10001`, so that identity must be able to read the mounted home folder; a `0700` home owned by your user shows as empty. Either grant it access (see [Permission notes](docker.md#permission-notes)) or run as yourself with `--user "$(id -u):$(id -g)"`.
 
 ## Local Source Builds
 

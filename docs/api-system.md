@@ -1,6 +1,6 @@
 # Jobs, Settings and WebSocket
 
-Background jobs, server settings and the live event stream. All routes need an access token; see [API reference](/docs/api/).
+Background jobs, server settings and the live event stream. All routes need an access token; see [API reference](api.md).
 
 ## Jobs
 

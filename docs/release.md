@@ -2,7 +2,7 @@
 
 Use this workflow to keep stable releases and nightly builds in separate GHCR packages while still getting automatic nightly and branch images for testing.
 
-What changed in each version, and how to upgrade, is in [Release notes](/docs/release-notes/).
+What changed in each version, and how to upgrade, is in [Release notes](release-notes.md).
 
 ## Test Branch Model
 

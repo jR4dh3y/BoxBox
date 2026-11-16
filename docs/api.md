@@ -77,10 +77,10 @@ Tokens without a session ID, including legacy tokens, are rejected. The server d
 
 | Page | Covers |
 | --- | --- |
-| [Files](/docs/api-files/) | Mount points, directories, file info, create, rename, move, delete and search. |
-| [Downloads and uploads](/docs/api-transfers/) | Download, folder archives, previews and chunked uploads. |
-| [Share links](/docs/api-shares/) | Creating, listing, updating and revoking shares, and the public recipient endpoints. |
-| [Jobs, settings and WebSocket](/docs/api-system/) | Background jobs, system settings, live events and the desktop file chooser. |
+| [Files](api-files.md) | Mount points, directories, file info, create, rename, move, delete and search. |
+| [Downloads and uploads](api-transfers.md) | Download, folder archives, previews and chunked uploads. |
+| [Share links](api-shares.md) | Creating, listing, updating and revoking shares, and the public recipient endpoints. |
+| [Jobs, settings and WebSocket](api-system.md) | Background jobs, system settings, live events and the desktop file chooser. |
 
 ## Errors
 

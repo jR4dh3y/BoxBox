@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Fixes for starting BoxBox and signing in. For mounts, uploads, previews, share links and live updates, see [Files and sharing problems](/docs/troubleshooting-files/).
+Fixes for starting BoxBox and signing in. For mounts, uploads, previews, share links and live updates, see [Files and sharing problems](troubleshooting-files.md).
 
 ## Container Fails to Start
 
@@ -44,7 +44,7 @@ An older valid registry backup can revive its sessions, access tokens, and curre
 docker compose logs boxbox | grep "Starting HTTP server"
 ```
 
-The container side of the port mapping (`HOST_PORT:<container-port>`), the healthcheck URL, and any reverse proxy that reaches the container directly must use the server port from `config.yaml` (or `BOXBOX_PORT`). `HOST_PORT` can differ; browsers on the host use it. See the [v0.3.0 upgrade notes](/docs/release-notes/#v0-3-0-release-notes).
+The container side of the port mapping (`HOST_PORT:<container-port>`), the healthcheck URL, and any reverse proxy that reaches the container directly must use the server port from `config.yaml` (or `BOXBOX_PORT`). `HOST_PORT` can differ; browsers on the host use it. See the [v0.3.0 upgrade notes](release-notes.md#v0-3-0-release-notes).
 
 ## Server Rejects the Configured User
 
@@ -79,7 +79,7 @@ If both old and new variables are set, `BOXBOX_*` wins. Run the check-only helpe
 scripts/check-0.2-migration.sh
 ```
 
-The helper does not edit files or Docker volumes. See [Release notes](/docs/release-notes/#v0-2-0-upgrade-notes) for volume copy commands and failure handling.
+The helper does not edit files or Docker volumes. See [Release notes](release-notes.md#v0-2-0-upgrade-notes) for volume copy commands and failure handling.
 
 ## Frontend Is Blank in a Built Container
 

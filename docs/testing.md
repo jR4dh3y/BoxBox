@@ -1,6 +1,6 @@
 # Testing and CI
 
-How to test and validate BoxBox locally, and how CI picks the checks a change needs. To set up and run the app, see [Development](/docs/development/).
+How to test and validate BoxBox locally, and how CI picks the checks a change needs. To set up and run the app, see [Development](development.md).
 
 ## Test and Validate
 

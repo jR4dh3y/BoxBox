@@ -56,11 +56,11 @@ docker pull ghcr.io/jr4dh3y/boxbox:v0.3.1
 
 Stable release tags update `latest`. Prerelease tags such as `v0.3.1-rc.1` publish versioned images without moving `latest`, nightly builds publish to the dedicated `boxbox-nightly` package, and test branch images publish under branch-scoped tags in the `boxbox-branch` package, such as `ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change`.
 
-See [Release workflow](/docs/release/) for the full test-branch and stable-release process.
+See [Release workflow](release.md) for the full test-branch and stable-release process.
 
-If you are upgrading an older deployment that still uses `FM_*`, `filemanager`, or `filemanager-*` names, see the `v0.2.0` notes in [Release notes](/docs/release-notes/#v0-2-0-upgrade-notes). The `scripts/check-0.2-migration.sh` helper is check-only and prints the manual changes without editing files or Docker volumes.
+If you are upgrading an older deployment that still uses `FM_*`, `filemanager`, or `filemanager-*` names, see the `v0.2.0` notes in [Release notes](release-notes.md#v0-2-0-upgrade-notes). The `scripts/check-0.2-migration.sh` helper is check-only and prints the manual changes without editing files or Docker volumes.
 
-For a reverse proxy, a single `docker run` container, local source builds, volumes and mount propagation, see [Docker options](/docs/docker-options/).
+For a reverse proxy, a single `docker run` container, local source builds, volumes and mount propagation, see [Docker options](docker-options.md).
 
 ## Updating
 
@@ -88,7 +88,7 @@ docker rm boxbox
 # Re-run the docker run command with the same volumes and env values.
 ```
 
-For the `v0.3.1` security release, read the upgrade and session-registry guidance in [Release notes](/docs/release-notes/#v0-3-1-security-release).
+For the `v0.3.1` security release, read the upgrade and session-registry guidance in [Release notes](release-notes.md#v0-3-1-security-release).
 
 ## Health and Logs
 

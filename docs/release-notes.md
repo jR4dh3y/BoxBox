@@ -1,10 +1,10 @@
 # Release Notes
 
-What changed in each release and what to do when you upgrade. To ship a release, see [Release workflow](/docs/release/).
+What changed in each release and what to do when you upgrade. To ship a release, see [Release workflow](release.md).
 
 ## v0.3.2 Desktop Release
 
-The next release adds the Linux x86_64 desktop app alongside the existing amd64/arm64 server packages. Check [Downloads](/download/) for published assets; the website does not offer a desktop link until a real release asset exists. See [Linux Desktop](/docs/desktop/) for dependencies and pairing.
+The next release adds the Linux x86_64 desktop app alongside the existing amd64/arm64 server packages. Check [Downloads](/download/) for published assets; the website does not offer a desktop link until a real release asset exists. See [Linux Desktop](desktop.md) for dependencies and pairing.
 
 `VERSION` is the release source of truth and also sets the Electrobun app version. Build the full distribution locally with:
 
@@ -72,7 +72,7 @@ ghcr.io/jr4dh3y/boxbox:latest
 - Share links and stored wallpapers live in the data directory (`/data` in the container), in `shares.json` and the `wallpapers/` folder. Keep the `boxbox-data` volume when you recreate the container, or existing links stop working.
 - Nested mounts now appear under Places instead of Drives, and only drives appear on **This Server**. Add `kind: drive` to any mount you want to keep listed as a drive.
 - Back up `shares.json` before downgrading. Older versions cannot keep the per-link upload/delete permissions and upload caps if they rewrite the file.
-- Read the [security guide](/docs/security/#share-links) for how share tokens, rate limits, and recipient access work.
+- Read the [security guide](security.md#share-links) for how share tokens, rate limits, and recipient access work.
 
 The stable Docker workflow runs from the `v0.3.0` tag and publishes:
 
@@ -94,7 +94,7 @@ To roll back, set `BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.2.2` and keep the serv
 
 `v0.2.2` is a security and deployment-focused release. It adds the single-binary build and loopback-only development mode, refactors browsing/streaming and uploads, fixes upload finalization races, and adds stronger mount, job, preview, authentication, and container isolation.
 
-Before upgrading, read the [security guide](/docs/security/) and update deployment configuration:
+Before upgrading, read the [security guide](security.md) and update deployment configuration:
 
 - Configure every user with a bcrypt password hash.
 - Set a non-placeholder `BOXBOX_JWT_SECRET` of at least 32 bytes.
@@ -143,22 +143,29 @@ scripts/check-0.2-migration.sh
 
 The script does not edit `.env`, rewrite Compose files, stop containers, or change Docker volumes. It exits `0` when no legacy settings are found, `2` when migration work is detected, and `1` only for script/runtime errors.
 
-If you used old Docker named volumes, copy them manually only when you are ready to switch Compose to the new names. Docker Compose may prefix volume names with the project name; use `scripts/check-0.2-migration.sh` to print the actual volume names on your host.
+If you used old Docker named volumes, copy them manually only when you are ready to switch Compose to the new names. Docker Compose may prefix volume names with the project name; use `scripts/check-0.2-migration.sh` to print the actual volume names on your host, and set them below. The new names must be the ones the new Compose project mounts.
+
+`docker volume inspect` stops the copy when an old volume name is wrong. Without it, `docker run` would create an empty volume under that name and the copy would "succeed" with nothing in it.
 
 ```bash
+OLD_DATA=filemanager-data   NEW_DATA=boxbox-data
+OLD_TEMP=filemanager-temp   NEW_TEMP=boxbox-temp
+
 docker compose down
 
-docker volume create boxbox-data
-docker run --rm \
-  -v filemanager-data:/from:ro \
-  -v boxbox-data:/to \
-  alpine sh -c 'cd /from && cp -a . /to'
+docker volume inspect "$OLD_DATA" >/dev/null &&
+  docker volume create "$NEW_DATA" &&
+  docker run --rm \
+    -v "$OLD_DATA":/from:ro \
+    -v "$NEW_DATA":/to \
+    alpine sh -c 'cd /from && cp -a . /to'
 
-docker volume create boxbox-temp
-docker run --rm \
-  -v filemanager-temp:/from:ro \
-  -v boxbox-temp:/to \
-  alpine sh -c 'cd /from && cp -a . /to'
+docker volume inspect "$OLD_TEMP" >/dev/null &&
+  docker volume create "$NEW_TEMP" &&
+  docker run --rm \
+    -v "$OLD_TEMP":/from:ro \
+    -v "$NEW_TEMP":/to \
+    alpine sh -c 'cd /from && cp -a . /to'
 
 docker compose up -d
 ```

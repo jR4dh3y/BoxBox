@@ -1,6 +1,6 @@
 # Downloads and Uploads
 
-Stream files out, archive folders, preview content and upload large files in chunks. All routes need an access token; see [API reference](/docs/api/).
+Stream files out, archive folders, preview content and upload large files in chunks. All routes need an access token; see [API reference](api.md).
 
 ## Download
 

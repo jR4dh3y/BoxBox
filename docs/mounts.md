@@ -1,6 +1,6 @@
 # Mount Points
 
-Mount points are the folders BoxBox shows. They are set in the `mount_points` section of `config.yaml`; see [Configuration](/docs/configuration/) for the rest of the file. Restart BoxBox after changing them.
+Mount points are the folders BoxBox shows. They are set in the `mount_points` section of `config.yaml`; see [Configuration](configuration.md) for the rest of the file. Restart BoxBox after changing them.
 
 Every mounted path must have a unique `name` and an absolute container `path`.
 

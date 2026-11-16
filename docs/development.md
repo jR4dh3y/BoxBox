@@ -133,4 +133,4 @@ Use the existing Handler -> Service -> Model/Filesystem shape:
 - File type logic belongs in `frontend/src/lib/utils/fileTypes.ts`.
 - Central config belongs in `frontend/src/lib/config.ts`.
 
-To test and validate a change, see [Testing and CI](/docs/testing/).
+To test and validate a change, see [Testing and CI](testing.md).

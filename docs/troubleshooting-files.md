@@ -1,6 +1,6 @@
 # Files and Sharing Problems
 
-Fixes for mounts, permissions, uploads, previews, share links and live updates. For problems starting BoxBox or signing in, see [Troubleshooting](/docs/troubleshooting/).
+Fixes for mounts, permissions, uploads, previews, share links and live updates. For problems starting BoxBox or signing in, see [Troubleshooting](troubleshooting.md).
 
 ## Mount Point Does Not Show Up
 
