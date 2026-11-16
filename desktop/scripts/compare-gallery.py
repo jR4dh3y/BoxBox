@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops
 
-MANIFEST = Path(__file__).resolve().parents[3] / "frontend/src/routes/dev/gallery/gallery.json"
+MANIFEST = Path(__file__).resolve().parents[2] / "frontend/src/routes/dev/gallery/gallery.json"
 TOLERANCE = 24
 # Cells GPUI cannot match exactly, with the reason. They are reported, not failed.
 EXCEPTIONS = {

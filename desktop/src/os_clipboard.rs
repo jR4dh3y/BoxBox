@@ -108,7 +108,7 @@ pub fn decode(gnome: Option<&[u8]>, uri_list: Option<&[u8]>, kde_cut: Option<&[u
 }
 
 fn wayland() -> bool {
-    std::env::var_os("WAYLAND_DISPLAY").is_some()
+    std::env::var_os("WAYLAND_DISPLAY").is_some_and(|display| !display.is_empty())
 }
 
 /// Offers `files` until another app takes the clipboard. Returns once it is offered.

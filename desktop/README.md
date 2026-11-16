@@ -24,7 +24,7 @@ Browse behavior includes drive/folder navigation, history, breadcrumbs, tabs, li
 
 Drag a row or tile out of the window to drop it into another app, such as a file manager, browser, or editor. Dragging a selected item carries the whole selection. GPUI 0.2 can only receive drops from other apps, so `src/drag_out/` implements the X11 drag-and-drop protocol (XDND v5) itself, offering the files as `text/uri-list` with the copy action.
 
-Local files are handed to other apps by their real filesystem paths. Remote files are staged into `$TMPDIR/boxbox-gpui-drag/`. Folders arrive as the server's ZIP archive. The staged copies are not deleted automatically.
+Local files are handed to other apps by their real filesystem paths. Remote files are staged into a private `$TMPDIR/boxbox-gpui-drag-*` folder. Folders arrive as the server's ZIP archive. The staged copies are not deleted automatically.
 
 On Wayland the drag is handed to the compositor when the pointer leaves the window (`src/drag_out/wayland.rs`). macOS and Windows are not implemented.
 

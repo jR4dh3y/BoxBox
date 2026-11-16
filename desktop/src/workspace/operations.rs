@@ -1064,10 +1064,18 @@ impl Workspace {
                 if let Some(id) = target {
                     self.activate_pane_id(id, cx);
                     self.navigate_in(PaneTarget(id), favorite.path, cx);
-                } else {
-                    self.open_provider(Api::new(&url, None), cx);
-                    let target = self.active_pane;
-                    self.navigate_in(target, favorite.path, cx);
+                    return;
+                }
+                // The saved connection carries the credential; a bare address has none.
+                let normalized = Api::new(&url, None).server_url().map(str::to_string);
+                let connection = self.desktop_settings.connections.iter().find(|connection| {
+                    favorite.connection_id.as_deref() == Some(connection.id.as_str())
+                        || Api::new(&connection.url, None).server_url().map(str::to_string) == normalized
+                });
+                match connection.cloned() {
+                    // Opens in this pane, as a server drive in the sidebar does.
+                    Some(connection) => self.open_server_drive_when_ready(connection, Some(favorite.path), cx),
+                    None => self.report(Err(format!("{url} is no longer a saved server")), cx),
                 }
             }
         }
@@ -1424,7 +1432,15 @@ pub(crate) fn outside_folder(folder: &Path, paths: Vec<PathBuf>) -> Vec<PathBuf>
 fn import_paths_into(api: &Arc<Api>, paths: &[PathBuf], parent: &str) -> anyhow::Result<()> {
     let existing = api.list(parent)?;
     let mut names: HashSet<String> = existing.into_iter().map(|item| item.name).collect();
+    // A folder copied into itself would keep finding its own copy inside.
+    let destination = api.local_path(parent)?;
     for path in paths {
+        if let Some(destination) = &destination {
+            let source = fs::canonicalize(path).with_context(|| format!("cannot resolve {}", path.display()))?;
+            if destination.starts_with(&source) {
+                bail!("“{}” cannot be copied into itself", path.display());
+            }
+        }
         let name = path
             .file_name()
             .and_then(|name| name.to_str())

@@ -59,7 +59,7 @@ pub(crate) fn load_remembered() -> Remembered {
 /// server does, unless the pane went somewhere else first.
 pub(crate) struct Wanted {
     pub server: String,
-    /// None for the server's first drive.
+    /// A drive, or a folder inside one such as a favorite; None for the server's first drive.
     pub drive: Option<String>,
     pub pane: PaneTarget,
 }
@@ -216,7 +216,7 @@ impl Workspace {
                 self.remember(&connection.id, &drives, cx);
                 if let Some(wanted) = wanted {
                     // A remembered drive the server no longer has opens its first.
-                    let drive = wanted.drive.filter(|name| drives.iter().any(|drive| &drive.name == name));
+                    let drive = wanted.drive.filter(|path| drives.iter().any(|drive| path.split('/').next() == Some(drive.name.as_str())));
                     let drive = drive.or_else(|| drives.first().map(|drive| drive.name.clone())).unwrap_or_default();
                     self.open_server_drive(wanted.pane, api.clone(), drive, cx);
                 }

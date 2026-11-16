@@ -52,6 +52,7 @@ impl DirectoryWatches {
         let stale: Vec<_> = self.paths.keys().copied().filter(|id| !active.contains(id)).collect();
         for id in stale { self.remove(id); }
         let mut changed = std::collections::HashSet::new();
+        let mut ended: Vec<usize> = Vec::new();
         #[cfg(target_os = "linux")]
         if let Some(events) = &mut self.events {
             use std::io::Read;
@@ -70,13 +71,17 @@ impl DirectoryWatches {
                     let descriptor = word(offset);
                     let mask = word(offset + 4) as u32;
                     let length = word(offset + 12) as u32 as usize;
+                    // The watched folder is gone or moved; the reload watches whatever has the path now.
+                    let gone = mask & (libc::IN_DELETE_SELF | libc::IN_MOVE_SELF | libc::IN_IGNORED) != 0;
                     for (pane, (_, watch)) in &self.paths {
                         if *watch == descriptor || mask & libc::IN_Q_OVERFLOW != 0 { changed.insert(*pane); }
+                        if *watch == descriptor && gone { ended.push(*pane); }
                     }
                     offset += 16 + length;
                 }
             }
         }
+        for pane in ended { self.remove(pane); }
         changed.into_iter().collect()
     }
 }

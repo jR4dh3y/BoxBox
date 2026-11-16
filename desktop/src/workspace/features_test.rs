@@ -1609,3 +1609,18 @@ fn f11_shows_details_of_the_selection(cx: &mut TestAppContext) {
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert!(!workspace.preferences.details_panel));
 }
+
+#[gpui::test]
+fn clicks_in_the_second_pane_select_there(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt"]);
+    cx.simulate_keystrokes("f3");
+    cx.run_until_parked();
+    let second = view.read_with(cx, |workspace, _| workspace.split_panes.values().next().unwrap().id);
+    let row = cx.debug_bounds(Box::leak(format!("row-{second}-1").into_boxed_str())).expect("the second pane's row");
+    cx.simulate_click(row.center(), Modifiers::default());
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.active_pane.0, second);
+        assert_eq!(workspace.pane_by_id(second).unwrap().selected.len(), 1);
+        assert!(workspace.tabs[0].selected.is_empty(), "the first pane keeps its selection");
+    });
+}

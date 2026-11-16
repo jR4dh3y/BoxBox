@@ -294,6 +294,14 @@ impl LocalFiles {
         Ok(resolved)
     }
 
+    /// The entry itself: its parent is resolved, but a final link is not followed.
+    pub fn entry_path(&self, path: &str) -> Result<PathBuf> {
+        if !path.contains('/') {
+            return self.local_path(path);
+        }
+        Ok(self.resolve_entry(path)?.1)
+    }
+
     pub fn create_file(&self, parent: &str, name: &str, content: &str) -> Result<FileInfo> {
         validate_name(name)?;
         let (mount, directory) = self.resolve_directory(parent)?;

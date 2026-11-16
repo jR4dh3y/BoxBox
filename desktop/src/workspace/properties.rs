@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use gpui::Context;
 
 use super::operations::PaneTarget;
@@ -19,6 +20,9 @@ pub(crate) struct PropertiesState {
     /// Everything inside the folders, plus the selected files.
     pub totals: Load<Totals>,
     cancel: Arc<AtomicBool>,
+    /// A permission write is running; the newest mode clicked meanwhile waits here.
+    writing: bool,
+    queued_mode: Option<u32>,
 }
 
 impl Drop for PropertiesState {
@@ -72,6 +76,8 @@ impl Workspace {
             totals: if needs_walk { Load::Loading } else { Load::Loaded(Totals { files: 1, folders: 0, bytes: items[0].size }) },
             items: items.clone(),
             cancel: cancel.clone(),
+            writing: false,
+            queued_mode: None,
         });
         self.context_menu = None;
         cx.notify();
@@ -81,8 +87,12 @@ impl Workspace {
                 .background_executor()
                 .spawn(async move {
                     let real: Option<Vec<PathBuf>> = items.iter().map(|item| api.local_path(&item.path).ok().flatten()).collect();
-                    let ownership = match (items.as_slice(), &real) {
-                        ([_], Some(paths)) => Some(ownership(&paths[0]).map_err(|error| format!("{error:#}"))),
+                    let ownership = match items.as_slice() {
+                        [item] if api.is_local() => Some(
+                            api.entry_path(&item.path)
+                                .and_then(|path| ownership(&path.context("not a local item")?))
+                                .map_err(|error| format!("{error:#}")),
+                        ),
                         _ => None,
                     };
                     let totals = needs_walk.then(|| match &real {
@@ -150,20 +160,43 @@ impl Workspace {
     }
 
     /// Changes the mode at once, as Nautilus and Thunar do, then reads it back.
+    /// Clicks build on the shown mode, and writes run one at a time, so a quick
+    /// second click neither starts from a stale mode nor lands before the first.
     fn change_mode(&mut self, change: impl FnOnce(u32) -> u32, cx: &mut Context<Self>) {
-        let Some(state) = self.properties.as_ref() else { return };
-        let Some(Load::Loaded(shown_mode)) = &state.ownership else { return };
-        let (path, mode, shown) = (shown_mode.path.clone(), change(shown_mode.mode) & 0o7777, state.cancel.clone());
+        let Some(state) = self.properties.as_mut() else { return };
+        let Some(Load::Loaded(shown_mode)) = &mut state.ownership else { return };
+        let mode = change(shown_mode.mode & 0o7777) & 0o7777;
+        shown_mode.mode = (shown_mode.mode & !0o7777) | mode;
+        let path = shown_mode.path.clone();
+        if state.writing {
+            state.queued_mode = Some(mode);
+            cx.notify();
+            return;
+        }
+        state.writing = true;
+        let shown = state.cancel.clone();
+        cx.notify();
+        self.write_mode(path, mode, shown, cx);
+    }
+
+    fn write_mode(&mut self, path: PathBuf, mode: u32, shown: Arc<AtomicBool>, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
-            let result = cx.background_executor().spawn(async move { chmod(&path, mode).and_then(|()| ownership(&path)) }).await;
+            let (written, read, path) = cx
+                .background_executor()
+                .spawn(async move { (chmod(&path, mode), ownership(&path), path) })
+                .await;
             this.update(cx, |this, cx| {
-                match result {
-                    Ok(read) => {
-                        if let Some(state) = this.properties.as_mut().filter(|state| Arc::ptr_eq(&state.cancel, &shown)) {
-                            state.ownership = Some(Load::Loaded(read));
-                        }
-                    }
-                    Err(error) => this.report(Err(format!("Could not change the permissions: {error:#}")), cx),
+                if let Err(error) = written {
+                    this.report(Err(format!("Could not change the permissions: {error:#}")), cx);
+                }
+                let Some(state) = this.properties.as_mut().filter(|state| Arc::ptr_eq(&state.cancel, &shown)) else { return };
+                if let Some(next) = state.queued_mode.take() {
+                    this.write_mode(path, next, shown, cx);
+                    return;
+                }
+                state.writing = false;
+                if let Ok(read) = read {
+                    state.ownership = Some(Load::Loaded(read));
                 }
                 cx.notify();
             })

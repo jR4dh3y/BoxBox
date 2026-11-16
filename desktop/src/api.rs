@@ -251,6 +251,14 @@ impl Api {
         }
     }
 
+    /// Like `local_path`, but a final symbolic link names the link, not its target.
+    pub fn entry_path(&self, path: &str) -> Result<Option<PathBuf>> {
+        match &self.provider {
+            Provider::Local(local) => local.entry_path(path).map(Some),
+            Provider::Remote(_) => Ok(None),
+        }
+    }
+
     pub fn roots(&self) -> Result<Vec<MountPoint>> {
         let _span = crate::profile::span("api.roots");
         match &self.provider {

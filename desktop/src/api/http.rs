@@ -2,6 +2,7 @@ use std::{
     fmt::Write as _,
     fs::{self, File, OpenOptions},
     io::Read,
+    os::unix::fs::OpenOptionsExt as _,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     thread,
@@ -157,6 +158,8 @@ impl RemoteApi {
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
+            // Downloads are authenticated: readable by this user only.
+            .mode(0o600)
             .open(&target)
             .with_context(|| {
                 format!(
@@ -164,7 +167,20 @@ impl RemoteApi {
                     target.display()
                 )
             })?;
-        if let Err(error) = std::io::copy(&mut response.into_reader(), &mut file) {
+        // In chunks, so a cancelled transfer stops mid-file.
+        let mut reader = response.into_reader();
+        let copied = (|| -> Result<()> {
+            let mut buffer = vec![0u8; 1024 * 1024];
+            loop {
+                crate::progress::check()?;
+                let read = reader.read(&mut buffer)?;
+                if read == 0 {
+                    return Ok(());
+                }
+                std::io::Write::write_all(&mut file, &buffer[..read])?;
+            }
+        })();
+        if let Err(error) = copied {
             drop(file);
             let _ = fs::remove_file(&target);
             return Err(error).with_context(|| format!("cannot download {}", item.path));
@@ -369,6 +385,7 @@ impl RemoteApi {
         let mut buffer = vec![0u8; UPLOAD_CHUNK_SIZE];
 
         for index in 0..total_chunks {
+            crate::progress::check()?;
             let offset = index * chunk_size;
             let bytes_this_chunk = (total_size - offset).min(chunk_size) as usize;
             file.read_exact(&mut buffer[..bytes_this_chunk])
@@ -604,7 +621,7 @@ fn validate_remote_path(path: &str) -> Result<()> {
             "invalid remote path"
         );
     }
-    Ok(())
+    ensure_no_escape(path)
 }
 
 fn validate_file_name(name: &str) -> Result<()> {
@@ -614,6 +631,17 @@ fn validate_file_name(name: &str) -> Result<()> {
             && !name.chars().any(char::is_control),
         "unsafe file name"
     );
+    ensure_no_escape(name)
+}
+
+/// The server decodes a path once more after the HTTP layer, so `a%20b` would
+/// name `a b` there: a different file. Such names are refused rather than sent.
+fn ensure_no_escape(text: &str) -> Result<()> {
+    let escaped = text
+        .as_bytes()
+        .windows(3)
+        .any(|window| window[0] == b'%' && window[1].is_ascii_hexdigit() && window[2].is_ascii_hexdigit());
+    anyhow::ensure!(!escaped, "{text:?} contains a %-escape, which a BoxBox server would read as another name");
     Ok(())
 }
 
@@ -745,6 +773,14 @@ mod tests {
             }
         });
         (url, received)
+    }
+
+    #[test]
+    fn names_the_server_would_decode_again_are_refused() {
+        assert!(validate_file_name("report%20.txt").is_err());
+        assert!(validate_remote_path("media/100%2f/a.txt").is_err());
+        assert!(validate_file_name("100% done.txt").is_ok());
+        assert!(validate_file_name("50%.txt").is_ok());
     }
 
     #[test]

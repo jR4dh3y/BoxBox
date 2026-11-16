@@ -50,8 +50,11 @@ try {
           event.ph === "e" &&
           "name" in event &&
           typeof event.name === "string"
-        )
+        ) {
+          if (event.name === "open folder: failed")
+            throw new Error("The app painted a folder error instead of the listing");
           wanted.delete(event.name);
+        }
       }
     }
     console.log("PASS: desktop app painted its first frame and a listed folder");

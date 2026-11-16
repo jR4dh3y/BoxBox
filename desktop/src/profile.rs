@@ -172,6 +172,11 @@ impl Journey {
     pub fn ready(self) {
         READY.with(|ready| ready.borrow_mut().push(self));
     }
+
+    /// Records the journey under `name`, so a failure is not counted as the result.
+    pub fn renamed(self, name: &'static str) -> Self {
+        Self { name, ..self }
+    }
 }
 
 /// Ends a journey, if one is being recorded, at the next painted frame.

@@ -115,6 +115,16 @@ impl Workspace {
 
     /// Mounts a typed location such as `smb://nas/media` and opens it in `target`.
     pub(crate) fn connect_location(&mut self, target: PaneTarget, uri: String, cx: &mut Context<Self>) {
+        // GVfs mounts one share, so a discovered `smb://nas/` asks which, in the address field.
+        if let Some(server) = crate::devices::gvfs::spec::smb_server_only(&uri) {
+            let text = format!("smb://{server}/");
+            let length = text.len();
+            self.location_editor = Some(super::operations::LocationEditor { target_id: target.0 });
+            self.location_field.update(cx, |field, cx| field.set_text(text, length..length, cx));
+            self.pending_location_focus = true;
+            self.notify(crate::components::ToastKind::Info, format!("Type the shared folder's name after smb://{server}/"), cx);
+            return;
+        }
         self.run_mount(target, uri.clone(), cx, move |prompts| devices::gvfs::mount(&uri, prompts));
     }
 

@@ -140,7 +140,7 @@ impl Run<'_> {
         let same = same_provider(source, self.dest());
         if let Ok(existing) = self.dest().stat(&target) {
             // A copy pasted where its original is: Nautilus names it, without asking.
-            let answer = if same && existing.path == item.path {
+            let answer = if same && (existing.path == item.path || same_local_file(source, &item.path, &target)) {
                 Answer::Rename
             } else {
                 self.conflict(item, &existing, parent, &name, more)?
@@ -271,6 +271,7 @@ impl Run<'_> {
         // Across providers a move is a copy, then the original goes: to Trash
         // locally, for good on a server.
         if job.mode == Mode::Move {
+            crate::progress::check()?;
             match source.is_local() {
                 true => source.move_to_trash(&item.path).map(|_| ()).with_context(|| format!("cannot move {} to Trash", item.name))?,
                 false => source.delete(&item.path, true).with_context(|| format!("cannot delete {}", item.name))?,
@@ -281,8 +282,17 @@ impl Run<'_> {
 
     /// Copies `item` into `parent` on another provider, as `name`.
     fn between_providers(job: &Job, fat: bool, source: &Arc<Api>, item: &FileInfo, parent: &str, name: &str) -> Result<()> {
+        crate::progress::check()?;
         let dest = &job.destination;
         if item.is_dir {
+            // A listing shows a link to a folder as the folder; walking it would
+            // copy what it points at, or loop for ever on a link to a parent.
+            if let Some(entry) = source.entry_path(&item.path)? {
+                let metadata = fs::symlink_metadata(&entry).with_context(|| format!("cannot read {}", item.name))?;
+                if metadata.file_type().is_symlink() {
+                    bail!("{} is a link to a folder; links cannot be copied to another place", item.name);
+                }
+            }
             dest.create_directory(parent, name).with_context(|| format!("cannot create folder {name}"))?;
             let inside = join(parent, name);
             for child in source.list(&item.path).with_context(|| format!("cannot list {}", item.path))? {
@@ -318,6 +328,17 @@ impl Run<'_> {
         let taken: HashSet<String> = self.dest().list(parent)?.into_iter().map(|item| item.name).collect();
         Ok(keep_both_name(name, &taken))
     }
+}
+
+/// Two virtual paths on one local provider that name the same file, such as
+/// `home/a.txt` and the same file through the System drive.
+fn same_local_file(api: &Api, left: &str, right: &str) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    let identity = |path: &str| {
+        let real = api.local_path(path).ok().flatten()?;
+        fs::metadata(real).ok().map(|metadata| (metadata.dev(), metadata.ino()))
+    };
+    identity(left).is_some_and(|left| identity(right) == Some(left))
 }
 
 pub fn same_provider(left: &Api, right: &Api) -> bool {
@@ -566,6 +587,48 @@ mod tests {
         let ask = |_: Question, _| panic!("nothing to ask");
         run(&job(&api, Mode::Copy, &["dst/a.txt"], "dst"), &ask).unwrap();
         assert!(root.0.join("dst/a (copy 1).txt").exists());
+    }
+
+    #[test]
+    fn the_same_file_by_another_path_is_named_not_replaced() {
+        let (root, api) = fixture(&["dst/a.txt"]);
+        std::os::unix::fs::symlink(root.0.join("dst"), root.0.join("alias")).unwrap();
+        let ask = |_: Question, _| panic!("Replace must not be offered for the file itself");
+        run(&job(&api, Mode::Copy, &["dst/a.txt"], "alias"), &ask).unwrap();
+        assert_eq!(fs::read_to_string(root.0.join("dst/a.txt")).unwrap(), "dst/a.txt");
+        assert!(root.0.join("dst/a (copy 1).txt").exists());
+    }
+
+    #[test]
+    fn a_link_to_a_folder_is_not_walked_onto_a_server() {
+        let (root, local) = fixture(&["src/inner.txt"]);
+        std::os::unix::fs::symlink("..", root.0.join("src/loop")).unwrap();
+        let (url, requests) = server_with_a_txt();
+        let item = local.stat("home/src/loop").unwrap();
+        assert!(item.is_dir);
+        let job = Job { mode: Mode::Copy, items: vec![(local.clone(), item)], destination: Arc::new(Api::new(&url, None)), parent: "media".into() };
+        let asked = RefCell::new(Vec::new());
+        let ask = |question: Question, _| {
+            asked.borrow_mut().push(question);
+            (Answer::Skip, false)
+        };
+        assert_eq!(run(&job, &ask).unwrap(), Outcome { done: 0, skipped: 1 });
+        assert!(matches!(&asked.borrow()[..], [Question::Failed { error, .. }] if error.contains("link")));
+        let sent: Vec<String> = requests.try_iter().collect();
+        assert!(sent.iter().all(|line| line.starts_with("GET ")), "nothing was created: {sent:?}");
+    }
+
+    #[test]
+    fn a_cancelled_move_keeps_its_original() {
+        let (root, local) = fixture(&["a.txt"]);
+        let (url, _requests) = server_with_a_txt();
+        let item = local.stat("home/a.txt").unwrap();
+        let job = Job { mode: Mode::Move, items: vec![(local.clone(), item)], destination: Arc::new(Api::new(&url, None)), parent: "media/new".into() };
+        let progress = crate::progress::Progress::default();
+        progress.cancel();
+        let ask = |_: Question, _| (Answer::Cancel, false);
+        assert!(progress.scope(|| run(&job, &ask)).is_err());
+        assert!(root.0.join("a.txt").exists());
     }
 
     #[test]

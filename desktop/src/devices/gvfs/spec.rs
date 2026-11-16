@@ -84,6 +84,13 @@ fn authority(text: &str) -> Result<Authority> {
     Ok(Authority { user, host: percent_decode(host), port })
 }
 
+/// The authority of an `smb://` address that names a server but no share.
+pub fn smb_server_only(uri: &str) -> Option<&str> {
+    let (scheme, rest) = uri.trim().split_once("://")?;
+    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    (scheme.eq_ignore_ascii_case("smb") && !host.is_empty() && path.trim_matches('/').is_empty()).then_some(host)
+}
+
 pub fn parse(uri: &str) -> Result<Location> {
     let Some((scheme, rest)) = uri.trim().split_once("://") else { bail!("{uri} is not a network location") };
     let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
@@ -151,6 +158,14 @@ mod tests {
 
     fn pairs(items: &[(&'static str, &str)]) -> Vec<(&'static str, String)> {
         items.iter().map(|(key, value)| (*key, value.to_string())).collect()
+    }
+
+    #[test]
+    fn a_discovered_server_without_a_share_is_recognised() {
+        assert_eq!(smb_server_only("smb://nas/"), Some("nas"));
+        assert_eq!(smb_server_only("SMB://nas"), Some("nas"));
+        assert_eq!(smb_server_only("smb://nas/media"), None);
+        assert_eq!(smb_server_only("sftp://nas/"), None);
     }
 
     #[test]

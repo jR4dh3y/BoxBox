@@ -178,10 +178,11 @@ fn stage(api: &Api, files: &[FileInfo]) -> Result<Vec<PathBuf>> {
             .collect();
     }
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-    let dir = std::env::temp_dir()
-        .join("boxbox-gpui-drag")
-        .join(format!("{}-{stamp}", std::process::id()));
-    std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    // Only this user may read authenticated downloads, whatever the umask.
+    let dir = std::env::temp_dir().join(format!("boxbox-gpui-drag-{}-{stamp}", std::process::id()));
+    let mut builder = std::fs::DirBuilder::new();
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
     files.iter().map(|item| api.download(item, &dir)).collect()
 }
 

@@ -306,6 +306,8 @@ pub struct Workspace {
     pub(crate) device_fields: [Entity<TextField>; 3],
     /// Focus the sign-in dialog on the next render; a mount asked from the background.
     pub(crate) pending_credential_focus: bool,
+    /// Focus the address field on the next render, to finish a location such as `smb://nas/`.
+    pub(crate) pending_location_focus: bool,
     pub(crate) open_with: Option<open_with::OpenWith>,
     pub(crate) open_with_search: Entity<TextField>,
     pub(crate) settings_focus: FocusHandle,
@@ -448,6 +450,7 @@ impl Workspace {
             drag_drop: Default::default(),
             device_fields,
             pending_credential_focus: false,
+            pending_location_focus: false,
             open_with: None,
             open_with_search: open_with_search.clone(),
             settings_focus: cx.focus_handle(),
@@ -591,7 +594,7 @@ impl Workspace {
         if let Some(index) = self.tabs.iter().position(|pane| pane.id == target) {
             return &mut self.tabs[index];
         }
-        if let Some(pane) = self.split_panes.get_mut(&target) {
+        if let Some(pane) = self.split_panes.values_mut().find(|pane| pane.id == target) {
             return pane;
         }
         &mut self.tabs[self.active_tab]
@@ -739,6 +742,7 @@ impl Workspace {
         pane.writable = read.writable;
         pane.real_path = read.real.clone();
         let _span = crate::profile::span("apply listing");
+        let journey = if read.items.is_err() { journey.map(|journey| journey.renamed("open folder: failed")) } else { journey };
         let stale = pane.finish_load(read.items, view);
         if let Some(path) = read.real { self.directory_watches.watch(target.0, path); }
         if stale { self.resort(target, cx); }
@@ -1348,6 +1352,9 @@ impl Render for Workspace {
         }
         if std::mem::take(&mut self.pending_credential_focus) {
             self.focus_credentials(window, cx);
+        }
+        if std::mem::take(&mut self.pending_location_focus) {
+            self.location_field.read(cx).focus(window);
         }
         self.start_pending_rename(window, cx);
         self.apply_window_background(window);
