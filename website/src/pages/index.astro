@@ -5,16 +5,21 @@ import GetBoxBox from '../components/GetBoxBox.astro';
 import Closing from '../components/Closing.astro';
 import AppInterfaceDemo from '../components/AppInterfaceDemo.astro';
 import Walkthrough from '../components/Walkthrough.astro';
-import ReleaseBanner from '../components/ReleaseBanner.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 ---
 <Layout title="BoxBox | Self-hosted File Manager & Linux Desktop" description="Manage local files with the Linux desktop app, or self-host BoxBox to browse and share your server files. Pair both in one workspace.">
-<ReleaseBanner />
 <SiteNav />
 
 <main>
 <section class="relative z-10 overflow-hidden px-5 pt-10 pb-16 md:px-8 md:pt-20">
   <div class="mx-auto max-w-7xl">
+    <p class="animate-fade-in-up mb-7 inline-flex h-8 items-center gap-2 rounded-full border border-border-primary bg-white/[0.03] px-3.5 text-[13px] text-text-secondary">
+      <span>Not backed by</span>
+      <span class="inline-flex items-center gap-1.5 font-medium text-text-primary">
+        <span aria-hidden="true" class="flex h-[18px] w-[18px] items-center justify-center rounded-[3px] bg-[#ff6600] font-sans text-[12px] leading-none font-bold text-white">Y</span>
+        <span class="sr-only">Y</span>Combinator
+      </span>
+    </p>
     <h1 class="hero-title font-display animate-fade-in-up font-extrabold text-white" style="animation-delay: 100ms;">
       The file manager <br class="md:hidden" />your <br class="hidden md:block" /><span class="word-box hero-rename"><span id="hero-rename-window"><span id="hero-rename-word" aria-hidden="true">homelab</span></span><span class="sr-only">homelab, NAS, or server</span></span> <br class="md:hidden" />deserves.
     </h1>
