@@ -1,6 +1,6 @@
 //! The Details panel under the toolbar, as Dolphin's Information panel (F11):
-//! the active pane's selection, or the folder when nothing is selected. A
-//! centred preview and name, then label and value rows as in Properties.
+//! the active pane's selection, or the folder when nothing is selected. From
+//! the top: the preview, the name, then the details as label and value columns.
 
 use gpui::{div, img, prelude::*, px, AnyElement, Context, ObjectFit, SharedString};
 
@@ -15,32 +15,38 @@ pub(crate) const DETAILS_WIDTH: f32 = 260.;
 const PREVIEW_HEIGHT: f32 = 128.;
 const ICON_SIZE: f32 = 64.;
 
-/// The label left, the value right.
+/// Wide enough for "Modified", so every value starts on one line.
+const LABEL_WIDTH: f32 = 72.;
+
+/// The label in its column, the value beside it, wrapping under itself.
 fn row(label: &'static str, value: impl Into<SharedString>) -> gpui::Div {
     div()
         .flex()
         .items_start()
-        .justify_between()
-        .gap(px(12.))
+        .gap(px(8.))
         .py(px(4.))
-        .child(div().flex_none().text_color(c(TEXT_SECONDARY)).child(label))
-        .child(div().min_w_0().text_right().text_color(c(TEXT_PRIMARY)).child(value.into()))
+        .child(div().w(px(LABEL_WIDTH)).flex_none().text_color(c(TEXT_SECONDARY)).child(label))
+        .child(div().flex_1().min_w_0().text_color(c(TEXT_PRIMARY)).child(value.into()))
 }
 
-/// Rows under a divider.
+/// "Details" over its rows.
 fn rows(children: Vec<gpui::Div>) -> gpui::Div {
-    div().mt(px(14.)).pt(px(10.)).border_t_1().border_color(c(BORDER_SECONDARY)).flex().flex_col().children(children)
+    div()
+        .mt(px(18.))
+        .flex()
+        .flex_col()
+        .child(div().mb(px(4.)).text_13().font_weight(gpui::FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child("Details"))
+        .children(children)
 }
 
-/// The name and a line under it, centred.
+/// The name, and a line under it when there is one.
 fn title(name: impl Into<SharedString>, under: impl Into<SharedString>) -> gpui::Div {
+    let under = under.into();
     div()
         .flex()
         .flex_col()
-        .items_center()
-        .text_center()
-        .child(div().w_full().text_13().font_weight(gpui::FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child(name.into()))
-        .child(div().mt(px(2.)).text_color(c(TEXT_SECONDARY)).child(under.into()))
+        .child(div().w_full().text_sm_tw().font_weight(gpui::FontWeight::SEMIBOLD).text_color(c(TEXT_PRIMARY)).child(name.into()))
+        .when(!under.is_empty(), |title| title.child(div().mt(px(2.)).text_color(c(TEXT_SECONDARY)).child(under)))
 }
 
 fn parent(path: &str) -> String {
@@ -79,12 +85,10 @@ impl Workspace {
             .border_l_1()
             .border_color(c(BORDER_SECONDARY))
             .bg(self.chrome_background())
-            .flex()
-            .flex_col()
             .overflow_y_scroll()
             .text_xs_tw()
-            // Auto margins centre it in the panel's height; a long list falls back to the top and scrolls.
-            .child(div().my_auto().flex_none().p(px(14.)).child(body))
+            .p(px(16.))
+            .child(body)
             .into_any_element()
     }
 
@@ -107,13 +111,13 @@ impl Workspace {
 
     fn single_details(&self, item: &FileInfo) -> gpui::Div {
         let kind = if item.is_dir { "Folder".to_string() } else { type_description(&item.name) };
-        let mut details = Vec::new();
+        let mut details = vec![row("Type", kind)];
         if !item.is_dir {
             details.push(row("Size", file_size(item.size)));
         }
-        details.push(row("Modified", full_date(item.mod_time)));
         details.push(row("Location", self.location_label(&parent(&item.path))));
-        div().flex().flex_col().child(self.preview(item)).child(div().mt(px(10.)).child(title(item.name.clone(), kind))).child(rows(details))
+        details.push(row("Modified", full_date(item.mod_time)));
+        div().flex().flex_col().child(self.preview(item)).child(div().mt(px(12.)).child(title(item.name.clone(), ""))).child(rows(details))
     }
 
     fn folder_details(&self) -> gpui::Div {
@@ -129,7 +133,7 @@ impl Workspace {
             .flex()
             .flex_col()
             .child(title(name, under))
-            .child(div().mt(px(14.)).text_center().text_color(c(TEXT_MUTED)).child("Select an item to see its details."))
+            .child(div().mt(px(14.)).text_color(c(TEXT_MUTED)).child("Select an item to see its details."))
     }
 
     /// A virtual path as the path bar names it: the drive or place, then the folders under it.
@@ -148,7 +152,8 @@ fn many_details(items: &[FileInfo]) -> gpui::Div {
     let files = items.len() - folders;
     let bytes: u64 = items.iter().filter(|item| !item.is_dir).map(|item| item.size).sum();
     let mut details = vec![row("Files", files.to_string()), row("Folders", folders.to_string())];
-    details.push(row(if folders > 0 { "Size of files" } else { "Size" }, file_size(bytes)));
+    // Folders are not walked here; Properties counts what is inside them.
+    details.push(row("Size", if folders > 0 { format!("{}, files only", file_size(bytes)) } else { file_size(bytes) }));
     div()
         .flex()
         .flex_col()
@@ -156,14 +161,12 @@ fn many_details(items: &[FileInfo]) -> gpui::Div {
         .child(rows(details))
         .child(
             div()
-                .mt(px(14.))
-                .pt(px(10.))
-                .border_t_1()
-                .border_color(c(BORDER_SECONDARY))
+                .mt(px(18.))
                 .flex()
                 .flex_col()
                 .gap(px(4.))
                 .text_color(c(TEXT_SECONDARY))
+                .child(div().mb(px(2.)).text_13().font_weight(gpui::FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child("Selected"))
                 .children(items.iter().take(LISTED).map(|item| div().truncate().child(item.name.clone())))
                 .when(items.len() > LISTED, |list| list.child(div().text_color(c(TEXT_MUTED)).child(format!("and {} more", items.len() - LISTED)))),
         )
