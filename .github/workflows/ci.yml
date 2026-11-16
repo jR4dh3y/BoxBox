@@ -198,8 +198,8 @@ jobs:
         working-directory: website
         run: bun install --frozen-lockfile
 
-      - name: Test release metadata
-        run: bun test website/src/lib/releases.test.ts
+      - name: Test website logic
+        run: bun test website/src/lib
 
       - name: Check website TypeScript
         working-directory: website
