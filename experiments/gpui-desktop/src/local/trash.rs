@@ -358,8 +358,12 @@ fn discover_roots(data_home: &Path, include_volume_trash: bool) -> Result<Vec<Tr
                     path,
                     relative_base: Some(mountpoint.clone()),
                 };
-                if existing_trash_root(&root)? && !roots.iter().any(|known| known.path == root.path) {
-                    roots.push(root);
+                // A mount the user cannot look into (/sys/fs/bpf, /run/credentials/…) or an
+                // unsafe one holds no trash of theirs; as in gio, it must not hide the others.
+                match existing_trash_root(&root) {
+                    Ok(true) if !roots.iter().any(|known| known.path == root.path) => roots.push(root),
+                    Ok(_) => {}
+                    Err(error) => log::debug!("skipping volume trash {}: {error:#}", root.path.display()),
                 }
             }
         }
@@ -924,5 +928,14 @@ mod tests {
         assert!(item.can_restore, "a missing folder does not stop a restore");
         local.restore_trash(&c.id).unwrap();
         assert_eq!(std::fs::read_to_string(root.0.join("a/b/c.txt")).unwrap(), "c");
+    }
+
+    /// Mounts such as /sys/fs/bpf deny a look inside; Trash still lists.
+    #[test]
+    fn unreadable_mounts_do_not_hide_trash() {
+        let root = Root(std::env::temp_dir().join(format!("boxbox-trash-mounts-{}", std::process::id())));
+        std::fs::create_dir_all(&root.0).unwrap();
+        super::list(&[], &root.0, true).unwrap();
+        assert!(!super::has_items(&root.0, true));
     }
 }

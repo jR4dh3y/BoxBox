@@ -115,9 +115,7 @@ impl Workspace {
             .min_h_0()
             .min_w_0()
             .bg(self.shell_background())
-            .when(!self.trash_open, |browser| {
-                browser.child(self.render_toolbar(target, window, cx))
-            })
+            .child(self.render_toolbar(target, window, cx))
             .when_some(stale_error, |browser, error| {
                 browser.child(
                     div()
@@ -147,6 +145,15 @@ impl Workspace {
             .when(!self.trash_open, |browser| {
                 browser.child(self.render_status_bar(target, cx))
             })
+    }
+
+    pub(crate) fn empty_trash_button(&self, cx: &mut Context<Self>) -> Button {
+        Button::new("empty-trash")
+            .label("Empty Trash")
+            .variant(ButtonVariant::Danger)
+            .size(ButtonSize::Sm)
+            .disabled(!matches!(&self.trash, Load::Loaded(items) if !items.is_empty()) || self.operation_status.is_busy())
+            .on_click(cx.listener(|this, _, _, cx| this.empty_trash(cx)))
     }
 
     fn render_trash(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -241,49 +248,11 @@ impl Workspace {
                 }))
                 .into_any_element(),
         };
-        let header = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .gap(px(10.))
-            .border_b_1()
-            .border_color(c(BORDER_PRIMARY))
-            .px(px(12.))
-            .py(px(8.))
-            .child(
-                div()
-                    .id("trash-back")
-                    .cursor_pointer()
-                    .rounded(px(4.))
-                    .px(px(8.))
-                    .py(px(4.))
-                    .hover(|style| style.bg(c(SURFACE_ELEVATED)))
-                    .child("Back")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.back(&crate::workspace::Back, window, cx)
-                    })),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("Trash"),
-            )
-            // Trash is watched, so it needs no Refresh.
-            .child(
-                Button::new("empty-trash")
-                    .label("Empty Trash")
-                    .variant(ButtonVariant::Danger)
-                    .size(ButtonSize::Sm)
-                    .disabled(!matches!(&self.trash, Load::Loaded(items) if !items.is_empty()) || self.operation_status.is_busy())
-                    .on_click(cx.listener(|this, _, _, cx| this.empty_trash(cx))),
-            );
         div()
             .id("trash-page")
             .size_full()
             .flex()
             .flex_col()
-            .child(header)
             .child(
                 div()
                     .id("trash-list")

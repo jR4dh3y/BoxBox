@@ -132,7 +132,9 @@ impl Workspace {
                 .into_any_element();
         }
         let crumbs = self.breadcrumbs(target);
-        let content: AnyElement = if crumbs.is_empty() {
+        let content: AnyElement = if self.trash_open {
+            div().text_13().whitespace_nowrap().child("Trash").into_any_element()
+        } else if crumbs.is_empty() {
             div()
                 .text_13()
                 .whitespace_nowrap()
@@ -424,6 +426,9 @@ impl Workspace {
     ) -> impl IntoElement {
         let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
         let toolbar_width = self.browser_width(window);
+        // Trash keeps the toolbar; what does not apply there is greyed out.
+        let trash = self.trash_open;
+        let can_add = !pane.is_at_root() && !trash;
         div()
             .flex_none()
             .flex()
@@ -440,7 +445,7 @@ impl Workspace {
                     .flex_none()
                     .gap(px(2.))
                     .child(
-                        self.nav_button("back", "chevron-left", 18., pane.can_go_back())
+                        self.nav_button("back", "chevron-left", 18., trash || pane.can_go_back())
                             .debug_selector(|| "nav-back".into())
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.back(&Back, window, cx)),
@@ -452,7 +457,7 @@ impl Workspace {
                             })),
                     )
                     .child(
-                        self.nav_button("forward", "chevron-right", 18., pane.can_go_forward())
+                        self.nav_button("forward", "chevron-right", 18., !trash && pane.can_go_forward())
                             .debug_selector(|| "nav-forward".into())
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.forward(&Forward, window, cx)
@@ -464,7 +469,7 @@ impl Workspace {
                     ),
             )
             .child(self.render_path_bar(target, window, cx))
-            .children((!pane.is_at_root()).then(|| self.render_search(target, toolbar_width, window, cx)))
+            .children((!pane.is_at_root() && !self.trash_open).then(|| self.render_search(target, toolbar_width, window, cx)))
             .child(
                 div()
                     .flex()
@@ -474,7 +479,7 @@ impl Workspace {
                     .child(
                         div()
                             .relative()
-                            .child(self.nav_button("add", "plus", 16., !pane.is_at_root()).when(!pane.is_at_root(), |button| {
+                            .child(self.nav_button("add", "plus", 16., can_add).when(can_add, |button| {
                                 button.on_click(cx.listener(move |this, _, _, cx| {
                                     this.add_menu = if this.add_menu == Some(target) { None } else { Some(target) };
                                     this.open_submenu = None;
@@ -484,12 +489,11 @@ impl Workspace {
                             }))
                             .when(self.add_menu == Some(target), |slot| slot.child(div().absolute().top_0().left_0().child(self.render_add_menu(target, cx)))),
                     )
-                    .child(
-                        self.nav_button("refresh", "refresh-cw", 16., true)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.refresh(&Refresh, window, cx)
-                            })),
-                    )
+                    // Trash is watched, so it needs no Refresh.
+                    .child(self.nav_button("refresh", "refresh-cw", 16., !trash).when(!trash, |button| {
+                        button.on_click(cx.listener(|this, _, window, cx| this.refresh(&Refresh, window, cx)))
+                    }))
+                    .when(trash, |row| row.child(self.empty_trash_button(cx)))
                     .child(self.nav_button("settings", "settings", 16., true).on_click(
                         cx.listener(|this, _, window, cx| {
                             this.open_settings(&OpenSettings, window, cx)
