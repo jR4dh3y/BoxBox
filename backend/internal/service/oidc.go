@@ -185,6 +185,8 @@ func (s *OIDCService) Complete(ctx context.Context, flowToken string, callback O
 		if userInfo.Subject != idToken.Subject {
 			return "", ErrOIDCProvider
 		}
+		// A fresh map keeps email_verified from the same reply as the email.
+		claims = make(map[string]json.RawMessage)
 		if err := userInfo.Claims(&claims); err != nil {
 			return "", ErrOIDCProvider
 		}

@@ -147,8 +147,18 @@ func loadWithReport(configPath string, searchPaths []configSearchPath, localIden
 		warnings = append(warnings, configSearchWarnings(v.ConfigFileUsed(), searchPaths)...)
 	}
 
+	source := v
+	if localIdentity {
+		// Drop OIDC before decoding so invalid values in ignored settings cannot fail local startup.
+		settings := v.AllSettings()
+		delete(settings, "oidc")
+		source = viper.New()
+		if err := source.MergeConfigMap(settings); err != nil {
+			return nil, fmt.Errorf("error unmarshaling config: %w", err)
+		}
+	}
 	var cfg model.ServerConfig
-	if err := v.Unmarshal(&cfg); err != nil {
+	if err := source.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 	cfg.MountPoints = model.ClassifyMountPoints(cfg.MountPoints)

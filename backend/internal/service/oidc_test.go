@@ -206,6 +206,8 @@ func TestOIDCUsernameClaimHandling(t *testing.T) {
 		{name: "verified email as string", claim: "email", claims: map[string]any{"email": "a@example.com", "email_verified": "true"}, want: "a@example.com"},
 		{name: "unverified email", claim: "email", claims: map[string]any{"email": "a@example.com", "email_verified": false}, wantErr: ErrOIDCIdentity},
 		{name: "email without verification", claim: "email", claims: map[string]any{"email": "a@example.com"}, wantErr: ErrOIDCIdentity},
+		{name: "userinfo email without its own verification", claim: "email", claims: map[string]any{"email_verified": true}, userInfo: map[string]any{"email": "a@example.com"}, wantErr: ErrOIDCIdentity},
+		{name: "verified userinfo email", claim: "email", claims: map[string]any{}, userInfo: map[string]any{"email": "a@example.com", "email_verified": true}, want: "a@example.com"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

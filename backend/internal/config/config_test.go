@@ -353,6 +353,7 @@ func TestLocalIdentityIgnoresIncompleteOIDC(t *testing.T) {
 	t.Setenv("BOXBOX_JWT_SECRET", "boxbox-secret-at-least-thirty-two-bytes")
 	t.Setenv("BOXBOX_USERS_admin", testHashA)
 	t.Setenv("BOXBOX_OIDC_ISSUER_URL", "https://auth.example.com")
+	t.Setenv("BOXBOX_OIDC_DISABLE_PASSWORD_LOGIN", "not-a-bool")
 	if _, err := LoadWithReport(configPath, false); err == nil {
 		t.Fatal("server mode accepted incomplete OIDC configuration")
 	}

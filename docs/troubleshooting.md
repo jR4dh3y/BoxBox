@@ -46,7 +46,7 @@ The login page shows a message for the `sso_error` code, and the server log has 
 - `identity_invalid`: the provider sent no usable `oidc.username_claim`. Add the scope that carries it, or choose another claim.
 - `not_allowed`: the name is not a configured account. The log shows it; add it to `oidc.users`.
 
-If the provider is down and `oidc.disable_password_login` is set, unset it and restart to sign in with a password.
+If the provider is down and `oidc.disable_password_login` is set, unset it and restart to sign in with a password. This works only for an account with a bcrypt password in `users` or `BOXBOX_USERS_*`; accounts listed only in `oidc.users` have no password.
 
 ## Unreachable After Upgrading to v0.3.0
 
