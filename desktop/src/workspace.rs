@@ -365,6 +365,8 @@ pub struct Workspace {
     pub(crate) bookmarks_read: bool,
     pub(crate) wallpaper: WallpaperState,
     pub(crate) wallpaper_generation: u64,
+    /// Bumped by each background choice; a wallpaper install from before it is dropped.
+    pub(crate) wallpaper_choice: u64,
     /// The background the window was last told to draw, see-through or opaque.
     window_transparent: Option<bool>,
     mutation_generation: u64,
@@ -504,6 +506,7 @@ impl Workspace {
             bookmarks_read: false,
             wallpaper: WallpaperState::Empty,
             wallpaper_generation: 0,
+            wallpaper_choice: 0,
             window_transparent: None,
             mutation_generation: 0,
         };

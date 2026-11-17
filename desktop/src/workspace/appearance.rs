@@ -133,7 +133,8 @@ fn prepare_wallpaper(bytes: &[u8]) -> Result<(Prepared, [Vec<u8>; 4])> {
 impl Workspace {
     pub(crate) fn install_wallpaper(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.wallpaper_generation = self.wallpaper_generation.wrapping_add(1);
-        let generation = self.wallpaper_generation;
+        self.wallpaper_choice = self.wallpaper_choice.wrapping_add(1);
+        let (generation, choice) = (self.wallpaper_generation, self.wallpaper_choice);
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move {
                 let bytes = read_wallpaper(&path)?;
@@ -145,7 +146,7 @@ impl Workspace {
                 Ok::<_, anyhow::Error>((stored, image))
             }).await;
             let _ = this.update(cx, |this, cx| {
-                if this.wallpaper_generation != generation { return; }
+                if this.wallpaper_generation != generation || this.wallpaper_choice != choice { return; }
                 match result {
                     Ok((path, image)) => {
                         this.desktop_settings.wallpaper = Some(path);

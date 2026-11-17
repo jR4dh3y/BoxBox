@@ -57,7 +57,7 @@ fn main() {
         }
         Ok(cli::Command::SetPicker(enable)) => {
             let result = match enable {
-                true => std::env::current_exe().map_err(anyhow::Error::from).and_then(|program| chooser::routing::enable(&program)),
+                true => chooser::routing::enable(),
                 false => chooser::routing::disable(),
             };
             match result {
@@ -75,7 +75,7 @@ fn main() {
             return;
         }
         Ok(cli::Command::Version) => {
-            println!("boxbox-files {}", env!("CARGO_PKG_VERSION"));
+            println!("boxbox-files {}", env!("BOXBOX_VERSION"));
             return;
         }
         Ok(cli::Command::ProfileSummary(trace)) => {

@@ -156,15 +156,73 @@ fn quoted(path: &Path) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// Routes Open and Save dialogs to `program --portal`. Returns the file changed.
-pub fn enable(program: &Path) -> Result<PathBuf> {
-    ensure!(program.is_absolute(), "the program path must be absolute");
+/// The executable to register: an AppImage runs from a mount that goes away,
+/// so its own file is the one that stays.
+fn program() -> Result<PathBuf> {
+    if let Some(image) = absolute_env("APPIMAGE").filter(|path| path.is_file()) {
+        return Ok(image);
+    }
+    std::env::current_exe().context("cannot find the BoxBox program")
+}
+
+/// The first xdg-desktop-portal that reads backends from the user's data folder.
+const USER_BACKENDS_SINCE: (u32, u32, u32) = (1, 20, 1);
+
+/// `1.18.4` from `xdg-desktop-portal 1.18.4`.
+fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
+    let word = text.split_whitespace().find(|word| word.starts_with(|c: char| c.is_ascii_digit()))?;
+    let mut parts = word.split('.').map(|part| part.chars().take_while(char::is_ascii_digit).collect::<String>().parse::<u32>().ok());
+    Some((parts.next()??, parts.next().flatten().unwrap_or(0), parts.next().flatten().unwrap_or(0)))
+}
+
+/// The portal frontend's program, from its systemd unit or where distributions put it.
+fn frontend_program() -> Option<PathBuf> {
+    type ExecStart = Vec<(String, Vec<String>, bool, u64, u64, u64, u64, u32, i32, i32)>;
+    let from_unit = || -> Result<PathBuf> {
+        let connection = zbus::blocking::Connection::session()?;
+        let manager = zbus::blocking::Proxy::new(&connection, "org.freedesktop.systemd1", "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager")?;
+        let unit: zbus::zvariant::OwnedObjectPath = manager.call("LoadUnit", &("xdg-desktop-portal.service",))?;
+        let service = zbus::blocking::Proxy::new(&connection, "org.freedesktop.systemd1", unit, "org.freedesktop.systemd1.Service")?;
+        let exec: ExecStart = service.get_property("ExecStart")?;
+        exec.into_iter().next().map(|(path, ..)| PathBuf::from(path)).context("no ExecStart")
+    };
+    from_unit()
+        .ok()
+        .into_iter()
+        .chain(["/usr/libexec/xdg-desktop-portal", "/usr/lib/xdg-desktop-portal", "/usr/lib/xdg-desktop-portal/xdg-desktop-portal"].map(PathBuf::from))
+        .find(|path| path.is_file())
+}
+
+/// Fails unless the portal frontend will find a backend in the user's data
+/// folder; routing to one it cannot find leaves apps without a dialog.
+fn ensure_discoverable() -> Result<()> {
+    // The frontend does not report its version on the bus; the program does.
+    let program = frontend_program().context("xdg-desktop-portal is not installed")?;
+    let output = std::process::Command::new(&program).arg("--version").output().with_context(|| format!("cannot run {}", program.display()))?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let version = parse_version(&text).with_context(|| format!("cannot tell which xdg-desktop-portal {} is", program.display()))?;
+    let (major, minor, patch) = USER_BACKENDS_SINCE;
+    ensure!(
+        version >= USER_BACKENDS_SINCE,
+        "xdg-desktop-portal {}.{}.{} only finds file choosers installed for every user; BoxBox needs {major}.{minor}.{patch} or newer",
+        version.0,
+        version.1,
+        version.2
+    );
+    ensure!(std::env::var_os("XDG_DESKTOP_PORTAL_DIR").is_none(), "XDG_DESKTOP_PORTAL_DIR is set, so xdg-desktop-portal reads no other backends");
+    Ok(())
+}
+
+/// Routes Open and Save dialogs to this program's `--portal`. Returns the file changed.
+pub fn enable() -> Result<PathBuf> {
+    ensure_discoverable()?;
+    let program = program()?;
     let service = service_file();
     if let Ok(existing) = std::fs::read_to_string(&service) {
         ensure!(existing.starts_with(MANAGED), "{} was not written by BoxBox; remove it first", service.display());
     }
     write_atomic(&portal_file(), &format!("[portal]\nDBusName={BUS_NAME}\nInterfaces={INTERFACE};\n"))?;
-    write_atomic(&service, &format!("{MANAGED}\n[D-BUS Service]\nName={BUS_NAME}\nExec={} --portal\n", quoted(program)))?;
+    write_atomic(&service, &format!("{MANAGED}\n[D-BUS Service]\nName={BUS_NAME}\nExec={} --portal\n", quoted(&program)))?;
     let destination = set_route(true)?;
     restart_portal();
     Ok(destination)
@@ -218,7 +276,15 @@ fn restart_portal() {
 
 #[cfg(test)]
 mod tests {
-    use super::route;
+    use super::{parse_version, route};
+
+    #[test]
+    fn portal_versions_parse() {
+        assert_eq!(parse_version("xdg-desktop-portal 1.22.1\n"), Some((1, 22, 1)));
+        assert_eq!(parse_version("xdg-desktop-portal 1.18.4-1ubuntu2"), Some((1, 18, 4)));
+        assert_eq!(parse_version("xdg-desktop-portal 1.20"), Some((1, 20, 0)));
+        assert!(parse_version("nothing").is_none());
+    }
 
     #[test]
     fn routing_keeps_the_old_line_and_restores_it() {

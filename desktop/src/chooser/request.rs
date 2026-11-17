@@ -352,36 +352,93 @@ pub fn glob(pattern: &str, name: &str) -> bool {
     glob_at(&pattern, &name)
 }
 
-fn glob_at(pattern: &[char], name: &[char]) -> bool {
-    let Some((&first, rest)) = pattern.split_first() else { return name.is_empty() };
-    match first {
-        '*' => (0..=name.len()).any(|skip| glob_at(rest, &name[skip..])),
-        '?' => !name.is_empty() && glob_at(rest, &name[1..]),
+/// One step of a pattern: what it consumes and where the next step starts.
+enum Token<'a> {
+    Star,
+    One(&'a [char], bool),
+    Literal(char),
+    Any,
+}
+
+/// The token at `at` and the index after it.
+fn token(pattern: &[char], at: usize) -> (Token<'_>, usize) {
+    match pattern[at] {
+        '*' => (Token::Star, at + 1),
+        '?' => (Token::Any, at + 1),
         '[' => {
-            let Some(&c) = name.first() else { return false };
+            let rest = &pattern[at + 1..];
             let negated = matches!(rest.first(), Some('!' | '^'));
             let start = usize::from(negated);
             // A `]` first in the class is a member, not its end.
-            let Some(end) = rest.iter().enumerate().skip(start + 1).find(|(_, &c)| c == ']').map(|(index, _)| index) else {
-                return c == '[' && glob_at(rest, &name[1..]);
-            };
-            let class = &rest[start..end];
-            let mut found = false;
-            let mut index = 0;
-            while index < class.len() {
-                if index + 2 < class.len() && class[index + 1] == '-' {
-                    found |= class[index] <= c && c <= class[index + 2];
-                    index += 3;
-                } else {
-                    found |= class[index] == c;
-                    index += 1;
-                }
+            match rest.iter().enumerate().skip(start + 1).find(|(_, &c)| c == ']').map(|(index, _)| index) {
+                Some(end) => (Token::One(&rest[start..end], negated), at + 1 + end + 1),
+                None => (Token::Literal('['), at + 1),
             }
-            found != negated && glob_at(&rest[end + 1..], &name[1..])
         }
-        '\\' if !rest.is_empty() => name.first() == Some(&rest[0]) && glob_at(&rest[1..], &name[1..]),
-        literal => name.first() == Some(&literal) && glob_at(rest, &name[1..]),
+        '\\' if at + 1 < pattern.len() => (Token::Literal(pattern[at + 1]), at + 2),
+        literal => (Token::Literal(literal), at + 1),
     }
+}
+
+fn in_class(class: &[char], c: char) -> bool {
+    let mut index = 0;
+    while index < class.len() {
+        if index + 2 < class.len() && class[index + 1] == '-' {
+            if class[index] <= c && c <= class[index + 2] {
+                return true;
+            }
+            index += 3;
+        } else {
+            if class[index] == c {
+                return true;
+            }
+            index += 1;
+        }
+    }
+    false
+}
+
+/// Matches with at most one pending `*`: a later `*` makes earlier choices
+/// final, so the work is bounded by pattern length times name length, whatever
+/// an app sends.
+fn glob_at(pattern: &[char], name: &[char]) -> bool {
+    let (mut p, mut n) = (0, 0);
+    let mut star: Option<(usize, usize)> = None;
+    while n < name.len() {
+        if p < pattern.len() {
+            let (step, next) = token(pattern, p);
+            let advanced = match step {
+                Token::Star => {
+                    star = Some((next, n));
+                    p = next;
+                    continue;
+                }
+                Token::Any => true,
+                Token::Literal(c) => name[n] == c,
+                Token::One(class, negated) => in_class(class, name[n]) != negated,
+            };
+            if advanced {
+                p = next;
+                n += 1;
+                continue;
+            }
+        }
+        match &mut star {
+            Some((after, from)) => {
+                *from += 1;
+                p = *after;
+                n = *from;
+            }
+            None => return false,
+        }
+    }
+    while p < pattern.len() {
+        match token(pattern, p) {
+            (Token::Star, next) => p = next,
+            _ => return false,
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -408,6 +465,19 @@ mod tests {
         assert!(glob("\\*", "*"));
         assert!(!glob("\\*", "a"));
         assert!(glob("[]]", "]"));
+        assert!(glob("*a*b*c", "xxaxxbxxc"));
+        assert!(!glob("*a*b*c", "xxaxxbxxcx"));
+        assert!(glob("a*", "a"));
+        assert!(glob("[", "["));
+    }
+
+    #[test]
+    fn many_stars_take_bounded_work() {
+        let pattern = format!("{}b", "*a".repeat(400));
+        let name = "a".repeat(4000);
+        let started = std::time::Instant::now();
+        assert!(!glob(&pattern, &name));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
     }
 
     #[test]

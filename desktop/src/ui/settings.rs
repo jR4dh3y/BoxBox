@@ -315,7 +315,7 @@ impl Workspace {
                 .background_executor()
                 .spawn(async move {
                     match on {
-                        true => std::env::current_exe().map_err(anyhow::Error::from).and_then(|program| crate::chooser::routing::enable(&program)),
+                        true => crate::chooser::routing::enable(),
                         false => crate::chooser::routing::disable(),
                     }
                 })
@@ -339,6 +339,10 @@ impl Workspace {
     /// Solid drops the wallpaper; Transparent keeps it for later; Wallpaper
     /// shows the kept one or asks for one.
     fn set_background(&mut self, choice: Background, cx: &mut Context<Self>) {
+        if choice != Background::Wallpaper {
+            // A wallpaper still being prepared would undo this choice.
+            self.wallpaper_choice = self.wallpaper_choice.wrapping_add(1);
+        }
         match choice {
             Background::Solid => {
                 self.desktop_settings.transparent = false;

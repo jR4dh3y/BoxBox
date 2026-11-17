@@ -120,6 +120,8 @@ pub struct Chooser {
     replace: Option<(Vec<PathBuf>, String)>,
     error: Option<String>,
     busy: bool,
+    /// The server download in flight; cancelled when the dialog closes.
+    download: Option<crate::progress::Progress>,
     accent: u32,
     icon_style: IconStyle,
     name_field: Entity<TextField>,
@@ -138,6 +140,9 @@ impl Drop for Chooser {
     fn drop(&mut self) {
         if let Some(reply) = self.reply.take() {
             let _ = reply.try_send(Response::cancelled());
+        }
+        if let Some(download) = self.download.take() {
+            download.cancel();
         }
     }
 }
@@ -165,10 +170,13 @@ fn read_folder(path: &Path) -> anyhow::Result<Vec<FileInfo>> {
     let mut items = Vec::new();
     for entry in std::fs::read_dir(path)?.flatten() {
         let entry_path = entry.path();
+        // The app is answered with this path rebuilt from text; a name that is
+        // not UTF-8 would come back as a different file.
+        let (Some(name), Some(text)) = (entry.file_name().to_str().map(str::to_string), entry_path.to_str().map(str::to_string)) else { continue };
         let Ok(metadata) = std::fs::metadata(&entry_path).or_else(|_| std::fs::symlink_metadata(&entry_path)) else { continue };
         items.push(FileInfo {
-            name: entry.file_name().to_string_lossy().into_owned(),
-            path: entry_path.to_string_lossy().into_owned(),
+            name,
+            path: text,
             size: if metadata.is_dir() { 0 } else { metadata.len() },
             is_dir: metadata.is_dir(),
             mod_time: metadata.modified().ok().and_then(crate::api::mod_time),
@@ -264,6 +272,7 @@ impl Chooser {
             replace: None,
             error: None,
             busy: false,
+            download: None,
             accent,
             icon_style: preferences.file_icons,
             name_field,
@@ -299,6 +308,9 @@ impl Chooser {
     fn finish(&mut self, response: Response, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(reply) = self.reply.take() {
             let _ = reply.try_send(response);
+        }
+        if let Some(download) = self.download.take() {
+            download.cancel();
         }
         // After the event that answered has finished with the window.
         cx.defer_in(window, |_, window, _| window.remove_window());
@@ -381,22 +393,44 @@ impl Chooser {
             return;
         }
         let api = api.clone();
+        let progress = crate::progress::Progress::default();
+        if let Some(previous) = self.download.replace(progress.clone()) {
+            previous.cancel();
+        }
         self.busy = true;
         cx.notify();
         let handle = window.window_handle();
         cx.spawn(async move |this, cx| {
+            let running = progress.clone();
             let result = cx
                 .background_executor()
                 .spawn(async move {
                     let folder = download_folder()?;
-                    items.iter().map(|item| api.download(item, &folder)).collect::<anyhow::Result<Vec<PathBuf>>>()
+                    let paths = running.scope(|| items.iter().map(|item| api.download(item, &folder)).collect::<anyhow::Result<Vec<PathBuf>>>());
+                    match paths {
+                        Ok(paths) => Ok((folder, paths)),
+                        Err(error) => {
+                            let _ = std::fs::remove_dir_all(&folder);
+                            Err(error)
+                        }
+                    }
                 })
                 .await;
+            // The copies stay only for the app that was answered with them.
+            let mut kept = false;
+            let folder = result.as_ref().ok().map(|(folder, _)| folder.clone());
             let _ = handle.update(cx, |_, window, cx| {
                 let _ = this.update(cx, |this, cx| {
+                    if progress.is_cancelled() {
+                        return;
+                    }
                     this.busy = false;
+                    this.download = None;
                     match result {
-                        Ok(paths) => this.check_and_answer(paths, window, cx),
+                        Ok((_, paths)) => {
+                            this.check_and_answer(paths, window, cx);
+                            kept = this.reply.is_none();
+                        }
                         Err(error) => {
                             this.error = Some(format!("Could not download: {error:#}"));
                             cx.notify();
@@ -404,6 +438,9 @@ impl Chooser {
                     }
                 });
             });
+            if let Some(folder) = folder.filter(|_| !kept) {
+                let _ = std::fs::remove_dir_all(folder);
+            }
         })
         .detach();
     }
