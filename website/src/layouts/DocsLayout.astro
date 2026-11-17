@@ -1,14 +1,16 @@
 ---
 import Layout from './Layout.astro';
-import { ArrowLeft, GitFork } from '@lucide/astro';
-import type { DocHeading, DocNavItem, DocPage } from '../lib/docs';
+import { ArrowLeft } from '@lucide/astro';
+import { ClientRouter } from 'astro:transitions';
+import GitHubLink from '../components/GitHubLink.astro';
+import type { DocHeading, DocNavSection, DocPage } from '../lib/docs';
 
 interface Props {
 	doc: DocPage;
-	nav: DocNavItem[];
+	sections: DocNavSection[];
 }
 
-const { doc, nav } = Astro.props;
+const { doc, sections } = Astro.props;
 
 function hrefFor(slug: string) {
 	return slug === 'index' ? '/docs/' : `/docs/${slug}/`;
@@ -16,44 +18,45 @@ function hrefFor(slug: string) {
 ---
 
 <Layout title={`${doc.title} | BoxBox Docs`} description={doc.description}>
+  <!-- Moving between docs pages swaps the article in place of a full page
+       load; the header and sidebar persist, and links prefetch on hover. -->
+  <ClientRouter slot="head" />
   <main class="relative z-10 min-h-screen bg-[#0d0d0d] text-text-primary">
-    <header class="sticky top-0 z-50 border-b border-border-primary bg-[#0d0d0d]/95 backdrop-blur">
+    <header transition:persist="docs-header" class="sticky top-0 z-50 border-b border-border-primary bg-[#0d0d0d]/95 backdrop-blur">
       <div class="mx-auto flex h-14 max-w-360 items-center justify-between gap-4 px-4">
-        <a href="/" class="flex items-center gap-2 text-sm font-semibold text-text-secondary transition-colors hover:text-white">
+        <!-- The landing page does not use the router, so this is a normal load. -->
+        <a href="/" data-astro-reload class="flex items-center gap-2 text-sm font-semibold text-text-secondary transition-colors hover:text-white">
           <ArrowLeft class="h-4 w-4" />
           <img src="/logo-boxbox-3d.svg" alt="BoxBox" width="570" height="410" class="h-9 w-auto" />
         </a>
-        <div class="flex items-center gap-2">
-          <a
-            href="https://github.com/jR4dh3y/BoxBox"
-            target="_blank"
-            class="flex items-center gap-2 rounded border border-border-primary bg-surface-secondary px-3 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:border-border-focus hover:text-white"
-          >
-            <GitFork class="h-4 w-4" />
-            GitHub
-          </a>
-        </div>
+        <nav aria-label="Primary" class="flex items-center text-sm font-medium text-text-secondary">
+          <GitHubLink />
+        </nav>
       </div>
     </header>
 
     <div class="mx-auto grid max-w-360 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_240px]">
-      <aside class="min-w-0 border-b border-border-primary bg-[#101010] lg:sticky lg:top-[calc(3.5rem_+_1px)] lg:h-[calc(100vh_-_3.5rem_-_1px)] lg:border-b-0 lg:border-r lg:bg-transparent">
-        <nav class="min-w-0 px-4 py-4 lg:py-8" aria-label="Documentation">
-          <div class="mb-3 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">Documentation</div>
-          <div class="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
-            {nav.map((item) => (
-              <a
-                href={hrefFor(item.slug)}
-                class={`shrink-0 rounded px-3 py-2 text-sm font-semibold transition-colors lg:shrink ${
-                  item.slug === doc.slug
-                    ? 'bg-accent-solid text-white'
-                    : 'text-text-secondary hover:bg-surface-secondary hover:text-white'
-                }`}
-              >
-                {item.title}
-              </a>
-            ))}
-          </div>
+      <aside transition:persist="docs-sidebar" class="min-w-0 border-b border-border-primary bg-[#101010] lg:sticky lg:top-[calc(3.5rem_+_1px)] lg:h-[calc(100vh_-_3.5rem_-_1px)] lg:border-b-0 lg:border-r lg:bg-transparent">
+        <nav data-docs-sidebar class="min-w-0 px-4 py-4 lg:h-full lg:overflow-y-auto lg:py-8" aria-label="Documentation">
+          {sections.map((section) => (
+            <div class="mb-5 last:mb-0">
+              <div class="px-3 py-2 text-sm font-semibold text-text-primary">{section.title}</div>
+              <ul class="ml-3 flex flex-col border-l border-border-primary">
+                {section.items.map((item) => (
+                  <li>
+                    <a
+                      href={hrefFor(item.slug)}
+                      data-doc-link
+                      aria-current={item.slug === doc.slug ? 'page' : undefined}
+                      class="-ml-px block border-l border-transparent py-1.5 pr-3 pl-4 text-sm text-text-secondary transition-colors hover:border-text-muted hover:text-white aria-[current=page]:border-white aria-[current=page]:font-medium aria-[current=page]:text-white"
+                    >
+                      {item.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </nav>
       </aside>
 
@@ -77,8 +80,8 @@ function hrefFor(slug: string) {
                 <a
                   href={`#${heading.id}`}
                   data-toc-link={heading.id}
-                  class={`toc-link block rounded border-l border-transparent py-1 pl-3 text-sm leading-snug text-text-secondary transition-colors hover:text-white ${
-                    heading.depth === 3 ? 'pl-4' : ''
+                  class={`toc-link block py-1 text-sm leading-snug text-text-secondary transition-colors hover:text-white ${
+                    heading.depth === 3 ? 'pl-3' : ''
                   }`}
                 >
                   {heading.text}
@@ -94,13 +97,10 @@ function hrefFor(slug: string) {
   </main>
 
   <script>
-    const tocLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
-    const headings = tocLinks
-      .map((link): HTMLElement | null => {
-        const id = link.getAttribute('data-toc-link');
-        return id ? document.getElementById(id) : null;
-      })
-      .filter((heading): heading is HTMLElement => heading !== null);
+    // With the client router this module runs once; astro:page-load fires on
+    // the first load and after each docs page swap.
+    let tocLinks: HTMLAnchorElement[] = [];
+    let headings: HTMLElement[] = [];
 
     function setActiveTocLink(activeId: string) {
       for (const link of tocLinks) {
@@ -149,7 +149,39 @@ function hrefFor(slug: string) {
       });
     }
 
-    updateActiveTocLink();
+    // The sidebar persists across pages, so its current-page mark is moved here.
+    // "/docs/api" and "/docs/api/" are the same page.
+    const withoutSlash = (path: string) => path.replace(/\/+$/, '');
+
+    function markCurrentDoc() {
+      const here = withoutSlash(window.location.pathname);
+      for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-doc-link]')) {
+        if (withoutSlash(link.pathname) === here) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+      }
+    }
+
+    // Moving the persisted sidebar into the new page resets its scroll.
+    let sidebarScroll = 0;
+    document.addEventListener('astro:before-swap', () => {
+      sidebarScroll = document.querySelector('[data-docs-sidebar]')?.scrollTop ?? 0;
+    });
+    document.addEventListener('astro:after-swap', () => {
+      const sidebar = document.querySelector('[data-docs-sidebar]');
+      if (sidebar) sidebar.scrollTop = sidebarScroll;
+    });
+
+    document.addEventListener('astro:page-load', () => {
+      markCurrentDoc();
+      tocLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
+      headings = tocLinks
+        .map((link): HTMLElement | null => {
+          const id = link.getAttribute('data-toc-link');
+          return id ? document.getElementById(id) : null;
+        })
+        .filter((heading): heading is HTMLElement => heading !== null);
+      updateActiveTocLink();
+    });
     window.addEventListener('scroll', requestTocUpdate, { passive: true });
     window.addEventListener('resize', requestTocUpdate);
     window.addEventListener('hashchange', requestTocUpdate);

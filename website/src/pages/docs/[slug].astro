@@ -1,6 +1,6 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
-import { getDocNav, getDocPage } from '../../lib/docs';
+import { getDocNav, getDocPage, getDocSections } from '../../lib/docs';
 
 export function getStaticPaths() {
 	return getDocNav()
@@ -11,8 +11,8 @@ export function getStaticPaths() {
 }
 
 const { slug } = Astro.params;
-const nav = getDocNav();
+const sections = getDocSections();
 const doc = await getDocPage(slug ?? 'index');
 ---
 
-<DocsLayout doc={doc} nav={nav} />
+<DocsLayout doc={doc} sections={sections} />

@@ -1,9 +1,9 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
-import { getDocNav, getDocPage } from '../../lib/docs';
+import { getDocPage, getDocSections } from '../../lib/docs';
 
-const nav = getDocNav();
+const sections = getDocSections();
 const doc = await getDocPage('index');
 ---
 
-<DocsLayout doc={doc} nav={nav} />
+<DocsLayout doc={doc} sections={sections} />

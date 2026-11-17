@@ -1,6 +1,6 @@
 # Quick Start
 
-Use this page to get BoxBox running quickly with Docker Compose and the published GitHub Container Registry image. This is the preferred deployment path and does not require cloning the repository. For the full deployment reference, see [Docker deployment](/docs/docker/).
+Use this page to get BoxBox running quickly with Docker Compose and the published GitHub Container Registry image. This is the preferred deployment path and does not require cloning the repository. For the full deployment reference, see [Docker deployment](docker.md).
 
 ## Quick Install with Compose
 
@@ -22,7 +22,7 @@ docker compose up -d
 
 Open `http://localhost:8080` and sign in as `admin` with the plaintext password used to generate `BOXBOX_USERS_admin`.
 
-For a single-container `docker run` command or local source build, use the separate alternatives in [Docker deployment](/docs/docker/).
+For a single-container `docker run` command or local source build, use the separate alternatives in [Docker deployment](docker.md).
 
 ## Required Edits
 

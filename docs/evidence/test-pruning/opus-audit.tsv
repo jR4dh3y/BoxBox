@@ -1,0 +1,166 @@
+file	top_level_tests	disposition	candidates	rationale_and_retained_coverage
+backend/cmd/server/compress_test.go	5	TRIM	TestGzipIsSkippedWhenTheClientRefusesIt (low); TestErrorResponsesKeepTheirStatus (low)	q=0 parsing is already a table in middleware/compress_test TestAcceptsGzip and wiring is proven by TestDirectoryListingIsGzippedWhenAccepted; error test only asserts a 400 the gzip writer passes through. Keep listing gzip round-trip, no-recompress downloads incl. range, small-body skip.
+backend/cmd/server/connect_test.go	6	KEEP		Paired-client permission allowlist, cross-origin pairing, code disclosure, replay, per-IP and global redemption limits, dev-mode credential refusal through the production router.
+backend/cmd/server/desktop_test.go	8	KEEP		Desktop cookie/origin/host gate, bootstrap open-redirect table, fail-closed corrupt store, preference persistence across origins, wallpaper prune ownership across restarts.
+backend/cmd/server/devmode_test.go	1	KEEP		--dev credentials must pass the real config loader.
+backend/cmd/server/main_test.go	1	KEEP		auto_discover expansion through initializeServer and the router (host-dependent skip).
+backend/cmd/server/remote_integration_test.go	1	KEEP		End-to-end TLS pairing, proxied range/sandbox, resumable upload, cross-source copy, revocation mapped to REMOTE_AUTH_REQUIRED.
+backend/internal/config/config_test.go	6	KEEP		BOXBOX_/FM_ env migration and warnings, precedence, legacy search path, data dir resolution, filesystem-root rejection. PR removal of TestLoadStillReturnsConfigOnly is fine (Load exercised by remaining tests).
+backend/internal/handler/archive_test.go	2	KEEP		Folder ZIP contents through MountPointGuard; outside-mount 403.
+backend/internal/handler/auth_test.go	8	TRIM	DELETE TestAuthRejectsCrossOriginCookieRequests	Exact duplicate of the "cross-origin refresh" subtest of TestAuthCookieSecurityAndOriginBoundaries (same nil handler, same Origin, same 403, plus that subtest also asserts no Set-Cookie). Everything else is auth persistence/cookie boundary: keep.
+backend/internal/handler/connect_errors_test.go	1	KEEP		Wrapped service error -> HTTP status/code translation.
+backend/internal/handler/desktop_apps_test.go	4	TRIM	TestDesktopTerminalLaunchErrorNamesRecovery (low)	One sentinel -> message-substring mirror; same shape already in TestDesktopAppsHandlerReturnsActionableErrorsAndRejectsUnknownFields. Service-level TestDesktopTerminalLaunchFailureIsDistinct keeps the classification.
+backend/internal/handler/desktop_chooser_test.go	2	KEEP		Malformed bodies leave request pending; >10k entry listing regression.
+backend/internal/handler/desktop_clipboard_test.go	3	TRIM	tautological tail assert in TestDesktopClipboardHandlerValidatesRequestsAndMapsUnavailableHelper	Final `errors.Is(clipboard.err, ErrDesktopClipboardChanged)` only re-checks the test's own setup. Rest is request validation and error mapping.
+backend/internal/handler/desktop_gateway_errors_test.go	1	KEEP		Remote gateway error translation.
+backend/internal/handler/desktop_job_events_test.go	1	KEEP		SSE multiplexer must not starve the HTTP connection pool; upstream streams close.
+backend/internal/handler/desktop_preferences_test.go	1	KEEP		Wallpaper staging preserves committed images across handler/service recreation.
+backend/internal/handler/desktop_servers_test.go	4	KEEP		Upstream header stripping (Set-Cookie/Location/CORS), credential non-disclosure, insecure URL rejection, SSE flush over TLS.
+backend/internal/handler/desktop_trash_test.go	3	TRIM	TestDesktopTrashHandlerRoutesRestoreAndDelete (medium)	Asserts the stub received "entry-1" and body {"ok":true}: mock-call mirror. Keep ListAndMove (no-store, envelope) and validation/error mapping.
+backend/internal/handler/desktop_volumes_test.go	5	KEEP		URL-decoded volume id, error translation, unavailable body keeps [] not null, no internal detail leak.
+backend/internal/handler/desktop_watch_test.go	2	KEEP		Real fs change reaches stream; symlink/traversal confinement.
+backend/internal/handler/directory_response_test.go	2	KEEP		Wire shape (no repeated parent path) and deterministic raw/gzip byte ceilings.
+backend/internal/handler/file_test.go	5	TRIM	DELETE TestCreateItemCreatesFileViaAPI, TestSaveFileContentViaAPI (medium)	Happy paths duplicated by service/file_test (TestCreateFileCreatesEmptyFileWithoutOverwriting, TestWriteFileOverwritesExistingFileOnly) and by cmd/server TestPairedClientOperationsOnReservedMountNames (create with content, PATCH content, through the production router). Keep listing/refresh, 409 mapping, symlink delete.
+backend/internal/handler/job_events_test.go	2	KEEP		Stream stops after authorization revocation; real copy emits intermediate progress.
+backend/internal/handler/job_test.go	2	KEEP		{"jobs":[]} not null; owner and resolved real paths never serialized.
+backend/internal/handler/mount_read_only_test.go	4	KEEP		Nested/overlapping/inaccessible read-only mounts across files, shares and chunk uploads.
+backend/internal/handler/settings_wallpaper_test.go	1	KEEP		Per-user wallpaper isolation (?username ignored), headers, delete.
+backend/internal/handler/share_folders_test.go	3	KEEP		Full-access folder creation, escape attempts, upload+delete != manage, empty upload only over existing file.
+backend/internal/handler/share_test.go	23	TRIM	DELETE TestShareUploadRejectsInvalidRequests; low: TestCreateFolderShareViaAPI	All three cases of TestShareUploadRejectsInvalidRequests are asserted elsewhere: viewer 403 (TestShareFolderViewerAndReadOnlyMountCannotUploadViaAPI), unknown token 404 (TestShareRecipientEndpointsAreUniformlyNotFound /upload), empty new file 400 (share_folders TestShareUploadCanEmptyExistingFileOnly). TestCreateFolderShareViaAPI repeats service TestShareCreateSupportsFoldersAndSimplifiesFilePermissions folder half. Rest: keep (recipient auth, CSP, size limits, owner scoping).
+backend/internal/handler/share_wallpaper_test.go	1	KEEP		Share serves owner's wallpaper only; revoked share 404.
+backend/internal/handler/stream_create_only_test.go	1	KEEP		Create-only capability, 409 collision without overwrite, empty file, checksum failure not published.
+backend/internal/handler/stream_test.go	9	TRIM	local restore TestDownloadServesRequestedRange is redundant	Restored range test duplicates cmd/server TestFileDownloadsAreNotRecompressed/range (206, exact bytes, Content-Range, real initializeServer router) plus share download range and remote preview range. Harmless but not needed for parity; drop or keep as cheap handler-level check. Other tests: upload ID/size/checksum/session validation and sandbox CSP: keep.
+backend/internal/handler/stream_thumbnail_test.go	1	KEEP		Thumbnail via real JWTAuth + MountPointGuard: 401, 403, ETag 304, JPEG bounds.
+backend/internal/handler/system_test.go	1	DELETE-FILE	TestGetUploadConfigReturnsConfiguredChunkSize (medium)	Asserts 5<<20 and DefaultChunkSizeMB<<20: constant/arithmetic mirror. Upload-config wire use is covered by stream_create_only_test and remote_integration (chunkSize consumed), createOnly by cmd/server connect_test.
+backend/internal/handler/websocket_test.go	2	KEEP		WebSocket same-origin default (CSWSH) and explicit wildcard.
+backend/internal/middleware/auth_test.go	2	KEEP	(see ADD)	Query tokens only on stream routes; header table incl. expired body. Note the expired case runs against a test fake that re-implements jwt.ErrTokenExpired mapping; the real authService expiry path is untested (see ADD).
+backend/internal/middleware/compress_test.go	1	KEEP		Accept-Encoding q-value parsing table.
+backend/internal/middleware/connect_test.go	2	KEEP		Paired-client route allowlist incl. traversal/prefix confusion; invalid validators -> 401.
+backend/internal/middleware/logging_test.go	1	KEEP		Query string (tokens) never logged.
+backend/internal/middleware/ratelimit_test.go	4	KEEP		X-Forwarded-For spoofing, IPv6, trusted proxy hop selection.
+backend/internal/middleware/security_test.go	3	KEEP		Security header values (borderline constant mirror, kept as security boundary), mount isolation, read-only enforcement.
+backend/internal/model/config_test.go	5	KEEP		Unsafe auth defaults, bcrypt/secret strength, root mount override, mount kind classification incl. root case.
+backend/internal/model/share_test.go	4	KEEP		Legacy write -> upload without delete; client canReplace ignored.
+backend/internal/pkg/filesystem/fs_test.go	8	TRIM	TestAferoFSReadsNamesWithDotSubstrings (low)	Covered end-to-end by service/desktop_filesystem_test TestFileServiceHandlesLegalDotSequenceNamesOnDisk (List/GetInfo/OpenFile on OsFS). Keep traversal rejection, no-replace rename, Lstat, MkdirAllWithin confinement, entry limit.
+backend/internal/pkg/fileutil/order_test.go	1	KEEP		Natural compare incl. huge digit runs and determinism.
+backend/internal/pkg/validator/path_test.go	8	KEEP		Traversal/encoded/NUL rejection and dot-substring acceptance at the validator.
+backend/internal/service/archive_test.go	4	KEEP		Windows-safe ZIP names, collisions, reserved device names.
+backend/internal/service/auth_sessions_test.go	16	KEEP		Session store persistence, legacy rejection, rotation across restart, failure transactions, concurrent refresh winner, permissions, malformed/symlink stores.
+backend/internal/service/auth_test.go	6	KEEP	(see ADD)	Token type binding, rotation, logout replay, claim validation, lockout. Missing: an expired-JWT case through the real service.
+backend/internal/service/connect_store_test.go	2	KEEP		>1 MiB snapshot survives restart; trailing data rejected.
+backend/internal/service/connect_test.go	9	TRIM	constant asserts inside TestConnectConcurrentRedemptionHasOneWinner (low)	`len(pairingAlphabet) != 32` and code display-format checks mirror constants; the 40-way race and everything else in the file stays.
+backend/internal/service/desktop_apps_test.go	16	KEEP		XDG association parsing, argv to gio/xdg-open/terminal, Exec validation, confinement, mimeapps write-through symlink.
+backend/internal/service/desktop_chooser_dbus_test.go	1	KEEP		D-Bus signatures, untrusted peer rejection, cancel via Request.Close (isolated bus).
+backend/internal/service/desktop_chooser_remote_test.go	9	KEEP		Remote listing name validation, cancel cleanup, auth/cancellation propagation.
+backend/internal/service/desktop_chooser_test.go	8	KEEP		Confinement, symlink swap before sniff, portal option decoding, glob/MIME filters.
+backend/internal/service/desktop_clipboard_linux_test.go	7	KEEP		wl-* argv/stdin protocol, cut never degrades to copy, output bound, GTK helper restart/timeout.
+backend/internal/service/desktop_clipboard_test.go	7	KEEP		Clipboard MIME codec, confinement, ambiguous percent names.
+backend/internal/service/desktop_filesystem_test.go	2	KEEP		Dot-sequence names on disk; desktop unlimited vs server ErrDirectoryTooLarge.
+backend/internal/service/desktop_job_events_test.go	1	KEEP		Remote job stream reconnect; legacy discovered once.
+backend/internal/service/desktop_preferences_test.go	2	KEEP		Persistence, invalid write preserved, account namespace collision.
+backend/internal/service/desktop_servers_test.go	15	KEEP		Forwarding header/credential hygiene, allowlist, TLS verification, persistence failures, authority validation.
+backend/internal/service/desktop_thumbnail_linux_test.go	5	KEEP		Confined inode, env scrub, child kill on cancel, FIFO refusal.
+backend/internal/service/desktop_transfers_test.go	9	TRIM	TestDesktopTransferHTTPBoundary (low)	POST 202 + list contains id is a smoke check also done by cmd/server TestRemoteProductionTLSJourney (POST /transfers + poll). Keep the TLS copy, cancel, authority, progress, no-overwrite and percent-name tests.
+backend/internal/service/desktop_trash_test.go	8	KEEP		trashinfo format, stale ID, symlink entry, escapes, collisions, volume trash safety.
+backend/internal/service/desktop_volumes_test.go	16	TRIM	DELETE TestGioMountListFiltersRemovableDrives, TestGioMountListIncludesInternalDataVolumes; low TestDesktopVolumeReadOnlyFlagComesFromMountStats	The two parser tests use the same fixtures as TestDesktopVolumesListDescribesMountedRemovableDrive / ...MountedInternalVolume, which assert the same name, device, uuid, mount path, capabilities and removable flag through the public service. ReadOnly test echoes a stubbed space() value.
+backend/internal/service/discovery_test.go	1	KEEP		Unreadable mounts skipped. PR removal of TestBPFIsNotAStorageFilesystem is fine (constant table).
+backend/internal/service/file_bench_test.go	2	KEEP		Allocation ceiling (deterministic proxy) + benchmark used by frontend/scripts/perf/backend.ts.
+backend/internal/service/file_test.go	6	KEEP		Hidden entries, single directory read, cancel, entry limit, create without overwrite, write existing only.
+backend/internal/service/fold_test.go	1	KEEP		Differential check vs strings.ToLower over Unicode cases.
+backend/internal/service/job_events_test.go	1	KEEP		Owner isolation, snapshot copy, overflow closes subscriber (timeout added in PR is correct).
+backend/internal/service/job_noreplace_test.go	2	KEEP		Destination race after preflight; no merge into existing dir.
+backend/internal/service/job_paths_test.go	4	KEEP		Virtual vs resolved paths, -race snapshot regression, outside mounts, read-only.
+backend/internal/service/job_test.go	5	KEEP		Pending cancel, owner scoping, snapshot isolation, mid-flight cancel cleanup, byte progress.
+backend/internal/service/list_folder_test.go	0	SUPPORT		No tests; benchmark adapter that scripts/perf/backend.ts swaps on base revisions. Must stay.
+backend/internal/service/mount_policy_test.go	5	KEEP		Most-specific root; broken/relative/dangling/unresolved read-only mounts fail closed.
+backend/internal/service/mount_read_only_test.go	2	KEEP		Ancestor rename/delete/jobs blocked; queued jobs rechecked.
+backend/internal/service/mounts_test.go	4	TRIM	TestIsMalformedPath (low)	Sentinel-membership table mirrors isMalformedPath's switch. Resolve tables stay.
+backend/internal/service/path_safety_test.go	1	KEEP		OpenFile rejects symlink escaping mount.
+backend/internal/service/perf_budget_test.go	0	SUPPORT		No tests; loads perf-budget.json ceilings for the two allocation tests.
+backend/internal/service/search_bench_test.go	2	KEEP		Search allocation ceiling + benchmark used by CI comparison.
+backend/internal/service/search_test.go	2	KEEP		Case-insensitive recursive match with exact paths; empty query.
+backend/internal/service/share_test.go	28	TRIM	DELETE TestShareRevokeUnknownID, TestShareResolveForRecipientIsUniform, TestShareFolderRejectsInvalidRecipientPaths, TestShareFileUploadIsAlwaysDenied, TestShareFolderListsNestedItemsAndKeepsPathsRelative; low TestShareFolderArchiveContainsRelativeZipEntries, TestShareManagementIsScopedToOwner	Each duplicates a handler/share_test case that drives the same service through HTTP and also checks the status mapping: TestShareListAndRevokeViaAPI (unknown 404), TestShareRecipientEndpointsAreUniformlyNotFound (unknown/expired/revoked x 4 routes), TestShareFolderRejectsInvalidPathsViaAPI (identical 4 cases), TestShareFileUploadIsRejectedViaAPI, TestShareFolderItemsAndNestedDownloadViaAPI, TestShareFolderArchiveViaAPI, TestShareManagementIsScopedToOwnerViaAPI. Keep legacy migration, token entropy, live mount revalidation, atomic bounded upload, symlink write/delete, revocation races, permissions, folder TOCTOU, manage recheck.
+backend/internal/service/symlink_entry_test.go	9	KEEP		Entry-vs-target semantics across delete, rename, move, copy, jobs on mount roots behind symlinks.
+backend/internal/service/thumbnail_test.go	6	KEEP		Decoders, pixel/byte resource limits, cache invalidation and bounds, concurrent cache.
+backend/internal/service/upload_test.go	6	KEEP		Concurrent out-of-order chunks, cleanup vs active session, pinned finalization, create-only pin, parent swap, discard.
+backend/internal/service/wallpaper_test.go	4	KEEP		Lifecycle, HTML/invalid rejection, username escape, AVIF/SVG sniff, replace cleanup.
+backend/internal/static/static_test.go	1	KEEP		Cache-Control per asset class incl. compressed early script.
+desktop/scripts/appRun.test.ts	1	KEEP		Real AppRun: argv quoting, exit code, read-only metadata, temp cleanup.
+desktop/scripts/portal.test.ts	3	KEEP		Portal config edit idempotent/reversible; refuses foreign managed line; real registration and activation.
+desktop/scripts/runtimeArchive.test.ts	4	KEEP	fixture dedupe	Tar slip, link escape, duplicate entry rejection. createTar/tarHeader/writeTarOctal are copied verbatim in src/launch.test.ts: share one fixture module.
+desktop/scripts/thumbnails.test.ts	6	KEEP		Packaged native thumbnails through the real server: formats, >2 GiB video, 304/invalidation, playlist SSRF guard, shutdown.
+desktop/src/chooser.test.ts	3	KEEP		Poll recovery, abort during backoff, invalid bootstrap, retry same revision.
+desktop/src/connections-host.test.ts	3	KEEP		Bootstrap URL composition; cookie (not bearer) to local gateway; malformed response rejection.
+desktop/src/instance.test.ts	8	KEEP		Single-instance: request validation, multi-process race, crash recovery, unsafe parent, socket path safety.
+desktop/src/launch.test.ts	26	TRIM	low: "maps the filesystem root to the root mount", "returns no target for an ordinary desktop launch", "walks past wrapper processes but stops at the launcher"	First two are trivial branches already exercised by the parse/targetArguments tests; the third overlaps "recovers packaged arguments from the waiting launcher process". Keep launch parsing, remote-scheme rejection, /proc recovery, install safety, Exec quoting.
+desktop/src/renderer-target.test.ts	1	KEEP		Script injection escape, origin enforcement, token not embedded.
+desktop/src/rendering.test.ts	1	KEEP		Persisted preference -> Chromium flags per channel/install root.
+desktop/src/target.test.ts	2	KEEP		Remote URL and loopback readiness validation.
+frontend/scripts/chunk-cycles.test.ts	5	KEEP		Cycle detection behind the bundle gate.
+frontend/scripts/perf/gates.test.ts	6	KEEP		CI gate logic: ratchets only tighten, missing/undersampled benchmarks fail, timing noise ignored.
+frontend/scripts/shell-scripts.test.ts	6	KEEP		Shell script extraction for byte budget (low overlap between first two cases).
+frontend/src/lib/api/client.test.ts	7	KEEP		Single-flight refresh, transient vs terminal failure, logout drains refresh, superseded retry, no refresh on logout 401.
+frontend/src/lib/api/connect.test.ts	4	KEEP		Pairing: password cleared, invalid code parse, rate limit, no replay/refresh on 401, server clock governs expiry.
+frontend/src/lib/api/desktopClipboard.test.ts	3	KEEP		Parse/reject external JSON; request body shape.
+frontend/src/lib/api/desktopPreferences.test.ts	5	KEEP		Fallback wallpaper adoption persisted, data: migration, no rewrite, round-trip.
+frontend/src/lib/api/desktopVolumes.test.ts	4	TRIM	DELETE "parses the unavailable handler body without masking its reason"	Same input and assertions as the first case of "keeps the typed snapshot and optional reason".
+frontend/src/lib/api/directory.test.ts	2	KEEP		Listing boundary parse/reject.
+frontend/src/lib/api/earlyStart.test.ts	21	KEEP		Runs real static/early-fetch.js: one refresh, dev no-auth, stale/mismatched handoff dropped, 401 codes preserved, remote paths never sent locally.
+frontend/src/lib/api/remoteCapabilities.test.ts	4	KEEP		Remote paths never reach native endpoints; read-only menus disable mutations.
+frontend/src/lib/api/remotePaths.test.ts	14	KEEP		Remote path parse/traversal rejection, proxy routing, private device/mountPoint stripped, share URL translation, upload routing.
+frontend/src/lib/api/websocket.test.ts	4	KEEP		Server message parsing/rejection.
+frontend/src/lib/browse/clipboardPublication.test.ts	3	KEEP		Stale publication cannot replace newer selection; serialized writes.
+frontend/src/lib/browse/desktopLaunch.test.ts	2	KEEP		Launch handoff into tabs; boundary parse.
+frontend/src/lib/browse/desktopPath.test.ts	1	KEEP		OS path -> virtual; file:// remote host rejected.
+frontend/src/lib/browse/desktopWatch.test.ts	2	KEEP		Refresh coalescing (setTimeout 0 only flushes microtasks).
+frontend/src/lib/browse/details.test.ts	2	TRIM	DELETE "details handle root locations and unknown timestamps"	parentFolder/fullFileDate('invalid') are trivial branches, the same class the PR removed with format.test.ts. Keep directory-size exclusion.
+frontend/src/lib/browse/fileCollection.test.ts	8	KEEP		Virtualized keyboard navigation, ranges across unrendered items, resume after re-sort.
+frontend/src/lib/browse/fileDrag.test.ts	6	KEEP		Drop-into-self guard, cross-source copy default, URI-list parse.
+frontend/src/lib/browse/fileInteractions.test.ts	8	KEEP		Selection algebra, context-menu target, activation incl. legacy preference migration.
+frontend/src/lib/browse/fileShortcuts.test.ts	3	KEEP		Shift+Delete permanent guard, modifier rejection, grid/page index clamping.
+frontend/src/lib/browse/paneLocation.test.ts	8	KEEP		URL parse, history semantics, remote root bound, malformed remote fallback.
+frontend/src/lib/browse/paneShortcuts.test.ts	2	TRIM	DELETE "maps tab, split, and navigation shortcuts" (medium)	Pure key->action literal table. Keep the editable-target guard test.
+frontend/src/lib/browse/remoteCatalog.test.ts	2	KEEP		Confirming invalidation; session reset blocks late publication.
+frontend/src/lib/browse/requests.test.ts	15	TRIM	wall-clock assert `Date.now() - started >= 990` in "retry confirms once after a transient failure..."	That line checks the backoff timer duration (and costs ~1 s). Keep every behavioural assert in the file.
+frontend/src/lib/browse/selection.test.ts	5	TRIM	"a checkbox changes only its own path" (low)	Set add/delete immutability; fileInteractions "checkbox state sets or removes an item" covers the gesture.
+frontend/src/lib/browse/sortFiles.test.ts	6	KEEP		Ordering contract, determinism, cached listing not mutated.
+frontend/src/lib/browse/tabs.test.ts	3	KEEP		Tab/pane state orchestration.
+frontend/src/lib/browse/transfers.test.ts	8	KEEP		Keep-both naming, single listing, sequential queue, failure/cancel stop batch.
+frontend/src/lib/browse/uploadAnnouncements.test.svelte.ts	1	KEEP		Screen-reader announcement dedupe and cumulative count.
+frontend/src/lib/browse/uploadAnnouncements.test.ts	0	SUPPORT		One-line shim so bun discovers the .test.svelte.ts file.
+frontend/src/lib/browse/virtualWindow.test.ts	8	KEEP		Windowing invariants, shrink, grid rows, reveal.
+frontend/src/lib/desktop/chooser.test.ts	11	KEEP		Portal globs, MIME visibility, search composition, remote destination guard.
+frontend/src/lib/desktop/chooserServers.test.ts	2	KEEP		Independent per-server roots; abort before discovery.
+frontend/src/lib/desktop/connectionView.test.ts	5	TRIM	low: "an unprobed server is checking", "the address drops the scheme and a bare trailing slash"	Trivial branch and formatting. Keep expired/revoked/offline derivation.
+frontend/src/lib/desktop/jobEvents.test.ts	5	KEEP	(cost note)	SSE consumption without polling, remote qualification, legacy discovery, dropped-stream reconcile, shared connection, recovery fairness. ~9 s of real sleeps on the recovery interval: inject the interval if suite time matters; not a deletion reason.
+frontend/src/lib/desktop/openWith.test.ts	3	KEEP		Default preselection, search hides choices, immutable default update.
+frontend/src/lib/desktop/remote.test.ts	8	KEEP		Stale response ordering, action snapshot outranks load, abort, single pending action.
+frontend/src/lib/desktop/servers.test.ts	4	KEEP		Saved-server controller: editor closes on save, failed save keeps draft and error, two-click remove, edit cancels pending remove.
+frontend/src/lib/desktop/trash.test.ts	5	KEEP		Two-click permanent delete, confirmation withdrawn, no restore without origin.
+frontend/src/lib/desktop/volumeCatalog.test.ts	1	KEEP		Mounted+browsable filter, usedPct mapping.
+frontend/src/lib/desktop/volumes.test.ts	3	KEEP		Snapshot replace, failure keeps last snapshot, refresh clears result.
+frontend/src/lib/settings/options.test.ts	DELETED	DELETED-OK		PR deletion agreed: one find() lookup. Production use remains (GeneralSettings/AppearanceSettings).
+frontend/src/lib/settings/sections.test.ts	2	DELETE-FILE	both tests (medium)	Test 1 mirrors literal section-id arrays; test 2 is a find-or-General fallback. Same class as deleted options.test/addMenu.test.
+frontend/src/lib/settings/wallpaperFile.test.ts	1	TRIM	`WALLPAPER_FILE_ACCEPT.includes(...)` tail assert (low)	Constant mirror; the acceptance/rejection table matching server sniffing stays.
+frontend/src/lib/share/uploads.test.ts	4	KEEP		Progress isolation, captured destination, abort stops batch, 403 message.
+frontend/src/lib/stores/auth.test.ts	8	KEEP		Auth store transitions: transient vs terminal logout, alerts, anonymous 401, storage failure recovery, login blocked during restore.
+frontend/src/lib/stores/jobs.test.ts	19	TRIM	"ignores updates for unknown jobs" (low)	Trivial guard. Everything else is deterministic race regressions: keep.
+frontend/src/lib/stores/toast.test.ts	2	DELETE-FILE	both tests (medium)	Real 20-30 ms sleeps around a setTimeout lifetime: timer-only, same class as deleted hoverIntent/delayedFlag.
+frontend/src/lib/stores/websocket.test.svelte.ts	0	SUPPORT		Helper (no tests) used by websocket.test.ts.
+frontend/src/lib/stores/websocket.test.ts	8	TRIM	DELETE "delays double on each failed attempt and stop at the maximum" (medium)	Expected array recomputes min(first*2^n, max) from CONFIG: formula mirror. Keep effect self-retry regression, attempt limit terminal state, clean close, reconnect reload races.
+frontend/src/lib/theme/wallpaperAccent.test.ts	6	KEEP		Palette algorithm, contrast, worker boundary rejects url(), accent source migration.
+frontend/src/lib/utils/addMenu.test.ts	DELETED	DELETED-OK		PR deletion agreed: literal menu flags and a type guard.
+frontend/src/lib/utils/appearance.test.ts	2	KEEP		WCAG contrast invariant over accents.
+frontend/src/lib/utils/delayedFlag.test.svelte.ts	DELETED	DELETED-OK		PR deletion agreed: real-sleep timer mechanics.
+frontend/src/lib/utils/driveUsage.test.ts	DELETED	DELETED-OK		PR deletion agreed: threshold constants.
+frontend/src/lib/utils/fileTypes.test.ts	DELETED	DELETED-OK	orphan export FILE_EXTENSIONS	Agreed (expected values derived from the production table). Leaves `export const FILE_EXTENSIONS` used only inside fileTypes.ts: drop the export.
+frontend/src/lib/utils/format.test.ts	DELETED	DELETED-OK		Agreed for display formatting. Borderline: formatRelativeTime past/future rounding feeds share-link expiry text; acceptable loss.
+frontend/src/lib/utils/hoverIntent.test.ts	DELETED	DELETED-OK		PR deletion agreed: real-sleep timer mechanics.
+frontend/src/lib/utils/jobProgress.test.ts	7	TRIM	"older servers without a size still show their percentage" (low)	One-line passthrough. Keep indeterminate vs 0%, weighting, remote-ID hiding.
+frontend/src/lib/utils/thumbnail.test.ts	4	KEEP		Cache key; web vs native format contract matching backend decoders.
+frontend/src/lib/utils/uploadEntries.test.ts	2	TRIM	DELETE "uses the file name when there is no folder path"	Trivial default. Keep parents-first folder ordering.
+frontend/src/lib/utils/wallpaperSync.test.ts	30	KEEP		30 tests: account isolation, persistence, legacy migration, publication-intent races, blocked storage. Keeps fake-indexeddb in use.
+website/src/lib/releases.test.ts	3	KEEP		Release asset parse; off-origin URL and unsafe tag rejection.
+.github/scripts/test_check_release.py	2	KEEP		Release tag validation incl. injection-shaped tags.
+.github/scripts/test_ci_scope.py	5	KEEP		CI job selection; fail-open on missing diff; real git rename.
+frontend/scripts/perf/*.ts (15 scenario scripts)	n/a	KEEP (assertion-level review)		Browser integration suite run by CI perf:browser. Assertions are deterministic (request counts, rendered-element bounds, focus/selection, runtime errors). filesVisibleMs medians are printed as advisory only. Reviewed by grepping every assert, not read line by line.

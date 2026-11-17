@@ -1,17 +1,23 @@
 ---
 import { Download, ArrowUpRight } from '@lucide/astro';
 ---
-<div id="desktop-download" class="space-y-4">
-  <p id="desktop-release-status" class="text-sm leading-relaxed text-text-secondary" role="status">Find published desktop packages on GitHub Releases, or follow the installation guide.</p>
-  <a id="desktop-release-download" hidden class="inline-flex items-center justify-center gap-2 rounded-lg bg-accent-solid px-6 py-3 font-semibold text-white transition-colors hover:bg-accent-solid-hover" href="/docs/desktop/">
-    <Download class="h-5 w-5" /> Download for Linux x86_64
-  </a>
-  <div class="flex flex-wrap gap-x-5 gap-y-3 text-sm">
+<!-- Its parts are rows of the download page's column grid: button, links, notes. -->
+<div id="desktop-download" class="contents">
+  <div>
+    <a id="desktop-release-download" hidden class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-accent-solid px-6 py-3 font-semibold text-white transition-colors hover:bg-accent-solid-hover" href="/docs/desktop/">
+      <Download class="h-5 w-5" /> Download for Linux x86_64
+    </a>
+  </div>
+  <div class="mt-5 flex flex-wrap gap-x-5 gap-y-3 text-sm">
     <a href="/docs/desktop/" class="inline-flex items-center gap-1 text-accent hover:underline">Install, pair & update <ArrowUpRight class="h-4 w-4" /></a>
     <a id="desktop-release-checksums" hidden href="https://github.com/jR4dh3y/BoxBox/releases" class="text-text-secondary hover:text-white hover:underline">SHA-256 checksums</a>
     <a href="https://github.com/jR4dh3y/BoxBox/releases" class="text-text-secondary hover:text-white hover:underline">All releases</a>
   </div>
-  <noscript><p class="text-sm text-text-secondary">Visit <a href="https://github.com/jR4dh3y/BoxBox/releases" class="text-accent underline">GitHub Releases</a> to check for a desktop package, or follow the source-build instructions.</p></noscript>
+  <div class="mt-6 space-y-3 text-sm leading-relaxed text-text-muted">
+    <p id="desktop-release-status" class="text-text-secondary" role="status">Find published desktop packages on GitHub Releases, or follow the installation guide.</p>
+    <noscript><p class="text-text-secondary">Visit <a href="https://github.com/jR4dh3y/BoxBox/releases" class="text-accent underline">GitHub Releases</a> to check for a desktop package, or follow the source-build instructions.</p></noscript>
+    <slot />
+  </div>
 </div>
 <script>
   const status = document.getElementById('desktop-release-status');
