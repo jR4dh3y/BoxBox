@@ -38,10 +38,14 @@ here. Thunar rows are what a mature Linux file manager does, not commitments.
   typed file path opens its folder and selects the file; click on the blank
   path bar, or F2 or Enter on it, opens the editor.
 - "Show in folder" and launch arguments: select the item, accept several
-  paths and `--select PATH`, reject bad input.
-- System file picker through the xdg portal (`desktop_chooser_portal.go`):
-  open, save, save-files, filters, choices, overwrite confirmation, and an
-  explicit `--enable`/`--disable` portal route.
+  paths and `--select PATH`. (`--help`, `--version` and refusing unknown
+  options are done.)
+- File picker (`chooser/`), done: the xdg portal FileChooser backend with
+  open, save, save-files, filters, choices, overwrite confirmation and
+  opt-in routing (`--enable-picker`, `--disable-picker`, Settings → General).
+  Left: mounting unmounted drives and browsing network shares from the
+  dialog, theme icons and thumbnails in its list, a New Folder button, and
+  parenting the dialog to the app's window (GPUI has no xdg-foreign).
 - Register as the default folder handler (`inode/directory`,
   `x-scheme-handler/file`), opt-in.
 - Delete in Trash deletes: the Trash page has per-row buttons, no selection.
@@ -128,7 +132,7 @@ threads (`thumbnail_queue.rs`). Installed freedesktop thumbnailers are still to 
 
 | Svelte | Role | Native scope | PR | Local |
 |---|---|---|---|---|
-| `desktop/TrashPage.svelte` | Trash, restore, delete forever | keep | ✓ `trash.rs` | ✓ `local/trash.rs`, `ui/browser.rs` |
+| `desktop/TrashPage.svelte` | Trash, restore, delete forever | keep | ✓ `trash.rs` | ✓ `local/trash.rs`, `ui/trash.rs`: a table of name, original folder and deletion date, with Restore and Delete per row |
 | `desktop/TransferJobs.svelte` | transfer progress, cancel | keep | ✓ `jobs.rs`, `sse.rs` | ◐ coarse status |
 | `desktop/TransferConflictDialog.svelte` | Skip or Keep both | keep | ✓ `clipboard.rs` | ✓ `transfer.rs`, `workspace/transfers.rs`, `ui/transfer_question.rs`: a paste or drop runs on its own thread and asks as it goes, as Thunar does. A taken name: Skip, Rename (to `name (copy N)`, shown), Replace, or Merge for two folders, which asks again for names that meet inside; the dialog compares both sides' size and date. A failed item: Retry or Skip, and the rest go on. "Do this for the rest" remembers the answer for later items of the same kind. Before starting, too little free space asks to go on anyway. On FAT and exFAT drives, names lose `"*/:<>?\|`, control characters and trailing dots or spaces, inside folders too. A copy pasted into its own folder is named without asking; a move to another filesystem on the same provider copies, then removes the original. The ✕ or Escape cancels the transfer |
 | `desktop/OpenWithDialog.svelte`, `desktop/ApplicationIcon.svelte` | Open With, set default | keep | ✓ `desktop.rs` | ✓ `open_with.rs`, `ui/open_with.rs`; icons from the desktop's icon theme and its parents (`icon_theme.rs`, theme name from the settings portal); "Use as default" beside Open |

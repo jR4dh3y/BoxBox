@@ -2,7 +2,8 @@
 # Installs BoxBox Files for the current user, under ~/.local. No root needed.
 #   ./install.sh                 install or update
 #   ./install.sh --set-default   also make it the default file manager
-#   ./install.sh --uninstall     remove it
+#   ./install.sh --set-picker    also use it for other apps' Open and Save dialogs
+#   ./install.sh --uninstall     remove it, and give the dialogs back
 set -eu
 base=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
@@ -15,13 +16,14 @@ first() { for file; do [ -f "$file" ] && { echo "$file"; return; }; done; echo "
 
 case "${1:-}" in
 --uninstall)
+	[ -x "$bin/boxbox-files" ] && "$bin/boxbox-files" --disable-picker || true
 	rm -f "$bin/boxbox-files" "$desktop" "$icon"
 	echo "Removed BoxBox Files. Settings stay in ${XDG_CONFIG_HOME:-$HOME/.config}/boxbox-gpui."
 	exit 0
 	;;
-"" | --set-default) ;;
+"" | --set-default | --set-picker) ;;
 *)
-	echo "usage: $0 [--set-default | --uninstall]" >&2
+	echo "usage: $0 [--set-default | --set-picker | --uninstall]" >&2
 	exit 2
 	;;
 esac
@@ -41,5 +43,8 @@ install -Dm644 "$(first "$base/io.boxbox.files.svg" "$base/../../frontend/static
 command -v update-desktop-database >/dev/null && update-desktop-database "$data/applications" || true
 if [ "${1:-}" = --set-default ]; then
 	xdg-mime default io.boxbox.files.desktop inode/directory
+fi
+if [ "${1:-}" = --set-picker ]; then
+	"$bin/boxbox-files" --enable-picker
 fi
 echo "Installed BoxBox Files to $bin/boxbox-files."

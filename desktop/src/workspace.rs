@@ -1287,6 +1287,7 @@ impl Workspace {
     ) {
         self.settings_open = true;
         self.settings_section = SettingsSection::General;
+        self.settings_panel.picker = crate::chooser::routing::enabled();
         self.settings_focus.focus(window);
         cx.notify();
     }
@@ -1476,6 +1477,6 @@ impl Render for Workspace {
 }
 
 #[cfg(test)]
-mod parity_test;
+pub(crate) mod parity_test;
 #[cfg(test)]
 mod features_test;

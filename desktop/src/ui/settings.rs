@@ -19,6 +19,28 @@ use crate::settings_state::{
 use crate::theme::*;
 use crate::workspace::{IconStyle, Preferences, SettingsSection, StartLocation, Workspace};
 
+const ACCENT_SOURCES: [(bool, &str); 2] = [(true, "From wallpaper"), (false, "Custom")];
+
+/// What the window shows behind the files. A see-through window hides any wallpaper.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Background {
+    Solid,
+    Wallpaper,
+    Transparent,
+}
+
+impl Background {
+    const OPTIONS: [(Self, &'static str); 3] = [(Self::Solid, "Solid color"), (Self::Wallpaper, "Wallpaper"), (Self::Transparent, "Transparent")];
+
+    fn of(settings: &DesktopSettings) -> Self {
+        match (settings.transparent, settings.wallpaper.is_some()) {
+            (true, _) => Self::Transparent,
+            (false, true) => Self::Wallpaper,
+            (false, false) => Self::Solid,
+        }
+    }
+}
+
 /// Which settings text field a dialog input uses.
 #[derive(Clone, Copy)]
 pub(crate) enum SettingsField {
@@ -101,6 +123,12 @@ impl Workspace {
 
     fn render_general_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = &self.preferences;
+        let picker = {
+            let workspace = cx.entity().downgrade();
+            Toggle::new("setting-picker", self.settings_panel.picker).disabled(self.settings_panel.busy).on_change(move |on, _, _, cx| {
+                workspace.update(cx, |this, cx| this.set_picker(on, cx)).ok();
+            })
+        };
         settings_rows(vec![
             SettingsRow::new("Show hidden files")
                 .control(self.preference_toggle("setting-hidden", p.show_hidden_files, |p| &mut p.show_hidden_files, cx)),
@@ -130,6 +158,7 @@ impl Workspace {
                 this.preferences.default_view = value;
                 this.commit_preferences(cx);
             })),
+            SettingsRow::new("Use BoxBox for Open and Save dialogs").control(picker),
             SettingsRow::new("Start location").control(self.select(
                 "setting-start",
                 p.start_location,
@@ -145,36 +174,83 @@ impl Workspace {
     }
 
     fn render_appearance_settings(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
-        const ACCENT_SOURCES: [(bool, &str); 2] = [(true, "From wallpaper"), (false, "Custom")];
         let preferences = &self.preferences;
         let settings = &self.desktop_settings;
-        let has_wallpaper = settings.wallpaper.is_some();
-        let wallpaper_label =
-            settings.wallpaper.as_ref().and_then(|path| path.file_name()).map(|name| name.to_string_lossy().into_owned());
-        let mut rows = vec![SettingsRow::new("Accent color").control(self.select(
-            "accent-source",
-            settings.accent_from_wallpaper,
-            &ACCENT_SOURCES,
-            176.,
+        let background = Background::of(settings);
+        let note = |text: String, color: u32| div().pb(px(8.)).text_xs_tw().text_color(c(color)).child(text);
+
+        // What the window shows behind the files; each choice brings only its own options.
+        let mut look = vec![SettingsRow::new("Background").control(self.select(
+            "setting-background",
+            background,
+            &Background::OPTIONS,
+            160.,
             cx,
-            |this, from_wallpaper, cx| {
-                this.desktop_settings.accent_from_wallpaper = from_wallpaper;
-                this.save_desktop_settings(cx);
-            },
+            |this, choice, cx| this.set_background(choice, cx),
         ))];
-        let accent_note = settings.accent_from_wallpaper.then(|| match &self.wallpaper {
-            _ if !has_wallpaper => Some("Choose a wallpaper first".to_string()),
-            crate::workspace::appearance::WallpaperState::Ready { accent: Some(_), .. } => None,
-            crate::workspace::appearance::WallpaperState::Ready { accent: None, .. } => Some(format!(
-                "No usable color; using {}",
-                if settings.custom_accent.is_some() { "your custom color" } else { "default blue" }
-            )),
-            _ => Some("Matching wallpaper…".to_string()),
-        }).flatten();
-        if !settings.accent_from_wallpaper {
+        if background == Background::Wallpaper {
+            let label = settings.wallpaper.as_ref().and_then(|path| path.file_name()).map(|name| name.to_string_lossy().into_owned());
+            look.push(SettingsRow::new("Image").control(
+                div()
+                    .flex()
+                    .min_w_0()
+                    .items_center()
+                    .gap(px(8.))
+                    .when_some(label, |row, label| row.child(div().max_w(px(160.)).truncate().text_xs_tw().text_color(c(TEXT_SECONDARY)).child(label)))
+                    .child(
+                        Button::new("wallpaper-choose")
+                            .label("Change…")
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Sm)
+                            .on_click(cx.listener(|this, _, _, cx| this.choose_wallpaper(cx))),
+                    ),
+            ));
+            look.push(SettingsRow::new("Fit").control(self.select(
+                "setting-wallpaper-fit",
+                settings.wallpaper_fit,
+                &WallpaperFit::OPTIONS,
+                160.,
+                cx,
+                |this, fit, cx| {
+                    this.desktop_settings.wallpaper_fit = fit;
+                    this.save_desktop_settings(cx);
+                },
+            )));
+            look.push(SettingsRow::new("Frosted glass").control(self.preference_toggle("setting-frost", preferences.frosted_glass, |p| &mut p.frosted_glass, cx)));
+            look.push(SettingsRow::new("Tint panels with its colors").control(self.preference_toggle(
+                "setting-tint",
+                preferences.wallpaper_tint,
+                |p| &mut p.wallpaper_tint,
+                cx,
+            )));
+        }
+        let look_note = match (&self.wallpaper, background) {
+            (crate::workspace::appearance::WallpaperState::Failed(error), Background::Wallpaper) => Some(note(error.clone(), DANGER)),
+            (_, Background::Transparent) => Some(note("The desktop shows through. Blur, if any, comes from your compositor.".into(), TEXT_SECONDARY)),
+            _ => None,
+        };
+
+        // The accent can follow the wallpaper only while one is shown.
+        let mut accent = Vec::new();
+        let from_wallpaper = background == Background::Wallpaper && settings.accent_from_wallpaper;
+        if background == Background::Wallpaper {
+            accent.push(SettingsRow::new("Accent color").control(self.select(
+                "accent-source",
+                settings.accent_from_wallpaper,
+                &ACCENT_SOURCES,
+                160.,
+                cx,
+                |this, from_wallpaper, cx| {
+                    this.desktop_settings.accent_from_wallpaper = from_wallpaper;
+                    this.save_desktop_settings(cx);
+                },
+            )));
+        }
+        if !from_wallpaper {
             let field = self.accent_field.clone();
             let focused = field.read(cx).is_focused(window);
-            rows.push(SettingsRow::new("Custom color").control(
+            let label = if background == Background::Wallpaper { "Custom color" } else { "Accent color" };
+            accent.push(SettingsRow::new(label).control(
                 // A swatch, the hex field (w-24) and Default.
                 div()
                     .flex()
@@ -204,93 +280,78 @@ impl Workspace {
                     ),
             ));
         }
+        let accent_note = match &self.wallpaper {
+            _ if !from_wallpaper => None,
+            crate::workspace::appearance::WallpaperState::Ready { accent: Some(_), .. } => None,
+            crate::workspace::appearance::WallpaperState::Ready { accent: None, .. } => Some(format!(
+                "No usable color in this image; using {}",
+                if settings.custom_accent.is_some() { "your custom color" } else { "the default blue" }
+            )),
+            crate::workspace::appearance::WallpaperState::Failed(_) => None,
+            _ => Some("Matching wallpaper…".to_string()),
+        };
+
         // Selects are w-40.
-        rows.push(SettingsRow::new("File icons").control(self.select("setting-icons", preferences.file_icons, &IconStyle::OPTIONS, 160., cx, |this, value, cx| {
+        let icons = vec![SettingsRow::new("File icons").control(self.select("setting-icons", preferences.file_icons, &IconStyle::OPTIONS, 160., cx, |this, value, cx| {
             this.preferences.file_icons = value;
             this.commit_preferences(cx);
-        })));
-        rows.push(SettingsRow::new("Transparent background").control({
-            let workspace = cx.entity().downgrade();
-            Toggle::new("setting-transparent", settings.transparent).on_change(move |value, _, _, cx| {
-                workspace
-                    .update(cx, |this, cx| {
-                        this.desktop_settings.transparent = value;
-                        this.save_desktop_settings(cx);
-                    })
-                    .ok();
-            })
-        }));
-        // A wallpaper would not show behind a see-through window.
-        let transparent = settings.transparent;
-        if !transparent {
-            rows.push(SettingsRow::new("Wallpaper").control(
-                div()
-                    .flex()
-                    .min_w_0()
-                    .items_center()
-                    .gap(px(8.))
-                    .when_some(wallpaper_label, |row, label| {
-                        row.child(div().max_w(px(144.)).truncate().text_xs_tw().text_color(c(TEXT_SECONDARY)).child(label))
-                    })
-                    .child(
-                        Button::new("wallpaper-choose")
-                            .label(if has_wallpaper { "Change" } else { "Choose" })
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Sm)
-                            .on_click(cx.listener(|this, _, _, cx| this.choose_wallpaper(cx))),
-                    )
-                    .when(has_wallpaper, |row| {
-                        row.child(
-                            Button::new("wallpaper-remove")
-                                .label("Remove")
-                                .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Sm)
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.desktop_settings.wallpaper = None;
-                                    this.reload_wallpaper(cx);
-                                    this.save_desktop_settings(cx);
-                                })),
-                        )
-                    }),
-            ));
-        }
-        if has_wallpaper && !transparent {
-            rows.push(SettingsRow::new("Wallpaper fit").control(self.select(
-                "setting-wallpaper-fit",
-                settings.wallpaper_fit,
-                &WallpaperFit::OPTIONS,
-                160.,
-                cx,
-                |this, fit, cx| {
-                    this.desktop_settings.wallpaper_fit = fit;
-                    this.save_desktop_settings(cx);
-                },
-            )));
-            rows.push(SettingsRow::new("Tint components from wallpaper").control(self.preference_toggle(
-                "setting-tint",
-                preferences.wallpaper_tint,
-                |p| &mut p.wallpaper_tint,
-                cx,
-            )));
-            rows.push(SettingsRow::new("Frosted glass").control(self.preference_toggle(
-                "setting-frost",
-                preferences.frosted_glass,
-                |p| &mut p.frosted_glass,
-                cx,
-            )));
-        }
-        let failure = match &self.wallpaper {
-            crate::workspace::appearance::WallpaperState::Failed(error) => Some(error.clone()),
-            _ => None,
-        };
+        }))];
         div()
             .flex()
             .flex_col()
-            .child(settings_rows(rows.drain(..1).collect()))
-            // The wallpaper accent's state sits under its select, as on the web.
-            .when_some(accent_note, |panel, note| panel.child(div().py(px(8.)).text_xs_tw().text_color(c(TEXT_SECONDARY)).child(note)))
-            .child(div().border_t_1().border_color(c(BORDER_SECONDARY)).child(settings_rows(rows)))
-            .when_some(failure, |panel, error| panel.child(div().py(px(8.)).text_xs_tw().text_color(c(DANGER)).child(error)))
+            .child(settings_rows(look))
+            .when_some(look_note, |panel, note| panel.child(note))
+            .child(div().border_t_1().border_color(c(BORDER_SECONDARY)).child(settings_rows(accent)))
+            .when_some(accent_note, |panel, text| panel.child(note(text, TEXT_SECONDARY)))
+            .child(div().border_t_1().border_color(c(BORDER_SECONDARY)).child(settings_rows(icons)))
+    }
+
+    /// Routes other apps' file dialogs to BoxBox, or back. The portal restarts, off the UI thread.
+    fn set_picker(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.settings_panel.busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    match on {
+                        true => std::env::current_exe().map_err(anyhow::Error::from).and_then(|program| crate::chooser::routing::enable(&program)),
+                        false => crate::chooser::routing::disable(),
+                    }
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                this.settings_panel.busy = false;
+                match result {
+                    Ok(_) => {
+                        this.settings_panel.picker = on;
+                        this.settings_panel.notice = Some(if on { "Apps now ask BoxBox for files. Apps already open may need a restart." } else { "Apps use the previous Open and Save dialogs again." }.into());
+                    }
+                    Err(error) => this.settings_panel.error = Some(format!("Could not change the file dialogs: {error:#}")),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Solid drops the wallpaper; Transparent keeps it for later; Wallpaper
+    /// shows the kept one or asks for one.
+    fn set_background(&mut self, choice: Background, cx: &mut Context<Self>) {
+        match choice {
+            Background::Solid => {
+                self.desktop_settings.transparent = false;
+                if self.desktop_settings.wallpaper.take().is_some() {
+                    self.reload_wallpaper(cx);
+                }
+            }
+            Background::Transparent => self.desktop_settings.transparent = true,
+            Background::Wallpaper if self.desktop_settings.wallpaper.is_some() => self.desktop_settings.transparent = false,
+            // Shown once an image is chosen; a cancelled picker changes nothing.
+            Background::Wallpaper => return self.choose_wallpaper(cx),
+        }
+        self.save_desktop_settings(cx);
     }
 
     fn settings_button(

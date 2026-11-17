@@ -2,6 +2,8 @@
 
 mod api;
 mod assets;
+mod chooser;
+mod cli;
 mod components;
 mod devices;
 mod filemanager1;
@@ -43,17 +45,51 @@ use crate::api::Api;
 use crate::workspace::Workspace;
 
 fn main() {
-    if std::env::args().nth(1).as_deref() == Some("--profile-summary") {
-        let Some(trace) = std::env::args().nth(2) else {
-            eprintln!("usage: boxbox-gpui --profile-summary <trace.json>");
-            std::process::exit(2);
-        };
-        if let Err(error) = profile::summary::run(&trace) {
-            eprintln!("{error:#}");
-            std::process::exit(1);
+    let (initial_path, gallery) = match cli::parse(std::env::args_os().skip(1)) {
+        Ok(cli::Command::Open(path)) => (path, false),
+        Ok(cli::Command::Gallery) => (String::new(), true),
+        Ok(cli::Command::Portal) => {
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+            #[cfg(target_os = "linux")]
+            render_gpu::follow_compositor();
+            chooser::run(system_fonts::resolve().sans);
+            return;
         }
-        return;
-    }
+        Ok(cli::Command::SetPicker(enable)) => {
+            let result = match enable {
+                true => std::env::current_exe().map_err(anyhow::Error::from).and_then(|program| chooser::routing::enable(&program)),
+                false => chooser::routing::disable(),
+            };
+            match result {
+                Ok(path) if enable => println!("Open and Save dialogs now use BoxBox ({}).", path.display()),
+                Ok(path) => println!("Open and Save dialogs are back to the previous choice ({}).", path.display()),
+                Err(error) => {
+                    eprintln!("boxbox-files: {error:#}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        Ok(cli::Command::Help) => {
+            print!("{}", cli::USAGE);
+            return;
+        }
+        Ok(cli::Command::Version) => {
+            println!("boxbox-files {}", env!("CARGO_PKG_VERSION"));
+            return;
+        }
+        Ok(cli::Command::ProfileSummary(trace)) => {
+            if let Err(error) = profile::summary::run(&trace) {
+                eprintln!("{error:#}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        Err(cli::Error(message)) => {
+            eprintln!("boxbox-files: {message}\nTry 'boxbox-files --help'.");
+            std::process::exit(2);
+        }
+    };
     profile::init();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     // Sets environment variables, so it runs before the threads below read theirs.
@@ -82,8 +118,7 @@ fn main() {
         eprintln!("Could not open local files: {error:#}");
         std::process::exit(1);
     });
-    let initial_path = std::env::args().nth(1).unwrap_or_default();
-    if std::env::args().nth(1).as_deref() == Some("--gallery") {
+    if gallery {
         run_gallery(fonts.join().expect("font lookup panicked").sans);
         return;
     }

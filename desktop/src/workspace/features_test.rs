@@ -1177,9 +1177,9 @@ fn a_select_opens_its_list_right_under_it(cx: &mut TestAppContext) {
     let (_view, cx, _fixture) = open(cx, &["a.txt"]);
     cx.simulate_keystrokes("ctrl-,");
     click(cx, "settings-appearance");
-    click(cx, "accent-source");
-    let control = cx.debug_bounds("accent-source").unwrap();
-    let first = cx.debug_bounds("accent-source-0").unwrap();
+    click(cx, "setting-background");
+    let control = cx.debug_bounds("setting-background").unwrap();
+    let first = cx.debug_bounds("setting-background-0").unwrap();
     let gap = first.top() - control.bottom();
     assert!(gap >= gpui::px(0.) && gap < gpui::px(12.), "the list starts just below the control, {gap:?} away");
 }
@@ -1189,8 +1189,10 @@ fn a_transparent_background_replaces_the_wallpaper(cx: &mut TestAppContext) {
     let (view, cx, _fixture) = open(cx, &["a.txt"]);
     cx.simulate_keystrokes("ctrl-,");
     click(cx, "settings-appearance");
-    assert!(cx.debug_bounds("wallpaper-choose").is_some());
-    click(cx, "setting-transparent");
+    assert!(cx.debug_bounds("wallpaper-choose").is_none(), "no wallpaper options without a wallpaper");
+    assert!(cx.debug_bounds("accent-source").is_none(), "nor an accent taken from one");
+    click(cx, "setting-background");
+    click(cx, "setting-background-2");
     settle(cx);
     view.read_with(cx, |workspace, _| {
         assert!(workspace.desktop_settings.transparent);
@@ -1199,7 +1201,8 @@ fn a_transparent_background_replaces_the_wallpaper(cx: &mut TestAppContext) {
         assert!(workspace.shell_background().a < 1., "panels are tinted glass over the desktop");
     });
     assert!(DesktopSettings::load().transparent, "the choice is saved");
-    click(cx, "setting-transparent");
+    click(cx, "setting-background");
+    click(cx, "setting-background-0");
     settle(cx);
     view.read_with(cx, |workspace, _| assert_eq!(workspace.window_transparent, Some(false)));
 }
@@ -1228,18 +1231,18 @@ fn pressing_an_open_select_closes_it(cx: &mut TestAppContext) {
     let (view, cx, _fixture) = open(cx, &["a.txt"]);
     cx.simulate_keystrokes("ctrl-,");
     click(cx, "settings-appearance");
-    click(cx, "accent-source");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("accent-source")));
-    click(cx, "accent-source");
+    click(cx, "setting-background");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("setting-background")));
+    click(cx, "setting-background");
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, None, "a second press closes the list"));
-    click(cx, "accent-source");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("accent-source"), "and a third opens it again"));
+    click(cx, "setting-background");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("setting-background"), "and a third opens it again"));
     // A press elsewhere closes it, and the next press on the control opens it.
     click(cx, "settings-appearance");
     cx.run_until_parked();
-    click(cx, "accent-source");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("accent-source")));
+    click(cx, "setting-background");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("setting-background")));
 }
 
 fn selected_names(view: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String> {
@@ -1644,4 +1647,37 @@ fn permission_clicks_are_all_written_after_properties_closes(cx: &mut TestAppCon
     });
     cx.run_until_parked();
     assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
+}
+
+#[gpui::test]
+fn wallpaper_options_show_only_while_the_wallpaper_does(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a.txt"]);
+    let wallpaper = fixture.root.join("wallpaper.png");
+    image::RgbImage::from_pixel(64, 64, image::Rgb([200, 40, 30])).save(&wallpaper).unwrap();
+    cx.simulate_keystrokes("ctrl-,");
+    click(cx, "settings-appearance");
+    let default_accent = view.read_with(cx, |workspace, _| workspace.accent_hex());
+    cx.update(|_, app| view.update(app, |workspace, cx| workspace.install_wallpaper(wallpaper, cx)));
+    cx.run_until_parked();
+    settle(cx);
+    assert!(cx.debug_bounds("setting-wallpaper-fit").is_some());
+    assert!(cx.debug_bounds("accent-source").is_some());
+    let wallpaper_accent = view.read_with(cx, |workspace, _| workspace.accent_hex());
+    assert_ne!(wallpaper_accent, default_accent, "the accent follows the wallpaper");
+    // Transparent hides the wallpaper, so its options and its accent go too.
+    click(cx, "setting-background");
+    click(cx, "setting-background-2");
+    settle(cx);
+    view.read_with(cx, |workspace, _| assert!(workspace.desktop_settings.transparent));
+    // The test platform keeps bounds from earlier frames, so the new row proves the redraw.
+    assert!(cx.debug_bounds("accent-color-input").is_some(), "the accent is a plain color now");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.accent_hex(), default_accent));
+    // Back to Wallpaper: the kept image returns without a picker.
+    click(cx, "setting-background");
+    click(cx, "setting-background-1");
+    settle(cx);
+    view.read_with(cx, |workspace, _| {
+        assert!(!workspace.desktop_settings.transparent);
+        assert_eq!(workspace.accent_hex(), wallpaper_accent);
+    });
 }

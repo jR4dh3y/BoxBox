@@ -405,6 +405,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn deletion_dates_read_both_forms() {
+        assert_eq!(deletion_millis("2026-11-15T11:20:01Z"), Some(1_794_741_601_000));
+        let local = deletion_millis("2026-11-15T11:20:01").unwrap();
+        assert_eq!(full_date(Some(local)), "15 Nov 2026, 11:20");
+        assert_eq!(deletion_millis("yesterday"), None);
+    }
+
+    #[test]
     fn sizes_match_format_ts() {
         assert_eq!(file_size(0), "0 B");
         assert_eq!(file_size(1023), "1023 B");
@@ -439,6 +447,16 @@ pub fn display_name(name: &str, is_dir: bool, show_extensions: bool) -> String {
         .filter(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
         .map(|(stem, _)| stem.to_string())
         .unwrap_or_else(|| name.to_string())
+}
+
+/// A Trash deletion date as milliseconds: RFC 3339 from a server, or the
+/// trash spec's zone-less local time.
+pub fn deletion_millis(text: &str) -> Option<i64> {
+    if let Ok(date) = DateTime::parse_from_rfc3339(text) {
+        return Some(date.timestamp_millis());
+    }
+    let naive = chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S").ok()?;
+    naive.and_local_timezone(Local).earliest().map(|date| date.timestamp_millis())
 }
 
 /// "13 Nov 2026, 15:31": the whole date, for Properties.

@@ -20,6 +20,8 @@ struct Database {
     /// `mime/icons` and `mime/generic-icons`: a type's own icon name and its family's.
     icons: HashMap<String, String>,
     generic_icons: HashMap<String, String>,
+    /// `mime/subclasses`: each type's parents, as `text/x-python` is a `text/plain`.
+    parents: HashMap<String, Vec<String>>,
 }
 
 /// `$XDG_DATA_HOME`, then `$XDG_DATA_DIRS`: the user's files win.
@@ -44,6 +46,11 @@ fn database() -> &'static Database {
             if let Ok(text) = std::fs::read_to_string(dir.join("mime/aliases")) {
                 for (alias, canonical) in text.lines().filter_map(|line| line.split_once(' ')) {
                     database.aliases.entry(alias.to_string()).or_insert_with(|| canonical.trim().to_string());
+                }
+            }
+            if let Ok(text) = std::fs::read_to_string(dir.join("mime/subclasses")) {
+                for (child, parent) in text.lines().filter_map(|line| line.split_once(' ')) {
+                    database.parents.entry(child.to_string()).or_default().push(parent.trim().to_string());
                 }
             }
             for (file, table) in [("mime/icons", &mut database.icons), ("mime/generic-icons", &mut database.generic_icons)] {
@@ -125,6 +132,41 @@ fn icon_names_in(database: &Database, mime: &str) -> Vec<String> {
     names
 }
 
+/// Whether `mime` is `wanted`, a kind of it, or under a `media/*` wildcard, as
+/// `g_content_type_is_a` answers. Every type is an `application/octet-stream`,
+/// and every `text/*` a `text/plain`.
+pub fn is_a(mime: &str, wanted: &str) -> bool {
+    is_a_in(database(), mime, wanted)
+}
+
+fn is_a_in(database: &Database, mime: &str, wanted: &str) -> bool {
+    let wanted = canonical_in(database, wanted);
+    if wanted == "application/octet-stream" || wanted == "*/*" {
+        return true;
+    }
+    let mut pending = vec![canonical_in(database, mime).to_string()];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(current) = pending.pop() {
+        if !seen.insert(current.clone()) {
+            continue;
+        }
+        let matched = match wanted.strip_suffix("/*") {
+            Some(media) => current.split('/').next() == Some(media),
+            None => current == wanted,
+        };
+        if matched {
+            return true;
+        }
+        if let Some(parents) = database.parents.get(&current) {
+            pending.extend(parents.iter().map(|parent| canonical_in(database, parent).to_string()));
+        }
+        if current.starts_with("text/") && current != "text/plain" {
+            pending.push("text/plain".into());
+        }
+    }
+    false
+}
+
 /// The canonical name of a type that may be an alias, such as `video/x-matroska`.
 pub fn canonical(mime: &str) -> &str {
     canonical_in(database(), mime)
@@ -141,6 +183,7 @@ mod tests {
             aliases: [("video/x-matroska".to_string(), "video/matroska".to_string())].into_iter().collect(),
             icons: HashMap::new(),
             generic_icons: [("text/x-python".to_string(), "text-x-script".to_string())].into_iter().collect(),
+            parents: HashMap::new(),
         }
     }
 
@@ -168,6 +211,21 @@ mod tests {
         let database = database();
         assert_eq!(lookup(&database, "main.C").as_deref(), Some("text/x-c++src"));
         assert_eq!(lookup(&database, "main.c").as_deref(), Some("text/x-csrc"));
+    }
+
+    #[test]
+    fn types_are_kinds_of_their_parents() {
+        let database = Database {
+            parents: [("application/x-shellscript".to_string(), vec!["application/x-executable".to_string(), "text/plain".to_string()])].into_iter().collect(),
+            aliases: [("video/x-matroska".to_string(), "video/matroska".to_string())].into_iter().collect(),
+            ..Database::default()
+        };
+        assert!(is_a_in(&database, "application/x-shellscript", "text/plain"));
+        assert!(is_a_in(&database, "text/x-python", "text/plain"));
+        assert!(is_a_in(&database, "image/png", "image/*"));
+        assert!(is_a_in(&database, "video/x-matroska", "video/matroska"));
+        assert!(!is_a_in(&database, "image/png", "text/plain"));
+        assert!(is_a_in(&database, "image/png", "application/octet-stream"));
     }
 
     #[test]

@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{bail, ensure, Context as _, Result};
-use chrono::Utc;
+use chrono::Local;
 
 use crate::api::TrashItem;
 
@@ -222,7 +222,8 @@ fn store_entry(root: &TrashRoot, source: &Path, path_in_info: &Path) -> Result<R
             continue;
         }
         let encoded_path = encode_path(path_in_info);
-        let deleted_at = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+        // The trash spec stores local time, without a zone.
+        let deleted_at = Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
         let body = format!("[Trash Info]\nPath={encoded_path}\nDeletionDate={deleted_at}\n");
         match write_info_new(&info_path, body.as_bytes()) {
             Ok(()) => {}

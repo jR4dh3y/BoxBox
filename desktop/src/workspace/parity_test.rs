@@ -5,7 +5,7 @@ struct ProbeServer(std::process::Child);
 
 /// Points the settings files at a temporary folder. Tests that render a workspace
 /// share the environment, so they take turns.
-pub(super) struct TestConfig {
+pub(crate) struct TestConfig {
     previous: Option<std::ffi::OsString>,
     previous_cache: Option<std::ffi::OsString>,
     previous_state: Option<std::ffi::OsString>,
@@ -14,7 +14,7 @@ pub(super) struct TestConfig {
 }
 
 impl TestConfig {
-    pub(super) fn new(path: std::path::PathBuf) -> Self {
+    pub(crate) fn new(path: std::path::PathBuf) -> Self {
         static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let turn = TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let previous = std::env::var_os("XDG_CONFIG_HOME");
@@ -207,7 +207,8 @@ fn desktop_workflow(cx: &mut TestAppContext) {
         assert!(workspace.preferences.frosted_glass);
         assert!(workspace.preferences.wallpaper_tint);
     });
-    click(cx, "wallpaper-remove");
+    click(cx, "setting-background");
+    click(cx, "setting-background-0");
     view.read_with(cx, |workspace, _| assert!(!workspace.has_wallpaper()));
     assert!(DesktopSettings::load().wallpaper.is_none());
     cx.simulate_keystrokes("escape ctrl-t ctrl-tab");

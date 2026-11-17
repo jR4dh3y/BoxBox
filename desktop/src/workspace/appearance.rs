@@ -149,6 +149,8 @@ impl Workspace {
                 match result {
                     Ok((path, image)) => {
                         this.desktop_settings.wallpaper = Some(path);
+                        // A chosen wallpaper is meant to be seen.
+                        this.desktop_settings.transparent = false;
                         this.wallpaper = image;
                         this.save_desktop_settings(cx);
                     }
@@ -202,7 +204,7 @@ impl Workspace {
     }
 
     pub(crate) fn accent_hex(&self) -> u32 {
-        if self.desktop_settings.accent_from_wallpaper {
+        if self.desktop_settings.accent_from_wallpaper && !self.transparent() {
             if let WallpaperState::Ready { accent: Some(accent), .. } = self.wallpaper { return accent; }
         }
         self.desktop_settings.custom_accent.unwrap_or_else(|| self.desktop_settings.accent.hex())
@@ -296,7 +298,7 @@ impl Workspace {
     }
 }
 
-fn mix(color: u32, base: u32, amount: f32) -> u32 {
+pub(crate) fn mix(color: u32, base: u32, amount: f32) -> u32 {
     let channel = |shift: u32| {
         let foreground = ((color >> shift) & 255u32) as f32;
         let background = ((base >> shift) & 255u32) as f32;

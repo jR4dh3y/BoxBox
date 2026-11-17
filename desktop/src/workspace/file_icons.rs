@@ -151,12 +151,15 @@ impl Workspace {
     pub(crate) fn glyph_style(&self, api: &Api, item: &FileInfo) -> GlyphStyle {
         let kind = crate::format::Kind::of(&item.name, item.is_dir);
         let special = if item.is_dir && api.is_local() { self.file_icons.special.get(&item.path).copied() } else { None };
-        let accent = self.accent_hex();
-        let tint = match (self.preferences.file_icons, kind) {
-            (crate::workspace::IconStyle::Tinted, crate::format::Kind::Folder) => Some(accent),
+        GlyphStyle { glyph: kind.glyph(), tint: self.kind_tint(kind), emblem: special.and_then(emblem) }
+    }
+
+    /// The glyph's colour under the chosen icon style; `None` keeps it grey.
+    pub(crate) fn kind_tint(&self, kind: crate::format::Kind) -> Option<u32> {
+        match (self.preferences.file_icons, kind) {
+            (crate::workspace::IconStyle::Tinted, crate::format::Kind::Folder) => Some(self.accent_hex()),
             (crate::workspace::IconStyle::Tinted, kind) => kind.tint(),
             _ => None,
-        };
-        GlyphStyle { glyph: kind.glyph(), tint, emblem: special.and_then(emblem) }
+        }
     }
 }

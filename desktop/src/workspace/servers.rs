@@ -110,7 +110,7 @@ impl Servers {
     }
 }
 
-enum Connected {
+pub(crate) enum Connected {
     Ready(Arc<Api>, Vec<DriveStats>),
     NeedsPairing(String),
 }
@@ -122,7 +122,7 @@ fn client_name() -> String {
 }
 
 /// The saved connection with its keyring credential, and its drives once the server accepts it.
-fn connect(connection: &SavedConnection) -> Result<Connected> {
+pub(crate) fn connect(connection: &SavedConnection) -> Result<Connected> {
     let Some(credential) = crate::secrets::lookup(&connection.id)? else {
         return Ok(Connected::NeedsPairing("This computer is not paired with the server yet.".into()));
     };

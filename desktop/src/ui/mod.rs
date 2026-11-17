@@ -25,6 +25,7 @@ pub(crate) use settings::SettingsField;
 mod sidebar;
 mod status_bar;
 mod tabs;
+mod trash;
 mod toolbar;
 
 use gpui::{px, svg, Rgba, Styled, Svg};

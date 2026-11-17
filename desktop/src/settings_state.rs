@@ -225,6 +225,8 @@ pub(crate) struct SettingsPanelState {
     pub(crate) error: Option<String>,
     pub(crate) notice: Option<String>,
     pub(crate) share_request: u64,
+    /// Other apps' Open and Save dialogs are BoxBox's; read when Settings opens.
+    pub(crate) picker: bool,
 }
 
 impl Default for SettingsPanelState {
@@ -236,6 +238,7 @@ impl Default for SettingsPanelState {
             error: None,
             notice: None,
             share_request: 0,
+            picker: false,
         }
     }
 }

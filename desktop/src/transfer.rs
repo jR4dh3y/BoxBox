@@ -336,12 +336,13 @@ impl Run<'_> {
 }
 
 /// Two virtual paths on one local provider that name the same file, such as
-/// `home/a.txt` and the same file through the System drive.
+/// `home/a.txt` and the same file through the System drive. A final link is
+/// its own entry, not the file it points to.
 fn same_local_file(api: &Api, left: &str, right: &str) -> bool {
     use std::os::unix::fs::MetadataExt as _;
     let identity = |path: &str| {
-        let real = api.local_path(path).ok().flatten()?;
-        fs::metadata(real).ok().map(|metadata| (metadata.dev(), metadata.ino()))
+        let real = api.entry_path(path).ok().flatten()?;
+        fs::symlink_metadata(real).ok().map(|metadata| (metadata.dev(), metadata.ino()))
     };
     identity(left).is_some_and(|left| identity(right) == Some(left))
 }
@@ -612,6 +613,21 @@ mod tests {
         assert_eq!(run(&job(&api, Mode::Move, &["dst/a.txt"], "alias"), &ask).unwrap(), Outcome::default());
         assert!(root.0.join("dst/a.txt").exists());
         assert!(!root.0.join("dst/a (copy 1).txt").exists());
+    }
+
+    #[test]
+    fn moving_a_link_onto_its_target_asks() {
+        let (root, api) = fixture(&["dst/a.txt", "src/"]);
+        std::os::unix::fs::symlink(root.0.join("dst/a.txt"), root.0.join("src/a.txt")).unwrap();
+        let asked = std::cell::Cell::new(false);
+        let ask = |question: Question, _| {
+            assert!(matches!(question, Question::Conflict { .. }));
+            asked.set(true);
+            (Answer::Skip, false)
+        };
+        run(&job(&api, Mode::Move, &["src/a.txt"], "dst"), &ask).unwrap();
+        assert!(asked.get(), "a link and its target are two entries");
+        assert!(fs::symlink_metadata(root.0.join("src/a.txt")).unwrap().file_type().is_symlink());
     }
 
     #[test]

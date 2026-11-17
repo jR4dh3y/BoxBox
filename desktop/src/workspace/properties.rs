@@ -29,6 +29,8 @@ pub(crate) struct PropertiesState {
 struct ModeWrites {
     running: bool,
     next: Option<u32>,
+    /// Counts clicks, so a read-back that a later click overtook is dropped.
+    clicks: u64,
 }
 
 impl Drop for PropertiesState {
@@ -177,6 +179,7 @@ impl Workspace {
         cx.notify();
         {
             let mut queue = writes.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            queue.clicks += 1;
             if queue.running {
                 queue.next = Some(mode);
                 return;
@@ -184,13 +187,14 @@ impl Workspace {
             queue.running = true;
         }
         // The task, not the dialog, owns the queue: closing Properties still writes every click.
+        let latest = writes.clone();
         cx.spawn(async move |this, cx| {
-            let (failed, read) = cx
+            let (failed, read, clicks) = cx
                 .background_executor()
                 .spawn(async move {
                     let mut mode = mode;
                     let mut failed = None;
-                    loop {
+                    let clicks = loop {
                         if let Err(error) = chmod(&path, mode) {
                             failed = Some(format!("{error:#}"));
                         }
@@ -199,18 +203,19 @@ impl Workspace {
                             Some(next) => mode = next,
                             None => {
                                 queue.running = false;
-                                break;
+                                break queue.clicks;
                             }
                         }
-                    }
-                    (failed, ownership(&path))
+                    };
+                    (failed, ownership(&path), clicks)
                 })
                 .await;
             this.update(cx, |this, cx| {
                 if let Some(error) = failed {
                     this.report(Err(format!("Could not change the permissions: {error}")), cx);
                 }
-                if let Some(state) = this.properties.as_mut().filter(|state| Arc::ptr_eq(&state.cancel, &shown)) {
+                let current = latest.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clicks == clicks;
+                if let Some(state) = this.properties.as_mut().filter(|state| current && Arc::ptr_eq(&state.cancel, &shown)) {
                     if let Ok(read) = read {
                         state.ownership = Some(Load::Loaded(read));
                     }

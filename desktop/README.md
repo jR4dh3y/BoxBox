@@ -63,7 +63,7 @@ On Linux, GPUI needs Vulkan and the development packages for xkbcommon, wayland,
 
 ## Install
 
-Release downloads hold a `boxbox-desktop-v<version>-linux-amd64.tar.gz` archive. Extract it and run `./install.sh` without sudo. It installs `boxbox-files` to `~/.local/bin` with a desktop entry and icon. Pass `--set-default` to make it the default folder handler, or `--uninstall` to remove it; settings in `~/.config/boxbox-gpui` are kept. From a checkout, `bun run install:desktop` builds and installs the same way.
+Release downloads hold a `boxbox-desktop-v<version>-linux-amd64.tar.gz` archive. Extract it and run `./install.sh` without sudo. It installs `boxbox-files` to `~/.local/bin` with a desktop entry and icon. Pass `--set-picker` to use it for other apps' Open and Save dialogs (the xdg-desktop-portal FileChooser; `boxbox-files --disable-picker` or Settings → General undoes it), `--set-default` to make it the default folder handler, or `--uninstall` to remove it; settings in `~/.config/boxbox-gpui` are kept. From a checkout, `bun run install:desktop` builds and installs the same way.
 
 Arch users can install `boxbox-bin` from the AUR. Each release also has x86_64 and aarch64 AppImages.
 
