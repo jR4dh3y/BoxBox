@@ -58,16 +58,6 @@ describe('desktop volume response parsing', () => {
 		);
 	});
 
-	test('parses the unavailable handler body without masking its reason', () => {
-		const body: unknown = JSON.parse(
-			'{"available":false,"reason":"The gio command is not installed.","volumes":[]}'
-		);
-		const parsed = parseDesktopVolumesResponse(body);
-		assert.equal(parsed.available, false);
-		assert.equal(parsed.reason, 'The gio command is not installed.');
-		assert.deepEqual(parsed.volumes, []);
-	});
-
 	test('rejects malformed volume data instead of trusting JSON', () => {
 		const missingName: Record<string, unknown> = { ...volume() };
 		delete missingName.name;

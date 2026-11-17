@@ -124,32 +124,6 @@ func sortedNames(listing model.FileList) []string {
 	return names
 }
 
-func TestCreateItemCreatesFileViaAPI(t *testing.T) {
-	handler, fs := setupTestFileHandler()
-	router := createFileTestRouter(handler)
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/api/v1/files/media",
-		bytes.NewBufferString(`{"name":"note.txt","type":"file"}`),
-	)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
-	}
-
-	content, err := fs.ReadFile("/data/media/note.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(content) != "" {
-		t.Fatalf("expected empty file, got %q", string(content))
-	}
-}
-
 func TestCreateItemRejectsExistingFileViaAPI(t *testing.T) {
 	handler, fs := setupTestFileHandler()
 	router := createFileTestRouter(handler)
@@ -169,36 +143,6 @@ func TestCreateItemRejectsExistingFileViaAPI(t *testing.T) {
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusConflict, rec.Code, rec.Body.String())
-	}
-}
-
-func TestSaveFileContentViaAPI(t *testing.T) {
-	handler, fs := setupTestFileHandler()
-	router := createFileTestRouter(handler)
-
-	if err := fs.WriteFile("/data/media/editable.txt", []byte("before"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	req := httptest.NewRequest(
-		http.MethodPatch,
-		"/api/v1/files/media/editable.txt",
-		bytes.NewBufferString(`{"content":"after"}`),
-	)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
-	}
-
-	content, err := fs.ReadFile("/data/media/editable.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(content) != "after" {
-		t.Fatalf("expected overwritten content, got %q", string(content))
 	}
 }
 

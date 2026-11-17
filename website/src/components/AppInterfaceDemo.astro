@@ -1,34 +1,9 @@
 ---
-import DriveCard from './DriveCard.astro';
-import SidebarItem from './SidebarItem.astro';
-
-import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  Monitor,
-  Download,
-  FileText,
-  Music,
-  Image,
-  Video,
-  House,
-  RefreshCw,
-  Settings,
-  List,
-  LayoutGrid,
-  LoaderCircle,
-  X,
-  Server,
-  FilePlus,
-  HardDrive,
-  FolderUp,
-  Upload
-} from '@lucide/astro';
+import DemoApp from './DemoApp.astro';
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
 ---
 
-<div id="demo" class="w-full max-w-[1400px] mt-24 mb-32 flex flex-col items-center justify-center relative isolate" style="--hero-glow: rgba(146, 124, 255, 0.32);">
+<div id="demo" class="w-full max-w-[1400px] mt-24 mb-4 md:mt-28 flex flex-col items-center justify-center relative isolate" style="--hero-glow: rgba(146, 124, 255, 0.32);">
   <div class="pointer-events-none absolute left-1/2 top-1/2 h-[86%] w-[118%] -translate-x-1/2 -translate-y-[42%] demo-hero-glow z-0"></div>
   <div
     id="demo-stage"
@@ -63,255 +38,42 @@ import {
     <div class="absolute inset-0 demo-wallpaper-layer"></div>
     <div id="demo-wallpaper-fade" class="absolute inset-0 demo-wallpaper-fade"></div>
     <div class="absolute inset-0 bg-black/35"></div>
-
-    <div class="flex h-[600px] md:h-auto md:aspect-video w-full bg-[#161616]/55 text-text-primary text-[13px] font-sans relative z-10 backdrop-blur-[2px]">
-      <div class="w-[220px] min-w-[220px] bg-[#1e1e1e]/78 border-r border-[#2a2a2a] hidden md:flex md:flex-col backdrop-blur-md">
-        <div class="border-b border-border-secondary">
-          <button class="w-full flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
-            <ChevronDown class="w-3.5 h-3.5" />
-            <span>Drives</span>
-          </button>
-          <div class="pb-2">
-            <SidebarItem icon={Server} label="This Server" active={true} />
-            <SidebarItem icon={HardDrive} label="storage" />
-            <SidebarItem icon={HardDrive} label="archive" />
-            <SidebarItem icon={HardDrive} label="backups" />
-          </div>
-        </div>
-
-        <div class="border-b border-border-secondary">
-          <div class="flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
-            <ChevronDown class="w-3.5 h-3.5" />
-            <span>Places</span>
-          </div>
-          <div class="pb-2">
-            <SidebarItem icon={Monitor} label="Desktop" />
-            <SidebarItem icon={Download} label="Downloads" />
-            <SidebarItem icon={FileText} label="Documents" />
-            <SidebarItem icon={Music} label="Music" />
-            <SidebarItem icon={Image} label="Pictures" />
-            <SidebarItem icon={Video} label="Videos" />
-          </div>
-        </div>
-
-        <div class="border-b border-border-secondary flex-1">
-          <button class="w-full flex items-center gap-1.5 px-3 py-2.5 text-text-secondary text-[11px] font-medium uppercase tracking-wide">
-            <ChevronDown class="w-3.5 h-3.5" />
-            <span>Favorites</span>
-          </button>
-          <div class="py-2 px-5 text-text-muted text-xs italic">
-            No favorites yet
-          </div>
-        </div>
-      </div>
-
-      <div class="flex-1 flex flex-col min-w-0 bg-[#161616]/45 backdrop-blur-sm">
-        <div class="h-14 border-b border-[#2a2a2a] flex items-center px-4 justify-between bg-[#1e1e1e]/82 backdrop-blur-md">
-          <div class="flex items-center gap-0.5">
-            <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><ChevronLeft class="w-[18px] h-[18px]" /></button>
-            <button class="w-7 h-7 flex items-center justify-center text-text-disabled cursor-not-allowed"><ChevronRight class="w-[18px] h-[18px]" /></button>
-            <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><ChevronUp class="w-[18px] h-[18px]" /></button>
-          </div>
-
-          <div class="flex-1 mx-4 relative">
-            <div class="bg-surface-secondary border border-border-primary rounded flex items-center px-2 py-1 max-w-full overflow-hidden h-8">
-              <button class="w-4.5 h-4.5 flex items-center justify-center text-text-secondary shrink-0 mr-1.5">
-                <House class="w-3.5 h-3.5" />
-              </button>
-              <span class="text-text-primary text-[13px]">This Server</span>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-1">
-            <button aria-label="Upload files" class="w-7 h-7 flex items-center justify-center text-text-secondary"><Upload class="w-4 h-4" /></button>
-            <button aria-label="Upload folder" class="w-7 h-7 flex items-center justify-center text-text-secondary"><FolderUp class="w-4 h-4" /></button>
-            <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><FilePlus class="w-4 h-4" /></button>
-            <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><RefreshCw class="w-4 h-4" /></button>
-            <button class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated rounded transition-colors"><Settings class="w-4 h-4" /></button>
-          </div>
-        </div>
-
-        <div class="flex-1 overflow-y-auto mock-scrollbar p-6 bg-surface-primary/35 backdrop-blur-[1.5px]">
-          <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 text-left">
-            <DriveCard
-              path="root"
-              total="217.97 GB"
-              used="105.22 GB"
-              free="101.61 GB"
-              device="/dev/sda2"
-              fs="ext4"
-              percent={48.3}
-              color="var(--color-accent)"
-            />
-            <DriveCard
-              path="storage"
-              total="223.57 GB"
-              used="211.18 GB"
-              free="12.39 GB"
-              device="/dev/sdc1"
-              fs="fuseblk"
-              percent={94.5}
-              color="#ef4165"
-            />
-            <DriveCard
-              path="archive"
-              total="101.56 TB"
-              used="61.24 TB"
-              free="40.32 TB"
-              device="archive_remote:"
-              fs="fuse.rclone"
-              percent={60.3}
-              color="var(--color-accent)"
-            />
-            <DriveCard
-              path="backups"
-              total="5 TB"
-              used="59.67 GB"
-              free="4.94 TB"
-              device="backups_remote:"
-              fs="fuse.rclone"
-              percent={1.2}
-              color="var(--color-accent)"
-            />
-            <DriveCard
-              path="home"
-              total="217.97 GB"
-              used="105.22 GB"
-              free="101.61 GB"
-              device="/dev/sda2"
-              fs="ext4"
-              percent={48.3}
-              color="var(--color-accent)"
-            />
-          </div>
-        </div>
-
-        <div class="h-8 bg-surface-primary/70 border-t border-border-secondary flex items-center px-4 justify-between text-[11px] text-text-secondary backdrop-blur-md">
-          <div class="flex items-center gap-3">
-            <span>5 items</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <div class="flex gap-0.5 bg-surface-secondary border border-border-primary rounded p-0.5">
-              <button class="w-[20px] h-[20px] flex items-center justify-center text-text-muted hover:text-text-secondary"><List class="w-3.5 h-3.5" /></button>
-              <button class="w-[20px] h-[20px] flex items-center justify-center bg-surface-elevated text-text-primary rounded-sm"><LayoutGrid class="w-3.5 h-3.5" /></button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="absolute bottom-12 right-3 sm:right-6 w-[calc(100%-1.5rem)] max-w-[360px] bg-surface-secondary/92 border border-border-primary rounded-lg shadow-2xl overflow-hidden animate-fade-in-up backdrop-blur-md" style="animation-delay: 1s; z-index: 60; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);">
-        <div class="px-4 py-2 border-b border-border-primary flex items-center justify-between text-[12px] font-medium bg-surface-tertiary/95">
-          <span class="text-text-primary flex items-center gap-2">
-            <LoaderCircle class="w-3.5 h-3.5 text-accent animate-spin" />
-            Uploading summer-photos...
-          </span>
-          <button class="text-text-muted hover:text-text-primary">
-            <X class="w-3.5 h-3.5" />
-          </button>
-        </div>
-        <div class="p-4 flex flex-col gap-2.5">
-          <div class="flex items-center justify-between text-xs">
-            <span class="text-text-primary font-medium truncate pr-4">summer-photos/2026/sunset.jpg</span>
-            <span class="text-text-secondary font-mono text-[10px] shrink-0">1.8 / 2.4 MB</span>
-          </div>
-          <div class="w-full bg-surface-elevated rounded-full h-1.5 overflow-hidden">
-            <div class="bg-accent h-full rounded-full transition-all duration-300 relative" style="width: 74%">
-              <div class="absolute inset-0 bg-white/20 animate-pulse"></div>
-            </div>
-          </div>
-          <div class="flex justify-between text-[10px] text-text-muted mt-1 font-mono">
-            <span>74% &middot; 2 of 3 files</span>
-            <span>Paths preserved</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <DemoApp id="hero-app" class="h-[600px] w-full md:aspect-video md:h-auto" />
   </div>
   </div>
-  <div class="mt-4 flex items-center justify-center gap-3 text-sm text-text-secondary">
+  <div class="relative z-10 mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-text-secondary">
     <button id="demo-prev" type="button" aria-label="Show promo video" class="demo-arrow" disabled>
       <ChevronLeft class="w-4 h-4" />
     </button>
     <p data-caption="0">BoxBox in 40 seconds. Music: <a href="https://www.youtube.com/watch?v=LL9VJAljSQs" target="_blank" rel="noopener" class="text-accent underline underline-offset-4 hover:text-white">“the kill 2” by Lex Amarni &amp; 2muchmotion</a></p>
-    <p data-caption="1" hidden>Interface preview with sample files and storage. <a href="#sharing" class="text-accent underline underline-offset-4 hover:text-white">Explore folder sharing</a></p>
+    <p data-caption="1" hidden>This one is live. Open a drive, edit a file, or <a href="#sharing" class="text-accent underline underline-offset-4 hover:text-white">share a folder</a>.</p>
     <button id="demo-next" type="button" aria-label="Show interface preview" class="demo-arrow">
       <ChevronRight class="w-4 h-4" />
+    </button>
+    <button id="demo-theater" type="button" aria-pressed="false" class="demo-theater-toggle">
+      <Maximize2 class="demo-theater-enter h-3.5 w-3.5" aria-hidden="true" /><Minimize2 class="demo-theater-exit h-3.5 w-3.5" aria-hidden="true" />
+      <span>Theater mode</span>
     </button>
   </div>
 </div>
 
 <script>
+  import { mountDemoApp } from '../lib/demo/app';
+  import { activeTheme, applyAccent, onThemeChange, startThemeCycle, type Theme } from '../lib/siteTheme';
+
   const appWindow = document.getElementById('app-window');
   const demo = document.getElementById('demo');
   const stage = document.getElementById('demo-stage');
+  const heroApp = document.getElementById('hero-app');
   const video = document.getElementById('demo-video') as HTMLVideoElement | null;
   const prevButton = document.getElementById('demo-prev') as HTMLButtonElement | null;
   const nextButton = document.getElementById('demo-next') as HTMLButtonElement | null;
   const wallpaperFade = document.getElementById('demo-wallpaper-fade');
-  const root = document.documentElement;
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-  const themes = [
-    {
-      wallpaper: '/wallpapers/evernight.png',
-      accent: '#a892ff',
-      glow: 'rgba(146, 124, 255, 0.26)'
-    },
-    {
-      wallpaper: '/wallpapers/light.png',
-      accent: '#5ea8ff',
-      glow: 'rgba(94, 168, 255, 0.28)'
-    },
-    {
-      wallpaper: '/wallpapers/lucy.jpeg',
-      accent: '#ff7ab8',
-      glow: 'rgba(255, 122, 184, 0.28)'
-    },
-    {
-      wallpaper: '/wallpapers/minami.jpg',
-      accent: '#7ed3ff',
-      glow: 'rgba(126, 211, 255, 0.24)'
-    },
-    {
-      wallpaper: '/wallpapers/summer_1.png',
-      accent: '#ff9f70',
-      glow: 'rgba(255, 159, 112, 0.26)'
-    }
-  ];
-
-  function hexToRgb(hex: string) {
-    const cleaned = hex.replace('#', '');
-    return [
-      Number.parseInt(cleaned.slice(0, 2), 16),
-      Number.parseInt(cleaned.slice(2, 4), 16),
-      Number.parseInt(cleaned.slice(4, 6), 16)
-    ];
-  }
-
-  function rgbToHex(rgb: number[]) {
-    return `#${rgb.map((value) => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
-  }
-
-  function mixHex(color: string, target: string, amount: number) {
-    const [r1, g1, b1] = hexToRgb(color);
-    const [r2, g2, b2] = hexToRgb(target);
-    return rgbToHex([
-      r1 + (r2 - r1) * amount,
-      g1 + (g2 - g1) * amount,
-      b1 + (b2 - b1) * amount
-    ]);
-  }
-
-  function setThemeVars(target: HTMLElement, theme: typeof themes[number]) {
-    target.style.setProperty('--color-accent', theme.accent);
-    target.style.setProperty('--color-border-focus', theme.accent);
-    target.style.setProperty('--color-accent-hover', mixHex(theme.accent, '#000000', 0.28));
-    target.style.setProperty('--color-accent-muted', mixHex(theme.accent, '#1b1b1b', 0.58));
-    target.style.setProperty('--color-selection', mixHex(theme.accent, '#1e1e1e', 0.6));
-    target.style.setProperty('--color-selection-hover', mixHex(theme.accent, '#000000', 0.35));
-  }
-
-  function applyTheme(theme: typeof themes[number], shouldFade = true, syncSiteAccent = false) {
+  // The window wears the theme before the rest of the page does, so it sets
+  // the colours on itself as well as following the page.
+  function wearTheme(theme: Theme, shouldFade: boolean) {
     if (!appWindow || !demo) return;
 
     if (wallpaperFade && shouldFade) {
@@ -329,25 +91,28 @@ import {
     }
 
     appWindow.style.setProperty('--hero-glow', theme.glow);
-    setThemeVars(appWindow, theme);
-
-    if (syncSiteAccent) {
-      root.dataset.accentTransition = 'true';
-      setThemeVars(root, theme);
-    }
-
+    applyAccent(appWindow, theme);
     demo.style.setProperty('--hero-glow', theme.glow);
   }
 
-  if (appWindow && stage) {
+  if (appWindow && stage && heroApp) {
     const demoStage = stage;
+    const previewWindow = appWindow;
+    const preview = mountDemoApp(heroApp);
     let ticking = false;
-    let themeIndex = 0;
-    let themeStarted = false;
-    let themeInterval: number | undefined;
+    let previewShown = false;
+    let theater = false;
+
+    const THEATER_LEAVE_PX = 120;
+    let theaterScrollY = 0;
+
+    // Scrolling on is a way out of theater mode.
+    function followScroll() {
+      if (theater && Math.abs(window.scrollY - theaterScrollY) > THEATER_LEAVE_PX) setTheater(false);
+    }
 
     function updateDemoTransform() {
-      if (motionPreference.matches) {
+      if (motionPreference.matches || theater) {
         demoStage.style.transform = 'none';
         return;
       }
@@ -367,40 +132,21 @@ import {
       ticking = true;
       window.requestAnimationFrame(() => {
         updateDemoTransform();
+        followScroll();
         ticking = false;
       });
     }, { passive: true });
 
-    function syncThemeCycle() {
-      if (themeInterval !== undefined) {
-        window.clearInterval(themeInterval);
-        themeInterval = undefined;
-      }
-      if (!themeStarted || motionPreference.matches) return;
-      themeInterval = window.setInterval(() => {
-        themeIndex = (themeIndex + 1) % themes.length;
-        applyTheme(themes[themeIndex], true, true);
-      }, 4800);
-    }
-
-    function startThemeCycle() {
-      if (themeStarted) return;
-      themeStarted = true;
-      applyTheme(themes[themeIndex], false, true);
-      syncThemeCycle();
-    }
-
-    motionPreference.addEventListener('change', () => {
-      updateDemoTransform();
-      syncThemeCycle();
-    });
+    motionPreference.addEventListener('change', updateDemoTransform);
 
     updateDemoTransform();
-    applyTheme(themes[themeIndex], false, false);
+    wearTheme(activeTheme(), false);
+    onThemeChange((theme) => wearTheme(theme, true));
 
     // Slide 0 is the promo video, slide 1 the interface preview. The video
     // plays while it is the visible slide and hands over to the preview when
-    // it ends; the theme cycle starts the first time the preview is shown.
+    // it ends. The first time the preview is shown the page takes on its theme
+    // and a sample upload begins.
     let activeSlide = 0;
     let demoVisible = false;
     // Set when the visitor pauses with the native controls, so scrolling
@@ -431,7 +177,12 @@ import {
       if (prevButton) prevButton.disabled = index === 0;
       if (nextButton) nextButton.disabled = index === 1;
       if (video) video.inert = index !== 0;
-      if (index === 1) startThemeCycle();
+      previewWindow.inert = index !== 1;
+      if (index === 1 && !previewShown) {
+        previewShown = true;
+        startThemeCycle();
+        preview.startUpload();
+      }
       syncVideo();
     }
 
@@ -469,6 +220,40 @@ import {
 
     motionPreference.addEventListener('change', syncVideo);
     showSlide(0);
+
+    // Theater mode: the page dims and the demo grows to fill the window,
+    // without going full screen. The stage glides between its two places.
+    const theaterButton = document.getElementById('demo-theater');
+    const theaterLabel = theaterButton?.querySelector('span');
+    const demoRoot = demo;
+
+    function setTheater(on: boolean) {
+      if (!demoRoot || on === theater) return;
+      const first = demoStage.getBoundingClientRect();
+      const slot = demoRoot.parentElement;
+      // The demo leaves the page's flow; its slot keeps the page from moving.
+      if (slot) slot.style.minHeight = on ? `${slot.offsetHeight}px` : '';
+      theater = on;
+      theaterScrollY = window.scrollY;
+      demoRoot.toggleAttribute('data-theater', on);
+      demoRoot.closest('section')?.toggleAttribute('data-theater', on);
+      theaterButton?.setAttribute('aria-pressed', String(on));
+      if (theaterLabel) theaterLabel.textContent = on ? 'Exit theater mode' : 'Theater mode';
+      updateDemoTransform();
+      if (motionPreference.matches) return;
+      const last = demoStage.getBoundingClientRect();
+      const from = `translate(${first.left - last.left}px, ${first.top - last.top}px) scale(${first.width / last.width}, ${first.height / last.height})`;
+      demoStage.animate({ transformOrigin: ['top left', 'top left'], transform: [from, getComputedStyle(demoStage).transform] }, { duration: 450, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+    }
+
+    theaterButton?.addEventListener('click', () => setTheater(!theater));
+    // A click on the dimmed page, outside the demo, leaves theater mode.
+    demoRoot?.addEventListener('click', (event) => {
+      if (event.target === demoRoot) setTheater(false);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && theater) setTheater(false);
+    });
 
     if ('IntersectionObserver' in window && demo) {
       const demoObserver = new IntersectionObserver((entries) => {
@@ -516,6 +301,67 @@ import {
     left: 0;
     opacity: 0;
     visibility: hidden;
+  }
+
+  .demo-theater-toggle {
+    display: inline-flex;
+    height: 2rem;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 0.75rem;
+    border-radius: 9999px;
+    border: 1px solid var(--color-border-primary, #333);
+    color: var(--color-text-primary, #e5e5e5);
+    transition: color 150ms ease, border-color 150ms ease;
+  }
+
+  .demo-theater-toggle:hover,
+  .demo-theater-toggle[aria-pressed='true'] {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+
+  .demo-theater-toggle[aria-pressed='false'] .demo-theater-exit,
+  .demo-theater-toggle[aria-pressed='true'] .demo-theater-enter { display: none; }
+
+  /* Theater mode. The section rises above the nav, the demo covers the
+     window with a dim backdrop, and the stage takes the room that is left. */
+  :global(section[data-theater]) { z-index: 50; }
+
+  #demo[data-theater] {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    max-width: none;
+    margin: 0;
+    padding: 1rem;
+    /* Wrapped captions on a small screen can still outgrow it. */
+    overflow-y: auto;
+  }
+
+  #demo[data-theater]::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: rgb(0 0 0 / 0.86);
+    animation: theater-dim 300ms ease;
+  }
+
+  #demo[data-theater] #demo-stage {
+    width: min(100%, calc((100dvh - 6rem) * 16 / 9));
+    transition: none;
+  }
+
+  /* Below md the live preview has a fixed height rather than a ratio. */
+  #demo[data-theater] :global(#hero-app) { height: min(600px, calc(100dvh - 8rem)); }
+
+  @media (min-width: 768px) {
+    #demo[data-theater] :global(#hero-app) { height: auto; }
+  }
+
+  @keyframes theater-dim {
+    from { opacity: 0; }
   }
 
   .demo-arrow {
