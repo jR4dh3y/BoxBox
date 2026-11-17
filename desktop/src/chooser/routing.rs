@@ -158,11 +158,21 @@ fn quoted(path: &Path) -> String {
 
 /// The executable to register: an AppImage runs from a mount that goes away,
 /// so its own file is the one that stays.
-fn program() -> Result<PathBuf> {
+fn program() -> Result<String> {
     if let Some(image) = absolute_env("APPIMAGE").filter(|path| path.is_file()) {
-        return Ok(image);
+        return Ok(appimage_command(&image, absolute_env("APPDIR").as_deref()));
     }
-    std::env::current_exe().context("cannot find the BoxBox program")
+    Ok(quoted(&std::env::current_exe().context("cannot find the BoxBox program")?))
+}
+
+/// The AppImage runtime unpacks to `appimage_extracted_*` when it runs without
+/// FUSE (`--appimage-extract-and-run`); D-Bus has to start it the same way.
+fn appimage_command(image: &Path, appdir: Option<&Path>) -> String {
+    let extracted = appdir.and_then(Path::file_name).is_some_and(|name| name.to_string_lossy().starts_with("appimage_extracted_"));
+    match extracted {
+        true => format!("{} --appimage-extract-and-run", quoted(image)),
+        false => quoted(image),
+    }
 }
 
 /// The first xdg-desktop-portal that reads backends from the user's data folder.
@@ -222,7 +232,7 @@ pub fn enable() -> Result<PathBuf> {
         ensure!(existing.starts_with(MANAGED), "{} was not written by BoxBox; remove it first", service.display());
     }
     write_atomic(&portal_file(), &format!("[portal]\nDBusName={BUS_NAME}\nInterfaces={INTERFACE};\n"))?;
-    write_atomic(&service, &format!("{MANAGED}\n[D-BUS Service]\nName={BUS_NAME}\nExec={} --portal\n", quoted(&program)))?;
+    write_atomic(&service, &format!("{MANAGED}\n[D-BUS Service]\nName={BUS_NAME}\nExec={program} --portal\n"))?;
     let destination = set_route(true)?;
     restart_portal();
     Ok(destination)
@@ -276,7 +286,16 @@ fn restart_portal() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_version, route};
+    use super::{appimage_command, parse_version, route};
+    use std::path::Path;
+
+    #[test]
+    fn an_appimage_without_fuse_is_started_the_same_way() {
+        let image = Path::new("/opt/BoxBox.AppImage");
+        assert_eq!(appimage_command(image, Some(Path::new("/tmp/.mount_BoxBoxa1b2c3"))), "\"/opt/BoxBox.AppImage\"");
+        assert_eq!(appimage_command(image, Some(Path::new("/tmp/appimage_extracted_0123abcd"))), "\"/opt/BoxBox.AppImage\" --appimage-extract-and-run");
+        assert_eq!(appimage_command(image, None), "\"/opt/BoxBox.AppImage\"");
+    }
 
     #[test]
     fn portal_versions_parse() {
