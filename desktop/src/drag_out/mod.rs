@@ -1,6 +1,7 @@
 //! Dragging files out to other apps. GPUI 0.2 only receives external drops, so the source side
 //! talks to the platform directly: XDND on X11, `wl_data_device` on Wayland.
 
+pub mod icon;
 #[cfg(target_os = "linux")]
 mod wayland;
 #[cfg(target_os = "linux")]
@@ -66,19 +67,21 @@ pub fn draggable<E: StatefulInteractiveElement>(
 ) -> E {
     element.on_drag(
         DraggedItem { pane, index },
-        move |item: &DraggedItem, grip, _: &mut Window, cx: &mut App| -> Entity<DragPreview> {
+        move |item: &DraggedItem, grip, window: &mut Window, cx: &mut App| -> Entity<DragPreview> {
             let files = workspace.update(cx, |workspace, _| workspace.begin_drag(item.pane, item.index)).unwrap_or_default();
             let label = match files.as_slice() {
                 [item] => item.name.clone(),
                 items => format!("{} items", items.len()),
             };
-            start(files, api.clone(), cx);
+            let scale = window.scale_factor().ceil().max(1.) as u32;
+            let picture = files.first().and_then(|first| workspace.upgrade()?.read(cx).drag_picture(&api, first)).and_then(|image| icon::compose(&image, files.len(), scale));
+            start(files, api.clone(), picture, cx);
             cx.new(|_| DragPreview { label: label.into(), grip })
         },
     )
 }
 
-fn start(files: Vec<FileInfo>, api: Arc<Api>, cx: &mut App) {
+fn start(files: Vec<FileInfo>, api: Arc<Api>, picture: Option<icon::DragIcon>, cx: &mut App) {
     #[cfg(target_os = "linux")]
     if let Some(drag) = wayland_drag(cx) {
         drag.pending = None;
@@ -99,20 +102,20 @@ fn start(files: Vec<FileInfo>, api: Arc<Api>, cx: &mut App) {
         // Held until the pointer leaves the window; see `moved`.
         "Wayland" => {
             if let Some(drag) = wayland_drag(cx) {
-                drag.pending = Some(prepare);
+                drag.pending = Some((prepare, picture));
             }
         }
         name => log::info!("dragging to other apps is not implemented on {name}"),
     }
     #[cfg(not(target_os = "linux"))]
-    drop(prepare);
+    drop((prepare, picture));
 }
 
 /// The Wayland drag source of this app, and the drag that has not left the window yet.
 #[cfg(target_os = "linux")]
 struct WaylandDrag {
     source: wayland::Source,
-    pending: Option<Prepare>,
+    pending: Option<(Prepare, Option<icon::DragIcon>)>,
 }
 
 #[cfg(target_os = "linux")]
@@ -154,10 +157,10 @@ pub fn moved(event: &DragMoveEvent<DraggedItem>, window: &mut Window, cx: &mut A
         let Some(drag) = wayland_drag(cx) else {
             return;
         };
-        let Some(prepare) = drag.pending.take() else {
+        let Some((prepare, picture)) = drag.pending.take() else {
             return;
         };
-        if let Err(error) = drag.source.start(window, wayland::Payload::new(prepare)) {
+        if let Err(error) = drag.source.start(window, wayland::Payload::new(prepare), picture) {
             log::warn!("drag to another app failed: {error:#}");
         }
         cx.stop_active_drag(window);

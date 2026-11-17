@@ -52,3 +52,6 @@ gpui = { version = "0.2.2", features = ["test-support"] }
 # fontconfig's cache instead of parsing every installed font. See the vendored crate.
 [patch.crates-io]
 fontdb = { path = "vendor/fontdb" }
+# NVIDIA reports the swapchain out of date when the compositor sends new dmabuf
+# feedback, and GPUI only rebuilds it on a resize; the window then stops drawing.
+blade-graphics = { path = "vendor/blade-graphics" }

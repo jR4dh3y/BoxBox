@@ -69,6 +69,28 @@ impl Workspace {
         }
     }
 
+    /// What a drag to another app shows for `item`: its thumbnail when one is
+    /// made, else the icon the views draw for it. Made here when not ready: one
+    /// small icon, once per drag.
+    pub(crate) fn drag_picture(&self, api: &Arc<Api>, item: &FileInfo) -> Option<Arc<RenderImage>> {
+        const PIXELS: u32 = 128;
+        if let Some(thumbnail) = self.thumbnail(api, item) {
+            return Some(thumbnail);
+        }
+        let (key, _) = self.file_icons.key(api, item, PIXELS as f32);
+        if self.preferences.file_icons == crate::workspace::IconStyle::System {
+            if let Some(image) = crate::file_icons::render(&key, PIXELS) {
+                return Some(image);
+            }
+        }
+        // BoxBox's glyph, in the colour the views give it.
+        let kind = crate::format::Kind::of(&item.name, item.is_dir);
+        let tint = self.kind_tint(kind).unwrap_or(if item.is_dir { crate::theme::FOLDER } else { crate::theme::TEXT_SECONDARY });
+        let svg = gpui::AssetSource::load(&crate::assets::Assets, &format!("icons/{}.svg", kind.glyph())).ok()??;
+        let svg = String::from_utf8_lossy(&svg).replace("currentColor", &format!("#{tint:06x}"));
+        crate::file_icons::svg_image(svg.as_bytes(), PIXELS).ok()
+    }
+
     /// Starts making the icon of a pane's entry, drawn at `size`, if no one has.
     pub(crate) fn request_entry_icon(&mut self, target: PaneTarget, index: usize, size: f32, cx: &mut Context<Self>) {
         if self.preferences.file_icons != crate::workspace::IconStyle::System {

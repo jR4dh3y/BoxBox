@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{anyhow, bail, ensure, Context as _, Result};
 use gpui::Window;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
 use wayland_backend::client::{Backend, ObjectId};
@@ -24,11 +24,16 @@ use wayland_client::protocol::wl_data_source::{self, WlDataSource};
 use wayland_client::protocol::wl_pointer::{self, ButtonState, WlPointer};
 use wayland_client::protocol::wl_registry::WlRegistry;
 use wayland_client::protocol::wl_seat::{self, Capability, WlSeat};
+use wayland_client::protocol::wl_buffer::WlBuffer;
+use wayland_client::protocol::wl_compositor::WlCompositor;
+use wayland_client::protocol::wl_shm::{self, WlShm};
+use wayland_client::protocol::wl_shm_pool::WlShmPool;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{
     delegate_noop, event_created_child, Connection, Dispatch, Proxy, QueueHandle, WEnum,
 };
 
+use super::icon::DragIcon;
 use super::Prepare;
 
 const URI_LIST: &str = "text/uri-list";
@@ -64,16 +69,33 @@ impl Payload {
     }
 }
 
-/// One drag: its data, and the data device that lives only as long as the drag does.
+/// One drag: its data, and the data device and picture that live only as long as the drag does.
 struct Drag {
     device: WlDataDevice,
     payload: Arc<Payload>,
+    icon: Option<Icon>,
+}
+
+/// The surface that follows the pointer, and the buffer it shows.
+struct Icon {
+    surface: WlSurface,
+    buffer: WlBuffer,
+}
+
+impl Icon {
+    fn destroy(&self) {
+        self.surface.destroy();
+        self.buffer.destroy();
+    }
 }
 
 struct Globals {
     queue: QueueHandle<State>,
     seat: WlSeat,
     manager: WlDataDeviceManager,
+    /// For the drag picture; without them the drag still works, unpictured.
+    compositor: Option<WlCompositor>,
+    shm: Option<WlShm>,
 }
 
 struct Shared {
@@ -115,7 +137,7 @@ impl Source {
 
     /// Asks the compositor to take over the drag that began with the last press on `window`.
     /// Only queues requests; the data is served from the event thread.
-    pub fn start(&self, window: &Window, payload: Payload) -> Result<()> {
+    pub fn start(&self, window: &Window, payload: Payload, icon: Option<DragIcon>) -> Result<()> {
         let shared = &self.0;
         let globals = shared
             .globals
@@ -140,16 +162,52 @@ impl Source {
         let device = globals
             .manager
             .get_data_device(&globals.seat, &globals.queue, ());
+        let icon = icon.and_then(|icon| {
+            picture(globals, &icon).map_err(|error| log::warn!("cannot show the drag picture: {error:#}")).ok()
+        });
         let drag = Drag {
             device: device.clone(),
             payload: Arc::new(payload),
+            icon: icon.as_ref().map(|(icon, _)| Icon { surface: icon.surface.clone(), buffer: icon.buffer.clone() }),
         };
         let source = globals.manager.create_data_source(&globals.queue, drag);
         source.offer(URI_LIST.to_string());
         source.set_actions(DndAction::Copy);
-        device.start_drag(Some(&source), &origin, None, serial);
+        device.start_drag(Some(&source), &origin, icon.as_ref().map(|(icon, _)| &icon.surface), serial);
+        // The surface takes its role from start_drag; its first buffer comes after.
+        if let Some((icon, scale)) = &icon {
+            if *scale > 1 {
+                icon.surface.set_buffer_scale(*scale as i32);
+            }
+            icon.surface.attach(Some(&icon.buffer), 0, 0);
+            icon.surface.damage_buffer(0, 0, i32::MAX, i32::MAX);
+            icon.surface.commit();
+        }
         shared.conn.flush().context("cannot reach the compositor")
     }
+}
+
+/// A surface and a shared-memory buffer holding `icon`, and the buffer scale to set.
+fn picture(globals: &Globals, icon: &DragIcon) -> Result<(Icon, u32)> {
+    let (Some(compositor), Some(shm)) = (&globals.compositor, &globals.shm) else {
+        bail!("the compositor offers no shared-memory buffers");
+    };
+    let stride = icon.width * 4;
+    let length = (stride * icon.height) as usize;
+    ensure!(icon.bgra.len() == length, "the picture has {} bytes, not {length}", icon.bgra.len());
+    // Safety: a fresh anonymous file, owned from here on.
+    let fd = unsafe { libc::memfd_create(c"boxbox-drag-icon".as_ptr(), libc::MFD_CLOEXEC) };
+    ensure!(fd >= 0, "cannot make the picture buffer: {}", std::io::Error::last_os_error());
+    let fd = unsafe { <OwnedFd as std::os::fd::FromRawFd>::from_raw_fd(fd) };
+    let mut file = File::from(fd);
+    file.write_all(&icon.bgra)?;
+    let pool = shm.create_pool(std::os::fd::AsFd::as_fd(&file), length as i32, &globals.queue, ());
+    let buffer = pool.create_buffer(0, icon.width as i32, icon.height as i32, stride as i32, wl_shm::Format::Argb8888, &globals.queue, ());
+    // The buffer keeps the memory; the pool is not needed again.
+    pool.destroy();
+    let surface = compositor.create_surface(&globals.queue, ());
+    let scale = if compositor.version() >= 3 { icon.scale.max(1) } else { 1 };
+    Ok((Icon { surface, buffer }, scale))
 }
 
 fn run(shared: Arc<Shared>) -> Result<()> {
@@ -159,10 +217,14 @@ fn run(shared: Arc<Shared>) -> Result<()> {
     let seat: WlSeat = list.bind(&handle, 1..=1, ())?;
     let manager: WlDataDeviceManager =
         list.bind(&handle, DATA_DEVICE_VERSION..=DATA_DEVICE_VERSION, ())?;
+    let compositor: Option<WlCompositor> = list.bind(&handle, 1..=4, ()).ok();
+    let shm: Option<WlShm> = list.bind(&handle, 1..=1, ()).ok();
     let globals = Globals {
         queue: handle,
         seat,
         manager,
+        compositor,
+        shm,
     };
     if shared.globals.set(globals).is_err() {
         bail!("the drag source was started twice");
@@ -188,6 +250,9 @@ struct State {
 impl State {
     fn finish(&mut self, source: &WlDataSource, drag: &Drag) {
         source.destroy();
+        if let Some(icon) = &drag.icon {
+            icon.destroy();
+        }
         drag.device.release();
         for offer in self.offers.drain(..) {
             offer.destroy();
@@ -293,6 +358,11 @@ impl Dispatch<WlDataSource, Drag> for State {
 }
 
 delegate_noop!(State: WlDataDeviceManager);
+delegate_noop!(State: WlCompositor);
+delegate_noop!(State: WlShmPool);
+delegate_noop!(State: ignore WlShm);
+delegate_noop!(State: ignore WlBuffer);
+delegate_noop!(State: ignore WlSurface);
 delegate_noop!(State: ignore WlDataOffer);
 
 /// Writes on a thread of its own: preparing can download, and a target may read slowly.
