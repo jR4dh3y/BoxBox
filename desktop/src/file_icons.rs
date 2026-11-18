@@ -115,6 +115,13 @@ pub fn render_app(key: &IconKey, size: u32) -> Option<Arc<RenderImage>> {
     rasterize(&path, size).map_err(|error| log::debug!("{}: {error:#}", path.display())).ok()
 }
 
+/// A local executable's embedded icon, `size` pixels square.
+#[cfg(windows)]
+pub fn render_executable(api: &crate::api::Api, path: &str, size: u32) -> Option<Arc<RenderImage>> {
+    let real = api.local_path(path).ok().flatten()?;
+    crate::windows::icons::embedded(&real, size).ok().map(bgra)
+}
+
 /// An SVG centred in a `size` pixel square, as GPUI's BGRA pixels. Also the
 /// BoxBox logo, which GPUI's own SVG loader refuses.
 pub fn svg_image(bytes: &[u8], size: u32) -> anyhow::Result<Arc<RenderImage>> {

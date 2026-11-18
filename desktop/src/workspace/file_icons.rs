@@ -1,6 +1,7 @@
 //! The window's icons: one image per source and pixel size, made off the UI
-//! thread the first time a row or tile asks. A package's own icon wins once
-//! ready; until then, or without one, views show the selected icon style.
+//! thread the first time a row or tile asks. A file's own icon (a Linux
+//! package's, a Windows executable's) wins once ready; until then, or without
+//! one, views show the selected icon style.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -33,6 +34,9 @@ enum IconSource {
     /// The icon of the app that opens files of this kind.
     #[cfg(target_os = "linux")]
     App(IconKey),
+    /// A local `.exe`'s embedded icon; its size and time make a changed file a new key.
+    #[cfg(windows)]
+    Executable { path: String, bytes: u64, modified: Option<i64> },
 }
 
 type CacheKey = (IconSource, u32);
@@ -67,8 +71,12 @@ impl FileIcons {
         let embedded = crate::package_icons::Package::of(api, item).map(|package| (IconSource::Package(package), pixels));
         #[cfg(target_os = "linux")]
         let app = (preferences.app_icons && !item.is_dir).then(|| (IconSource::App(self.theme_key(api, item)), pixels));
+        #[cfg(windows)]
+        let embedded = (api.is_local() && !item.is_dir
+            && std::path::Path::new(&item.name).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("exe")))
+            .then(|| (IconSource::Executable { path: item.path.clone(), bytes: item.size, modified: item.mod_time }, pixels));
         #[cfg(not(target_os = "linux"))]
-        let (embedded, app) = (None, None);
+        let app = None;
         [embedded, app, theme]
     }
 }
@@ -160,7 +168,6 @@ impl Workspace {
         if let Some(thumbnail) = self.thumbnail(api, item) {
             return Some(thumbnail);
         }
-        #[cfg(target_os = "linux")]
         if let Some(image) = crate::package_icons::Package::of(api, item)
             .and_then(|package| crate::package_icons::ready(api, &package))
             .and_then(|bytes| crate::file_icons::package_image(&bytes, PIXELS))
@@ -201,7 +208,7 @@ impl Workspace {
         }
     }
 
-    fn request_icon(&mut self, key: CacheKey, _api: &Arc<Api>, cx: &mut Context<Self>) {
+    fn request_icon(&mut self, key: CacheKey, api: &Arc<Api>, cx: &mut Context<Self>) {
         let icons = &mut self.file_icons;
         let frame = icons.frame;
         match icons.drawn.get_mut(&key) {
@@ -233,9 +240,9 @@ impl Workspace {
         }
         self.file_icons.slots.insert(key.clone(), Slot::Pending);
         let (icon, pixels) = key.clone();
-        #[cfg(target_os = "linux")]
-        let api = _api.clone();
+        let api = api.clone();
         cx.spawn(async move |this, cx| {
+            #[cfg_attr(not(target_os = "linux"), allow(clippy::match_single_binding))]
             let image = match icon {
                 #[cfg(target_os = "linux")]
                 IconSource::Package(package) if package.is_slow() => {
@@ -251,6 +258,8 @@ impl Workspace {
                                 IconSource::Package(package) => crate::package_icons::icon(&api, &package).and_then(|bytes| crate::file_icons::package_image(&bytes, pixels)),
                                 #[cfg(target_os = "linux")]
                                 IconSource::App(key) => crate::file_icons::render_app(&key, pixels),
+                                #[cfg(windows)]
+                                IconSource::Executable { path, .. } => crate::file_icons::render_executable(&api, &path, pixels),
                             }
                         })
                         .await
@@ -363,5 +372,42 @@ mod tests {
             assert_eq!(image.as_bytes(0).unwrap()[..4], [30, 30, 200, 255], "BGRA pixels of the package's PNG");
             assert!(matches!(icon("notes.txt"), EntryIcon::Glyph));
         });
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn executable_icons_use_the_files_resources_in_every_icon_style() {
+        let root = tempfile::tempdir().unwrap();
+        let windows = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap());
+        for (source, folder) in [(windows.join("System32/cmd.exe"), "first"), (windows.join("regedit.exe"), "second")] {
+            let folder = root.path().join(folder);
+            std::fs::create_dir(&folder).unwrap();
+            std::fs::copy(source, folder.join("APP.EXE")).unwrap();
+        }
+        std::fs::write(root.path().join("plain.exe"), "no icon resources").unwrap();
+        let api = Api::local_with_root(root.path().to_path_buf()).unwrap();
+        let icons = FileIcons::default();
+        let first = api.stat("home/first/APP.EXE").unwrap();
+        let second = api.stat("home/second/APP.EXE").unwrap();
+        let preferences = |file_icons| super::super::Preferences { file_icons, ..Default::default() };
+        for style in [super::super::IconStyle::System, super::super::IconStyle::Tinted, super::super::IconStyle::Grey] {
+            let [first_key, ..] = icons.keys(&api, &first, 96., &preferences(style));
+            let [second_key, ..] = icons.keys(&api, &second, 96., &preferences(style));
+            assert!(first_key.is_some() && second_key.is_some());
+            assert_ne!(first_key, second_key);
+        }
+        let mut changed = first.clone();
+        changed.size += 1;
+        let tinted = preferences(super::super::IconStyle::Tinted);
+        assert_ne!(icons.keys(&api, &first, 96., &tinted), icons.keys(&api, &changed, 96., &tinted));
+
+        let first_icon = crate::file_icons::render_executable(&api, &first.path, 96).unwrap();
+        let second_icon = crate::file_icons::render_executable(&api, &second.path, 96).unwrap();
+        assert_ne!(first_icon.as_bytes(0), second_icon.as_bytes(0));
+        assert!(crate::file_icons::render_executable(&api, "home/plain.exe", 96).is_none());
     }
 }

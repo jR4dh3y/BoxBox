@@ -1,6 +1,6 @@
-//! File type icons from the same Shell image list Explorer uses.
+//! File type icons and embedded executable icons from the Windows Shell.
 
-use std::{mem::size_of, ptr::null_mut};
+use std::{mem::size_of, path::Path, ptr::null_mut};
 
 use anyhow::{ensure, Context as _, Result};
 use windows::{
@@ -11,10 +11,10 @@ use windows::{
         UI::{
             Controls::{IImageList, ILD_TRANSPARENT},
             Shell::{
-                SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_SYSICONINDEX,
+                SHDefExtractIconW, SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_SYSICONINDEX,
                 SHGFI_USEFILEATTRIBUTES, SHIL_JUMBO,
             },
-            WindowsAndMessaging::{DestroyIcon, DrawIconEx, DI_NORMAL, HICON},
+            WindowsAndMessaging::{DestroyIcon, DrawIconEx, DI_MASK, DI_NORMAL, HICON},
         },
     },
 };
@@ -48,10 +48,25 @@ pub(crate) fn render(key: &IconKey, size: u32) -> Result<image::RgbaImage> {
     })
 }
 
+/// Read the executable's primary icon at the requested size through Shell32.
+pub(crate) fn embedded(path: &Path, size: u32) -> Result<image::RgbaImage> {
+    ensure!((16..=256).contains(&size), "invalid icon size");
+    let path = super::shell_path(path);
+    let mut handle = HICON::default();
+    let result =
+        unsafe { SHDefExtractIconW(PCWSTR(path.as_ptr()), 0, 0, Some(&mut handle), None, size) };
+    let icon = Icon(handle);
+    result.ok()?;
+    ensure!(!icon.0 .0.is_null(), "the executable has no embedded icon");
+    pixels(&icon, size)
+}
+
 struct Icon(HICON);
 impl Drop for Icon {
     fn drop(&mut self) {
-        let _ = unsafe { DestroyIcon(self.0) };
+        if !self.0 .0.is_null() {
+            let _ = unsafe { DestroyIcon(self.0) };
+        }
     }
 }
 
@@ -96,10 +111,28 @@ fn pixels(icon: &Icon, size: u32) -> Result<image::RgbaImage> {
     unsafe { std::ptr::write_bytes(data.cast::<u8>(), 0, bytes) };
     let previous = unsafe { SelectObject(dc.0, bitmap.0.into()) };
     ensure!(!previous.0.is_null(), "cannot select icon bitmap");
-    let drawn = unsafe { DrawIconEx(dc.0, 0, 0, icon.0, px, px, 0, None, DI_NORMAL) };
+    let drawn = (|| {
+        unsafe {
+            DrawIconEx(dc.0, 0, 0, icon.0, px, px, 0, None, DI_NORMAL)?;
+            GdiFlush().ok()?;
+        }
+        let mut rgba = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), bytes) }.to_vec();
+        // Older icon resources express transparency in an AND mask.
+        if rgba.chunks_exact(4).all(|pixel| pixel[3] == 0) {
+            unsafe {
+                std::ptr::write_bytes(data.cast::<u8>(), 255, bytes);
+                DrawIconEx(dc.0, 0, 0, icon.0, px, px, 0, None, DI_MASK)?;
+                GdiFlush().ok()?;
+            }
+            let mask = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), bytes) };
+            for (pixel, mask) in rgba.chunks_exact_mut(4).zip(mask.chunks_exact(4)) {
+                pixel[3] = 255 - mask[0];
+            }
+        }
+        Ok::<_, windows::core::Error>(rgba)
+    })();
     unsafe { SelectObject(dc.0, previous) };
-    drawn?;
-    let mut rgba = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), bytes) }.to_vec();
+    let mut rgba = drawn?;
     // The DIB uses premultiplied BGRA, GPUI expects straight alpha.
     for pixel in rgba.chunks_exact_mut(4) {
         pixel.swap(0, 2);
