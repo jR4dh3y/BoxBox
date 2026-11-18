@@ -95,7 +95,8 @@ impl Workspace {
             .child({
                 let spacer = div().flex_1().h_full();
                 #[cfg(windows)]
-                let spacer = spacer.min_w(px(32.)).window_control_area(WindowControlArea::Drag);
+                // Keep workspace focus handling from consuming native caption presses.
+                let spacer = spacer.min_w(px(32.)).occlude().window_control_area(WindowControlArea::Drag);
                 spacer
             })
             .child(
@@ -137,6 +138,7 @@ fn window_controls(maximized: bool) -> impl IntoElement {
             .flex()
             .items_center()
             .justify_center()
+            .occlude()
             .window_control_area(area)
             .hover(move |button| button.bg(hover))
             .active(crate::components::pressed)

@@ -90,6 +90,36 @@ pub(super) fn click(cx: &mut VisualTestContext, selector: &'static str) {
     cx.simulate_click(bounds.center(), Modifiers::default());
 }
 
+#[cfg(windows)]
+#[gpui::test]
+fn tab_bar_leaves_caption_presses_for_windows(cx: &mut gpui::TestAppContext) {
+    use super::{startup, Fonts, Workspace};
+    use crate::api::Api;
+    use gpui::{point, px, Modifiers, MouseButton};
+
+    let folder = tempfile::tempdir().unwrap();
+    let _config = TestConfig::new(folder.path().join("config"));
+    let api = Api::local_with_root(folder.path().to_path_buf()).unwrap();
+    let (_, cx) = cx.add_window_view(|window, cx| Workspace::new(
+        startup::Startup::deferred(api, "home"),
+        Fonts { sans: "sans-serif".into(), mono: "monospace".into() },
+        window,
+        cx,
+    ));
+    cx.run_until_parked();
+    let width = cx.update(|window, _| window.viewport_size().width);
+    let top = point(width - px(22.), px(1.));
+    cx.simulate_mouse_down(top, MouseButton::Left, Modifiers::default());
+    assert!(cx.update(|window, _| window.default_prevented()), "the workspace handles presses outside the caption hitboxes");
+    cx.simulate_mouse_up(top, MouseButton::Left, Modifiers::default());
+    for offset in [22., 68., 114., 170.] {
+        let at = point(width - px(offset), px(20.));
+        cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::default());
+        assert!(!cx.update(|window, _| window.default_prevented()), "caption press at {offset}px from the right edge was consumed");
+        cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::default());
+    }
+}
+
 // Exercise the real workspace, key routing and filesystem rather than isolated helpers.
 #[cfg(target_os = "linux")]
 #[gpui::test]
