@@ -154,6 +154,7 @@ impl Workspace {
     /// made, else the icon the views draw for it. Made here when not ready: one
     /// small icon, once per drag. A package's own icon is used only when already
     /// read, as reading it can take seconds.
+    #[cfg(target_os = "linux")]
     pub(crate) fn drag_picture(&self, api: &Arc<Api>, item: &FileInfo) -> Option<Arc<RenderImage>> {
         const PIXELS: u32 = 128;
         if let Some(thumbnail) = self.thumbnail(api, item) {

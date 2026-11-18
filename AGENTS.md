@@ -8,7 +8,7 @@ Read the code that runs before you change it. Prefer the smallest complete chang
 
 ## Commands
 
-- Desktop, from the root: `bun run dev:desktop`, `bun run build:desktop`, `bun run check:desktop`, and `bun run test:desktop`. They wrap `cargo` in `desktop/`. See `desktop/README.md` for Linux prerequisites and remote mode.
+- Desktop, from the root: `bun run dev:desktop`, `bun run build:desktop`, `bun run check:desktop`, and `bun run test:desktop`. They wrap `cargo` in `desktop/`. See `desktop/README.md` for Windows and Linux prerequisites and remote mode.
 
 - Backend, from `backend/`: `go vet ./...` and `go test ./...`. The service tests take about 80 seconds. Add `-race` for concurrency changes.
 - Frontend, from `frontend/`: `bun run format`, `bun run check`, `bun run lint`, `bun run test`, `bun run build`. Tests use `node:test` and run under `bun test`. A test that imports `.svelte.ts` code needs the preload in `frontend/test/`, which `bun run test` already uses.
@@ -40,7 +40,7 @@ Read the code that runs before you change it. Prefer the smallest complete chang
 
 ## Desktop file manager (GPUI)
 
-`desktop/` is a native Linux file manager that looks like BoxBox. It is not a port of the web app or of the Electrobun app it replaced.
+`desktop/` is a native Windows and Linux file manager that looks like BoxBox. It is not a port of the web app or of the Electrobun app it replaced.
 
 - Build each feature the way a native file manager does: talk to the system directly (D-Bus services such as UDisks2 and GVfs, Wayland protocols, freedesktop specs, the kernel). Do not copy how the Go server or the Electrobun host did it, and do not shell out to a command-line tool where the system offers an API.
 - Follow Linux file manager behaviour (Thunar, Nautilus, Dolphin) when it differs from the web UI. The web UI sets the look, not the behaviour.

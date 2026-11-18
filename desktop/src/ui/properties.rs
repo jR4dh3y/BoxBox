@@ -2,13 +2,19 @@
 //! on the left and the value on the right, in groups: what it is, when it
 //! changed, and for a local item who may use it, changed from the row itself.
 
-use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton, SharedString};
+use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton};
+#[cfg(target_os = "linux")]
+use gpui::SharedString;
 
 use super::thin_icon;
-use crate::components::{Button, ButtonSize, ButtonVariant, Modal, Type};
+use crate::components::{Modal, Type};
+#[cfg(target_os = "linux")]
+use crate::components::{Button, ButtonSize, ButtonVariant};
 use crate::format::{file_icon, file_size, full_date, type_description};
 use crate::theme::*;
-use crate::workspace::properties::{permission_string, Ownership, Totals, CLASSES};
+use crate::workspace::properties::Totals;
+#[cfg(target_os = "linux")]
+use crate::workspace::properties::{permission_string, Ownership, CLASSES};
 use crate::workspace::{Load, Workspace};
 
 /// A row: the label left, the value right.
@@ -70,12 +76,17 @@ impl Workspace {
                     dates.push(row("Accessed", text(full_date(ownership.accessed))));
                     dates.push(row("Created", text(full_date(ownership.created))));
                 }
-                let mut groups = vec![about, dates];
-                match (&properties.ownership, ownership) {
-                    (_, Some(ownership)) if ownership.link_target.is_none() => groups.push(self.permission_rows(ownership, cx)),
-                    (Some(Load::Failed(error)), _) => groups.push(vec![row("Permissions", text(error.clone()))]),
-                    _ => {}
-                }
+                let groups = vec![about, dates];
+                #[cfg(target_os = "linux")]
+                let groups = {
+                    let mut groups = groups;
+                    match (&properties.ownership, ownership) {
+                        (_, Some(ownership)) if ownership.link_target.is_none() => groups.push(self.permission_rows(ownership, cx)),
+                        (Some(Load::Failed(error)), _) => groups.push(vec![row("Permissions", text(error.clone()))]),
+                        _ => {}
+                    }
+                    groups
+                };
                 (item.name.clone(), file_icon(&item.name, item.is_dir), groups)
             }
             items => {
@@ -119,6 +130,7 @@ impl Workspace {
     /// folder) as one control; Run only where something can run. Then "Apply
     /// to contents" for a folder, and the mode as `ls` shows it. Only the owner
     /// can change them; for anyone else the control is dimmed.
+    #[cfg(target_os = "linux")]
     fn permission_rows(&self, ownership: &Ownership, cx: &mut Context<Self>) -> Vec<gpui::Div> {
         let folder = ownership.is_dir();
         let names = ["Read", "Write", if folder { "Open" } else { "Run" }];
@@ -199,13 +211,7 @@ impl Workspace {
 
 /// `~/code/BoxBox` for a folder under the home folder.
 fn home_relative(folder: &std::path::Path) -> String {
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    let path = match home.as_deref().and_then(|home| folder.strip_prefix(home).ok()) {
-        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
-        Some(rest) => format!("~/{}", rest.display()),
-        None => folder.display().to_string(),
-    };
-    keep_end(path, 44)
+    keep_end(crate::local::display_location(folder), 44)
 }
 
 /// A long path loses its start, at a folder boundary, so the folder it names shows.

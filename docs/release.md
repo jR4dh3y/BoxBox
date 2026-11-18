@@ -6,7 +6,7 @@ What changed in each version, and how to upgrade, is in [Release notes](release-
 
 ## Desktop and server packages
 
-Each release ships the Linux x86_64 desktop app, BoxBox Files, alongside the amd64/arm64 server packages. v0.3.2 shipped the Electrobun app; later releases ship the native GPUI app from `desktop/`. See [Linux Desktop](desktop.md) for dependencies and pairing.
+Each release ships BoxBox Files for Linux x86_64 and Windows x64 alongside the Linux amd64/arm64 server packages. v0.3.2 shipped the Electrobun app; later releases ship the native GPUI app from `desktop/`. See [Desktop app](desktop.md) for dependencies and pairing.
 
 `VERSION` is the release source of truth; the desktop app's About page reads it when the checkout has no tags. Build the full distribution locally with:
 
@@ -15,6 +15,8 @@ bun scripts/package-release.ts
 ```
 
 This builds the desktop binary and its installer archive, both standalone server targets, `SHA256SUMS` and `release-manifest.json` under `dist/release/`. Every packaging run builds the desktop from the current checkout so its manifest cannot describe a stale bundle. A local working-tree build is marked dirty in its manifest; official tag builds require clean source.
+
+On Windows x64, <code>pwsh -File scripts/package-windows.ps1</code> builds the portable ZIP under <code>dist/release/</code>. CI expands that ZIP and launches its executable on a temporary folder. The tag workflow adds the Windows ZIP to the release manifest and <code>SHA256SUMS</code> before publishing.
 
 For a public stable release, merge both the desktop PR and its website/release follow-up into master first. Set `VERSION` to the intended version, keep `docs/releases/v0.3.2.md` current, and tag the tested master commit with `v0.3.2`. The release workflow verifies that the tag matches VERSION and belongs to master. It validates the server, website, Docker build, desktop tests and artifacts before publishing. The GitHub release stays a draft while files upload, then becomes public only after the Docker image succeeds. Published releases are not overwritten.
 

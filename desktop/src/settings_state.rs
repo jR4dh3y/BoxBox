@@ -226,6 +226,7 @@ pub(crate) struct SettingsPanelState {
     pub(crate) notice: Option<String>,
     pub(crate) share_request: u64,
     /// Other apps' Open and Save dialogs are BoxBox's; read when Settings opens.
+    #[cfg(target_os = "linux")]
     pub(crate) picker: bool,
 }
 
@@ -238,6 +239,7 @@ impl Default for SettingsPanelState {
             error: None,
             notice: None,
             share_request: 0,
+            #[cfg(target_os = "linux")]
             picker: false,
         }
     }

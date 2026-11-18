@@ -56,6 +56,9 @@ fn read(logo_pixels: u32) -> AboutInfo {
         .ok()
         .and_then(crate::api::mod_time);
     // os-release(5): /etc first, then the vendor's copy.
+    #[cfg(windows)]
+    let system = Some("Windows".to_string());
+    #[cfg(target_os = "linux")]
     let system = ["/etc/os-release", "/usr/lib/os-release"].iter().find_map(|path| std::fs::read_to_string(path).ok()).and_then(|text| pretty_name(&text));
     AboutInfo { logo, installed, system }
 }

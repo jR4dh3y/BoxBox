@@ -2,15 +2,24 @@
 //! shares from GVfs (`gvfs`). Both are D-Bus services, and every call here
 //! blocks, so it runs on a watcher thread or the background executor.
 
+#[cfg(target_os = "linux")]
 pub mod gvfs;
+#[cfg(target_os = "linux")]
 mod udisks;
 
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
 pub use gvfs::{Answer, Prompt, Prompts};
+
+#[cfg(windows)]
+#[path = "windows/devices.rs"]
+pub mod gvfs;
+#[cfg(windows)]
+pub use gvfs::{mount_device as mount, remove, watch};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -91,6 +100,7 @@ pub enum Update {
 }
 
 /// Sends each service's list now and after every change, until the receiver is dropped.
+#[cfg(target_os = "linux")]
 pub fn watch(sender: async_channel::Sender<Update>) {
     udisks::watch(sender.clone());
     gvfs::watch(sender);
@@ -98,6 +108,7 @@ pub fn watch(sender: async_channel::Sender<Update>) {
 
 /// Mounts an unmounted volume and returns where. `passphrase` unlocks a locked one;
 /// GVfs asks for anything else it needs through `prompts`.
+#[cfg(target_os = "linux")]
 pub fn mount(volume: &Volume, passphrase: Option<&str>, prompts: Prompts) -> Result<PathBuf> {
     match &volume.source {
         Source::Block { object, .. } => match (&volume.state, passphrase) {
@@ -111,6 +122,7 @@ pub fn mount(volume: &Volume, passphrase: Option<&str>, prompts: Prompts) -> Res
 }
 
 /// Ejects a removable volume's drive, or unmounts a fixed one or a GVfs location.
+#[cfg(target_os = "linux")]
 pub fn remove(volume: &Volume) -> Result<()> {
     match &volume.source {
         Source::Block { object, crypto } if volume.ejectable => udisks::eject(object, crypto.as_deref()),
@@ -121,6 +133,7 @@ pub fn remove(volume: &Volume) -> Result<()> {
 }
 
 /// A mounted filesystem's size and whether it is mounted read-only.
+#[cfg(target_os = "linux")]
 fn filesystem(point: &Path) -> Option<(Option<Space>, bool)> {
     use std::os::unix::ffi::OsStrExt as _;
     let path = CString::new(point.as_os_str().as_bytes()).ok()?;
@@ -135,12 +148,14 @@ fn filesystem(point: &Path) -> Option<(Option<Space>, bool)> {
     Some(((total > 0).then_some(Space { total, free }), raw.f_flag & libc::ST_RDONLY != 0))
 }
 
+#[cfg(target_os = "linux")]
 fn mounted(point: PathBuf, read_only_device: bool) -> State {
     let (space, read_only) = filesystem(&point).unwrap_or((None, false));
     State::Mounted { point, space, read_only: read_only || read_only_device }
 }
 
 /// The service's own words for a failed call, without the D-Bus error name in front.
+#[cfg(target_os = "linux")]
 fn reason(error: zbus::Error) -> anyhow::Error {
     match error {
         // polkit would ask for a password, but nothing in the session can show the question.

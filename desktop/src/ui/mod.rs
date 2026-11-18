@@ -13,6 +13,7 @@ mod file_list;
 mod hover_card;
 mod jobs;
 mod notifications;
+#[cfg(target_os = "linux")]
 mod open_with;
 mod operations;
 mod overlays;

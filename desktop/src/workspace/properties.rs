@@ -3,7 +3,9 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(target_os = "linux")]
+use std::sync::Mutex;
 
 use anyhow::Context as _;
 use gpui::Context;
@@ -21,10 +23,12 @@ pub(crate) struct PropertiesState {
     pub totals: Load<Totals>,
     cancel: Arc<AtomicBool>,
     /// Shared with the write in flight, which outlives the dialog.
+    #[cfg(target_os = "linux")]
     writes: Arc<Mutex<ModeWrites>>,
 }
 
 /// Permission writes run one at a time; the newest mode clicked meanwhile waits in `next`.
+#[cfg(target_os = "linux")]
 #[derive(Default)]
 struct ModeWrites {
     running: bool,
@@ -43,20 +47,26 @@ impl Drop for PropertiesState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Ownership {
     pub path: PathBuf,
+    #[cfg(target_os = "linux")]
     pub mode: u32,
+    #[cfg(target_os = "linux")]
     pub owner: String,
+    #[cfg(target_os = "linux")]
     pub group: String,
     /// Only the owner, or root, may change the permissions.
+    #[cfg(target_os = "linux")]
     pub editable: bool,
     pub accessed: Option<i64>,
     pub created: Option<i64>,
     /// Whether execute applies: a folder, or a file that can run.
+    #[cfg(target_os = "linux")]
     pub runnable: bool,
     /// Where a symbolic link points; a link has no permissions of its own.
     pub link_target: Option<String>,
 }
 
 impl Ownership {
+    #[cfg(target_os = "linux")]
     pub fn is_dir(&self) -> bool {
         self.mode & libc::S_IFMT == libc::S_IFDIR
     }
@@ -84,6 +94,7 @@ impl Workspace {
             totals: if needs_walk { Load::Loading } else { Load::Loaded(Totals { files: 1, folders: 0, bytes: items[0].size }) },
             items: items.clone(),
             cancel: cancel.clone(),
+            #[cfg(target_os = "linux")]
             writes: Arc::default(),
         });
         self.context_menu = None;
@@ -132,9 +143,11 @@ impl Workspace {
 }
 
 /// Owner, group and others, each with its read, write and execute bits.
+#[cfg(target_os = "linux")]
 pub(crate) const CLASSES: [(&str, [u32; 3]); 3] = [("owner", [0o400, 0o200, 0o100]), ("group", [0o040, 0o020, 0o010]), ("others", [0o004, 0o002, 0o001])];
 
 /// Types that run: programs, scripts, AppImages and launchers.
+#[cfg(target_os = "linux")]
 const PROGRAMS: [&str; 7] = [
     "application/x-executable",
     "application/x-pie-executable",
@@ -147,6 +160,7 @@ const PROGRAMS: [&str; 7] = [
 
 /// Whether execute means anything for a file: it is marked so already, its
 /// type is a program or script, or it starts like one (`#!` or ELF).
+#[cfg(target_os = "linux")]
 fn runnable(path: &Path, mode: u32) -> bool {
     if mode & 0o111 != 0 {
         return true;
@@ -162,6 +176,7 @@ fn runnable(path: &Path, mode: u32) -> bool {
 
 impl Workspace {
     /// One part of the permissions control: flips `bit`.
+    #[cfg(target_os = "linux")]
     pub(crate) fn toggle_permission(&mut self, bit: u32, cx: &mut Context<Self>) {
         self.change_mode(|mode| mode ^ bit, cx);
     }
@@ -169,6 +184,7 @@ impl Workspace {
     /// Changes the mode at once, as Nautilus and Thunar do, then reads it back.
     /// Clicks build on the shown mode, and writes run one at a time, so a quick
     /// second click neither starts from a stale mode nor lands before the first.
+    #[cfg(target_os = "linux")]
     fn change_mode(&mut self, change: impl FnOnce(u32) -> u32, cx: &mut Context<Self>) {
         let Some(state) = self.properties.as_mut() else { return };
         let Some(Load::Loaded(shown_mode)) = &mut state.ownership else { return };
@@ -229,6 +245,7 @@ impl Workspace {
 
     /// Gives everything inside the folder its permissions: folders the same,
     /// files the same without execute, unless they were programs already.
+    #[cfg(target_os = "linux")]
     pub(crate) fn apply_permissions_to_contents(&mut self, cx: &mut Context<Self>) {
         let Some(Load::Loaded(ownership)) = self.properties.as_ref().and_then(|state| state.ownership.as_ref()) else { return };
         let (root, mode) = (ownership.path.clone(), ownership.mode & 0o7777);
@@ -249,6 +266,7 @@ impl Workspace {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn chmod(path: &Path, mode: u32) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
@@ -256,6 +274,7 @@ fn chmod(path: &Path, mode: u32) -> anyhow::Result<()> {
 }
 
 /// Returns how many items could not be changed. Links are not followed.
+#[cfg(target_os = "linux")]
 fn apply_below(root: &Path, mode: u32) -> anyhow::Result<usize> {
     use std::os::unix::fs::MetadataExt as _;
     let mut failed = 0;
@@ -280,6 +299,7 @@ fn apply_below(root: &Path, mode: u32) -> anyhow::Result<usize> {
     Ok(failed)
 }
 
+#[cfg(target_os = "linux")]
 fn ownership(path: &Path) -> anyhow::Result<Ownership> {
     use std::os::unix::fs::MetadataExt as _;
     let metadata = std::fs::symlink_metadata(path)?;
@@ -302,7 +322,19 @@ fn ownership(path: &Path) -> anyhow::Result<Ownership> {
     })
 }
 
+#[cfg(windows)]
+fn ownership(path: &Path) -> anyhow::Result<Ownership> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    Ok(Ownership {
+        path: path.to_path_buf(),
+        accessed: metadata.accessed().ok().and_then(crate::api::mod_time),
+        created: metadata.created().ok().and_then(crate::api::mod_time),
+        link_target: std::fs::read_link(path).ok().map(|target| target.display().to_string()),
+    })
+}
+
 /// The account name for `uid`, or the number when the system has none.
+#[cfg(target_os = "linux")]
 fn user_name(uid: u32) -> String {
     let mut buffer = vec![0 as libc::c_char; 4096];
     // SAFETY: `passwd` and `buffer` outlive the call, which writes only within them.
@@ -316,6 +348,7 @@ fn user_name(uid: u32) -> String {
     uid.to_string()
 }
 
+#[cfg(target_os = "linux")]
 fn group_name(gid: u32) -> String {
     let mut buffer = vec![0 as libc::c_char; 4096];
     // SAFETY: as in `user_name`.
@@ -331,6 +364,7 @@ fn group_name(gid: u32) -> String {
 
 /// `drwxr-xr-x`: the kind, then read, write and execute for owner, group and others,
 /// with the set-id and sticky bits where `ls` shows them.
+#[cfg(target_os = "linux")]
 pub(crate) fn permission_string(mode: u32) -> String {
     let kind = match mode & libc::S_IFMT {
         libc::S_IFDIR => 'd',
@@ -405,6 +439,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn only_things_that_run_offer_run() {
         let root = std::env::temp_dir().join(format!("boxbox-runnable-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
@@ -422,6 +457,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn permissions_read_like_ls() {
         assert_eq!(permission_string(libc::S_IFDIR | 0o755), "drwxr-xr-x");
         assert_eq!(permission_string(libc::S_IFREG | 0o640), "-rw-r-----");

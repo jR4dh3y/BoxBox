@@ -367,12 +367,19 @@ fn contains(api: &Api, folder: &str, item: &str) -> bool {
 /// Two virtual paths on one local provider that name the same file, such as
 /// `home/a.txt` and the same file through the System drive. A final link is
 /// its own entry, not the file it points to.
+#[cfg(target_os = "linux")]
 fn same_local_file(api: &Api, left: &str, right: &str) -> bool {
     use std::os::unix::fs::MetadataExt as _;
     let identity = |path: &str| {
         let real = api.entry_path(path).ok().flatten()?;
         fs::symlink_metadata(real).ok().map(|metadata| (metadata.dev(), metadata.ino()))
     };
+    identity(left).is_some_and(|left| identity(right) == Some(left))
+}
+
+#[cfg(windows)]
+fn same_local_file(api: &Api, left: &str, right: &str) -> bool {
+    let identity = |path| crate::windows::file_id(&api.entry_path(path).ok().flatten()?);
     identity(left).is_some_and(|left| identity(right) == Some(left))
 }
 
@@ -406,6 +413,7 @@ pub fn fat_safe(name: &str) -> String {
     safe
 }
 
+#[cfg(target_os = "linux")]
 fn is_fat(folder: &Path) -> bool {
     const MSDOS: i64 = 0x4d44;
     const EXFAT: i64 = 0x2011_bab0;
@@ -417,6 +425,7 @@ fn is_fat(folder: &Path) -> bool {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn free_space(folder: &Path) -> Option<u64> {
     let path = std::ffi::CString::new(folder.as_os_str().as_encoded_bytes()).ok()?;
     // SAFETY: as in `is_fat`.
@@ -426,10 +435,14 @@ fn free_space(folder: &Path) -> Option<u64> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn same_device(path: &Path, folder: &Path) -> bool {
     use std::os::unix::fs::MetadataExt as _;
     matches!((fs::symlink_metadata(path), fs::metadata(folder)), (Ok(left), Ok(right)) if left.dev() == right.dev())
 }
+
+#[cfg(windows)]
+use crate::windows::{free_space, is_fat, same_device};
 
 fn tree_size(path: &Path) -> u64 {
     let mut bytes = 0;
@@ -446,7 +459,7 @@ fn tree_size(path: &Path) -> u64 {
 }
 
 fn crosses_devices(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| cause.downcast_ref::<std::io::Error>().is_some_and(|io| io.raw_os_error() == Some(libc::EXDEV)))
+    error.chain().any(|cause| cause.downcast_ref::<std::io::Error>().is_some_and(|io| io.kind() == std::io::ErrorKind::CrossesDevices))
 }
 
 /// A staging folder, removed when dropped.
@@ -467,6 +480,7 @@ fn temp_dir() -> Result<TempDir> {
     for _ in 0..100 {
         let path = std::env::temp_dir().join(format!("boxbox-transfer-{}-{}", std::process::id(), next_stage()));
         let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
         match builder.create(&path) {
             Ok(()) => return Ok(TempDir(path)),
@@ -624,6 +638,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn a_failure_can_be_retried_or_skipped() {
         use std::os::unix::fs::PermissionsExt as _;
         let (root, api) = fixture(&["src/a.txt", "src/b.txt", "dst/"]);
@@ -657,6 +672,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn the_same_file_by_another_path_is_named_not_replaced() {
         let (root, api) = fixture(&["dst/a.txt"]);
         std::os::unix::fs::symlink(root.0.join("dst"), root.0.join("alias")).unwrap();
@@ -667,6 +683,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn moving_a_file_onto_itself_by_another_path_leaves_it() {
         let (root, api) = fixture(&["dst/a.txt"]);
         std::os::unix::fs::symlink(root.0.join("dst"), root.0.join("alias")).unwrap();
@@ -677,6 +694,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn moving_a_link_onto_its_target_asks() {
         let (root, api) = fixture(&["dst/a.txt", "src/"]);
         std::os::unix::fs::symlink(root.0.join("dst/a.txt"), root.0.join("src/a.txt")).unwrap();
@@ -692,6 +710,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn a_link_to_a_folder_is_not_walked_onto_a_server() {
         let (root, local) = fixture(&["src/inner.txt"]);
         std::os::unix::fs::symlink("..", root.0.join("src/loop")).unwrap();

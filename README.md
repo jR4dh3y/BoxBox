@@ -25,7 +25,7 @@
 <p align="center">
   <a href="https://boxbox.radhey.dev">Website</a> ·
   <a href="https://boxbox.radhey.dev/download/">Downloads</a> ·
-  <a href="https://boxbox.radhey.dev/docs/desktop/">Linux desktop</a> ·
+  <a href="https://boxbox.radhey.dev/docs/desktop/">Desktop app</a> ·
   <a href="https://boxbox.radhey.dev/docs/quickstart/">Quick start</a> ·
   <a href="https://boxbox.radhey.dev/docs/">Docs</a> ·
   <a href="https://github.com/jR4dh3y/BoxBox/releases">Releases</a>
@@ -33,7 +33,7 @@
 
 BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provides a browser UI for mounted Linux paths, large file and folder uploads, previews, code editing, search, share links, and background file operations.
 
-`frontend/` contains the Svelte UI, `desktop/` BoxBox Files, a native Linux file manager written in Rust with GPUI, and `website/` the marketing site. The Go API stays in `backend/`. Run `bun run dev:desktop` to open BoxBox Files on your own files; it can also browse a BoxBox server. See [the desktop README](desktop/README.md).
+`frontend/` contains the Svelte UI, `desktop/` BoxBox Files, a native Windows and Linux file manager written in Rust with GPUI, and `website/` the marketing site. The Go API stays in `backend/`. Run `bun run dev:desktop` to open BoxBox Files on your own files; it can also browse a BoxBox server. See [the desktop README](desktop/README.md).
 
 <p align="center">
   <a href="https://boxbox.radhey.dev/media/boxbox-promo.mp4">

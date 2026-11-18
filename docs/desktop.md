@@ -1,12 +1,20 @@
-# Linux desktop app
+# Desktop app
 
-BoxBox Files is a native Linux file manager with the BoxBox look. It manages the files on your computer directly and browses paired BoxBox servers. It needs no Docker, browser engine or local server.
+BoxBox Files is a native file manager for Windows and Linux with the BoxBox look. It manages the files on your computer directly and browses paired BoxBox servers. It needs no Docker, browser engine or local server.
 
 It replaced the Electrobun desktop app shipped in v0.3.2. Settings from that app are not carried over.
 
-## Supported systems
+## Windows
 
-Desktop builds target **Linux with glibc**, built on Ubuntu 24.04. The archive and the AUR package are x86_64; AppImages are x86_64 and ARM64. It runs as a native Wayland client (tested on Niri, Hyprland and sway) or on X11. Windows, macOS, 32-bit ARM and musl are not provided. The server remains available for Linux amd64 and arm64.
+BoxBox Files runs on Windows 11 x64 with a Direct3D 11-capable graphics driver. Download <code>boxbox-desktop-v&lt;version&gt;-windows-amd64.zip</code> and <code>SHA256SUMS</code> from [GitHub Releases](https://github.com/jR4dh3y/BoxBox/releases/) or [Downloads](/download/). To check the archive, compare its SHA-256 from <code>Get-FileHash</code> with the matching line in <code>SHA256SUMS</code>. Extract the archive and launch <code>boxbox-files.exe</code>. To update, extract the new ZIP and replace the previous app.
+
+The sidebar lists Windows drives and known folders. Use Ctrl+L to enter a drive-letter path. Network shares are available through drive letters mapped in Windows. Open With uses the Windows app chooser, and you can copy, cut, and paste files between BoxBox and Explorer. Settings live under <code>%APPDATA%\BoxBox\Config</code>, state and cache under <code>%LOCALAPPDATA%\BoxBox</code>, and paired server credentials in Windows Credential Manager.
+
+BoxBox’s Trash can restore items deleted from the Windows profile volume. Local image thumbnails, drag and drop within BoxBox, and dropping files from Explorer are supported. The system-wide picker, GVfs mounts, POSIX permissions, video/PDF thumbnails and dragging files out of BoxBox are currently Linux features.
+
+## Linux
+
+Desktop builds target **Linux with glibc**, built on Ubuntu 24.04. The archive and the AUR package are x86_64; AppImages are x86_64 and ARM64. It runs as a native Wayland client (tested on Niri, Hyprland and sway) or on X11. The server remains available for Linux amd64 and arm64.
 
 It draws with Vulkan. On Ubuntu 24.04 install:
 
@@ -24,7 +32,7 @@ Optional, for the features that use them:
 
 On a laptop with two GPUs it draws on the GPU the compositor uses. Set `ZED_DEVICE_ID` to a PCI device ID to pick one yourself.
 
-## Download and install
+### Download and install on Linux
 
 Arch Linux users can install from the AUR:
 
@@ -65,9 +73,9 @@ If FUSE is unavailable, add `--appimage-extract-and-run`. AppImages do not insta
 
 ## Local files and connected servers
 
-- Browse drives, home folders, disks, phones and network shares. Type `smb://server/share`, `sftp://user@host/path` or `ftp://host` in the location bar (Ctrl+L) to mount and open one.
-- Use tabs, split panes, list and grid views, search, favorites (shared with other file managers through the GTK bookmarks file) and the freedesktop Trash.
-- Files open in their default app; **Open with** lists the installed apps that take the file. Drag files out of the window into other apps.
+- On Linux, browse drives, home folders, disks, phones and network shares. Type `smb://server/share`, `sftp://user@host/path` or `ftp://host` in the location bar (Ctrl+L) to mount and open one.
+- Use tabs, split panes, list and grid views, search, favorites and Trash. On Linux, bookmarks and Trash use shared desktop formats.
+- Files open in their default app. Use **Open with** to choose another app.
 
 To connect a server:
 
@@ -75,15 +83,17 @@ To connect a server:
 2. In the server's web UI, open **Settings → Account → Pair a desktop**, confirm your password and generate a single-use code.
 3. In BoxBox Files, open **Settings → Connections** (Ctrl+Shift+O), enter the server's address and the code.
 
-The credential is stored in your keyring through the Secret Service. Saved servers connect in the background at launch, and their drives join the sidebar and Overview. Removing a connection revokes it on the server and forgets it here; it does not touch files on the server.
+BoxBox stores the credential in Windows Credential Manager or the Linux Secret Service. Saved servers connect in the background at launch, and their drives join the sidebar and Overview. Removing a connection revokes it on the server and forgets it here; it does not touch files on the server.
 
 ## Build from source
 
-Install Rust, Bun and the development packages for the libraries above (on Ubuntu: `libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig-dev libfreetype-dev`), then run:
+On Linux, install Rust, Bun and the development packages for the libraries above (on Ubuntu: `libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig-dev libfreetype-dev`), then run:
 
 ```bash
 bun run build:desktop
 bun run install:desktop
 ```
+
+On Windows, install stable Rust for <code>x86_64-pc-windows-msvc</code>, the Visual Studio C++ Build Tools, and a Windows SDK with the x64 <code>fxc.exe</code>. Set <code>GPUI_FXC_PATH</code> to that executable and run <code>pwsh -File scripts/package-windows.ps1</code> from the checkout. The ZIP lands under <code>dist/release/</code>.
 
 See the [desktop README](https://github.com/jR4dh3y/BoxBox/blob/master/desktop/README.md) for development, profiling and tests, and [the paired-client API](connect-api.md) for the authorization contract.

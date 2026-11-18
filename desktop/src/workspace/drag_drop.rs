@@ -457,10 +457,16 @@ impl Workspace {
 /// Whether a dragged item and the folder it is dropped in share a device, so that a
 /// move is a rename and not a copy. Remote providers count as one filesystem each.
 fn same_filesystem(from: &Api, item: &str, to: &Api, folder: &str) -> bool {
-    use std::os::unix::fs::MetadataExt as _;
-    let device = |api: &Api, path: &str| -> Option<Option<u64>> {
+    #[cfg(unix)]
+    let volume = |path: &std::path::Path| {
+        use std::os::unix::fs::MetadataExt as _;
+        std::fs::symlink_metadata(path).ok().map(|metadata| metadata.dev())
+    };
+    #[cfg(windows)]
+    let volume = |path: &std::path::Path| crate::windows::file_id(path).map(|(volume, _)| volume);
+    let device = |api: &Api, path: &str| {
         match api.local_path(path) {
-            Ok(Some(real)) => std::fs::symlink_metadata(real).ok().map(|metadata| Some(metadata.dev())),
+            Ok(Some(real)) => volume(&real).map(Some),
             Ok(None) => Some(None),
             Err(_) => None,
         }

@@ -92,7 +92,10 @@ impl Startup {
 pub(super) fn start_path(api: &Api, start: StartLocation) -> String {
     match start {
         StartLocation::Overview => String::new(),
-        StartLocation::Home => std::env::var_os("HOME").and_then(|home| api.virtual_path(std::path::Path::new(&home))).unwrap_or_default(),
+        StartLocation::Home => {
+            let home_var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+            std::env::var_os(home_var).and_then(|home| api.virtual_path(std::path::Path::new(&home)))
+        }.unwrap_or_default(),
         StartLocation::Last => std::fs::read_to_string(crate::persist::LAST_LOCATION.path()).map(|path| path.trim().to_string()).unwrap_or_default(),
     }
 }

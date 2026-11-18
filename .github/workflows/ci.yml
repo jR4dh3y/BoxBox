@@ -260,3 +260,9 @@ jobs:
           name: desktop-release-preview
           path: dist/release/*
           retention-days: 7
+
+  desktop-windows:
+    name: Windows desktop package validation
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.desktop == 'true') }}
+    uses: ./.github/workflows/desktop-windows.yml

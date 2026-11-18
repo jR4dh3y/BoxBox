@@ -430,6 +430,17 @@ impl Workspace {
                     if path.is_empty() {
                         return Ok((path, None));
                     }
+                    #[cfg(windows)]
+                    let path = if validation_api.is_local() && (Path::new(&path).is_absolute() || path.starts_with("file://")) {
+                        let real = if path.starts_with("file://") {
+                            crate::os_clipboard::path_from_uri(&path).context("Invalid file URI")?
+                        } else {
+                            PathBuf::from(path)
+                        };
+                        validation_api.virtual_path(&real).context("The location is unavailable or outside the listed drives")?
+                    } else {
+                        path
+                    };
                     let mut read = super::startup::read_listing(&validation_api, &path, view);
                     let items = std::mem::replace(&mut read.items, Ok(Vec::new())).with_context(|| format!("cannot open {path}"))?;
                     read.items = Ok(items);

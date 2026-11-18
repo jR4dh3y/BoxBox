@@ -1,3 +1,4 @@
+#[cfg(target_os = "linux")]
 mod media;
 mod render;
 
@@ -50,8 +51,6 @@ pub fn thumbnail_path(
     width: u32,
     height: u32,
 ) -> Result<Vec<u8>, ThumbnailError> {
-    use std::os::fd::AsRawFd;
-
     if !(16..=512).contains(&width) || !(16..=512).contains(&height) {
         return Err(ThumbnailError::InvalidInput);
     }
@@ -81,9 +80,15 @@ pub fn thumbnail_path(
         return render::render_png(BufReader::new(file), width, height)
             .map_err(ThumbnailError::from);
     }
-    let fd = u32::try_from(file.as_raw_fd()).map_err(|_| ThumbnailError::InvalidInput)?;
-    let frame = media::frame(kind, fd, width, height).map_err(ThumbnailError::from)?;
-    render::render_png(Cursor::new(frame), width, height).map_err(ThumbnailError::from)
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::fd::AsRawFd;
+        let fd = u32::try_from(file.as_raw_fd()).map_err(|_| ThumbnailError::InvalidInput)?;
+        let frame = media::frame(kind, fd, width, height).map_err(ThumbnailError::from)?;
+        render::render_png(Cursor::new(frame), width, height).map_err(ThumbnailError::from)
+    }
+    #[cfg(not(target_os = "linux"))]
+    Err(ThumbnailError::UnsupportedFormat)
 }
 
 /// Decodes bounded remote thumbnail bytes and normalizes them to PNG.

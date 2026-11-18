@@ -3,18 +3,16 @@
 
 use std::ffi::OsString;
 
-pub const USAGE: &str = "\
+macro_rules! usage {
+    ($platform:literal, $options:literal) => { concat!("\
 Usage: boxbox-files [OPTIONS] [LOCATION]
 
 Opens LOCATION: a folder, a file:// URI, or a file (opens its folder).
-If BoxBox is already running, the location opens in that window.
-
+", $platform, "
 Options:
   -h, --help                     Print this help and exit
   -V, --version                  Print the version and exit
-      --enable-picker            Use BoxBox for other apps' Open and Save dialogs
-      --disable-picker           Go back to the previous Open and Save dialogs
-      --portal                   Serve the Open and Save dialogs (D-Bus starts this)
+", $options, "\
       --profile-summary <TRACE>  Summarise a BOXBOX_PROFILE trace and exit
       --                         Treat the next argument as a location,
                                  even if it starts with '-'
@@ -24,15 +22,30 @@ Environment:
   BOXBOX_TOKEN    Bearer token for BOXBOX_URL
   BOXBOX_ROOT     Use this folder as the local root (for fixtures)
   BOXBOX_PROFILE  Record a profiling trace to this file
-";
+") };
+}
+
+#[cfg(target_os = "linux")]
+pub const USAGE: &str = usage!(
+    "If BoxBox is already running, the location opens in that window.\n",
+    "      --enable-picker            Use BoxBox for other apps' Open and Save dialogs
+      --disable-picker           Go back to the previous Open and Save dialogs
+      --portal                   Serve the Open and Save dialogs (D-Bus starts this)
+"
+);
+
+#[cfg(windows)]
+pub const USAGE: &str = usage!("", "");
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     /// Open the window at a location; empty means the default start.
     Open(String),
     Gallery,
+    #[cfg(target_os = "linux")]
     /// Serve the file chooser portal.
     Portal,
+    #[cfg(target_os = "linux")]
     /// Route other apps' file dialogs to BoxBox (`true`), or back.
     SetPicker(bool),
     ProfileSummary(String),
@@ -60,8 +73,11 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, Error>
             "-h" | "--help" | "-help" | "help" => return Ok(Command::Help),
             "-V" | "--version" => return Ok(Command::Version),
             "--gallery" => return Ok(Command::Gallery),
+            #[cfg(target_os = "linux")]
             "--portal" => return Ok(Command::Portal),
+            #[cfg(target_os = "linux")]
             "--enable-picker" => return Ok(Command::SetPicker(true)),
+            #[cfg(target_os = "linux")]
             "--disable-picker" => return Ok(Command::SetPicker(false)),
             "--profile-summary" => {
                 let trace = args.next().transpose()?.ok_or_else(|| Error("--profile-summary needs a trace file".into()))?;

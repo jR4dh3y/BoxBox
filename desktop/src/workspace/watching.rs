@@ -8,7 +8,10 @@ use super::{PaneTarget, Workspace};
 pub(crate) struct DirectoryWatches {
     #[cfg(target_os = "linux")]
     events: Option<std::fs::File>,
+    #[cfg(target_os = "linux")]
     paths: HashMap<usize, (PathBuf, i32)>,
+    #[cfg(windows)]
+    paths: HashMap<usize, (PathBuf, ChangeNotification)>,
 }
 
 impl DirectoryWatches {
@@ -32,13 +35,21 @@ impl DirectoryWatches {
             if watch >= 0 { self.paths.insert(pane, (path, watch)); }
             else { log::warn!("Could not watch folder: {}", std::io::Error::last_os_error()); }
         }
-        #[cfg(not(target_os = "linux"))]
-        let _ = (pane, path);
+        #[cfg(windows)]
+        {
+            if self.paths.get(&pane).is_some_and(|(current, _)| current == &path) { return; }
+            self.remove(pane);
+            if let Some(watch) = ChangeNotification::new(&path) {
+                self.paths.insert(pane, (path, watch));
+            }
+        }
     }
 
     fn remove(&mut self, pane: usize) {
+        #[cfg(windows)]
+        self.paths.remove(&pane);
+        #[cfg(target_os = "linux")]
         if let Some((_, descriptor)) = self.paths.remove(&pane) {
-            #[cfg(target_os = "linux")]
             if !self.paths.values().any(|(_, watch)| *watch == descriptor) {
                 use std::os::fd::AsRawFd;
                 if let Some(events) = &self.events {
@@ -81,8 +92,52 @@ impl DirectoryWatches {
                 }
             }
         }
+        #[cfg(windows)]
+        for (&pane, (_, watch)) in &self.paths {
+            if let Some(rearmed) = watch.changed() {
+                changed.insert(pane);
+                if !rearmed {
+                    ended.push(pane);
+                }
+            }
+        }
         for pane in ended { self.remove(pane); }
         changed.into_iter().collect()
+    }
+}
+
+#[cfg(windows)]
+struct ChangeNotification(windows_sys::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl ChangeNotification {
+    fn new(path: &std::path::Path) -> Option<Self> {
+        use windows_sys::Win32::{Foundation::INVALID_HANDLE_VALUE, Storage::FileSystem::*};
+        let path = crate::windows::wide(path);
+        let mask = FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME
+            | FILE_NOTIFY_CHANGE_ATTRIBUTES | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE;
+        let handle = unsafe { FindFirstChangeNotificationW(path.as_ptr(), 0, mask) };
+        (handle != INVALID_HANDLE_VALUE).then(|| Self(handle))
+    }
+
+    fn changed(&self) -> Option<bool> {
+        use windows_sys::Win32::{
+            Foundation::{WAIT_FAILED, WAIT_OBJECT_0},
+            Storage::FileSystem::FindNextChangeNotification,
+            System::Threading::WaitForSingleObject,
+        };
+        match unsafe { WaitForSingleObject(self.0, 0) } {
+            WAIT_OBJECT_0 => Some(unsafe { FindNextChangeNotification(self.0) } != 0),
+            WAIT_FAILED => Some(false),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ChangeNotification {
+    fn drop(&mut self) {
+        unsafe { windows_sys::Win32::Storage::FileSystem::FindCloseChangeNotification(self.0) };
     }
 }
 

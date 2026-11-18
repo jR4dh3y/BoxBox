@@ -1,13 +1,18 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 //! Native BoxBox desktop with direct local filesystem access and remote HTTP connections.
 
 mod api;
 mod assets;
+#[cfg(target_os = "linux")]
 mod chooser;
 mod cli;
 mod components;
 mod devices;
+#[cfg(target_os = "linux")]
 mod filemanager1;
 mod gallery;
+#[cfg(target_os = "linux")]
 mod instance;
 mod drag_out;
 mod file_icons;
@@ -16,12 +21,15 @@ mod transfer;
 mod heap;
 mod icon_theme;
 mod local;
+#[cfg_attr(windows, path = "windows/launch.rs")]
 mod launch;
 mod custom_actions;
 #[cfg(target_os = "linux")]
 mod associations;
 mod media;
+#[cfg(target_os = "linux")]
 mod open_with;
+#[cfg_attr(windows, path = "windows/clipboard.rs")]
 mod os_clipboard;
 #[cfg(target_os = "linux")]
 mod package_icons;
@@ -32,7 +40,10 @@ mod render_gpu;
 mod persist;
 mod profile;
 mod search;
+#[cfg_attr(windows, path = "windows/secrets.rs")]
 mod secrets;
+#[cfg(windows)]
+mod windows;
 mod sort;
 mod theme;
 mod thumbnail_queue;
@@ -53,6 +64,7 @@ fn main() {
     let (initial_path, gallery) = match cli::parse(std::env::args_os().skip(1)) {
         Ok(cli::Command::Open(path)) => (path, false),
         Ok(cli::Command::Gallery) => (String::new(), true),
+        #[cfg(target_os = "linux")]
         Ok(cli::Command::Portal) => {
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
             #[cfg(target_os = "linux")]
@@ -60,6 +72,7 @@ fn main() {
             chooser::run(system_fonts::resolve().sans);
             return;
         }
+        #[cfg(target_os = "linux")]
         Ok(cli::Command::SetPicker(enable)) => {
             let result = match enable {
                 true => chooser::routing::enable(),
@@ -128,10 +141,12 @@ fn main() {
         return;
     }
     // A second launch opens its location in the running window instead.
+    #[cfg(target_os = "linux")]
     let claimed = {
         let _span = profile::span("single-instance claim");
         instance::claim(&initial_path)
     };
+    #[cfg(target_os = "linux")]
     let launches = match claimed {
         Ok(instance::Instance::Forwarded) => return,
         Ok(instance::Instance::Primary(launches, sender)) => {
@@ -187,10 +202,15 @@ fn main() {
                     drag_out::init(window, cx);
                     cx.new(|cx| {
                         let _span = profile::span("Workspace::new");
-                        let mut workspace = Workspace::new(start, fonts, window, cx);
-                        if let Some(launches) = launches {
-                            workspace.receive_launches(launches, window, cx);
-                        }
+                        let workspace = Workspace::new(start, fonts, window, cx);
+                        #[cfg(target_os = "linux")]
+                        let workspace = {
+                            let mut workspace = workspace;
+                            if let Some(launches) = launches {
+                                workspace.receive_launches(launches, window, cx);
+                            }
+                            workspace
+                        };
                         workspace
                     })
                 },

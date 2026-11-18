@@ -117,8 +117,11 @@ pub(crate) enum Connected {
 
 /// What the server lists among its paired clients.
 fn client_name() -> String {
+    #[cfg(windows)]
+    let host = std::env::var("COMPUTERNAME").unwrap_or_default();
+    #[cfg(target_os = "linux")]
     let host = std::fs::read_to_string("/proc/sys/kernel/hostname").map(|name| name.trim().to_string()).unwrap_or_default();
-    if host.is_empty() { "BoxBox for Linux".into() } else { format!("BoxBox on {host}") }
+    if host.is_empty() { format!("BoxBox for {}", if cfg!(windows) { "Windows" } else { "Linux" }) } else { format!("BoxBox on {host}") }
 }
 
 /// The saved connection with its keyring credential, and its drives once the server accepts it.

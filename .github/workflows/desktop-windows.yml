@@ -1,0 +1,42 @@
+name: Windows desktop
+
+on:
+  workflow_call:
+    inputs:
+      release-tag:
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-desktop-windows
+      - name: Build portable package
+        env:
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        run: ./scripts/package-windows.ps1
+      - name: Test desktop
+        run: cargo test --release --locked --workspace --manifest-path desktop/Cargo.toml
+      - name: Launch the packaged app until it paints a folder
+        run: |
+          $version = (Get-Content -Raw VERSION).Trim()
+          $name = "boxbox-desktop-v$version-windows-amd64"
+          $unpacked = Join-Path $env:RUNNER_TEMP 'BoxBox Windows smoke'
+          Expand-Archive -LiteralPath "dist/release/$name.zip" -DestinationPath $unpacked
+          bun scripts/desktop-smoke.ts (Join-Path $unpacked "$name/boxbox-files.exe")
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: boxbox-release-windows
+          path: dist/release/*-windows-amd64.zip
+          retention-days: 14
+          if-no-files-found: error

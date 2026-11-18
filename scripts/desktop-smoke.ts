@@ -17,7 +17,7 @@ try {
   );
   // BOXBOX_ROOT names its drive `home`; it also keys the single-instance
   // socket, so a BoxBox window already open does not take this launch.
-  const child = Bun.spawn([app, "home"], {
+  const child = Bun.spawn([app, "--", root], {
     env: {
       ...env,
       BOXBOX_PROFILE: trace,

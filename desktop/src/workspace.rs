@@ -25,6 +25,7 @@ pub(crate) mod overview;
 pub(crate) mod drag_drop;
 pub(crate) mod jobs;
 mod notifications;
+#[cfg_attr(windows, path = "windows/open_with.rs")]
 pub(crate) mod open_with;
 mod watching;
 pub(crate) mod undo;
@@ -322,7 +323,9 @@ pub struct Workspace {
     pub(crate) pending_credential_focus: bool,
     /// Focus the address field on the next render, to finish a location such as `smb://nas/`.
     pub(crate) pending_location_focus: bool,
+    #[cfg(target_os = "linux")]
     pub(crate) open_with: Option<open_with::OpenWith>,
+    #[cfg(target_os = "linux")]
     pub(crate) open_with_search: Entity<TextField>,
     pub(crate) settings_focus: FocusHandle,
     pub(crate) dialog_field: Entity<TextField>,
@@ -411,6 +414,7 @@ impl Workspace {
         let rename_focus = gpui::Focusable::focus_handle(rename_field.read(cx), cx);
         let location_field = cx.new(|cx| TextField::new("Type a location", cx));
         let accent_field = cx.new(|cx| TextField::new("#4a9eff", cx));
+        #[cfg(target_os = "linux")]
         let open_with_search = cx.new(|cx| TextField::new("Search applications", cx));
         let settings_fields = [
             cx.new(|cx| TextField::new("", cx)),
@@ -471,7 +475,9 @@ impl Workspace {
             device_fields,
             pending_credential_focus: false,
             pending_location_focus: false,
+            #[cfg(target_os = "linux")]
             open_with: None,
+            #[cfg(target_os = "linux")]
             open_with_search: open_with_search.clone(),
             settings_focus: cx.focus_handle(),
             dialog_field: dialog_field.clone(),
@@ -488,6 +494,7 @@ impl Workspace {
                 cx.on_blur(&rename_focus, window, |this, window, cx| this.on_rename_blur(window, cx)),
                 cx.subscribe_in(&location_field, window, |this, _, event, window, cx| this.on_location_field(event, window, cx)),
                 cx.subscribe_in(&accent_field, window, |this, _, event, _, cx| this.on_accent_field(event, cx)),
+                #[cfg(target_os = "linux")]
                 cx.subscribe_in(&open_with_search, window, |this, _, event, window, cx| this.on_open_with_search(event, window, cx)),
             ]
             .into_iter()
@@ -554,6 +561,7 @@ impl Workspace {
     }
 
     /// Later launches each open a tab and raise the window.
+    #[cfg(target_os = "linux")]
     pub(crate) fn receive_launches(&mut self, launches: async_channel::Receiver<String>, window: &mut Window, cx: &mut Context<Self>) {
         cx.spawn_in(window, async move |this, cx| {
             while let Ok(argument) = launches.recv().await {
@@ -1340,7 +1348,10 @@ impl Workspace {
     ) {
         self.settings_open = true;
         self.settings_section = SettingsSection::General;
-        self.settings_panel.picker = crate::chooser::routing::enabled();
+        #[cfg(target_os = "linux")]
+        {
+            self.settings_panel.picker = crate::chooser::routing::enabled();
+        }
         self.settings_focus.focus(window);
         cx.notify();
     }
@@ -1379,7 +1390,7 @@ impl Workspace {
 pub(crate) fn launch_path(api: &Api, argument: &str) -> String {
     let real = match argument.strip_prefix("file://") {
         Some(_) => crate::os_clipboard::path_from_uri(argument),
-        None if argument.starts_with('/') => Some(std::path::PathBuf::from(argument)),
+        None if std::path::Path::new(argument).is_absolute() => Some(std::path::PathBuf::from(argument)),
         None => return argument.trim_matches('/').to_string(),
     };
     let Some(real) = real else { return String::new() };
@@ -1518,7 +1529,11 @@ impl Render for Workspace {
             .when(self.drop_menu.is_some(), |root| root.child(self.render_drop_menu(cx)))
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
             .child(self.render_notices(cx))
-            .when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)))
+            .when(cfg!(target_os = "linux"), |root| {
+                #[cfg(target_os = "linux")]
+                let root = root.when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)));
+                root
+            })
             .when(self.transfer_question.is_some(), |root| root.child(self.render_transfer_question(cx)))
             .when(self.confirm.is_some(), |root| root.child(self.render_confirm(cx)))
             .when(self.shortcuts_open, |root| root.child(self.render_shortcuts(cx)))
@@ -1532,5 +1547,5 @@ impl Render for Workspace {
 
 #[cfg(test)]
 pub(crate) mod parity_test;
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod features_test;

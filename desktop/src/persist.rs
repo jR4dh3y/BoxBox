@@ -11,29 +11,31 @@ use std::{
 };
 
 pub(crate) fn config_dir() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("boxbox-gpui")
+    directory("XDG_CONFIG_HOME", ".config", "APPDATA", "Config")
 }
 
 /// What can be rebuilt, under `$XDG_CACHE_HOME/boxbox-gpui`.
 pub(crate) fn cache_dir() -> PathBuf {
-    std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("boxbox-gpui")
+    directory("XDG_CACHE_HOME", ".cache", "LOCALAPPDATA", "Cache")
 }
 
 /// What the app was doing, such as the last folder, under `$XDG_STATE_HOME/boxbox-gpui`.
 pub(crate) fn state_dir() -> PathBuf {
-    std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("boxbox-gpui")
+    directory("XDG_STATE_HOME", ".local/state", "LOCALAPPDATA", "State")
+}
+
+fn directory(override_var: &str, unix_fallback: &str, windows_var: &str, windows_folder: &str) -> PathBuf {
+    if let Some(path) = std::env::var_os(override_var).filter(|path| !path.is_empty()) {
+        return PathBuf::from(path).join("boxbox-gpui");
+    }
+    if cfg!(windows) {
+        std::env::var_os(windows_var).map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("BoxBox").join(windows_folder)
+    } else {
+        std::env::var_os("HOME").map(|home| PathBuf::from(home).join(unix_fallback))
+            .unwrap_or_else(|| PathBuf::from(".")).join("boxbox-gpui")
+    }
 }
 
 /// Writes through a temporary file and a rename, so a crash leaves the old or the new file.

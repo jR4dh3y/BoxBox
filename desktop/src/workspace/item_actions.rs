@@ -1,10 +1,15 @@
 //! Context-menu actions on selected items: Open in New Tab,
 //! Compress and Send To (a removable drive, the Desktop, or an email).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+#[cfg(target_os = "linux")]
+use std::collections::HashMap;
+#[cfg(target_os = "linux")]
 use std::os::fd::AsFd as _;
+#[cfg(target_os = "linux")]
 use std::sync::Arc;
 
+#[cfg(target_os = "linux")]
 use anyhow::Context as _;
 use gpui::{Context, SharedString};
 
@@ -91,7 +96,7 @@ impl Workspace {
         if !api.is_local() || items.is_empty() {
             return None;
         }
-        let mut entries: Vec<MenuItem> = self
+        let entries: Vec<MenuItem> = self
             .send_destinations(&api)
             .into_iter()
             .enumerate()
@@ -106,17 +111,25 @@ impl Workspace {
                     }))
             })
             .collect();
-        let files = items.iter().all(|item| !item.is_dir);
-        let mail_items = items.to_vec();
-        entries.push(
-            MenuItem::action("send-mail", "Mail Recipient…")
-                .icon("send")
-                .disabled(!files)
-                .on_select(cx.listener(move |this, _, _, cx| {
-                    this.close_menus();
-                    this.send_by_mail(api.clone(), mail_items.clone(), cx);
-                })),
-        );
+        #[cfg(target_os = "linux")]
+        let entries = {
+            let mut entries = entries;
+            let files = items.iter().all(|item| !item.is_dir);
+            let mail_items = items.to_vec();
+            entries.push(
+                MenuItem::action("send-mail", "Mail Recipient…")
+                    .icon("send")
+                    .disabled(!files)
+                    .on_select(cx.listener(move |this, _, _, cx| {
+                        this.close_menus();
+                        this.send_by_mail(api.clone(), mail_items.clone(), cx);
+                    })),
+            );
+            entries
+        };
+        if entries.is_empty() {
+            return None;
+        }
         let id: SharedString = "send-to".into();
         let open = self.open_submenu.as_ref() == Some(&id);
         Some(MenuItem::submenu(id, "Send To", entries, open).icon("send"))
@@ -124,6 +137,7 @@ impl Workspace {
 
     /// Opens a new email with the files attached, through the desktop's Email
     /// portal, which hands them to the user's mail app.
+    #[cfg(target_os = "linux")]
     pub(crate) fn send_by_mail(&mut self, api: Arc<Api>, items: Vec<FileInfo>, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move { compose_email(&api, &items) }).await;
@@ -140,6 +154,7 @@ impl Workspace {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn compose_email(api: &Api, items: &[FileInfo]) -> anyhow::Result<()> {
     let files = items
         .iter()

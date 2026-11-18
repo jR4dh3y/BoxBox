@@ -1,6 +1,11 @@
+#[cfg(target_os = "linux")]
 use super::*;
+#[cfg(windows)]
+use std::fs;
+#[cfg(target_os = "linux")]
 use gpui::{TestAppContext, VisualTestContext, Modifiers, MouseButton};
 
+#[cfg(target_os = "linux")]
 struct ProbeServer(std::process::Child);
 
 /// Points the settings files at a temporary folder. Tests that render a workspace
@@ -45,6 +50,7 @@ impl Drop for TestConfig {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Drop for ProbeServer {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -53,6 +59,7 @@ impl Drop for ProbeServer {
 }
 
 // The same rendered workflow can run against a freshly built Go server instead of local Rust.
+#[cfg(target_os = "linux")]
 fn fixture_api(fixture: &std::path::Path) -> (Api, Option<ProbeServer>) {
     let Some(binary) = std::env::var_os("BOXBOX_PARITY_SERVER") else {
         return (Api::local_with_root(fixture.to_path_buf()).unwrap(), None);
@@ -77,12 +84,14 @@ fn fixture_api(fixture: &std::path::Path) -> (Api, Option<ProbeServer>) {
     (api, Some(server))
 }
 
+#[cfg(target_os = "linux")]
 pub(super) fn click(cx: &mut VisualTestContext, selector: &'static str) {
     let bounds = cx.debug_bounds(selector).unwrap_or_else(|| panic!("{selector} must be rendered"));
     cx.simulate_click(bounds.center(), Modifiers::default());
 }
 
 // Exercise the real workspace, key routing and filesystem rather than isolated helpers.
+#[cfg(target_os = "linux")]
 #[gpui::test]
 fn desktop_workflow(cx: &mut TestAppContext) {
     let fixture = std::env::temp_dir().join(format!("boxbox-parity-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));

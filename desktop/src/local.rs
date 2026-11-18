@@ -2,14 +2,19 @@
 
 mod archive;
 mod copy;
-pub mod network;
+#[cfg(target_os = "linux")]
+mod network;
+#[cfg(target_os = "linux")]
 mod recent;
 mod search;
 mod trash;
 pub(crate) mod mime;
+#[cfg_attr(windows, path = "windows_thumbnails.rs")]
 pub mod thumbnails;
+#[cfg(target_os = "linux")]
 mod thumbnailers;
 
+#[cfg(unix)]
 use std::ffi::CString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -26,9 +31,9 @@ pub(super) struct Mount {
 
 /// Local files exposed through the same virtual paths as the remote file API.
 pub struct LocalFiles {
-    mounts: Vec<Mount>,
-    trash_data_home: PathBuf,
-    volume_trash: bool,
+    pub(super) mounts: Vec<Mount>,
+    pub(super) trash_data_home: PathBuf,
+    pub(super) volume_trash: bool,
 }
 
 impl LocalFiles {
@@ -38,6 +43,15 @@ impl LocalFiles {
             return Self::with_root(root.into());
         }
 
+        #[cfg(windows)]
+        return crate::windows::local_files();
+
+        #[cfg(target_os = "linux")]
+        Self::linux()
+    }
+
+    #[cfg(target_os = "linux")]
+    fn linux() -> Result<Self> {
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .context("HOME is not set")?;
@@ -109,23 +123,38 @@ impl LocalFiles {
     /// The mounts, with Home then Recent first among the places and Network last.
     /// Recent and Network are listings, not folders.
     pub fn roots(&self) -> Result<Vec<MountPoint>> {
+        #[cfg(target_os = "linux")]
         let place = |name: &str, label: &str| MountPoint { name: name.into(), label: Some(label.into()), kind: RootKind::Place };
         let (drives, places): (Vec<_>, Vec<_>) = self.mounts.iter().map(|mount| mount.point.clone()).partition(|point| point.kind == RootKind::Drive);
         let (home, places): (Vec<_>, Vec<_>) = places.into_iter().partition(|point| point.name == "home");
-        Ok(drives.into_iter().chain(home).chain([place(RECENT, "Recent")]).chain(places).chain([place(NETWORK, "Network")]).collect())
+        let roots = drives.into_iter().chain(home);
+        #[cfg(target_os = "linux")]
+        let roots = roots.chain([place(RECENT, "Recent")]).chain(places).chain([place(NETWORK, "Network")]);
+        #[cfg(windows)]
+        let roots = roots.chain(places);
+        Ok(roots.collect())
     }
 
     pub fn drives(&self) -> Result<Vec<DriveStats>> {
         self.mounts
             .iter()
             .filter(|mount| mount.point.kind != RootKind::Place)
-            .map(drive_stats)
+            .filter_map(|mount| match drive_stats(mount) {
+                #[cfg(windows)]
+                Err(error) => {
+                    log::debug!("Could not read {}: {error:#}", mount.path.display());
+                    None
+                }
+                result => Some(result),
+            })
             .collect()
     }
 
     pub fn list(&self, path: &str) -> Result<Vec<FileInfo>> {
         match path {
+            #[cfg(target_os = "linux")]
             RECENT => return Ok(self.recent()),
+            #[cfg(target_os = "linux")]
             NETWORK => return network_entries(),
             _ => {}
         }
@@ -185,11 +214,7 @@ impl LocalFiles {
         let is_tree = metadata.is_dir();
         ensure!(!is_tree || recursive, "directory deletion requires confirmation");
         self.ensure_mutable_target(&entry, is_tree)?;
-        if is_tree {
-            fs::remove_dir_all(&entry).with_context(|| format!("cannot delete {path}"))
-        } else {
-            fs::remove_file(&entry).with_context(|| format!("cannot delete {path}"))
-        }
+        copy::remove_entry(&entry).with_context(|| format!("cannot delete {path}"))
     }
 
     /// Copy a file into `directory`, or write a directory archive as `<name>.zip`.
@@ -243,6 +268,10 @@ impl LocalFiles {
 
     /// The virtual path for a real one, under the mount that holds it most closely.
     pub fn virtual_path(&self, real: &Path) -> Option<String> {
+        #[cfg(windows)]
+        let canonical = fs::canonicalize(real).ok()?;
+        #[cfg(windows)]
+        let real = canonical.as_path();
         let mount = self.mounts.iter().filter(|mount| real.starts_with(&mount.path)).max_by_key(|mount| mount.path.components().count())?;
         let relative = real.strip_prefix(&mount.path).ok()?;
         let mut path = mount.point.name.clone();
@@ -279,7 +308,7 @@ impl LocalFiles {
         for mount in &self.mounts {
             for (path, icon) in &places {
                 if let Ok(rest) = path.strip_prefix(&mount.path) {
-                    let rest = rest.to_string_lossy();
+                    let rest = rest.iter().map(|part| part.to_string_lossy()).collect::<Vec<_>>().join("/");
                     found.push((if rest.is_empty() { mount.point.name.clone() } else { format!("{}/{rest}", mount.point.name) }, *icon));
                 }
             }
@@ -360,7 +389,15 @@ impl LocalFiles {
             true => PathBuf::from(entry.file_name().context("the target has no name")?),
             false => entry.clone(),
         };
-        std::os::unix::fs::symlink(points_to, parent.join(name)).with_context(|| format!("cannot create a link to {target}"))
+        #[cfg(unix)]
+        let result = std::os::unix::fs::symlink(points_to, parent.join(name));
+        #[cfg(windows)]
+        let result = if entry.is_dir() {
+            std::os::windows::fs::symlink_dir(points_to, parent.join(name))
+        } else {
+            std::os::windows::fs::symlink_file(points_to, parent.join(name))
+        };
+        result.with_context(|| format!("cannot create a link to {target}"))
     }
 
     /// Import a selected local file or directory into an existing virtual directory.
@@ -406,6 +443,7 @@ impl LocalFiles {
     }
 
     /// Recently used local files, each at its own path, newest first.
+    #[cfg(target_os = "linux")]
     fn recent(&self) -> Vec<FileInfo> {
         recent::files(&self.trash_data_home, 200)
             .into_iter()
@@ -571,11 +609,30 @@ impl LocalFiles {
 }
 
 /// Whether this process may add, rename and remove entries in `folder`.
+#[cfg(unix)]
 pub(crate) fn writable(folder: &Path) -> bool {
     use std::os::unix::ffi::OsStrExt as _;
     let Ok(path) = CString::new(folder.as_os_str().as_bytes()) else { return false };
     // SAFETY: the C path is NUL-terminated and outlives the call.
     unsafe { libc::access(path.as_ptr(), libc::W_OK | libc::X_OK) == 0 }
+}
+
+#[cfg(windows)]
+pub(crate) use crate::windows::writable;
+
+/// A readable location for Properties and Trash.
+pub(crate) fn display_location(path: &Path) -> String {
+    #[cfg(windows)]
+    let plain = crate::windows::shell_path_buf(path);
+    #[cfg(windows)]
+    let path = plain.as_path();
+    let home_var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    let home = std::env::var_os(home_var).filter(|value| !value.is_empty());
+    match home.as_deref().and_then(|home| path.strip_prefix(home).ok()) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Some(rest) => format!("~{}{rest}", std::path::MAIN_SEPARATOR, rest = rest.display()),
+        None => path.display().to_string(),
+    }
 }
 
 /// Folders this large read their entries on several threads.
@@ -607,6 +664,7 @@ pub const RECENT: &str = "recent";
 pub const NETWORK: &str = "network";
 
 /// Servers as folders whose paths are the addresses that mount them.
+#[cfg(target_os = "linux")]
 fn network_entries() -> Result<Vec<FileInfo>> {
     Ok(network::browse()?
         .into_iter()
@@ -614,14 +672,14 @@ fn network_entries() -> Result<Vec<FileInfo>> {
         .collect())
 }
 
-fn canonical_directory(path: &Path) -> Result<PathBuf> {
+pub(super) fn canonical_directory(path: &Path) -> Result<PathBuf> {
     let canonical = fs::canonicalize(path)
         .with_context(|| format!("cannot resolve directory {}", path.display()))?;
     ensure!(canonical.is_dir(), "{} is not a directory", path.display());
     Ok(canonical)
 }
 
-fn add_mount(mounts: &mut Vec<Mount>, name: &str, label: Option<&str>, kind: RootKind, path: PathBuf) {
+pub(super) fn add_mount(mounts: &mut Vec<Mount>, name: &str, label: Option<&str>, kind: RootKind, path: PathBuf) {
     if mounts.iter().any(|mount| mount.point.name == name || mount.path == path) {
         return;
     }
@@ -654,7 +712,7 @@ fn validate_name(name: &str) -> Result<()> {
     ensure!(!matches!(name, "." | ".."), "invalid file name {name:?}");
     ensure!(!name.contains(['/', '\0']), "invalid file name {name:?}");
     #[cfg(windows)]
-    ensure!(!name.contains('\\'), "invalid file name {name:?}");
+    crate::windows::validate_name(name)?;
     Ok(())
 }
 
@@ -742,11 +800,8 @@ fn drive_stats(mount: &Mount) -> Result<DriveStats> {
             read_only,
         })
     }
-    #[cfg(not(unix))]
-    {
-        let _ = mount;
-        bail!("filesystem statistics are unsupported on this platform")
-    }
+    #[cfg(windows)]
+    crate::windows::drive_stats(mount)
 }
 
 #[cfg(target_os = "linux")]
@@ -775,7 +830,7 @@ fn mount_details(path: &Path) -> (Option<String>, Option<String>) {
     .unwrap_or((None, None))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(unix, not(target_os = "linux")))]
 fn mount_details(_path: &Path) -> (Option<String>, Option<String>) {
     (None, None)
 }

@@ -26,12 +26,7 @@ fn cell(share: Option<f32>) -> Div {
 
 /// The folder an item came from, with the home folder as `~`.
 fn location(original: &str) -> String {
-    let parent = std::path::Path::new(original).parent().map(|parent| parent.display().to_string()).unwrap_or_default();
-    match std::env::var("HOME") {
-        Ok(home) if !home.is_empty() && parent == home => "~".into(),
-        Ok(home) if !home.is_empty() && parent.starts_with(&format!("{home}/")) => format!("~{}", &parent[home.len()..]),
-        _ => parent,
-    }
+    std::path::Path::new(original).parent().map(crate::local::display_location).unwrap_or_default()
 }
 
 impl Workspace {
@@ -189,9 +184,12 @@ mod tests {
 
     #[test]
     fn locations_show_the_folder_with_home_as_tilde() {
-        let home = std::env::var("HOME").unwrap();
-        assert_eq!(location(&format!("{home}/Desktop/a.pdf")), "~/Desktop");
-        assert_eq!(location(&format!("{home}/a.pdf")), "~");
+        let home_var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let home = std::path::PathBuf::from(std::env::var_os(home_var).unwrap());
+        let separator = std::path::MAIN_SEPARATOR;
+        assert_eq!(location(home.join("Desktop").join("a.pdf").to_str().unwrap()), format!("~{separator}Desktop"));
+        assert_eq!(location(home.join("a.pdf").to_str().unwrap()), "~");
+        #[cfg(unix)]
         assert_eq!(location("/srv/media/a.mkv"), "/srv/media");
     }
 }

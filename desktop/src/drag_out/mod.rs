@@ -1,28 +1,37 @@
 //! Dragging files out to other apps. GPUI 0.2 only receives external drops, so the source side
 //! talks to the platform directly: XDND on X11, `wl_data_device` on Wayland.
 
+#[cfg(target_os = "linux")]
 pub mod icon;
 #[cfg(target_os = "linux")]
 mod wayland;
 #[cfg(target_os = "linux")]
 mod x11;
 
+#[cfg(target_os = "linux")]
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(target_os = "linux")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(target_os = "linux")]
 use anyhow::{Context as _, Result};
+#[cfg(target_os = "linux")]
+use gpui::{point, Bounds, Global};
 use gpui::{
-    div, point, prelude::*, px, App, Bounds, Context, DragMoveEvent, Entity, Global, Pixels, Point,
+    div, prelude::*, px, App, Context, DragMoveEvent, Entity, Pixels, Point,
     SharedString, WeakEntity, Window,
 };
 
-use crate::api::{Api, FileInfo};
+use crate::api::Api;
+#[cfg(target_os = "linux")]
+use crate::api::FileInfo;
 use crate::theme::*;
 use crate::workspace::operations::PaneTarget;
 use crate::workspace::Workspace;
 
 /// Resolves the dragged items to real paths. It can download, so it never runs on the UI thread.
+#[cfg(target_os = "linux")]
 pub type Prepare = Box<dyn FnOnce() -> Result<Vec<PathBuf>> + Send>;
 
 /// The in-window drag value: the pane and index of the row or tile, resolved to items when a
@@ -73,14 +82,20 @@ pub fn draggable<E: StatefulInteractiveElement>(
                 [item] => item.name.clone(),
                 items => format!("{} items", items.len()),
             };
-            let scale = window.scale_factor().ceil().max(1.) as u32;
-            let picture = files.first().and_then(|first| workspace.upgrade()?.read(cx).drag_picture(&api, first)).and_then(|image| icon::compose(&image, files.len(), scale));
-            start(files, api.clone(), picture, cx);
+            #[cfg(target_os = "linux")]
+            {
+                let scale = window.scale_factor().ceil().max(1.) as u32;
+                let picture = files.first().and_then(|first| workspace.upgrade()?.read(cx).drag_picture(&api, first)).and_then(|image| icon::compose(&image, files.len(), scale));
+                start(files, api.clone(), picture, cx);
+            }
+            #[cfg(windows)]
+            let _ = (&api, window);
             cx.new(|_| DragPreview { label: label.into(), grip })
         },
     )
 }
 
+#[cfg(target_os = "linux")]
 fn start(files: Vec<FileInfo>, api: Arc<Api>, picture: Option<icon::DragIcon>, cx: &mut App) {
     #[cfg(target_os = "linux")]
     if let Some(drag) = wayland_drag(cx) {
@@ -90,7 +105,6 @@ fn start(files: Vec<FileInfo>, api: Arc<Api>, picture: Option<icon::DragIcon>, c
         return;
     }
     let prepare: Prepare = Box::new(move || stage(&api, &files));
-    #[cfg(target_os = "linux")]
     match cx.compositor_name() {
         "X11" => {
             std::thread::spawn(move || {
@@ -107,8 +121,6 @@ fn start(files: Vec<FileInfo>, api: Arc<Api>, picture: Option<icon::DragIcon>, c
         }
         name => log::info!("dragging to other apps is not implemented on {name}"),
     }
-    #[cfg(not(target_os = "linux"))]
-    drop((prepare, picture));
 }
 
 /// The Wayland drag source of this app, and the drag that has not left the window yet.
@@ -170,6 +182,7 @@ pub fn moved(event: &DragMoveEvent<DraggedItem>, window: &mut Window, cx: &mut A
 }
 
 /// Remote files are staged for other apps; local files keep their original filesystem paths.
+#[cfg(target_os = "linux")]
 fn stage(api: &Api, files: &[FileInfo]) -> Result<Vec<PathBuf>> {
     if api.is_local() {
         return files
@@ -191,6 +204,7 @@ fn stage(api: &Api, files: &[FileInfo]) -> Result<Vec<PathBuf>> {
 }
 
 /// `text/uri-list`: one percent-encoded `file://` URI per line, CRLF-terminated.
+#[cfg(target_os = "linux")]
 pub fn uri_list(paths: &[PathBuf]) -> String {
     paths
         .iter()
@@ -198,6 +212,7 @@ pub fn uri_list(paths: &[PathBuf]) -> String {
         .collect()
 }
 
+#[cfg(target_os = "linux")]
 fn encode_path(path: &Path) -> String {
     #[cfg(unix)]
     let bytes = std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str()).to_vec();
@@ -214,7 +229,7 @@ fn encode_path(path: &Path) -> String {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
 

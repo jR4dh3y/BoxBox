@@ -1,10 +1,12 @@
 //! The browser resolves the CSS `sans-serif` and `monospace` stacks through
 //! fontconfig; resolve them the same way, through its library.
 
+#[cfg(target_os = "linux")]
 use gpui::SharedString;
 
 use crate::workspace::Fonts;
 
+#[cfg(target_os = "linux")]
 pub fn resolve() -> Fonts {
     let _span = crate::profile::span("resolve fonts");
     Fonts {
@@ -43,9 +45,9 @@ fn family(generic: &std::ffi::CStr) -> Option<SharedString> {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-fn family(_generic: &std::ffi::CStr) -> Option<SharedString> {
-    None
+#[cfg(windows)]
+pub fn resolve() -> Fonts {
+    Fonts { sans: "Segoe UI".into(), mono: "Consolas".into() }
 }
 
 #[cfg(all(test, target_os = "linux"))]

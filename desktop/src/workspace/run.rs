@@ -28,7 +28,9 @@ impl Workspace {
             this.update(cx, |this, cx| match found {
                 Some((Runnable::Document, _)) | None => this.open_document(target, item, cx),
                 Some((Runnable::Program { script }, real)) => this.ask_to_run(target, item, real, script, cx),
+                #[cfg(target_os = "linux")]
                 Some((Runnable::Launcher { trusted: true, name }, real)) => this.start_launcher(name, real, false, cx),
+                #[cfg(target_os = "linux")]
                 Some((Runnable::Launcher { trusted: false, name }, real)) => this.ask_to_trust(target, item, name, real, cx),
             })
             .ok();
@@ -57,6 +59,7 @@ impl Workspace {
         self.ask(confirm, cx);
     }
 
+    #[cfg(target_os = "linux")]
     fn ask_to_trust(&mut self, target: PaneTarget, item: FileInfo, name: String, real: PathBuf, cx: &mut Context<Self>) {
         let confirm = Confirm::new(
             "Untrusted launcher",
@@ -70,6 +73,7 @@ impl Workspace {
     }
 
     /// Starts a launcher's app, marking the launcher trusted first if asked.
+    #[cfg(target_os = "linux")]
     fn start_launcher(&mut self, name: String, real: PathBuf, trust: bool, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let result = cx

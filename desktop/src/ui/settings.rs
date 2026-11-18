@@ -123,6 +123,7 @@ impl Workspace {
 
     fn render_general_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = &self.preferences;
+        #[cfg(target_os = "linux")]
         let picker = {
             let workspace = cx.entity().downgrade();
             Toggle::new("setting-picker", self.settings_panel.picker).disabled(self.settings_panel.busy).on_change(move |on, _, _, cx| {
@@ -158,6 +159,7 @@ impl Workspace {
                 this.preferences.default_view = value;
                 this.commit_preferences(cx);
             })),
+            #[cfg(target_os = "linux")]
             SettingsRow::new("Use BoxBox for Open and Save dialogs").control(picker),
             SettingsRow::new("Start location").control(self.select(
                 "setting-start",
@@ -314,6 +316,7 @@ impl Workspace {
     }
 
     /// Routes other apps' file dialogs to BoxBox, or back. The portal restarts, off the UI thread.
+    #[cfg(target_os = "linux")]
     fn set_picker(&mut self, on: bool, cx: &mut Context<Self>) {
         self.settings_panel.busy = true;
         cx.notify();

@@ -2,12 +2,14 @@ use std::{
     fmt::Write as _,
     fs::{self, File, OpenOptions},
     io::Read,
-    os::unix::fs::OpenOptionsExt as _,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt as _;
 
 use anyhow::{bail, Context as _, Result};
 use serde::{de::DeserializeOwned, Deserialize};
@@ -147,6 +149,8 @@ impl RemoteApi {
     pub(super) fn download(&self, item: &FileInfo, dir: &Path) -> Result<PathBuf> {
         validate_remote_path(&item.path)?;
         validate_file_name(&item.name)?;
+        #[cfg(windows)]
+        crate::windows::validate_name(&item.name)?;
         let (route, name) = if item.is_dir {
             ("/stream/archive", format!("{}.zip", item.name))
         } else {
@@ -155,12 +159,11 @@ impl RemoteApi {
         let endpoint = format!("{route}/{}", encode_path(&item.path));
         let response = self.call("GET", &endpoint, None)?;
         let target = dir.join(name);
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            // Downloads are authenticated: readable by this user only.
-            .mode(0o600)
-            .open(&target)
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = options.open(&target)
             .with_context(|| {
                 format!(
                     "cannot create {} without overwriting an existing file",

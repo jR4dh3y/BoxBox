@@ -1,10 +1,12 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(not(windows))]
+use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
@@ -44,6 +46,10 @@ pub fn prepare_file(api: &Api, item: &FileInfo) -> Result<PathBuf> {
 
 /// Prepare a file and ask the platform's default application to open it.
 pub fn open_file(api: &Api, item: &FileInfo) -> Result<PathBuf> {
+    #[cfg(windows)]
+    if !api.is_local() && crate::launch::program(Path::new(&safe_staged_name(&item.name))) {
+        bail!("Download this program before running it");
+    }
     let path = prepare_file(api, item)?;
     open_default_application(&path)?;
     Ok(path)
@@ -162,10 +168,7 @@ fn open_default_application(path: &Path) -> Result<()> {
     }
     #[cfg(target_os = "windows")]
     {
-        Command::new("explorer.exe")
-            .arg(path)
-            .spawn()
-            .with_context(|| format!("cannot open {} in its default application", path.display()))?;
+        crate::windows::open(path)?;
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     bail!("opening files is unsupported on this platform");

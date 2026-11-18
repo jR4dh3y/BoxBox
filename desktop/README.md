@@ -1,6 +1,6 @@
 # BoxBox Files
 
-A native Linux file manager with the BoxBox look, written in Rust with [GPUI](https://gpui.rs) 0.2.2. It replaced the Electrobun/CEF desktop app. Local files use Rust directly; a BoxBox server is browsed through its `/api/v1` endpoints. [`UI_MAP.md`](UI_MAP.md) lists what exists and what is left.
+A native Windows and Linux file manager with the BoxBox look, written in Rust with [GPUI](https://gpui.rs) 0.2.2. It replaced the Electrobun/CEF desktop app. Local files use Rust directly; a BoxBox server is browsed through its `/api/v1` endpoints. [`UI_MAP.md`](UI_MAP.md) lists what exists and what is left.
 
 ## Where the look comes from
 
@@ -61,9 +61,19 @@ On Linux, GPUI needs Vulkan and the development packages for xkbcommon, wayland,
 
 `sudo apt install libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan1 libx11-xcb-dev libxcb1-dev libfontconfig-dev libfreetype-dev`
 
+On Windows, use Rust's <code>x86_64-pc-windows-msvc</code> toolchain, Visual Studio C++ Build Tools and a Windows SDK containing <code>fxc.exe</code>. Point <code>GPUI_FXC_PATH</code> to the x64 shader compiler for release builds. From the repository root:
+
+~~~powershell
+cargo run --locked --manifest-path desktop/Cargo.toml -- 'C:\Users\Public'
+cargo test --locked --workspace --manifest-path desktop/Cargo.toml
+pwsh -File scripts/package-windows.ps1
+~~~
+
 ## Install
 
-Release downloads hold a `boxbox-desktop-v<version>-linux-amd64.tar.gz` archive. Extract it and run `./install.sh` without sudo. It installs `boxbox-files` to `~/.local/bin` with a desktop entry and icon. Pass `--set-picker` to use it for other apps' Open and Save dialogs (the xdg-desktop-portal FileChooser; `boxbox-files --disable-picker` or Settings → General undoes it), `--set-default` to make it the default folder handler, or `--uninstall` to remove it; settings in `~/.config/boxbox-gpui` are kept. From a checkout, `bun run install:desktop` builds and installs the same way.
+On Windows 11 x64, extract <code>boxbox-desktop-v&lt;version&gt;-windows-amd64.zip</code> and launch <code>boxbox-files.exe</code>. The Windows package uses Direct3D 11.
+
+On Linux, release downloads hold a `boxbox-desktop-v<version>-linux-amd64.tar.gz` archive. Extract it and run `./install.sh` without sudo. It installs `boxbox-files` to `~/.local/bin` with a desktop entry and icon. Pass `--set-picker` to use it for other apps' Open and Save dialogs (the xdg-desktop-portal FileChooser; `boxbox-files --disable-picker` or Settings → General undoes it), `--set-default` to make it the default folder handler, or `--uninstall` to remove it; settings in `~/.config/boxbox-gpui` are kept. From a checkout, `bun run install:desktop` builds and installs the same way.
 
 Arch users can install `boxbox-bin` from the AUR. Each release also has x86_64 and aarch64 AppImages.
 

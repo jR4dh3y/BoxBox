@@ -113,6 +113,12 @@ impl Favorites {
 }
 
 /// Where GTK keeps bookmarks, read when needed so tests can point it elsewhere.
+#[cfg(windows)]
+pub(crate) fn bookmarks_path() -> PathBuf {
+    crate::persist::config_dir().join("bookmarks")
+}
+
+#[cfg(target_os = "linux")]
 pub(crate) fn bookmarks_path() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -130,7 +136,7 @@ pub(crate) fn read_bookmarks(api: &Api) -> Option<Vec<Favorite>> {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(error) => {
-            log::warn!("Could not read GTK bookmarks: {error}");
+            log::warn!("Could not read bookmarks: {error}");
             return None;
         }
     };

@@ -663,7 +663,11 @@ fn validate_original_parent(mounts: &[Mount], original: &Path) -> Result<Destina
     reject_line_breaks(original)?;
     // Folders to recreate are named, never `..`, so nothing lands outside the mount.
     ensure!(
-        original.components().all(|part| matches!(part, Component::RootDir | Component::Normal(_))),
+        original.components().all(|part| match part {
+            Component::RootDir | Component::Normal(_) => true,
+            Component::Prefix(_) => cfg!(windows),
+            Component::CurDir | Component::ParentDir => false,
+        }),
         "Trash restore path is not a plain path"
     );
     let name = original.file_name().context("Trash restore path has no name")?.to_owned();
@@ -819,19 +823,8 @@ fn mode(_metadata: &fs::Metadata) -> u32 {
 }
 
 fn is_cross_device(error: &anyhow::Error) -> bool {
-    #[cfg(unix)]
-    {
-        error.chain().any(|cause| {
-            cause
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|error| error.raw_os_error() == Some(libc::EXDEV))
-        })
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = error;
-        false
-    }
+    error.chain().any(|cause| cause.downcast_ref::<std::io::Error>()
+        .is_some_and(|error| error.kind() == std::io::ErrorKind::CrossesDevices))
 }
 
 #[cfg(unix)]
@@ -908,7 +901,7 @@ fn unescape_mount_field(value: &str) -> String {
     String::from_utf8_lossy(&decoded).into_owned()
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use crate::local::LocalFiles;
 

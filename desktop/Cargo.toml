@@ -3,7 +3,7 @@ name = "boxbox-gpui"
 version = "0.0.0"
 edition = "2021"
 publish = false
-description = "BoxBox Files: a native Linux file manager for local files and BoxBox servers"
+description = "BoxBox Files: a native file manager for local files and BoxBox servers"
 
 [workspace]
 members = [".", "thumbnail"]
@@ -20,7 +20,6 @@ image = { version = "=0.25.10", default-features = false, features = ["jpeg", "p
 libc = "=0.2.189"
 log = "0.4"
 material-colors = "0.4.2"
-md-5 = "0.10.6"
 resvg = { version = "=0.45.1", default-features = false }
 roxmltree = "0.20"
 serde = { version = "1", features = ["derive"] }
@@ -29,21 +28,30 @@ sha2 = "0.10"
 shlex = "1"
 unicode-segmentation = "1"
 ureq = { version = "2", features = ["json"] }
-wl-clipboard-rs = "0.9"
-zbus = { version = "5.19", default-features = false, features = ["async-io", "blocking-api"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+url = "2"
+windows-sys = { version = "0.61", features = [
+    "Win32_Security", "Win32_Security_Credentials", "Win32_Storage_FileSystem",
+    "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole",
+    "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 backhand = { version = "0.25.5", default-features = false, features = ["gzip", "xz", "zstd"] }
 flate2 = "1"
 liblzma = { version = "0.4", default-features = false }
+md-5 = "0.10.6"
 raw-window-handle = "0.6"
 tar = { version = "0.4.46", default-features = false }
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
+wl-clipboard-rs = "0.9"
 x11rb = "0.13"
 yeslogic-fontconfig-sys = "6.0.1"
+zbus = { version = "5.19", default-features = false, features = ["async-io", "blocking-api"] }
 zstd = { version = "0.13", default-features = false }
 
 [profile.dev]

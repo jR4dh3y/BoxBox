@@ -20,7 +20,7 @@ pub(super) fn copy_no_overwrite(
     let stage = match fs::symlink_metadata(source) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
             let stage = unique_path(parent, "copy")?;
-            create_symlink(&fs::read_link(source)?, &stage)?;
+            create_symlink(source, &stage, &metadata)?;
             stage
         }
         Ok(metadata) if metadata.is_dir() => {
@@ -71,6 +71,13 @@ pub(super) fn write_new_file(destination: &Path, bytes: &[u8]) -> Result<()> {
 
 pub(super) fn remove_entry(path: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(path)?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt as _;
+        if metadata.file_type().is_symlink_dir() {
+            return fs::remove_dir(path).with_context(|| format!("cannot remove {}", path.display()));
+        }
+    }
     if metadata.is_dir() {
         fs::remove_dir_all(path).with_context(|| format!("cannot remove {}", path.display()))
     } else {
@@ -108,7 +115,10 @@ pub(super) fn rename_noreplace(source: &Path, destination: &Path) -> Result<()> 
             })
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    return crate::windows::rename_noreplace(source, destination);
+
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = (source, destination);
         bail!("atomic no-replace moves are unsupported on this platform")
@@ -134,7 +144,7 @@ fn copy_directory_contents(
             let destination_entry = destination_dir.join(entry.file_name());
             let metadata = fs::symlink_metadata(&source_entry)?;
             if metadata.file_type().is_symlink() {
-                create_symlink(&fs::read_link(&source_entry)?, &destination_entry)?;
+                create_symlink(&source_entry, &destination_entry, &metadata)?;
             } else if metadata.is_dir() {
                 let canonical = fs::canonicalize(&source_entry)?;
                 ensure_confined(&canonical, confinement)?;
@@ -265,13 +275,21 @@ fn unique_path(parent: &Path, purpose: &str) -> Result<PathBuf> {
     Ok(parent.join(format!(".{parent_name}.boxbox-{purpose}-{}-{id}", std::process::id())))
 }
 
-#[cfg(unix)]
-fn create_symlink(target: &Path, link: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(target, link)
-        .with_context(|| format!("cannot create symlink {}", link.display()))
-}
-
-#[cfg(not(unix))]
-fn create_symlink(_target: &Path, link: &Path) -> Result<()> {
-    bail!("preserving symlinks is unsupported on this platform: {}", link.display())
+fn create_symlink(source: &Path, link: &Path, metadata: &fs::Metadata) -> Result<()> {
+    let target = fs::read_link(source)?;
+    #[cfg(unix)]
+    let result = {
+        let _ = metadata;
+        std::os::unix::fs::symlink(target, link)
+    };
+    #[cfg(windows)]
+    let result = {
+        use std::os::windows::fs::FileTypeExt as _;
+        if metadata.file_type().is_symlink_dir() {
+            std::os::windows::fs::symlink_dir(target, link)
+        } else {
+            std::os::windows::fs::symlink_file(target, link)
+        }
+    };
+    result.with_context(|| format!("cannot create symlink {}", link.display()))
 }

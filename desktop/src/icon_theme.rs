@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
 /// The size an app icon is looked up at; Open With draws them at 24px, on HiDPI at 48.
@@ -171,6 +172,10 @@ impl<'a> Ini<'a> {
 
 /// The theme name: from the settings portal, which every desktop's portal
 /// backend answers, else GTK's and KDE's settings files.
+#[cfg(windows)]
+fn current_name() -> Option<String> { None }
+
+#[cfg(target_os = "linux")]
 fn current_name() -> Option<String> {
     portal_name().or_else(|| {
         let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|path| path.is_absolute()).unwrap_or_else(|| home().join(".config"));
@@ -183,6 +188,7 @@ fn current_name() -> Option<String> {
     })
 }
 
+#[cfg(target_os = "linux")]
 fn portal_name() -> Option<String> {
     let connection = zbus::blocking::connection::Builder::session().ok()?.method_timeout(Duration::from_secs(1)).build().ok()?;
     let reply = connection

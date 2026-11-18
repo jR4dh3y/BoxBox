@@ -100,7 +100,7 @@ impl LocalFiles {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;
