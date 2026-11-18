@@ -95,6 +95,8 @@ impl Volume {
 
 /// One service's volumes, or why it could not list them.
 pub enum Update {
+    #[cfg(windows)]
+    DrivesChanged,
     Disks(Result<Vec<Volume>, String>),
     Gvfs(Result<Vec<Volume>, String>),
 }

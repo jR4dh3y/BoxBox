@@ -179,6 +179,7 @@ fn read_folder(path: &Path) -> anyhow::Result<Vec<FileInfo>> {
             path: text,
             size: if metadata.is_dir() { 0 } else { metadata.len() },
             is_dir: metadata.is_dir(),
+            hidden: false,
             mod_time: metadata.modified().ok().and_then(crate::api::mod_time),
         });
     }
@@ -472,7 +473,7 @@ impl Chooser {
                         Location::Server { api, path, .. } if path.is_empty() => Ok(api
                             .drives()?
                             .into_iter()
-                            .map(|drive| FileInfo { name: drive.label.clone().unwrap_or_else(|| drive.name.clone()), path: drive.name, size: 0, is_dir: true, mod_time: None })
+                            .map(|drive| FileInfo { name: drive.label.clone().unwrap_or_else(|| drive.name.clone()), path: drive.name, size: 0, is_dir: true, hidden: false, mod_time: None })
                             .collect()),
                         Location::Server { api, path, .. } => api.list(&path),
                     }

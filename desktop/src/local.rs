@@ -16,6 +16,7 @@ mod thumbnailers;
 
 #[cfg(unix)]
 use std::ffi::CString;
+use std::borrow::Cow;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -34,6 +35,8 @@ pub struct LocalFiles {
     pub(super) mounts: Vec<Mount>,
     pub(super) trash_data_home: PathBuf,
     pub(super) volume_trash: bool,
+    #[cfg(windows)]
+    pub(super) host_filesystem: bool,
 }
 
 impl LocalFiles {
@@ -117,26 +120,62 @@ impl LocalFiles {
             mounts,
             trash_data_home: root.join(".local/share"),
             volume_trash: false,
+            #[cfg(windows)]
+            host_filesystem: false,
         })
+    }
+
+    fn mount(&self, name: &str) -> Option<Cow<'_, Mount>> {
+        if let Some(mount) = self.mounts.iter().find(|mount| mount.point.name == name) {
+            #[cfg(windows)]
+            if self.host_filesystem && mount.point.kind == RootKind::Drive &&
+                !crate::windows::has_drive(name, crate::windows::drive_mask()) {
+                return None;
+            }
+            return Some(Cow::Borrowed(mount));
+        }
+        #[cfg(windows)]
+        if self.host_filesystem {
+            return crate::windows::additional_mount(name).map(Cow::Owned);
+        }
+        None
+    }
+
+    #[cfg(windows)]
+    fn current_mounts(&self) -> Vec<Mount> {
+        if !self.host_filesystem {
+            return self.mounts.clone();
+        }
+        let mut current = crate::windows::drive_mounts();
+        current.extend(self.mounts.iter().filter(|mount| mount.point.kind == RootKind::Place).cloned());
+        current
     }
 
     /// The mounts, with Home then Recent first among the places and Network last.
     /// Recent and Network are listings, not folders.
     pub fn roots(&self) -> Result<Vec<MountPoint>> {
-        #[cfg(target_os = "linux")]
         let place = |name: &str, label: &str| MountPoint { name: name.into(), label: Some(label.into()), kind: RootKind::Place };
-        let (drives, places): (Vec<_>, Vec<_>) = self.mounts.iter().map(|mount| mount.point.clone()).partition(|point| point.kind == RootKind::Drive);
+        #[cfg(windows)]
+        let mounted = self.current_mounts();
+        #[cfg(not(windows))]
+        let mounted = &self.mounts;
+        let (drives, places): (Vec<_>, Vec<_>) = mounted.iter().map(|mount| mount.point.clone()).partition(|point| point.kind == RootKind::Drive);
         let (home, places): (Vec<_>, Vec<_>) = places.into_iter().partition(|point| point.name == "home");
         let roots = drives.into_iter().chain(home);
         #[cfg(target_os = "linux")]
         let roots = roots.chain([place(RECENT, "Recent")]).chain(places).chain([place(NETWORK, "Network")]);
         #[cfg(windows)]
-        let roots = roots.chain(places);
+        let roots = roots.chain(self.host_filesystem.then(|| place(RECENT, "Recent"))).chain(places)
+            .chain(self.host_filesystem.then(|| place(NETWORK, "Network")));
         Ok(roots.collect())
     }
 
     pub fn drives(&self) -> Result<Vec<DriveStats>> {
-        self.mounts
+        #[cfg(windows)]
+        let mounted = self.current_mounts();
+        #[cfg(not(windows))]
+        let mounted = &self.mounts;
+        mounted
             .iter()
             .filter(|mount| mount.point.kind != RootKind::Place)
             .filter_map(|mount| match drive_stats(mount) {
@@ -152,10 +191,13 @@ impl LocalFiles {
 
     pub fn list(&self, path: &str) -> Result<Vec<FileInfo>> {
         match path {
-            #[cfg(target_os = "linux")]
             RECENT => return Ok(self.recent()),
             #[cfg(target_os = "linux")]
             NETWORK => return network_entries(),
+            #[cfg(windows)]
+            NETWORK if self.host_filesystem => return Ok(crate::windows::drive_mounts().into_iter()
+                .filter(|mount| crate::windows::is_network_drive(&mount.path))
+                .filter_map(|mount| self.stat(&mount.point.name).ok()).collect()),
             _ => {}
         }
         let (mount, directory) = self.resolve_directory(path)?;
@@ -163,7 +205,7 @@ impl LocalFiles {
             .with_context(|| format!("cannot list {}", path))?
             .map(|entry| entry.map_err(anyhow::Error::from))
             .collect::<Result<Vec<_>>>()?;
-        let mut items = map_entries(&entries, |entry| self.info_for_entry(mount, path, entry))
+        let mut items = map_entries(&entries, |entry| self.info_for_entry(&mount, path, entry))
             .into_iter()
             // Deleted since the folder was read, as happens in a busy Downloads. A name that is
             // not UTF-8 has no virtual path to reach it, so it is left out, not the folder.
@@ -180,7 +222,7 @@ impl LocalFiles {
         let target = directory.join(name);
         self.ensure_mutable_target(&target, true)?;
         fs::create_dir(&target).with_context(|| format!("cannot create directory {name:?}"))?;
-        self.info_for_path(mount, parent, &target)
+        self.info_for_path(&mount, parent, &target)
     }
 
     pub fn rename(&self, old_path: &str, new_path: &str) -> Result<FileInfo> {
@@ -203,7 +245,7 @@ impl LocalFiles {
         }
         copy::rename_noreplace(&source, &destination)
             .with_context(|| format!("cannot rename {old_path} to {new_path}"))?;
-        self.info_for_path(destination_mount, parent_of_virtual(new_path), &destination)
+        self.info_for_path(&destination_mount, parent_of_virtual(new_path), &destination)
     }
 
     /// Permanently delete one entry. `recursive` must be true to remove a real directory tree.
@@ -256,14 +298,14 @@ impl LocalFiles {
     /// One entry's details, as a listing of its folder would give them.
     pub fn stat(&self, path: &str) -> Result<FileInfo> {
         // A drive or place itself, named as the sidebar names it.
-        if let Some(mount) = self.mounts.iter().find(|mount| mount.point.name == path) {
+        if let Some(mount) = self.mount(path) {
             let metadata = fs::metadata(&mount.path).with_context(|| format!("cannot inspect {path}"))?;
             let mod_time = metadata.modified().ok().and_then(crate::api::mod_time);
-            return Ok(FileInfo { name: mount.point.display_name().to_string(), path: path.to_string(), size: metadata.len(), is_dir: true, mod_time });
+            return Ok(FileInfo { name: mount.point.display_name().to_string(), path: path.to_string(), size: metadata.len(), is_dir: true, hidden: false, mod_time });
         }
         let (mount, real) = self.resolve_entry(path)?;
         let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
-        self.info_for_path(mount, parent, &real).with_context(|| format!("cannot inspect {path}"))
+        self.info_for_path(&mount, parent, &real).with_context(|| format!("cannot inspect {path}"))
     }
 
     /// The virtual path for a real one, under the mount that holds it most closely.
@@ -272,7 +314,13 @@ impl LocalFiles {
         let canonical = fs::canonicalize(real).ok()?;
         #[cfg(windows)]
         let real = canonical.as_path();
-        let mount = self.mounts.iter().filter(|mount| real.starts_with(&mount.path)).max_by_key(|mount| mount.path.components().count())?;
+        let mount = self.mounts.iter().filter(|mount| real.starts_with(&mount.path)).max_by_key(|mount| mount.path.components().count()).map(Cow::Borrowed);
+        #[cfg(windows)]
+        let mount = mount.or_else(|| {
+            if !self.host_filesystem { return None; }
+            self.mount(&crate::windows::mount_name(real)?)
+        });
+        let mount = mount?;
         let relative = real.strip_prefix(&mount.path).ok()?;
         let mut path = mount.point.name.clone();
         for part in relative.components() {
@@ -345,7 +393,7 @@ impl LocalFiles {
         let target = directory.join(name);
         self.ensure_mutable_target(&target, false)?;
         copy::write_new_file(&target, content.as_bytes())?;
-        self.info_for_path(mount, parent, &target)
+        self.info_for_path(&mount, parent, &target)
     }
 
     /// Copy one entry to an explicit, non-existing virtual destination path.
@@ -421,11 +469,19 @@ impl LocalFiles {
         }
         copy::copy_no_overwrite(source, &target, None)
             .with_context(|| format!("cannot import {}", source.display()))?;
-        self.info_for_path(mount, parent, &target)
+        self.info_for_path(&mount, parent, &target)
     }
 
     pub fn trash(&self) -> Result<Vec<TrashItem>> {
-        trash::list(&self.mounts, &self.trash_data_home, self.volume_trash)
+        let items = trash::list(&self.mounts, &self.trash_data_home, self.volume_trash)?;
+        #[cfg(windows)]
+        if self.host_filesystem {
+            let mut combined = items;
+            combined.extend(crate::windows::recycle_bin::list()?);
+            combined.sort_by(|left, right| right.deleted_at.cmp(&left.deleted_at));
+            return Ok(combined);
+        }
+        Ok(items)
     }
 
     pub fn move_to_trash(&self, path: &str) -> Result<TrashItem> {
@@ -433,6 +489,10 @@ impl LocalFiles {
         let metadata = fs::symlink_metadata(&entry)
             .with_context(|| format!("cannot inspect {path}"))?;
         self.ensure_mutable_target(&entry, metadata.is_dir())?;
+        #[cfg(windows)]
+        if self.host_filesystem {
+            return crate::windows::recycle_bin::recycle(&entry);
+        }
         trash::move_to_trash(
             &self.mounts,
             &self.trash_data_home,
@@ -443,20 +503,30 @@ impl LocalFiles {
     }
 
     /// Recently used local files, each at its own path, newest first.
-    #[cfg(target_os = "linux")]
     fn recent(&self) -> Vec<FileInfo> {
-        recent::files(&self.trash_data_home, 200)
-            .into_iter()
+        #[cfg(target_os = "linux")]
+        let recent = recent::files(&self.trash_data_home, 200);
+        #[cfg(windows)]
+        let recent = if self.host_filesystem { crate::windows::recent::files(200) } else { Vec::new() };
+        recent.into_iter()
             .filter_map(|real| self.stat(&self.virtual_path(&real)?).ok())
             .collect()
     }
 
     pub fn trash_has_items(&self) -> bool {
+        #[cfg(windows)]
+        if self.host_filesystem && crate::windows::recycle_bin::has_items() {
+            return true;
+        }
         trash::has_items(&self.trash_data_home, self.volume_trash)
     }
 
     pub fn empty_trash(&self) -> Result<usize> {
-        trash::empty(&self.mounts, &self.trash_data_home, self.volume_trash)
+        #[cfg(windows)]
+        let recycled = if self.host_filesystem { crate::windows::recycle_bin::purge(None)? } else { 0 };
+        #[cfg(not(windows))]
+        let recycled = 0;
+        Ok(trash::empty(&self.mounts, &self.trash_data_home, self.volume_trash)? + recycled)
     }
 
     /// The home Trash's `files` folder, which changes whenever Trash does.
@@ -465,14 +535,22 @@ impl LocalFiles {
     }
 
     pub fn restore_trash(&self, id: &str) -> Result<()> {
+        #[cfg(windows)]
+        if self.host_filesystem && id.starts_with("win:") {
+            return crate::windows::recycle_bin::restore(id);
+        }
         trash::restore(&self.mounts, &self.trash_data_home, self.volume_trash, id)
     }
 
     pub fn delete_trash(&self, id: &str) -> Result<()> {
+        #[cfg(windows)]
+        if self.host_filesystem && id.starts_with("win:") {
+            return crate::windows::recycle_bin::purge(Some(id)).map(|_| ());
+        }
         trash::delete(&self.mounts, &self.trash_data_home, self.volume_trash, id)
     }
 
-    fn resolve_directory(&self, path: &str) -> Result<(&Mount, PathBuf)> {
+    fn resolve_directory(&self, path: &str) -> Result<(Cow<'_, Mount>, PathBuf)> {
         let (mount, candidate) = self.candidate_path(path)?;
         let directory = fs::canonicalize(&candidate)
             .with_context(|| format!("cannot resolve directory {path}"))?;
@@ -481,7 +559,7 @@ impl LocalFiles {
         Ok((mount, directory))
     }
 
-    fn resolve_entry(&self, path: &str) -> Result<(&Mount, PathBuf)> {
+    fn resolve_entry(&self, path: &str) -> Result<(Cow<'_, Mount>, PathBuf)> {
         let (mount, segments) = self.parse_virtual_path(path)?;
         ensure!(!segments.is_empty(), "cannot mutate a mount root");
         let (name, parent_segments) = segments.split_last().context("invalid path")?;
@@ -493,7 +571,7 @@ impl LocalFiles {
         Ok((mount, parent.join(name)))
     }
 
-    fn resolve_destination(&self, path: &str) -> Result<(&Mount, PathBuf, String)> {
+    fn resolve_destination(&self, path: &str) -> Result<(Cow<'_, Mount>, PathBuf, String)> {
         let (mount, segments) = self.parse_virtual_path(path)?;
         ensure!(!segments.is_empty(), "cannot mutate a mount root");
         let (name, parent_segments) = segments.split_last().context("invalid path")?;
@@ -505,24 +583,22 @@ impl LocalFiles {
         Ok((mount, parent, (*name).to_owned()))
     }
 
-    fn candidate_path(&self, path: &str) -> Result<(&Mount, PathBuf)> {
+    fn candidate_path(&self, path: &str) -> Result<(Cow<'_, Mount>, PathBuf)> {
         let (mount, segments) = self.parse_virtual_path(path)?;
-        Ok((mount, append_segments(&mount.path, &segments)))
+        let candidate = append_segments(&mount.path, &segments);
+        Ok((mount, candidate))
     }
 
-    fn parse_virtual_path<'mount, 'path>(
-        &'mount self,
+    fn parse_virtual_path<'path>(
+        &self,
         path: &'path str,
-    ) -> Result<(&'mount Mount, Vec<&'path str>)> {
+    ) -> Result<(Cow<'_, Mount>, Vec<&'path str>)> {
         ensure!(!path.is_empty(), "empty virtual path");
         ensure!(!path.starts_with('/') && !path.ends_with('/'), "malformed virtual path {path:?}");
         ensure!(!path.contains('\0'), "malformed virtual path {path:?}");
         let mut segments = path.split('/');
         let root_name = segments.next().context("empty virtual path")?;
-        let mount = self
-            .mounts
-            .iter()
-            .find(|mount| mount.point.name == root_name)
+        let mount = self.mount(root_name)
             .with_context(|| format!("unknown local mount {root_name:?}"))?;
         let rest = segments.collect::<Vec<_>>();
         for segment in &rest {
@@ -603,9 +679,23 @@ impl LocalFiles {
             path: virtual_path,
             size: metadata.len(),
             is_dir: metadata.is_dir(),
+            hidden: hidden_attribute(&metadata),
             mod_time,
         })
     }
+}
+
+/// Native hidden flags supplement dot-prefixed names.
+#[cfg(windows)]
+fn hidden_attribute(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt as _;
+    use windows_sys::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM};
+    metadata.file_attributes() & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0
+}
+
+#[cfg(not(windows))]
+fn hidden_attribute(_: &fs::Metadata) -> bool {
+    false
 }
 
 /// Whether this process may add, rename and remove entries in `folder`.
@@ -668,7 +758,7 @@ pub const NETWORK: &str = "network";
 fn network_entries() -> Result<Vec<FileInfo>> {
     Ok(network::browse()?
         .into_iter()
-        .map(|server| FileInfo { name: format!("{} ({})", server.name, server.kind), path: server.uri, size: 0, is_dir: true, mod_time: None })
+        .map(|server| FileInfo { name: format!("{} ({})", server.name, server.kind), path: server.uri, size: 0, is_dir: true, hidden: false, mod_time: None })
         .collect())
 }
 

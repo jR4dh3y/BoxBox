@@ -83,6 +83,14 @@ impl Workspace {
                     }
                     None => Vec::new(),
                 };
+                #[cfg(windows)]
+                if self.home.api.is_local() {
+                    if let Some((drive, label)) = folder.as_ref().and_then(|drive|
+                        crate::devices::gvfs::drive_action(drive).map(|action| (drive.clone(), action.label()))) {
+                        items.push(item("place-windows-drive", label, "arrow-up-from-line",
+                            Box::new(move |this, window, cx| this.windows_release_drive(drive.clone(), window, cx)), cx));
+                    }
+                }
                 items.extend(self.drive_name_items(key, own, cx));
                 items
             }

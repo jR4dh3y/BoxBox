@@ -3,18 +3,19 @@
 
 #[cfg(target_os = "linux")]
 pub mod icon;
+#[cfg(windows)]
+mod windows;
 #[cfg(target_os = "linux")]
 mod wayland;
 #[cfg(target_os = "linux")]
 mod x11;
 
 #[cfg(target_os = "linux")]
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
-#[cfg(target_os = "linux")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(target_os = "linux")]
 use anyhow::{Context as _, Result};
 #[cfg(target_os = "linux")]
 use gpui::{point, Bounds, Global};
@@ -24,14 +25,12 @@ use gpui::{
 };
 
 use crate::api::Api;
-#[cfg(target_os = "linux")]
 use crate::api::FileInfo;
 use crate::theme::*;
 use crate::workspace::operations::PaneTarget;
 use crate::workspace::Workspace;
 
 /// Resolves the dragged items to real paths. It can download, so it never runs on the UI thread.
-#[cfg(target_os = "linux")]
 pub type Prepare = Box<dyn FnOnce() -> Result<Vec<PathBuf>> + Send>;
 
 /// The in-window drag value: the pane and index of the row or tile, resolved to items when a
@@ -89,7 +88,10 @@ pub fn draggable<E: StatefulInteractiveElement>(
                 start(files, api.clone(), picture, cx);
             }
             #[cfg(windows)]
-            let _ = (&api, window);
+            {
+                let _ = window;
+                windows::prepare(files, api.clone(), cx);
+            }
             cx.new(|_| DragPreview { label: label.into(), grip })
         },
     )
@@ -177,12 +179,11 @@ pub fn moved(event: &DragMoveEvent<DraggedItem>, window: &mut Window, cx: &mut A
         }
         cx.stop_active_drag(window);
     }
-    #[cfg(not(target_os = "linux"))]
-    let _ = (event, window, cx);
+    #[cfg(windows)]
+    windows::moved(event, window, cx);
 }
 
 /// Remote files are staged for other apps; local files keep their original filesystem paths.
-#[cfg(target_os = "linux")]
 fn stage(api: &Api, files: &[FileInfo]) -> Result<Vec<PathBuf>> {
     if api.is_local() {
         return files
@@ -197,10 +198,19 @@ fn stage(api: &Api, files: &[FileInfo]) -> Result<Vec<PathBuf>> {
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     // Only this user may read authenticated downloads, whatever the umask.
     let dir = std::env::temp_dir().join(format!("boxbox-gpui-drag-{}-{stamp}", std::process::id()));
-    let mut builder = std::fs::DirBuilder::new();
-    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    let builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    let builder = {
+        let mut builder = builder;
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder
+    };
     builder.create(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    files.iter().map(|item| api.download(item, &dir)).collect()
+    let files: Result<Vec<_>> = files.iter().map(|item| api.download(item, &dir)).collect();
+    if files.is_err() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    files
 }
 
 /// `text/uri-list`: one percent-encoded `file://` URI per line, CRLF-terminated.

@@ -6,12 +6,10 @@ use std::collections::HashSet;
 use std::collections::HashMap;
 #[cfg(target_os = "linux")]
 use std::os::fd::AsFd as _;
-#[cfg(target_os = "linux")]
 use std::sync::Arc;
 
-#[cfg(target_os = "linux")]
 use anyhow::Context as _;
-use gpui::{Context, SharedString};
+use gpui::{Context, SharedString, Window};
 
 use super::operations::{ClipboardEntry, ClipboardMode, FileClipboard, PaneTarget};
 use super::Workspace;
@@ -111,7 +109,6 @@ impl Workspace {
                     }))
             })
             .collect();
-        #[cfg(target_os = "linux")]
         let entries = {
             let mut entries = entries;
             let files = items.iter().all(|item| !item.is_dir);
@@ -120,9 +117,9 @@ impl Workspace {
                 MenuItem::action("send-mail", "Mail Recipient…")
                     .icon("send")
                     .disabled(!files)
-                    .on_select(cx.listener(move |this, _, _, cx| {
+                    .on_select(cx.listener(move |this, _, window, cx| {
                         this.close_menus();
-                        this.send_by_mail(api.clone(), mail_items.clone(), cx);
+                        this.send_by_mail(api.clone(), mail_items.clone(), window, cx);
                     })),
             );
             entries
@@ -135,12 +132,14 @@ impl Workspace {
         Some(MenuItem::submenu(id, "Send To", entries, open).icon("send"))
     }
 
-    /// Opens a new email with the files attached, through the desktop's Email
-    /// portal, which hands them to the user's mail app.
-    #[cfg(target_os = "linux")]
-    pub(crate) fn send_by_mail(&mut self, api: Arc<Api>, items: Vec<FileInfo>, cx: &mut Context<Self>) {
+    /// Opens a draft with the files attached in the user's mail app.
+    pub(crate) fn send_by_mail(&mut self, api: Arc<Api>, items: Vec<FileInfo>, window: &Window, cx: &mut Context<Self>) {
+        #[cfg(windows)]
+        let owner = crate::windows::window_id(window).unwrap_or_default();
+        #[cfg(target_os = "linux")]
+        let owner = { let _ = window; 0 };
         cx.spawn(async move |this, cx| {
-            let result = cx.background_executor().spawn(async move { compose_email(&api, &items) }).await;
+            let result = cx.background_executor().spawn(async move { compose_email(&api, &items, owner) }).await;
             if let Err(error) = result {
                 this.update(cx, |this, cx| this.report(Err(format!("Could not start an email: {error:#}")), cx)).ok();
             }
@@ -155,7 +154,7 @@ impl Workspace {
 }
 
 #[cfg(target_os = "linux")]
-fn compose_email(api: &Api, items: &[FileInfo]) -> anyhow::Result<()> {
+fn compose_email(api: &Api, items: &[FileInfo], _owner: isize) -> anyhow::Result<()> {
     let files = items
         .iter()
         .map(|item| {
@@ -170,4 +169,11 @@ fn compose_email(api: &Api, items: &[FileInfo]) -> anyhow::Result<()> {
     let portal = zbus::blocking::Proxy::new(&connection, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop", "org.freedesktop.portal.Email")?;
     portal.call::<_, _, zbus::zvariant::OwnedObjectPath>("ComposeEmail", &("", options))?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn compose_email(api: &Api, items: &[FileInfo], owner: isize) -> anyhow::Result<()> {
+    let paths = items.iter().map(|item| api.local_path(&item.path)?.context("not a local file"))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    crate::windows::mail::compose(&paths, owner)
 }

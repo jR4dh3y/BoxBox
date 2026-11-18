@@ -80,6 +80,17 @@ pub(crate) struct Totals {
 }
 
 impl Workspace {
+    #[cfg(windows)]
+    pub(crate) fn windows_properties(&mut self, path: PathBuf, window: &gpui::Window, cx: &mut Context<Self>) {
+        let owner = crate::windows::window_id(window).unwrap_or_default();
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { crate::windows::show_properties(&path, owner) }).await;
+            if let Err(error) = result {
+                this.update(cx, |this, cx| this.report(Err(format!("Could not open Windows properties: {error:#}")), cx)).ok();
+            }
+        }).detach();
+    }
+
     /// Opens Properties for `items` and starts reading what a listing does not hold.
     pub(crate) fn show_properties(&mut self, target: PaneTarget, items: Vec<FileInfo>, cx: &mut Context<Self>) {
         let Some(api) = self.pane_by_id(target.0).map(|pane| pane.api.clone()) else { return };

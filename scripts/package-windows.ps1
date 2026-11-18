@@ -32,11 +32,13 @@ try {
     $bundle = New-Item -Path $stage.FullName -Name $name -ItemType Directory
     Copy-Item -LiteralPath $executable -Destination (Join-Path $bundle.FullName 'boxbox-files.exe')
     Copy-Item -LiteralPath LICENSE -Destination $bundle.FullName
+    Copy-Item -LiteralPath desktop/packaging/windows-explorer.ps1 -Destination $bundle.FullName
     @"
 BoxBox Files v$version for Windows x64
 Source: $source
 
 Extract the ZIP and launch boxbox-files.exe.
+Optionally run windows-explorer.ps1 to add Open in BoxBox Files to folder menus.
 See https://boxbox.radhey.dev/docs/desktop/#windows for system requirements.
 "@ | Set-Content -Encoding utf8 (Join-Path $bundle.FullName 'README.txt')
 

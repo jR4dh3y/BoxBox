@@ -3,12 +3,14 @@
 //! and a file's by its MIME type from its name. Lookup and rasterising block on
 //! the filesystem, so they run off the UI thread; views only read the result.
 
+#[cfg(target_os = "linux")]
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context as _;
 use gpui::RenderImage;
 
+#[cfg(target_os = "linux")]
 use crate::icon_theme::IconTheme;
 
 /// What decides an entry's icon. A folder of 100 000 files has a few dozen keys.
@@ -37,6 +39,7 @@ impl IconKey {
     }
 
     /// The type a file's name gives it.
+    #[cfg(target_os = "linux")]
     fn mime(&self) -> Option<String> {
         let Self::File(key) = self else { return None };
         // A whole name such as `makefile`, else an extension.
@@ -44,6 +47,7 @@ impl IconKey {
     }
 
     /// The icon names to try, best first.
+    #[cfg(target_os = "linux")]
     fn names(&self) -> Vec<String> {
         match self {
             Self::Folder("folder") => vec!["folder".into()],
@@ -69,6 +73,7 @@ pub fn bucket(size: f32, scale: f32) -> u32 {
 
 /// The theme's icon for `key`, `size` pixels square. `None` when the theme has
 /// none, and the view draws its own glyph.
+#[cfg(target_os = "linux")]
 pub fn render(key: &IconKey, size: u32) -> Option<Arc<RenderImage>> {
     let theme = IconTheme::shared();
     let names = key.names();
@@ -76,8 +81,14 @@ pub fn render(key: &IconKey, size: u32) -> Option<Arc<RenderImage>> {
     rasterize(&path, size).map_err(|error| log::debug!("{}: {error:#}", path.display())).ok()
 }
 
+#[cfg(windows)]
+pub fn render(key: &IconKey, size: u32) -> Option<Arc<RenderImage>> {
+    crate::windows::icons::render(key, size).ok().map(bgra)
+}
+
 /// Types whose files are programs or packages, drawn by what they are, not by
 /// the app that would open them: a launcher or AppImage is its own app.
+#[cfg(target_os = "linux")]
 const OWN_ICON_TYPES: [&str; 9] = [
     "application/x-desktop",
     "application/x-executable",
@@ -141,12 +152,14 @@ pub fn package_image(bytes: &[u8], size: u32) -> Option<Arc<RenderImage>> {
 }
 
 /// An icon file (a theme's, an app's), as GPUI's BGRA pixels.
+#[cfg(target_os = "linux")]
 pub(crate) fn rasterize(path: &Path, size: u32) -> anyhow::Result<Arc<RenderImage>> {
     let svg = path.extension().is_some_and(|extension| extension == "svg");
     Ok(bgra(pixels(&std::fs::read(path)?, svg, size)?))
 }
 
 /// An SVG drawn at `size`, or a PNG scaled down to it.
+#[cfg(target_os = "linux")]
 fn pixels(bytes: &[u8], svg: bool, size: u32) -> anyhow::Result<image::RgbaImage> {
     if svg {
         return svg_pixels(bytes, size);

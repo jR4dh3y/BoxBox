@@ -70,6 +70,8 @@ impl Workspace {
                 let alive = this
                     .update(cx, |this, cx| {
                         match update {
+                            #[cfg(windows)]
+                            Update::DrivesChanged => this.refresh_provider(this.home.api.clone(), cx),
                             Update::Disks(Ok(volumes)) => this.devices.disks = volumes,
                             Update::Gvfs(Ok(volumes)) => this.devices.gvfs = volumes,
                             Update::Disks(Err(error)) => log::warn!("Disks are unavailable: {error}"),
@@ -270,6 +272,20 @@ impl Workspace {
             self.focus_handle.focus(window);
             cx.notify();
         }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn windows_release_drive(&mut self, drive: String, window: &Window, cx: &mut Context<Self>) {
+        let owner = crate::windows::window_id(window).unwrap_or_default();
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { devices::gvfs::release_drive(&drive, owner) }).await;
+            this.update(cx, |this, cx| {
+                this.refresh_provider(this.home.api.clone(), cx);
+                if let Err(error) = result {
+                    this.report(Err(format!("Could not remove the drive: {error:#}")), cx);
+                }
+            }).ok();
+        }).detach();
     }
 
     /// Ejects a removable volume's drive, or unmounts a fixed one or a network share.

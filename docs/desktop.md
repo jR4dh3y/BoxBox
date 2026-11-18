@@ -8,9 +8,13 @@ It replaced the Electrobun desktop app shipped in v0.3.2. Settings from that app
 
 BoxBox Files runs on Windows 11 x64 with a Direct3D 11-capable graphics driver. Download <code>boxbox-desktop-v&lt;version&gt;-windows-amd64.zip</code> and <code>SHA256SUMS</code> from [GitHub Releases](https://github.com/jR4dh3y/BoxBox/releases/) or [Downloads](/download/). To check the archive, compare its SHA-256 from <code>Get-FileHash</code> with the matching line in <code>SHA256SUMS</code>. Extract the archive and launch <code>boxbox-files.exe</code>. To update, extract the new ZIP and replace the previous app.
 
-The sidebar lists Windows drives and known folders. Use Ctrl+L to enter a drive-letter path. Network shares are available through drive letters mapped in Windows. Open With uses the Windows app chooser, and you can copy, cut, and paste files between BoxBox and Explorer. Settings live under <code>%APPDATA%\BoxBox\Config</code>, state and cache under <code>%LOCALAPPDATA%\BoxBox</code>, and paired server credentials in Windows Credential Manager.
+The sidebar lists Windows drives and known folders, including Recent. Use Ctrl+L for drive-letter paths, UNC paths or SMB URLs such as <code>smb://server/share</code>. BoxBox uses the Windows credential prompt when a share requires it. Right-click a removable or mapped drive to eject or disconnect it.
 
-BoxBox’s Trash can restore items deleted from the Windows profile volume. Local image thumbnails, drag and drop within BoxBox, and dropping files from Explorer are supported. The system-wide picker, GVfs mounts, POSIX permissions, video/PDF thumbnails and dragging files out of BoxBox are currently Linux features.
+Open With uses the Windows app chooser. Copy, cut, paste and file dragging work with Explorer. The grid uses Windows thumbnail handlers, renders the first page of PDFs, and falls back to an audio waveform if Media Foundation can decode the file. Video thumbnails depend on the installed Windows codecs. Windows Properties opens the native sheet for attributes and security permissions. Windows Trash uses the Recycle Bin, and Mail Recipient opens a draft in a configured Simple MAPI client.
+
+To add **Open in BoxBox Files** to Explorer's folder menu, run <code>windows-explorer.ps1</code> from the extracted folder. Run it again with <code>-Uninstall</code> to remove the entry. A second launch opens the folder in a tab. Settings live under <code>%APPDATA%\BoxBox\Config</code>, state and cache under <code>%LOCALAPPDATA%\BoxBox</code>, and paired server credentials in Windows Credential Manager.
+
+Windows applications keep using their own Open and Save dialogs. Windows Explorer handles portable devices such as MTP phones. SFTP and FTP mounts use the Linux GVfs integration.
 
 ## Linux
 

@@ -53,6 +53,11 @@ fn work(queue: &Queue) {
 
 /// Input, listings and the compositor come first when every core is busy.
 fn lower_priority() {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    }
     #[cfg(target_os = "linux")]
     // SAFETY: gettid has no preconditions; setpriority only changes this thread's nice value.
     unsafe {

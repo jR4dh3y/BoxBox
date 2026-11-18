@@ -19,10 +19,18 @@ pub struct FileInfo {
     pub path: String,
     pub size: u64,
     pub is_dir: bool,
+    #[serde(default)]
+    pub hidden: bool,
     /// Milliseconds since the Unix epoch. A number, not the server's RFC 3339
     /// text: a 20,000-entry folder sorted by date parsed every one of them.
     #[serde(default, deserialize_with = "rfc3339_millis")]
     pub mod_time: Option<i64>,
+}
+
+impl FileInfo {
+    pub fn is_hidden(&self) -> bool {
+        self.hidden || self.name.starts_with('.')
+    }
 }
 
 pub fn mod_time(time: std::time::SystemTime) -> Option<i64> {
@@ -599,6 +607,7 @@ mod tests {
             path: String::new(),
             size: 12,
             is_dir: false,
+            hidden: false,
             mod_time: None,
         }
     }

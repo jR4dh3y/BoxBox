@@ -694,6 +694,7 @@ fn file_info_from_metadata(name: &str, path: &str, metadata: &fs::Metadata) -> F
         path: path.to_owned(),
         size: if metadata.is_file() { metadata.len() } else { 0 },
         is_dir: metadata.is_dir(),
+        hidden: false,
         mod_time,
     }
 }

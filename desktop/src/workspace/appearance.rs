@@ -32,10 +32,7 @@ const PICTURES: [&str; 4] = ["image", "frosted", "tile", "frosted_tile"];
 /// its content's hash, so the name is the key; any other file is keyed by its
 /// path, size and time.
 fn cache_dir(path: &Path) -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
+    let base = crate::persist::cache_dir();
     let name = path.file_stem()?.to_string_lossy();
     let key = match name.strip_prefix("wallpaper-") {
         Some(digest) if digest.len() == 64 => digest.to_string(),
@@ -45,7 +42,7 @@ fn cache_dir(path: &Path) -> Option<PathBuf> {
             format!("{:x}", Sha256::digest(stamp.as_bytes()))
         }
     };
-    Some(base.join("boxbox-gpui/wallpapers").join(key))
+    Some(base.join("wallpapers").join(key))
 }
 
 /// The prepared wallpaper from the cache: a few file reads, fast enough to do

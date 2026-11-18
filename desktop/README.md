@@ -71,7 +71,7 @@ pwsh -File scripts/package-windows.ps1
 
 ## Install
 
-On Windows 11 x64, extract <code>boxbox-desktop-v&lt;version&gt;-windows-amd64.zip</code> and launch <code>boxbox-files.exe</code>. The Windows package uses Direct3D 11.
+On Windows 11 x64, extract <code>boxbox-desktop-v&lt;version&gt;-windows-amd64.zip</code> and launch <code>boxbox-files.exe</code>. The Windows package uses Direct3D 11. Run <code>windows-explorer.ps1</code> from the extracted folder to add **Open in BoxBox Files** to Explorer's folder menu, or pass <code>-Uninstall</code> to remove it.
 
 On Linux, release downloads hold a `boxbox-desktop-v<version>-linux-amd64.tar.gz` archive. Extract it and run `./install.sh` without sudo. It installs `boxbox-files` to `~/.local/bin` with a desktop entry and icon. Pass `--set-picker` to use it for other apps' Open and Save dialogs (the xdg-desktop-portal FileChooser; `boxbox-files --disable-picker` or Settings → General undoes it), `--set-default` to make it the default folder handler, or `--uninstall` to remove it; settings in `~/.config/boxbox-gpui` are kept. From a checkout, `bun run install:desktop` builds and installs the same way.
 

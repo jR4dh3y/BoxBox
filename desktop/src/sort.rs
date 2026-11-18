@@ -148,6 +148,7 @@ mod tests {
             path: name.into(),
             size,
             is_dir,
+            hidden: false,
             mod_time: None,
         }
     }

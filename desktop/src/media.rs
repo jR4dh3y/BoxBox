@@ -52,6 +52,10 @@ pub fn open_file(api: &Api, item: &FileInfo) -> Result<PathBuf> {
     }
     let path = prepare_file(api, item)?;
     open_default_application(&path)?;
+    #[cfg(windows)]
+    if api.is_local() {
+        crate::windows::add_recent(&path);
+    }
     Ok(path)
 }
 

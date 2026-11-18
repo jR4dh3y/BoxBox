@@ -59,7 +59,7 @@ pub struct View {
 /// Runs off the UI thread.
 pub fn arrange(items: Vec<FileInfo>, view: View) -> Vec<FileInfo> {
     let mut items: Vec<FileInfo> =
-        items.into_iter().filter(|item| view.show_hidden_files || !item.name.starts_with('.')).collect();
+        items.into_iter().filter(|item| view.show_hidden_files || !item.is_hidden()).collect();
     if !view.ranked {
         sort_files(&mut items, view.sort);
     }
@@ -872,6 +872,7 @@ mod tests {
             path: format!("d/{name}"),
             size: 10,
             is_dir: false,
+            hidden: false,
             mod_time: None,
         }
     }

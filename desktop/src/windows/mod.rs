@@ -18,8 +18,58 @@ use windows_sys::Win32::{
     UI::WindowsAndMessaging::SW_SHOWNORMAL,
 };
 
+pub(crate) mod icons;
+pub(crate) mod mail;
+pub(crate) mod recent;
+pub(crate) mod recycle_bin;
+
 use crate::api::{DriveStats, RootKind};
 use crate::local::{add_mount, canonical_directory, LocalFiles, Mount};
+
+pub(super) struct SystemLibrary(windows_sys::Win32::Foundation::HMODULE);
+
+impl SystemLibrary {
+    pub(super) fn open(name: windows_sys::core::PCWSTR) -> Result<Self> {
+        use windows_sys::Win32::System::LibraryLoader::{
+            LoadLibraryExW, LOAD_LIBRARY_SEARCH_SYSTEM32,
+        };
+        let module = unsafe { LoadLibraryExW(name, null_mut(), LOAD_LIBRARY_SEARCH_SYSTEM32) };
+        if module.is_null() {
+            return Err(std::io::Error::last_os_error())
+                .context("a Windows system component is unavailable");
+        }
+        Ok(Self(module))
+    }
+
+    pub(super) fn symbol(
+        &self,
+        name: &std::ffi::CStr,
+    ) -> Result<unsafe extern "system" fn() -> isize> {
+        unsafe {
+            windows_sys::Win32::System::LibraryLoader::GetProcAddress(self.0, name.as_ptr().cast())
+        }
+        .with_context(|| {
+            format!(
+                "Windows system component does not export {}",
+                name.to_string_lossy()
+            )
+        })
+    }
+}
+
+impl Drop for SystemLibrary {
+    fn drop(&mut self) {
+        unsafe { windows_sys::Win32::Foundation::FreeLibrary(self.0) };
+    }
+}
+
+pub(super) fn window_id(window: &gpui::Window) -> Option<isize> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match HasWindowHandle::window_handle(window).ok()?.as_raw() {
+        RawWindowHandle::Win32(handle) => Some(handle.hwnd.get()),
+        _ => None,
+    }
+}
 
 pub(super) fn wide(text: impl AsRef<OsStr>) -> Vec<u16> {
     text.as_ref().encode_wide().chain([0]).collect()
@@ -58,7 +108,7 @@ pub(super) fn shell_path_buf(path: &Path) -> PathBuf {
     PathBuf::from(OsString::from_wide(&text))
 }
 
-fn known_folder(id: &GUID) -> Option<PathBuf> {
+pub(super) fn known_folder(id: &GUID) -> Option<PathBuf> {
     let mut path = null_mut();
     // The shell allocates a NUL-terminated string with the COM allocator.
     let result = unsafe { SHGetKnownFolderPath(id, 0, null_mut(), &mut path) };
@@ -78,26 +128,7 @@ pub(super) fn local_files() -> Result<LocalFiles> {
     let home = known_folder(&FOLDERID_Profile).context("cannot locate the Windows profile")?;
     let home = canonical_directory(&home).context("cannot open the Windows profile")?;
     let mut mounts = Vec::new();
-    let mask = unsafe { GetLogicalDrives() };
-    for (index, letter) in ('A'..='Z').enumerate() {
-        if mask & (1 << index) == 0 {
-            continue;
-        }
-        let root = format!("{letter}:\\");
-        if let Ok(path) = canonical_directory(Path::new(&root)) {
-            let label = volume(&path).and_then(|info| info.label).map_or_else(
-                || format!("{letter}:"),
-                |label| format!("{label} ({letter}:)"),
-            );
-            add_mount(
-                &mut mounts,
-                &letter.to_ascii_lowercase().to_string(),
-                Some(&label),
-                RootKind::Drive,
-                path,
-            );
-        }
-    }
+    mounts.extend(drive_mounts());
     add_mount(&mut mounts, "home", Some("Home"), RootKind::Place, home);
     for (name, label, id) in [
         ("desktop", "Desktop", FOLDERID_Desktop),
@@ -115,7 +146,92 @@ pub(super) fn local_files() -> Result<LocalFiles> {
         mounts,
         trash_data_home: crate::persist::state_dir(),
         volume_trash: false,
+        host_filesystem: true,
     })
+}
+
+pub(super) fn drive_mask() -> u32 {
+    unsafe { GetLogicalDrives() }
+}
+
+pub(super) fn has_drive(name: &str, mask: u32) -> bool {
+    matches!(name.as_bytes(), [letter] if letter.is_ascii_lowercase() && mask & (1 << (letter - b'a')) != 0)
+}
+
+pub(super) fn drive_mounts() -> Vec<Mount> {
+    let mask = drive_mask();
+    ('a'..='z')
+        .filter_map(|letter| {
+            let name = letter.to_string();
+            has_drive(&name, mask)
+                .then(|| additional_mount(&name))
+                .flatten()
+        })
+        .collect()
+}
+
+pub(super) fn additional_mount(name: &str) -> Option<Mount> {
+    use crate::api::MountPoint;
+    use std::path::{Component, Prefix};
+
+    let root = if has_drive(name, drive_mask()) {
+        PathBuf::from(format!("{}:\\", name.to_ascii_uppercase()))
+    } else {
+        let path = Path::new(name);
+        let mut parts = path.components();
+        let Component::Prefix(prefix) = parts.next()? else {
+            return None;
+        };
+        if !matches!(prefix.kind(), Prefix::UNC(..))
+            || parts.any(|part| !matches!(part, Component::RootDir))
+        {
+            return None;
+        }
+        return Some(Mount {
+            point: MountPoint {
+                name: name.trim_end_matches('\\').to_owned(),
+                label: None,
+                kind: RootKind::Drive,
+            },
+            path: canonical_directory(path).ok()?,
+        });
+    };
+    let path = canonical_directory(&root).ok()?;
+    let letter = name.to_ascii_uppercase();
+    let label = volume(&path).and_then(|info| info.label).map_or_else(
+        || format!("{letter}:"),
+        |label| format!("{label} ({letter}:)"),
+    );
+    Some(Mount {
+        point: MountPoint {
+            name: name.to_owned(),
+            label: Some(label),
+            kind: RootKind::Drive,
+        },
+        path,
+    })
+}
+
+pub(super) fn mount_name(real: &Path) -> Option<String> {
+    use std::path::{Component, Prefix};
+    let Component::Prefix(prefix) = real.components().next()? else {
+        return None;
+    };
+    match prefix.kind() {
+        Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => {
+            Some(char::from(letter).to_ascii_lowercase().to_string())
+        }
+        Prefix::UNC(host, share) | Prefix::VerbatimUNC(host, share) => {
+            Some(format!(r"\\{}\{}", host.to_str()?, share.to_str()?))
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn is_network_drive(path: &Path) -> bool {
+    use windows_sys::Win32::System::WindowsProgramming::DRIVE_REMOTE;
+    let path = shell_path(path);
+    (unsafe { GetDriveTypeW(path.as_ptr()) }) == DRIVE_REMOTE
 }
 
 pub(super) fn validate_name(name: &str) -> Result<()> {
@@ -278,8 +394,39 @@ pub(super) fn drive_stats(mount: &Mount) -> Result<DriveStats> {
     })
 }
 
-pub(super) fn with_shell<T>(run: impl FnOnce() -> Result<T>) -> Result<T> {
+pub(super) fn shell_item(path: &Path) -> Result<windows::Win32::UI::Shell::IShellItem> {
+    use windows::{core::PCWSTR, Win32::UI::Shell::SHCreateItemFromParsingName};
+
+    let wide = shell_path(path);
+    Ok(unsafe { SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None)? })
+}
+
+/// Take ownership of a string returned by the Shell's COM allocator.
+unsafe fn shell_string(text: windows::core::PWSTR) -> Result<String> {
+    let value = unsafe { text.to_string() };
+    unsafe { CoTaskMemFree(text.0.cast()) };
+    Ok(value?)
+}
+
+pub(super) fn with_shell<T: Send>(run: impl FnOnce() -> Result<T> + Send) -> Result<T> {
+    // GPUI's background workers are initialized as MTA. Shell dialogs and file
+    // operations need an STA and cannot change the caller's existing apartment.
     let result = unsafe { CoInitializeEx(null(), COINIT_APARTMENTTHREADED as u32) };
+    if result == windows_sys::Win32::Foundation::RPC_E_CHANGED_MODE {
+        return std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    let result = unsafe { CoInitializeEx(null(), COINIT_APARTMENTTHREADED as u32) };
+                    initialized_shell(result, run)
+                })
+                .join()
+                .map_err(|_| anyhow::anyhow!("the Windows Shell thread panicked"))?
+        });
+    }
+    initialized_shell(result, run)
+}
+
+fn initialized_shell<T>(result: i32, run: impl FnOnce() -> Result<T>) -> Result<T> {
     if result < 0 {
         return Err(io::Error::from_raw_os_error(result))
             .context("cannot initialize the Windows Shell");
@@ -292,6 +439,32 @@ pub(super) fn with_shell<T>(run: impl FnOnce() -> Result<T>) -> Result<T> {
     }
     let _com = Com;
     run()
+}
+
+pub(super) fn shell_verb(verb: &[u16], path: &Path, owner: isize) -> Result<()> {
+    let file = shell_path(path);
+    with_shell(|| {
+        let mut info = SHELLEXECUTEINFOW {
+            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_INVOKEIDLIST | SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC,
+            hwnd: owner as _,
+            lpVerb: verb.as_ptr(),
+            lpFile: file.as_ptr(),
+            nShow: SW_SHOWNORMAL,
+            ..Default::default()
+        };
+        ensure_win32(unsafe { ShellExecuteExW(&mut info) })?;
+        Ok(())
+    })
+}
+
+pub(super) fn show_properties(path: &Path, owner: isize) -> Result<()> {
+    shell_verb(&wide("properties"), path, owner)
+}
+
+pub(super) fn add_recent(path: &Path) {
+    let target = shell_path(path);
+    unsafe { SHAddToRecentDocs(SHARD_PATHW as u32, target.as_ptr().cast()) };
 }
 
 pub(super) fn open(path: &Path) -> Result<()> {

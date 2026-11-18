@@ -1,4 +1,4 @@
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(all(windows, not(debug_assertions), not(test)), windows_subsystem = "windows")]
 
 //! Native BoxBox desktop with direct local filesystem access and remote HTTP connections.
 
@@ -12,7 +12,7 @@ mod devices;
 #[cfg(target_os = "linux")]
 mod filemanager1;
 mod gallery;
-#[cfg(target_os = "linux")]
+#[cfg_attr(windows, path = "windows/instance.rs")]
 mod instance;
 mod drag_out;
 mod file_icons;
@@ -61,6 +61,8 @@ use crate::api::Api;
 use crate::workspace::Workspace;
 
 fn main() {
+    #[cfg(windows)]
+    local::thumbnails::dispatch_worker();
     let (initial_path, gallery) = match cli::parse(std::env::args_os().skip(1)) {
         Ok(cli::Command::Open(path)) => (path, false),
         Ok(cli::Command::Gallery) => (String::new(), true),
@@ -141,16 +143,17 @@ fn main() {
         return;
     }
     // A second launch opens its location in the running window instead.
-    #[cfg(target_os = "linux")]
     let claimed = {
         let _span = profile::span("single-instance claim");
         instance::claim(&initial_path)
     };
-    #[cfg(target_os = "linux")]
     let launches = match claimed {
         Ok(instance::Instance::Forwarded) => return,
         Ok(instance::Instance::Primary(launches, sender)) => {
             // "Show in folder" from other apps, when no other file manager answers it.
+            #[cfg(windows)]
+            drop(sender);
+            #[cfg(target_os = "linux")]
             std::thread::Builder::new()
                 .name("filemanager1".into())
                 .spawn(move || match filemanager1::serve(sender) {
@@ -202,15 +205,10 @@ fn main() {
                     drag_out::init(window, cx);
                     cx.new(|cx| {
                         let _span = profile::span("Workspace::new");
-                        let workspace = Workspace::new(start, fonts, window, cx);
-                        #[cfg(target_os = "linux")]
-                        let workspace = {
-                            let mut workspace = workspace;
-                            if let Some(launches) = launches {
-                                workspace.receive_launches(launches, window, cx);
-                            }
-                            workspace
-                        };
+                        let mut workspace = Workspace::new(start, fonts, window, cx);
+                        if let Some(launches) = launches {
+                            workspace.receive_launches(launches, window, cx);
+                        }
                         workspace
                     })
                 },

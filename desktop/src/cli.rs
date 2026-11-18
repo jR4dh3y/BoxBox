@@ -35,7 +35,10 @@ pub const USAGE: &str = usage!(
 );
 
 #[cfg(windows)]
-pub const USAGE: &str = usage!("", "");
+pub const USAGE: &str = usage!(
+    "If BoxBox is already running, the location opens in that window.\n",
+    ""
+);
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {

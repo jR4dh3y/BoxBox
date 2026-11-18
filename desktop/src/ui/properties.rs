@@ -7,9 +7,9 @@ use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton};
 use gpui::SharedString;
 
 use super::thin_icon;
-use crate::components::{Modal, Type};
+use crate::components::{Button, ButtonVariant, Modal, Type};
 #[cfg(target_os = "linux")]
-use crate::components::{Button, ButtonSize, ButtonVariant};
+use crate::components::ButtonSize;
 use crate::format::{file_icon, file_size, full_date, type_description};
 use crate::theme::*;
 use crate::workspace::properties::Totals;
@@ -65,6 +65,14 @@ impl Workspace {
                     None => parent(&item.path),
                 };
                 about.push(row("Location", text(location)));
+                #[cfg(windows)]
+                if let Some(data) = ownership {
+                    let path = data.path.clone();
+                    let button = Button::new("windows-properties").label("Open Windows properties…")
+                        .variant(ButtonVariant::Secondary)
+                        .on_click(cx.listener(move |this, _, window, cx| this.windows_properties(path.clone(), window, cx)));
+                    about.push(row("Security and attributes", button));
+                }
                 if let Some(target) = ownership.and_then(|ownership| ownership.link_target.clone()) {
                     about.push(row("Link to", text(target)));
                 }

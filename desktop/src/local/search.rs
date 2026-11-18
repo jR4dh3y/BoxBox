@@ -71,6 +71,10 @@ impl LocalFiles {
                 if !request.hidden && name.starts_with('.') {
                     continue;
                 }
+                #[cfg(windows)]
+                if !request.hidden && entry.metadata().is_ok_and(|metadata| super::hidden_attribute(&metadata)) {
+                    continue;
+                }
                 let is_folder = entry.file_type().is_ok_and(|kind| kind.is_dir());
                 let rank = request.query.rank(name);
                 if rank.is_none() && !is_folder {
@@ -79,11 +83,11 @@ impl LocalFiles {
                 let path = entry.path();
                 let virtual_path = format!("{virtual_directory}/{name}");
                 if let Some(rank) = rank {
-                    let item = FileInfo { name: name.to_owned(), path: virtual_path.clone(), size: 0, is_dir: is_folder, mod_time: None };
+                    let item = FileInfo { name: name.to_owned(), path: virtual_path.clone(), size: 0, is_dir: is_folder, hidden: false, mod_time: None };
                     hits.push(Found { hit: Hit { item, rank, depth }, real: path.clone(), parent: virtual_directory.clone(), inspected: false });
                     unreported = true;
                 }
-                if is_folder && !skip_search_directory(mount, &path) {
+                if is_folder && !skip_search_directory(&mount, &path) {
                     pending.push_back((path, virtual_path, depth + 1));
                 }
             }
@@ -92,11 +96,11 @@ impl LocalFiles {
                 best_by(&mut hits, |found| &found.hit);
             }
             if unreported && reported.elapsed() >= REPORT_EVERY {
-                progress(self.best_items(mount, &mut hits));
+                progress(self.best_items(&mount, &mut hits));
                 (reported, unreported) = (Instant::now(), false);
             }
         }
-        Ok(self.best_items(mount, &mut hits))
+        Ok(self.best_items(&mount, &mut hits))
     }
 }
 

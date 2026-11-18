@@ -561,7 +561,6 @@ impl Workspace {
     }
 
     /// Later launches each open a tab and raise the window.
-    #[cfg(target_os = "linux")]
     pub(crate) fn receive_launches(&mut self, launches: async_channel::Receiver<String>, window: &mut Window, cx: &mut Context<Self>) {
         cx.spawn_in(window, async move |this, cx| {
             while let Ok(argument) = launches.recv().await {
