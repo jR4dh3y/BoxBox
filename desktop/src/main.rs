@@ -204,6 +204,8 @@ fn main() {
                 |window, cx| {
                     #[cfg(windows)]
                     windows::live_resize::install(window);
+                    #[cfg(windows)]
+                    windows::context_menu::warm();
                     drag_out::init(window, cx);
                     cx.new(|cx| {
                         let _span = profile::span("Workspace::new");

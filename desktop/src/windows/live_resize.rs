@@ -1,8 +1,20 @@
+//! Keeps the drawn content the same size as the window while the user drags its border.
+//!
+//! Windows applies new window bounds before it sends `WM_SIZE`, and GPUI presents
+//! through a DirectComposition swap chain that DWM composes on its own clock. If DWM
+//! composes while GPUI is still rendering the new size, the frame shows the larger
+//! window with the old, shorter content and the backdrop shows through the gap.
+//! Linux needs none of this: X11 uses `_NET_WM_SYNC_REQUEST` and Wayland sizes the
+//! window from the committed buffer.
+
 use std::mem::size_of;
 
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, WPARAM},
-    Graphics::Gdi::{RedrawWindow, RDW_INVALIDATE, RDW_NOERASE, RDW_UPDATENOW},
+    Graphics::{
+        Dwm::DwmFlush,
+        Gdi::{RedrawWindow, RDW_INVALIDATE, RDW_NOERASE, RDW_UPDATENOW},
+    },
     UI::{
         Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::{
@@ -33,10 +45,10 @@ unsafe extern "system" fn resize_proc(
         let _ = unsafe { RemoveWindowSubclass(hwnd, Some(resize_proc), id) };
     }
     let result = unsafe { DefSubclassProc(hwnd, message, wparam, lparam) };
-    if message == WM_EXITSIZEMOVE
-        || (message == WM_SIZE && wparam.0 != SIZE_MINIMIZED as usize && in_size_move(hwnd))
-    {
-        // GPUI has updated its viewport and swap chain. Paint before DWM displays the new bounds.
+    let dragging =
+        message == WM_SIZE && wparam.0 != SIZE_MINIMIZED as usize && in_size_move(hwnd);
+    if dragging || message == WM_EXITSIZEMOVE {
+        // GPUI has updated its viewport and swap chain. Paint the new size now.
         let _ = unsafe {
             RedrawWindow(
                 Some(hwnd),
@@ -45,6 +57,11 @@ unsafe extern "system" fn resize_proc(
                 RDW_INVALIDATE | RDW_UPDATENOW | RDW_NOERASE,
             )
         };
+    }
+    if dragging {
+        // Hold the drag until DWM has shown this frame. The next bounds change then
+        // starts just after a composition, which leaves a full refresh to render it.
+        let _ = unsafe { DwmFlush() };
     }
     result
 }

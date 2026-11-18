@@ -37,7 +37,7 @@ tempfile = "3"
 url = "2"
 windows = { version = "0.61", features = [
     "Data_Pdf", "Graphics_Imaging", "Storage_FileProperties", "Storage_Streams",
-    "Win32_Graphics_Gdi", "Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_SystemServices", "Win32_System_WinRT",
+    "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_SystemServices", "Win32_System_WinRT",
     "Win32_UI_Controls", "Win32_UI_Shell_Common", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_Input_KeyboardAndMouse",
 ] }
 windows-sys = { version = "0.61", features = [

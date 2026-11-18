@@ -48,6 +48,10 @@ impl Workspace {
         if menu.extras.pending() {
             return div().into_any_element();
         }
+        #[cfg(windows)]
+        if menu.windows.pending() {
+            return div().into_any_element();
+        }
 
         // Opening comes first, as in Thunar and Nautilus.
         let mut entries = Vec::new();

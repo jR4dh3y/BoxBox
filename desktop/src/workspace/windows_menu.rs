@@ -1,27 +1,85 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context as _;
-use gpui::{Context, Window};
+use gpui::{Context, RenderImage, Window};
 
 use crate::components::MenuItem;
 use crate::windows::{
-    context_menu::{Branch, Entry, ShellMenu, Target},
+    context_menu::{Branch, Entry, Icon, ShellMenu, Target},
     window_id,
 };
 
 use super::Workspace;
+
+/// How long a right-click waits for Windows commands before the menu opens without them.
+/// A warm Shell menu takes about 60 ms; a dead network drive can take seconds.
+const SHELL_MENU_LIMIT: Duration = Duration::from_millis(200);
+
+/// Distinct Shell menu icons kept on the GPU. Menus reuse a few dozen.
+const ICON_LIMIT: usize = 256;
 
 #[derive(Default)]
 pub(crate) struct WindowsMenu {
     request: Rc<()>,
     pending: bool,
     shell: Option<Rc<ShellMenu>>,
-    pages: Vec<Vec<Entry>>,
+    pages: Vec<Vec<Row>>,
+}
+
+struct Row {
+    entry: Entry,
+    image: Option<Arc<RenderImage>>,
+}
+
+/// Makes each row's icon a GPU image once, as the page arrives, not every frame.
+fn page(entries: Vec<Entry>) -> Vec<Row> {
+    entries
+        .into_iter()
+        .map(|mut entry| {
+            let icon = match &mut entry {
+                Entry::Action { icon, .. } | Entry::Submenu { icon, .. } => icon.take(),
+                Entry::Separator => None,
+            };
+            Row {
+                entry,
+                image: icon.and_then(image),
+            }
+        })
+        .collect()
+}
+
+fn image(icon: Icon) -> Option<Arc<RenderImage>> {
+    thread_local! {
+        // Keyed by content, so every menu that shows 7-Zip shares one texture.
+        static IMAGES: RefCell<HashMap<(u32, u32, u32), Arc<RenderImage>>> = RefCell::default();
+    }
+    let key = (icon.width, icon.height, crc32fast::hash(&icon.bgra));
+    IMAGES.with_borrow_mut(|images| {
+        if let Some(image) = images.get(&key) {
+            return Some(image.clone());
+        }
+        if images.len() >= ICON_LIMIT {
+            return None;
+        }
+        let pixels = image::RgbaImage::from_raw(icon.width, icon.height, icon.bgra)?;
+        let image = Arc::new(RenderImage::new(vec![image::Frame::new(pixels)]));
+        images.insert(key, image.clone());
+        Some(image)
+    })
 }
 
 impl WindowsMenu {
     pub(crate) fn depth(&self) -> usize {
         self.pages.len().saturating_sub(1)
+    }
+
+    /// The menu stays hidden while pending, so it opens once and complete.
+    pub(crate) fn pending(&self) -> bool {
+        self.pending
     }
 }
 
@@ -47,12 +105,30 @@ impl Workspace {
         if let Some(menu) = &mut self.context_menu {
             menu.windows.pending = true;
         }
+        let limit = request.clone();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(SHELL_MENU_LIMIT).await;
+            this.update(cx, |this, cx| {
+                let Some(menu) = &mut this.context_menu else {
+                    return;
+                };
+                if menu.windows.pending && Rc::ptr_eq(&menu.windows.request, &limit) {
+                    // Open without Windows commands and ignore the late result.
+                    menu.windows = WindowsMenu::default();
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
         cx.spawn(async move |this, cx| {
             let target = cx
                 .background_executor()
                 .spawn(async move {
                     if items.is_empty() {
-                        return Target::folder(&folder.context("this folder has no Windows path")?);
+                        return Ok(Target::Folder(
+                            folder.context("this folder has no Windows path")?,
+                        ));
                     }
                     let paths = items
                         .iter()
@@ -61,34 +137,29 @@ impl Workspace {
                                 .context("this item has no Windows path")
                         })
                         .collect::<anyhow::Result<Vec<_>>>()?;
-                    Target::items(&paths)
+                    anyhow::Ok(Target::Items(paths))
                 })
                 .await;
-            let current = this
-                .update(cx, |this, _| {
-                    this.context_menu
-                        .as_ref()
-                        .is_some_and(|menu| Rc::ptr_eq(&menu.windows.request, &request))
-                })
-                .unwrap_or(false);
-            if !current {
-                return;
-            }
-            // Shell callbacks can pump Win32 messages. Run them outside a GPUI entity update.
-            let shell = target.and_then(|target| ShellMenu::new(owner, target, shift));
-            let result = shell.map(|shell| (shell.entries(), Rc::new(shell)));
+            let result = match target {
+                Ok(target) => ShellMenu::open(owner, target, shift).await,
+                Err(error) => Err(error),
+            };
             this.update(cx, |this, cx| {
                 let Some(menu) = &mut this.context_menu else {
                     return;
                 };
-                if Rc::ptr_eq(&menu.windows.request, &request) {
-                    menu.windows.pending = false;
-                    if let Ok((entries, shell)) = result {
-                        menu.windows.pages.push(entries);
-                        menu.windows.shell = Some(shell);
-                    }
-                    cx.notify();
+                if !Rc::ptr_eq(&menu.windows.request, &request) {
+                    return;
                 }
+                menu.windows.pending = false;
+                match result {
+                    Ok((shell, entries)) => {
+                        menu.windows.pages.push(page(entries));
+                        menu.windows.shell = Some(Rc::new(shell));
+                    }
+                    Err(error) => log::warn!("Windows commands unavailable: {error:#}"),
+                }
+                cx.notify();
             })
             .ok();
         })
@@ -100,11 +171,6 @@ impl Workspace {
         menu: &WindowsMenu,
         cx: &mut Context<Self>,
     ) -> Vec<MenuItem> {
-        if menu.pending {
-            return vec![
-                MenuItem::action("windows-loading", "Loading Windows commands…").disabled(true),
-            ];
-        }
         let Some(page) = menu.pages.last() else {
             return Vec::new();
         };
@@ -122,19 +188,20 @@ impl Workspace {
             );
             items.push(MenuItem::Separator);
         }
-        for (index, entry) in page.iter().enumerate() {
-            items.push(match entry {
+        for (index, Row { entry, image }) in page.iter().enumerate() {
+            let item = match entry {
                 Entry::Action {
                     id,
                     label,
                     shortcut,
                     disabled,
+                    ..
                 } => {
                     let id = *id;
                     let mut item = MenuItem::action(("windows-command", index), label.clone())
                         .disabled(*disabled)
                         .on_select(cx.listener(move |this, _, window, cx| {
-                            this.run_windows_menu_action(window, Some(id), cx)
+                            this.run_windows_menu_command(window, id, cx)
                         }));
                     if let Some(keys) = shortcut {
                         item = item.shortcut(keys.clone());
@@ -145,6 +212,7 @@ impl Workspace {
                     branch,
                     label,
                     disabled,
+                    ..
                 } => {
                     let branch = *branch;
                     MenuItem::action(("windows-submenu", index), label.clone())
@@ -155,18 +223,12 @@ impl Workspace {
                         )
                 }
                 Entry::Separator => MenuItem::Separator,
+            };
+            items.push(match image {
+                Some(image) => item.image(image.clone()),
+                None => item,
             });
         }
-        if !page.is_empty() {
-            items.push(MenuItem::Separator);
-        }
-        items.push(
-            MenuItem::action("windows-classic", "Open classic Windows menu…")
-                .icon("app-window")
-                .on_select(cx.listener(|this, _, window, cx| {
-                    this.run_windows_menu_action(window, None, cx)
-                })),
-        );
         items
     }
 
@@ -179,20 +241,24 @@ impl Workspace {
         };
         let depth = menu.windows.depth();
         cx.spawn(async move |this, cx| {
-            let entries = shell.expand(branch);
+            let entries = shell.expand(branch).await;
             this.update(cx, |this, cx| {
                 let Some(menu) = &mut this.context_menu else {
                     return;
                 };
-                if menu.windows.depth() == depth
+                let same_page = menu.windows.depth() == depth
                     && menu
                         .windows
                         .shell
                         .as_ref()
-                        .is_some_and(|open| Rc::ptr_eq(open, &shell))
-                {
-                    menu.windows.pages.push(entries);
-                    cx.notify();
+                        .is_some_and(|open| Rc::ptr_eq(open, &shell));
+                match entries {
+                    Ok(entries) if same_page => {
+                        menu.windows.pages.push(page(entries));
+                        cx.notify();
+                    }
+                    Ok(_) => {}
+                    Err(error) => this.report(Err(format!("Windows Shell menu failed: {error:#}")), cx),
                 }
             })
             .ok();
@@ -200,12 +266,7 @@ impl Workspace {
         .detach();
     }
 
-    fn run_windows_menu_action(
-        &mut self,
-        window: &Window,
-        command: Option<u32>,
-        cx: &mut Context<Self>,
-    ) {
+    fn run_windows_menu_command(&mut self, window: &Window, command: u32, cx: &mut Context<Self>) {
         let Some(menu) = self.context_menu.take() else {
             return;
         };
@@ -219,11 +280,7 @@ impl Workspace {
         );
         cx.notify();
         cx.spawn(async move |this, cx| {
-            let result = match command {
-                Some(id) => shell.invoke(id, anchor),
-                None => shell.popup(anchor),
-            };
-            if let Err(error) = result {
+            if let Err(error) = shell.invoke(command, anchor).await {
                 this.update(cx, |this, cx| {
                     this.report(Err(format!("Windows Shell command failed: {error:#}")), cx)
                 })
