@@ -147,7 +147,7 @@ struct MenuSubclass(HWND);
 
 impl Drop for MenuSubclass {
     fn drop(&mut self) {
-        unsafe { RemoveWindowSubclass(self.0, Some(menu_proc), MENU_SUBCLASS) };
+        let _ = unsafe { RemoveWindowSubclass(self.0, Some(menu_proc), MENU_SUBCLASS) };
     }
 }
 
