@@ -1158,6 +1158,38 @@ impl Workspace {
             .map(|menu| (PaneTarget(menu.target_id), menu.items.clone()))
     }
 
+    #[cfg(windows)]
+    pub(crate) fn context_windows_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use crate::windows::{context_menu, window_id};
+
+        let Some(menu) = &self.context_menu else { return };
+        let Some(pane) = self.pane_by_id(menu.target_id) else { return };
+        let Some(owner) = window_id(window) else { return };
+        let api = pane.api.clone();
+        let folder = pane.real_path.clone();
+        let items: Vec<_> = menu.items.iter().map(|item| item.path.clone()).collect();
+        let scale = window.scale_factor();
+        let anchor = (
+            (f32::from(menu.position.x) * scale).round() as i32,
+            (f32::from(menu.position.y) * scale).round() as i32,
+        );
+
+        cx.spawn(async move |this, cx| {
+            let target = cx.background_executor().spawn(async move {
+                if items.is_empty() {
+                    return context_menu::Target::folder(&folder.context("this folder has no Windows path")?);
+                }
+                let paths = items.iter().map(|item| api.entry_path(item)?.context("this item has no Windows path"))
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                context_menu::Target::items(&paths)
+            }).await;
+            // Track the popup on its owner's thread, outside GPUI's event callback.
+            if let Err(error) = target.and_then(|target| context_menu::show(owner, anchor, &target)) {
+                this.update(cx, |this, cx| this.report(Err(format!("Could not open Windows options: {error:#}")), cx)).ok();
+            }
+        }).detach();
+    }
+
     pub(crate) fn context_copy(&mut self, cx: &mut Context<Self>) {
         if let Some((target, items)) = self.context_selection() {
             self.copy_items(target, items, ClipboardMode::Copy, cx);

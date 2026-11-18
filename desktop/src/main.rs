@@ -193,7 +193,7 @@ fn main() {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
                         title: Some("BoxBox".into()),
-                        appears_transparent: false,
+                        appears_transparent: start.integrates_window_controls(),
                         traffic_light_position: Some(point(px(9.), px(9.))),
                     }),
                     app_id: Some("boxbox-gpui".into()),

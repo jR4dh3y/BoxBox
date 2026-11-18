@@ -93,6 +93,10 @@ impl Workspace {
         if items_empty {
             entries.extend(self.template_menu(crate::workspace::operations::PaneTarget(pane.id), |this| this.context_menu = None, cx));
         }
+        #[cfg(windows)]
+        if local && (!items_empty || pane.real_path.is_some()) {
+            entries.push(self.menu_item("context-windows", "Show Windows options…", "app-window", Self::context_windows_menu, cx));
+        }
         entries.push(MenuItem::Separator);
         let paste = self
             .menu_item("context-paste", "Paste", "clipboard-paste", |this, window, cx| this.context_paste(window, cx), cx)

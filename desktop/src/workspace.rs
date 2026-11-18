@@ -95,6 +95,8 @@ pub(crate) struct Preferences {
     pub hover_details: bool,
     /// Files take the icon of the app that opens them, as on Windows.
     pub app_icons: bool,
+    #[cfg(windows)]
+    pub window_controls_in_tab_bar: bool,
     /// The Details panel at the right (F11).
     pub details_panel: bool,
 }
@@ -148,6 +150,8 @@ impl Default for Preferences {
             animations: true,
             hover_details: true,
             app_icons: true,
+            #[cfg(windows)]
+            window_controls_in_tab_bar: true,
             details_panel: false,
         }
     }
@@ -292,6 +296,8 @@ pub struct Workspace {
     pub(crate) desktop_motion: Option<bool>,
     /// Tabs opened from here on slide open; those restored at launch just appear.
     pub(crate) first_new_pane: usize,
+    #[cfg(windows)]
+    pub(crate) integrated_window_controls: bool,
     pub(crate) desktop_settings: DesktopSettings,
     pub(crate) settings_panel: SettingsPanelState,
     pub(crate) operation_status: OperationStatus,
@@ -452,6 +458,8 @@ impl Workspace {
             search_fields: HashMap::new(),
             settings_open: false,
             settings_section: SettingsSection::General,
+            #[cfg(windows)]
+            integrated_window_controls: preferences.window_controls_in_tab_bar,
             preferences,
             desktop_motion: None,
             first_new_pane: usize::MAX,
@@ -1516,7 +1524,7 @@ impl Render for Workspace {
                     .flex_1()
                     .min_w_0()
                     .min_h_0()
-                    .child(self.render_tabs(cx))
+                    .child(self.render_tabs(window, cx))
                     .child(browsers),
             )
             .when(self.settings_open, |root| {

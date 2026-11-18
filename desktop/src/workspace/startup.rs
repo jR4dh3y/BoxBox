@@ -48,6 +48,17 @@ pub(super) struct DrivesRead {
 }
 
 impl Startup {
+    pub(crate) fn integrates_window_controls(&self) -> bool {
+        #[cfg(windows)]
+        {
+            self.preferences.window_controls_in_tab_bar
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    }
+
     /// Starts reading the launch folder and the drives at once.
     pub fn prefetch(api: Api, argument: &str) -> Self {
         let mut start = Self::deferred(api, argument);

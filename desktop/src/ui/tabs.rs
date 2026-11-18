@@ -1,6 +1,8 @@
 //! The tab strip in `BrowseWorkspace.svelte`.
 
-use gpui::{div, prelude::*, px, Animation, AnimationExt as _, Context};
+use gpui::{div, prelude::*, px, Animation, AnimationExt as _, Context, Window};
+#[cfg(windows)]
+use gpui::WindowControlArea;
 
 use super::{icon, TextScale};
 use crate::components::motion;
@@ -12,7 +14,7 @@ use crate::workspace::{NewTab, ToggleSplit, Workspace};
 const TAB_MAX_WIDTH: f32 = 260.;
 
 impl Workspace {
-    pub(crate) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_tabs(&self, _window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let closable = self.tabs.len() > 1;
         let animate = motion::enabled(cx);
         let tabs = self.tabs.iter().enumerate().map(|(index, pane)| {
@@ -74,7 +76,7 @@ impl Workspace {
         };
 
         // Taffy drops `gap` in a row with an auto margin, so a spacer stands in for `ml-auto`.
-        div()
+        let bar = div()
             .h(px(32.))
             .flex_none()
             .flex()
@@ -90,7 +92,12 @@ impl Workspace {
                     .fill(c(SURFACE_SECONDARY))
                     .rounded(4.),
             )
-            .child(div().flex_1())
+            .child({
+                let spacer = div().flex_1().h_full();
+                #[cfg(windows)]
+                let spacer = spacer.min_w(px(32.)).window_control_area(WindowControlArea::Drag);
+                spacer
+            })
             .child(
                 motion::interact(
                     "toggle-split-feedback",
@@ -98,6 +105,41 @@ impl Workspace {
                 )
                 .fill(c(SURFACE_SECONDARY))
                 .rounded(4.),
-            )
+            );
+        #[cfg(windows)]
+        let bar = bar.when(self.integrated_window_controls && !_window.is_fullscreen(), |bar| {
+            let maximized = _window.is_maximized();
+            bar.pr_0()
+                // Leave the top resize edge available on a restored window.
+                .when(!maximized, |bar| bar.h(px(37.)).pt(px(5.)))
+                .child(window_controls(maximized))
+        });
+        bar
     }
+}
+
+#[cfg(windows)]
+fn window_controls(maximized: bool) -> impl IntoElement {
+    use WindowControlArea::{Close, Max, Min};
+
+    let maximize_icon = if maximized { "window-restore" } else { "window-maximize" };
+    let buttons = [
+        ("minimize-window", "window-minimize", Min),
+        ("maximize-window", maximize_icon, Max),
+        ("close-window", "x", Close),
+    ];
+    div().flex().flex_none().h_full().children(buttons.map(|(id, glyph, area)| {
+        let hover = if matches!(area, Close) { c(0xc42b1c) } else { c(SURFACE_ELEVATED) };
+        div()
+            .id(id)
+            .w(px(46.))
+            .h_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .window_control_area(area)
+            .hover(move |button| button.bg(hover))
+            .active(crate::components::pressed)
+            .child(icon(glyph, 14., c(TEXT_PRIMARY)))
+    }))
 }

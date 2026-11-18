@@ -190,6 +190,13 @@ impl Workspace {
             cx,
             |this, choice, cx| this.set_background(choice, cx),
         ))];
+        #[cfg(windows)]
+        look.push(SettingsRow::new("Window controls in tab bar").control(self.preference_toggle(
+            "setting-window-controls",
+            preferences.window_controls_in_tab_bar,
+            |p| &mut p.window_controls_in_tab_bar,
+            cx,
+        )));
         if background == Background::Wallpaper {
             let label = settings.wallpaper.as_ref().and_then(|path| path.file_name()).map(|name| name.to_string_lossy().into_owned());
             look.push(SettingsRow::new("Image").control(
@@ -309,6 +316,13 @@ impl Workspace {
             .flex()
             .flex_col()
             .child(settings_rows(look))
+            .when(cfg!(windows), |panel| {
+                #[cfg(windows)]
+                let panel = panel.when(self.integrated_window_controls != preferences.window_controls_in_tab_bar, |panel| {
+                    panel.child(note("Restart BoxBox to apply the window controls setting.".into(), TEXT_SECONDARY))
+                });
+                panel
+            })
             .when_some(look_note, |panel, note| panel.child(note))
             .child(div().border_t_1().border_color(c(BORDER_SECONDARY)).child(settings_rows(accent)))
             .when_some(accent_note, |panel, text| panel.child(note(text, TEXT_SECONDARY)))

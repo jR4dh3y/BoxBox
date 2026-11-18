@@ -18,6 +18,7 @@ use windows_sys::Win32::{
     UI::WindowsAndMessaging::SW_SHOWNORMAL,
 };
 
+pub(crate) mod context_menu;
 pub(crate) mod icons;
 pub(crate) mod mail;
 pub(crate) mod recent;
