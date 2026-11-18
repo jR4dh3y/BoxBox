@@ -20,6 +20,7 @@ use windows_sys::Win32::{
 
 pub(crate) mod context_menu;
 pub(crate) mod icons;
+pub(crate) mod live_resize;
 pub(crate) mod mail;
 pub(crate) mod recent;
 pub(crate) mod recycle_bin;

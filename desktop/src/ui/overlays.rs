@@ -44,6 +44,7 @@ impl Workspace {
         let single = items.len() == 1;
         let single_folder = single && items[0].is_dir;
         let single_file = single && !items[0].is_dir;
+        #[cfg(target_os = "linux")]
         if menu.extras.pending() {
             return div().into_any_element();
         }
@@ -58,6 +59,8 @@ impl Workspace {
                     }
                 }, cx));
             }
+            // Windows lists its own Open With among the Shell commands.
+            #[cfg(target_os = "linux")]
             if single_file && local {
                 entries.extend(self.open_with_entries(&menu.extras, cx));
             }
@@ -93,16 +96,15 @@ impl Workspace {
         if items_empty {
             entries.extend(self.template_menu(crate::workspace::operations::PaneTarget(pane.id), |this| this.context_menu = None, cx));
         }
-        #[cfg(windows)]
-        if local && (!items_empty || pane.real_path.is_some()) {
-            entries.push(self.menu_item("context-windows", "Show Windows options…", "app-window", Self::context_windows_menu, cx));
-        }
         entries.push(MenuItem::Separator);
         let paste = self
             .menu_item("context-paste", "Paste", "clipboard-paste", |this, window, cx| this.context_paste(window, cx), cx)
             .shortcut("Ctrl+V")
             .disabled(read_only || !can_paste);
+        #[cfg(target_os = "linux")]
         let actions = self.custom_action_entries(&menu.extras, terminal, cx);
+        #[cfg(not(target_os = "linux"))]
+        let actions: Vec<MenuItem> = Vec::new();
         if items.is_empty() {
             entries.push(paste);
             if !actions.is_empty() {
@@ -181,6 +183,21 @@ impl Workspace {
             }
             entries.push(self.menu_item("context-properties", "Properties", "info", |this, _, cx| this.context_properties(cx), cx).shortcut("Alt+Enter"));
         }
+        // The Shell's commands come first; a Shell submenu replaces BoxBox's rows while open.
+        #[cfg(windows)]
+        let entries = {
+            let mut windows = self.windows_context_entries(&menu.windows, cx);
+            if windows.is_empty() {
+                entries
+            } else {
+                if menu.windows.depth() == 0 {
+                    windows.push(MenuItem::Separator);
+                    windows.extend(entries);
+                }
+                windows
+            }
+        };
+        let panel = ContextMenu::new(entries).on_submenu(self.submenu_listener(cx));
         div()
             .id("context-dismiss")
             .occlude()
@@ -200,7 +217,7 @@ impl Workspace {
                         .id("file-context-menu")
                         .debug_selector(|| "file-context-menu".into())
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .child(ContextMenu::new(entries).on_submenu(self.submenu_listener(cx))),
+                        .child(panel),
                 ),
             )
             .into_any_element()

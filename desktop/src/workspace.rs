@@ -54,7 +54,10 @@ pub(crate) mod file_icons;
 pub(crate) mod folder_views;
 pub(crate) mod drive_names;
 pub(crate) mod about;
+#[cfg(target_os = "linux")]
 pub(crate) mod menu_extras;
+#[cfg(windows)]
+mod windows_menu;
 use appearance::WallpaperState;
 
 use favorites::{Favorite, FavoriteProvider, Favorites};
@@ -559,6 +562,7 @@ impl Workspace {
         workspace.connect_servers(cx);
         workspace.watch_trash(cx);
         workspace.load_bookmarks(cx);
+        #[cfg(target_os = "linux")]
         workspace.warm_menu_apps(cx);
         #[cfg(target_os = "linux")]
         workspace.watch_associations(cx);

@@ -99,12 +99,30 @@ impl OperationStatus {
     }
 }
 
-#[derive(Clone)]
 pub(crate) struct ContextMenuState {
     pub target_id: usize,
     pub items: Vec<FileInfo>,
     pub position: gpui::Point<gpui::Pixels>,
+    /// Open With and custom actions.
+    #[cfg(target_os = "linux")]
     pub extras: super::menu_extras::MenuExtras,
+    /// The Shell's own commands for the items or folder.
+    #[cfg(windows)]
+    pub windows: super::windows_menu::WindowsMenu,
+}
+
+impl ContextMenuState {
+    fn new(target_id: usize, items: Vec<FileInfo>, position: gpui::Point<gpui::Pixels>) -> Self {
+        Self {
+            target_id,
+            items,
+            position,
+            #[cfg(target_os = "linux")]
+            extras: Default::default(),
+            #[cfg(windows)]
+            windows: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1120,9 +1138,7 @@ impl Workspace {
         }
         self.open_submenu = None;
         self.refresh_templates(cx);
-        self.context_menu = Some(ContextMenuState { target_id: target.0, items: Vec::new(), position, extras: Default::default() });
-        self.load_menu_extras(window, cx);
-        cx.notify();
+        self.open_context_menu(ContextMenuState::new(target.0, Vec::new(), position), window, cx);
     }
 
     pub(crate) fn show_item_context_menu(
@@ -1142,13 +1158,16 @@ impl Workspace {
         let items = pane.selected_items();
         self.active_pane = target;
         self.open_submenu = None;
-        self.context_menu = Some(ContextMenuState {
-            target_id: target.0,
-            items,
-            position,
-            extras: Default::default(),
-        });
+        self.open_context_menu(ContextMenuState::new(target.0, items, position), window, cx);
+    }
+
+    /// Shows `menu` and starts reading what the system adds to it.
+    fn open_context_menu(&mut self, menu: ContextMenuState, window: &Window, cx: &mut Context<Self>) {
+        self.context_menu = Some(menu);
+        #[cfg(target_os = "linux")]
         self.load_menu_extras(window, cx);
+        #[cfg(windows)]
+        self.load_windows_context_menu(window, cx);
         cx.notify();
     }
 
@@ -1156,38 +1175,6 @@ impl Workspace {
         self.context_menu
             .as_ref()
             .map(|menu| (PaneTarget(menu.target_id), menu.items.clone()))
-    }
-
-    #[cfg(windows)]
-    pub(crate) fn context_windows_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        use crate::windows::{context_menu, window_id};
-
-        let Some(menu) = &self.context_menu else { return };
-        let Some(pane) = self.pane_by_id(menu.target_id) else { return };
-        let Some(owner) = window_id(window) else { return };
-        let api = pane.api.clone();
-        let folder = pane.real_path.clone();
-        let items: Vec<_> = menu.items.iter().map(|item| item.path.clone()).collect();
-        let scale = window.scale_factor();
-        let anchor = (
-            (f32::from(menu.position.x) * scale).round() as i32,
-            (f32::from(menu.position.y) * scale).round() as i32,
-        );
-
-        cx.spawn(async move |this, cx| {
-            let target = cx.background_executor().spawn(async move {
-                if items.is_empty() {
-                    return context_menu::Target::folder(&folder.context("this folder has no Windows path")?);
-                }
-                let paths = items.iter().map(|item| api.entry_path(item)?.context("this item has no Windows path"))
-                    .collect::<anyhow::Result<Vec<_>>>()?;
-                context_menu::Target::items(&paths)
-            }).await;
-            // Track the popup on its owner's thread, outside GPUI's event callback.
-            if let Err(error) = target.and_then(|target| context_menu::show(owner, anchor, &target)) {
-                this.update(cx, |this, cx| this.report(Err(format!("Could not open Windows options: {error:#}")), cx)).ok();
-            }
-        }).detach();
     }
 
     pub(crate) fn context_copy(&mut self, cx: &mut Context<Self>) {

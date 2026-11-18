@@ -26,6 +26,7 @@ pub enum MenuItem {
         label: SharedString,
         icon: Option<MenuIcon>,
         shortcut: Option<SharedString>,
+        submenu_link: bool,
         disabled: bool,
         on_select: Option<SelectHandler>,
     },
@@ -41,7 +42,7 @@ pub enum MenuItem {
 
 impl MenuItem {
     pub fn action(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
-        Self::Action { id: id.into(), label: label.into(), icon: None, shortcut: None, disabled: false, on_select: None }
+        Self::Action { id: id.into(), label: label.into(), icon: None, shortcut: None, submenu_link: false, disabled: false, on_select: None }
     }
 
     /// A row that shows `items` beside it while `open`.
@@ -75,6 +76,14 @@ impl MenuItem {
     pub fn disabled(mut self, value: bool) -> Self {
         if let Self::Action { disabled, .. } = &mut self {
             *disabled = value;
+        }
+        self
+    }
+
+    #[cfg(windows)]
+    pub fn submenu_link(mut self) -> Self {
+        if let Self::Action { submenu_link, .. } = &mut self {
+            *submenu_link = true;
         }
         self
     }
@@ -125,9 +134,10 @@ impl MenuItem {
         match self {
             // mx-2 my-1 h-px bg-border-secondary
             Self::Separator => div().flex_none().mx(px(8.)).my(px(4.)).h(px(1.)).bg(c(BORDER_SECONDARY)).into_any_element(),
-            Self::Action { id, label: text, icon: name, shortcut, disabled, on_select } => feedback(id.clone(), row(id, disabled)
+            Self::Action { id, label: text, icon: name, shortcut, submenu_link, disabled, on_select } => feedback(id.clone(), row(id, disabled)
                 .child(glyph(name, disabled))
                 .child(label(text))
+                .when(submenu_link, |el| el.child(icon("chevron-right", 14., c(TEXT_MUTED))))
                 .when_some(shortcut, |el, keys| el.child(div().type_11().text_color(c(TEXT_MUTED)).child(keys)))
                 .when_some(on_submenu.clone(), |el, handler| {
                     el.on_hover(move |hovered, window, cx| {
