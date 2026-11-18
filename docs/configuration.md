@@ -117,20 +117,32 @@ oidc:
     - carol
 ```
 
-Register `redirect_url` as the client's redirect URI at the provider. Its path must be `/api/v1/auth/oidc/callback`; BoxBox runs at the root of its origin, so prefixes such as `/boxbox/` are not supported.
+Two URLs must match exactly:
 
-The provider's `username_claim` value must exactly match a BoxBox account, either a password user from `users` or a name in `oidc.users`. Matching is case-sensitive. Any other account at the provider is refused and the server logs the name, so you can add it. A password user signs in the same way with either method. Use a claim the provider administrator controls; if users can rename themselves at the provider, one could take another account's name.
+- `redirect_url` is the full address browsers use to reach BoxBox, with scheme and host, followed by `/api/v1/auth/oidc/callback`. Behind a reverse proxy, use the public URL, not the container address. Register the same URL as the client's redirect URI at the provider. If they differ, the provider rejects the sign-in. BoxBox runs at the root of its origin, so prefixes such as `/boxbox/` are not supported.
+- `issuer_url` must equal the `issuer` field in `<issuer_url>/.well-known/openid-configuration`, including the trailing slash or its absence. Copy it from that document.
+
+BoxBox trusts the `username_claim` value as the user's identity. Choose a claim that users cannot change at the provider; if users can rename themselves, one could take another account's name. The claim must be present for every account. `preferred_username` is optional in OpenID Connect, so if your provider does not always send it, use `email` or another claim it always sends.
+
+The value must exactly match a BoxBox account. Matching is case-sensitive. There are two kinds of account:
+
+- `users` holds password accounts, each with a bcrypt hash. They can sign in with a password or through the provider.
+- `oidc.users` lists names that sign in only through the provider. They have no hash.
+
+Any other account at the provider is refused, and the server logs the name so you can add it.
+
+Behind a reverse proxy, set [`trusted_proxies`](#server-options) to the proxy's address. Otherwise the login rate limit sees every request as coming from the proxy, and users share one limit.
 
 | Key | Default | Description |
 | --- | --- | --- |
 | `oidc.issuer_url` | `""` (off) | Provider issuer. It must match the provider's `iss` exactly, including any trailing slash. |
 | `oidc.client_id` | Required | OAuth client ID. |
 | `oidc.client_secret` | `""` | Client secret. Leave empty for a public client; PKCE is always used. |
-| `oidc.redirect_url` | Required | Public callback URL, as above. |
+| `oidc.redirect_url` | Required | Full browser-visible callback URL, as above. |
 | `oidc.provider_name` | `SSO` | Button label: "Sign in with <name>". |
-| `oidc.username_claim` | `preferred_username` | Claim compared to account names. `email` also requires `email_verified`. BoxBox reads UserInfo when the ID token lacks the claim. |
+| `oidc.username_claim` | `preferred_username` | Claim trusted as the account name. Users must not be able to change it. `email` also requires `email_verified`. BoxBox reads UserInfo when the ID token lacks the claim. |
 | `oidc.scopes` | `openid, profile, email` | Requested scopes; must include `openid`. |
-| `oidc.users` | `[]` | Accounts that sign in only through the provider. They cannot pair desktop clients, which asks for a password. |
+| `oidc.users` | `[]` | Names that sign in only through the provider, with no password hash. They cannot pair desktop clients, which asks for a password. |
 | `oidc.disable_password_login` | `false` | Hides the password form and rejects password login with `403`. If the provider is down, unset it and restart to sign in with a password. |
 
 Common providers, as a starting point; they have not each been tested with BoxBox. Check the issuer in your provider's discovery document, since it must match exactly:

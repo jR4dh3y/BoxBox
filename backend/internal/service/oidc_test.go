@@ -228,19 +228,25 @@ func TestOIDCUsernameClaimHandling(t *testing.T) {
 	}
 }
 
-func TestOIDCDiscoveryFailureIsUnavailable(t *testing.T) {
+// A provider that is down at startup is retried on a later sign-in, without a restart.
+func TestOIDCSignInAfterProviderRecovers(t *testing.T) {
 	svc, issuer := newTestOIDC(t, "preferred_username")
+	issuer.Claims = map[string]any{"preferred_username": "alice"}
 	issuer.FailDiscovery = true
-	if _, _, err := svc.Begin(context.Background()); !errors.Is(err, ErrOIDCUnavailable) {
-		t.Fatalf("Begin() err = %v, want ErrOIDCUnavailable", err)
+	svc.Warm()
+	if svc.provider != nil {
+		t.Fatal("discovery succeeded while the provider was down")
 	}
+
 	issuer.FailDiscovery = false
 	if _, _, err := svc.Begin(context.Background()); !errors.Is(err, ErrOIDCUnavailable) {
-		t.Fatalf("retry inside the interval err = %v, want ErrOIDCUnavailable", err)
+		t.Fatalf("sign-in inside the cooldown err = %v, want ErrOIDCUnavailable", err)
 	}
+	// Rewind the clock instead of sleeping through the cooldown.
 	svc.lastAttempt = time.Now().Add(-oidcRetryInterval)
-	if _, _, err := svc.Begin(context.Background()); err != nil {
-		t.Fatalf("Begin() after recovery err = %v", err)
+	username, err := signIn(t, svc, issuer, nil)
+	if err != nil || username != "alice" {
+		t.Fatalf("sign-in after recovery = %q, %v; want alice", username, err)
 	}
 }
 
