@@ -42,6 +42,14 @@ type ThumbnailService interface {
 // A renderer receives a source already opened and confined by FileStreamer.
 type ThumbnailRenderer func(context.Context, File, *model.FileInfo, int, int) ([]byte, error)
 
+// ThumbnailLimit bounds renders across every service that shares it. NAS mode
+// has a service per account, and decode memory is a server-wide budget.
+type ThumbnailLimit struct{ slots chan struct{} }
+
+func NewThumbnailLimit() *ThumbnailLimit {
+	return &ThumbnailLimit{slots: make(chan struct{}, maxConcurrentThumbnails)}
+}
+
 type thumbnailService struct {
 	files  FileStreamer
 	slots  chan struct{}
@@ -49,14 +57,14 @@ type thumbnailService struct {
 	render ThumbnailRenderer
 }
 
-func NewThumbnailService(files FileStreamer) ThumbnailService {
-	return NewThumbnailServiceWithRenderer(files, renderImageThumbnail)
+func NewThumbnailService(files FileStreamer, limit *ThumbnailLimit) ThumbnailService {
+	return NewThumbnailServiceWithRenderer(files, renderImageThumbnail, limit)
 }
 
-func NewThumbnailServiceWithRenderer(files FileStreamer, render ThumbnailRenderer) ThumbnailService {
+func NewThumbnailServiceWithRenderer(files FileStreamer, render ThumbnailRenderer, limit *ThumbnailLimit) ThumbnailService {
 	return &thumbnailService{
 		files:  files,
-		slots:  make(chan struct{}, maxConcurrentThumbnails),
+		slots:  limit.slots,
 		cache:  newThumbnailCache(),
 		render: render,
 	}

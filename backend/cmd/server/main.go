@@ -237,9 +237,10 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool, worker
 	}
 
 	var stacks fileStacks
+	thumbnailLimit := service.NewThumbnailLimit()
 	var userFiles func(account string) (filesystem.FS, error)
 	if workers == nil {
-		stacks.shared, err = newFileStack(fs, mountPoints, hub, cfg, desktopMode)
+		stacks.shared, err = newFileStack(fs, mountPoints, hub, cfg, desktopMode, thumbnailLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -247,7 +248,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool, worker
 		stacks.byAccount = make(map[string]*fileStack)
 		for _, account := range workers.Accounts() {
 			accountFS, _ := workers.FS(account)
-			stacks.byAccount[account], err = newFileStack(accountFS, mountPoints, hub, cfg, desktopMode)
+			stacks.byAccount[account], err = newFileStack(accountFS, mountPoints, hub, cfg, desktopMode, thumbnailLimit)
 			if err != nil {
 				return nil, err
 			}

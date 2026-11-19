@@ -29,7 +29,7 @@ type fileStack struct {
 	job    http.Handler
 }
 
-func newFileStack(fsys filesystem.FS, mountPoints []model.MountPoint, hub *websocket.Hub, cfg *model.ServerConfig, desktopMode bool) (*fileStack, error) {
+func newFileStack(fsys filesystem.FS, mountPoints []model.MountPoint, hub *websocket.Hub, cfg *model.ServerConfig, desktopMode bool, thumbnailLimit *service.ThumbnailLimit) (*fileStack, error) {
 	fileConfig := service.FileServiceConfig{MountPoints: mountPoints}
 	if desktopMode {
 		fileConfig.DirectoryEntryLimit = -1
@@ -40,10 +40,10 @@ func newFileStack(fsys filesystem.FS, mountPoints []model.MountPoint, hub *webso
 		Workers:     config.DefaultJobWorkers,
 		MountPoints: mountPoints,
 	})
-	thumbnails := service.NewThumbnailService(fileService)
+	thumbnails := service.NewThumbnailService(fileService, thumbnailLimit)
 	if desktopMode {
 		var err error
-		thumbnails, err = desktopThumbnails(fileService)
+		thumbnails, err = desktopThumbnails(fileService, thumbnailLimit)
 		if err != nil {
 			return nil, err
 		}

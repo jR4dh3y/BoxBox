@@ -34,7 +34,7 @@ type StreamHandler struct {
 
 // NewStreamHandler creates a new stream handler
 func NewStreamHandler(fileService service.FileService, maxUploadMB int) *StreamHandler {
-	return NewStreamHandlerWithThumbnails(fileService, maxUploadMB, service.NewThumbnailService(fileService))
+	return NewStreamHandlerWithThumbnails(fileService, maxUploadMB, service.NewThumbnailService(fileService, service.NewThumbnailLimit()))
 }
 
 func NewStreamHandlerWithThumbnails(fileService service.FileService, maxUploadMB int, thumbnails service.ThumbnailService) *StreamHandler {
