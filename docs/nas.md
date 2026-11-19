@@ -38,7 +38,11 @@ Restart BoxBox after changing an identity. Jobs and uploads in progress stop, so
 
 ## Run the Container
 
-NAS mode starts as root and keeps only the two capabilities it needs to switch identities. Change the Compose service:
+NAS mode starts as root and keeps only the two capabilities it needs to switch identities.
+
+Use an image that includes NAS mode. An older image ignores `nas` and would run the whole server as root. Check the [release notes](release-notes.md) before changing `user`.
+
+Change the Compose service:
 
 ```yaml
 services:
@@ -51,6 +55,8 @@ services:
       - SETGID
     security_opt:
       - no-new-privileges:true
+    # Shutdown can take up to 40 seconds; Docker sends SIGKILL after 10 by default.
+    stop_grace_period: 45s
 ```
 
 Keep the rest of the service as it is. BoxBox starts these processes:
@@ -63,18 +69,37 @@ Keep the rest of the service as it is. BoxBox starts these processes:
 
 A worker starts the first time an account touches a file and exits after five idle minutes. Workers get no environment variables, so they never see the JWT secret or password hashes.
 
-The API needs to read `config.yaml` and write `/data` and `/tmp/boxbox`, as it does without NAS mode. Set the API's identity with `nas.service_uid` and `nas.service_gid`, or `BOXBOX_NAS_SERVICE_UID` and `BOXBOX_NAS_SERVICE_GID`, if those paths belong to another user.
+### File Permissions for BoxBox Itself
+
+The supervisor and the API both read `config.yaml`. In NAS mode root has no override, so it reads files only through their normal permissions. A file owned by a host user with mode `0600` stops BoxBox from starting. Let root and the API read it, and nobody else, because it holds password hashes:
+
+```bash
+chown root:10001 config.yaml
+chmod 0640 config.yaml
+```
+
+Do not put group `10001` in any account's `groups`, or that account's worker could read the file too.
+
+The API writes `/data` and `/tmp/boxbox`, as it does without NAS mode. The image creates both for `10001:10001`. To run the API as another identity, set `nas.service_uid` and `nas.service_gid`, or `BOXBOX_NAS_SERVICE_UID` and `BOXBOX_NAS_SERVICE_GID`. Then give that identity those two paths and the files already in them. BoxBox does not change their ownership.
+
+### TrueNAS SCALE
+
+Install BoxBox as a custom app with **Install via YAML**, using the full Compose service above, and use absolute dataset paths for the config file, `/data` and your shares. The custom app form cannot express this setup. Leaving the user unset runs the image's `10001`, and setting it suggests `568:568`. Either fails the root check, and the form does not keep the capability settings.
+
+### Check the Deployment
+
+The container health check only shows that the API answers. To check NAS mode, sign in as a mapped account and upload a file. On the host, confirm with `ls -ln` that it has that account's UID. Then open a folder that account should not reach, and confirm BoxBox says *Permission denied*.
 
 ## Shared Folders
 
-To let a household write to one folder, give the folder a shared group and the setgid bit, and add each person to the group:
+To let a household write to one folder, give it a shared group and the setgid bit, and add each person to the group. Check the folder's ACL with `getfacl` first. On a dataset with POSIX ACLs, `chmod` changes the ACL mask and can narrow existing grants. Datasets that use the TrueNAS SMB or Apps presets use NFSv4 ACLs; set those in the TrueNAS ACL editor instead.
 
 ```bash
 chgrp family /mnt/tank/shared
 chmod 2770 /mnt/tank/shared
 ```
 
-Files created in it get the `family` group. Whether other members can change those files depends on the file's mode. BoxBox currently creates files as `0644` and folders as `0755`, so other group members can read new files but not change them.
+Files created in it get the `family` group. BoxBox currently creates files as `0644` and folders as `0755`, so other members cannot write into each other's files directly. Because they can write to the folder, they can still delete or rename a file, or replace it with a new one. BoxBox's editor saves that way.
 
 ## Moves, Copies and Share Links
 
@@ -101,6 +126,7 @@ It does not protect against a compromised API. An attacker who controls the API 
 | Message | Cause |
 | --- | --- |
 | `NAS mode must start as root` | The container runs as a non-root user. Set `user: "0:0"`. |
-| `Start API process; NAS mode needs the SETUID and SETGID capabilities` | `cap_add` is missing `SETUID` or `SETGID`. |
+| `Start API process; NAS mode needs the SETUID and SETGID capabilities` | Usually `cap_add` is missing `SETUID` or `SETGID`. The error that follows in the log says which. If Docker remaps user namespaces (`userns-remap`), an ID outside the container's mapping also fails here, and mapped IDs appear as different IDs on the host. |
+| `Failed to load configuration` with *permission denied* | Root cannot read `config.yaml`. See [File Permissions for BoxBox Itself](#file-permissions-for-boxbox-itself). |
 | *This account has no NAS identity* | Add the account under `nas.identities`. |
 | *File access is temporarily unavailable* | The account's worker could not start. The server log names the reason. |

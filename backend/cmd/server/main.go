@@ -159,12 +159,8 @@ func main() {
 		}
 	}
 
-	if workers != nil {
-		nas.WatchShutdown()
-	}
-
 	// Wait for shutdown signal
-	waitForShutdown(cancel, app, *desktopMode)
+	waitForShutdown(cancel, app, *desktopMode, workers != nil)
 }
 
 // app is the assembled server and the background work it owns.
@@ -422,10 +418,14 @@ func createRouter(
 }
 
 // waitForShutdown handles graceful shutdown on interrupt signals
-func waitForShutdown(cancel context.CancelFunc, app *app, desktopMode bool) {
+func waitForShutdown(cancel context.CancelFunc, app *app, desktopMode, nasMode bool) {
 	// Create channel to receive OS signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	if nasMode {
+		// After Notify, so a stop requested during startup is still graceful.
+		nas.WatchShutdown(sigCh)
+	}
 	if desktopMode {
 		// The desktop parent keeps stdin open; EOF also handles a crashed parent.
 		go func() {

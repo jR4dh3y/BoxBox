@@ -91,12 +91,12 @@ func (w *Workers) dial(account string) (*fdconn.Conn, error) {
 	return fdconn.New(reply.File)
 }
 
-// WatchShutdown delivers SIGTERM to this process once the supervisor asks the
-// API to exit, so shutdown takes the same path as a signal would.
-func WatchShutdown() {
+// WatchShutdown sends SIGTERM on signals once the supervisor asks the API to
+// exit, so shutdown takes the same path as a real signal would.
+func WatchShutdown(signals chan<- os.Signal) {
 	pipe := os.NewFile(shutdownFD, "shutdown")
 	go func() {
 		_, _ = io.Copy(io.Discard, pipe)
-		_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+		signals <- syscall.SIGTERM
 	}()
 }

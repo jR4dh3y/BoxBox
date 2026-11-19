@@ -4,6 +4,7 @@ package nas
 
 import (
 	"errors"
+	"os"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -34,4 +35,4 @@ func (*Workers) FS(string) (filesystem.FS, bool) { return nil, false }
 
 func (*Workers) Accounts() []string { return nil }
 
-func WatchShutdown() {}
+func WatchShutdown(chan<- os.Signal) {}
