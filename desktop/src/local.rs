@@ -378,15 +378,23 @@ impl LocalFiles {
         let (mount, candidate) = self.candidate_path(path)?;
         let resolved = fs::canonicalize(&candidate)
             .with_context(|| format!("cannot resolve {path}"))?;
-        ensure!(self.exposes(&resolved), "{path} resolves outside the folders BoxBox shows");
+        ensure!(self.exposes(&mount, &resolved), "{path} resolves outside the folders BoxBox shows");
         Ok(resolved)
     }
 
-    /// Whether `real` lies in a root this provider shows. On the host, System
-    /// holds every path, so a link in Home to `/mnt/media` opens; a
-    /// `BOXBOX_ROOT` fixture has one root and stays confined to it.
-    fn exposes(&self, real: &Path) -> bool {
-        self.mounts.iter().any(|mount| real.starts_with(&mount.path))
+    /// Whether `real`, reached through `mount`, lies in a root this provider
+    /// shows. On the host, System holds every path, so a link in Home to
+    /// `/mnt/media` opens; on Windows any present drive does, including one
+    /// attached after launch. A `BOXBOX_ROOT` fixture stays inside its one root.
+    fn exposes(&self, mount: &Mount, real: &Path) -> bool {
+        if real.starts_with(&mount.path) || self.mounts.iter().any(|shown| real.starts_with(&shown.path)) {
+            return true;
+        }
+        #[cfg(windows)]
+        if self.host_filesystem {
+            return crate::windows::mount_name(real).is_some();
+        }
+        false
     }
 
     /// The entry itself: its parent is resolved, but a final link is not followed.
@@ -564,7 +572,7 @@ impl LocalFiles {
         let (mount, candidate) = self.candidate_path(path)?;
         let directory = fs::canonicalize(&candidate)
             .with_context(|| format!("cannot resolve directory {path}"))?;
-        ensure!(self.exposes(&directory), "{path} resolves outside the folders BoxBox shows");
+        ensure!(self.exposes(&mount, &directory), "{path} resolves outside the folders BoxBox shows");
         ensure!(directory.is_dir(), "{path} is not a directory");
         Ok((mount, directory))
     }
