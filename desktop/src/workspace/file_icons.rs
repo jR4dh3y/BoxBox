@@ -2,7 +2,7 @@
 //! thread the first time a row or tile asks. A package's own icon wins once
 //! ready; until then, or without one, views show the selected icon style.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use gpui::{Context, RenderImage};
@@ -13,8 +13,8 @@ use crate::api::{Api, FileInfo};
 use crate::components::EntryIcon;
 use crate::file_icons::{bucket, IconKey};
 
-/// Enough for every type in a few folders at two zoom steps; past it, all are
-/// dropped and the drawn ones asked for again.
+/// Enough for every type in a few folders at two zoom steps; past it, the
+/// icons not asked for since the last pass are dropped.
 const CAPACITY: usize = 512;
 
 enum Slot {
@@ -40,6 +40,10 @@ type CacheKey = (IconSource, u32);
 #[derive(Default)]
 pub(crate) struct FileIcons {
     slots: HashMap<CacheKey, Slot>,
+    /// Keys asked for since the cache last made room: the ones on screen.
+    asked: HashSet<CacheKey>,
+    /// The size that starts the next pass, past `CAPACITY` when more are on screen.
+    limit: usize,
     /// Virtual paths of the home and user folders on the local provider.
     special: HashMap<String, &'static str>,
     /// The display's scale, so icons are made at device pixels.
@@ -169,7 +173,8 @@ impl Workspace {
         let kind = crate::format::Kind::of(&item.name, item.is_dir);
         let tint = self.kind_tint(kind).unwrap_or(if item.is_dir { crate::theme::FOLDER } else { crate::theme::TEXT_SECONDARY });
         let svg = gpui::AssetSource::load(&crate::assets::Assets, &format!("icons/{}.svg", kind.glyph())).ok()??;
-        let svg = String::from_utf8_lossy(&svg).replace("currentColor", &format!("#{tint:06x}"));
+        // The glyphs carry a black stroke, since GPUI draws them as masks (`extract-icons.ts`).
+        let svg = String::from_utf8_lossy(&svg).replace(r##"stroke="#000""##, &format!(r##"stroke="#{tint:06x}""##));
         crate::file_icons::svg_image(svg.as_bytes(), PIXELS).ok()
     }
 
@@ -193,15 +198,28 @@ impl Workspace {
     }
 
     fn request_icon(&mut self, key: CacheKey, _api: &Arc<Api>, cx: &mut Context<Self>) {
-        if self.file_icons.slots.contains_key(&key) {
+        let icons = &mut self.file_icons;
+        if !icons.asked.contains(&key) {
+            icons.asked.insert(key.clone());
+        }
+        if icons.slots.contains_key(&key) {
             return;
         }
-        if self.file_icons.slots.len() >= CAPACITY {
-            for (_, slot) in self.file_icons.slots.drain() {
-                if let Slot::Ready(image) = slot {
-                    cx.drop_image(image, None);
+        if icons.slots.len() >= icons.limit.max(CAPACITY) {
+            // Views ask for what they draw each frame, so what was asked for
+            // since the last pass is on screen and stays.
+            let asked = std::mem::take(&mut icons.asked);
+            icons.slots.retain(|key, slot| {
+                let keep = asked.contains(key);
+                if let (false, Slot::Ready(image)) = (keep, &*slot) {
+                    cx.drop_image(image.clone(), None);
                 }
-            }
+                keep
+            });
+            // Room for twice what stayed, so a screen of more than `CAPACITY`
+            // icons is all asked for again before the next pass.
+            icons.limit = icons.slots.len() * 2;
+            icons.asked.insert(key.clone());
         }
         self.file_icons.slots.insert(key.clone(), Slot::Pending);
         let (icon, pixels) = key.clone();

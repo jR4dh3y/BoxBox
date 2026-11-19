@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::{bail, ensure, Context as _};
 
-use super::archive::{normalize, Flow, Member, Visitor};
+use super::archive::{normalize, xz, Flow, Member, Visitor};
 
 pub(super) fn walk(path: &Path, visit: Visitor) -> anyhow::Result<()> {
     let mut file = BufReader::new(File::open(path)?);
@@ -25,7 +25,7 @@ pub(super) fn walk(path: &Path, visit: Visitor) -> anyhow::Result<()> {
             return match compression {
                 "" => walk_tar(data, visit),
                 ".gz" => walk_tar(flate2::read::MultiGzDecoder::new(data), visit),
-                ".xz" => walk_tar(liblzma::read::XzDecoder::new(data), visit),
+                ".xz" => walk_tar(xz(data, false)?, visit),
                 ".zst" => walk_tar(zstd::stream::read::Decoder::new(data)?, visit),
                 other => bail!("data.tar{other} is not supported"),
             };

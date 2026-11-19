@@ -8,7 +8,7 @@ use std::path::Path;
 
 use anyhow::{bail, ensure, Context as _};
 
-use super::archive::{normalize, Flow, Member, Visitor};
+use super::archive::{normalize, xz, Flow, Member, Visitor};
 
 const PAYLOAD_COMPRESSOR: u32 = 1125;
 const STRING: u32 = 6;
@@ -24,8 +24,8 @@ pub(super) fn walk(path: &Path, visit: Visitor) -> anyhow::Result<()> {
     // Packages from before the tag are gzip.
     match compressor.as_deref().unwrap_or("gzip") {
         "gzip" => walk_cpio(flate2::read::MultiGzDecoder::new(file), visit),
-        "xz" => walk_cpio(liblzma::read::XzDecoder::new(file), visit),
-        "lzma" => walk_cpio(liblzma::read::XzDecoder::new_stream(file, liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?), visit),
+        "xz" => walk_cpio(xz(file, false)?, visit),
+        "lzma" => walk_cpio(xz(file, true)?, visit),
         "zstd" => walk_cpio(zstd::stream::read::Decoder::new(file)?, visit),
         other => bail!("{other} payloads are not supported"),
     }

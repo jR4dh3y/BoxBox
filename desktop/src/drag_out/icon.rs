@@ -28,8 +28,10 @@ pub fn compose(image: &RenderImage, count: usize, scale: u32) -> Option<DragIcon
     let fit = fit.min(scale as f32);
     let (drawn_width, drawn_height) = (width as f32 * fit, height as f32 * fit);
     let stack = if count > 1 { STACK * scale as f32 } else { 0. };
-    let (canvas_width, canvas_height) = ((drawn_width + stack).ceil() as u32, (drawn_height + stack).ceil() as u32);
-    let mut canvas = Pixmap::new(canvas_width.max(1), canvas_height.max(1))?;
+    // Wayland refuses a buffer whose sides are not multiples of its scale.
+    let fit_scale = |length: f32| ((length.ceil() as u32).max(1)).next_multiple_of(scale.max(1));
+    let (canvas_width, canvas_height) = (fit_scale(drawn_width + stack), fit_scale(drawn_height + stack));
+    let mut canvas = Pixmap::new(canvas_width, canvas_height)?;
     if count > 1 {
         let card = Rect::from_xywh(stack, stack, drawn_width, drawn_height)?;
         let path = PathBuilder::from_rect(card);
@@ -46,7 +48,7 @@ pub fn compose(image: &RenderImage, count: usize, scale: u32) -> Option<DragIcon
     for pixel in bgra.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }
-    Some(DragIcon { width: canvas_width.max(1), height: canvas_height.max(1), scale, bgra })
+    Some(DragIcon { width: canvas_width, height: canvas_height, scale, bgra })
 }
 
 /// Straight BGRA into tiny-skia's premultiplied RGBA.
@@ -87,5 +89,13 @@ mod tests {
         // A small icon is not enlarged past its own pixels at this scale.
         assert_eq!((icon.width, icon.height), (96 + 12, 96 + 12));
         assert_eq!(icon.scale, 2);
+    }
+
+    #[test]
+    fn hidpi_pictures_have_sides_the_scale_divides() {
+        // 256×170 fits to 128×85 device pixels at scale 2; 85 is odd.
+        let icon = compose(&solid(256, 170, [255, 255, 255, 255]), 1, 2).unwrap();
+        assert_eq!((icon.width % 2, icon.height % 2), (0, 0));
+        assert_eq!(icon.bgra.len(), (icon.width * icon.height * 4) as usize);
     }
 }

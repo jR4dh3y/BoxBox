@@ -67,7 +67,8 @@ fn load(api: &Api, items: &[FileInfo], folder: Option<PathBuf>, pixels: u32) -> 
         [] => vec![Target::new(folder.context("the folder is not on this computer")?, true)],
         items => items
             .iter()
-            .map(|item| Ok(Target::new(api.local_path(&item.path)?.context("not a local file")?, item.is_dir)))
+            // The entry itself: an action on a link acts on the link, as in Thunar.
+            .map(|item| Ok(Target::new(api.entry_path(&item.path)?.context("not a local file")?, item.is_dir)))
             .collect::<anyhow::Result<_>>()?,
     };
     let apps = match targets.as_slice() {

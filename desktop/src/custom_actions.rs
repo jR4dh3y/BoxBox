@@ -52,13 +52,16 @@ enum Exec {
 
 impl Action {
     /// Whether the command only opens a terminal, which BoxBox's own Open in
-    /// Terminal row already does. Thunar ships such an action by default.
+    /// Terminal row already does. Thunar ships such an action by default. A
+    /// terminal given a program to run (`kitty ranger %f`) does more, and stays.
     pub fn opens_terminal(&self) -> bool {
-        let program = match &self.exec {
-            Exec::Desktop { line, .. } => crate::launch::exec_words(line).and_then(|words| words.into_iter().next()),
-            Exec::Thunar(command) => shlex::split(command).and_then(|words| words.into_iter().next()),
+        let words = match &self.exec {
+            Exec::Desktop { line, .. } => crate::launch::exec_words(line),
+            Exec::Thunar(command) => shlex::split(command),
         };
-        program.is_some_and(|program| crate::launch::is_terminal(&program))
+        let Some((program, rest)) = words.as_deref().and_then(<[String]>::split_first) else { return false };
+        // Options such as `--workdir`, and the folder they are given.
+        crate::launch::is_terminal(program) && rest.iter().all(|word| word.starts_with('-') || word.contains('%'))
     }
 
     /// Starts the command for `paths`, in the folder that holds the first.
@@ -498,6 +501,8 @@ NoDisplay=true
         assert_eq!(labels(&[file("/p/notes.txt"), file("/p/b.txt")]), Vec::<String>::new(), "out of range");
         let actions = parse_uca(UCA, &[folder("/p")]).unwrap();
         assert!(actions[0].opens_terminal());
+        let ranger = Action { exec: Exec::Thunar("kitty ranger %f".into()), ..actions[0].clone() };
+        assert!(!ranger.opens_terminal(), "a terminal running a program is its own action");
         assert_eq!(actions[0].argv(&[PathBuf::from("/p/it's")]).unwrap(), [["kitty", "--directory", "/p/it's"]]);
         let shrink = parse_uca(UCA, &[file("/a.png")]).unwrap().remove(0);
         assert_eq!(shrink.submenu.as_deref(), Some("Images"));

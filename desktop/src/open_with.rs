@@ -196,13 +196,15 @@ fn read_entry(path: &Path, id: &str) -> Option<Result<Entry, ()>> {
     }))
 }
 
+type Installed = Option<(Vec<Option<SystemTime>>, Arc<HashMap<String, Entry>>)>;
+static INSTALLED: Mutex<Installed> = Mutex::new(None);
+
 /// The installed apps. Installing, removing or replacing an app's file changes
 /// its folder's modification time, so the folders' times tell when to read again.
+/// An app's file edited in place does not; `forget_installed` covers that.
 fn installed() -> Arc<HashMap<String, Entry>> {
-    type Cache = Option<(Vec<Option<SystemTime>>, Arc<HashMap<String, Entry>>)>;
-    static CACHE: Mutex<Cache> = Mutex::new(None);
     let stamps: Vec<_> = application_dirs().iter().map(|dir| std::fs::metadata(dir).and_then(|metadata| metadata.modified()).ok()).collect();
-    let mut cache = CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut cache = INSTALLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     match &*cache {
         Some((read, entries)) if *read == stamps => entries.clone(),
         _ => {
@@ -211,6 +213,11 @@ fn installed() -> Arc<HashMap<String, Entry>> {
             entries
         }
     }
+}
+
+/// Reads the apps again on next use, after one of their files changed.
+pub fn forget_installed() {
+    *INSTALLED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
 /// Reads the app list and the icon theme off the UI thread at startup, so the

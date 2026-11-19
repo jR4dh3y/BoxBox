@@ -56,6 +56,8 @@ pub fn watch(changed: async_channel::Sender<()>) {
                 continue;
             }
             std::thread::sleep(SETTLE);
+            // A launcher edited in place leaves its folder's time, which the app list checks, alone.
+            crate::open_with::forget_installed();
             if changed.send_blocking(()).is_err() {
                 break;
             }

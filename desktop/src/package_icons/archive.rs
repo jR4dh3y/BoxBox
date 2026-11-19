@@ -29,6 +29,19 @@ const KEEP_BUDGET: u64 = 8 << 20;
 /// Links followed to reach an icon.
 const HOPS: usize = 8;
 
+/// The most memory an xz or lzma payload may make its decoder use. The package
+/// picks its dictionary size; `xz -9` needs 65 MiB, and a hostile one could ask for gigabytes.
+const LZMA_MEMORY: u64 = 128 << 20;
+
+/// An xz stream, or a legacy lzma one, decoded within `LZMA_MEMORY`.
+pub(super) fn xz<R: Read>(reader: R, legacy: bool) -> io::Result<liblzma::read::XzDecoder<R>> {
+    let stream = match legacy {
+        true => liblzma::stream::Stream::new_lzma_decoder(LZMA_MEMORY),
+        false => liblzma::stream::Stream::new_stream_decoder(LZMA_MEMORY, 0),
+    }?;
+    Ok(liblzma::read::XzDecoder::new_stream(reader, stream))
+}
+
 /// A path as the reader saw it, relative to the package root.
 pub(super) fn normalize(path: &str) -> &str {
     path.trim_start_matches("./").trim_start_matches('/')
