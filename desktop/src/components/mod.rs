@@ -8,6 +8,7 @@ mod button;
 pub mod check;
 mod context_menu;
 mod drive_card;
+mod ellipsis;
 mod file_grid;
 mod file_list;
 mod input;
@@ -24,6 +25,7 @@ mod toggle;
 mod tooltip;
 
 pub use button::{Button, ButtonSize, ButtonVariant};
+pub use ellipsis::Ellipsis;
 pub use drive_card::{usage_bar, usage_text, DriveCard, DriveInfo, DriveState, Usage};
 pub use context_menu::{ContextMenu, MenuItem, MENU_MARGIN};
 pub use file_grid::{FileTile, GridMetrics};

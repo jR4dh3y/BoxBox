@@ -4,6 +4,7 @@
 //! The table is `table-fixed` with Type 18%, Size 15% and Modified 25%, and
 //! Name takes the rest, so every column scales with the pane.
 
+use super::Ellipsis as _;
 use gpui::{
     div, img, prelude::*, px, relative, AnyElement, App, ClickEvent, Div, ElementId, Entity, FontWeight, MouseButton, RenderImage, Rgba,
     SharedString, Stateful, Window,
@@ -360,7 +361,7 @@ impl RenderOnce for FileRow {
                 )
             });
 
-        let text = |value: SharedString| div().min_w_0().truncate().child(value);
+        let text = |value: SharedString| div().min_w_0().ellipsis().child(value);
         let feedback_id = self.id.clone();
         // Only a plain row eases in a hover fill; selected and active rows keep their own.
         let plain = !self.selected && !self.active && !self.drop_target;
