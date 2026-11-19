@@ -194,6 +194,7 @@ mod tests {
 
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn launchers_programs_and_packages_keep_their_own_icons() {
         for name in ["tool.desktop", "run.sh", "app.AppImage", "pkg.deb", "pkg.rpm"] {

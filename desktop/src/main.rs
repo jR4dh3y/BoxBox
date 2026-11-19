@@ -19,6 +19,7 @@ mod file_icons;
 mod format;
 mod transfer;
 mod heap;
+#[cfg(target_os = "linux")]
 mod icon_theme;
 mod local;
 #[cfg_attr(windows, path = "windows/launch.rs")]
