@@ -424,9 +424,16 @@ func (a *AferoFS) RemoveFileWithin(root, path string, verify func(fs.FileInfo) e
 // removeVerifiedEntry renames path to a private sibling and checks that entry,
 // so a save that replaces path after the check cannot be the entry removed.
 // A rejected entry, or one that cannot be removed, goes back to path unless
-// something new has taken its name.
+// something new has taken its name. Every step uses one handle on the folder,
+// so renaming that folder mid-removal cannot strand the entry.
 func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInfo) error) error {
-	info, err := directory.Lstat(path)
+	folder, err := directory.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer folder.Close()
+	name := filepath.Base(path)
+	info, err := folder.Lstat(name)
 	if err != nil {
 		return err
 	}
@@ -434,21 +441,21 @@ func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInf
 	if err := verify(info); err != nil {
 		return err
 	}
-	aside := filepath.Join(filepath.Dir(path), ".boxbox-removing-"+rand.Text())
-	if err := directory.Rename(path, aside); err != nil {
+	aside := ".boxbox-removing-" + rand.Text()
+	if err := folder.Rename(name, aside); err != nil {
 		return err
 	}
-	info, err = directory.Lstat(aside)
+	info, err = folder.Lstat(aside)
 	if err == nil {
 		err = verify(info)
 	}
 	if err == nil {
-		if err = directory.Remove(aside); err == nil {
+		if err = folder.Remove(aside); err == nil {
 			return nil
 		}
 	}
-	if restoreErr := restoreEntry(directory, aside, path); restoreErr != nil {
-		return fmt.Errorf("%w; entry left at %s: %w", err, aside, restoreErr)
+	if restoreErr := restoreEntry(folder, aside, name); restoreErr != nil {
+		return fmt.Errorf("%w; entry left at %s: %w", err, filepath.Join(filepath.Dir(path), aside), restoreErr)
 	}
 	return err
 }

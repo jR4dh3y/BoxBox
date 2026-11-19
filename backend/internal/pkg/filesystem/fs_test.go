@@ -311,6 +311,37 @@ func TestRemoveFileWithinNeverRestoresOverANewEntry(t *testing.T) {
 	}
 }
 
+func TestRemoveFileWithinRestoresIntoRenamedFolder(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "a"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a", "file.txt"), []byte("shared"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	errChanged := errors.New("changed")
+	calls := 0
+	err := NewOsFS().RemoveFileWithin(root, filepath.Join("a", "file.txt"), func(fs.FileInfo) error {
+		calls++
+		if calls == 1 {
+			return nil
+		}
+		// Another process renames the folder after the file was moved aside.
+		if err := os.Rename(filepath.Join(root, "a"), filepath.Join(root, "b")); err != nil {
+			t.Fatal(err)
+		}
+		return errChanged
+	})
+	if !errors.Is(err, errChanged) {
+		t.Fatalf("RemoveFileWithin() error = %v, want %v", err, errChanged)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "b", "file.txt"))
+	if err != nil || string(data) != "shared" {
+		t.Fatalf("restored file = %q, %v", data, err)
+	}
+	assertOnlyEntries(t, filepath.Join(root, "b"), "file.txt")
+}
+
 func TestRemoveFileWithinRestoresRejectedEntry(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "file.txt")
