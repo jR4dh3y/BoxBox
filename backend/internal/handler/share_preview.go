@@ -37,7 +37,7 @@ type PreviewDocument interface {
 // SharePreviewHandler serves share pages and images for link-preview crawlers.
 type SharePreviewHandler struct {
 	shares       service.ShareService
-	thumbnails   service.ThumbnailService
+	thumbnails   *service.ShareThumbnailService
 	document     PreviewDocument
 	publicURL    string
 	defaultImage []byte
@@ -62,7 +62,7 @@ type sharePreviewKind int
 const (
 	sharePreviewGeneric sharePreviewKind = iota
 	sharePreviewFile
-	sharePreviewImage
+	sharePreviewThumbnail
 	sharePreviewFolder
 )
 
@@ -107,8 +107,8 @@ func (h *SharePreviewHandler) lookup(ctx context.Context, token string) (preview
 	switch {
 	case info.IsDir:
 		preview.kind = sharePreviewFolder
-	case service.RendersImageThumbnail(info.Name):
-		preview.kind = sharePreviewImage
+	case h.thumbnails.Supports(info.Name):
+		preview.kind = sharePreviewThumbnail
 	}
 	return preview
 }
@@ -147,7 +147,7 @@ func sharePageMeta(preview sharePreview, origin, token string) static.PageMeta {
 	switch preview.kind {
 	case sharePreviewFolder:
 		meta.Description = "View this shared folder on BoxBox"
-	case sharePreviewImage:
+	case sharePreviewThumbnail:
 		if origin != "" {
 			meta.Image = &static.PageImage{URL: origin + "/api/v1/share/" + url.PathEscape(token) +
 				"/thumbnail?v=" + strconv.FormatInt(preview.modTime, 10)}
@@ -238,7 +238,8 @@ func (h *SharePreviewHandler) Image(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", ifNoneMatch)
 		w.WriteHeader(http.StatusNotModified)
 	case h.defaultImage != nil && (errors.Is(err, service.ErrThumbnailUnsupported) ||
-		errors.Is(err, service.ErrThumbnailTooLarge) || errors.Is(err, service.ErrNotFile)):
+		errors.Is(err, service.ErrThumbnailTooLarge) || errors.Is(err, service.ErrThumbnailUnavailable) ||
+		errors.Is(err, service.ErrNotFile)):
 		w.Header().Set("ETag", h.defaultETag)
 		if ifNoneMatch == h.defaultETag {
 			w.WriteHeader(http.StatusNotModified)

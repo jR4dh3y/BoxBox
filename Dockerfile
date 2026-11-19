@@ -65,7 +65,8 @@ WORKDIR /app
 # Install runtime dependencies
 # - ca-certificates: HTTPS support
 # - tzdata: Timezone support
-RUN apk add --no-cache ca-certificates tzdata
+# - ffmpeg and prlimit (util-linux-misc): bounded video share thumbnails
+RUN apk add --no-cache ca-certificates tzdata ffmpeg util-linux-misc
 
 # Copy binary from builder
 COPY --from=backend-builder /server /app/server

@@ -106,7 +106,11 @@ Unknown, expired, and revoked tokens all return the same `404`, so recipients ca
 
 Folder creation requires `manage` and a writable mount. It creates missing parents below the shared root and returns `201` with `{"success": true}`. Traversal outside the shared root is denied.
 
-The thumbnail endpoint serves the link-preview image for a file share: a JPEG of at most 1200 px for JPEG, PNG, GIF and WebP files, or the default `og-default.png` when the file is not a renderable image or is a folder. It sends an `ETag`, answers `If-None-Match` with `304`, and uses `Cache-Control: no-cache` so revocation takes effect at once.
+The thumbnail endpoint serves the link-preview image for a single-file share. It returns a JPEG up to 1200 px per side for JPEG, PNG, GIF, WebP, MP4, M4V, MOV, MKV, and WebM files. Video thumbnails use a frame near one second, or the opening frame for short clips. Folders and files that cannot be rendered use `og-default.png`.
+
+Video thumbnails require Linux with FFmpeg 6 or later and util-linux `prlimit` on the server's `PATH`. The BoxBox Docker image includes both. When either tool is missing, video shares use the default image.
+
+The server caches rendered JPEGs in memory by share token, file modification time, file size, and thumbnail dimensions. The endpoint sends an `ETag` and uses `Cache-Control: no-cache`. Every request checks the share before serving cached bytes or returning `304`.
 
 File-browser and share image renders share a 256 MiB budget for decoded pixels and scaling workspace. WebP chunk types determine its decoder reservation; table construction, pixel decoding, inverse transforms, and scaling are counted as separate memory peaks. An image whose estimated workspace exceeds that budget uses the default share preview; other renders wait for memory or request cancellation. The existing source limits of 64 MiB, 32 million pixels, and 8192 pixels per dimension also apply.
 

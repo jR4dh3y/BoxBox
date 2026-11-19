@@ -48,11 +48,12 @@ type ThumbnailRenderer func(context.Context, File, *model.FileInfo, int, int) ([
 type thumbnailOpener func(context.Context, string) (File, *model.FileInfo, error)
 
 type thumbnailService struct {
-	open      thumbnailOpener
-	slots     chan struct{}
-	cache     *thumbnailCache
-	render    ThumbnailRenderer
-	maxOutput int
+	open              thumbnailOpener
+	slots             chan struct{}
+	cache             *thumbnailCache
+	render            ThumbnailRenderer
+	maxOutput         int
+	trustUncachedETag bool
 }
 
 func NewThumbnailService(files FileStreamer) ThumbnailService {
@@ -61,24 +62,43 @@ func NewThumbnailService(files FileStreamer) ThumbnailService {
 
 func NewThumbnailServiceWithRenderer(files FileStreamer, render ThumbnailRenderer) ThumbnailService {
 	return &thumbnailService{
-		open:      files.OpenFile,
-		slots:     make(chan struct{}, maxConcurrentThumbnails),
-		cache:     newThumbnailCache(),
-		render:    render,
-		maxOutput: maxThumbnailOutput,
+		open:              files.OpenFile,
+		slots:             make(chan struct{}, maxConcurrentThumbnails),
+		cache:             newThumbnailCache(),
+		render:            render,
+		maxOutput:         maxThumbnailOutput,
+		trustUncachedETag: true,
 	}
 }
 
-// NewShareThumbnailService renders link-preview images for single-file shares, keyed by share token.
-// Request slots and caches stay separate; image decoders share a memory budget.
-func NewShareThumbnailService(shares ShareService) ThumbnailService {
-	return &thumbnailService{
+// ShareThumbnailService renders public link previews with a separate request slot and cache.
+type ShareThumbnailService struct {
+	*thumbnailService
+	video videoThumbnailer
+}
+
+func NewShareThumbnailService(shares ShareService) *ShareThumbnailService {
+	s := &ShareThumbnailService{video: newVideoThumbnailer()}
+	s.thumbnailService = &thumbnailService{
 		open:      shares.OpenForRecipient,
 		slots:     make(chan struct{}, maxConcurrentShareThumbnails),
 		cache:     newThumbnailCache(),
-		render:    renderImageThumbnail,
+		render:    s.renderFile,
 		maxOutput: maxShareThumbnailOutput,
 	}
+	return s
+}
+
+// Supports reports whether a file name can use the thumbnail URL in share metadata.
+func (s *ShareThumbnailService) Supports(name string) bool {
+	return rendersImageThumbnail(name) || (s.video.available() && videoDemuxer(name) != "")
+}
+
+func (s *ShareThumbnailService) renderFile(ctx context.Context, file File, info *model.FileInfo, width, height int) ([]byte, error) {
+	if demuxer := videoDemuxer(info.Name); demuxer != "" {
+		return s.video.render(ctx, file, demuxer, width, height)
+	}
+	return renderImageThumbnail(ctx, file, info, width, height)
 }
 
 func (s *thumbnailService) Render(
@@ -117,7 +137,7 @@ func (s *thumbnailService) Render(
 		}
 		return cached, nil
 	}
-	if ifNoneMatch == etag {
+	if s.trustUncachedETag && ifNoneMatch == etag {
 		return nil, ErrThumbnailNotModified
 	}
 	content, err := s.render(ctx, file, info, width, height)
@@ -129,6 +149,10 @@ func (s *thumbnailService) Render(
 	}
 	thumbnail := &Thumbnail{Content: content, ETag: etag}
 	s.cache.add(key, thumbnail)
+	// Public previews can fall back to a different image when a decoder is unavailable.
+	if ifNoneMatch == etag {
+		return nil, ErrThumbnailNotModified
+	}
 	return thumbnail, nil
 }
 
