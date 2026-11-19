@@ -205,7 +205,7 @@ func TestClientRedialsAfterWorkerExits(t *testing.T) {
 		if err == nil && w.dials.Load() == 2 {
 			break
 		}
-		if err != nil && !errors.Is(err, ErrWorkerUnavailable) {
+		if err != nil && !errors.Is(err, filesystem.ErrWorkerUnavailable) {
 			t.Fatalf("Stat after worker exit = %v", err)
 		}
 		if time.Now().After(deadline) {

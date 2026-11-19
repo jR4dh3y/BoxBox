@@ -18,11 +18,6 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 )
 
-// ErrWorkerUnavailable means the worker could not be started or stopped while
-// a call was in flight. The call may or may not have taken effect; callers
-// must not replay it.
-var ErrWorkerUnavailable = errors.New("file worker unavailable")
-
 // Dialer returns a fresh connection to a worker for this client's identity.
 type Dialer func() (*fdconn.Conn, error)
 
@@ -79,7 +74,7 @@ func (c *Client) session() (*session, error) {
 	}
 	conn, err := c.dial()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrWorkerUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", filesystem.ErrWorkerUnavailable, err)
 	}
 	current := &session{conn: conn, pending: make(map[uint64]chan fdconn.Message)}
 	c.current = current
@@ -108,7 +103,7 @@ func (s *session) read() {
 	}
 }
 
-// fail ends every call still waiting; their callers see ErrWorkerUnavailable.
+// fail ends every call still waiting; their callers see filesystem.ErrWorkerUnavailable.
 func (s *session) fail() {
 	s.mu.Lock()
 	s.dead = true
@@ -137,7 +132,7 @@ func (c *Client) call(req request) (response, fdconn.Message, error) {
 	current.mu.Lock()
 	if current.dead {
 		current.mu.Unlock()
-		return response{}, fdconn.Message{}, ErrWorkerUnavailable
+		return response{}, fdconn.Message{}, filesystem.ErrWorkerUnavailable
 	}
 	current.nextID++
 	id := current.nextID
@@ -151,11 +146,11 @@ func (c *Client) call(req request) (response, fdconn.Message, error) {
 
 	if err := current.conn.Send(id, payload, nil); err != nil {
 		current.fail()
-		return response{}, fdconn.Message{}, fmt.Errorf("%w: %w", ErrWorkerUnavailable, err)
+		return response{}, fdconn.Message{}, fmt.Errorf("%w: %w", filesystem.ErrWorkerUnavailable, err)
 	}
 	message, ok := <-reply
 	if !ok {
-		return response{}, fdconn.Message{}, ErrWorkerUnavailable
+		return response{}, fdconn.Message{}, filesystem.ErrWorkerUnavailable
 	}
 	var decoded response
 	if err := json.Unmarshal(message.Payload, &decoded); err != nil {

@@ -90,6 +90,11 @@ type AferoFS struct {
 	fs afero.Fs
 }
 
+// ErrWorkerUnavailable means a NAS file worker could not be started, or
+// stopped while a call was in flight. That call may or may not have taken
+// effect, so callers must not replay it.
+var ErrWorkerUnavailable = errors.New("file worker unavailable")
+
 // ErrInvalidPath reports a path with a NUL byte or a ".." component.
 var ErrInvalidPath = errors.New("invalid filesystem path")
 

@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -387,7 +388,7 @@ func (s *jobService) execute(ctx context.Context, job *model.Job) {
 		}
 		if err != nil {
 			job.State = model.JobStateFailed
-			job.Error = err.Error()
+			job.Error = jobFailure(err)
 		} else {
 			job.State = model.JobStateCompleted
 			job.Progress = 100
@@ -625,8 +626,24 @@ func (s *jobService) executeMove(ctx context.Context, job *model.Job) error {
 	default:
 	}
 
-	// Delete source
-	return s.fs.RemoveAll(sourcePath)
+	// The copy is complete; a failure from here on must not hide that.
+	if err := s.fs.RemoveAll(sourcePath); err != nil {
+		return fmt.Errorf("%w: %w", errMoveSourceRemains, err)
+	}
+	return nil
+}
+
+// errMoveSourceRemains means a cross-filesystem move copied everything but
+// could not finish removing the source.
+var errMoveSourceRemains = errors.New("the destination is complete, but the source could not be fully removed")
+
+// jobFailure tells the user what state a failed job left behind. A worker that
+// stopped mid-call may or may not have done that step, and nothing retries it.
+func jobFailure(err error) string {
+	if errors.Is(err, filesystem.ErrWorkerUnavailable) {
+		return "The file worker stopped during this job, so its last step may or may not have happened. Check the destination before trying again: " + err.Error()
+	}
+	return err.Error()
 }
 
 // executeDelete deletes a file or directory

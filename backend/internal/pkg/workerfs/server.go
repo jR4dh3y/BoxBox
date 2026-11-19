@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"os"
@@ -23,7 +24,8 @@ func Serve(conn *fdconn.Conn, fsys filesystem.FS) error {
 	for {
 		message, err := conn.Receive()
 		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
+			// The API closing the socket is the normal way a worker ends.
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
