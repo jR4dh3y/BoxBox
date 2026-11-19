@@ -124,24 +124,11 @@ func (c *Client) call(req request) (response, fdconn.Message, error) {
 	if err != nil {
 		return response{}, fdconn.Message{}, err
 	}
-	current, err := c.session()
+	reply := make(chan fdconn.Message, 1)
+	current, id, err := c.register(reply)
 	if err != nil {
 		return response{}, fdconn.Message{}, err
 	}
-	reply := make(chan fdconn.Message, 1)
-	current.mu.Lock()
-	if current.dead {
-		current.mu.Unlock()
-		return response{}, fdconn.Message{}, filesystem.ErrWorkerUnavailable
-	}
-	current.nextID++
-	id := current.nextID
-	current.pending[id] = reply
-	current.inFlight++
-	if current.idle != nil {
-		current.idle.Stop()
-	}
-	current.mu.Unlock()
 	defer c.release(current)
 
 	if err := current.conn.Send(id, payload, nil); err != nil {
@@ -168,6 +155,31 @@ func (c *Client) call(req request) (response, fdconn.Message, error) {
 	return decoded, message, nil
 }
 
+// register reserves a request ID on a live session. A session that died before
+// anything was sent on it is replaced; that is not a replay.
+func (c *Client) register(reply chan fdconn.Message) (*session, uint64, error) {
+	for {
+		current, err := c.session()
+		if err != nil {
+			return nil, 0, err
+		}
+		current.mu.Lock()
+		if current.dead {
+			current.mu.Unlock()
+			continue
+		}
+		current.nextID++
+		id := current.nextID
+		current.pending[id] = reply
+		current.inFlight++
+		if current.idle != nil {
+			current.idle.Stop()
+		}
+		current.mu.Unlock()
+		return current, id, nil
+	}
+}
+
 func (c *Client) release(current *session) {
 	current.mu.Lock()
 	defer current.mu.Unlock()
@@ -176,19 +188,17 @@ func (c *Client) release(current *session) {
 		return
 	}
 	current.idle = time.AfterFunc(c.idle, func() {
+		// Marking the session dead under its lock means no call can register
+		// on it between this check and the close.
 		current.mu.Lock()
 		idle := current.inFlight == 0 && !current.dead
+		if idle {
+			current.dead = true
+		}
 		current.mu.Unlock()
-		if !idle {
-			return
+		if idle {
+			_ = current.conn.Close()
 		}
-		c.mu.Lock()
-		if c.current == current {
-			c.current = nil
-		}
-		c.mu.Unlock()
-		// The reader sees the close and marks the session dead.
-		_ = current.conn.Close()
 	})
 }
 

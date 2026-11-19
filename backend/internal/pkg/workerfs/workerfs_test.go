@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -27,7 +28,7 @@ type worker struct {
 // worker process would.
 func startWorker(t *testing.T) (*Client, *worker) {
 	t.Helper()
-	w := &worker{conns: make(chan *fdconn.Conn, 8)}
+	w := &worker{conns: make(chan *fdconn.Conn, 4096)}
 	client := NewClient(func() (*fdconn.Conn, error) {
 		w.dials.Add(1)
 		local, peer, err := fdconn.Pair()
@@ -257,4 +258,25 @@ func currentUmask() fs.FileMode {
 	mask := syscall.Umask(0)
 	syscall.Umask(mask)
 	return fs.FileMode(mask)
+}
+
+// Constant idle closes must never surface as failed calls. This guards the
+// reconnect path; the narrow register-versus-close race it was written for
+// does not reproduce reliably here.
+func TestClientIdleChurnNeverFailsACall(t *testing.T) {
+	client, _ := startWorker(t)
+	client.idle = time.Microsecond
+	root := t.TempDir()
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			for range 200 {
+				if _, err := client.Stat(root); err != nil {
+					t.Errorf("Stat during idle churn: %v", err)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
 }
