@@ -564,7 +564,6 @@ impl Workspace {
         workspace.load_bookmarks(cx);
         #[cfg(target_os = "linux")]
         workspace.warm_menu_apps(cx);
-        #[cfg(target_os = "linux")]
         workspace.watch_associations(cx);
         workspace.apply_motion(cx);
         workspace.follow_desktop_motion(cx);

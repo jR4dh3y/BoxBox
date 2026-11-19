@@ -171,16 +171,30 @@ impl Workspace {
         .detach();
     }
 
-    /// Opens a mount on this computer, even in a pane that is on a server.
+    /// Opens a mount on this computer, even in a pane that is on a server. The
+    /// path is resolved in the background: on Windows that reaches the share,
+    /// which can stall when it is slow or has just gone away.
     fn open_mounted(&mut self, target: PaneTarget, name: &str, point: &Path, cx: &mut Context<Self>) {
         let home = self.home.api.clone();
-        match home.virtual_path(point) {
-            Some(path) => {
-                self.location_editor = None;
-                self.navigate_to(target, home, path, cx);
-            }
-            None => self.report(Err(format!("{name} is mounted at {}, outside the folders this window can open.", point.display())), cx),
-        }
+        let (name, point) = (name.to_string(), point.to_path_buf());
+        cx.spawn(async move |this, cx| {
+            let (path, point) = cx
+                .background_executor()
+                .spawn({
+                    let home = home.clone();
+                    async move { (home.virtual_path(&point), point) }
+                })
+                .await;
+            this.update(cx, |this, cx| match path {
+                Some(path) => {
+                    this.location_editor = None;
+                    this.navigate_to(target, home, path, cx);
+                }
+                None => this.report(Err(format!("{name} is mounted at {}, outside the folders this window can open.", point.display())), cx),
+            })
+            .ok();
+        })
+        .detach();
     }
 
     /// A backend's question. The window cannot be focused from here, so the dialog's

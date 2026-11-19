@@ -120,10 +120,12 @@ impl Workspace {
 
     /// Makes app icons again whenever file associations change, such as a new
     /// default set in Open With or in another app.
-    #[cfg(target_os = "linux")]
     pub(crate) fn watch_associations(&mut self, cx: &mut Context<Self>) {
         let (changed, changes) = async_channel::unbounded();
+        #[cfg(target_os = "linux")]
         crate::associations::watch(changed);
+        #[cfg(windows)]
+        crate::windows::associations::watch(changed);
         cx.spawn(async move |this, cx| {
             while changes.recv().await.is_ok() {
                 if this.update(cx, |this, cx| this.forget_app_icons(cx)).is_err() {
@@ -135,11 +137,14 @@ impl Workspace {
     }
 
     /// Drops every app icon; the views ask for them again as they draw, and an
-    /// icon still being made is dropped when it arrives.
-    #[cfg(target_os = "linux")]
+    /// icon still being made is dropped when it arrives. Windows has no separate
+    /// app icon: the Shell's file type icon is the default app's.
     fn forget_app_icons(&mut self, cx: &mut Context<Self>) {
         self.file_icons.slots.retain(|(source, _), slot| {
+            #[cfg(target_os = "linux")]
             let app = matches!(source, IconSource::App(_));
+            #[cfg(windows)]
+            let app = matches!(source, IconSource::Theme(IconKey::File(_)));
             if let (true, Slot::Ready(image)) = (app, &*slot) {
                 cx.drop_image(image.clone(), None);
             }
