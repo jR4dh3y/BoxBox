@@ -25,6 +25,11 @@ pub fn usage_bar(used_pct: f64) -> impl IntoElement {
     div().flex_1().child(ProgressBar::new(used_pct as f32).size(ProgressSize::Sm).variant(usage_level(used_pct).0))
 }
 
+/// The bar on a raised card, whose own colour would hide the empty part.
+pub fn card_usage_bar(used_pct: f64) -> impl IntoElement {
+    ProgressBar::new(used_pct as f32).size(ProgressSize::Sm).variant(usage_level(used_pct).0).track(SURFACE_PRIMARY)
+}
+
 /// The percentage beside the bar: text-[11px] font-medium.
 pub fn usage_text(used_pct: f64) -> impl IntoElement {
     div().flex_none().type_11().font_weight(FontWeight::MEDIUM).text_color(c(usage_level(used_pct).1)).child(format!("{used_pct:.1}%"))

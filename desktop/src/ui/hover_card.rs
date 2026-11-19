@@ -5,6 +5,7 @@
 //! takes a disk read (a folder's contents, an image's size, the app that opens
 //! a file) loads off the UI thread and stops when the card closes.
 
+use crate::components::Ellipsis as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -285,7 +286,8 @@ impl Workspace {
 /// as the Overview's drive card shows it, for the sidebar's narrow rows.
 pub(crate) struct DriveHover {
     info: crate::components::DriveInfo,
-    kind: &'static str,
+    /// Where the drive is: this computer, a disk, or the server it belongs to.
+    origin: SharedString,
     details: Vec<(&'static str, String)>,
 }
 
@@ -298,12 +300,12 @@ impl Workspace {
         }
         let info = self.drive_info(storage);
         let mut details = Vec::new();
-        let kind = match storage {
+        let origin: SharedString = match storage {
             Storage::Drive(stats) => {
                 if let Ok(Some(real)) = self.home.api.local_path(&stats.name) {
                     details.push(("Location", real.display().to_string()));
                 }
-                "Drive on this computer"
+                "This computer".into()
             }
             Storage::Volume(volume) => {
                 if let Some(point) = volume.mount_point() {
@@ -314,21 +316,20 @@ impl Workspace {
                     crate::devices::Kind::Phone => "Phone",
                     crate::devices::Kind::Network => "Network share",
                 }
+                .into()
             }
-            Storage::ServerDrive { server, .. } | Storage::Remembered { server, .. } => {
-                details.push(("Server", server.url.clone()));
-                "Drive on a server"
-            }
-            Storage::Server { server, reason, .. } => {
-                details.push(("Server", server.url.clone()));
+            Storage::ServerDrive { server, .. } | Storage::Remembered { server, .. } => server.name.clone().into(),
+            Storage::Server { reason, .. } => {
                 if let Some(reason) = reason {
                     details.push(("Reason", reason.clone()));
                 }
-                "Server"
+                "Server".into()
             }
         };
+        // A whole server's device is its address.
+        let device_label = if matches!(storage, Storage::Server { .. }) { "Address" } else { "Device" };
         if let Some(device) = info.device.clone().filter(|device| !device.is_empty()) {
-            details.push(("Device", device));
+            details.push((device_label, device));
         }
         if let Some(fs) = info.fs_type.clone().filter(|fs| !fs.is_empty()) {
             details.push(("Filesystem", fs));
@@ -336,37 +337,50 @@ impl Workspace {
         if info.read_only {
             details.push(("Access", "Read-only".into()));
         }
-        Some(move |_: &mut Window, cx: &mut App| -> AnyView { cx.new(|_| DriveHover { info: info.clone(), kind, details: details.clone() }).into() })
+        Some(move |_: &mut Window, cx: &mut App| -> AnyView {
+            cx.new(|_| DriveHover { info: info.clone(), origin: origin.clone(), details: details.clone() }).into()
+        })
     }
+}
+
+/// A detail kept to one line and cut short with an ellipsis; a reason is a
+/// sentence and wraps.
+fn drive_row(label: &'static str, value: impl Into<SharedString>) -> gpui::Div {
+    let value = div().flex_1().min_w_0().text_color(c(TEXT_PRIMARY)).child(value.into());
+    div()
+        .flex()
+        .items_start()
+        .gap(px(8.))
+        .child(div().w(px(LABEL_WIDTH)).flex_none().text_color(c(TEXT_MUTED)).child(label))
+        .child(if label == "Reason" { value } else { value.ellipsis() })
 }
 
 impl Render for DriveHover {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        use crate::components::{usage_bar, DriveState};
+        use crate::components::{card_usage_bar, DriveState};
         let usage: gpui::AnyElement = match &self.info.state {
             DriveState::Usage(usage) => div()
                 .flex()
                 .flex_col()
                 .gap(px(6.))
-                .child(div().flex().child(usage_bar(usage.pct)))
+                .child(card_usage_bar(usage.pct))
                 .child(
                     div()
                         .flex()
                         .justify_between()
                         .gap(px(8.))
-                        .child(div().text_color(c(TEXT_PRIMARY)).child(format!("{} free of {}", file_size(usage.free), file_size(usage.total))))
-                        .child(div().text_color(c(TEXT_SECONDARY)).child(format!("{:.0}% used", usage.pct))),
+                        .child(div().min_w_0().truncate().text_color(c(TEXT_PRIMARY)).child(format!("{} free of {}", file_size(usage.free), file_size(usage.total))))
+                        .child(div().flex_none().text_color(c(TEXT_SECONDARY)).child(format!("{:.0}% used", usage.pct))),
                 )
-                .child(div().text_color(c(TEXT_MUTED)).child(format!("{} used", file_size(usage.used))))
                 .into_any_element(),
             DriveState::Status { status, size } => div()
                 .flex()
                 .flex_col()
                 .gap(px(4.))
-                .child(row("Status", status.clone()))
-                .when_some(*size, |rows, size| rows.child(row("Size", file_size(size))))
+                .child(drive_row("Status", status.clone()))
+                .when_some(*size, |rows, size| rows.child(drive_row("Size", file_size(size))))
                 .into_any_element(),
-            DriveState::Pending { status, .. } => row("Status", status.clone()).into_any_element(),
+            DriveState::Pending { status, .. } => drive_row("Status", status.clone()).into_any_element(),
         };
         let card = div()
             .when_some(cx.try_global::<UiFont>(), |card, font| card.font_family(font.0.clone()))
@@ -384,22 +398,15 @@ impl Render for DriveHover {
             .child(
                 div()
                     .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .child(div().size(px(PICTURE)).flex_none().flex().items_center().justify_center().child(thin_icon(self.info.glyph, PICTURE - 8., c(TEXT_SECONDARY))))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .min_w_0()
-                            .child(div().truncate().text_sm_tw().text_color(c(TEXT_PRIMARY)).child(self.info.name.clone()))
-                            .child(div().truncate().text_color(c(TEXT_SECONDARY)).child(self.kind)),
-                    ),
+                    .items_baseline()
+                    .gap(px(8.))
+                    .child(div().flex_1().min_w_0().ellipsis().text_sm_tw().text_color(c(TEXT_PRIMARY)).child(self.info.name.clone()))
+                    .child(div().flex_none().max_w(px(WIDTH / 2.)).truncate().text_color(c(TEXT_MUTED)).child(self.origin.clone())),
             )
             .child(usage)
             .when(!self.details.is_empty(), |card| {
                 card.child(div().h(px(1.)).bg(c(BORDER_SECONDARY)))
-                    .child(div().flex().flex_col().gap(px(4.)).children(self.details.iter().map(|(label, value)| row(label, value.clone()))))
+                    .child(div().flex().flex_col().gap(px(4.)).children(self.details.iter().map(|(label, value)| drive_row(label, value.clone()))))
             });
         motion::enter("drive-hover-enter", card, motion::POPOVER, cx)
     }

@@ -25,11 +25,13 @@ pub struct ProgressBar {
     percent: f32,
     variant: ProgressVariant,
     size: ProgressSize,
+    /// The empty part's colour; the default suits a bar on the page, not on a raised card.
+    track: u32,
 }
 
 impl ProgressBar {
     pub fn new(percent: f32) -> Self {
-        Self { percent: percent.clamp(0., 100.), variant: ProgressVariant::Default, size: ProgressSize::Md }
+        Self { percent: percent.clamp(0., 100.), variant: ProgressVariant::Default, size: ProgressSize::Md, track: SURFACE_ELEVATED }
     }
 
     pub fn variant(mut self, variant: ProgressVariant) -> Self {
@@ -39,6 +41,11 @@ impl ProgressBar {
 
     pub fn size(mut self, size: ProgressSize) -> Self {
         self.size = size;
+        self
+    }
+
+    pub fn track(mut self, track: u32) -> Self {
+        self.track = track;
         self
     }
 }
@@ -61,7 +68,7 @@ impl RenderOnce for ProgressBar {
             }))
             .overflow_hidden()
             .rounded_full()
-            .bg(c(SURFACE_ELEVATED))
+            .bg(c(self.track))
             .child(div().h_full().w(relative(self.percent / 100.)).rounded_full().bg(c(fill)))
     }
 }
