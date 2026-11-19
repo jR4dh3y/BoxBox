@@ -84,8 +84,9 @@ func (s *shareService) StartExpiryCleanup(ctx context.Context) {
 // touched, so a crash during the pass keeps the file instead of retrying it.
 // A failed save touches no file. If the store was not replaced, the flag stays
 // for the next pass, since no decision about the file was made; if only the
-// final permission change failed, the flag is already cleared and the file kept. Holding the lock keeps Create and
-// Revoke out of the pass.
+// final permission change failed, the flag is already cleared and the file
+// kept. A store that cannot be read keeps every file. Holding the lock keeps
+// Create and Revoke out of the pass.
 func (s *shareService) deleteExpiredFiles(now time.Time) {
 	if s.storageErr != nil {
 		return
@@ -93,7 +94,11 @@ func (s *shareService) deleteExpiredFiles(now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	data := s.loadLocked()
+	data, err := s.readStoreLocked()
+	if err != nil {
+		log.Error().Err(err).Msg("Skipped expired share cleanup: could not read the share store")
+		return
+	}
 	var due []shareRecord
 	for i := range data.Shares {
 		record := &data.Shares[i]
@@ -111,11 +116,16 @@ func (s *shareService) deleteExpiredFiles(now time.Time) {
 		return
 	}
 
+	// Reread once after the save, so a link another process saved is seen. A
+	// failed read must not look like a store without links.
+	current, err := s.readStoreLocked()
+	if err != nil {
+		log.Error().Err(err).Int("shares", len(due)).Msg("Kept files of expired shares: could not reread the share store")
+		return
+	}
+	links := newShareLinks(s, current.Shares)
 	for _, record := range due {
-		// Reread the store and resolve each active link again right before each
-		// deletion, so a link added by another process or a retargeted symlink
-		// still protects the file.
-		reaches := s.activeShareReachesLocked(s.loadLocked(), record.ExpiresAt, now)
+		reaches := links.protecting(record.ExpiresAt, now)
 		logger := log.With().
 			Str("share", record.ID).
 			Str("owner", record.CreatedBy).
@@ -222,31 +232,52 @@ type shareReach struct {
 	unknown bool
 }
 
-// activeShareReachesLocked returns the links active at the expired share's
-// deadline or now. Checking the deadline keeps the result the same when the
-// server was down at the deadline and another link expired in the meantime.
-func (s *shareService) activeShareReachesLocked(data *sharesData, deadline, now time.Time) []shareReach {
-	reaches := make([]shareReach, 0, len(data.Shares))
-	for _, record := range data.Shares {
-		if !activeAt(record, deadline) && !activeAt(record, now) {
+// shareLinks resolves the stored links for one cleanup pass. Each link is
+// resolved at most once, however many expired shares are checked against it.
+type shareLinks struct {
+	service  *shareService
+	records  []shareRecord
+	resolved map[int]shareReach
+}
+
+func newShareLinks(s *shareService, records []shareRecord) *shareLinks {
+	return &shareLinks{service: s, records: records, resolved: make(map[int]shareReach)}
+}
+
+// protecting returns the links active at the expired share's deadline or now.
+// Checking the deadline keeps the result the same when the server was down at
+// the deadline and another link expired in the meantime.
+func (l *shareLinks) protecting(deadline, now time.Time) []shareReach {
+	var reaches []shareReach
+	for i, record := range l.records {
+		if !activeAt(record, deadline) && !activeNow(record, now) {
 			continue
 		}
-		reach := shareReach{virtualPath: shareVirtualPath(record), folder: record.IsFolder}
-		_, realPath, err := s.mounts.resolve(reach.virtualPath, readExisting)
-		switch {
-		case err == nil:
-			reach.realPath = realPath
-			if info, statErr := s.fs.Stat(realPath); statErr == nil {
-				reach.id = keyOf(info)
-			}
-		case errors.Is(err, ErrMountPointNotFound), errors.Is(err, ErrPathNotFound), errors.Is(err, ErrPermissionDenied):
-			// The share cannot serve anything now; its logical path still protects the file.
-		default:
-			reach.unknown = true
+		reach, ok := l.resolved[i]
+		if !ok {
+			reach = l.service.resolveReach(record)
+			l.resolved[i] = reach
 		}
 		reaches = append(reaches, reach)
 	}
 	return reaches
+}
+
+func (s *shareService) resolveReach(record shareRecord) shareReach {
+	reach := shareReach{virtualPath: shareVirtualPath(record), folder: record.IsFolder}
+	_, realPath, err := s.mounts.resolve(reach.virtualPath, readExisting)
+	switch {
+	case err == nil:
+		reach.realPath = realPath
+		if info, statErr := s.fs.Stat(realPath); statErr == nil {
+			reach.id = keyOf(info)
+		}
+	case errors.Is(err, ErrMountPointNotFound), errors.Is(err, ErrPathNotFound), errors.Is(err, ErrPermissionDenied):
+		// The share cannot serve anything now; its logical path still protects the file.
+	default:
+		reach.unknown = true
+	}
+	return reach
 }
 
 // covers reports whether the active share can reach the expired share's file:
@@ -274,6 +305,13 @@ func (r shareReach) covers(target expiringTarget) bool {
 func activeAt(record shareRecord, t time.Time) bool {
 	return !record.CreatedAt.After(t) && !isExpired(record.ExpiresAt, t) &&
 		(!record.Revoked || record.RevokedAt.After(t))
+}
+
+// activeNow reports whether a stored link is usable now. It has no creation
+// cutoff: now is read before the pass takes the lock, so a link saved while
+// the pass waited was created after it and must still count.
+func activeNow(record shareRecord, now time.Time) bool {
+	return !record.Revoked && !isExpired(record.ExpiresAt, now)
 }
 
 func shareVirtualPath(record shareRecord) string {

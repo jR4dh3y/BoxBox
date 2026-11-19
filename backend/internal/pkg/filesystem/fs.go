@@ -423,7 +423,8 @@ func (a *AferoFS) RemoveFileWithin(root, path string, verify func(fs.FileInfo) e
 
 // removeVerifiedEntry renames path to a private sibling and checks that entry,
 // so a save that replaces path after the check cannot be the entry removed.
-// A rejected entry goes back to path unless something new has taken its name.
+// A rejected entry, or one that cannot be removed, goes back to path unless
+// something new has taken its name.
 func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInfo) error) error {
 	info, err := directory.Lstat(path)
 	if err != nil {
@@ -442,7 +443,9 @@ func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInf
 		err = verify(info)
 	}
 	if err == nil {
-		return directory.Remove(aside)
+		if err = directory.Remove(aside); err == nil {
+			return nil
+		}
 	}
 	if restoreErr := restoreEntry(directory, aside, path); restoreErr != nil {
 		return fmt.Errorf("%w; entry left at %s: %w", err, aside, restoreErr)

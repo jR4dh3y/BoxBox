@@ -939,25 +939,38 @@ func (s *shareService) secureExistingStore() error {
 	return s.fs.Chmod(s.filePath, 0o600)
 }
 
+// loadLocked reads the store, treating an unreadable or corrupt one as empty.
 func (s *shareService) loadLocked() *sharesData {
-	data := &sharesData{Shares: []shareRecord{}}
-	exists, err := s.fs.Exists(s.filePath)
-	if err != nil || !exists {
-		return data
-	}
-	file, err := s.fs.ReadFile(s.filePath)
+	data, err := s.readStoreLocked()
 	if err != nil {
-		log.Warn().Err(err).Str("path", s.filePath).Msg("Could not read shares file, starting empty")
-		return data
-	}
-	if len(file) == 0 {
-		return data
-	}
-	if err := json.Unmarshal(file, data); err != nil {
-		log.Warn().Err(err).Str("path", s.filePath).Msg("Corrupt shares file, starting empty")
+		log.Warn().Err(err).Str("path", s.filePath).Msg("Could not load shares file, starting empty")
 		return &sharesData{Shares: []shareRecord{}}
 	}
 	return data
+}
+
+// readStoreLocked reads the store and reports a read or decode error, for
+// callers that must not mistake a failed read for a store without links.
+func (s *shareService) readStoreLocked() (*sharesData, error) {
+	data := &sharesData{Shares: []shareRecord{}}
+	exists, err := s.fs.Exists(s.filePath)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return data, nil
+	}
+	file, err := s.fs.ReadFile(s.filePath)
+	if err != nil {
+		return nil, err
+	}
+	if len(file) == 0 {
+		return data, nil
+	}
+	if err := json.Unmarshal(file, data); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func (s *shareService) saveLocked(data *sharesData) error {

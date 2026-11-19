@@ -488,3 +488,63 @@ func TestShareReachCoversFolderByIdentity(t *testing.T) {
 		}
 	}
 }
+
+// rereadFailingFS fails to read the share store once cleanup has saved it.
+type rereadFailingFS struct {
+	filesystem.FS
+	armed, saved bool
+}
+
+func (f *rereadFailingFS) Rename(oldpath, newpath string) error {
+	if f.armed && strings.Contains(oldpath, "shares.json.tmp.") {
+		f.saved = true
+	}
+	return f.FS.Rename(oldpath, newpath)
+}
+
+func (f *rereadFailingFS) ReadFile(name string) ([]byte, error) {
+	if f.saved && strings.HasSuffix(name, "shares.json") {
+		return nil, errors.New("I/O error")
+	}
+	return f.FS.ReadFile(name)
+}
+
+func TestShareExpiryKeepsFileWhenTheStoreCannotBeReread(t *testing.T) {
+	backing := filesystem.NewMemMapFS()
+	setupShareTestFS(backing)
+	fsys := &rereadFailingFS{FS: backing}
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+	createExpiringShare(t, shares, "media/file.txt", true)
+
+	fsys.armed = true
+	shares.deleteExpiredFiles(afterExpiry())
+	assertFileExists(t, backing, "/data/media/file.txt", true)
+}
+
+func TestShareExpiryKeepsFileForLinkSavedWhileCleanupWaited(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+	createExpiringShare(t, shares, "media/file.txt", true)
+	later, err := shares.Create(context.Background(), "owner", "media/file.txt", ShareSettings{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The pass read its time, then waited for the lock while Create saved.
+	now := afterExpiry()
+	shares.mu.Lock()
+	data := shares.loadLocked()
+	for i := range data.Shares {
+		if data.Shares[i].ID == later.ID {
+			data.Shares[i].CreatedAt = now.Add(time.Second)
+		}
+	}
+	if err := shares.saveLocked(data); err != nil {
+		t.Fatal(err)
+	}
+	shares.mu.Unlock()
+
+	shares.deleteExpiredFiles(now)
+	assertFileExists(t, fsys, "/data/media/file.txt", true)
+}
