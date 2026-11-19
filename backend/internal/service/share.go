@@ -88,13 +88,19 @@ type ShareServiceConfig struct {
 	DataDir        string
 	MaxUploadBytes int64
 	Mounts         func() []model.MountPoint
+	// Files returns an account's view of user files. Shares read and write as
+	// their creator, so a link never grants more than the creator's identity.
+	// Nil means every account uses the store's filesystem.
+	Files func(account string) (filesystem.FS, error)
 }
 
 type shareService struct {
-	fs             filesystem.FS
+	// store holds the share list; it is never used for user files.
+	store          filesystem.FS
+	files          func(account string) (filesystem.FS, error)
+	mountList      func() []model.MountPoint
 	filePath       string
 	maxUploadBytes int64
-	mounts         *mounts
 	storageErr     error
 	mu             sync.RWMutex
 }
@@ -134,11 +140,16 @@ func NewShareService(fsys filesystem.FS, cfg ShareServiceConfig) ShareService {
 	if mountList == nil {
 		mountList = func() []model.MountPoint { return nil }
 	}
+	files := cfg.Files
+	if files == nil {
+		files = func(string) (filesystem.FS, error) { return fsys, nil }
+	}
 	shareSvc := &shareService{
-		fs:             fsys,
+		store:          fsys,
+		files:          files,
+		mountList:      mountList,
 		filePath:       filepath.Join(dataDir, config.SharesFileName),
 		maxUploadBytes: maxUploadBytes,
-		mounts:         newMounts(fsys, mountList),
 	}
 	shareSvc.storageErr = shareSvc.secureExistingStore()
 	return shareSvc
@@ -151,15 +162,20 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 	if username == "" {
 		return nil, ErrInvalidOperation
 	}
+	files, err := s.files(username)
+	if err != nil {
+		return nil, err
+	}
+	creator := &shareFiles{fs: files, mounts: newMounts(files, s.mountList)}
 	maxUploadBytes, err := s.resolveUploadLimit(settings.MaxUploadBytes)
 	if err != nil {
 		return nil, err
 	}
-	mount, fsPath, err := s.mounts.resolve(path, readExisting)
+	mount, fsPath, err := creator.mounts.resolve(path, readExisting)
 	if err != nil {
 		return nil, err
 	}
-	info, err := s.statTarget(fsPath)
+	info, err := creator.statTarget(fsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -190,11 +206,11 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		if mount.ReadOnly {
 			return nil, ErrPermissionDenied
 		}
-		if err := s.mounts.requireWritablePath(fsPath, false); err != nil {
+		if err := creator.mounts.requireWritablePath(fsPath, false); err != nil {
 			return nil, err
 		}
 	}
-	mountRoot, err := s.fs.EvalSymlinks(mount.Path)
+	mountRoot, err := creator.fs.EvalSymlinks(mount.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +344,11 @@ func (s *shareService) Update(username string, id string, settings ShareUpdateSe
 			return nil, ErrShareNotFound
 		}
 		share := s.shareFromRecord(*record)
-		mount, fsPath, err := s.resolveShareTarget(&share)
+		creator, err := s.creatorFiles(&share)
+		if err != nil {
+			return nil, err
+		}
+		mount, fsPath, err := creator.resolveShareTarget(&share)
 		if err != nil {
 			return nil, err
 		}
@@ -336,7 +356,7 @@ func (s *shareService) Update(username string, id string, settings ShareUpdateSe
 			if mount.ReadOnly {
 				return nil, ErrPermissionDenied
 			}
-			if err := s.mounts.requireWritablePath(fsPath, false); err != nil {
+			if err := creator.mounts.requireWritablePath(fsPath, false); err != nil {
 				return nil, err
 			}
 		}
@@ -388,23 +408,27 @@ func (s *shareService) OpenForRecipient(ctx context.Context, token string) (File
 	if err != nil {
 		return nil, nil, err
 	}
-
-	mount, fsPath, err := s.resolveShareTarget(share)
+	creator, err := s.creatorFiles(share)
 	if err != nil {
 		return nil, nil, err
 	}
-	info, err := s.statTarget(fsPath)
+
+	mount, fsPath, err := creator.resolveShareTarget(share)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := creator.statTarget(fsPath)
 	if err != nil {
 		return nil, nil, err
 	}
 	if !info.Mode().IsRegular() {
 		return nil, nil, ErrNotFile
 	}
-	file, err := s.fs.Open(fsPath)
+	file, err := creator.fs.Open(fsPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := verifyOpenFileWithinMount(s.fs, mount, file); err != nil {
+	if err := verifyOpenFileWithinMount(creator.fs, mount, file); err != nil {
 		_ = file.Close()
 		return nil, nil, err
 	}
@@ -418,11 +442,15 @@ func (s *shareService) InfoForRecipient(ctx context.Context, token string) (*mod
 	if err != nil {
 		return nil, "", err
 	}
-	_, fsPath, err := s.resolveShareTarget(share)
+	creator, err := s.creatorFiles(share)
 	if err != nil {
 		return nil, "", err
 	}
-	info, err := s.statTarget(fsPath)
+	_, fsPath, err := creator.resolveShareTarget(share)
+	if err != nil {
+		return nil, "", err
+	}
+	info, err := creator.statTarget(fsPath)
 	if err != nil {
 		return nil, "", err
 	}
@@ -444,14 +472,18 @@ func (s *shareService) ListForRecipient(ctx context.Context, token string, relat
 	if err != nil {
 		return nil, err
 	}
-	if !share.Permissions.View {
-		return nil, ErrPermissionDenied
-	}
-	_, target, _, err := s.resolveFolderPath(share, relativePath, false)
+	creator, err := s.creatorFiles(share)
 	if err != nil {
 		return nil, err
 	}
-	info, err := s.statTarget(target)
+	if !share.Permissions.View {
+		return nil, ErrPermissionDenied
+	}
+	_, target, _, err := creator.resolveFolderPath(share, relativePath, false)
+	if err != nil {
+		return nil, err
+	}
+	info, err := creator.statTarget(target)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +492,7 @@ func (s *shareService) ListForRecipient(ctx context.Context, token string, relat
 	}
 
 	const maxShareEntries = 10_000
-	entries, truncated, err := s.fs.ReadDirLimit(target, maxShareEntries)
+	entries, truncated, err := creator.fs.ReadDirLimit(target, maxShareEntries)
 	if err != nil {
 		return nil, err
 	}
@@ -475,12 +507,12 @@ func (s *shareService) ListForRecipient(ctx context.Context, token string, relat
 	items := make([]model.ShareItem, 0, len(entries))
 	for _, entry := range entries {
 		itemPath := filepath.ToSlash(filepath.Join(cleanPath, entry.Name()))
-		_, resolvedEntry, _, resolveErr := s.resolveFolderPath(share, itemPath, false)
+		_, resolvedEntry, _, resolveErr := creator.resolveFolderPath(share, itemPath, false)
 		if resolveErr != nil {
 			// Do not expose broken links or entries that escape the shared root.
 			continue
 		}
-		entryInfo, statErr := s.statTarget(resolvedEntry)
+		entryInfo, statErr := creator.statTarget(resolvedEntry)
 		if statErr != nil || (!entryInfo.IsDir() && !entryInfo.Mode().IsRegular()) {
 			continue
 		}
@@ -514,14 +546,18 @@ func (s *shareService) PrepareDirectoryArchive(ctx context.Context, token string
 	if err != nil {
 		return nil, err
 	}
-	if !share.Permissions.Download {
-		return nil, ErrPermissionDenied
-	}
-	_, target, root, err := s.resolveFolderPath(share, relativePath, false)
+	creator, err := s.creatorFiles(share)
 	if err != nil {
 		return nil, err
 	}
-	return prepareDirectoryArchive(ctx, s.fs, target, root)
+	if !share.Permissions.Download {
+		return nil, ErrPermissionDenied
+	}
+	_, target, root, err := creator.resolveFolderPath(share, relativePath, false)
+	if err != nil {
+		return nil, err
+	}
+	return prepareDirectoryArchive(ctx, creator.fs, target, root)
 }
 
 func (s *shareService) OpenForRecipientPath(ctx context.Context, token string, relativePath string) (File, *model.FileInfo, error) {
@@ -529,27 +565,31 @@ func (s *shareService) OpenForRecipientPath(ctx context.Context, token string, r
 	if err != nil {
 		return nil, nil, err
 	}
-	_, target, _, err := s.resolveFolderPath(share, relativePath, false)
+	creator, err := s.creatorFiles(share)
 	if err != nil {
 		return nil, nil, err
 	}
-	info, err := s.statTarget(target)
+	_, target, _, err := creator.resolveFolderPath(share, relativePath, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := creator.statTarget(target)
 	if err != nil {
 		return nil, nil, err
 	}
 	if !info.Mode().IsRegular() {
 		return nil, nil, ErrNotFile
 	}
-	file, err := s.fs.Open(target)
+	file, err := creator.fs.Open(target)
 	if err != nil {
 		return nil, nil, err
 	}
-	mount, _, err := s.resolveShareTarget(share)
+	mount, _, err := creator.resolveShareTarget(share)
 	if err != nil {
 		_ = file.Close()
 		return nil, nil, err
 	}
-	if err := verifyOpenFileWithinMount(s.fs, mount, file); err != nil {
+	if err := verifyOpenFileWithinMount(creator.fs, mount, file); err != nil {
 		_ = file.Close()
 		return nil, nil, err
 	}
@@ -567,6 +607,10 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	if err != nil {
 		return 0, "", err
 	}
+	creator, err := s.creatorFiles(share)
+	if err != nil {
+		return 0, "", err
+	}
 	if !share.IsFolder || !share.Permissions.Upload {
 		return 0, "", ErrPermissionDenied
 	}
@@ -574,26 +618,26 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 		return 0, "", err
 	}
 
-	mount, target, _, err := s.resolveFolderPath(share, relativePath, true)
+	mount, target, _, err := creator.resolveFolderPath(share, relativePath, true)
 	if err != nil {
 		return 0, "", err
 	}
 	if mount.ReadOnly {
 		return 0, "", ErrPermissionDenied
 	}
-	if err := s.mounts.requireWritablePath(target, false); err != nil {
+	if err := creator.mounts.requireWritablePath(target, false); err != nil {
 		return 0, "", err
 	}
 	canReplace := share.Permissions.Delete || share.Permissions.LegacyReplace
 	replacementMode := os.FileMode(0o644)
-	exists, existsErr := s.fs.Exists(target)
+	exists, existsErr := creator.fs.Exists(target)
 	if existsErr != nil {
 		return 0, "", existsErr
 	} else if exists {
 		if !canReplace {
 			return 0, "", ErrPermissionDenied
 		}
-		info, statErr := s.fs.Stat(target)
+		info, statErr := creator.fs.Stat(target)
 		if statErr != nil {
 			return 0, "", statErr
 		}
@@ -602,7 +646,7 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 		}
 		replacementMode = info.Mode().Perm()
 	}
-	parentInfo, err := s.statTarget(filepath.Dir(target))
+	parentInfo, err := creator.statTarget(filepath.Dir(target))
 	if err != nil {
 		return 0, "", err
 	}
@@ -611,20 +655,20 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	}
 
 	temporary := target + ".share." + uuid.New().String()
-	file, err := s.fs.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, replacementMode)
+	file, err := creator.fs.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, replacementMode)
 	if err != nil {
 		return 0, "", err
 	}
-	if err := s.fs.Chmod(temporary, replacementMode); err != nil {
+	if err := creator.fs.Chmod(temporary, replacementMode); err != nil {
 		_ = file.Close()
-		_ = s.fs.Remove(temporary)
+		_ = creator.fs.Remove(temporary)
 		return 0, "", err
 	}
 	complete := false
 	defer func() {
 		_ = file.Close()
 		if !complete {
-			_ = s.fs.Remove(temporary)
+			_ = creator.fs.Remove(temporary)
 		}
 	}()
 
@@ -663,37 +707,37 @@ func (s *shareService) WriteForRecipientPath(ctx context.Context, token string, 
 	if written > share.MaxUploadBytes {
 		return 0, "", ErrShareTooLarge
 	}
-	finalMount, finalPath, _, err := s.resolveFolderPath(share, relativePath, true)
+	finalMount, finalPath, _, err := creator.resolveFolderPath(share, relativePath, true)
 	if err != nil {
 		return 0, "", err
 	}
-	if err := s.mounts.requireWritablePath(finalPath, false); err != nil {
+	if err := creator.mounts.requireWritablePath(finalPath, false); err != nil {
 		return 0, "", err
 	}
 	if finalMount.ReadOnly || finalPath != target {
 		return 0, "", ErrPermissionDenied
 	}
-	if exists, existsErr := s.fs.Exists(finalPath); existsErr != nil {
+	if exists, existsErr := creator.fs.Exists(finalPath); existsErr != nil {
 		return 0, "", existsErr
 	} else if exists {
 		if !canReplace {
 			return 0, "", ErrPermissionDenied
 		}
-		finalInfo, statErr := s.fs.Stat(finalPath)
+		finalInfo, statErr := creator.fs.Stat(finalPath)
 		if statErr != nil {
 			return 0, "", statErr
 		}
 		if finalInfo.IsDir() || !finalInfo.Mode().IsRegular() {
 			return 0, "", ErrNotFile
 		}
-		if err := s.fs.Chmod(temporary, finalInfo.Mode().Perm()); err != nil {
+		if err := creator.fs.Chmod(temporary, finalInfo.Mode().Perm()); err != nil {
 			return 0, "", err
 		}
 	}
 	if canReplace {
-		err = s.fs.Rename(temporary, finalPath)
+		err = creator.fs.Rename(temporary, finalPath)
 	} else {
-		err = s.fs.RenameNoReplace(temporary, finalPath)
+		err = creator.fs.RenameNoReplace(temporary, finalPath)
 		if errors.Is(err, fs.ErrExist) {
 			return 0, "", ErrPermissionDenied
 		}
@@ -716,6 +760,10 @@ func (s *shareService) CreateFolderForRecipient(ctx context.Context, token strin
 	if err != nil {
 		return err
 	}
+	creator, err := s.creatorFiles(share)
+	if err != nil {
+		return err
+	}
 	if !share.IsFolder || !share.Permissions.Manage {
 		return ErrPermissionDenied
 	}
@@ -728,20 +776,20 @@ func (s *shareService) CreateFolderForRecipient(ctx context.Context, token strin
 	}
 	// allowMissing resolves symlinks in the existing part of the path and keeps the
 	// result inside both the mount and the shared folder.
-	mount, target, root, err := s.resolveFolderPath(share, cleanPath, true)
+	mount, target, root, err := creator.resolveFolderPath(share, cleanPath, true)
 	if err != nil {
 		return err
 	}
 	if mount.ReadOnly || !pathWithinRoot(root, target) || target == root {
 		return ErrPermissionDenied
 	}
-	if info, err := s.fs.Lstat(target); err == nil && !info.IsDir() {
+	if info, err := creator.fs.Lstat(target); err == nil && !info.IsDir() {
 		return ErrPathExists
 	}
-	if err := s.mounts.requireWritablePath(target, false); err != nil {
+	if err := creator.mounts.requireWritablePath(target, false); err != nil {
 		return err
 	}
-	return s.fs.MkdirAllWithin(root, filepath.FromSlash(cleanPath), 0o755)
+	return creator.fs.MkdirAllWithin(root, filepath.FromSlash(cleanPath), 0o755)
 }
 
 func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string, relativePath string) error {
@@ -755,10 +803,14 @@ func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string,
 	if err != nil {
 		return err
 	}
+	creator, err := s.creatorFiles(share)
+	if err != nil {
+		return err
+	}
 	if !share.IsFolder || !share.Permissions.Delete {
 		return ErrPermissionDenied
 	}
-	mount, target, root, err := s.resolveFolderPath(share, relativePath, false)
+	mount, target, root, err := creator.resolveFolderPath(share, relativePath, false)
 	if err != nil {
 		return err
 	}
@@ -770,14 +822,14 @@ func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string,
 	if mount.ReadOnly || cleanPath == "" || !pathWithinRoot(root, target) || !pathWithinRoot(root, entryPath) {
 		return ErrPermissionDenied
 	}
-	if err := s.mounts.requireWritablePath(target, true); err != nil {
+	if err := creator.mounts.requireWritablePath(target, true); err != nil {
 		return err
 	}
 	components := strings.Split(cleanPath, "/")
 	current := root
 	for index, component := range components {
 		current = filepath.Join(current, component)
-		info, err := s.fs.Lstat(current)
+		info, err := creator.fs.Lstat(current)
 		if err != nil {
 			return err
 		}
@@ -785,7 +837,7 @@ func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string,
 			if index != len(components)-1 {
 				return ErrPermissionDenied
 			}
-			return s.fs.Remove(current)
+			return creator.fs.Remove(current)
 		}
 		if index < len(components)-1 && !info.IsDir() {
 			return ErrNotDirectory
@@ -794,18 +846,18 @@ func (s *shareService) DeleteForRecipientPath(ctx context.Context, token string,
 			return ErrNotFile
 		}
 	}
-	return s.fs.RemoveAll(entryPath)
+	return creator.fs.RemoveAll(entryPath)
 }
 
-func (s *shareService) resolveFolderPath(share *model.Share, relativePath string, allowMissing bool) (*model.MountPoint, string, string, error) {
+func (f *shareFiles) resolveFolderPath(share *model.Share, relativePath string, allowMissing bool) (*model.MountPoint, string, string, error) {
 	if !share.IsFolder {
 		return nil, "", "", ErrNotDirectory
 	}
-	mount, root, err := s.resolveShareTarget(share)
+	mount, root, err := f.resolveShareTarget(share)
 	if err != nil {
 		return nil, "", "", err
 	}
-	rootInfo, err := s.statTarget(root)
+	rootInfo, err := f.statTarget(root)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -821,7 +873,7 @@ func (s *shareService) resolveFolderPath(share *model.Share, relativePath string
 	}
 	candidate := filepath.Join(root, filepath.FromSlash(cleanPath))
 	if allowMissing {
-		resolved, resolveErr := resolveWritablePathWithinMount(s.fs, mount, candidate)
+		resolved, resolveErr := resolveWritablePathWithinMount(f.fs, mount, candidate)
 		if resolveErr != nil {
 			return nil, "", "", resolveErr
 		}
@@ -830,7 +882,7 @@ func (s *shareService) resolveFolderPath(share *model.Share, relativePath string
 		}
 		return mount, resolved, root, nil
 	}
-	resolved, resolveErr := resolveExistingPathWithinMount(s.fs, mount, candidate)
+	resolved, resolveErr := resolveExistingPathWithinMount(f.fs, mount, candidate)
 	if resolveErr != nil {
 		return nil, "", "", resolveErr
 	}
@@ -858,18 +910,37 @@ func cleanShareRelativePath(relativePath string) (string, error) {
 	return cleaned, nil
 }
 
+// shareFiles reaches user files as one account.
+type shareFiles struct {
+	fs     filesystem.FS
+	mounts *mounts
+}
+
+// creatorFiles is file access as the share's creator. A creator who lost file
+// access makes the link look missing, like any other unresolvable share.
+func (s *shareService) creatorFiles(share *model.Share) (*shareFiles, error) {
+	files, err := s.files(share.CreatedBy)
+	if err != nil {
+		if errors.Is(err, ErrPermissionDenied) {
+			return nil, ErrShareNotFound
+		}
+		return nil, err
+	}
+	return &shareFiles{fs: files, mounts: newMounts(files, s.mountList)}, nil
+}
+
 // resolveShareTarget re-resolves a share's mount-relative path against the live
 // mount list. A mount that no longer exists makes the share unresolvable, which
 // is reported as ErrShareNotFound so recipients see a uniform failure.
-func (s *shareService) resolveShareTarget(share *model.Share) (*model.MountPoint, string, error) {
-	mount, fsPath, err := s.mounts.resolve(share.MountName+"/"+share.RelPath, readExisting)
+func (f *shareFiles) resolveShareTarget(share *model.Share) (*model.MountPoint, string, error) {
+	mount, fsPath, err := f.mounts.resolve(share.MountName+"/"+share.RelPath, readExisting)
 	if err != nil {
 		if errors.Is(err, ErrMountPointNotFound) || errors.Is(err, ErrPathNotFound) || errors.Is(err, ErrPermissionDenied) {
 			return nil, "", ErrShareNotFound
 		}
 		return nil, "", err
 	}
-	info, err := s.statTarget(fsPath)
+	info, err := f.statTarget(fsPath)
 	if err != nil {
 		if errors.Is(err, ErrPathNotFound) {
 			return nil, "", ErrShareNotFound
@@ -885,37 +956,37 @@ func (s *shareService) resolveShareTarget(share *model.Share) (*model.MountPoint
 // statTarget stats a resolved share target, mapping a missing file to
 // ErrPathNotFound across both the OS and in-memory filesystems (whose Stat
 // errors do not uniformly satisfy fs.ErrNotExist).
-func (s *shareService) statTarget(fsPath string) (fs.FileInfo, error) {
-	exists, err := s.fs.Exists(fsPath)
+func (f *shareFiles) statTarget(fsPath string) (fs.FileInfo, error) {
+	exists, err := f.fs.Exists(fsPath)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
 		return nil, ErrPathNotFound
 	}
-	return s.fs.Stat(fsPath)
+	return f.fs.Stat(fsPath)
 }
 
 // secureExistingStore tightens storage created by earlier BoxBox versions
 // before its bearer tokens can be served.
 func (s *shareService) secureExistingStore() error {
-	exists, err := s.fs.Exists(s.filePath)
+	exists, err := s.store.Exists(s.filePath)
 	if err != nil || !exists {
 		return err
 	}
-	if err := s.fs.Chmod(filepath.Dir(s.filePath), 0o700); err != nil {
+	if err := s.store.Chmod(filepath.Dir(s.filePath), 0o700); err != nil {
 		return err
 	}
-	return s.fs.Chmod(s.filePath, 0o600)
+	return s.store.Chmod(s.filePath, 0o600)
 }
 
 func (s *shareService) loadLocked() *sharesData {
 	data := &sharesData{Shares: []shareRecord{}}
-	exists, err := s.fs.Exists(s.filePath)
+	exists, err := s.store.Exists(s.filePath)
 	if err != nil || !exists {
 		return data
 	}
-	file, err := s.fs.ReadFile(s.filePath)
+	file, err := s.store.ReadFile(s.filePath)
 	if err != nil {
 		log.Warn().Err(err).Str("path", s.filePath).Msg("Could not read shares file, starting empty")
 		return data
@@ -932,10 +1003,10 @@ func (s *shareService) loadLocked() *sharesData {
 
 func (s *shareService) saveLocked(data *sharesData) error {
 	directory := filepath.Dir(s.filePath)
-	if err := s.fs.MkdirAll(directory, 0o700); err != nil {
+	if err := s.store.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-	if err := s.fs.Chmod(directory, 0o700); err != nil {
+	if err := s.store.Chmod(directory, 0o700); err != nil {
 		return err
 	}
 	fileData, err := json.MarshalIndent(data, "", "  ")
@@ -945,19 +1016,19 @@ func (s *shareService) saveLocked(data *sharesData) error {
 	// Write to a temporary sibling, then rename so a crash mid-write can never
 	// leave a half-written shares file behind.
 	temporary := s.filePath + ".tmp." + uuid.New().String()
-	if err := s.fs.WriteFile(temporary, fileData, 0o600); err != nil {
-		_ = s.fs.Remove(temporary)
+	if err := s.store.WriteFile(temporary, fileData, 0o600); err != nil {
+		_ = s.store.Remove(temporary)
 		return err
 	}
-	if err := s.fs.Chmod(temporary, 0o600); err != nil {
-		_ = s.fs.Remove(temporary)
+	if err := s.store.Chmod(temporary, 0o600); err != nil {
+		_ = s.store.Remove(temporary)
 		return err
 	}
-	if err := s.fs.Rename(temporary, s.filePath); err != nil {
-		_ = s.fs.Remove(temporary)
+	if err := s.store.Rename(temporary, s.filePath); err != nil {
+		_ = s.store.Remove(temporary)
 		return err
 	}
-	return s.fs.Chmod(s.filePath, 0o600)
+	return s.store.Chmod(s.filePath, 0o600)
 }
 
 func generateShareToken() (string, error) {

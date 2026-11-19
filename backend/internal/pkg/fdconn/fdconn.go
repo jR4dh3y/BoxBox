@@ -61,18 +61,25 @@ type Conn struct {
 // Pair returns a connected socket pair: one end as a Conn and the other as a
 // file to hand to another process.
 func Pair() (*Conn, *os.File, error) {
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET|syscall.SOCK_CLOEXEC, 0)
+	local, peer, err := SocketPair()
 	if err != nil {
-		return nil, nil, fmt.Errorf("fdconn: socketpair: %w", err)
+		return nil, nil, err
 	}
-	local := os.NewFile(uintptr(fds[0]), "fdconn")
-	peer := os.NewFile(uintptr(fds[1]), "fdconn-peer")
 	conn, err := New(local)
 	if err != nil {
 		_ = peer.Close()
 		return nil, nil, err
 	}
 	return conn, peer, nil
+}
+
+// SocketPair returns both ends as files, for when neither end stays here.
+func SocketPair() (*os.File, *os.File, error) {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fdconn: socketpair: %w", err)
+	}
+	return os.NewFile(uintptr(fds[0]), "fdconn"), os.NewFile(uintptr(fds[1]), "fdconn-peer"), nil
 }
 
 // New takes ownership of file, which must be a SOCK_SEQPACKET Unix socket.
