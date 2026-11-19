@@ -120,7 +120,9 @@ type shareRecord struct {
 	CreatedAt      time.Time              `json:"createdAt"`
 	ExpiresAt      time.Time              `json:"expiresAt,omitempty"`
 	Revoked        bool                   `json:"revoked"`
-	CreatedBy      string                 `json:"createdBy"`
+	// RevokedAt is zero for links revoked before it was recorded.
+	RevokedAt time.Time `json:"revokedAt,omitzero"`
+	CreatedBy string    `json:"createdBy"`
 	// Stores written before delete-on-expiry decode as nil, which keeps the file.
 	DeleteOnExpiry *model.ShareFileIdentity `json:"deleteOnExpiry,omitempty"`
 }
@@ -306,7 +308,10 @@ func (s *shareService) Revoke(username string, id string) error {
 	data := s.loadLocked()
 	for i := range data.Shares {
 		if data.Shares[i].ID == id && data.Shares[i].CreatedBy == username {
-			data.Shares[i].Revoked = true
+			if !data.Shares[i].Revoked {
+				data.Shares[i].Revoked = true
+				data.Shares[i].RevokedAt = time.Now().UTC()
+			}
 			data.Shares[i].DeleteOnExpiry = nil
 			return s.saveLocked(data)
 		}

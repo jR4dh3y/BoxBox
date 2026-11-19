@@ -163,8 +163,10 @@ func TestShareExpiryIgnoresSharesThatCannotReachTheFile(t *testing.T) {
 	if _, err := shares.Create(context.Background(), "owner", "media/sub", ShareSettings{}, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	// Expired and revoked shares of the same file are no longer active.
-	createExpiringShare(t, shares, "media/sub-old/file.txt", false)
+	// Shares of the same file that ended before the deadline do not protect it.
+	if _, err := shares.Create(context.Background(), "owner", "media/sub-old/file.txt", ShareSettings{}, time.Now().Add(30*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
 	revoked, err := shares.Create(context.Background(), "owner", "media/sub-old/file.txt", ShareSettings{}, time.Time{})
 	if err != nil {
 		t.Fatal(err)
@@ -175,6 +177,53 @@ func TestShareExpiryIgnoresSharesThatCannotReachTheFile(t *testing.T) {
 
 	shares.deleteExpiredFiles(afterExpiry())
 	assertFileExists(t, fsys, "/data/media/sub-old/file.txt", false)
+}
+
+// The result must not depend on whether the server was running at the deadline.
+func TestShareExpiryKeepsFileSharedAtTheDeadlineAfterDowntime(t *testing.T) {
+	tests := []struct {
+		name  string
+		other func(t *testing.T, shares *shareService, deadline time.Time) func(now time.Time)
+	}{
+		{"link that expired before the late pass", func(t *testing.T, shares *shareService, deadline time.Time) func(time.Time) {
+			if _, err := shares.Create(context.Background(), "owner", "media/file.txt", ShareSettings{}, deadline.Add(time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			return func(time.Time) {}
+		}},
+		{"link revoked after the deadline", func(t *testing.T, shares *shareService, deadline time.Time) func(time.Time) {
+			other, err := shares.Create(context.Background(), "owner", "media/file.txt", ShareSettings{}, time.Time{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return func(now time.Time) {
+				shares.mu.Lock()
+				defer shares.mu.Unlock()
+				data := shares.loadLocked()
+				for i := range data.Shares {
+					if data.Shares[i].ID == other.ID {
+						data.Shares[i].Revoked = true
+						data.Shares[i].RevokedAt = now
+					}
+				}
+				if err := shares.saveLocked(data); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := filesystem.NewMemMapFS()
+			setupShareTestFS(fsys)
+			shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+			expiring := createExpiringShare(t, shares, "media/file.txt", true)
+			test.other(t, shares, expiring.ExpiresAt)(expiring.ExpiresAt.Add(30 * time.Minute))
+
+			shares.deleteExpiredFiles(afterExpiry())
+			assertFileExists(t, fsys, "/data/media/file.txt", true)
+		})
+	}
 }
 
 func TestShareExpiryRevokeNeverDeletes(t *testing.T) {

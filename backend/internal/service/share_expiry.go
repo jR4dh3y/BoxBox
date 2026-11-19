@@ -114,7 +114,7 @@ func (s *shareService) deleteExpiredFiles(now time.Time) {
 		// Reread the store and resolve each active link again right before each
 		// deletion, so a link added by another process or a retargeted symlink
 		// still protects the file.
-		reaches := s.activeShareReachesLocked(s.loadLocked(), now)
+		reaches := s.activeShareReachesLocked(s.loadLocked(), record.ExpiresAt, now)
 		logger := log.With().
 			Str("share", record.ID).
 			Str("owner", record.CreatedBy).
@@ -221,10 +221,13 @@ type shareReach struct {
 	unknown bool
 }
 
-func (s *shareService) activeShareReachesLocked(data *sharesData, now time.Time) []shareReach {
+// activeShareReachesLocked returns the links active at the expired share's
+// deadline or now. Checking the deadline keeps the result the same when the
+// server was down at the deadline and another link expired in the meantime.
+func (s *shareService) activeShareReachesLocked(data *sharesData, deadline, now time.Time) []shareReach {
 	reaches := make([]shareReach, 0, len(data.Shares))
 	for _, record := range data.Shares {
-		if record.Revoked || isExpired(record.ExpiresAt, now) {
+		if !activeAt(record, deadline) && !activeAt(record, now) {
 			continue
 		}
 		reach := shareReach{virtualPath: shareVirtualPath(record), folder: record.IsFolder}
@@ -262,6 +265,14 @@ func (r shareReach) covers(target expiringTarget) bool {
 	}
 	return reachVirtual == virtualPath || r.realPath == target.realPath ||
 		(r.id.known() && r.id == target.file)
+}
+
+// activeAt reports whether a link could be used at t. A link revoked before
+// RevokedAt was recorded was revoked before delete-on-expiry existed, so it
+// cannot overlap a delete-on-expiry deadline.
+func activeAt(record shareRecord, t time.Time) bool {
+	return !record.CreatedAt.After(t) && !isExpired(record.ExpiresAt, t) &&
+		(!record.Revoked || record.RevokedAt.After(t))
 }
 
 func shareVirtualPath(record shareRecord) string {
