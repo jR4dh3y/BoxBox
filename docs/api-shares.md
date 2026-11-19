@@ -20,6 +20,18 @@ Content-Type: application/json
 
 Full-access folder links set `manage`, `upload`, and `delete` to `true`. `manage` permits folder creation and empty file edits. File links cannot grant these capabilities.
 
+### Delete a File When Its Link Expires
+
+Set `"deleteOnExpiry": true` to delete the shared file when the link expires. It is off by default. The request needs a file, not a folder or a symlink, on a writable mount, and an `expiresInSeconds` value. Otherwise it returns `400`, or `403` for a read-only mount. `expiresInSeconds` cannot exceed 100 years.
+
+A background job checks expired links every minute, and once when the server starts, so a link that expired while the server was down is handled at startup. Each link gets one attempt. The job deletes the file only if all of these are true at that moment:
+
+- The path still names the same file. The server compares size and modification time, and also device and inode on Unix systems. A file that was edited, renamed, or replaced is kept.
+- The mount still exists and is writable.
+- No other active link reaches the file. That includes a link to the same file, a folder link that contains it, and links through another mount name for the same folder. A file kept for this reason stays, even after the other link ends.
+
+Every other outcome keeps the file, and the server logs each deletion and each kept file. Revoking a link never deletes its file. Create and list responses report `deleteOnExpiry`; recipient metadata does not.
+
 Response uses `201 Created`:
 
 ```json
@@ -32,7 +44,8 @@ Response uses `201 Created`:
   "maxUploadBytes": 104857600,
   "isFolder": true,
   "createdAt": "2026-09-02T09:00:00Z",
-  "expiresAt": "2026-09-02T10:00:00Z"
+  "expiresAt": "2026-09-02T10:00:00Z",
+  "deleteOnExpiry": false
 }
 ```
 
@@ -42,7 +55,7 @@ Response uses `201 Created`:
 GET /api/v1/shares
 ```
 
-Returns only the authenticated caller's active (non-revoked, non-expired) shares. Each entry includes the `token`, `url`, `fileName`, mount-relative `path`, `permissions`, `maxUploadBytes`, `isFolder`, and expiry.
+Returns only the authenticated caller's active (non-revoked, non-expired) shares. Each entry includes the `token`, `url`, `fileName`, mount-relative `path`, `permissions`, `maxUploadBytes`, `isFolder`, expiry, and `deleteOnExpiry`.
 
 ## Update a Folder Share
 

@@ -133,6 +133,7 @@ Share links expose one file or a folder tree to anyone holding the token URL:
 - Unknown, expired, and revoked tokens all return the same `404`, so recipients cannot probe why a link stopped working.
 - Share management is scoped to the creating account: users can list, update, and revoke only their own links.
 - Owners can revoke a link at any time; expiry is optional (`expiresInSeconds` at creation). A revocation that completes during an upload prevents that upload from being published.
+- A file link can delete its file when it expires (`deleteOnExpiry`, off by default; files on writable mounts only). The background job makes one attempt per link. It keeps the file unless the path still names the same file (size, modification time, and device and inode on Unix), the mount is writable, and no other active link reaches the file. The removal runs through an opened mount root, so it cannot leave the mount, and it removes only that file. Revoking a link never deletes its file. Each deletion and each kept file is logged.
 - Shared targets are re-resolved against the current mount configuration on every recipient access. Removed or renamed mounts invalidate the link, and a mount that became read-only still serves reads while denying uploads or deletes.
 - Recipient downloads and previews carry the same sandboxed `Content-Security-Policy` as the app's streaming endpoints, and active document formats (HTML, SVG, XML) are forced to download instead of rendering inline.
 - Folder uploads are capped by both the per-link `maxUploadBytes` and server `max_upload_mb` limits. Upload-only links cannot replace existing items; delete permission also permits replacement and deletion below (never at) the shared root.
@@ -141,7 +142,7 @@ Share links expose one file or a folder tree to anyone holding the token URL:
 - Anyone holding an active share link can view the owner's stored wallpaper. The browser keeps the wallpaper owner marker and cancels pending synchronization when the authenticated session ends.
 - Recipient metadata responses never include mount names or internal paths.
 - The share store directory is restricted to owner access (`0700`) and its token-bearing `shares.json` file to `0600`, including existing stores when the service initializes.
-- Before downgrading to a version predating split upload/delete permissions, back up `shares.json`; older versions cannot preserve the new per-link permissions and upload caps if they rewrite the store.
+- Before downgrading to a version predating split upload/delete permissions, back up `shares.json`; older versions cannot preserve the new per-link permissions and upload caps if they rewrite the store. An older version that rewrites the store also drops `deleteOnExpiry`, so those files are kept.
 
 ## Operational Checklist
 
