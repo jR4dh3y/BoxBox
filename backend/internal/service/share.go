@@ -42,8 +42,12 @@ type ShareService interface {
 	List(username string) ([]model.Share, error)
 	// Update changes the permissions and upload limit on one of the user's folder shares.
 	Update(username string, id string, settings ShareUpdateSettings) (*model.Share, error)
-	// Revoke permanently disables one of the user's shares by ID.
+	// Revoke permanently disables one of the user's shares by ID. It never
+	// deletes the shared file, even when the share would delete it on expiry.
 	Revoke(username string, id string) error
+	// StartExpiryCleanup deletes the files of expired delete-on-expiry shares
+	// now and then periodically until ctx ends.
+	StartExpiryCleanup(ctx context.Context)
 	// ResolveForRecipient returns the share for a token, or ErrShareNotFound for
 	// unknown, expired, or revoked tokens.
 	ResolveForRecipient(token string) (*model.Share, error)
@@ -70,9 +74,11 @@ type ShareService interface {
 }
 
 // ShareSettings contains the recipient capabilities and per-link upload limit.
+// DeleteOnExpiry deletes a shared file when the link expires.
 type ShareSettings struct {
 	Permissions    model.SharePermissions
 	MaxUploadBytes int64
+	DeleteOnExpiry bool
 }
 
 // ShareUpdateSettings distinguishes an omitted upload limit from an explicit one.
@@ -115,6 +121,8 @@ type shareRecord struct {
 	ExpiresAt      time.Time              `json:"expiresAt,omitempty"`
 	Revoked        bool                   `json:"revoked"`
 	CreatedBy      string                 `json:"createdBy"`
+	// Stores written before delete-on-expiry decode as nil, which keeps the file.
+	DeleteOnExpiry *model.ShareFileIdentity `json:"deleteOnExpiry,omitempty"`
 }
 
 type sharesData struct {
@@ -194,6 +202,16 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 			return nil, err
 		}
 	}
+	var deleteOnExpiry *model.ShareFileIdentity
+	if settings.DeleteOnExpiry {
+		if isFolder || !expiresAt.After(time.Now()) {
+			return nil, ErrInvalidOperation
+		}
+		deleteOnExpiry, err = s.identifyDeletableFile(path, mount, fsPath)
+		if err != nil {
+			return nil, err
+		}
+	}
 	mountRoot, err := s.fs.EvalSymlinks(mount.Path)
 	if err != nil {
 		return nil, err
@@ -222,6 +240,7 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		CreatedAt:      time.Now().UTC(),
 		ExpiresAt:      expiresAt,
 		CreatedBy:      username,
+		DeleteOnExpiry: deleteOnExpiry,
 	}
 
 	s.mu.Lock()
@@ -283,6 +302,7 @@ func (s *shareService) Revoke(username string, id string) error {
 	for i := range data.Shares {
 		if data.Shares[i].ID == id && data.Shares[i].CreatedBy == username {
 			data.Shares[i].Revoked = true
+			data.Shares[i].DeleteOnExpiry = nil
 			return s.saveLocked(data)
 		}
 	}
@@ -987,6 +1007,7 @@ func toShareRecord(share model.Share) shareRecord {
 		ExpiresAt:      share.ExpiresAt,
 		Revoked:        share.Revoked,
 		CreatedBy:      share.CreatedBy,
+		DeleteOnExpiry: share.DeleteOnExpiry,
 	}
 }
 
@@ -1010,6 +1031,7 @@ func fromShareRecord(record shareRecord) model.Share {
 		ExpiresAt:      record.ExpiresAt,
 		Revoked:        record.Revoked,
 		CreatedBy:      record.CreatedBy,
+		DeleteOnExpiry: record.DeleteOnExpiry,
 	}
 	if !share.IsFolder {
 		share.Permissions = model.SharePermissions{View: true, Download: true}

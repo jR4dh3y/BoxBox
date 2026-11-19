@@ -60,6 +60,11 @@ type FS interface {
 	// keeping the mutation confined even if a parent is replaced by a symlink.
 	MkdirAllWithin(root, path string, perm os.FileMode) error
 
+	// RemoveFileWithin removes the entry at path below an already resolved root
+	// after verify accepts its Lstat info. The check and the removal resolve path
+	// through the same opened root, so neither can leave it.
+	RemoveFileWithin(root, path string, verify func(fs.FileInfo) error) error
+
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
 
@@ -379,6 +384,44 @@ func (a *AferoFS) MkdirAllWithin(root, path string, perm os.FileMode) error {
 	}
 	// MemMapFs has no symlinks or external filesystem writers.
 	return a.fs.MkdirAll(filepath.Join(root, filepath.Clean("/"+path)), perm)
+}
+
+func (a *AferoFS) RemoveFileWithin(root, path string, verify func(fs.FileInfo) error) error {
+	if err := validateFilesystemPath(root); err != nil {
+		return err
+	}
+	if err := validateFilesystemPath(path); err != nil {
+		return err
+	}
+	if !fs.ValidPath(filepath.ToSlash(path)) {
+		return errInvalidFilesystemPath
+	}
+	root = filepath.Clean("/" + root)
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		directory, err := os.OpenRoot(root)
+		if err != nil {
+			return err
+		}
+		defer directory.Close()
+		info, err := directory.Lstat(path)
+		if err != nil {
+			return err
+		}
+		if err := verify(info); err != nil {
+			return err
+		}
+		return directory.Remove(path)
+	}
+	// MemMapFs has no symlinks or external filesystem writers.
+	target := filepath.Join(root, filepath.Clean("/"+path))
+	info, err := a.Lstat(target)
+	if err != nil {
+		return err
+	}
+	if err := verify(info); err != nil {
+		return err
+	}
+	return a.fs.Remove(target)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.

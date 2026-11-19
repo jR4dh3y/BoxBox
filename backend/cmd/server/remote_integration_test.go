@@ -29,7 +29,7 @@ func TestRemoteProductionTLSJourney(t *testing.T) {
 	upstreamRoot := t.TempDir()
 	os.WriteFile(filepath.Join(upstreamRoot, "hello.txt"), []byte("Hello remote"), 0600)
 	cfg := &model.ServerConfig{Host: "127.0.0.1", DataDir: t.TempDir(), JWTSecret: "integration-test-secret", Users: map[string]string{"alice": string(hash)}, MountPoints: []model.MountPoint{{Name: "files", Path: upstreamRoot}}, MaxUploadMB: 10, ChunkSizeMB: 1}
-	upstream, _, jobs, auth, stream, err := initializeServer(cfg, false, false)
+	upstream, _, jobs, auth, stream, _, err := initializeServer(cfg, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

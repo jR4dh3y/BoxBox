@@ -82,6 +82,18 @@ type Share struct {
 	ExpiresAt      time.Time        `json:"expiresAt,omitempty"` // zero means never
 	Revoked        bool             `json:"revoked"`
 	CreatedBy      string           `json:"createdBy"`
+	// DeleteOnExpiry is set when the shared file is deleted as the link expires.
+	// It names the exact file, so a changed or replaced file is kept.
+	DeleteOnExpiry *ShareFileIdentity `json:"-"`
+}
+
+// ShareFileIdentity identifies the file a share was created for. Device and
+// Inode are zero on platforms without a stable file ID.
+type ShareFileIdentity struct {
+	Size    int64     `json:"size"`
+	ModTime time.Time `json:"modTime"`
+	Device  uint64    `json:"device,omitempty"`
+	Inode   uint64    `json:"inode,omitempty"`
 }
 
 // CreateShareRequest is the request body for creating a share link.
@@ -91,6 +103,9 @@ type CreateShareRequest struct {
 	Permissions      SharePermissions `json:"permissions"`
 	MaxUploadBytes   int64            `json:"maxUploadBytes,omitempty"`
 	ExpiresInSeconds *int64           `json:"expiresInSeconds,omitempty"`
+	// DeleteOnExpiry deletes the shared file when the link expires. It needs a
+	// file on a writable mount and an expiry.
+	DeleteOnExpiry bool `json:"deleteOnExpiry,omitempty"`
 }
 
 // UpdateShareRequest changes the access granted by an active folder share.
@@ -110,6 +125,7 @@ type ShareResponse struct {
 	IsFolder       bool                     `json:"isFolder"`
 	CreatedAt      time.Time                `json:"createdAt"`
 	ExpiresAt      time.Time                `json:"expiresAt,omitempty"`
+	DeleteOnExpiry bool                     `json:"deleteOnExpiry"`
 }
 
 // ShareSummary is one active share in the owner's share list
@@ -124,6 +140,7 @@ type ShareSummary struct {
 	IsFolder       bool                     `json:"isFolder"`
 	CreatedAt      time.Time                `json:"createdAt"`
 	ExpiresAt      time.Time                `json:"expiresAt,omitempty"`
+	DeleteOnExpiry bool                     `json:"deleteOnExpiry"`
 }
 
 // ShareListResponse is the owner's list of active shares
