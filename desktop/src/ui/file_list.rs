@@ -24,16 +24,27 @@ impl Workspace {
             .flex()
             .flex_col()
             .bg(self.file_background())
-            .child(FileListHeader::new(pane.sort).unsorted(pane.shows_ranked()).background(self.chrome_background()).on_sort({
-                let workspace = cx.entity().downgrade();
-                move |field, _, _, cx| {
-                    let _ = workspace.update(cx, |this, cx| {
-                        this.active_pane = target;
-                        let next = this.pane().sort.toggled(field);
-                        this.choose_sort(target, next, cx);
-                    });
-                }
-            }))
+            .child(
+                FileListHeader::new(pane.sort)
+                    .unsorted(pane.shows_ranked())
+                    .background(self.chrome_background())
+                    .columns(self.preferences.list_columns, target.0, {
+                        let workspace = cx.entity().downgrade();
+                        move |columns, _, cx| {
+                            let _ = workspace.update(cx, |this, cx| this.resize_columns(columns, cx));
+                        }
+                    })
+                    .on_sort({
+                        let workspace = cx.entity().downgrade();
+                        move |field, _, _, cx| {
+                            let _ = workspace.update(cx, |this, cx| {
+                                this.active_pane = target;
+                                let next = this.pane().sort.toggled(field);
+                                this.choose_sort(target, next, cx);
+                            });
+                        }
+                    }),
+            )
             .when_some(placeholder, |list, (glyph, message)| {
                 list.child(
                     div()
@@ -69,6 +80,26 @@ impl Workspace {
             .child(self.pointer_layer(target, window, cx))
     }
 
+    /// Sets the list's column widths in every pane, and saves them once a drag
+    /// has rested, not at every step.
+    fn resize_columns(&mut self, columns: crate::components::ColumnShares, cx: &mut Context<Self>) {
+        if self.preferences.list_columns == columns {
+            return;
+        }
+        self.preferences.list_columns = columns;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(std::time::Duration::from_millis(400)).await;
+            this.update(cx, |this, cx| {
+                if this.preferences.list_columns == columns {
+                    this.save_preferences(cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn render_row(&self, target: PaneTarget, index: usize, cx: &mut Context<Self>) -> Option<FileRow> {
         let pane = self.pane_by_id(target.0)?;
         let item = pane.items.get(index)?;
@@ -89,7 +120,8 @@ impl Workspace {
             .active(pane.active == Some(index))
             .cut(self.is_cut(pane, item))
             .drop_target(self.drop_hover(cx) == Some(&folder))
-            .zoom(self.preferences.list_zoom);
+            .zoom(self.preferences.list_zoom)
+            .columns(self.preferences.list_columns);
         let row = match self.renaming(target, &item.path) {
             true => row.editor(crate::components::rename_box(self.rename_field.clone())),
             false => row,

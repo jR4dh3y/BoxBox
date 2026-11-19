@@ -102,6 +102,8 @@ pub(crate) struct Preferences {
     pub window_controls_in_tab_bar: bool,
     /// The Details panel at the right (F11).
     pub details_panel: bool,
+    /// The list's column widths, as last dragged.
+    pub list_columns: crate::components::ColumnShares,
 }
 
 /// What a window opens on when it is launched without a folder.
@@ -156,6 +158,7 @@ impl Default for Preferences {
             #[cfg(windows)]
             window_controls_in_tab_bar: true,
             details_panel: false,
+            list_columns: crate::components::ColumnShares::default(),
         }
     }
 }
