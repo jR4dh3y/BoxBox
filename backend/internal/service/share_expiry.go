@@ -244,7 +244,11 @@ type expiringTarget struct {
 
 // hostMount is one mount from the host's mount table.
 type hostMount struct {
-	path string
+	// id and parent place the mount in the mount tree, which decides which of
+	// several mounts at or above a path is visible there.
+	id     string
+	parent string
+	path   string
 	// device and root name what the mount shows: a folder (or file) of the
 	// filesystem on device. Two mounts of one folder share both.
 	device string
@@ -262,13 +266,7 @@ type mountedFolder struct {
 // holds them, as the mount table would. It reads only the table, so no mount
 // is touched.
 func mountedFoldersOf(mounts []hostMount, entry string) []mountedFolder {
-	var holder *hostMount
-	for i := range mounts {
-		// A later entry for the same mount point covers the earlier one.
-		if pathWithinRoot(mounts[i].path, entry) && (holder == nil || len(mounts[i].path) >= len(holder.path)) {
-			holder = &mounts[i]
-		}
-	}
+	holder := visibleMountAt(mounts, entry)
 	if holder == nil {
 		return nil
 	}
@@ -283,6 +281,51 @@ func mountedFoldersOf(mounts []hostMount, entry string) []mountedFolder {
 			return names
 		}
 	}
+}
+
+// visibleMountAt returns the mount that shows path, or nil when the table has
+// no root. It walks the mount tree from the root: at each mount, the child
+// with the shortest mount point on the way to path is on top, since a mount
+// below it would have been made on it instead. That skips mounts hidden by a
+// later mount over one of their parent folders.
+func visibleMountAt(mounts []hostMount, path string) *hostMount {
+	var current *hostMount
+	for i := range mounts {
+		if mounts[i].path == "/" && !hasChildAt(mounts, mounts[i].id, "/") {
+			current = &mounts[i]
+		}
+	}
+	// Each step goes one mount deeper, so a well-formed table ends within its
+	// own length; the bound stops a malformed table that loops.
+	for range len(mounts) {
+		if current == nil {
+			return nil
+		}
+		var next *hostMount
+		for i := range mounts {
+			mount := &mounts[i]
+			if mount.parent != current.id || mount.id == current.id || !pathWithinRoot(mount.path, path) {
+				continue
+			}
+			if next == nil || len(mount.path) <= len(next.path) {
+				next = mount
+			}
+		}
+		if next == nil {
+			return current
+		}
+		current = next
+	}
+	return nil
+}
+
+func hasChildAt(mounts []hostMount, parent string, path string) bool {
+	for _, mount := range mounts {
+		if mount.parent == parent && mount.id != parent && mount.path == path {
+			return true
+		}
+	}
+	return false
 }
 
 // shareReach is the part of the mounts one active share exposes.
@@ -361,9 +404,14 @@ func (s *shareService) resolveReach(record shareRecord, mounts []hostMount) shar
 func mountsInside(mounts []hostMount, folder string) []mountedFolder {
 	var nested []mountedFolder
 	for _, mount := range mounts {
-		if mount.path != folder && pathWithinRoot(folder, mount.path) {
-			nested = append(nested, mountedFolder{device: mount.device, path: mount.root})
+		if mount.path == folder || !pathWithinRoot(folder, mount.path) {
+			continue
 		}
+		// A hidden mount shows nothing inside the folder.
+		if visible := visibleMountAt(mounts, mount.path); visible == nil || visible.id != mount.id {
+			continue
+		}
+		nested = append(nested, mountedFolder{device: mount.device, path: mount.root})
 	}
 	return nested
 }

@@ -17,9 +17,9 @@ func TestParseHostMounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []hostMount{
-		{path: "/", device: "8:2", root: "/"},
-		{path: "/home", device: "0:45", root: "/@home"},
-		{path: "/mnt/my files", device: "8:2", root: "/srv/my files"},
+		{id: "22", parent: "1", path: "/", device: "8:2", root: "/"},
+		{id: "40", parent: "22", path: "/home", device: "0:45", root: "/@home"},
+		{id: "41", parent: "22", path: "/mnt/my files", device: "8:2", root: "/srv/my files"},
 	}
 	if len(mounts) != len(want) {
 		t.Fatalf("parseHostMounts() = %+v, want %+v", mounts, want)

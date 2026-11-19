@@ -70,6 +70,8 @@ func parseHostMounts(r io.Reader) ([]hostMount, error) {
 			continue
 		}
 		mounts = append(mounts, hostMount{
+			id:     fields[0],
+			parent: fields[1],
 			path:   filepath.Clean(decodeMountField(fields[4])),
 			device: fields[2],
 			root:   filepath.Clean(decodeMountField(fields[3])),

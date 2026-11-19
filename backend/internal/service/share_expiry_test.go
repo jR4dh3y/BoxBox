@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -621,13 +622,13 @@ func TestShareExpiryStopWaitsForARunningPass(t *testing.T) {
 
 func TestShareReachCoversFolderMountedBelowSharedFolder(t *testing.T) {
 	mounts := []hostMount{
-		{path: "/", device: "8:1", root: "/"},
-		{path: "/srv", device: "8:2", root: "/"},
+		{id: "1", parent: "0", path: "/", device: "8:1", root: "/"},
+		{id: "2", parent: "1", path: "/srv", device: "8:2", root: "/"},
 		// /srv/files/photos is also mounted at /srv/shared/photos.
-		{path: "/srv/shared/photos", device: "8:2", root: "/files/photos"},
-		{path: "/srv/shared/music", device: "8:2", root: "/files/music"},
+		{id: "3", parent: "2", path: "/srv/shared/photos", device: "8:2", root: "/files/photos"},
+		{id: "4", parent: "2", path: "/srv/shared/music", device: "8:2", root: "/files/music"},
 		// A single file bind-mounted inside the shared folder.
-		{path: "/srv/shared/a.jpg", device: "8:2", root: "/files/photos/a.jpg"},
+		{id: "5", parent: "2", path: "/srv/shared/a.jpg", device: "8:2", root: "/files/photos/a.jpg"},
 	}
 	target := expiringTarget{
 		virtualPath: "files/photos/a.jpg",
@@ -649,7 +650,7 @@ func TestShareReachCoversFolderMountedBelowSharedFolder(t *testing.T) {
 			t.Errorf("%s: covers() = %v, want %v", test.name, got, test.want)
 		}
 	}
-	fileMount := shareReach{virtualPath: "x", realPath: "/srv/shared", folder: true, nested: mountsInside(mounts[4:], "/srv/shared")}
+	fileMount := shareReach{virtualPath: "x", realPath: "/srv/shared", folder: true, nested: mountsInside(append(mounts[:2:2], mounts[4]), "/srv/shared")}
 	if !fileMount.covers(target) {
 		t.Error("covers() with the file bind-mounted inside the folder = false")
 	}
@@ -684,8 +685,9 @@ func TestShareExpiryKeepsFileReachedThroughMountBelowSharedFolder(t *testing.T) 
 	now := afterExpiry()
 	// The mount table says files/photos is also mounted at shared/photos.
 	mounts := []hostMount{
-		{path: media, device: "0:99", root: "/"},
-		{path: filepath.Join(media, "shared", "photos"), device: "0:99", root: "/files/photos"},
+		{id: "1", parent: "0", path: "/", device: "0:1", root: "/"},
+		{id: "2", parent: "1", path: media, device: "0:99", root: "/"},
+		{id: "3", parent: "2", path: filepath.Join(media, "shared", "photos"), device: "0:99", root: "/files/photos"},
 	}
 
 	links := newShareLinks(shares, shares.loadLocked().Shares, mounts)
@@ -695,10 +697,51 @@ func TestShareExpiryKeepsFileReachedThroughMountBelowSharedFolder(t *testing.T) 
 	assertDiskFileExists(t, filepath.Join(photos, "a.jpg"), true)
 
 	// Without the nested mount, nothing else reaches the file.
-	mounts = mounts[:1]
+	mounts = mounts[:2]
 	links = newShareLinks(shares, shares.loadLocked().Shares, mounts)
 	if err := shares.deleteExpiredFile(record, links.protecting(record.ExpiresAt, now), mounts); err != nil {
 		t.Fatalf("deleteExpiredFile() without the mount = %v", err)
 	}
 	assertDiskFileExists(t, filepath.Join(photos, "a.jpg"), false)
+}
+
+func TestVisibleMountAtSkipsHiddenMounts(t *testing.T) {
+	mounts := []hostMount{
+		{id: "1", parent: "0", path: "/", device: "8:1", root: "/"},
+		{id: "2", parent: "1", path: "/files", device: "8:2", root: "/"},
+		{id: "3", parent: "2", path: "/files/photos", device: "8:2", root: "/photos"},
+		// A later mount over /files hides mount 3.
+		{id: "4", parent: "2", path: "/files", device: "8:3", root: "/"},
+		{id: "5", parent: "1", path: "/shared", device: "8:4", root: "/"},
+		// The visible /files/photos is also mounted at /shared/photos.
+		{id: "6", parent: "5", path: "/shared/photos", device: "8:3", root: "/photos"},
+	}
+	if got := visibleMountAt(mounts, "/files/photos/a.jpg"); got == nil || got.id != "4" {
+		t.Fatalf("visibleMountAt() = %+v, want mount 4", got)
+	}
+	if got := visibleMountAt(mounts, "/elsewhere"); got == nil || got.id != "1" {
+		t.Fatalf("visibleMountAt() = %+v, want the root mount", got)
+	}
+	target := expiringTarget{
+		virtualPath: "files/photos/a.jpg",
+		realPath:    "/files/photos/a.jpg",
+		shownAs:     mountedFoldersOf(mounts, "/files/photos/a.jpg"),
+	}
+	shared := shareReach{virtualPath: "shared", realPath: "/shared", folder: true, nested: mountsInside(mounts, "/shared")}
+	if !shared.covers(target) {
+		t.Fatal("covers() = false for the visible folder mounted inside the shared folder")
+	}
+	// Mount 3 is hidden, so it shows nothing inside /files.
+	if nested := mountsInside(mounts, "/"); slices.Contains(nested, mountedFolder{device: "8:2", path: "/photos"}) {
+		t.Fatalf("mountsInside() = %+v, includes the hidden mount", nested)
+	}
+}
+
+func TestVisibleMountAtStopsOnALoopingTable(t *testing.T) {
+	mounts := []hostMount{
+		{id: "1", parent: "0", path: "/", device: "8:1", root: "/"},
+		{id: "2", parent: "3", path: "/a", device: "8:2", root: "/"},
+		{id: "3", parent: "2", path: "/a", device: "8:2", root: "/"},
+	}
+	visibleMountAt(mounts, "/a/b")
 }
