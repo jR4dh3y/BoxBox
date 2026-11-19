@@ -82,8 +82,9 @@ func (s *shareService) StartExpiryCleanup(ctx context.Context) {
 // deleteExpiredFiles makes one deletion attempt for each delete-on-expiry
 // share that has expired. The flag is cleared and saved before any file is
 // touched, so a crash during the pass keeps the file instead of retrying it.
-// A failed save touches no file and leaves the flag for the next pass, since
-// no decision about the file was made. Holding the lock keeps Create and
+// A failed save touches no file. If the store was not replaced, the flag stays
+// for the next pass, since no decision about the file was made; if only the
+// final permission change failed, the flag is already cleared and the file kept. Holding the lock keeps Create and
 // Revoke out of the pass.
 func (s *shareService) deleteExpiredFiles(now time.Time) {
 	if s.storageErr != nil {

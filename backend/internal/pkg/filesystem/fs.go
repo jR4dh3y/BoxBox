@@ -450,21 +450,15 @@ func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInf
 	return err
 }
 
-// restoreEntry moves from back to to without replacing an entry at to.
+// restoreEntry moves from back to to without replacing an entry at to. Link is
+// the only no-replace move os.Root offers; where it fails, the entry stays at
+// from, because a checked rename could still overwrite a file created between
+// the check and the rename.
 func restoreEntry(directory *os.Root, from, to string) error {
-	err := directory.Link(from, to)
-	if err == nil {
-		return directory.Remove(from)
-	}
-	if errors.Is(err, fs.ErrExist) {
+	if err := directory.Link(from, to); err != nil {
 		return err
 	}
-	// The filesystem has no hard links. A plain rename is the best remaining
-	// option once the name is still free.
-	if _, statErr := directory.Lstat(to); !errors.Is(statErr, fs.ErrNotExist) {
-		return errors.Join(err, fs.ErrExist)
-	}
-	return directory.Rename(from, to)
+	return directory.Remove(from)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.
