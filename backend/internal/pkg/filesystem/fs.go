@@ -449,12 +449,14 @@ func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInf
 	if err := folder.Rename(name, aside); err != nil {
 		return err
 	}
-	err = folderStillAt(directory, folder, filepath.Dir(path))
-	if err == nil {
-		info, err = folder.Lstat(aside)
-	}
+	info, err = folder.Lstat(aside)
 	if err == nil {
 		err = verify(info)
+	}
+	// Checked last, right before removal, to leave the smallest window for a
+	// folder move.
+	if err == nil {
+		err = folderStillAt(directory, folder, filepath.Dir(path))
 	}
 	if err == nil {
 		if err = folder.Remove(aside); err == nil {

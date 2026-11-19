@@ -430,3 +430,36 @@ func TestRemoveFileWithinKeepsFileWhoseFolderBecameASymlink(t *testing.T) {
 	}
 	assertOnlyEntries(t, filepath.Join(root, "shared", "a"), "file.txt")
 }
+
+func TestRemoveFileWithinKeepsFileWhoseFolderMovesDuringTheFinalCheck(t *testing.T) {
+	root := t.TempDir()
+	for _, folder := range []string{"a", "shared"} {
+		if err := os.Mkdir(filepath.Join(root, folder), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "a", "file.txt"), []byte("shared"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	err := NewOsFS().RemoveFileWithin(root, filepath.Join("a", "file.txt"), func(fs.FileInfo) error {
+		calls++
+		if calls == 2 {
+			if err := os.Rename(filepath.Join(root, "a"), filepath.Join(root, "shared", "a")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join("shared", "a"), filepath.Join(root, "a")); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		t.Fatal("RemoveFileWithin() removed a file whose folder moved during the final check")
+	}
+	data, err := os.ReadFile(filepath.Join(root, "shared", "a", "file.txt"))
+	if err != nil || string(data) != "shared" {
+		t.Fatalf("moved file = %q, %v; want it kept", data, err)
+	}
+	assertOnlyEntries(t, filepath.Join(root, "shared", "a"), "file.txt")
+}
