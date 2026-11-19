@@ -48,6 +48,9 @@ type ShareService interface {
 	// StartExpiryCleanup deletes the files of expired delete-on-expiry shares
 	// now and then periodically until ctx ends.
 	StartExpiryCleanup(ctx context.Context)
+	// StopExpiryCleanup waits for the cleanup to return after its ctx ends, so
+	// shutdown never interrupts a file that is being removed.
+	StopExpiryCleanup()
 	// ResolveForRecipient returns the share for a token, or ErrShareNotFound for
 	// unknown, expired, or revoked tokens.
 	ResolveForRecipient(token string) (*model.Share, error)
@@ -103,6 +106,7 @@ type shareService struct {
 	mounts         *mounts
 	storageErr     error
 	mu             sync.RWMutex
+	cleanup        sync.WaitGroup
 }
 
 // shareRecord is the persistence shape for a share. It is separate from

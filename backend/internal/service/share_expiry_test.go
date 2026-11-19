@@ -548,3 +548,73 @@ func TestShareExpiryKeepsFileForLinkSavedWhileCleanupWaited(t *testing.T) {
 	shares.deleteExpiredFiles(now)
 	assertFileExists(t, fsys, "/data/media/file.txt", true)
 }
+
+// statFailFS fails Stat for one path once armed, as a transient I/O error would.
+type statFailFS struct {
+	filesystem.FS
+	path  string
+	armed bool
+}
+
+func (f *statFailFS) Stat(name string) (os.FileInfo, error) {
+	if f.armed && filepath.Clean(name) == f.path {
+		return nil, errors.New("input/output error")
+	}
+	return f.FS.Stat(name)
+}
+
+func TestShareExpiryKeepsFileWhenAnIdentityCheckFails(t *testing.T) {
+	tests := []struct {
+		name     string
+		failPath string
+	}{
+		// The other link resolves, but its target cannot be identified.
+		{name: "other link target", failPath: "/data/archive"},
+		// A folder above the file cannot be identified.
+		{name: "folder above the file", failPath: "/data"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mem := filesystem.NewMemMapFS()
+			setupShareTestFS(mem)
+			fsys := &statFailFS{FS: mem, path: test.failPath}
+			shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+			createExpiringShare(t, shares, "media/file.txt", true)
+			if _, err := shares.Create(context.Background(), "owner", "archive", ShareSettings{}, time.Time{}); err != nil {
+				t.Fatal(err)
+			}
+
+			fsys.armed = true
+			shares.deleteExpiredFiles(afterExpiry())
+			assertFileExists(t, mem, "/data/media/file.txt", true)
+		})
+	}
+}
+
+func TestShareExpiryStopWaitsForARunningPass(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+
+	// Hold the lock so the first pass blocks inside the cleanup goroutine.
+	shares.mu.Lock()
+	ctx, cancel := context.WithCancel(context.Background())
+	shares.StartExpiryCleanup(ctx)
+	cancel()
+	stopped := make(chan struct{})
+	go func() {
+		shares.StopExpiryCleanup()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		t.Fatal("StopExpiryCleanup returned while a pass was running")
+	case <-time.After(50 * time.Millisecond):
+	}
+	shares.mu.Unlock()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StopExpiryCleanup did not return after the pass finished")
+	}
+}

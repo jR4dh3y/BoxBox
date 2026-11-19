@@ -149,7 +149,7 @@ func main() {
 	}
 
 	// Wait for shutdown signal
-	waitForShutdown(cancel, server, jobService, authService, streamHandler, *desktopMode)
+	waitForShutdown(cancel, server, jobService, authService, streamHandler, shareService, *desktopMode)
 }
 
 // initializeServer creates and configures all server components
@@ -397,7 +397,7 @@ func createRouter(
 }
 
 // waitForShutdown handles graceful shutdown on interrupt signals
-func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService service.JobService, authService service.AuthService, streamHandler *handler.StreamHandler, desktopMode bool) {
+func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService service.JobService, authService service.AuthService, streamHandler *handler.StreamHandler, shareService service.ShareService, desktopMode bool) {
 	// Create channel to receive OS signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -435,4 +435,5 @@ func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService 
 	// Stop background cleanups
 	authService.StopCleanup()
 	streamHandler.StopCleanup()
+	shareService.StopExpiryCleanup()
 }

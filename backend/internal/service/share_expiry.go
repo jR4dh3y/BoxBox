@@ -65,7 +65,7 @@ func sameFile(want model.ShareFileIdentity, info fs.FileInfo) bool {
 }
 
 func (s *shareService) StartExpiryCleanup(ctx context.Context) {
-	go func() {
+	s.cleanup.Go(func() {
 		ticker := time.NewTicker(config.ShareExpiryCleanupInterval)
 		defer ticker.Stop()
 		for {
@@ -76,7 +76,11 @@ func (s *shareService) StartExpiryCleanup(ctx context.Context) {
 			case <-ticker.C:
 			}
 		}
-	}()
+	})
+}
+
+func (s *shareService) StopExpiryCleanup() {
+	s.cleanup.Wait()
 }
 
 // deleteExpiredFiles makes one deletion attempt for each delete-on-expiry
@@ -161,11 +165,15 @@ func (s *shareService) deleteExpiredFile(record shareRecord, reaches []shareReac
 		return errExpiryFileChanged
 	}
 	identity := *record.DeleteOnExpiry
+	folders, err := s.folderKeysAbove(entry)
+	if err != nil {
+		return err
+	}
 	target := expiringTarget{
 		virtualPath: shareVirtualPath(record),
 		realPath:    entry,
 		file:        fileKey{device: identity.Device, inode: identity.Inode},
-		folders:     s.folderKeysAbove(entry),
+		folders:     folders,
 	}
 	for _, reach := range reaches {
 		if reach.covers(target) {
@@ -196,17 +204,20 @@ func (k fileKey) known() bool { return k.inode != 0 }
 
 // folderKeysAbove returns the identity of every folder that contains realPath,
 // up to the filesystem root. A folder bind-mounted at two paths has one
-// identity, so a link through either path is found.
-func (s *shareService) folderKeysAbove(realPath string) []fileKey {
+// identity, so a link through either path is found. A folder that cannot be
+// checked could be the one a link shares, so an error keeps the file.
+func (s *shareService) folderKeysAbove(realPath string) ([]fileKey, error) {
 	var keys []fileKey
 	for folder := filepath.Dir(realPath); ; folder = filepath.Dir(folder) {
-		if info, err := s.fs.Stat(folder); err == nil {
-			if key := keyOf(info); key.known() {
-				keys = append(keys, key)
-			}
+		info, err := s.fs.Stat(folder)
+		if err != nil {
+			return nil, err
+		}
+		if key := keyOf(info); key.known() {
+			keys = append(keys, key)
 		}
 		if parent := filepath.Dir(folder); parent == folder {
-			return keys
+			return keys, nil
 		}
 	}
 }
@@ -269,9 +280,13 @@ func (s *shareService) resolveReach(record shareRecord) shareReach {
 	switch {
 	case err == nil:
 		reach.realPath = realPath
-		if info, statErr := s.fs.Stat(realPath); statErr == nil {
-			reach.id = keyOf(info)
+		info, statErr := s.fs.Stat(realPath)
+		if statErr != nil {
+			// Without its identity the link might reach the file another way.
+			reach.unknown = true
+			break
 		}
+		reach.id = keyOf(info)
 	case errors.Is(err, ErrMountPointNotFound), errors.Is(err, ErrPathNotFound), errors.Is(err, ErrPermissionDenied):
 		// The share cannot serve anything now; its logical path still protects the file.
 	default:
