@@ -30,3 +30,8 @@ func DiscoverMountPoints(fs filesystem.FS, mountPoints []model.MountPoint) []mod
 	return result
 }
 
+// mountPointPaths has no mount table to read here. Bind mounts are a Linux
+// feature, so identity checks of shared folders cover the remaining cases.
+func mountPointPaths() ([]string, error) {
+	return nil, nil
+}

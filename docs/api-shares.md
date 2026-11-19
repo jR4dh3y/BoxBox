@@ -28,7 +28,7 @@ A background job checks expired links every minute, and once when the server sta
 
 - The path still names the same file. The server compares size and modification time, and also device and inode on Unix systems. A file that was edited, renamed, or replaced is kept.
 - The mount still exists and is writable.
-- No other link reaches the file, counting links active at the expiry time as well as now, so a server that was down at the expiry decides the same way. That includes a link to the same file, a folder link that contains it, links through another mount name for the same folder, and, on Unix systems, links through a hard link to the file or a bind mount of a folder that contains it. A file kept for this reason stays, even after the other link ends.
+- No other link reaches the file, counting links active at the expiry time as well as now, so a server that was down at the expiry decides the same way. That includes a link to the same file, a folder link that contains it, links through another mount name for the same folder, and, on Unix systems, links through a hard link to the file or a bind mount of a folder that contains it, including a folder mounted inside another shared folder. If the server cannot read its mount table, it keeps the file. A file kept for this reason stays, even after the other link ends.
 
 The file is moved aside before the final check, so a save that replaces it at that moment is kept. Every other outcome keeps the file, and the server logs each deletion and each kept file. Revoking a link never deletes its file. Create and list responses report `deleteOnExpiry`; recipient metadata does not.
 

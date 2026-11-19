@@ -618,3 +618,74 @@ func TestShareExpiryStopWaitsForARunningPass(t *testing.T) {
 		t.Fatal("StopExpiryCleanup did not return after the pass finished")
 	}
 }
+
+func TestShareReachCoversFolderMountedBelowSharedFolder(t *testing.T) {
+	file := fileKey{device: 1, inode: 11}
+	photos := fileKey{device: 1, inode: 10}
+	target := expiringTarget{
+		virtualPath: "files/photos/a.jpg",
+		realPath:    "/srv/files/photos/a.jpg",
+		file:        file,
+		folders:     []fileKey{photos, {device: 1, inode: 2}},
+	}
+	shared := shareReach{virtualPath: "shared", realPath: "/srv/shared", id: fileKey{device: 1, inode: 20}, folder: true}
+	if shared.covers(target) {
+		t.Fatal("covers() without a mount below the shared folder = true")
+	}
+	shared.mounted = []fileKey{photos}
+	if !shared.covers(target) {
+		t.Fatal("covers() with the file's folder mounted below the shared folder = false")
+	}
+	shared.mounted = []fileKey{file}
+	if !shared.covers(target) {
+		t.Fatal("covers() with the file bind-mounted below the shared folder = false")
+	}
+}
+
+func TestShareExpiryKeepsFileReachedThroughMountBelowSharedFolder(t *testing.T) {
+	shares, media := newDiskExpiryTestService(t)
+	media, err := filepath.EvalSymlinks(media)
+	if err != nil {
+		t.Fatal(err)
+	}
+	photos := filepath.Join(media, "files", "photos")
+	if err := os.MkdirAll(photos, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(photos, "a.jpg"), []byte("photo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(media, "shared"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Stat follows a symlink as it follows a mount, so this stands in for
+	// photos bind-mounted at shared/photos.
+	mountPoint := filepath.Join(media, "shared", "photos")
+	if err := os.Symlink(photos, mountPoint); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	expiring := createExpiringShare(t, shares, "media/files/photos/a.jpg", true)
+	if _, err := shares.Create(context.Background(), "owner", "media/shared", ShareSettings{}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	var record shareRecord
+	for _, stored := range shares.loadLocked().Shares {
+		if stored.ID == expiring.ID {
+			record = stored
+		}
+	}
+	now := afterExpiry()
+
+	links := newShareLinks(shares, shares.loadLocked().Shares, []string{mountPoint})
+	if err := shares.deleteExpiredFile(record, links.protecting(record.ExpiresAt, now)); !errors.Is(err, errExpiryFileShared) {
+		t.Fatalf("deleteExpiredFile() with the mount = %v, want %v", err, errExpiryFileShared)
+	}
+	assertDiskFileExists(t, filepath.Join(photos, "a.jpg"), true)
+
+	// Without the mount, nothing else reaches the file.
+	links = newShareLinks(shares, shares.loadLocked().Shares, nil)
+	if err := shares.deleteExpiredFile(record, links.protecting(record.ExpiresAt, now)); err != nil {
+		t.Fatalf("deleteExpiredFile() without the mount = %v", err)
+	}
+	assertDiskFileExists(t, filepath.Join(photos, "a.jpg"), false)
+}

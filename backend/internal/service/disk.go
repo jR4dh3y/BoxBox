@@ -5,6 +5,7 @@ package service
 import (
 	"bufio"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -40,6 +41,39 @@ func getMountInfo() ([]mountInfo, error) {
 		}
 	}
 	return mounts, scanner.Err()
+}
+
+// mountPointPaths lists the host's mount points.
+func mountPointPaths() ([]string, error) {
+	mounts, err := getMountInfo()
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(mounts))
+	for _, mount := range mounts {
+		paths = append(paths, unescapeMountPath(mount.MountPoint))
+	}
+	return paths, nil
+}
+
+// unescapeMountPath decodes the octal escapes /proc/mounts uses for space,
+// tab, newline, and backslash in a mount point.
+func unescapeMountPath(path string) string {
+	if !strings.Contains(path, `\`) {
+		return path
+	}
+	var out strings.Builder
+	for i := 0; i < len(path); i++ {
+		if path[i] == '\\' && i+3 < len(path) {
+			if value, err := strconv.ParseUint(path[i+1:i+4], 8, 8); err == nil {
+				out.WriteByte(byte(value))
+				i += 3
+				continue
+			}
+		}
+		out.WriteByte(path[i])
+	}
+	return out.String()
 }
 
 // findMountPoint finds the mount point for a given path
