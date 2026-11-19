@@ -186,7 +186,7 @@ impl FileTile {
 }
 
 impl RenderOnce for FileTile {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let Selection { background, hover, accent } = self.selection;
         let metrics = self.metrics;
         let group = SharedString::from(format!("file-tile-{}", self.id));
@@ -228,17 +228,25 @@ impl RenderOnce for FileTile {
                 Some(editor) => label.child(div().text_size(px(13.)).child(editor)),
                 // text-[13px] leading-4, two lines at most, and always two lines tall, so
                 // the size under it lines up across a row (issue #186).
-                None => label.child(
-                    div()
-                        .w_full()
-                        .text_center()
-                        .text_size(px(13.))
-                        .line_height(px(16.))
-                        .line_clamp(2)
-                        .h(px(32.))
-                        .text_color(c(TEXT_PRIMARY))
-                        .child(self.name),
-                ),
+                None => {
+                    let font = cx.try_global::<super::UiFont>().map_or_else(|| window.text_style().font(), |ui| gpui::font(ui.0.clone()));
+                    // The tile's border and padding.
+                    let width = metrics.tile_width - 18.;
+                    let (first, second) = super::tile_label::lines(&self.name, width, &font, 13., window);
+                    label.child(
+                        div()
+                            .w_full()
+                            .h(px(32.))
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .text_size(px(13.))
+                            .line_height(px(16.))
+                            .text_color(c(TEXT_PRIMARY))
+                            .child(div().whitespace_nowrap().child(first))
+                            .children(second.map(|second| div().whitespace_nowrap().child(second))),
+                    )
+                }
             })
             .child(
                 // mt-0.5 truncate text-[11px] leading-3.5. GPUI's ellipsis collapses centred

@@ -20,6 +20,7 @@ mod settings;
 mod sidebar;
 pub mod skeleton;
 mod text_field;
+mod tile_label;
 mod toast;
 mod toggle;
 mod tooltip;
