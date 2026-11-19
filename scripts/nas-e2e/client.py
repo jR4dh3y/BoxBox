@@ -174,20 +174,34 @@ check(supervisor_caps == "00000000000000c0", f"supervisor keeps only SETUID and 
 with open(f"{TANK}/shared/big.bin", "wb") as big:
     big.truncate(512 << 20)
 os.chown(f"{TANK}/shared/big.bin", 3000, 4000)
-status, job = request("POST", "/jobs", alice, {"type": "copy", "sourcePath": "tank/shared/big.bin", "destPath": "tank/alice/big.bin"})
-# Kill only once the copy is moving and not yet done, so the check really
-# interrupts it.
-progress, deadline = None, time.time() + 30
-while time.time() < deadline:
-    _, progress = request("GET", "/jobs/" + job["id"], alice)
-    if progress.get("state") != "pending" and 0 < progress.get("progress", 0) < 100:
-        break
-    time.sleep(0.01)
-alice_worker = next(pid for pid, (uid, cmd, _, _) in processes().items() if uid == 3000 and "--nas-worker" in cmd)
-os.kill(alice_worker, signal.SIGKILL)
-check(progress.get("state") == "running" and 0 < progress.get("progress", 0) < 100, f"worker killed mid-copy ({progress.get('state')}, {progress.get('progress')}%)")
-job = wait_job(alice, job["id"], timeout=120)
-size = os.path.getsize(f"{TANK}/alice/big.bin") if os.path.exists(f"{TANK}/alice/big.bin") else -1
+
+
+def kill_worker_mid_copy(attempts=5):
+    """Kills alice's worker while a copy is running. A copy that finishes before
+    progress is seen proves nothing, so it is retried with a fresh destination."""
+    for attempt in range(attempts):
+        dest = f"tank/alice/big-{attempt}.bin"
+        status, job = request("POST", "/jobs", alice, {"type": "copy", "sourcePath": "tank/shared/big.bin", "destPath": dest})
+        if status not in (200, 201, 202):
+            return None, dest, {"state": status}
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            _, progress = request("GET", "/jobs/" + job["id"], alice)
+            if progress.get("state") in ("completed", "failed", "cancelled"):
+                break
+            if progress.get("state") == "running" and 0 < progress.get("progress", 0) < 100:
+                worker = next(pid for pid, (uid, cmd, _, _) in processes().items() if uid == 3000 and "--nas-worker" in cmd)
+                os.kill(worker, signal.SIGKILL)
+                return job, dest, progress
+            time.sleep(0.01)
+    return None, None, {"state": f"no copy was caught running in {attempts} attempts"}
+
+
+job, dest, progress = kill_worker_mid_copy()
+check(job is not None, f"worker killed mid-copy ({progress.get('state')}, {progress.get('progress')}%)")
+job = wait_job(alice, job["id"], timeout=120) if job else {"state": "not started"}
+target = f"{ROOT}/{dest}" if dest else ""
+size = os.path.getsize(target) if dest and os.path.exists(target) else -1
 if job["state"] == "completed":
     check(size == 512 << 20, f"copy finished after its worker was killed, with every byte ({size})")
 else:
