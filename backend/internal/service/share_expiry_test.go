@@ -394,3 +394,48 @@ func TestShareExpiryKeepsFileSwappedForSymlink(t *testing.T) {
 	assertDiskFileExists(t, target, true)
 	assertDiskFileExists(t, other, true)
 }
+
+func TestShareExpiryKeepsFileReachedThroughHardLink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no persisted file ID")
+	}
+	shares, media := newDiskExpiryTestService(t)
+	if err := os.Link(filepath.Join(media, "file.txt"), filepath.Join(media, "alias.txt")); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	createExpiringShare(t, shares, "media/file.txt", true)
+	if _, err := shares.Create(context.Background(), "owner", "media/alias.txt", ShareSettings{}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+
+	shares.deleteExpiredFiles(afterExpiry())
+	assertDiskFileExists(t, filepath.Join(media, "file.txt"), true)
+}
+
+func TestShareReachCoversFolderByIdentity(t *testing.T) {
+	// A folder bind-mounted at two paths: neither the mount path nor the real
+	// path matches, but the folder identity does.
+	folder := fileKey{device: 1, inode: 10}
+	target := expiringTarget{
+		virtualPath: "copy/photos/a.jpg",
+		realPath:    "/mnt/copy/photos/a.jpg",
+		file:        fileKey{device: 1, inode: 11},
+		folders:     []fileKey{folder, {device: 1, inode: 2}},
+	}
+	tests := []struct {
+		name  string
+		reach shareReach
+		want  bool
+	}{
+		{"same folder", shareReach{virtualPath: "media/photos", realPath: "/srv/media/photos", id: folder, folder: true}, true},
+		{"same file", shareReach{virtualPath: "media/photos/a.jpg", realPath: "/srv/media/photos/a.jpg", id: target.file}, true},
+		{"file identity is not a folder", shareReach{virtualPath: "media/photos", realPath: "/srv/media/photos", id: target.file, folder: true}, false},
+		{"other folder", shareReach{virtualPath: "media/music", realPath: "/srv/media/music", id: fileKey{device: 1, inode: 12}, folder: true}, false},
+		{"unknown identity", shareReach{virtualPath: "media/photos", realPath: "/srv/media/photos", folder: true}, false},
+	}
+	for _, test := range tests {
+		if got := test.reach.covers(target); got != test.want {
+			t.Errorf("%s: covers() = %v, want %v", test.name, got, test.want)
+		}
+	}
+}

@@ -245,6 +245,11 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// The expiry pass holds the lock while it deletes, so a target checked
+	// above may be gone now. Check again before handing out a link to it.
+	if _, err := s.statTarget(fsPath); err != nil {
+		return nil, err
+	}
 	data := s.loadLocked()
 	data.Shares = append(data.Shares, toShareRecord(share))
 	if err := s.saveLocked(data); err != nil {

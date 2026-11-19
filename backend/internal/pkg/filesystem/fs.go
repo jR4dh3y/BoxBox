@@ -4,7 +4,9 @@
 package filesystem
 
 import (
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -62,7 +64,9 @@ type FS interface {
 
 	// RemoveFileWithin removes the entry at path below an already resolved root
 	// after verify accepts its Lstat info. The check and the removal resolve path
-	// through the same opened root, so neither can leave it.
+	// through the same opened root, so neither can leave it. On disk the entry is
+	// moved aside before the final check, so an entry that replaces path during
+	// the call is never removed. verify may run more than once.
 	RemoveFileWithin(root, path string, verify func(fs.FileInfo) error) error
 
 	// MkdirAll creates a directory named path, along with any necessary parents.
@@ -403,14 +407,7 @@ func (a *AferoFS) RemoveFileWithin(root, path string, verify func(fs.FileInfo) e
 			return err
 		}
 		defer directory.Close()
-		info, err := directory.Lstat(path)
-		if err != nil {
-			return err
-		}
-		if err := verify(info); err != nil {
-			return err
-		}
-		return directory.Remove(path)
+		return removeVerifiedEntry(directory, path, verify)
 	}
 	// MemMapFs has no symlinks or external filesystem writers.
 	target := filepath.Join(root, filepath.Clean("/"+path))
@@ -422,6 +419,52 @@ func (a *AferoFS) RemoveFileWithin(root, path string, verify func(fs.FileInfo) e
 		return err
 	}
 	return a.fs.Remove(target)
+}
+
+// removeVerifiedEntry renames path to a private sibling and checks that entry,
+// so a save that replaces path after the check cannot be the entry removed.
+// A rejected entry goes back to path unless something new has taken its name.
+func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInfo) error) error {
+	info, err := directory.Lstat(path)
+	if err != nil {
+		return err
+	}
+	// Checking first leaves a changed file in place instead of moving it twice.
+	if err := verify(info); err != nil {
+		return err
+	}
+	aside := filepath.Join(filepath.Dir(path), ".boxbox-removing-"+rand.Text())
+	if err := directory.Rename(path, aside); err != nil {
+		return err
+	}
+	info, err = directory.Lstat(aside)
+	if err == nil {
+		err = verify(info)
+	}
+	if err == nil {
+		return directory.Remove(aside)
+	}
+	if restoreErr := restoreEntry(directory, aside, path); restoreErr != nil {
+		return fmt.Errorf("%w; entry left at %s: %w", err, aside, restoreErr)
+	}
+	return err
+}
+
+// restoreEntry moves from back to to without replacing an entry at to.
+func restoreEntry(directory *os.Root, from, to string) error {
+	err := directory.Link(from, to)
+	if err == nil {
+		return directory.Remove(from)
+	}
+	if errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	// The filesystem has no hard links. A plain rename is the best remaining
+	// option once the name is still free.
+	if _, statErr := directory.Lstat(to); !errors.Is(statErr, fs.ErrNotExist) {
+		return errors.Join(err, fs.ErrExist)
+	}
+	return directory.Rename(from, to)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.

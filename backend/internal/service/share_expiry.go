@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
@@ -80,8 +81,10 @@ func (s *shareService) StartExpiryCleanup(ctx context.Context) {
 
 // deleteExpiredFiles makes one deletion attempt for each delete-on-expiry
 // share that has expired. The flag is cleared and saved before any file is
-// touched, so a crash or a failed save keeps the file instead of retrying a
-// deletion later. Holding the lock keeps Create and Revoke out of the pass.
+// touched, so a crash during the pass keeps the file instead of retrying it.
+// A failed save touches no file and leaves the flag for the next pass, since
+// no decision about the file was made. Holding the lock keeps Create and
+// Revoke out of the pass.
 func (s *shareService) deleteExpiredFiles(now time.Time) {
 	if s.storageErr != nil {
 		return
@@ -107,8 +110,11 @@ func (s *shareService) deleteExpiredFiles(now time.Time) {
 		return
 	}
 
-	reaches := s.activeShareReachesLocked(data, now)
 	for _, record := range due {
+		// Reread the store and resolve each active link again right before each
+		// deletion, so a link added by another process or a retargeted symlink
+		// still protects the file.
+		reaches := s.activeShareReachesLocked(s.loadLocked(), now)
 		logger := log.With().
 			Str("share", record.ID).
 			Str("owner", record.CreatedBy).
@@ -143,12 +149,18 @@ func (s *shareService) deleteExpiredFile(record shareRecord, reaches []shareReac
 	if filepath.Join(root, relPath) != entry {
 		return errExpiryFileChanged
 	}
+	identity := *record.DeleteOnExpiry
+	target := expiringTarget{
+		virtualPath: shareVirtualPath(record),
+		realPath:    entry,
+		file:        fileKey{device: identity.Device, inode: identity.Inode},
+		folders:     s.folderKeysAbove(entry),
+	}
 	for _, reach := range reaches {
-		if reach.covers(record, entry) {
+		if reach.covers(target) {
 			return errExpiryFileShared
 		}
 	}
-	identity := *record.DeleteOnExpiry
 	return s.fs.RemoveFileWithin(root, relPath, func(info fs.FileInfo) error {
 		if !sameFile(identity, info) {
 			return errExpiryFileChanged
@@ -157,12 +169,54 @@ func (s *shareService) deleteExpiredFile(record shareRecord, reaches []shareReac
 	})
 }
 
+// fileKey names a file or folder on this host. It is zero where the platform
+// has no stable file ID.
+type fileKey struct {
+	device uint64
+	inode  uint64
+}
+
+func keyOf(info fs.FileInfo) fileKey {
+	device, inode := fileID(info)
+	return fileKey{device: device, inode: inode}
+}
+
+func (k fileKey) known() bool { return k.inode != 0 }
+
+// folderKeysAbove returns the identity of every folder that contains realPath,
+// up to the filesystem root. A folder bind-mounted at two paths has one
+// identity, so a link through either path is found.
+func (s *shareService) folderKeysAbove(realPath string) []fileKey {
+	var keys []fileKey
+	for folder := filepath.Dir(realPath); ; folder = filepath.Dir(folder) {
+		if info, err := s.fs.Stat(folder); err == nil {
+			if key := keyOf(info); key.known() {
+				keys = append(keys, key)
+			}
+		}
+		if parent := filepath.Dir(folder); parent == folder {
+			return keys
+		}
+	}
+}
+
+// expiringTarget is the file an expired share is about to delete.
+type expiringTarget struct {
+	virtualPath string
+	realPath    string
+	file        fileKey
+	// folders holds the identities of the folders that contain the file.
+	folders []fileKey
+}
+
 // shareReach is the part of the mounts one active share exposes.
 type shareReach struct {
 	virtualPath string
 	// realPath is empty when the target cannot be resolved now.
 	realPath string
-	folder   bool
+	// id is the resolved target's identity, zero when it is unknown.
+	id     fileKey
+	folder bool
 	// unknown is set when an I/O error hid the target; it protects every file.
 	unknown bool
 }
@@ -178,6 +232,9 @@ func (s *shareService) activeShareReachesLocked(data *sharesData, now time.Time)
 		switch {
 		case err == nil:
 			reach.realPath = realPath
+			if info, statErr := s.fs.Stat(realPath); statErr == nil {
+				reach.id = keyOf(info)
+			}
 		case errors.Is(err, ErrMountPointNotFound), errors.Is(err, ErrPathNotFound), errors.Is(err, ErrPermissionDenied):
 			// The share cannot serve anything now; its logical path still protects the file.
 		default:
@@ -188,20 +245,23 @@ func (s *shareService) activeShareReachesLocked(data *sharesData, now time.Time)
 	return reaches
 }
 
-// covers reports whether the active share can reach the expired share's file,
-// either by the same mount name and path or by the resolved real path. The real
-// path catches a configured and a discovered mount name for the same folder.
-func (r shareReach) covers(expired shareRecord, realPath string) bool {
+// covers reports whether the active share can reach the expired share's file:
+// by the same mount name and path, by the resolved real path, or by file and
+// folder identity. The real path catches a configured and a discovered mount
+// name for the same folder; identity catches bind mounts and hard links.
+func (r shareReach) covers(target expiringTarget) bool {
 	if r.unknown {
 		return true
 	}
-	virtualPath := filepath.FromSlash(shareVirtualPath(expired))
+	virtualPath := filepath.FromSlash(target.virtualPath)
 	reachVirtual := filepath.FromSlash(r.virtualPath)
 	if r.folder {
 		return pathWithinRoot(reachVirtual, virtualPath) ||
-			(r.realPath != "" && pathWithinRoot(r.realPath, realPath))
+			(r.realPath != "" && pathWithinRoot(r.realPath, target.realPath)) ||
+			(r.id.known() && slices.Contains(target.folders, r.id))
 	}
-	return reachVirtual == virtualPath || r.realPath == realPath
+	return reachVirtual == virtualPath || r.realPath == target.realPath ||
+		(r.id.known() && r.id == target.file)
 }
 
 func shareVirtualPath(record shareRecord) string {

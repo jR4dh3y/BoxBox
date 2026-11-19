@@ -201,3 +201,77 @@ func TestReadDirFileInfoLimitCountsRawOSEntries(t *testing.T) {
 		t.Fatalf("exact-limit OS read returned %d entries, truncated=%v; want 3 and false", len(entries), truncated)
 	}
 }
+
+func TestRemoveFileWithinKeepsEntryThatReplacesPathDuringRemoval(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "file.txt")
+	if err := os.WriteFile(target, []byte("shared"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.Lstat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errChanged := errors.New("changed")
+	calls := 0
+	err = NewOsFS().RemoveFileWithin(root, "file.txt", func(info fs.FileInfo) error {
+		calls++
+		if calls == 1 {
+			// A save publishes a new version right after the first check passes.
+			staged := filepath.Join(root, "staged.tmp")
+			if err := os.WriteFile(staged, []byte("saved"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(staged, target); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !os.SameFile(original, info) {
+			return errChanged
+		}
+		return nil
+	})
+	if !errors.Is(err, errChanged) {
+		t.Fatalf("RemoveFileWithin() error = %v, want %v", err, errChanged)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "saved" {
+		t.Fatalf("saved version = %q, %v; want it kept", data, err)
+	}
+	assertOnlyEntries(t, root, "file.txt")
+}
+
+func TestRemoveFileWithinRemovesVerifiedEntry(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "media"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "media", "file.txt"), []byte("shared"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := NewOsFS().RemoveFileWithin(root, filepath.Join("media", "file.txt"), func(fs.FileInfo) error { return nil })
+	if err != nil {
+		t.Fatalf("RemoveFileWithin() = %v", err)
+	}
+	assertOnlyEntries(t, filepath.Join(root, "media"))
+}
+
+func assertOnlyEntries(t *testing.T, directory string, want ...string) {
+	t.Helper()
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, entry := range entries {
+		got = append(got, entry.Name())
+	}
+	if len(got) != len(want) {
+		t.Fatalf("entries in %s = %v, want %v", directory, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("entries in %s = %v, want %v", directory, got, want)
+		}
+	}
+}
