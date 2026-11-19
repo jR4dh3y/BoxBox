@@ -151,7 +151,6 @@ impl Workspace {
                 .border_color(c(BORDER_SECONDARY))
                 .text_13()
                 .cursor_default()
-                .hover(|style| style.bg(c(SURFACE_SECONDARY))).active(crate::components::pressed)
                 .child(
                     name_col(cell())
                         .flex()
@@ -187,7 +186,7 @@ impl Workspace {
                         this.open_storage(open.clone(), window, cx);
                     }
                 }));
-            self.with_drive_menu(row, storage, cx)
+            crate::components::motion::interact(("drive-row-feedback", index), self.with_drive_menu(row, storage, cx)).fill(crate::components::motion::hover_fill())
         });
 
         div()

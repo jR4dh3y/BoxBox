@@ -1,12 +1,13 @@
 //! `lib/components/Sidebar.svelte`: a collapsible section and a nav row.
 
-use gpui::{div, prelude::*, px, AnyElement, App, ClickEvent, ElementId, FontWeight, SharedString, Window};
+use gpui::{div, prelude::*, px, AnyElement, AnyView, App, ClickEvent, ElementId, FontWeight, SharedString, Window};
 
 use super::skeleton::{self, Wait};
 use super::{Type, ROUNDED};
 use crate::theme::*;
 use crate::ui::icon;
 
+type CardBuilder = Box<dyn Fn(&mut Window, &mut App) -> AnyView + 'static>;
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 /// A titled block with a bottom border. With `on_toggle` the title is the
@@ -100,6 +101,8 @@ pub struct NavItem {
     badge: Option<&'static str>,
     detail: Option<SharedString>,
     tooltip: Option<SharedString>,
+    /// A richer card than `tooltip`, which it replaces.
+    card: Option<CardBuilder>,
     on_click: Option<ClickHandler>,
     trailing: Option<(&'static str, SharedString, ClickHandler)>,
 }
@@ -119,6 +122,7 @@ impl NavItem {
             badge: None,
             detail: None,
             tooltip: None,
+            card: None,
             on_click: None,
             trailing: None,
         }
@@ -180,6 +184,12 @@ impl NavItem {
         self
     }
 
+    /// A view shown after the pointer rests, in place of the text tooltip.
+    pub fn hover_card(mut self, card: impl Fn(&mut Window, &mut App) -> AnyView + 'static) -> Self {
+        self.card = Some(Box::new(card));
+        self
+    }
+
     /// A small action at the row's end that shows on hover (unpin, eject).
     pub fn trailing(
         mut self,
@@ -200,8 +210,9 @@ impl RenderOnce for NavItem {
         let group = SharedString::from(format!("nav-{}", self.id));
         let detail_selector = format!("{}-detail", self.id);
         let pulse_id = ElementId::Name(format!("{}-pulse", self.id).into());
+        let (feedback_id, disabled) = (self.id.clone(), self.disabled);
         // w-full flex items-center gap-2.5 py-1.5 px-3 pl-5 text-[13px] (pr-9 with an action)
-        div()
+        let row = div()
             .id(self.id)
             .group(group.clone())
             .relative()
@@ -215,7 +226,7 @@ impl RenderOnce for NavItem {
             .type_13()
             .text_color(c(text))
             .when(self.disabled, |row| row.opacity(0.5))
-            .when(!self.disabled, |row| row.cursor_pointer().hover(|style| style.bg(c(SURFACE_SECONDARY))).active(crate::components::pressed))
+            .when(!self.disabled, |row| row.cursor_pointer())
             .when(self.drop_target, |row| row.bg(alpha(ACCENT, 0.25)))
             .child(icon(self.icon, 16., alpha(text, if self.muted { 0.5 } else if self.dim_icon { 0.8 } else { 1. })))
             .child(
@@ -244,7 +255,11 @@ impl RenderOnce for NavItem {
                         label.child(div().ml_auto().flex_none().max_w(px(80.)).truncate().type_11().text_color(c(TEXT_MUTED)).debug_selector(move || detail_selector).child(detail))
                     }),
             )
-            .when_some(self.tooltip, |row, text| row.tooltip(super::Tooltip::text(text)))
+            .map(|row| match (self.card, self.tooltip) {
+                (Some(card), _) => row.tooltip(card),
+                (None, Some(text)) => row.tooltip(super::Tooltip::text(text)),
+                (None, None) => row,
+            })
             .when_some(self.trailing, |row, (glyph, label, handler)| {
                 // absolute top-1 right-2 h-6 w-6 rounded text-text-muted, shown on group hover
                 row.child(
@@ -269,6 +284,8 @@ impl RenderOnce for NavItem {
                         }),
                 )
             })
-            .when_some(self.on_click.filter(|_| !self.disabled), |row, handler| row.on_click(handler))
+            .when_some(self.on_click.filter(|_| !self.disabled), |row, handler| row.on_click(handler));
+        // The hover fill eases in and out, and a click brightens the row (`motion`).
+        super::motion::interact(feedback_id, row).fill(super::motion::hover_fill()).disabled(disabled)
     }
 }

@@ -12,6 +12,7 @@ mod file_grid;
 mod file_list;
 mod input;
 mod modal;
+pub mod motion;
 mod progress_bar;
 mod select;
 mod settings;

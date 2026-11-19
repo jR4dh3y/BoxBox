@@ -92,6 +92,7 @@ impl Workspace {
             (false, true) => gpui::SharedString::default(),
             (false, false) => file_size(item.size).into(),
         })
+        .badge(thumbnail.as_ref().and_then(|_| self.app_badge(&pane.api, &item, crate::components::GridMetrics::new(self.preferences.grid_zoom).theme_icon())))
         .thumbnail(thumbnail)
         .selected(pane.is_selected(&item.path))
         .active(pane.active == Some(index))
@@ -107,6 +108,7 @@ impl Workspace {
             false => tile,
         };
         let (workspace, api) = (cx.entity().downgrade(), pane.api.clone());
+        let card = self.hover_card(target, &item, cx);
         let on_menu = cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
             this.show_item_context_menu(target, index, event.position, window, cx);
             cx.stop_propagation();
@@ -120,8 +122,11 @@ impl Workspace {
         Some(tile.decorate(move |tile| {
             let tile = crate::drag_out::draggable(tile, target, index, workspace.clone(), api);
             let tile = if is_dir { drop_zone(tile, folder, workspace).on_mouse_down(gpui::MouseButton::Middle, on_middle) } else { tile };
-            tile.on_mouse_down(gpui::MouseButton::Right, on_menu)
-                .on_click(on_click)
+            let tile = tile.on_mouse_down(gpui::MouseButton::Right, on_menu).on_click(on_click);
+            match card {
+                Some(card) => tile.tooltip(card),
+                None => tile,
+            }
         }))
     }
 }

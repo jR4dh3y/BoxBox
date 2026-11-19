@@ -308,6 +308,28 @@ pub(crate) fn mix(color: u32, base: u32, amount: f32) -> u32 {
     channel(16) << 16 | channel(8) << 8 | channel(0)
 }
 
+impl Workspace {
+    /// Publishes whether things move, for components that read it while drawing.
+    pub(crate) fn apply_motion(&mut self, cx: &mut Context<Self>) {
+        let enabled = self.preferences.animations && self.desktop_motion != Some(false);
+        cx.set_global(crate::components::motion::Motion { enabled });
+        cx.notify();
+    }
+
+    /// Reads the desktop's animation setting once, off the UI thread.
+    pub(crate) fn follow_desktop_motion(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let desktop = cx.background_executor().spawn(async { crate::components::motion::desktop_enabled() }).await;
+            this.update(cx, |this, cx| {
+                this.desktop_motion = desktop;
+                this.apply_motion(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

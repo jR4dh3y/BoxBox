@@ -91,8 +91,9 @@ impl SettingsTab {
 impl RenderOnce for SettingsTab {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let selector = self.id.to_string();
+        let (feedback_id, active) = (self.id.clone(), self.active);
         // h-8 rounded px-2.5 text-left text-[13px]; active bg-selection text-white
-        div()
+        let tab = div()
             .id(self.id)
             .debug_selector(move || selector)
             .flex()
@@ -108,9 +109,14 @@ impl RenderOnce for SettingsTab {
                 true => tab.bg(self.selection).text_color(c(WHITE)),
                 false => tab
                     .text_color(c(TEXT_SECONDARY))
-                    .hover(|style| style.bg(c(SURFACE_ELEVATED)).text_color(c(TEXT_PRIMARY))).active(crate::components::pressed),
+                    .hover(|style| style.text_color(c(TEXT_PRIMARY))),
             })
             .child(self.label)
-            .when_some(self.on_click, |tab, handler| tab.on_click(handler))
+            .when_some(self.on_click, |tab, handler| tab.on_click(handler));
+        let feedback = super::motion::interact(feedback_id, tab).rounded(ROUNDED);
+        match active {
+            true => feedback,
+            false => feedback.fill(c(SURFACE_ELEVATED)),
+        }
     }
 }

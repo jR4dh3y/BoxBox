@@ -361,7 +361,7 @@ pub(crate) fn permission_string(mode: u32) -> String {
 }
 
 /// Walks the paths without following links. `None` once cancelled.
-fn local_totals(paths: &[PathBuf], cancel: &AtomicBool) -> Option<Totals> {
+pub(crate) fn local_totals(paths: &[PathBuf], cancel: &AtomicBool) -> Option<Totals> {
     let mut totals = Totals::default();
     let mut pending = paths.to_vec();
     while let Some(path) = pending.pop() {

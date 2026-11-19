@@ -10,6 +10,7 @@ mod drives;
 mod drop_menu;
 mod file_grid;
 mod file_list;
+mod hover_card;
 mod jobs;
 mod notifications;
 mod open_with;

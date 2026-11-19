@@ -251,33 +251,34 @@ impl Workspace {
             let focused = field.read(cx).is_focused(window);
             let label = if background == Background::Wallpaper { "Custom color" } else { "Accent color" };
             accent.push(SettingsRow::new(label).control(
-                // A swatch, the hex field (w-24) and Default.
+                // The swatch, the hex field and Reset share the selects' 32px height;
+                // Reset shows only once a custom colour replaces the default.
                 div()
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(div().size(px(20.)).rounded(px(4.)).border_1().border_color(c(BORDER_PRIMARY)).bg(c(self.accent_hex())))
+                    .child(div().size(px(32.)).flex_none().rounded(px(6.)).border_1().border_color(c(BORDER_PRIMARY)).bg(c(self.accent_hex())))
                     .child(
                         div()
                             .id("accent-color-input")
                             .debug_selector(|| "accent-color-input".into())
-                            .w(px(96.))
+                            .w(px(112.))
                             .child(Input::new("").placeholder("#4a9eff").focused(focused).invalid(self.accent_invalid).editor(field)),
                     )
-                    .child(
-                        Button::new("accent-default")
-                            .label("Default")
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Sm)
-                            .disabled(settings.custom_accent.is_none())
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.desktop_settings.custom_accent = None;
-                                this.desktop_settings.accent = AccentColor::default();
-                                this.accent_field.update(cx, |field, cx| field.set_text("", 0..0, cx));
-                                this.accent_invalid = false;
-                                this.save_desktop_settings(cx);
-                            })),
-                    ),
+                    .when(settings.custom_accent.is_some(), |row| {
+                        row.child(
+                            Button::new("accent-default")
+                                .label("Reset")
+                                .variant(ButtonVariant::Secondary)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.desktop_settings.custom_accent = None;
+                                    this.desktop_settings.accent = AccentColor::default();
+                                    this.accent_field.update(cx, |field, cx| field.set_text("", 0..0, cx));
+                                    this.accent_invalid = false;
+                                    this.save_desktop_settings(cx);
+                                })),
+                        )
+                    }),
             ));
         }
         let accent_note = match &self.wallpaper {
@@ -292,10 +293,16 @@ impl Workspace {
         };
 
         // Selects are w-40.
-        let icons = vec![SettingsRow::new("File icons").control(self.select("setting-icons", preferences.file_icons, &IconStyle::OPTIONS, 160., cx, |this, value, cx| {
-            this.preferences.file_icons = value;
-            this.commit_preferences(cx);
-        }))];
+        let icons = vec![
+            SettingsRow::new("File icons").control(self.select("setting-icons", preferences.file_icons, &IconStyle::OPTIONS, 160., cx, |this, value, cx| {
+                this.preferences.file_icons = value;
+                this.commit_preferences(cx);
+            })),
+            SettingsRow::new("Files show their app's icon").control(self.preference_toggle("setting-app-icons", preferences.app_icons, |p| &mut p.app_icons, cx)),
+            SettingsRow::new("Details on hover").control(self.preference_toggle("setting-hover-details", preferences.hover_details, |p| &mut p.hover_details, cx)),
+            // The desktop's own setting also turns them off (`motion`).
+            SettingsRow::new("Animations").control(self.preference_toggle("setting-animations", preferences.animations, |p| &mut p.animations, cx)),
+        ];
         div()
             .flex()
             .flex_col()

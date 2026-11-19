@@ -6,7 +6,7 @@ use std::{rc::Rc, sync::Arc};
 
 use gpui::{anchored, deferred, div, img, point, prelude::*, px, AnchoredPositionMode, AnyElement, App, ClickEvent, ElementId, RenderImage, SharedString, Window};
 
-use super::{Type, ROUNDED_LG};
+use super::{motion, Type, ROUNDED_LG};
 use crate::theme::*;
 use crate::ui::icon;
 
@@ -114,14 +114,18 @@ impl MenuItem {
                 .type_xs()
                 .whitespace_nowrap()
                 .text_color(c(if disabled { TEXT_DISABLED } else { TEXT_PRIMARY }))
-                .when(!disabled, |el| el.cursor_pointer().hover(|style| style.bg(c(SURFACE_SECONDARY))).active(crate::components::pressed))
+                .when(!disabled, |el| el.cursor_pointer())
+        };
+        // The hover fill eases in and out (`motion`), behind an open submenu's own background.
+        let feedback = |id: ElementId, row: gpui::Stateful<gpui::Div>, disabled: bool| {
+            motion::interact(id, row).fill(motion::hover_fill()).disabled(disabled).into_any_element()
         };
         // A long name (an app, a template) ends in an ellipsis inside the panel's max width.
         let label = |text: SharedString| div().flex_1().min_w_0().truncate().child(text);
         match self {
             // mx-2 my-1 h-px bg-border-secondary
             Self::Separator => div().flex_none().mx(px(8.)).my(px(4.)).h(px(1.)).bg(c(BORDER_SECONDARY)).into_any_element(),
-            Self::Action { id, label: text, icon: name, shortcut, disabled, on_select } => row(id, disabled)
+            Self::Action { id, label: text, icon: name, shortcut, disabled, on_select } => feedback(id.clone(), row(id, disabled)
                 .child(glyph(name, disabled))
                 .child(label(text))
                 .when_some(shortcut, |el, keys| el.child(div().type_11().text_color(c(TEXT_MUTED)).child(keys)))
@@ -132,12 +136,12 @@ impl MenuItem {
                         }
                     })
                 })
-                .when_some(on_select.filter(|_| !disabled), |el, handler| el.on_click(handler))
-                .into_any_element(),
+                .when_some(on_select.filter(|_| !disabled), |el, handler| el.on_click(handler)), disabled),
             Self::Submenu { id, label: text, icon: name, items, open } => {
                 let opened = id.clone();
                 let open_on = on_submenu.clone();
-                row(ElementId::Name(id.clone()), false)
+                let element_id = ElementId::Name(id.clone());
+                feedback(element_id.clone(), row(element_id, false)
                     .relative()
                     .when(open, |el| el.bg(c(SURFACE_SECONDARY)))
                     .child(glyph(name, false))
@@ -172,8 +176,7 @@ impl MenuItem {
                                 .with_priority(2),
                             ),
                         )
-                    })
-                    .into_any_element()
+                    }), false)
             }
         }
     }
@@ -201,13 +204,13 @@ impl ContextMenu {
 pub const MENU_MARGIN: gpui::Pixels = px(8.);
 
 impl RenderOnce for ContextMenu {
-    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let on_submenu = self.on_submenu;
         // `snap_to_window` moves a menu inside the window but never shrinks it, so a
         // menu taller than the window scrolls instead of losing its last rows.
         let max_height = (window.viewport_size().height - MENU_MARGIN * 2.).max(px(1.));
         // max-w-70 min-w-45 rounded-lg border border-border-primary bg-surface-context-menu py-1 shadow-xl
-        div()
+        let panel = div()
             .id("menu-panel")
             .flex()
             .flex_col()
@@ -221,6 +224,8 @@ impl RenderOnce for ContextMenu {
             .bg(c(SURFACE_CONTEXT_MENU))
             .py(px(4.))
             .shadow_xl()
-            .children(self.items.into_iter().map(|item| item.render(&on_submenu)))
+            .children(self.items.into_iter().map(|item| item.render(&on_submenu)));
+        // Fades in; a menu is rebuilt every frame but keeps its state while shown.
+        motion::enter("menu-enter", panel, motion::MENU, cx)
     }
 }

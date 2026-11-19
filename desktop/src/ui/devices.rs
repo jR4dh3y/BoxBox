@@ -42,6 +42,9 @@ impl Workspace {
                 .disabled(busy)
                 .tooltip(summary(volume))
                 .on_click(cx.listener(move |this, _, window, cx| this.open_volume(open.clone(), window, cx)));
+            if let Some(card) = self.drive_hover(&crate::workspace::overview::Storage::Volume(volume.clone())) {
+                row = row.hover_card(card);
+            }
             match &volume.state {
                 State::Mounted { read_only: true, .. } => row = row.badge("pencil-off"),
                 State::Mounted { .. } => {}

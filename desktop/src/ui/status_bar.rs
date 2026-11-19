@@ -38,7 +38,7 @@ impl Workspace {
         let toggle =
             |id: &'static str, glyph: &'static str, target: ViewMode, cx: &mut Context<Self>| {
                 let active = mode == target;
-                div()
+                let button = div()
                     .id(id)
                     .debug_selector(move || id.to_string())
                     .size(px(22.))
@@ -47,7 +47,6 @@ impl Workspace {
                     .justify_center()
                     .rounded(px(2.))
                     .cursor_pointer()
-                    .active(crate::components::pressed)
                     .when(active, |button| button.bg(c(SURFACE_ELEVATED)))
                     .child(icon(
                         glyph,
@@ -57,7 +56,8 @@ impl Workspace {
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.choose_view_mode(this.active_pane, target, cx);
                         cx.notify();
-                    }))
+                    }));
+                crate::components::motion::interact(gpui::ElementId::Name(format!("{id}-feedback").into()), button).fill(c(SURFACE_SECONDARY)).rounded(2.)
             };
 
         div()

@@ -5,7 +5,7 @@
 use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton, SharedString};
 
 use super::thin_icon;
-use crate::components::{Button, ButtonVariant, Modal, Type};
+use crate::components::{Button, ButtonSize, ButtonVariant, Modal, Type};
 use crate::format::{file_icon, file_size, full_date, type_description};
 use crate::theme::*;
 use crate::workspace::properties::{permission_string, Ownership, Totals, CLASSES};
@@ -179,6 +179,8 @@ impl Workspace {
                 Button::new("permissions-apply-inside")
                     .label("Apply to contents")
                     .variant(ButtonVariant::Secondary)
+                    // As tall as the Read · Write · Open control above it.
+                    .size(ButtonSize::Sm)
                     .disabled(self.operation_status.is_busy())
                     .on_click(cx.listener(|this, _, _, cx| this.apply_permissions_to_contents(cx))),
             ));

@@ -3,7 +3,7 @@
 
 use gpui::{div, prelude::*, px, App, ClickEvent, ElementId, SharedString, Window};
 
-use super::{Type, ROUNDED, ROUNDED_LG};
+use super::{motion, Type, ROUNDED, ROUNDED_LG};
 use crate::theme::*;
 use crate::ui::icon;
 
@@ -44,15 +44,16 @@ impl Toast {
 }
 
 impl RenderOnce for Toast {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let (glyph, color) = match self.kind {
             ToastKind::Success => ("check-circle", SUCCESS),
             ToastKind::Error => ("x-circle", DANGER),
             ToastKind::Info => ("info", ACCENT),
             ToastKind::Warning => ("alert-triangle", WARNING),
         };
+        let id = self.id.clone();
         // flex items-start gap-3 rounded-lg border border-border-primary bg-surface-secondary px-4 py-3 shadow-lg
-        div()
+        let toast = div()
             .flex()
             .items_start()
             .gap(px(12.))
@@ -86,15 +87,20 @@ impl RenderOnce for Toast {
             })
             .child(
                 // shrink-0 rounded p-0.5 text-text-muted, a 14px X
-                div()
-                    .id(self.id)
-                    .flex_none()
-                    .rounded(px(ROUNDED))
-                    .p(px(2.))
-                    .cursor_pointer()
-                    .hover(|style| style.bg(c(SURFACE_ELEVATED))).active(crate::components::pressed)
-                    .child(icon("x", 14., c(TEXT_MUTED)))
-                    .when_some(self.on_dismiss, |el, handler| el.on_click(handler)),
-            )
+                motion::interact(
+                    self.id.clone(),
+                    div()
+                        .id(self.id)
+                        .flex_none()
+                        .p(px(2.))
+                        .cursor_pointer()
+                        .child(icon("x", 14., c(TEXT_MUTED)))
+                        .when_some(self.on_dismiss, |el, handler| el.on_click(handler)),
+                )
+                .fill(c(SURFACE_ELEVATED))
+                .rounded(ROUNDED),
+            );
+        // Each notice fades in as it arrives.
+        motion::enter(id, toast, motion::POPOVER, cx)
     }
 }

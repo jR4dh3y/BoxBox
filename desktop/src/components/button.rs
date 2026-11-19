@@ -97,6 +97,7 @@ impl RenderOnce for Button {
             ButtonVariant::Danger => (Some(DANGER), Some(DANGER_HOVER), WHITE, WHITE, None),
         };
         let enabled = !self.disabled;
+        let id = self.id.clone();
         let base = div()
             .debug_selector({
                 let id = self.id.to_string();
@@ -110,18 +111,8 @@ impl RenderOnce for Button {
             .font_weight(FontWeight::MEDIUM)
             .rounded(px(ROUNDED))
             .text_color(c(text))
-            .when_some(bg, |el, bg| el.bg(c(bg)))
             .when_some(border, |el, border| el.border_1().border_color(c(border)))
-            .when(enabled, |el| {
-                el.cursor_pointer().hover(move |style| {
-                    let style = style.text_color(c(hover_text));
-                    match hover_bg {
-                        Some(bg) => style.bg(c(bg)),
-                        None => style,
-                    }
-                })
-                .active(super::pressed)
-            })
+            .when(enabled, |el| el.cursor_pointer().hover(move |style| style.text_color(c(hover_text))))
             .when(self.disabled, |el| el.opacity(0.5));
         // sm: h-7 px-2.5 text-xs gap-1 · md: h-8 px-3 text-[13px] gap-2
         // lg: h-9 px-5 text-sm gap-2 · icon: w-7 h-7 p-0
@@ -131,9 +122,20 @@ impl RenderOnce for Button {
             ButtonSize::Lg => base.h(px(36.)).px(px(20.)).type_sm().gap(px(8.)),
             ButtonSize::Icon => base.size(px(28.)),
         };
-        sized
+        let button = sized
             .when_some(self.icon, |el, name: SharedString| el.child(icon(name.as_ref(), 16., c(text))))
             .when_some(self.label, |el, label| el.child(label))
-            .when_some(self.on_click.filter(|_| enabled), |el, handler| el.on_click(handler))
+            .when_some(self.on_click.filter(|_| enabled), |el, handler| el.on_click(handler));
+        // The background eases to its hover colour, and a press brightens it (`motion`).
+        let disabled_alpha = |color: gpui::Rgba| if enabled { color } else { gpui::Rgba { a: color.a * 0.5, ..color } };
+        let feedback = super::motion::interact(id, button).rounded(ROUNDED).disabled(!enabled);
+        let feedback = match bg {
+            Some(bg) => feedback.base(disabled_alpha(c(bg))),
+            None => feedback,
+        };
+        match hover_bg {
+            Some(hover) => feedback.fill(c(hover)),
+            None => feedback,
+        }
     }
 }

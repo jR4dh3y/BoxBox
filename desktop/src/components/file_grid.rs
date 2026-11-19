@@ -65,6 +65,8 @@ pub struct FileTile {
     icon: &'static str,
     detail: SharedString,
     thumbnail: Option<Arc<RenderImage>>,
+    /// The app that opens the file, shown small on its thumbnail.
+    badge: Option<Arc<RenderImage>>,
     image: EntryIcon,
     tint: Option<u32>,
     emblem: Option<&'static str>,
@@ -88,6 +90,7 @@ impl FileTile {
             icon: "file",
             detail: SharedString::default(),
             thumbnail: None,
+            badge: None,
             image: EntryIcon::Glyph,
             tint: None,
             emblem: None,
@@ -117,6 +120,12 @@ impl FileTile {
     /// The line under the name: the size for files, empty for folders.
     pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
         self.detail = detail.into();
+        self
+    }
+
+    /// A small app icon at the thumbnail's bottom left, as Windows marks a preview with its app.
+    pub fn badge(mut self, badge: Option<Arc<RenderImage>>) -> Self {
+        self.badge = badge;
         self
     }
 
@@ -193,12 +202,19 @@ impl RenderOnce for FileTile {
             .justify_center()
             .overflow_hidden()
             .map(|slot| match (self.thumbnail, self.image) {
-                (Some(image), _) => slot
-                    .rounded(px(ROUNDED))
-                    .border_1()
-                    .border_color(c(BORDER_PRIMARY))
-                    .bg(c(SURFACE_PRIMARY))
-                    .child(img(image).size_full().object_fit(ObjectFit::Cover)),
+                (Some(image), _) => {
+                    // A quarter of the icon's size, kept legible on the smallest tiles.
+                    let badge = (metrics.theme_icon() * 0.28).round().clamp(16., 32.);
+                    slot.relative()
+                        .rounded(px(ROUNDED))
+                        .border_1()
+                        .border_color(c(BORDER_PRIMARY))
+                        .bg(c(SURFACE_PRIMARY))
+                        .child(img(image).size_full().object_fit(ObjectFit::Cover))
+                        .when_some(self.badge, |slot, app| {
+                            slot.child(div().absolute().left(px(4.)).bottom(px(4.)).size(px(badge)).child(img(app).size_full()))
+                        })
+                }
                 (None, EntryIcon::Theme(image)) => slot.child(img(image).size(px(metrics.theme_icon()))),
                 (None, EntryIcon::Waiting) => slot,
                 (None, EntryIcon::Glyph) => slot.child(super::file_list::emblemed(thin_icon(self.icon, metrics.theme_icon(), tone), self.emblem, metrics.theme_icon(), tone)),
@@ -238,6 +254,9 @@ impl RenderOnce for FileTile {
                     .text_color(c(if self.selected { TEXT_PRIMARY } else { TEXT_MUTED }))
                     .child(self.detail),
             );
+        let feedback_id = self.id.clone();
+        // Only a plain tile eases in a hover fill; selected and active tiles keep their own.
+        let plain = !self.selected && !self.active && !self.drop_target;
         // tileClass: relative flex flex-col rounded border p-2, the row less its padding
         let tile = div()
             .id(self.id)
@@ -257,9 +276,7 @@ impl RenderOnce for FileTile {
             .map(|tile| match (self.selected, self.active) {
                 (true, _) => tile.border_color(alpha_of(accent, 0.7)).bg(background).hover(move |style| style.bg(hover)),
                 (false, true) => tile.border_color(gpui::transparent_black()).bg(c(SURFACE_SECONDARY)),
-                (false, false) => {
-                    tile.border_color(gpui::transparent_black()).hover(|style| style.bg(c(SURFACE_SECONDARY)))
-                }
+                (false, false) => tile.border_color(gpui::transparent_black()),
             })
             .when(self.drop_target, |tile| tile.border_color(accent).bg(background))
             .child(preview)
@@ -267,7 +284,8 @@ impl RenderOnce for FileTile {
             .when_some(self.checkbox, |tile, on_check| {
                 // absolute top-2 left-2 h-4 w-4, shown on tile hover
                 tile.child(
-                    checkbox(self.selected, accent)
+                    // Grows with the zoom, from 16px at the smallest tiles to 28px.
+                    checkbox(self.selected, accent, (metrics.theme_icon() * 0.2).round().clamp(16., 28.))
                         .absolute()
                         .top(px(8.))
                         .left(px(8.))
@@ -278,9 +296,14 @@ impl RenderOnce for FileTile {
                         }),
                 )
             });
-        match self.decorate {
+        let tile = match self.decorate {
             Some(decorate) => decorate(tile).into_any_element(),
             None => tile.into_any_element(),
+        };
+        let feedback = super::motion::interact(feedback_id, tile).rounded(ROUNDED).without_press();
+        match plain {
+            true => feedback.fill(super::motion::hover_fill()).into_any_element(),
+            false => feedback.into_any_element(),
         }
     }
 }

@@ -88,6 +88,12 @@ pub(crate) struct Preferences {
     pub grid_zoom: u8,
     pub wallpaper_tint: bool,
     pub frosted_glass: bool,
+    /// Eased transitions; off also when the desktop turns animations off.
+    pub animations: bool,
+    /// The card with an item's details when the pointer rests on it.
+    pub hover_details: bool,
+    /// Files take the icon of the app that opens them, as on Windows.
+    pub app_icons: bool,
     /// The Details panel at the right (F11).
     pub details_panel: bool,
 }
@@ -138,6 +144,9 @@ impl Default for Preferences {
             grid_zoom: 1,
             wallpaper_tint: false,
             frosted_glass: false,
+            animations: true,
+            hover_details: true,
+            app_icons: true,
             details_panel: false,
         }
     }
@@ -278,6 +287,10 @@ pub struct Workspace {
     pub(crate) settings_open: bool,
     pub(crate) settings_section: SettingsSection,
     pub(crate) preferences: Preferences,
+    /// The desktop's own animation setting; `None` until read or when it has none.
+    pub(crate) desktop_motion: Option<bool>,
+    /// Tabs opened from here on slide open; those restored at launch just appear.
+    pub(crate) first_new_pane: usize,
     pub(crate) desktop_settings: DesktopSettings,
     pub(crate) settings_panel: SettingsPanelState,
     pub(crate) operation_status: OperationStatus,
@@ -434,6 +447,8 @@ impl Workspace {
             settings_open: false,
             settings_section: SettingsSection::General,
             preferences,
+            desktop_motion: None,
+            first_new_pane: usize::MAX,
             desktop_settings: DesktopSettings::load(),
             settings_panel: SettingsPanelState::default(),
             operation_status: OperationStatus::Idle,
@@ -527,6 +542,11 @@ impl Workspace {
         workspace.watch_trash(cx);
         workspace.load_bookmarks(cx);
         workspace.warm_menu_apps(cx);
+        #[cfg(target_os = "linux")]
+        workspace.watch_associations(cx);
+        workspace.apply_motion(cx);
+        workspace.follow_desktop_motion(cx);
+        workspace.first_new_pane = workspace.next_pane_id;
         workspace
     }
 
@@ -861,6 +881,7 @@ impl Workspace {
     }
 
     fn apply_preferences(&mut self, cx: &mut Context<Self>) {
+        self.apply_motion(cx);
         let sort = preference_sort(&self.preferences);
         let view = preference_view(&self.preferences);
         let show_hidden_files = self.preferences.show_hidden_files;

@@ -20,6 +20,8 @@ struct NavItem {
     icon: &'static str,
     /// A drive's own name, which Reset Name returns to; places have none.
     own: Option<String>,
+    /// A drive's size and use, for its hover card; places have none.
+    storage: Option<Storage>,
 }
 
 fn place_icon(name: &str) -> &'static str {
@@ -66,7 +68,13 @@ impl Workspace {
     fn nav_item(&self, id: String, item: NavItem, current: &str, cx: &mut Context<Self>) -> impl IntoElement {
         let path = item.path;
         let home = std::sync::Arc::ptr_eq(&self.pane().api, &self.home.api);
-        let row = components::NavItem::new(SharedString::from(id.clone()), item.name, item.icon).active(home && is_active(current, &path)).on_click({
+        let card = item.storage.as_ref().and_then(|storage| self.drive_hover(storage));
+        let row = components::NavItem::new(SharedString::from(id.clone()), item.name, item.icon).active(home && is_active(current, &path));
+        let row = match card {
+            Some(card) => row.hover_card(card),
+            None => row,
+        };
+        let row = row.on_click({
             let path = path.clone();
             cx.listener(move |this, _, _, cx| {
                 let api = this.home.api.clone();
@@ -106,8 +114,12 @@ impl Workspace {
                 let row = components::NavItem::new(SharedString::from(format!("server-{index}")), info.name, "server")
                     .detail(detail)
                     .muted(waiting)
-                    .active(active)
-                    .tooltip(tooltip);
+                    .active(active);
+                // The drive's card when hover details are on, else its address or status.
+                let row = match self.drive_hover(&entry) {
+                    Some(card) => row.hover_card(card),
+                    None => row.tooltip(tooltip),
+                };
                 let row = match info.state.wait() {
                     Some(wait) => row.waiting(wait),
                     None => row,
@@ -154,11 +166,14 @@ impl Workspace {
             crate::pane::Load::Loaded(roots) => roots,
             _ => &[],
         };
-        let mut drives = std::iter::once(NavItem { name: "Overview".into(), path: String::new(), icon: "layout-dashboard", own: None })
+        // Read once for every drive row's card.
+        let storage = self.storage().unwrap_or_default();
+        let stats = |name: &str| storage.iter().find(|entry| matches!(entry, Storage::Drive(drive) if drive.name == name)).cloned();
+        let mut drives = std::iter::once(NavItem { name: "Overview".into(), path: String::new(), icon: "layout-dashboard", own: None, storage: None })
             .chain(roots.iter().filter(|root| root.kind != RootKind::Place).map(|root| {
                 let own = root.display_name().to_string();
                 let key = DriveKey::root(&self.home.api, &root.name);
-                NavItem { name: self.drive_names.name(&key, &own).to_string().into(), path: root.name.clone(), icon: "hard-drive", own: Some(own) }
+                NavItem { name: self.drive_names.name(&key, &own).to_string().into(), path: root.name.clone(), icon: "hard-drive", own: Some(own), storage: stats(&root.name) }
             }))
             .enumerate()
             .map(|(index, item)| self.nav_item(format!("drive-{index}"), item, &current, cx).into_any_element())
@@ -175,6 +190,7 @@ impl Workspace {
                 path: root.name.clone(),
                 icon: place_icon(&root.name),
                 own: None,
+                storage: None,
             })
             .enumerate()
             .map(|(index, item)| self.nav_item(format!("place-{index}"), item, &current, cx))

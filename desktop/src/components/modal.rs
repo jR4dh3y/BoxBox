@@ -1,8 +1,8 @@
 //! `lib/components/ui/Modal.svelte`: backdrop, panel, title bar, body and footer.
 
-use gpui::{div, prelude::*, px, rgba, AnyElement, App, ClickEvent, FontWeight, SharedString, Window};
+use gpui::{div, prelude::*, px, rgba, Animation, AnimationExt as _, AnyElement, App, ClickEvent, FontWeight, SharedString, Window};
 
-use super::{Type, ROUNDED, ROUNDED_LG};
+use super::{motion, Type, ROUNDED, ROUNDED_LG};
 use crate::theme::*;
 use crate::ui::icon;
 
@@ -80,7 +80,7 @@ impl Modal {
 }
 
 impl RenderOnce for Modal {
-    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let max_width: f32 = match self.size {
             ModalSize::Md => 448.,
             ModalSize::Xl => 672.,
@@ -96,12 +96,13 @@ impl RenderOnce for Modal {
             .rounded(px(ROUNDED))
             .text_color(c(TEXT_SECONDARY))
             .cursor_pointer()
-            .hover(|style| style.bg(c(SURFACE_ELEVATED)).text_color(c(TEXT_PRIMARY))).active(crate::components::pressed)
+            .hover(|style| style.text_color(c(TEXT_PRIMARY)))
             .child(icon("x", 16., c(TEXT_SECONDARY)))
             .when_some(self.close_selector, |el, selector| el.debug_selector(move || selector.to_string()))
             .when_some(self.on_close, |el, handler| el.on_click(handler));
+        let close = motion::interact("modal-close-feedback", close).fill(c(SURFACE_ELEVATED)).rounded(ROUNDED);
         // fixed inset-0 flex items-center justify-center bg-black/55
-        div()
+        let backdrop = div()
             .absolute()
             .inset_0()
             .flex()
@@ -109,8 +110,17 @@ impl RenderOnce for Modal {
             .justify_center()
             .bg(rgba(0x0000008c))
             // What is behind the dialog takes no hover or clicks while it is open.
-            .occlude()
-            .child(
+            .occlude();
+        // The shade darkens in as the panel fades in.
+        let backdrop = match motion::enabled(cx) {
+            true => backdrop
+                .with_animation("modal-backdrop", Animation::new(motion::DIALOG).with_easing(motion::ease_out), |backdrop, t| {
+                    backdrop.bg(gpui::Rgba { r: 0., g: 0., b: 0., a: 0.55 * t })
+                })
+                .into_any_element(),
+            false => backdrop.into_any_element(),
+        };
+        let panel = 
                 // mx-4 max-h-[90vh] w-full max-w-* flex-col overflow-hidden rounded-lg border
                 // border-border-primary bg-surface-secondary shadow-2xl
                 // A definite width, not w-full capped by max-w: a percentage leaves wrapped
@@ -176,7 +186,9 @@ impl RenderOnce for Modal {
                                 .py(px(12.))
                                 .children(self.footer),
                         )
-                    }),
-            )
+                    });
+        div().absolute().inset_0().child(backdrop).child(
+            div().absolute().inset_0().flex().items_center().justify_center().child(motion::enter("modal-enter", panel, motion::DIALOG, cx)),
+        )
     }
 }

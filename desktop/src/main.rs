@@ -18,6 +18,8 @@ mod icon_theme;
 mod local;
 mod launch;
 mod custom_actions;
+#[cfg(target_os = "linux")]
+mod associations;
 mod media;
 mod open_with;
 mod os_clipboard;

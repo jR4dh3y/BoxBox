@@ -1,10 +1,11 @@
-//! Settings → About: the app, its version, when and where it was installed,
-//! then the project on GitHub with Star, Sponsor and Report an issue.
+//! Settings → About: the app and its version, centred as an About window shows
+//! them; when and where it was installed; then the project on GitHub with
+//! Star, Sponsor and Report an issue.
 
 use gpui::{div, img, prelude::*, px, Context};
 
 use super::TextScale;
-use crate::components::{settings_rows, Button, ButtonSize, ButtonVariant, SettingsRow};
+use crate::components::{Button, ButtonSize, ButtonVariant};
 use crate::format::full_date;
 use crate::theme::*;
 use crate::workspace::about::{version_label, ISSUES, LOGO_SIZE, REPOSITORY, SPONSOR};
@@ -18,6 +19,23 @@ fn link(id: &'static str, label: &'static str, glyph: &'static str, variant: But
     Button::new(id).label(label).icon(glyph).variant(variant).size(ButtonSize::Sm).on_click(move |_, _, cx| cx.open_url(url))
 }
 
+/// The page's column: wide enough for the longest fact, centred in the panel.
+const COLUMN: f32 = 420.;
+
+/// A fact: the label muted at the left, the value at the right.
+fn fact(label: &'static str, text: impl Into<gpui::SharedString>, last: bool) -> gpui::Div {
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(16.))
+        .px(px(14.))
+        .py(px(9.))
+        .when(!last, |row| row.border_b_1().border_color(c(BORDER_SECONDARY)))
+        .child(div().flex_none().text_13().text_color(c(TEXT_SECONDARY)).child(label))
+        .child(value(text).flex_1().min_w_0().text_right().truncate())
+}
+
 impl Workspace {
     pub(crate) fn render_about(&self, _: &mut Context<Self>) -> impl IntoElement {
         let (logo, installed, system) = match &self.about {
@@ -28,58 +46,57 @@ impl Workspace {
             ),
             _ => (None, "…".to_string(), "…".to_string()),
         };
+        let accent = self.accent_hex();
+        // The logo, the name and what it is, centred as an About window shows them,
+        // with the version as a badge under the name.
         let header = div()
             .flex()
+            .flex_col()
             .items_center()
-            .gap(px(12.))
-            .py(px(12.))
-            .child(div().size(px(LOGO_SIZE)).flex_none().when_some(logo, |slot, logo| slot.child(img(logo).size_full())))
+            .gap(px(6.))
+            .child(div().size(px(LOGO_SIZE)).flex_none().mb(px(4.)).when_some(logo, |slot, logo| slot.child(img(logo).size_full())))
+            .child(div().text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(c(TEXT_PRIMARY)).child("BoxBox Files"))
+            .child(div().text_xs_tw().text_color(c(TEXT_SECONDARY)).child("A native file manager for Linux"))
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .child(div().text_size(px(16.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(c(TEXT_PRIMARY)).child("BoxBox Files"))
-                    .child(div().text_xs_tw().text_color(c(TEXT_SECONDARY)).child("A native file manager for Linux")),
+                    .mt(px(4.))
+                    .px(px(8.))
+                    .py(px(2.))
+                    .rounded(px(999.))
+                    .bg(alpha(accent, 0.14))
+                    .border_1()
+                    .border_color(alpha(accent, 0.3))
+                    .text_xs_tw()
+                    .text_color(c(TEXT_PRIMARY))
+                    .child(version_label(env!("BOXBOX_VERSION"))),
             );
-        // Pinned to the foot of the page, under the facts.
-        let banner = div()
-            .mt_auto()
-            .p(px(14.))
+        let facts = div()
+            .w_full()
             .rounded(px(8.))
             .border_1()
             .border_color(c(BORDER_SECONDARY))
             .bg(c(SURFACE_SECONDARY))
+            .overflow_hidden()
+            .child(fact("Installed", installed, false))
+            .child(fact("System", system, true));
+        let project = div()
             .flex()
             .flex_col()
+            .items_center()
             .gap(px(10.))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .child(div().text_13().font_weight(gpui::FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child("BoxBox is free and open source"))
-                    .child(div().text_xs_tw().text_color(c(TEXT_SECONDARY)).child("A star helps others find it; sponsoring keeps it going.")),
-            )
+            .child(div().text_xs_tw().text_color(c(TEXT_SECONDARY)).text_center().child("BoxBox is free and open source. A star helps others find it; sponsoring keeps it going."))
             .child(
                 div()
                     .flex()
                     .flex_wrap()
+                    .justify_center()
                     .gap(px(8.))
                     .child(link("about-star", "Star on GitHub", "star", ButtonVariant::Secondary, REPOSITORY))
                     .child(link("about-sponsor", "Sponsor", "heart", ButtonVariant::Primary, SPONSOR))
-                    .child(link("about-issues", "Report an issue", "external-link", ButtonVariant::Ghost, ISSUES)),
+                    .child(link("about-issues", "Report an issue", "external-link", ButtonVariant::Secondary, ISSUES)),
             );
-        div()
-            .h_full()
-            .flex()
-            .flex_col()
-            .pb(px(8.))
-            .child(header)
-            .child(div().border_t_1().border_color(c(BORDER_SECONDARY)).child(settings_rows(vec![
-                SettingsRow::new("Version").control(value(version_label(env!("BOXBOX_VERSION")))),
-                SettingsRow::new("Installed").control(value(installed)),
-                SettingsRow::new("System").control(value(system)),
-            ])))
-            .child(banner)
+        div().size_full().flex().justify_center().py(px(24.)).child(
+            div().w(px(COLUMN)).max_w_full().flex().flex_col().items_center().gap(px(20.)).child(header).child(facts).child(project),
+        )
     }
 }

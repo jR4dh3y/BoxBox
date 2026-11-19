@@ -32,6 +32,14 @@ fn hidden_crumbs(widths: &[f32], available: f32) -> usize {
     (0..widths.len().saturating_sub(1)).find(|&from| need(from) <= available).unwrap_or(widths.len().saturating_sub(1))
 }
 
+/// A toolbar button's eased hover fill and press (`motion`).
+fn pressable(id: &'static str, enabled: bool, button: gpui::Stateful<gpui::Div>) -> crate::components::motion::Interact {
+    crate::components::motion::interact(gpui::ElementId::Name(format!("{id}-feedback").into()), button)
+        .fill(c(SURFACE_ELEVATED))
+        .rounded(4.)
+        .disabled(!enabled)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -104,12 +112,7 @@ impl Workspace {
             .items_center()
             .justify_center()
             .rounded(px(4.))
-            .when(enabled, |button| {
-                button
-                    .cursor_pointer()
-                    .hover(|style| style.bg(c(SURFACE_ELEVATED)))
-                    .active(crate::components::pressed)
-            })
+            .when(enabled, |button| button.cursor_pointer())
     }
 
     /// Refresh, whose icon turns while what it asked for loads.
@@ -216,7 +219,7 @@ impl Workspace {
                         .text_13()
                         .text_color(c(TEXT_SECONDARY))
                         .cursor_pointer()
-                        .hover(|style| style.bg(c(SURFACE_ELEVATED))).active(crate::components::pressed)
+                        .hover(|style| style.bg(c(SURFACE_ELEVATED)))
                         .child("…")
                         .on_mouse_down(gpui::MouseButton::Left, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
                             cx.stop_propagation();
@@ -454,7 +457,9 @@ impl Workspace {
                     .flex()
                     .flex_none()
                     .gap(px(2.))
-                    .child(
+                    .child(pressable(
+                        "back",
+                        trash || pane.can_go_back(),
                         self.nav_button("back", "chevron-left", 18., trash || pane.can_go_back())
                             .debug_selector(|| "nav-back".into())
                             .on_click(
@@ -465,8 +470,10 @@ impl Workspace {
                                 cx.stop_propagation();
                                 this.open_history_menu(target, true, event.position, cx);
                             })),
-                    )
-                    .child(
+                    ))
+                    .child(pressable(
+                        "forward",
+                        !trash && pane.can_go_forward(),
                         self.nav_button("forward", "chevron-right", 18., !trash && pane.can_go_forward())
                             .debug_selector(|| "nav-forward".into())
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -476,7 +483,7 @@ impl Workspace {
                                 cx.stop_propagation();
                                 this.open_history_menu(target, false, event.position, cx);
                             })),
-                    ),
+                    )),
             )
             .child(self.render_path_bar(target, window, cx))
             .children((!pane.is_at_root() && !self.trash_open).then(|| self.render_search(target, toolbar_width, window, cx)))
@@ -489,31 +496,33 @@ impl Workspace {
                     .child(
                         div()
                             .relative()
-                            .child(self.nav_button("add", "plus", 16., can_add).when(can_add, |button| {
+                            .child(pressable("add", can_add, self.nav_button("add", "plus", 16., can_add).when(can_add, |button| {
                                 button.on_click(cx.listener(move |this, _, _, cx| {
                                     this.add_menu = if this.add_menu == Some(target) { None } else { Some(target) };
                                     this.open_submenu = None;
                                     this.refresh_templates(cx);
                                     cx.notify();
                                 }))
-                            }))
+                            })))
                             .when(self.add_menu == Some(target), |slot| slot.child(div().absolute().top_0().left_0().child(self.render_add_menu(target, cx)))),
                     )
                     // Trash is watched, so it needs no Refresh.
-                    .child(self.refresh_button(target, !trash, window).when(!trash, |button| {
+                    .child(pressable("refresh", !trash, self.refresh_button(target, !trash, window).when(!trash, |button| {
                         button.on_click(cx.listener(|this, _, window, cx| this.refresh(&Refresh, window, cx)))
-                    }))
+                    })))
                     .when(trash, |row| row.child(self.empty_trash_button(cx)))
-                    .child(
+                    .child(pressable(
+                        "details",
+                        true,
                         self.nav_button("details", "info", 16., true)
                             .when(self.preferences.details_panel, |button| button.bg(c(SURFACE_ELEVATED)))
                             .tooltip(crate::components::Tooltip::text("Details (F11)"))
                             .on_click(cx.listener(|this, _, window, cx| this.toggle_details(&ToggleDetails, window, cx))),
-                    )
-                    .child(self.nav_button("settings", "settings", 16., true).on_click(
-                        cx.listener(|this, _, window, cx| {
-                            this.open_settings(&OpenSettings, window, cx)
-                        }),
+                    ))
+                    .child(pressable(
+                        "settings",
+                        true,
+                        self.nav_button("settings", "settings", 16., true).on_click(cx.listener(|this, _, window, cx| this.open_settings(&OpenSettings, window, cx))),
                     )),
             )
     }

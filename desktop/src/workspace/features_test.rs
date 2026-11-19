@@ -1721,3 +1721,29 @@ fn custom_actions_run_on_their_files_and_terminal_ones_give_way(cx: &mut TestApp
     assert!(marker.is_file(), "the action ran on the file");
     view.read_with(cx, |workspace, _| assert!(workspace.context_menu.is_none()));
 }
+
+#[gpui::test]
+fn hover_cards_follow_settings_and_give_way_to_menus(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["notes.txt"]);
+    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
+    cx.run_until_parked();
+    let card = |cx: &mut VisualTestContext| {
+        view.update(cx, |workspace, cx| {
+            let item = workspace.pane().items[0].clone();
+            workspace.hover_card(PaneTarget(0), &item, cx).is_some()
+        })
+    };
+    assert!(card(cx), "on by default");
+    view.update(cx, |workspace, cx| {
+        workspace.preferences.hover_details = false;
+        workspace.commit_preferences(cx);
+    });
+    assert!(!card(cx), "Settings turn it off");
+    view.update(cx, |workspace, cx| {
+        workspace.preferences.hover_details = true;
+        workspace.preferences.animations = false;
+        workspace.commit_preferences(cx);
+    });
+    assert!(card(cx));
+    cx.update(|_, app| assert!(!crate::components::motion::enabled(app), "Animations off reaches every component"));
+}

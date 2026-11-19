@@ -30,6 +30,9 @@ enum IconSource {
     /// A local AppImage, deb or rpm's own icon.
     #[cfg(target_os = "linux")]
     Package(crate::package_icons::Package),
+    /// The icon of the app that opens files of this kind.
+    #[cfg(target_os = "linux")]
+    App(IconKey),
 }
 
 type CacheKey = (IconSource, u32);
@@ -49,15 +52,17 @@ impl FileIcons {
         IconKey::for_entry(&item.name, item.is_dir, special)
     }
 
-    /// The file's own icon, in every icon style, and the theme's.
-    fn keys(&self, api: &Api, item: &FileInfo, size: f32, style: super::IconStyle) -> [Option<CacheKey>; 2] {
+    /// The file's own icon, in every icon style; its app's, when Settings ask; and the theme's.
+    fn keys(&self, api: &Api, item: &FileInfo, size: f32, preferences: &super::Preferences) -> [Option<CacheKey>; 3] {
         let pixels = bucket(size, self.scale.max(1.));
-        let theme = (style == super::IconStyle::System).then(|| (IconSource::Theme(self.theme_key(api, item)), pixels));
+        let theme = (preferences.file_icons == super::IconStyle::System).then(|| (IconSource::Theme(self.theme_key(api, item)), pixels));
         #[cfg(target_os = "linux")]
         let embedded = crate::package_icons::Package::of(api, item).map(|package| (IconSource::Package(package), pixels));
+        #[cfg(target_os = "linux")]
+        let app = (preferences.app_icons && !item.is_dir).then(|| (IconSource::App(self.theme_key(api, item)), pixels));
         #[cfg(not(target_os = "linux"))]
-        let embedded = None;
-        [embedded, theme]
+        let (embedded, app) = (None, None);
+        [embedded, app, theme]
     }
 }
 
@@ -80,15 +85,61 @@ impl Workspace {
     /// the theme's icon, nothing while it is made, or BoxBox's glyph when the
     /// theme has none or BoxBox's set is chosen.
     pub(crate) fn item_icon(&self, api: &Api, item: &FileInfo, size: f32) -> EntryIcon {
-        let [embedded, theme] = self.file_icons.keys(api, item, size, self.preferences.file_icons);
+        let [embedded, app, theme] = self.file_icons.keys(api, item, size, &self.preferences);
         if let Some(Slot::Ready(image)) = embedded.and_then(|key| self.file_icons.slots.get(&key)) {
             return EntryIcon::Theme(image.clone());
+        }
+        // The app's icon is quick to find; waiting for it keeps the glyph from flashing first.
+        match app.as_ref().map(|key| self.file_icons.slots.get(key)) {
+            Some(Some(Slot::Ready(image))) => return EntryIcon::Theme(image.clone()),
+            Some(Some(Slot::Pending) | None) => return EntryIcon::Waiting,
+            Some(Some(Slot::Missing)) | None => {}
         }
         let Some(theme) = theme else { return EntryIcon::Glyph };
         match self.file_icons.slots.get(&theme) {
             Some(Slot::Ready(image)) => EntryIcon::Theme(image.clone()),
             Some(Slot::Missing) => EntryIcon::Glyph,
             Some(Slot::Pending) | None => EntryIcon::Waiting,
+        }
+    }
+
+    /// Makes app icons again whenever file associations change, such as a new
+    /// default set in Open With or in another app.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn watch_associations(&mut self, cx: &mut Context<Self>) {
+        let (changed, changes) = async_channel::unbounded();
+        crate::associations::watch(changed);
+        cx.spawn(async move |this, cx| {
+            while changes.recv().await.is_ok() {
+                if this.update(cx, |this, cx| this.forget_app_icons(cx)).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Drops every app icon; the views ask for them again as they draw, and an
+    /// icon still being made is dropped when it arrives.
+    #[cfg(target_os = "linux")]
+    fn forget_app_icons(&mut self, cx: &mut Context<Self>) {
+        self.file_icons.slots.retain(|(source, _), slot| {
+            let app = matches!(source, IconSource::App(_));
+            if let (true, Slot::Ready(image)) = (app, &*slot) {
+                cx.drop_image(image.clone(), None);
+            }
+            !app
+        });
+        cx.notify();
+    }
+
+    /// The icon of the app that opens `item`, once made at `size` for its own
+    /// slot, to mark its thumbnail. `None` when Settings turn app icons off.
+    pub(crate) fn app_badge(&self, api: &Api, item: &FileInfo, size: f32) -> Option<Arc<RenderImage>> {
+        let [_, app, _] = self.file_icons.keys(api, item, size, &self.preferences);
+        match self.file_icons.slots.get(&app?)? {
+            Slot::Ready(image) => Some(image.clone()),
+            Slot::Pending | Slot::Missing => None,
         }
     }
 
@@ -126,7 +177,7 @@ impl Workspace {
     pub(crate) fn request_entry_icon(&mut self, target: PaneTarget, index: usize, size: f32, cx: &mut Context<Self>) {
         let Some(pane) = self.pane_by_id(target.0) else { return };
         let Some(item) = pane.items.get(index) else { return };
-        let keys = self.file_icons.keys(&pane.api, item, size, self.preferences.file_icons);
+        let keys = self.file_icons.keys(&pane.api, item, size, &self.preferences);
         let api = pane.api.clone();
         for key in keys.into_iter().flatten() {
             self.request_icon(key, &api, cx);
@@ -135,7 +186,7 @@ impl Workspace {
 
     /// Starts making the icons of `item` drawn at `size`, if no one has.
     pub(crate) fn request_item_icon(&mut self, api: &Arc<Api>, item: &FileInfo, size: f32, cx: &mut Context<Self>) {
-        let keys = self.file_icons.keys(api, item, size, self.preferences.file_icons);
+        let keys = self.file_icons.keys(api, item, size, &self.preferences);
         for key in keys.into_iter().flatten() {
             self.request_icon(key, api, cx);
         }
@@ -170,6 +221,8 @@ impl Workspace {
                                 IconSource::Theme(key) => crate::file_icons::render(&key, pixels),
                                 #[cfg(target_os = "linux")]
                                 IconSource::Package(package) => crate::package_icons::icon(&api, &package).and_then(|bytes| crate::file_icons::package_image(&bytes, pixels)),
+                                #[cfg(target_os = "linux")]
+                                IconSource::App(key) => crate::file_icons::render_app(&key, pixels),
                             }
                         })
                         .await
@@ -252,6 +305,8 @@ mod tests {
         cx.update(|window, app| {
             view.update(app, |workspace, cx| {
                 workspace.preferences.file_icons = super::super::IconStyle::Tinted;
+                // The text file's glyph is the control; its app's icon would depend on this machine.
+                workspace.preferences.app_icons = false;
                 workspace.refresh(&super::super::Refresh, window, cx);
             })
         });

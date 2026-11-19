@@ -99,6 +99,7 @@ impl Workspace {
             false => row,
         };
         let (workspace, api) = (cx.entity().downgrade(), pane.api.clone());
+        let card = self.hover_card(target, item, cx);
         let on_menu = cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
             this.show_item_context_menu(target, index, event.position, window, cx);
             cx.stop_propagation();
@@ -112,8 +113,11 @@ impl Workspace {
         Some(row.decorate(move |row| {
             let row = crate::drag_out::draggable(row.debug_selector(move || format!("row-{}-{index}", target.0)), target, index, workspace.clone(), api);
             let row = if is_dir { drop_zone(row, folder, workspace).on_mouse_down(gpui::MouseButton::Middle, on_middle) } else { row };
-            row.on_mouse_down(gpui::MouseButton::Right, on_menu)
-                .on_click(on_click)
+            let row = row.on_mouse_down(gpui::MouseButton::Right, on_menu).on_click(on_click);
+            match card {
+                Some(card) => row.tooltip(card),
+                None => row,
+            }
         }))
     }
 

@@ -68,7 +68,7 @@ impl Workspace {
         self.request_item_icon(&api, &item, ICON_SIZE, cx);
     }
 
-    pub(crate) fn render_details(&self, _: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_details(&self, cx: &mut Context<Self>) -> AnyElement {
         let pane = self.pane();
         let selected = if self.trash_open { Vec::new() } else { pane.selected_items() };
         let body = match selected.as_slice() {
@@ -76,7 +76,7 @@ impl Workspace {
             [] => self.folder_details(),
             items => many_details(items),
         };
-        div()
+        let panel = div()
             .id("details-panel")
             .debug_selector(|| "details-panel".into())
             .w(px(DETAILS_WIDTH))
@@ -88,8 +88,9 @@ impl Workspace {
             .overflow_y_scroll()
             .text_xs_tw()
             .p(px(16.))
-            .child(body)
-            .into_any_element()
+            .child(body);
+        // Fades in where it stands: sliding would reflow the grid beside it every frame.
+        crate::components::motion::enter("details-enter", panel, crate::components::motion::POPOVER, cx)
     }
 
     fn preview(&self, item: &FileInfo) -> gpui::Div {

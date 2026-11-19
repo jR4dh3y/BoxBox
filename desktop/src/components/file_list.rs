@@ -348,10 +348,10 @@ impl RenderOnce for FileRow {
             .child(glyph)
             .when_some(self.checkbox, |slot, on_check| {
                 slot.child(
-                    checkbox(self.selected, accent)
+                    checkbox(self.selected, accent, list_checkbox(slot_size))
                         .absolute()
-                        .top(px((slot_size - 16.) / 2.))
-                        .left(px((slot_size - 16.) / 2.))
+                        .top(px((slot_size - list_checkbox(slot_size)) / 2.))
+                        .left(px((slot_size - list_checkbox(slot_size)) / 2.))
                         .when(!self.selected, |el| el.invisible().group_hover(group, |style| style.visible()))
                         .on_click(move |event, window, cx| {
                             cx.stop_propagation();
@@ -361,6 +361,9 @@ impl RenderOnce for FileRow {
             });
 
         let text = |value: SharedString| div().min_w_0().truncate().child(value);
+        let feedback_id = self.id.clone();
+        // Only a plain row eases in a hover fill; selected and active rows keep their own.
+        let plain = !self.selected && !self.active && !self.drop_target;
         let row = div()
             .id(self.id)
             .relative()
@@ -377,7 +380,7 @@ impl RenderOnce for FileRow {
             .map(|row| match (self.selected, self.active) {
                 (true, _) => row.bg(background).hover(move |style| style.bg(hover)),
                 (false, true) => row.bg(c(SURFACE_SECONDARY)),
-                (false, false) => row.hover(|style| style.bg(c(SURFACE_SECONDARY))),
+                (false, false) => row,
             })
             // shadow-[inset_2px_0_0_var(--color-accent)]
             .when(self.active, |row| row.child(div().absolute().left_0().top_0().bottom_0().w(px(2.)).bg(accent)))
@@ -396,16 +399,26 @@ impl RenderOnce for FileRow {
             .child(cell(Some(0.18)).text_color(secondary).child(text(self.kind)))
             .child(cell(Some(0.15)).justify_end().text_color(secondary).child(text(self.size)))
             .child(cell(Some(0.25)).text_color(secondary).child(text(self.modified)));
-        match self.decorate {
+        let row = match self.decorate {
             Some(decorate) => decorate(row).into_any_element(),
             None => row.into_any_element(),
+        };
+        let feedback = super::motion::interact(feedback_id, row).without_press();
+        match plain {
+            true => feedback.fill(super::motion::hover_fill()).into_any_element(),
+            false => feedback.into_any_element(),
         }
     }
 }
 
-/// The 16px selection checkbox of rows and tiles.
-pub(super) fn checkbox(checked: bool, accent: Rgba) -> Stateful<Div> {
-    super::check::checkbox(checked, accent, 16.).id("check").cursor_pointer()
+/// The selection checkbox of rows and tiles, `size` pixels square.
+pub(super) fn checkbox(checked: bool, accent: Rgba, size: f32) -> Stateful<Div> {
+    super::check::checkbox(checked, accent, size).id("check").cursor_pointer()
+}
+
+/// A row's checkbox, which covers its icon, grows with the zoom from 16px.
+fn list_checkbox(slot: f32) -> f32 {
+    (slot * 0.65).round().max(16.)
 }
 
 /// A folder glyph with a small one inside its body, as a special folder's mark.

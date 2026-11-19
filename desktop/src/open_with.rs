@@ -386,6 +386,20 @@ pub fn recommended(path: &Path) -> Result<Vec<App>> {
     Ok(apps)
 }
 
+/// The icon of the app that opens files of `mime_type`, as Windows and File
+/// Pilot draw files: the default, else the first recommended app, which is the
+/// one GIO would launch.
+pub fn default_app_icon(mime_type: &str, size: u32) -> Option<PathBuf> {
+    let entries = installed();
+    let apps = list_for(mime_type, &entries);
+    let icon = &entries.get(&initial_choice(&apps)?)?.icon;
+    let theme = IconTheme::shared();
+    match Path::new(icon).is_absolute() {
+        true => theme.find(icon),
+        false => theme.find_sized(icon, size).or_else(|| theme.find(icon)),
+    }
+}
+
 /// Opens `path` in the app, which must be one `list` offers for it.
 pub fn launch(path: &Path, app_id: &str, make_default: bool) -> Result<()> {
     let mime_type = content_type(path)?;

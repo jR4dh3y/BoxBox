@@ -6,7 +6,7 @@ use gpui::Context;
 use super::{Load, Workspace};
 
 /// The square the logo is drawn in, in pixels at scale 1.
-pub(crate) const LOGO_SIZE: f32 = 56.;
+pub(crate) const LOGO_SIZE: f32 = 72.;
 pub(crate) const REPOSITORY: &str = "https://github.com/jR4dh3y/BoxBox";
 /// From `.github/FUNDING.yml`.
 pub(crate) const SPONSOR: &str = "https://github.com/sponsors/jR4dh3y";

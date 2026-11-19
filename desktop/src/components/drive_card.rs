@@ -125,7 +125,8 @@ impl RenderOnce for DriveCard {
         let pulse_id = ElementId::Name(format!("{:?}-pulse", self.id).into());
         let device = drive.device.clone().filter(|device| !device.is_empty());
         let fs_type = drive.fs_type.clone().filter(|fs| !fs.is_empty());
-        div()
+        let (feedback_id, clickable) = (self.id.clone(), self.on_click.is_some());
+        let card = div()
             .id(self.id)
             .flex_1()
             .min_w_0()
@@ -134,9 +135,8 @@ impl RenderOnce for DriveCard {
             .rounded(px(8.))
             .border_1()
             .border_color(c(BORDER_PRIMARY))
-            .bg(c(SURFACE_SECONDARY))
             .p(px(16.))
-            .when(self.on_click.is_some(), |card| card.cursor_pointer().hover(move |style| style.border_color(accent).bg(c(SURFACE_TERTIARY))).active(crate::components::pressed))
+            .when(clickable, |card| card.cursor_pointer().hover(move |style| style.border_color(accent)))
             .child(
                 div()
                     .size(px(88.))
@@ -231,6 +231,12 @@ impl RenderOnce for DriveCard {
                         }
                     }),
             )
-            .when_some(self.on_click, |card, handler| card.on_click(handler))
+            .when_some(self.on_click, |card, handler| card.on_click(handler));
+        // The card's own background, easing a shade lighter on hover (`motion`).
+        let feedback = super::motion::interact(feedback_id, card).base(c(SURFACE_SECONDARY)).rounded(8.).disabled(!clickable);
+        match clickable {
+            true => feedback.fill(c(SURFACE_TERTIARY)),
+            false => feedback,
+        }
     }
 }
