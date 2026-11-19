@@ -342,9 +342,6 @@ impl Run<'_> {
     }
 }
 
-/// Two virtual paths on one local provider that name the same file, such as
-/// `home/a.txt` and the same file through the System drive. A final link is
-/// its own entry, not the file it points to.
 /// Whether `item` lies inside `folder`, by its path or through links to either.
 fn contains(api: &Api, folder: &str, item: &str) -> bool {
     if item.starts_with(&format!("{folder}/")) {
@@ -355,6 +352,9 @@ fn contains(api: &Api, folder: &str, item: &str) -> bool {
     matches!((folder, item), (Some(folder), Some(item)) if item != folder && item.starts_with(&folder))
 }
 
+/// Two virtual paths on one local provider that name the same file, such as
+/// `home/a.txt` and the same file through the System drive. A final link is
+/// its own entry, not the file it points to.
 fn same_local_file(api: &Api, left: &str, right: &str) -> bool {
     use std::os::unix::fs::MetadataExt as _;
     let identity = |path: &str| {
