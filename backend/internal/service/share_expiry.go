@@ -15,6 +15,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// errNoRootMount means the mount table cannot place paths, which keeps files.
+var errNoRootMount = errors.New("mount table has no root mount")
+
 // Reasons a delete-on-expiry share keeps its file. Every reason is final.
 var (
 	errExpiryFileChanged = errors.New("file changed since it was shared")
@@ -140,6 +143,11 @@ func (s *shareService) deleteExpiredFiles(ctx context.Context, now time.Time) {
 	// A folder mounted inside a shared folder exposes files that live
 	// elsewhere, so each pass needs the host's mount table.
 	mounts, err := s.readMounts()
+	if err == nil && len(mounts) > 0 && visibleMountAt(mounts, "/") == nil {
+		// In a chroot that is not a mount point, the table has no root, so no
+		// path can be placed on it and nested mounts would go unseen.
+		err = errNoRootMount
+	}
 	if err != nil {
 		log.Error().Err(err).Int("shares", len(due)).Msg("Skipped expired share cleanup: could not read the mount table")
 		return

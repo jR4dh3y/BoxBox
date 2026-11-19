@@ -891,3 +891,20 @@ func TestShareExpiryStopGivesUpWhenItsContextEnds(t *testing.T) {
 		t.Fatalf("StopExpiryCleanup() = %v, want %v", err, context.DeadlineExceeded)
 	}
 }
+
+func TestShareExpiryKeepsFileWhenTheMountTableHasNoRoot(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+	expiring := createExpiringShare(t, shares, "media/file.txt", true)
+
+	// A chroot that is not a mount point lists child mounts only.
+	shares.readMounts = func() ([]hostMount, error) {
+		return []hostMount{{id: "30", parent: "20", path: "/shared/photos", device: "8:1", root: "/files/photos"}}, nil
+	}
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
+	assertFileExists(t, fsys, "/data/media/file.txt", true)
+	if !storedDeleteOnExpiry(t, shares, expiring.ID) {
+		t.Fatal("a pass without a root mount consumed the deletion request")
+	}
+}
