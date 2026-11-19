@@ -35,14 +35,24 @@ func Serve(conn *fdconn.Conn, fsys filesystem.FS) error {
 		}
 		wg.Go(func() {
 			reply, file := handle(fsys, message.Payload)
+			defer func() {
+				if file != nil {
+					_ = file.Close()
+				}
+			}()
 			payload, err := json.Marshal(reply)
+			if err == nil && len(payload) > fdconn.MaxMessageSize {
+				err = fdconn.ErrMessageTooLarge
+			}
 			if err != nil {
 				payload, _ = json.Marshal(response{Err: encodeError(err)})
-			}
-			// A failed send means the API is gone; Receive reports it next.
-			_ = conn.Send(message.ID, payload, file)
-			if file != nil {
 				_ = file.Close()
+				file = nil
+			}
+			// Closing makes every waiting call fail instead of hang; the API
+			// redials. Usually the API is already gone.
+			if err := conn.Send(message.ID, payload, file); err != nil {
+				_ = conn.Close()
 			}
 		})
 	}
@@ -53,22 +63,23 @@ func handle(fsys filesystem.FS, payload []byte) (response, *os.File) {
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return response{Err: encodeError(fmt.Errorf("workerfs: bad request: %w", err))}, nil
 	}
+	path, path2 := string(req.Path), string(req.Path2)
 	fail := func(err error) response { return response{Err: encodeError(err)} }
 	switch req.Op {
 	case opReadDir:
-		entries, err := fsys.ReadDir(req.Path)
+		entries, err := fsys.ReadDir(path)
 		if err != nil {
 			return fail(err), nil
 		}
 		return response{Infos: entryInfos(entries)}, nil
 	case opReadDirLimit:
-		entries, truncated, err := fsys.ReadDirLimit(req.Path, req.Limit)
+		entries, truncated, err := fsys.ReadDirLimit(path, req.Limit)
 		if err != nil {
 			return fail(err), nil
 		}
 		return response{Infos: entryInfos(entries), Truncated: truncated}, nil
 	case opReadDirFileInfoLimit:
-		infos, truncated, err := fsys.ReadDirFileInfoLimit(req.Path, req.Limit)
+		infos, truncated, err := fsys.ReadDirFileInfoLimit(path, req.Limit)
 		if err != nil {
 			return fail(err), nil
 		}
@@ -78,17 +89,17 @@ func handle(fsys filesystem.FS, payload []byte) (response, *os.File) {
 		}
 		return response{Infos: wire, Truncated: truncated}, nil
 	case opEvalSymlinks:
-		text, err := fsys.EvalSymlinks(req.Path)
+		text, err := fsys.EvalSymlinks(path)
 		return textReply(text, err), nil
 	case opReadlink:
-		text, err := fsys.Readlink(req.Path)
+		text, err := fsys.Readlink(path)
 		return textReply(text, err), nil
 	case opStat:
-		return infoReply(fsys.Stat(req.Path)), nil
+		return infoReply(fsys.Stat(path)), nil
 	case opLstat:
-		return infoReply(fsys.Lstat(req.Path)), nil
+		return infoReply(fsys.Lstat(path)), nil
 	case opOpenFile:
-		opened, err := fsys.OpenFile(req.Path, req.Flag, req.Perm)
+		opened, err := fsys.OpenFile(path, req.Flag, req.Perm)
 		if err != nil {
 			return fail(err), nil
 		}
@@ -99,31 +110,31 @@ func handle(fsys filesystem.FS, payload []byte) (response, *os.File) {
 		}
 		return response{}, file
 	case opRemove:
-		return errReply(fsys.Remove(req.Path)), nil
+		return errReply(fsys.Remove(path)), nil
 	case opRemoveAll:
-		return errReply(fsys.RemoveAll(req.Path)), nil
+		return errReply(fsys.RemoveAll(path)), nil
 	case opRename:
-		return errReply(fsys.Rename(req.Path, req.Path2)), nil
+		return errReply(fsys.Rename(path, path2)), nil
 	case opRenameNoReplace:
-		return errReply(fsys.RenameNoReplace(req.Path, req.Path2)), nil
+		return errReply(fsys.RenameNoReplace(path, path2)), nil
 	case opMkdirAllWithin:
-		return errReply(fsys.MkdirAllWithin(req.Path, req.Path2, req.Perm)), nil
+		return errReply(fsys.MkdirAllWithin(path, path2, req.Perm)), nil
 	case opMkdirAll:
-		return errReply(fsys.MkdirAll(req.Path, req.Perm)), nil
+		return errReply(fsys.MkdirAll(path, req.Perm)), nil
 	case opMkdir:
-		return errReply(fsys.Mkdir(req.Path, req.Perm)), nil
+		return errReply(fsys.Mkdir(path, req.Perm)), nil
 	case opChmod:
-		return errReply(fsys.Chmod(req.Path, req.Perm)), nil
+		return errReply(fsys.Chmod(path, req.Perm)), nil
 	case opExists:
-		ok, err := fsys.Exists(req.Path)
+		ok, err := fsys.Exists(path)
 		return boolReply(ok, err), nil
 	case opIsDir:
-		ok, err := fsys.IsDir(req.Path)
+		ok, err := fsys.IsDir(path)
 		return boolReply(ok, err), nil
 	case opWriteFile:
-		return errReply(fsys.WriteFile(req.Path, req.Data, req.Perm)), nil
+		return errReply(fsys.WriteFile(path, req.Data, req.Perm)), nil
 	case opReadFile:
-		data, err := fsys.ReadFile(req.Path)
+		data, err := fsys.ReadFile(path)
 		if err != nil {
 			return fail(err), nil
 		}
@@ -134,14 +145,17 @@ func handle(fsys filesystem.FS, payload []byte) (response, *os.File) {
 
 // Directory entries carry their metadata so callers never need a round trip
 // per entry. An entry that vanished before Info is left out, like os.ReadDir.
+// Any other Info error goes to the caller, which decides whether to skip it.
 func entryInfos(entries []fs.DirEntry) []wireInfo {
 	wire := make([]wireInfo, 0, len(entries))
 	for _, entry := range entries {
 		info, err := entry.Info()
-		if err != nil {
-			continue
+		switch {
+		case err == nil:
+			wire = append(wire, toWireInfo(info))
+		case !errors.Is(err, fs.ErrNotExist):
+			wire = append(wire, wireInfo{Name: rawString(entry.Name()), Mode: entry.Type(), Err: encodeError(err)})
 		}
-		wire = append(wire, toWireInfo(info))
 	}
 	return wire
 }
@@ -149,7 +163,7 @@ func entryInfos(entries []fs.DirEntry) []wireInfo {
 func errReply(err error) response { return response{Err: encodeError(err)} }
 
 func textReply(text string, err error) response {
-	return response{Text: text, Err: encodeError(err)}
+	return response{Text: rawString(text), Err: encodeError(err)}
 }
 
 func boolReply(ok bool, err error) response {

@@ -119,6 +119,12 @@ func (s *session) fail() {
 	}
 }
 
+func (s *session) forget(id uint64) {
+	s.mu.Lock()
+	delete(s.pending, id)
+	s.mu.Unlock()
+}
+
 func (c *Client) call(req request) (response, fdconn.Message, error) {
 	payload, err := json.Marshal(req)
 	if err != nil {
@@ -132,6 +138,11 @@ func (c *Client) call(req request) (response, fdconn.Message, error) {
 	defer c.release(current)
 
 	if err := current.conn.Send(id, payload, nil); err != nil {
+		if errors.Is(err, fdconn.ErrMessageTooLarge) {
+			// Nothing was written, so the session and other calls are fine.
+			current.forget(id)
+			return response{}, fdconn.Message{}, err
+		}
 		current.fail()
 		return response{}, fdconn.Message{}, fmt.Errorf("%w: %w", filesystem.ErrWorkerUnavailable, err)
 	}
@@ -208,7 +219,7 @@ func (c *Client) do(req request) error {
 }
 
 func (c *Client) ReadDir(name string) ([]fs.DirEntry, error) {
-	reply, _, err := c.call(request{Op: opReadDir, Path: name})
+	reply, _, err := c.call(request{Op: opReadDir, Path: rawString(name)})
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +227,7 @@ func (c *Client) ReadDir(name string) ([]fs.DirEntry, error) {
 }
 
 func (c *Client) ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, error) {
-	reply, _, err := c.call(request{Op: opReadDirLimit, Path: name, Limit: limit})
+	reply, _, err := c.call(request{Op: opReadDirLimit, Path: rawString(name), Limit: limit})
 	if err != nil {
 		return nil, false, err
 	}
@@ -224,7 +235,7 @@ func (c *Client) ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, erro
 }
 
 func (c *Client) ReadDirFileInfoLimit(name string, limit int) ([]fs.FileInfo, bool, error) {
-	reply, _, err := c.call(request{Op: opReadDirFileInfoLimit, Path: name, Limit: limit})
+	reply, _, err := c.call(request{Op: opReadDirFileInfoLimit, Path: rawString(name), Limit: limit})
 	if err != nil {
 		return nil, false, err
 	}
@@ -239,21 +250,21 @@ func (c *Client) ReadDirFileInfoLimit(name string, limit int) ([]fs.FileInfo, bo
 }
 
 func (c *Client) EvalSymlinks(path string) (string, error) {
-	reply, _, err := c.call(request{Op: opEvalSymlinks, Path: path})
-	return reply.Text, err
+	reply, _, err := c.call(request{Op: opEvalSymlinks, Path: rawString(path)})
+	return string(reply.Text), err
 }
 
 func (c *Client) Readlink(path string) (string, error) {
-	reply, _, err := c.call(request{Op: opReadlink, Path: path})
-	return reply.Text, err
+	reply, _, err := c.call(request{Op: opReadlink, Path: rawString(path)})
+	return string(reply.Text), err
 }
 
 func (c *Client) Stat(name string) (fs.FileInfo, error) {
-	return c.info(request{Op: opStat, Path: name})
+	return c.info(request{Op: opStat, Path: rawString(name)})
 }
 
 func (c *Client) Lstat(name string) (fs.FileInfo, error) {
-	return c.info(request{Op: opLstat, Path: name})
+	return c.info(request{Op: opLstat, Path: rawString(name)})
 }
 
 func (c *Client) info(req request) (fs.FileInfo, error) {
@@ -278,7 +289,7 @@ func (c *Client) Create(name string) (afero.File, error) {
 // OpenFile returns the descriptor the worker opened, so reads and writes run
 // in this process at full speed after the worker's identity was checked.
 func (c *Client) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
-	_, message, err := c.call(request{Op: opOpenFile, Path: name, Flag: flag, Perm: perm})
+	_, message, err := c.call(request{Op: opOpenFile, Path: rawString(name), Flag: flag, Perm: perm})
 	if err != nil {
 		return nil, err
 	}
@@ -290,53 +301,53 @@ func (c *Client) OpenFile(name string, flag int, perm os.FileMode) (afero.File, 
 }
 
 func (c *Client) Remove(name string) error {
-	return c.do(request{Op: opRemove, Path: name})
+	return c.do(request{Op: opRemove, Path: rawString(name)})
 }
 
 func (c *Client) RemoveAll(path string) error {
-	return c.do(request{Op: opRemoveAll, Path: path})
+	return c.do(request{Op: opRemoveAll, Path: rawString(path)})
 }
 
 func (c *Client) Rename(oldpath, newpath string) error {
-	return c.do(request{Op: opRename, Path: oldpath, Path2: newpath})
+	return c.do(request{Op: opRename, Path: rawString(oldpath), Path2: rawString(newpath)})
 }
 
 func (c *Client) RenameNoReplace(oldpath, newpath string) error {
-	return c.do(request{Op: opRenameNoReplace, Path: oldpath, Path2: newpath})
+	return c.do(request{Op: opRenameNoReplace, Path: rawString(oldpath), Path2: rawString(newpath)})
 }
 
 func (c *Client) MkdirAllWithin(root, path string, perm os.FileMode) error {
-	return c.do(request{Op: opMkdirAllWithin, Path: root, Path2: path, Perm: perm})
+	return c.do(request{Op: opMkdirAllWithin, Path: rawString(root), Path2: rawString(path), Perm: perm})
 }
 
 func (c *Client) MkdirAll(path string, perm os.FileMode) error {
-	return c.do(request{Op: opMkdirAll, Path: path, Perm: perm})
+	return c.do(request{Op: opMkdirAll, Path: rawString(path), Perm: perm})
 }
 
 func (c *Client) Mkdir(path string, perm os.FileMode) error {
-	return c.do(request{Op: opMkdir, Path: path, Perm: perm})
+	return c.do(request{Op: opMkdir, Path: rawString(path), Perm: perm})
 }
 
 func (c *Client) Chmod(name string, mode os.FileMode) error {
-	return c.do(request{Op: opChmod, Path: name, Perm: mode})
+	return c.do(request{Op: opChmod, Path: rawString(name), Perm: mode})
 }
 
 func (c *Client) Exists(path string) (bool, error) {
-	reply, _, err := c.call(request{Op: opExists, Path: path})
+	reply, _, err := c.call(request{Op: opExists, Path: rawString(path)})
 	return reply.OK, err
 }
 
 func (c *Client) IsDir(path string) (bool, error) {
-	reply, _, err := c.call(request{Op: opIsDir, Path: path})
+	reply, _, err := c.call(request{Op: opIsDir, Path: rawString(path)})
 	return reply.OK, err
 }
 
 func (c *Client) WriteFile(name string, data []byte, perm os.FileMode) error {
-	return c.do(request{Op: opWriteFile, Path: name, Data: data, Perm: perm})
+	return c.do(request{Op: opWriteFile, Path: rawString(name), Data: data, Perm: perm})
 }
 
 func (c *Client) ReadFile(name string) ([]byte, error) {
-	reply, _, err := c.call(request{Op: opReadFile, Path: name})
+	reply, _, err := c.call(request{Op: opReadFile, Path: rawString(name)})
 	return reply.Data, err
 }
 

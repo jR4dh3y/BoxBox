@@ -280,3 +280,93 @@ func TestClientIdleChurnNeverFailsACall(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// Linux names are bytes; a copy walks back into the names ReadDir returned.
+func TestClientKeepsNonUTF8NamesExact(t *testing.T) {
+	client, _ := startWorker(t)
+	root := t.TempDir()
+	name := "caf\xe9 \xff.txt"
+	if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := client.ReadDir(root)
+	if err != nil || len(entries) != 1 || entries[0].Name() != name {
+		t.Fatalf("ReadDir = %v, %v", entries, err)
+	}
+	info, err := client.Stat(filepath.Join(root, entries[0].Name()))
+	if err != nil || info.Name() != name {
+		t.Fatalf("Stat of listed name = %v, %v", info, err)
+	}
+	_, err = client.Stat(filepath.Join(root, "gone\xfe"))
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) || pathErr.Path != filepath.Join(root, "gone\xfe") {
+		t.Fatalf("error path = %v", err)
+	}
+}
+
+// A folder readable but not searchable lists names whose Info fails; a copy
+// must see that failure, not an empty folder.
+func TestClientReturnsEntryInfoErrors(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permissions")
+	}
+	client, _ := startWorker(t)
+	root := t.TempDir()
+	locked := filepath.Join(root, "locked")
+	if err := os.Mkdir(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "a.txt"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	entries, err := client.ReadDir(locked)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "a.txt" {
+		t.Fatalf("ReadDir = %v, %v", entries, err)
+	}
+	if _, err := entries[0].Info(); !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("Info = %v, want a permission error", err)
+	}
+}
+
+func TestClientRejectsOversizedMessagesWithoutHanging(t *testing.T) {
+	client, w := startWorker(t)
+	root := t.TempDir()
+	big := filepath.Join(root, "big")
+	// Base64 in the reply grows this past the message limit.
+	file, err := os.Create(big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(fdconn.MaxMessageSize * 3 / 4); err != nil {
+		t.Fatal(err)
+	}
+	_ = file.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.ReadFile(big)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, fdconn.ErrMessageTooLarge) {
+			t.Fatalf("ReadFile = %v, want %v", err, fdconn.ErrMessageTooLarge)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("oversized reply never finished")
+	}
+	if err := client.WriteFile(filepath.Join(root, "out"), make([]byte, fdconn.MaxMessageSize+1), 0o644); !errors.Is(err, fdconn.ErrMessageTooLarge) {
+		t.Fatalf("WriteFile = %v, want %v", err, fdconn.ErrMessageTooLarge)
+	}
+	if _, err := client.Stat(root); err != nil {
+		t.Fatal(err)
+	}
+	if dials := w.dials.Load(); dials != 1 {
+		t.Fatalf("worker dialed %d times; an oversized message must not end the session", dials)
+	}
+}
