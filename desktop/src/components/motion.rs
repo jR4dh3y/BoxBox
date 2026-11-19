@@ -93,8 +93,9 @@ pub fn enter<E: IntoElement + Styled + 'static>(id: impl Into<ElementId>, elemen
 
 /// The hover fill of rows and list-like controls: a light wash, so it shows on
 /// the panels' dark grey, over a wallpaper and in a transparent window alike.
+/// Below about 12% it vanishes over a busy wallpaper.
 pub fn hover_fill() -> Rgba {
-    Rgba { r: 1., g: 1., b: 1., a: 0.07 }
+    Rgba { r: 1., g: 1., b: 1., a: 0.12 }
 }
 
 /// `element` fading up from 60%, for content that replaced what was there.
