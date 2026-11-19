@@ -128,7 +128,8 @@ impl Workspace {
         });
         let journey = crate::profile::journey("load drives", String::new);
         receive(self, prefetch.drives, cx, move |this, read, cx| match read {
-            Some(read) => this.apply_drives(target, read, journey, cx),
+            // The start-up thread reads this computer's drives.
+            Some(read) => this.apply_drives(target, this.home.api.clone(), read, journey, cx),
             None => this.load_drives(target, cx),
         });
         let Some(pane) = self.pane_mut_by_id(target.0) else { return };

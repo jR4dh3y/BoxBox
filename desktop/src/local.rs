@@ -136,8 +136,9 @@ impl LocalFiles {
             .collect::<Result<Vec<_>>>()?;
         let mut items = map_entries(&entries, |entry| self.info_for_entry(mount, path, entry))
             .into_iter()
-            // Deleted since the folder was read, as happens in a busy Downloads.
-            .filter(|result| !matches!(result, Err(error) if is_not_found(error)))
+            // Deleted since the folder was read, as happens in a busy Downloads. A name that is
+            // not UTF-8 has no virtual path to reach it, so it is left out, not the folder.
+            .filter(|result| !matches!(result, Err(error) if is_not_found(error) || error.is::<NotUtf8Name>()))
             .collect::<Result<Vec<_>>>()?;
         // By the names already read: `DirEntry::file_name` allocates on every call.
         items.sort_unstable_by(|left, right| left.name.cmp(&right.name));
@@ -290,8 +291,15 @@ impl LocalFiles {
         let (mount, candidate) = self.candidate_path(path)?;
         let resolved = fs::canonicalize(&candidate)
             .with_context(|| format!("cannot resolve {path}"))?;
-        ensure!(resolved.starts_with(&mount.path), "{path} resolves outside its mount");
+        ensure!(self.exposes(&resolved), "{path} resolves outside the folders BoxBox shows");
         Ok(resolved)
+    }
+
+    /// Whether `real` lies in a root this provider shows. On the host, System
+    /// holds every path, so a link in Home to `/mnt/media` opens; a
+    /// `BOXBOX_ROOT` fixture has one root and stays confined to it.
+    fn exposes(&self, real: &Path) -> bool {
+        self.mounts.iter().any(|mount| real.starts_with(&mount.path))
     }
 
     /// The entry itself: its parent is resolved, but a final link is not followed.
@@ -430,7 +438,7 @@ impl LocalFiles {
         let (mount, candidate) = self.candidate_path(path)?;
         let directory = fs::canonicalize(&candidate)
             .with_context(|| format!("cannot resolve directory {path}"))?;
-        ensure!(directory.starts_with(&mount.path), "{path} resolves outside its mount");
+        ensure!(self.exposes(&directory), "{path} resolves outside the folders BoxBox shows");
         ensure!(directory.is_dir(), "{path} is not a directory");
         Ok((mount, directory))
     }
@@ -499,14 +507,29 @@ impl LocalFiles {
         Ok(())
     }
 
+}
+
+/// An entry whose name is not UTF-8, which a virtual path cannot name.
+#[derive(Debug)]
+struct NotUtf8Name;
+
+impl std::fmt::Display for NotUtf8Name {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("file name is not valid UTF-8")
+    }
+}
+
+impl std::error::Error for NotUtf8Name {}
+
+impl LocalFiles {
     /// Stats relative to the open folder, which skips resolving the whole path
     /// again: 26 ms instead of 37 ms for 20,000 entries.
     fn info_for_entry(&self, mount: &Mount, parent: &str, entry: &fs::DirEntry) -> Result<FileInfo> {
         let path = entry.path();
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .context("file name is not valid UTF-8")?;
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            log::info!("{} is left out: its name is not UTF-8", path.display());
+            return Err(NotUtf8Name.into());
+        };
         let metadata = entry.metadata().with_context(|| format!("cannot inspect entry {name:?}"))?;
         self.info_from_metadata(mount, parent, &path, metadata)
             .with_context(|| format!("cannot inspect entry {name:?}"))

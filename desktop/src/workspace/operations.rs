@@ -527,7 +527,8 @@ impl Workspace {
                 .spawn(async move {
                     let paths = virtual_paths
                         .iter()
-                        .map(|path| api.local_path(path)?.with_context(|| format!("{path} is not on this computer")))
+                        // The entries themselves: a cut link moves the link, not its target.
+                        .map(|path| api.entry_path(path)?.with_context(|| format!("{path} is not on this computer")))
                         .collect::<anyhow::Result<Vec<_>>>()?;
                     let files = os_clipboard::Files { op, paths };
                     os_clipboard::publish(&files)?;

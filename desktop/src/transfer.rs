@@ -157,7 +157,14 @@ impl Run<'_> {
                 }
                 Answer::Rename => name = self.free_name(parent, &name)?,
                 Answer::Replace => {
-                    if !self.attempt(&item.name, || self.job.destination.delete(&target, true))? {
+                    // Replacing `A` with `A/A` would delete the item before it is copied.
+                    let holds = same && contains(source, &target, &item.path);
+                    let job = self.job;
+                    let replace = || {
+                        anyhow::ensure!(!holds, "“{name}” is inside the folder it would replace");
+                        job.destination.delete(&target, true)
+                    };
+                    if !self.attempt(&item.name, replace)? {
                         return Ok(());
                     }
                 }
@@ -338,6 +345,16 @@ impl Run<'_> {
 /// Two virtual paths on one local provider that name the same file, such as
 /// `home/a.txt` and the same file through the System drive. A final link is
 /// its own entry, not the file it points to.
+/// Whether `item` lies inside `folder`, by its path or through links to either.
+fn contains(api: &Api, folder: &str, item: &str) -> bool {
+    if item.starts_with(&format!("{folder}/")) {
+        return true;
+    }
+    let folder = api.local_path(folder).ok().flatten();
+    let item = api.entry_path(item).ok().flatten();
+    matches!((folder, item), (Some(folder), Some(item)) if item != folder && item.starts_with(&folder))
+}
+
 fn same_local_file(api: &Api, left: &str, right: &str) -> bool {
     use std::os::unix::fs::MetadataExt as _;
     let identity = |path: &str| {
@@ -541,6 +558,21 @@ mod tests {
         assert_eq!(fs::read_to_string(root.0.join("dst/a (copy 1).txt")).unwrap(), "src/a.txt");
         assert_eq!(fs::read_to_string(root.0.join("dst/a.txt")).unwrap(), "dst/a.txt");
         assert_eq!(fs::read_to_string(root.0.join("dst/c.txt")).unwrap(), "src/c.txt");
+    }
+
+    #[test]
+    fn replacing_the_folder_that_holds_the_item_deletes_nothing() {
+        let (root, api) = fixture(&["A/A/a.txt", "A/b.txt"]);
+        let (asked, answers) = scripted(vec![(Answer::Replace, false), (Answer::Skip, false)]);
+        let ask = |question: Question, _| {
+            asked.borrow_mut().push(question);
+            answers.borrow_mut().next().unwrap()
+        };
+        let job = Job { mode: Mode::Move, items: vec![(api.clone(), api.stat("home/A/A").unwrap())], destination: api.clone(), parent: "home".into() };
+        let outcome = run(&job, &ask).unwrap();
+        assert!(matches!(&asked.borrow()[1], Question::Failed { .. }), "the refusal is reported");
+        assert_eq!(outcome.done, 0);
+        assert!(root.0.join("A/A/a.txt").exists() && root.0.join("A/b.txt").exists());
     }
 
     #[test]

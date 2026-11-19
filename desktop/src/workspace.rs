@@ -377,6 +377,8 @@ pub struct Workspace {
     pub(crate) favorites_error: Option<String>,
     /// Whether the GTK bookmarks were read, so writing them keeps what they hold.
     pub(crate) bookmarks_read: bool,
+    /// Counts local favorite edits, so a read that started before one does not undo it.
+    pub(crate) bookmark_edits: u64,
     pub(crate) wallpaper: WallpaperState,
     pub(crate) wallpaper_generation: u64,
     /// Bumped by each background choice; a wallpaper install from before it is dropped.
@@ -520,6 +522,7 @@ impl Workspace {
             favorites: Favorites::load(),
             favorites_error: None,
             bookmarks_read: false,
+            bookmark_edits: 0,
             wallpaper: WallpaperState::Empty,
             wallpaper_generation: 0,
             wallpaper_choice: 0,
@@ -674,13 +677,21 @@ impl Workspace {
         let api = pane.api.clone();
         let journey = crate::profile::journey("load drives", String::new);
         cx.spawn(async move |this, cx| {
-            let read = cx.background_executor().spawn(async move { startup::read_drives(&api) }).await;
-            this.update(cx, |this, cx| this.apply_drives(target, read, journey, cx)).ok();
+            let read = cx.background_executor().spawn({
+                let api = api.clone();
+                async move { startup::read_drives(&api) }
+            }).await;
+            this.update(cx, |this, cx| this.apply_drives(target, api, read, journey, cx)).ok();
         })
         .detach();
     }
 
-    fn apply_drives(&mut self, target: PaneTarget, read: startup::DrivesRead, journey: Option<crate::profile::Journey>, cx: &mut Context<Self>) {
+    /// `api` is the provider the drives were read from: a reply for a server the
+    /// pane has since left is dropped, or it would replace this computer's drives.
+    fn apply_drives(&mut self, target: PaneTarget, api: Arc<Api>, read: startup::DrivesRead, journey: Option<crate::profile::Journey>, cx: &mut Context<Self>) {
+        if !self.pane_by_id(target.0).is_some_and(|pane| Arc::ptr_eq(&pane.api, &api)) {
+            return;
+        }
         let roots = match read.roots {
             Ok(roots) => Load::Loaded(roots),
             Err(error) => Load::Failed(format!("{error:#}")),

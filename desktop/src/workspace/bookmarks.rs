@@ -18,14 +18,32 @@ pub(crate) struct FavoriteDrag(pub usize);
 impl Workspace {
     pub(crate) fn load_bookmarks(&mut self, cx: &mut Context<Self>) {
         let Some(api) = self.local_api() else { return };
-        if let Some(folder) = super::favorites::bookmarks_path().parent() {
-            self.directory_watches.watch(BOOKMARKS_WATCH, folder.to_path_buf());
-        }
+        self.watch_bookmarks();
+        let edits = self.bookmark_edits;
         cx.spawn(async move |this, cx| {
-            let local = cx.background_executor().spawn(async move { read_bookmarks(&api) }).await;
+            let read = cx.background_executor().spawn(async move { read_bookmarks(&api) }).await;
             this.update(cx, |this, cx| {
-                this.bookmarks_read = local.is_some();
-                this.favorites.set_local(local.unwrap_or_default());
+                let edited = this.bookmark_edits != edits;
+                match read {
+                    // Edited here meanwhile: the edit is newer and was saved over this read.
+                    Some(_) if edited && this.bookmarks_read => {}
+                    Some(read) => {
+                        // Pins made before the first read finished join what the file holds.
+                        let pinned = if edited { this.favorites.local() } else { Vec::new() };
+                        this.bookmarks_read = true;
+                        this.favorites.set_local(read);
+                        for favorite in pinned {
+                            this.favorites.add(favorite);
+                        }
+                        if edited {
+                            this.save_bookmarks(cx);
+                        }
+                    }
+                    None => {
+                        this.bookmarks_read = false;
+                        this.favorites.set_local(Vec::new());
+                    }
+                }
                 cx.notify();
             })
             .ok();
@@ -33,8 +51,16 @@ impl Workspace {
         .detach();
     }
 
+    /// Watches the bookmarks file's folder, which GTK creates with the first bookmark.
+    fn watch_bookmarks(&mut self) {
+        if let Some(folder) = super::favorites::bookmarks_path().parent() {
+            self.directory_watches.watch(BOOKMARKS_WATCH, folder.to_path_buf());
+        }
+    }
+
     pub(crate) fn save_bookmarks(&mut self, cx: &mut Context<Self>) {
-        // Until the file is read, writing it would lose what it holds.
+        self.bookmark_edits += 1;
+        // Until the file is read, writing it would lose what it holds; the read saves them.
         if !self.bookmarks_read {
             return;
         }
@@ -43,9 +69,12 @@ impl Workspace {
         let generation = BOOKMARK_WRITES.fetch_add(1, Ordering::SeqCst) + 1;
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move { write_bookmarks(&api, &local, generation) }).await;
-            if let Err(error) = result {
-                this.update(cx, |this, cx| this.report(Err(format!("Could not save bookmarks: {error:#}")), cx)).ok();
-            }
+            this.update(cx, |this, cx| match result {
+                // The first bookmark may have just made the folder, which can only be watched now.
+                Ok(()) => this.watch_bookmarks(),
+                Err(error) => this.report(Err(format!("Could not save bookmarks: {error:#}")), cx),
+            })
+            .ok();
         })
         .detach();
     }

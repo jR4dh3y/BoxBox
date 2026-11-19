@@ -174,8 +174,9 @@ fn stage(api: &Api, files: &[FileInfo]) -> Result<Vec<PathBuf>> {
     if api.is_local() {
         return files
             .iter()
+            // The entries themselves: a dragged link is the link, not its target.
             .map(|item| {
-                api.local_path(&item.path)?
+                api.entry_path(&item.path)?
                     .context("local file has no filesystem path")
             })
             .collect();
