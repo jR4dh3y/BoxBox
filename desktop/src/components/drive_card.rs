@@ -20,14 +20,14 @@ fn usage_level(used_pct: f64) -> (ProgressVariant, u32) {
     }
 }
 
-/// `ProgressBar size="sm"` in the usage colour.
-pub fn usage_bar(used_pct: f64) -> impl IntoElement {
-    div().flex_1().child(ProgressBar::new(used_pct as f32).size(ProgressSize::Sm).variant(usage_level(used_pct).0))
+/// `ProgressBar size="sm"` in the usage colour, growing to its value as it appears.
+pub fn usage_bar(id: impl Into<ElementId>, used_pct: f64) -> impl IntoElement {
+    div().flex_1().child(ProgressBar::new(used_pct as f32).size(ProgressSize::Sm).variant(usage_level(used_pct).0).grow(id))
 }
 
 /// The bar on a raised card, whose own colour would hide the empty part.
-pub fn card_usage_bar(used_pct: f64) -> impl IntoElement {
-    ProgressBar::new(used_pct as f32).size(ProgressSize::Sm).variant(usage_level(used_pct).0).track(SURFACE_PRIMARY)
+pub fn card_usage_bar(id: impl Into<ElementId>, used_pct: f64) -> impl IntoElement {
+    ProgressBar::new(used_pct as f32).size(ProgressSize::Sm).variant(usage_level(used_pct).0).track(SURFACE_PRIMARY).grow(id)
 }
 
 /// The percentage beside the bar: text-[11px] font-medium.
@@ -128,6 +128,7 @@ impl RenderOnce for DriveCard {
         let usage = drive.state.usage();
         let wait = drive.state.wait();
         let pulse_id = ElementId::Name(format!("{:?}-pulse", self.id).into());
+        let grow_id = ElementId::Name(format!("{:?}-usage", self.id).into());
         let device = drive.device.clone().filter(|device| !device.is_empty());
         let fs_type = drive.fs_type.clone().filter(|fs| !fs.is_empty());
         let (feedback_id, clickable) = (self.id.clone(), self.on_click.is_some());
@@ -230,9 +231,9 @@ impl RenderOnce for DriveCard {
                     .child({
                         let row = div().mt(px(2.)).h(px(16.5)).flex().items_center().gap(px(12.));
                         match (usage, wait) {
-                            (Some(usage), _) => row.child(usage_bar(usage.pct)).child(usage_text(usage.pct)),
+                            (Some(usage), _) => row.child(usage_bar(grow_id, usage.pct)).child(usage_text(usage.pct)),
                             (None, Some(wait)) => row.child(skeleton::bar(pulse_id, 4., wait)),
-                            (None, None) => row.child(usage_bar(0.)),
+                            (None, None) => row.child(usage_bar(grow_id, 0.)),
                         }
                     }),
             )

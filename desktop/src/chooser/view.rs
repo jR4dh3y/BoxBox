@@ -902,7 +902,6 @@ impl Chooser {
         };
         let selection = crate::components::Selection {
             background: c(crate::workspace::appearance::mix(self.accent, 0x15171c, 0.30)),
-            hover: c(crate::workspace::appearance::mix(self.accent, 0x15171c, 0.36)),
             accent: c(self.accent),
         };
         let name = display_name(&item.name, item.is_dir, true);

@@ -53,10 +53,12 @@ impl Workspace {
     fn section(&self, title: &'static str, cx: &mut Context<Self>) -> SidebarSection {
         SidebarSection::new(SharedString::from(format!("section-{title}")), title).collapsible(
             self.collapsed_sections.contains(title),
+            self.section_toggles.get(title).copied(),
             cx.listener(move |this, _, _, cx| {
                 if !this.collapsed_sections.remove(title) {
                     this.collapsed_sections.insert(title);
                 }
+                this.section_toggles.insert(title, std::time::Instant::now());
                 cx.notify();
             }),
         )

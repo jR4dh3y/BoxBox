@@ -89,8 +89,9 @@ impl Workspace {
             .text_xs_tw()
             .p(px(16.))
             .child(body);
-        // Fades in where it stands: sliding would reflow the grid beside it every frame.
-        crate::components::motion::enter("details-enter", panel, crate::components::motion::POPOVER, cx)
+        // Its width is there from the first frame, so the grid beside it reflows
+        // once; only what is drawn slides in from the right.
+        crate::components::motion::enter_from("details-enter", panel, crate::components::motion::DIALOG, (24., 0.), cx)
     }
 
     fn preview(&self, item: &FileInfo) -> gpui::Div {

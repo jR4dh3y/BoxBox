@@ -309,6 +309,8 @@ pub struct Workspace {
     pub(crate) trash_table: trash_table::TrashTable,
     /// Sidebar sections the user folded, by title.
     pub(crate) collapsed_sections: std::collections::HashSet<&'static str>,
+    /// When each sidebar section last folded, for its animation.
+    pub(crate) section_toggles: HashMap<&'static str, std::time::Instant>,
     pub(crate) trash_error: Option<String>,
     pub(crate) trash_provider: Option<Arc<Api>>,
     /// Whether Trash holds anything, for its icon.
@@ -479,6 +481,7 @@ impl Workspace {
             trash_open: false,
             trash_table: Default::default(),
             collapsed_sections: Default::default(),
+            section_toggles: Default::default(),
             trash_error: None,
             trash_provider: None,
             trash_full: false,

@@ -188,7 +188,7 @@ impl RenderOnce for Modal {
                         )
                     });
         div().absolute().inset_0().child(backdrop).child(
-            div().absolute().inset_0().flex().items_center().justify_center().child(motion::enter("modal-enter", panel, motion::DIALOG, cx)),
+            div().absolute().inset_0().flex().items_center().justify_center().child(motion::enter_from("modal-enter", panel, motion::DIALOG, (0., 12.), cx)),
         )
     }
 }

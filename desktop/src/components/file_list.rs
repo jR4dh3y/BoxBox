@@ -141,7 +141,7 @@ impl FileListHeader {
 }
 
 impl RenderOnce for FileListHeader {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let Self { table, layout, sorted, pane, on_sort, on_resize, on_menu, background } = self;
         let specs = layout.specs(table);
         let last = specs.len() - 1;
@@ -199,10 +199,7 @@ impl RenderOnce for FileListHeader {
                 })
             })
             .children(specs.into_iter().enumerate().map(|(index, ColumnSpec { column, width })| {
-                let arrow = sorted.filter(|(sorted, _)| *sorted == column).map(|(_, dir)| match dir {
-                    SortDir::Asc => "chevron-up",
-                    SortDir::Desc => "chevron-down",
-                });
+                let arrow = sorted.filter(|(sorted, _)| *sorted == column).map(|(_, dir)| dir);
                 // The border is inside GPUI's box but half outside the web's collapsed one;
                 // pb-px puts the label on the same line.
                 cell(width)
@@ -224,7 +221,15 @@ impl RenderOnce for FileListHeader {
                                 .flex_none()
                                 .w(px(12.))
                                 .justify_center()
-                                .when_some(arrow, |slot, arrow| slot.child(icon(arrow, 12., c(TEXT_SECONDARY)))),
+                                // The arrow turns over when the order flips.
+                                .when_some(arrow, |slot, dir| {
+                                    let (from, to) = match dir {
+                                        SortDir::Asc => (180., 0.),
+                                        SortDir::Desc => (0., 180.),
+                                    };
+                                    let id = ElementId::Name(format!("sort-arrow-{}-{}", column.label(), to).into());
+                                    slot.child(super::motion::turn(id, icon("chevron-up", 12., c(TEXT_SECONDARY)), from, to, cx))
+                                }),
                         ),
                     )
                     .when_some(on_sort.clone(), |cell, handler| cell.on_click(move |_, window, cx| handler(column, window, cx)))
@@ -241,7 +246,6 @@ type CheckHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 #[derive(Clone, Copy)]
 pub struct Selection {
     pub background: Rgba,
-    pub hover: Rgba,
     pub accent: Rgba,
 }
 
@@ -406,7 +410,7 @@ impl FileRow {
 
 impl RenderOnce for FileRow {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        let Selection { background, hover, accent } = self.selection;
+        let Selection { background, accent } = self.selection;
         let secondary = c(if self.selected { TEXT_PRIMARY } else { TEXT_SECONDARY });
         let tone = c(self.tint.unwrap_or(if self.is_dir { FOLDER } else { TEXT_SECONDARY }));
         let group = SharedString::from(format!("file-icon-{}", self.id));
@@ -460,8 +464,9 @@ impl RenderOnce for FileRow {
             cell(width).overflow_hidden().when(column.right_aligned(), |cell| cell.justify_end()).text_color(secondary).child(text(value))
         });
         let feedback_id = self.id.clone();
-        // Only a plain row eases in a hover fill; selected and active rows keep their own.
-        let plain = !self.selected && !self.active && !self.drop_target;
+        // The cursor row and a drop target keep their own fill; the others ease in a
+        // hover wash, over the selection when selected.
+        let washed = !(self.active && !self.selected) && !self.drop_target;
         let row = div()
             .id(self.id)
             .relative()
@@ -475,11 +480,7 @@ impl RenderOnce for FileRow {
             .text_color(c(TEXT_PRIMARY))
             .cursor_default()
             .when(self.cut, |row| row.opacity(0.5))
-            .map(|row| match (self.selected, self.active) {
-                (true, _) => row.bg(background).hover(move |style| style.bg(hover)),
-                (false, true) => row.bg(c(SURFACE_SECONDARY)),
-                (false, false) => row,
-            })
+            .when(self.active && !self.selected, |row| row.bg(c(SURFACE_SECONDARY)))
             // shadow-[inset_2px_0_0_var(--color-accent)]
             .when(self.active, |row| row.child(div().absolute().left_0().top_0().bottom_0().w(px(2.)).bg(accent)))
             .when(self.drop_target, |row| row.bg(background).child(div().absolute().inset_0().border_1().border_color(accent)))
@@ -500,8 +501,8 @@ impl RenderOnce for FileRow {
             Some(decorate) => decorate(row).into_any_element(),
             None => row.into_any_element(),
         };
-        let feedback = super::motion::interact(feedback_id, row).without_press();
-        match plain {
+        let feedback = super::motion::interact(feedback_id, row).without_press().selected(self.selected.then_some(background));
+        match washed {
             true => feedback.fill(super::motion::hover_fill()).into_any_element(),
             false => feedback.into_any_element(),
         }

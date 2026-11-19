@@ -187,7 +187,7 @@ impl FileTile {
 
 impl RenderOnce for FileTile {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let Selection { background, hover, accent } = self.selection;
+        let Selection { background, accent } = self.selection;
         let metrics = self.metrics;
         let group = SharedString::from(format!("file-tile-{}", self.id));
         let tone = c(self.tint.unwrap_or(if self.is_dir { FOLDER } else { TEXT_SECONDARY }));
@@ -263,8 +263,9 @@ impl RenderOnce for FileTile {
                     .child(self.detail),
             );
         let feedback_id = self.id.clone();
-        // Only a plain tile eases in a hover fill; selected and active tiles keep their own.
-        let plain = !self.selected && !self.active && !self.drop_target;
+        // The cursor tile and a drop target keep their own fill; the others ease in a
+        // hover wash, over the selection when selected.
+        let washed = !(self.active && !self.selected) && !self.drop_target;
         // tileClass: relative flex flex-col rounded border p-2, the row less its padding
         let tile = div()
             .id(self.id)
@@ -282,7 +283,7 @@ impl RenderOnce for FileTile {
             .cursor_default()
             .when(self.cut, |tile| tile.opacity(0.5))
             .map(|tile| match (self.selected, self.active) {
-                (true, _) => tile.border_color(alpha_of(accent, 0.7)).bg(background).hover(move |style| style.bg(hover)),
+                (true, _) => tile.border_color(alpha_of(accent, 0.7)),
                 (false, true) => tile.border_color(gpui::transparent_black()).bg(c(SURFACE_SECONDARY)),
                 (false, false) => tile.border_color(gpui::transparent_black()),
             })
@@ -308,8 +309,8 @@ impl RenderOnce for FileTile {
             Some(decorate) => decorate(tile).into_any_element(),
             None => tile.into_any_element(),
         };
-        let feedback = super::motion::interact(feedback_id, tile).rounded(ROUNDED).without_press();
-        match plain {
+        let feedback = super::motion::interact(feedback_id, tile).rounded(ROUNDED).without_press().selected(self.selected.then_some(background));
+        match washed {
             true => feedback.fill(super::motion::hover_fill()).into_any_element(),
             false => feedback.into_any_element(),
         }

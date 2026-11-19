@@ -80,7 +80,7 @@ impl Workspace {
     }
 
     fn settings_tab(&self, id: &'static str, label: &'static str, section: SettingsSection, cx: &mut Context<Self>) -> SettingsTab {
-        SettingsTab::new(id, label, self.selection_color(false)).active(self.settings_section == section).on_click(cx.listener(
+        SettingsTab::new(id, label, self.selection_color()).active(self.settings_section == section).on_click(cx.listener(
             move |this, _, _, cx| {
                 this.select_settings_section(section, cx);
                 if section == SettingsSection::Links {
@@ -1598,7 +1598,7 @@ impl Workspace {
             .child(self.settings_tab("settings-about", "About", SettingsSection::About, cx))
             .child(div().flex_1())
             .child(
-                SettingsTab::new("settings-reset-button", "Reset to defaults", self.selection_color(false))
+                SettingsTab::new("settings-reset-button", "Reset to defaults", self.selection_color())
                     .quiet()
                     .on_click(cx.listener(|this, _, _, cx| this.confirm_reset_preferences(cx))),
             );

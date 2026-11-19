@@ -100,7 +100,7 @@ impl RenderOnce for Toast {
                 .fill(c(SURFACE_ELEVATED))
                 .rounded(ROUNDED),
             );
-        // Each notice fades in as it arrives.
-        motion::enter(id, toast, motion::POPOVER, cx)
+        // Each notice rises into the stack as it arrives.
+        motion::enter_from(id, toast, motion::DIALOG, (0., 16.), cx)
     }
 }

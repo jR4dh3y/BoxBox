@@ -17,21 +17,25 @@ pub struct SidebarSection {
     id: ElementId,
     title: &'static str,
     collapsed: bool,
+    /// When it last folded open or shut, so it can ease there.
+    toggled: Option<std::time::Instant>,
     on_toggle: Option<ClickHandler>,
     children: Vec<AnyElement>,
 }
 
 impl SidebarSection {
     pub fn new(id: impl Into<ElementId>, title: &'static str) -> Self {
-        Self { id: id.into(), title, collapsed: false, on_toggle: None, children: Vec::new() }
+        Self { id: id.into(), title, collapsed: false, toggled: None, on_toggle: None, children: Vec::new() }
     }
 
     pub fn collapsible(
         mut self,
         collapsed: bool,
+        toggled: Option<std::time::Instant>,
         on_toggle: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.collapsed = collapsed;
+        self.toggled = toggled;
         self.on_toggle = Some(Box::new(on_toggle));
         self
     }
@@ -43,9 +47,16 @@ impl ParentElement for SidebarSection {
     }
 }
 
+/// A row's height, to know how tall a folding section's rows stand.
+const ROW: f32 = 34.;
+
 impl RenderOnce for SidebarSection {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let section = div().flex().flex_col().border_b_1().border_color(c(BORDER_SECONDARY));
+        // How open the section is, easing from where it was toggled.
+        let t = super::motion::progress(self.toggled, super::motion::FOLD, window, cx);
+        let open = if self.collapsed { 1. - t } else { t };
+        let chevron = icon("chevron-right", 14., c(TEXT_SECONDARY)).with_transformation(gpui::Transformation::rotate(gpui::radians(open * std::f32::consts::FRAC_PI_2)));
         match self.on_toggle {
             // px-3 py-2.5 text-[11px] font-medium tracking-wide uppercase; 14px chevron, gap-1.5
             Some(on_toggle) => section
@@ -62,15 +73,18 @@ impl RenderOnce for SidebarSection {
                         .text_color(c(TEXT_SECONDARY))
                         .cursor_pointer()
                         .hover(|style| style.text_color(c(TEXT_PRIMARY))).active(crate::components::pressed)
-                        .child(icon(
-                            if self.collapsed { "chevron-right" } else { "chevron-down" },
-                            14.,
-                            c(TEXT_SECONDARY),
-                        ))
+                        .child(chevron)
                         .child(self.title.to_uppercase())
                         .on_click(on_toggle),
                 )
-                .when(!self.collapsed, |section| section.child(div().pb(px(8.)).children(self.children))),
+                .when(open > 0., |section| {
+                    let rows = div().pb(px(8.));
+                    // While folding, the rows show through a window that grows or shrinks
+                    // with them; the reckoned height runs a little over, so it opens whole.
+                    let tall = self.children.len() as f32 * ROW + 8.;
+                    let rows = if open < 1. { rows.max_h(px(tall * open)).overflow_hidden().opacity(open) } else { rows };
+                    section.child(rows.children(self.children))
+                }),
             // py-2; the label is px-3 pb-1 text-[11px] font-medium uppercase
             None => section.py(px(8.)).child(
                 div()

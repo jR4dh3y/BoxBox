@@ -1,6 +1,6 @@
 //! `lib/components/ui/ProgressBar.svelte` with a known value.
 
-use gpui::{div, prelude::*, px, relative, App, Window};
+use gpui::{div, prelude::*, px, relative, AnimationExt as _, App, Window};
 
 use crate::theme::*;
 
@@ -27,11 +27,13 @@ pub struct ProgressBar {
     size: ProgressSize,
     /// The empty part's colour; the default suits a bar on the page, not on a raised card.
     track: u32,
+    /// Grows from empty to its value when it appears, keyed by this id.
+    grow: Option<gpui::ElementId>,
 }
 
 impl ProgressBar {
     pub fn new(percent: f32) -> Self {
-        Self { percent: percent.clamp(0., 100.), variant: ProgressVariant::Default, size: ProgressSize::Md, track: SURFACE_ELEVATED }
+        Self { percent: percent.clamp(0., 100.), variant: ProgressVariant::Default, size: ProgressSize::Md, track: SURFACE_ELEVATED, grow: None }
     }
 
     pub fn variant(mut self, variant: ProgressVariant) -> Self {
@@ -48,10 +50,16 @@ impl ProgressBar {
         self.track = track;
         self
     }
+
+    /// Grows from empty to its value each time it appears, as a gauge does.
+    pub fn grow(mut self, id: impl Into<gpui::ElementId>) -> Self {
+        self.grow = Some(id.into());
+        self
+    }
 }
 
 impl RenderOnce for ProgressBar {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let fill = match self.variant {
             ProgressVariant::Default => ACCENT,
             ProgressVariant::Info => INFO,
@@ -69,6 +77,15 @@ impl RenderOnce for ProgressBar {
             .overflow_hidden()
             .rounded_full()
             .bg(c(self.track))
-            .child(div().h_full().w(relative(self.percent / 100.)).rounded_full().bg(c(fill)))
+            .child({
+                let share = self.percent / 100.;
+                let bar = div().h_full().w(relative(share)).rounded_full().bg(c(fill));
+                match self.grow.filter(|_| super::motion::enabled(cx)) {
+                    Some(id) => bar
+                        .with_animation(id, gpui::Animation::new(super::motion::GROW).with_easing(super::motion::ease_out_quint), move |bar, t| bar.w(relative(share * t)))
+                        .into_any_element(),
+                    None => bar.into_any_element(),
+                }
+            })
     }
 }

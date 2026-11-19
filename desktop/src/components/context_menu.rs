@@ -235,7 +235,8 @@ impl RenderOnce for ContextMenu {
             .py(px(4.))
             .shadow_xl()
             .children(self.items.into_iter().map(|item| item.render(&on_submenu)));
-        // Fades in; a menu is rebuilt every frame but keeps its state while shown.
-        motion::enter("menu-enter", panel, motion::MENU, cx)
+        // Fades in as it drops a few pixels into place; a menu is rebuilt every
+        // frame but keeps its state while shown.
+        motion::enter_from("menu-enter", panel, motion::MENU, (0., -6.), cx)
     }
 }

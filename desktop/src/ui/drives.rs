@@ -174,7 +174,7 @@ impl Workspace {
                         .gap(px(12.))
                         .child(match wait {
                             Some(wait) => skeleton::bar(("drive-row-pulse", index), 4., wait),
-                            None => usage_bar(usage.map_or(0., |usage| usage.pct)).into_any_element(),
+                            None => usage_bar(("drive-row-usage", index), usage.map_or(0., |usage| usage.pct)).into_any_element(),
                         })
                         .child(div().w(px(44.)).flex().justify_end().text_color(c(TEXT_MUTED)).child(match usage {
                             Some(usage) => usage_text(usage.pct).into_any_element(),

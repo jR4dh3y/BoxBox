@@ -208,8 +208,8 @@ impl Workspace {
         self.desktop_settings.custom_accent.unwrap_or_else(|| self.desktop_settings.accent.hex())
     }
 
-    pub(crate) fn selection_color(&self, hover: bool) -> Rgba {
-        c(mix(self.accent_hex(), 0x15171c, if hover { 0.36 } else { 0.30 }))
+    pub(crate) fn selection_color(&self) -> Rgba {
+        c(mix(self.accent_hex(), 0x15171c, 0.30))
     }
 
     pub(crate) fn has_wallpaper(&self) -> bool { matches!(self.wallpaper, WallpaperState::Ready { .. }) }

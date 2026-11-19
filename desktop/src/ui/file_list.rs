@@ -164,7 +164,7 @@ impl Workspace {
 
     /// How selected rows and tiles are drawn, from the accent.
     pub(crate) fn selection_style(&self) -> Selection {
-        Selection { background: self.selection_color(false), hover: self.selection_color(true), accent: c(self.accent_hex()) }
+        Selection { background: self.selection_color(), accent: c(self.accent_hex()) }
     }
 
     /// Whether the item is on the clipboard to be moved.

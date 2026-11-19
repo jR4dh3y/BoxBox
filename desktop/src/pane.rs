@@ -182,6 +182,10 @@ pub struct Pane {
     /// Set on a copy of another pane, until it leaves the folder it opened on:
     /// the screen did not change, so its contents do not fade up.
     pub copied: bool,
+    /// Which way the pane last moved, and a count of moves, so the contents
+    /// arrive from that side once per move.
+    pub arrival: crate::components::motion::Arrival,
+    pub moves: u64,
 }
 
 impl Pane {
@@ -247,6 +251,8 @@ impl Pane {
             grid_scroll: UniformListScrollHandle::new(),
             restore: None,
             copied: false,
+            arrival: Default::default(),
+            moves: 0,
         }
     }
 
@@ -337,6 +343,8 @@ impl Pane {
 
     /// Makes `place` current and returns the place it replaces.
     fn enter(&mut self, place: Place) -> Place {
+        self.arrival = crate::components::motion::Arrival::between(&self.path, &place.path, Arc::ptr_eq(&self.api, &place.api));
+        self.moves += 1;
         let view = self.view_memo();
         let previous = Place { api: std::mem::replace(&mut self.api, place.api), path: std::mem::replace(&mut self.path, place.path), view };
         self.reset();
@@ -376,6 +384,10 @@ impl Pane {
         let mut destination = from.pop().expect("checked above");
         let view = std::mem::take(&mut destination.view);
         let previous = self.enter(destination);
+        // History has a direction even between unrelated folders.
+        if self.arrival == crate::components::motion::Arrival::InPlace {
+            self.arrival = if back { crate::components::motion::Arrival::FromLeft } else { crate::components::motion::Arrival::FromRight };
+        }
         // Where it was, once its entries load: an empty list cannot hold a scroll position.
         self.restore = Some(view);
         let to = if back { &mut self.forward } else { &mut self.back };

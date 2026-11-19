@@ -264,7 +264,7 @@ impl Render for HoverCard {
             )
             .child(div().h(px(1.)).bg(c(BORDER_SECONDARY)))
             .child(div().flex().flex_col().gap(px(4.)).children(rows));
-        motion::enter("hover-card-enter", card, motion::POPOVER, cx)
+        motion::enter_from("hover-card-enter", card, motion::POPOVER, (0., -4.), cx)
     }
 }
 
@@ -363,7 +363,7 @@ impl Render for DriveHover {
                 .flex()
                 .flex_col()
                 .gap(px(6.))
-                .child(card_usage_bar(usage.pct))
+                .child(card_usage_bar("drive-hover-usage", usage.pct))
                 .child(
                     div()
                         .flex()
@@ -408,6 +408,6 @@ impl Render for DriveHover {
                 card.child(div().h(px(1.)).bg(c(BORDER_SECONDARY)))
                     .child(div().flex().flex_col().gap(px(4.)).children(self.details.iter().map(|(label, value)| drive_row(label, value.clone()))))
             });
-        motion::enter("drive-hover-enter", card, motion::POPOVER, cx)
+        motion::enter_from("drive-hover-enter", card, motion::POPOVER, (-6., 0.), cx)
     }
 }
