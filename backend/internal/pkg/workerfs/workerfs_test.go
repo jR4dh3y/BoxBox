@@ -151,7 +151,7 @@ func TestClientReturnsWorkerOpenedFiles(t *testing.T) {
 		t.Fatalf("ReadAt = %q, %v", buffer, err)
 	}
 	if _, ok := opened.(*os.File); !ok {
-		t.Fatalf("Open returned %T, want *os.File so io.Copy can use copy_file_range", opened)
+		t.Fatalf("Open returned %T, want the descriptor itself", opened)
 	}
 }
 

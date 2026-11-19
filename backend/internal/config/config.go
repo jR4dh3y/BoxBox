@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
@@ -78,6 +79,8 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 	v.SetDefault("chunk_size_mb", DefaultChunkSizeMB)
 	v.SetDefault("rate_limit_rps", 2.0)
 	v.SetDefault("data_dir", DefaultDataDir)
+	v.SetDefault("nas.service_uid", DefaultNASServiceID)
+	v.SetDefault("nas.service_gid", DefaultNASServiceID)
 
 	if configPath == "" {
 		configPath = os.Getenv("CONFIG_PATH")
@@ -111,6 +114,8 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 		"chunk_size_mb",
 		"data_dir",
 		"allow_root_mount",
+		"nas.service_uid",
+		"nas.service_gid",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind environment variable %q: %w", key, err)
@@ -159,6 +164,10 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 				}
 			}
 		}
+	}
+
+	if err := applyNASIdentityEnv(&cfg); err != nil {
+		return nil, err
 	}
 
 	if origins, ok := os.LookupEnv("FM_ALLOWED_ORIGINS"); ok {
@@ -215,6 +224,53 @@ func splitEnvList(value string) []string {
 		}
 	}
 	return result
+}
+
+// applyNASIdentityEnv reads BOXBOX_NAS_IDENTITY_<user>=uid:gid[:group,group].
+func applyNASIdentityEnv(cfg *model.ServerConfig) error {
+	const prefix = "BOXBOX_NAS_IDENTITY_"
+	for _, env := range os.Environ() {
+		name, value, ok := strings.Cut(env, "=")
+		if !ok || !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		username := strings.TrimPrefix(name, prefix)
+		identity, err := parseNASIdentity(value)
+		if username == "" || err != nil {
+			return fmt.Errorf("%s must be uid:gid or uid:gid:group,group: %v", name, err)
+		}
+		if cfg.NAS.Identities == nil {
+			cfg.NAS.Identities = make(map[string]model.NASIdentity)
+		}
+		cfg.NAS.Identities[username] = identity
+	}
+	return nil
+}
+
+func parseNASIdentity(value string) (model.NASIdentity, error) {
+	parts := strings.Split(value, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return model.NASIdentity{}, fmt.Errorf("got %q", value)
+	}
+	ids := make([]uint32, 0, 2)
+	for _, part := range parts[:2] {
+		id, err := strconv.ParseUint(part, 10, 32)
+		if err != nil {
+			return model.NASIdentity{}, err
+		}
+		ids = append(ids, uint32(id))
+	}
+	identity := model.NASIdentity{UID: ids[0], GID: ids[1]}
+	if len(parts) == 3 && parts[2] != "" {
+		for _, part := range strings.Split(parts[2], ",") {
+			group, err := strconv.ParseUint(strings.TrimSpace(part), 10, 32)
+			if err != nil {
+				return model.NASIdentity{}, err
+			}
+			identity.Groups = append(identity.Groups, uint32(group))
+		}
+	}
+	return identity, nil
 }
 
 func applyLegacyUserEnv(cfg *model.ServerConfig, warnings *[]MigrationWarning) {

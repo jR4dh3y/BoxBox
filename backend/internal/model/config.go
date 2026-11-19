@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -73,6 +74,51 @@ type ServerConfig struct {
 	AllowedOrigins []string          `mapstructure:"allowed_origins"` // WebSocket/CORS allowed origins
 	TrustedProxies []string          `mapstructure:"trusted_proxies"` // CIDRs allowed to supply forwarding headers
 	RateLimitRPS   float64           `mapstructure:"rate_limit_rps"`  // Auth endpoint rate limit (requests per second)
+
+	NAS NASConfig `mapstructure:"nas"`
+}
+
+// NASConfig maps BoxBox accounts to filesystem identities. With any identity
+// set, BoxBox runs each account's file access in a worker process running as
+// that identity, and accounts without one get no file access.
+type NASConfig struct {
+	// The API process runs as this unprivileged identity.
+	ServiceUID uint32                 `mapstructure:"service_uid"`
+	ServiceGID uint32                 `mapstructure:"service_gid"`
+	Identities map[string]NASIdentity `mapstructure:"identities"`
+}
+
+// NASIdentity is numeric because the container does not share the NAS's
+// account database.
+type NASIdentity struct {
+	UID    uint32   `mapstructure:"uid"`
+	GID    uint32   `mapstructure:"gid"`
+	Groups []uint32 `mapstructure:"groups"`
+}
+
+func (n NASConfig) Enabled() bool {
+	return len(n.Identities) > 0
+}
+
+func (n NASConfig) validate(users map[string]string) error {
+	if !n.Enabled() {
+		return nil
+	}
+	if n.ServiceUID == 0 || n.ServiceGID == 0 {
+		return fmt.Errorf("nas.service_uid and nas.service_gid must not be 0")
+	}
+	for username, identity := range n.Identities {
+		if _, ok := users[username]; !ok {
+			return fmt.Errorf("nas.identities.%s does not match a configured user", username)
+		}
+		if identity.UID == 0 || identity.GID == 0 {
+			return fmt.Errorf("nas.identities.%s: uid and gid are required and must not be 0", username)
+		}
+		if slices.Contains(identity.Groups, 0) {
+			return fmt.Errorf("nas.identities.%s: groups must not include 0", username)
+		}
+	}
+	return nil
 }
 
 // Validate checks that the configuration is valid
@@ -131,6 +177,9 @@ func (c *ServerConfig) Validate() error {
 
 	if c.ChunkSizeMB < 1 {
 		return fmt.Errorf("chunk_size_mb must be at least 1")
+	}
+	if err := c.NAS.validate(c.Users); err != nil {
+		return err
 	}
 	for _, trustedProxy := range c.TrustedProxies {
 		if _, err := netip.ParsePrefix(trustedProxy); err != nil {

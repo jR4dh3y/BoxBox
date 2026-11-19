@@ -126,6 +126,10 @@ const (
 
 // Data storage constants
 const (
+	// DefaultNASServiceID is the uid and gid the API drops to in NAS mode. It
+	// matches the unprivileged user in the Docker image.
+	DefaultNASServiceID = 10001
+
 	// DefaultDataDir is the default directory for persistent data storage
 	DefaultDataDir = "/data"
 
