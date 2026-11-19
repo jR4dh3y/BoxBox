@@ -18,21 +18,29 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/static"
 )
 
+func missingVideoThumbnailPrerequisite(t *testing.T, message string) {
+	t.Helper()
+	if os.Getenv("BOXBOX_REQUIRE_VIDEO_THUMBNAIL_TEST") == "1" {
+		t.Fatal(message)
+	}
+	t.Skip(message)
+}
+
 func TestSharePreviewVideo(t *testing.T) {
 	if runtime.GOOS != "linux" {
-		t.Skip("video previews require Linux")
+		missingVideoThumbnailPrerequisite(t, "video previews require Linux")
 	}
 	ffmpeg, err := exec.LookPath("ffmpeg")
 	if err != nil {
-		t.Skip("ffmpeg unavailable")
+		missingVideoThumbnailPrerequisite(t, "ffmpeg unavailable")
 	}
 	details, err := exec.Command(ffmpeg, "-hide_banner", "-h", "protocol=fd").CombinedOutput()
 	if err != nil || !bytes.Contains(details, []byte("fd AVOptions:")) {
-		t.Skip("ffmpeg does not support seekable descriptors")
+		missingVideoThumbnailPrerequisite(t, "ffmpeg does not support seekable descriptors")
 	}
 	prlimit, err := exec.LookPath("prlimit")
 	if err != nil {
-		t.Skip("prlimit unavailable")
+		missingVideoThumbnailPrerequisite(t, "prlimit unavailable")
 	}
 
 	mount := t.TempDir()

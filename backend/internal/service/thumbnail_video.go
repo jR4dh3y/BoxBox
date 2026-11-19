@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -10,10 +11,13 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 const (
 	maxVideoThumbnailBytes = 2 << 20
+	maxVideoHelperStderr   = 1024
 	videoThumbnailTimeout  = 5 * time.Second
 	// Include virtual space for the dynamic linker and thread stacks.
 	videoAddressSpaceBytes = 320 << 20
@@ -105,11 +109,16 @@ func (v videoThumbnailer) frame(ctx context.Context, source *os.File, demuxer st
 	// Keep glibc allocator arenas within the child's address-space ceiling.
 	cmd.Env = []string{"LANG=C", "MALLOC_ARENA_MAX=1"}
 	cmd.ExtraFiles = []*os.File{source}
+	var diagnostic videoHelperStderr
+	cmd.Stderr = &diagnostic
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil
 	}
 	if err := cmd.Start(); err != nil {
+		if ctx.Err() == nil {
+			log.Warn().Err(err).Msg("Could not launch video thumbnail helper")
+		}
 		return nil
 	}
 	content, err := io.ReadAll(io.LimitReader(stdout, maxVideoThumbnailBytes+1))
@@ -119,7 +128,33 @@ func (v videoThumbnailer) frame(ctx context.Context, source *os.File, demuxer st
 		return nil
 	}
 	if err := cmd.Wait(); err != nil {
+		if reason := diagnostic.setupFailure(); reason != "" && ctx.Err() == nil {
+			log.Warn().Err(err).Str("reason", reason).Msg("Video thumbnail helper setup failed")
+		}
 		return nil
 	}
 	return content
+}
+
+// Keep enough stderr to diagnose setup failures and drain the rest.
+type videoHelperStderr []byte
+
+func (b *videoHelperStderr) Write(p []byte) (int, error) {
+	*b = append(*b, p[:min(len(p), maxVideoHelperStderr-len(*b))]...)
+	return len(p), nil
+}
+
+func (b videoHelperStderr) setupFailure() string {
+	// Decoder output can contain private media metadata. Log fixed descriptions.
+	switch {
+	case bytes.HasPrefix(b, []byte("prlimit:")):
+		return "prlimit could not apply the limits or launch FFmpeg"
+	case bytes.Contains(b, []byte("Unrecognized option")):
+		return "FFmpeg rejected a thumbnail option"
+	case bytes.Contains(b, []byte("Protocol not found")):
+		return "FFmpeg lacks the input descriptor protocol"
+	case bytes.Contains(b, []byte("error while loading shared libraries")):
+		return "FFmpeg could not load a shared library"
+	}
+	return ""
 }
