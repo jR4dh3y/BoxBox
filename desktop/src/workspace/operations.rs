@@ -709,9 +709,9 @@ impl Workspace {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // The Trash page has its own buttons; the folder behind it is not on screen.
+        // In Trash, Delete can only mean for good; the folder behind it is not on screen.
         if self.trash_open {
-            return;
+            return self.delete_trash_items(self.selected_trash(), cx);
         }
         let target = self.active_pane;
         let items = self.pane().selected_items();
@@ -721,7 +721,7 @@ impl Workspace {
     /// Shift+Delete: gone without passing through Trash, after asking.
     pub(crate) fn delete_permanently(&mut self, _: &DeletePermanently, _window: &mut Window, cx: &mut Context<Self>) {
         if self.trash_open {
-            return;
+            return self.delete_trash_items(self.selected_trash(), cx);
         }
         let target = self.active_pane;
         let items = self.pane().selected_items();

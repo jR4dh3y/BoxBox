@@ -99,6 +99,43 @@ impl Workspace {
                 MenuItem::Separator,
                 item("place-empty-trash", "Empty Trash", "trash-2", Box::new(|this, _, cx| this.empty_trash(cx)), cx).disabled(!self.trash_full),
             ],
+            Place::Columns(table) => {
+                let table = *table;
+                let layout = self.preferences.columns(table);
+                let mut items: Vec<MenuItem> = table
+                    .available()
+                    .iter()
+                    .map(|&column| {
+                        let shown = layout.shown.contains(&column);
+                        let toggled = layout.toggled(table, column);
+                        let entry = MenuItem::action(("column-toggle", column as usize), column.label()).on_select(cx.listener(move |this, _, _, cx| {
+                            this.place_menu = None;
+                            this.resize_columns(table, toggled.clone(), cx);
+                        }));
+                        if shown { entry.icon("check") } else { entry }
+                    })
+                    .collect();
+                items.push(MenuItem::Separator);
+                items.push(item(
+                    "columns-reset",
+                    "Reset Columns",
+                    "refresh-cw",
+                    Box::new(move |this, _, cx| this.resize_columns(table, crate::components::ColumnLayout::new(table), cx)),
+                    cx,
+                ));
+                items
+            }
+            Place::TrashItems => {
+                let selected = self.selected_trash();
+                let restorable = selected.iter().any(|item| item.can_restore);
+                let (restore, delete) = (selected.clone(), selected);
+                vec![
+                    item("trash-restore", "Restore", "folder-input", Box::new(move |this, _, cx| this.restore_trash(restore.clone(), cx)), cx).disabled(!restorable),
+                    item("trash-delete", "Delete Permanently", "x-circle", Box::new(move |this, _, cx| this.delete_trash_items(delete.clone(), cx)), cx),
+                    MenuItem::Separator,
+                    item("trash-empty", "Empty Trash", "trash-2", Box::new(|this, _, cx| this.empty_trash(cx)), cx),
+                ]
+            }
             Place::Hidden { pane, crumbs } => crumbs
                 .iter()
                 .enumerate()

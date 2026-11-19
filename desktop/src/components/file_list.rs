@@ -1,20 +1,22 @@
 //! `lib/components/FileList.svelte`: the sortable header and one row. The
 //! view owns virtualisation, selection and events; these own the look.
 //!
-//! The table is `table-fixed` with Type 18%, Size 15% and Modified 25% at
-//! first, and Name takes the rest, so every column scales with the pane. The
-//! borders between header cells drag to resize (`ColumnShares`).
+//! The columns, their widths and their order are `ColumnLayout`'s, as in
+//! Thunar's details view; the header sorts, resizes and offers the columns.
 
 use super::Ellipsis as _;
+use std::rc::Rc;
+
 use gpui::{
-    div, img, prelude::*, px, relative, AnyElement, App, ClickEvent, Div, ElementId, Entity, FontWeight, MouseButton, RenderImage, Rgba,
-    SharedString, Stateful, Window,
+    div, img, prelude::*, px, relative, AnyElement, App, ClickEvent, Div, ElementId, Entity, FontWeight, MouseButton, Pixels, Point,
+    RenderImage, Rgba, SharedString, Stateful, Window,
 };
 
-use super::{ColumnShares, TextField};
+use super::columns::{Column, ColumnLayout, ColumnSpec, Table, Width};
+use super::TextField;
 
 use super::Type;
-use crate::sort::{Sort, SortDir, SortField};
+use crate::sort::SortDir;
 use crate::theme::*;
 use crate::ui::icon;
 
@@ -42,21 +44,11 @@ impl ListMetrics {
     }
 }
 
-/// Each column's field, label and whether it is right-aligned; the shares are `ColumnShares`.
-const COLUMNS: [(SortField, &str, bool); 4] =
-    [(SortField::Name, "Name", false), (SortField::Type, "Type", false), (SortField::Size, "Size", true), (SortField::Modified, "Modified", false)];
-
-/// The share of each column, `None` for Name, which takes the rest.
-fn shares(columns: ColumnShares) -> [Option<f32>; 4] {
-    let [kind, size, modified] = columns.usable().0;
-    [None, Some(kind), Some(size), Some(modified)]
-}
-
 /// A border between header cells being dragged; `pane` keeps a split view's
 /// other header still.
 struct ColumnDrag {
     pane: usize,
-    border: usize,
+    column: Column,
 }
 
 /// A border drag draws nothing under the pointer.
@@ -71,41 +63,50 @@ impl Render for NoPreview {
 /// How wide the strip that grabs a border is.
 const GRIP: f32 = 8.;
 
-/// A `<td>`/`<th>`: px-3, clipped, the given share of the row or the rest.
-fn cell(share: Option<f32>) -> Div {
-    let cell = div().flex().items_center().h_full().px(px(12.)).min_w_0().overflow_hidden();
-    match share {
-        Some(share) => cell.w(relative(share)).flex_none(),
-        None => cell.flex_1(),
+/// A `<td>`/`<th>`: px-3, its column's width or the room left.
+fn cell(width: Width) -> Div {
+    let cell = div().flex().items_center().h_full().px(px(12.)).min_w_0();
+    match width {
+        Width::Fixed(width) => cell.w(px(width)).flex_none(),
+        Width::Fill(min) => cell.flex_1().min_w(px(min)),
     }
 }
 
-type SortHandler = Box<dyn Fn(SortField, &ClickEvent, &mut Window, &mut App) + 'static>;
-type ResizeHandler = std::rc::Rc<dyn Fn(ColumnShares, &mut Window, &mut App) + 'static>;
+/// The table's own box: as wide as the pane, or as its columns when they are
+/// wider, so the header and rows scroll sideways together.
+pub fn table_frame(layout: &ColumnLayout, table: Table) -> Div {
+    div().flex().flex_col().h_full().min_w_full().w(px(layout.min_width(table)))
+}
+
+/// `table` in a box that scrolls sideways when its columns are wider than the
+/// pane; the rows inside scroll up and down on their own. Only a sideways
+/// gesture or Shift+wheel moves it, not a wheel over the header.
+pub fn sideways(id: impl Into<ElementId>, table: impl IntoElement) -> impl IntoElement {
+    let mut frame = div().id(id).size_full().overflow_x_scroll();
+    frame.style().restrict_scroll_to_axis = Some(true);
+    frame.child(table)
+}
+
+type SortHandler = Rc<dyn Fn(Column, &mut Window, &mut App) + 'static>;
+type ResizeHandler = Rc<dyn Fn(ColumnLayout, &mut Window, &mut App) + 'static>;
+type MenuHandler = Rc<dyn Fn(Point<Pixels>, &mut Window, &mut App) + 'static>;
 
 #[derive(IntoElement)]
 pub struct FileListHeader {
-    sort: Sort,
-    unsorted: bool,
-    on_sort: Option<SortHandler>,
-    background: Rgba,
-    columns: ColumnShares,
+    table: Table,
+    layout: ColumnLayout,
+    sorted: Option<(Column, SortDir)>,
     pane: usize,
+    on_sort: Option<SortHandler>,
     on_resize: Option<ResizeHandler>,
+    on_menu: Option<MenuHandler>,
+    background: Rgba,
 }
 
 impl FileListHeader {
-    pub fn new(sort: Sort) -> Self {
-        Self { sort, unsorted: false, on_sort: None, background: c(SURFACE_SECONDARY), columns: ColumnShares::default(), pane: 0, on_resize: None }
-    }
-
-    /// The column widths, and what a drag of a border between them sets.
-    /// `pane` tells this header's drags from another pane's.
-    pub fn columns(mut self, columns: ColumnShares, pane: usize, on_resize: impl Fn(ColumnShares, &mut Window, &mut App) + 'static) -> Self {
-        self.columns = columns.usable();
-        self.pane = pane;
-        self.on_resize = Some(std::rc::Rc::new(on_resize));
-        self
+    /// `pane` tells this header's border drags from another pane's.
+    pub fn new(table: Table, layout: ColumnLayout, pane: usize) -> Self {
+        Self { table, layout, sorted: None, pane, on_sort: None, on_resize: None, on_menu: None, background: c(SURFACE_SECONDARY) }
     }
 
     /// The window's chrome colour, which is translucent over a wallpaper or the desktop.
@@ -114,61 +115,67 @@ impl FileListHeader {
         self
     }
 
-    /// The rows are in an order no column describes, such as search results by
-    /// relevance, so no column shows a sort arrow.
-    pub fn unsorted(mut self, unsorted: bool) -> Self {
-        self.unsorted = unsorted;
+    /// The column the rows are sorted by, which shows the arrow; `None` when no
+    /// column describes the order, such as search results by relevance.
+    pub fn sorted(mut self, sorted: Option<(Column, SortDir)>) -> Self {
+        self.sorted = sorted;
         self
     }
 
-    pub fn on_sort(mut self, handler: impl Fn(SortField, &ClickEvent, &mut Window, &mut App) + 'static) -> Self {
-        self.on_sort = Some(Box::new(handler));
+    pub fn on_sort(mut self, handler: impl Fn(Column, &mut Window, &mut App) + 'static) -> Self {
+        self.on_sort = Some(Rc::new(handler));
+        self
+    }
+
+    /// What a drag of a border, or a double click on one, sets.
+    pub fn on_resize(mut self, handler: impl Fn(ColumnLayout, &mut Window, &mut App) + 'static) -> Self {
+        self.on_resize = Some(Rc::new(handler));
+        self
+    }
+
+    /// A right click on the header, which offers the columns to show.
+    pub fn on_menu(mut self, handler: impl Fn(Point<Pixels>, &mut Window, &mut App) + 'static) -> Self {
+        self.on_menu = Some(Rc::new(handler));
         self
     }
 }
 
 impl RenderOnce for FileListHeader {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        let on_sort = self.on_sort.map(std::rc::Rc::new);
-        let chevron = match self.sort.dir {
-            SortDir::Asc => "chevron-up",
-            SortDir::Desc => "chevron-down",
+        let Self { table, layout, sorted, pane, on_sort, on_resize, on_menu, background } = self;
+        let specs = layout.specs(table);
+        let last = specs.len() - 1;
+        let grip = |column: Column, on_resize: ResizeHandler, layout: ColumnLayout| {
+            div()
+                .id(("column-border", column as usize))
+                .group("column-border")
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right_0()
+                .w(px(GRIP))
+                .flex()
+                .justify_end()
+                .cursor(gpui::CursorStyle::ResizeColumn)
+                .child(div().w(px(1.)).h(px(16.)).my_auto().bg(c(BORDER_PRIMARY)).group_hover("column-border", |style| style.h_full().bg(c(BORDER_FOCUS))))
+                .on_drag(ColumnDrag { pane, column }, |_, _, _, cx| cx.new(|_| NoPreview))
+                // A double click puts the column back at its own width.
+                .on_click(move |event, window, cx| {
+                    cx.stop_propagation();
+                    if event.click_count() == 2 {
+                        on_resize(layout.reset_width(column), window, cx);
+                    }
+                })
         };
-        let (columns, pane) = (self.columns, self.pane);
-        let grips = self.on_resize.clone().map(|on_resize| {
-            columns.borders().into_iter().enumerate().map(move |(border, at)| {
-                let reset = on_resize.clone();
-                div()
-                    .id(("column-border", border))
-                    .absolute()
-                    .top_0()
-                    .bottom_0()
-                    .left(relative(at))
-                    .ml(px(-GRIP / 2.))
-                    .w(px(GRIP))
-                    .flex()
-                    .justify_center()
-                    .cursor(gpui::CursorStyle::ResizeColumn)
-                    .group("column-border")
-                    .child(div().w(px(1.)).h_full().group_hover("column-border", |style| style.bg(c(BORDER_FOCUS))))
-                    .on_drag(ColumnDrag { pane, border }, |_, _, _, cx| cx.new(|_| NoPreview))
-                    // A double click puts the columns back as they were at first.
-                    .on_click(move |event, window, cx| {
-                        cx.stop_propagation();
-                        if event.click_count() == 2 {
-                            reset(ColumnShares::default(), window, cx);
-                        }
-                    })
-            })
-        });
-        let on_resize = self.on_resize;
+        let drag_layout = layout.clone();
+        let drag_resize = on_resize.clone();
         div()
-            .relative()
+            .id(("table-header", pane))
             .flex()
             .flex_none()
             .w_full()
             .h(px(HEADER_HEIGHT))
-            .bg(self.background)
+            .bg(background)
             .border_b_1()
             .border_color(c(BORDER_PRIMARY))
             .text_size(px(13.))
@@ -179,42 +186,51 @@ impl RenderOnce for FileListHeader {
                 if drag.pane != pane {
                     return;
                 }
-                let border = drag.border;
-                if let Some(on_resize) = &on_resize {
+                let column = drag.column;
+                if let Some(on_resize) = &drag_resize {
                     let x = f32::from(event.event.position.x - event.bounds.left());
-                    on_resize(columns.resized(border, x, f32::from(event.bounds.size.width)), window, cx);
+                    on_resize(drag_layout.resized(table, column, x, f32::from(event.bounds.size.width)), window, cx);
                 }
             })
-            .children(COLUMNS.into_iter().zip(shares(columns)).map(|((field, label, right), share)| {
-                // `thSortedClass` loses to `thClass`'s text colour in the built CSS, so the web
-                // draws every header, sorted or not, in text-secondary.
-                let sorted = !self.unsorted && self.sort.field == field;
+            .when_some(on_menu, |header, on_menu| {
+                header.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                    cx.stop_propagation();
+                    on_menu(event.position, window, cx);
+                })
+            })
+            .children(specs.into_iter().enumerate().map(|(index, ColumnSpec { column, width })| {
+                let arrow = sorted.filter(|(sorted, _)| *sorted == column).map(|(_, dir)| match dir {
+                    SortDir::Asc => "chevron-up",
+                    SortDir::Desc => "chevron-down",
+                });
                 // The border is inside GPUI's box but half outside the web's collapsed one;
                 // pb-px puts the label on the same line.
-                cell(share)
-                    .id(label)
+                cell(width)
+                    .id(column.label())
+                    .relative()
                     .pb(px(1.))
-                    .when(right, |cell| cell.justify_end())
+                    .when(column.right_aligned(), |cell| cell.justify_end())
+                    // `thSortedClass` loses to `thClass`'s text colour in the built CSS, so the web
+                    // draws every header, sorted or not, in text-secondary.
                     .text_color(c(TEXT_SECONDARY))
                     .whitespace_nowrap()
                     .cursor_pointer()
                     .hover(|style| style.bg(c(SURFACE_TERTIARY)).text_color(c(TEXT_PRIMARY)))
                     .child(
                         // flex items-center gap-1; the chevron sits in a w-3 slot
-                        div().flex().min_w_0().items_center().gap(px(4.)).child(div().truncate().child(label)).child(
+                        div().flex().min_w_0().overflow_hidden().items_center().gap(px(4.)).child(div().truncate().child(column.label())).child(
                             div()
                                 .flex()
                                 .flex_none()
                                 .w(px(12.))
                                 .justify_center()
-                                .when(sorted, |slot| slot.child(icon(chevron, 12., c(TEXT_SECONDARY)))),
+                                .when_some(arrow, |slot, arrow| slot.child(icon(arrow, 12., c(TEXT_SECONDARY)))),
                         ),
                     )
-                    .when_some(on_sort.clone(), |cell, handler| {
-                        cell.on_click(move |event, window, cx| handler(field, event, window, cx))
-                    })
+                    .when_some(on_sort.clone(), |cell, handler| cell.on_click(move |_, window, cx| handler(column, window, cx)))
+                    // The last column's right border is the table's edge.
+                    .when_some(on_resize.clone().filter(|_| index < last), |cell, on_resize| cell.child(grip(column, on_resize, layout.clone())))
             }))
-            .children(grips.into_iter().flatten())
     }
 }
 
@@ -249,15 +265,14 @@ pub struct FileRow {
     image: EntryIcon,
     tint: Option<u32>,
     emblem: Option<&'static str>,
-    kind: SharedString,
-    size: SharedString,
-    modified: SharedString,
+    /// The cells after Name, by column.
+    values: Vec<(Column, SharedString)>,
     selected: bool,
     active: bool,
     cut: bool,
     drop_target: bool,
     metrics: ListMetrics,
-    columns: ColumnShares,
+    specs: Vec<ColumnSpec>,
     selection: Selection,
     checkbox: Option<CheckHandler>,
     decorate: Option<Decorate>,
@@ -294,15 +309,13 @@ impl FileRow {
             image: EntryIcon::Glyph,
             tint: None,
             emblem: None,
-            kind: SharedString::default(),
-            size: SharedString::default(),
-            modified: SharedString::default(),
+            values: Vec::new(),
             selected: false,
             active: false,
             cut: false,
             drop_target: false,
             metrics: ListMetrics::new(1),
-            columns: ColumnShares::default(),
+            specs: ColumnLayout::new(Table::Files).specs(Table::Files),
             selection,
             checkbox: None,
             decorate: None,
@@ -310,9 +323,15 @@ impl FileRow {
         }
     }
 
-    /// The column widths the header shows.
-    pub fn columns(mut self, columns: ColumnShares) -> Self {
-        self.columns = columns;
+    /// The columns the header shows, Name first, as `ColumnLayout::specs` gives them.
+    pub fn columns(mut self, specs: Vec<ColumnSpec>) -> Self {
+        self.specs = specs;
+        self
+    }
+
+    /// A cell after Name, already formatted.
+    pub fn value(mut self, column: Column, value: impl Into<SharedString>) -> Self {
+        self.values.push((column, value.into()));
         self
     }
 
@@ -342,19 +361,6 @@ impl FileRow {
     /// The folder a search result is in, shown muted after its name.
     pub fn location(mut self, location: impl Into<SharedString>) -> Self {
         self.location = location.into();
-        self
-    }
-
-    /// The Type, Size and Modified cells, already formatted.
-    pub fn details(
-        mut self,
-        kind: impl Into<SharedString>,
-        size: impl Into<SharedString>,
-        modified: impl Into<SharedString>,
-    ) -> Self {
-        self.kind = kind.into();
-        self.size = size.into();
-        self.modified = modified.into();
         self
     }
 
@@ -447,7 +453,12 @@ impl RenderOnce for FileRow {
             });
 
         let text = |value: SharedString| div().min_w_0().ellipsis().child(value);
-        let [_, kind_share, size_share, modified_share] = shares(self.columns);
+        let name_width = self.specs.first().map_or(Width::Fill(0.), |spec| spec.width);
+        let values = self.values;
+        let cells = self.specs.into_iter().skip(1).map(move |ColumnSpec { column, width }| {
+            let value = values.iter().find(|(key, _)| *key == column).map(|(_, value)| value.clone()).unwrap_or_default();
+            cell(width).overflow_hidden().when(column.right_aligned(), |cell| cell.justify_end()).text_color(secondary).child(text(value))
+        });
         let feedback_id = self.id.clone();
         // Only a plain row eases in a hover fill; selected and active rows keep their own.
         let plain = !self.selected && !self.active && !self.drop_target;
@@ -473,7 +484,8 @@ impl RenderOnce for FileRow {
             .when(self.active, |row| row.child(div().absolute().left_0().top_0().bottom_0().w(px(2.)).bg(accent)))
             .when(self.drop_target, |row| row.bg(background).child(div().absolute().inset_0().border_1().border_color(accent)))
             .child(
-                cell(None)
+                cell(name_width)
+                    .overflow_hidden()
                     .gap(px(8.))
                     .child(slot)
                     .map(|cell| match self.editor {
@@ -483,9 +495,7 @@ impl RenderOnce for FileRow {
                             .child(text(self.location).flex_1().text_color(c(TEXT_MUTED))),
                     }),
             )
-            .child(cell(kind_share).text_color(secondary).child(text(self.kind)))
-            .child(cell(size_share).justify_end().text_color(secondary).child(text(self.size)))
-            .child(cell(modified_share).text_color(secondary).child(text(self.modified)));
+            .children(cells);
         let row = match self.decorate {
             Some(decorate) => decorate(row).into_any_element(),
             None => row.into_any_element(),

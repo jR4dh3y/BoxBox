@@ -75,16 +75,16 @@ impl Workspace {
             let result = cx.background_executor().spawn(async move { request_api.trash() }).await;
             this.update(cx, |this, cx| {
                 if this.trash_provider.as_ref().is_some_and(|current| Arc::ptr_eq(current, &api)) {
-                    this.trash = match result {
+                    match result {
                         Ok(items) => {
                             this.trash_full = !items.is_empty();
-                            Load::Loaded(items)
+                            this.show_trash_items(items);
                         }
                         Err(error) => {
                             this.trash_error = Some(format!("{error:#}"));
-                            Load::Failed(format!("{error:#}"))
+                            this.trash = Load::Failed(format!("{error:#}"));
                         }
-                    };
+                    }
                     cx.notify();
                 }
             })
@@ -105,33 +105,40 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Puts an item back where it was. The notice offers to show it there.
-    pub(crate) fn restore_trash(&mut self, item: TrashItem, cx: &mut Context<Self>) {
+    /// Puts items back where they were. The notice offers to show one item there.
+    pub(crate) fn restore_trash(&mut self, items: Vec<TrashItem>, cx: &mut Context<Self>) {
         let Some(api) = self.trash_provider.clone().filter(|api| api.is_local()) else { return };
-        if self.operation_status.is_busy() {
+        let items: Vec<TrashItem> = items.into_iter().filter(|item| item.can_restore).collect();
+        if items.is_empty() || self.operation_status.is_busy() {
             return;
         }
         let token = self.begin_operation("Restoring from Trash");
-        let (request_api, id) = (api.clone(), item.id.clone());
+        let request_api = api.clone();
+        let ids: Vec<String> = items.iter().map(|item| item.id.clone()).collect();
         cx.spawn(async move |this, cx| {
-            let result = cx.background_executor().spawn(async move { request_api.restore_trash(&id) }).await;
+            // Each item on its own, so one that cannot go back does not stop the rest.
+            let failures = cx
+                .background_executor()
+                .spawn(async move { ids.iter().filter_map(|id| request_api.restore_trash(id).err().map(|error| format!("{error:#}"))).collect::<Vec<_>>() })
+                .await;
             this.update(cx, |this, cx| {
                 if this.mutation_generation != token {
                     return;
                 }
-                match &result {
-                    Ok(()) => {
-                        this.operation_status = super::operations::OperationStatus::Idle;
-                        let restored = api.virtual_path(std::path::Path::new(&item.original_path));
+                this.operation_status = super::operations::OperationStatus::Idle;
+                match (failures.first(), items.as_slice()) {
+                    (Some(error), [item]) => this.report(Err(format!("Could not restore “{}”: {error}", item.name)), cx),
+                    (Some(error), _) => this.report(Err(format!("Could not restore {} of {} items: {error}", failures.len(), items.len())), cx),
+                    (None, [item]) => {
                         let message = format!("Restored “{}”", item.name);
-                        match restored {
+                        match api.virtual_path(std::path::Path::new(&item.original_path)) {
                             Some(path) => this.notify_with_action(ToastKind::Success, message, "Show", move |this, cx| this.show_item(path.clone(), cx), cx),
                             None => this.notify(ToastKind::Success, message, cx),
                         }
                     }
-                    Err(error) => this.report(Err(format!("Could not restore “{}”: {error:#}", item.name)), cx),
+                    (None, _) => this.notify(ToastKind::Success, format!("Restored {} items", items.len()), cx),
                 }
-                this.trash_error = result.as_ref().err().map(|error| format!("Could not restore item: {error:#}"));
+                this.trash_error = failures.first().map(|error| format!("Could not restore item: {error}"));
                 this.refresh_trash_state(cx);
                 this.load_trash(api.clone(), cx);
                 this.refresh_provider(api.clone(), cx);
@@ -153,16 +160,23 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(crate) fn delete_trash_item(&mut self, item: TrashItem, cx: &mut Context<Self>) {
+    /// Asks, then deletes items from Trash for good.
+    pub(crate) fn delete_trash_items(&mut self, items: Vec<TrashItem>, cx: &mut Context<Self>) {
         let Some(api) = self.trash_provider.clone().filter(|api| api.is_local()) else { return };
-        let confirm = Confirm::new("Delete permanently", format!("“{}” will be deleted permanently. This cannot be undone.", item.name), "Delete", move |this, cx| {
+        let message = match items.as_slice() {
+            [] => return,
+            [item] => format!("“{}” will be deleted permanently. This cannot be undone.", item.name),
+            _ => format!("{} items will be deleted permanently. This cannot be undone.", items.len()),
+        };
+        let confirm = Confirm::new("Delete permanently", message, "Delete", move |this, cx| {
             if this.operation_status.is_busy() {
                 return;
             }
             let token = this.begin_operation("Deleting permanently");
-            let (request_api, id) = (api.clone(), item.id.clone());
+            let request_api = api.clone();
+            let ids: Vec<String> = items.iter().map(|item| item.id.clone()).collect();
             cx.spawn(async move |this, cx| {
-                let result = cx.background_executor().spawn(async move { request_api.delete_trash(&id) }).await;
+                let result = cx.background_executor().spawn(async move { ids.iter().try_for_each(|id| request_api.delete_trash(id).map(|_| ())) }).await;
                 this.update(cx, |this, cx| {
                     if this.mutation_generation == token {
                         this.report(result.as_ref().map(|_| ()).map_err(|error| format!("Could not permanently delete item: {error:#}")), cx);

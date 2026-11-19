@@ -20,6 +20,10 @@ pub(crate) enum Place {
     Drive { key: super::drive_names::DriveKey, own: String, folder: Option<String> },
     /// The leading crumbs a long path does not have room for: label and path.
     Hidden { pane: PaneTarget, crumbs: Vec<(String, String)> },
+    /// A table's header: the columns it can show.
+    Columns(crate::components::Table),
+    /// The selected items of the Trash page.
+    TrashItems,
 }
 
 pub(crate) struct PlaceMenu {

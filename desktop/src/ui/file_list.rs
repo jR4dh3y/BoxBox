@@ -4,12 +4,14 @@
 use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context};
 
 use super::{icon, TextScale};
-use crate::components::{FileListHeader, FileRow, Selection};
+use crate::components::{sideways, table_frame, Column, ColumnLayout, FileListHeader, FileRow, Selection, Table};
 use crate::api::FileInfo;
 use crate::format::{display_name, file_date, file_size, type_description};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
+use crate::sort::SortField;
 use crate::workspace::operations::{ClipboardMode, PaneTarget};
+use crate::workspace::place_menu::Place;
 use crate::workspace::Workspace;
 
 impl Workspace {
@@ -18,33 +20,22 @@ impl Workspace {
         let count = pane.items.len();
         let placeholder = pane.placeholder();
         let empty = placeholder.is_some();
-        div()
-            .relative()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(self.file_background())
-            .child(
-                FileListHeader::new(pane.sort)
-                    .unsorted(pane.shows_ranked())
-                    .background(self.chrome_background())
-                    .columns(self.preferences.list_columns, target.0, {
-                        let workspace = cx.entity().downgrade();
-                        move |columns, _, cx| {
-                            let _ = workspace.update(cx, |this, cx| this.resize_columns(columns, cx));
-                        }
-                    })
-                    .on_sort({
-                        let workspace = cx.entity().downgrade();
-                        move |field, _, _, cx| {
-                            let _ = workspace.update(cx, |this, cx| {
-                                this.active_pane = target;
-                                let next = this.pane().sort.toggled(field);
-                                this.choose_sort(target, next, cx);
-                            });
-                        }
-                    }),
-            )
+        let layout = self.preferences.columns(Table::Files);
+        let sorted = (!pane.shows_ranked()).then(|| (pane.sort.field.column(), pane.sort.dir));
+        let table = table_frame(&layout, Table::Files).child(
+            self.table_header(Table::Files, layout, target, cx).sorted(sorted).on_sort({
+                let workspace = cx.entity().downgrade();
+                move |column, _, cx| {
+                    let Some(field) = SortField::of_column(column) else { return };
+                    let _ = workspace.update(cx, |this, cx| {
+                        this.active_pane = target;
+                        let next = this.pane().sort.toggled(field);
+                        this.choose_sort(target, next, cx);
+                    });
+                }
+            }),
+        );
+        let table = table
             .when_some(placeholder, |list, (glyph, message)| {
                 list.child(
                     div()
@@ -76,22 +67,42 @@ impl Workspace {
                     .track_scroll(pane.list_scroll.clone())
                     .flex_1(),
                 )
-            })
+            });
+        div()
+            .relative()
+            .size_full()
+            .bg(self.file_background())
+            .child(sideways(("file-table", target.0), table))
             .child(self.pointer_layer(target, window, cx))
     }
 
-    /// Sets the list's column widths in every pane, and saves them once a drag
-    /// has rested, not at every step.
-    fn resize_columns(&mut self, columns: crate::components::ColumnShares, cx: &mut Context<Self>) {
-        if self.preferences.list_columns == columns {
+    /// A table's header with what every table does: border drags and double
+    /// clicks size its columns, and a right click offers them.
+    pub(crate) fn table_header(&self, table: Table, layout: ColumnLayout, target: PaneTarget, cx: &mut Context<Self>) -> FileListHeader {
+        let workspace = cx.entity().downgrade();
+        let menu = workspace.clone();
+        FileListHeader::new(table, layout, target.0)
+            .background(self.chrome_background())
+            .on_resize(move |layout, _, cx| {
+                let _ = workspace.update(cx, |this, cx| this.resize_columns(table, layout, cx));
+            })
+            .on_menu(move |position, _, cx| {
+                let _ = menu.update(cx, |this, cx| this.open_place_menu(Place::Columns(table), position, cx));
+            })
+    }
+
+    /// Sets a table's columns in every pane, and saves them once a drag has
+    /// rested, not at every step.
+    pub(crate) fn resize_columns(&mut self, table: Table, layout: ColumnLayout, cx: &mut Context<Self>) {
+        if self.preferences.columns(table) == layout {
             return;
         }
-        self.preferences.list_columns = columns;
+        self.preferences.set_columns(table, layout.clone());
         cx.notify();
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(std::time::Duration::from_millis(400)).await;
             this.update(cx, |this, cx| {
-                if this.preferences.list_columns == columns {
+                if this.preferences.columns(table) == layout {
                     this.save_preferences(cx);
                 }
             })
@@ -111,17 +122,15 @@ impl Workspace {
             .tint(style.tint, style.emblem)
             .image(self.item_icon(&pane.api, item, crate::components::ListMetrics::new(self.preferences.list_zoom).icon + 4.))
             .location(if pane.shows_locations() { crate::search::location(&pane.path, &item.path).to_string() } else { String::new() })
-            .details(
-                if is_dir { "Folder".into() } else { type_description(&item.name) },
-                if is_dir { "—".into() } else { file_size(item.size) },
-                file_date(item.mod_time),
-            )
+            .value(Column::Type, if is_dir { "Folder".into() } else { type_description(&item.name) })
+            .value(Column::Size, if is_dir { "—".into() } else { file_size(item.size) })
+            .value(Column::Modified, file_date(item.mod_time))
             .selected(pane.is_selected(&item.path))
             .active(pane.active == Some(index))
             .cut(self.is_cut(pane, item))
             .drop_target(self.drop_hover(cx) == Some(&folder))
             .zoom(self.preferences.list_zoom)
-            .columns(self.preferences.list_columns);
+            .columns(self.preferences.columns(Table::Files).specs(Table::Files));
         let row = match self.renaming(target, &item.path) {
             true => row.editor(crate::components::rename_box(self.rename_field.clone())),
             false => row,
@@ -202,3 +211,4 @@ impl Workspace {
         cx.notify();
     }
 }
+

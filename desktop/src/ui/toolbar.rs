@@ -510,7 +510,7 @@ impl Workspace {
                     .child(pressable("refresh", !trash, self.refresh_button(target, !trash, window).when(!trash, |button| {
                         button.on_click(cx.listener(|this, _, window, cx| this.refresh(&Refresh, window, cx)))
                     })))
-                    .when(trash, |row| row.child(self.empty_trash_button(cx)))
+                    .when(trash, |row| row.child(self.restore_trash_button(cx)).child(self.empty_trash_button(cx)))
                     .child(pressable(
                         "details",
                         true,

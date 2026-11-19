@@ -34,6 +34,7 @@ pub(crate) mod names;
 pub(crate) mod keyboard;
 pub(crate) mod history;
 pub(crate) mod trash;
+pub(crate) mod trash_table;
 pub(crate) mod place_menu;
 pub(crate) mod bookmarks;
 pub(crate) mod templates;
@@ -102,8 +103,11 @@ pub(crate) struct Preferences {
     pub window_controls_in_tab_bar: bool,
     /// The Details panel at the right (F11).
     pub details_panel: bool,
-    /// The list's column widths, as last dragged.
-    pub list_columns: crate::components::ColumnShares,
+    /// The folder lists' columns, as last shown and sized; `None` until changed.
+    #[serde(deserialize_with = "crate::components::columns::lenient")]
+    pub file_columns: Option<crate::components::ColumnLayout>,
+    #[serde(deserialize_with = "crate::components::columns::lenient")]
+    pub trash_columns: Option<crate::components::ColumnLayout>,
 }
 
 /// What a window opens on when it is launched without a folder.
@@ -158,12 +162,29 @@ impl Default for Preferences {
             #[cfg(windows)]
             window_controls_in_tab_bar: true,
             details_panel: false,
-            list_columns: crate::components::ColumnShares::default(),
+            file_columns: None,
+            trash_columns: None,
         }
     }
 }
 
 impl Preferences {
+    /// A table's columns as last shown and sized, or its defaults.
+    pub(crate) fn columns(&self, table: crate::components::Table) -> crate::components::ColumnLayout {
+        let stored = match table {
+            crate::components::Table::Files => &self.file_columns,
+            crate::components::Table::Trash => &self.trash_columns,
+        };
+        stored.clone().unwrap_or_else(|| crate::components::ColumnLayout::new(table))
+    }
+
+    pub(crate) fn set_columns(&mut self, table: crate::components::Table, layout: crate::components::ColumnLayout) {
+        match table {
+            crate::components::Table::Files => self.file_columns = Some(layout),
+            crate::components::Table::Trash => self.trash_columns = Some(layout),
+        }
+    }
+
     pub(crate) fn load() -> Self {
         fs::read(crate::persist::PREFERENCES.path())
             .ok()
@@ -285,6 +306,7 @@ pub struct Workspace {
     next_pane_id: usize,
     pub(crate) trash: Load<Vec<TrashItem>>,
     pub(crate) trash_open: bool,
+    pub(crate) trash_table: trash_table::TrashTable,
     /// Sidebar sections the user folded, by title.
     pub(crate) collapsed_sections: std::collections::HashSet<&'static str>,
     pub(crate) trash_error: Option<String>,
@@ -455,6 +477,7 @@ impl Workspace {
             next_pane_id: 1,
             trash: Load::Loading,
             trash_open: false,
+            trash_table: Default::default(),
             collapsed_sections: Default::default(),
             trash_error: None,
             trash_provider: None,
@@ -1300,6 +1323,9 @@ impl Workspace {
     }
 
     fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
+        if self.trash_open {
+            return self.select_all_trash(cx);
+        }
         self.pane_mut().select_all();
         cx.notify();
     }
@@ -1313,6 +1339,7 @@ impl Workspace {
         else if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
         else if self.properties.take().is_some() || self.context_menu.take().is_some() || self.drop_menu.take().is_some() {}
         // With nothing selected, Escape leaves the search, as it does in the field.
+        else if self.trash_open { self.trash_table.selected.clear(); }
         else if self.pane().selected.is_empty() && self.pane().is_searching() { self.pane_mut().clear_search(); }
         else { self.pane_mut().clear_selection(); }
         self.focus_handle.focus(window);

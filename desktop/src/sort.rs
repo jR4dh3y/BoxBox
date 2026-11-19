@@ -14,6 +14,31 @@ pub enum SortField {
     Modified,
 }
 
+impl SortField {
+    /// The table column that shows this order.
+    pub fn column(self) -> crate::components::Column {
+        use crate::components::Column;
+        match self {
+            Self::Name => Column::Name,
+            Self::Type => Column::Type,
+            Self::Size => Column::Size,
+            Self::Modified => Column::Modified,
+        }
+    }
+
+    /// The order a folder column stands for; Trash's own columns have none.
+    pub fn of_column(column: crate::components::Column) -> Option<Self> {
+        use crate::components::Column;
+        match column {
+            Column::Name => Some(Self::Name),
+            Column::Type => Some(Self::Type),
+            Column::Size => Some(Self::Size),
+            Column::Modified => Some(Self::Modified),
+            Column::Location | Column::Deleted => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SortDir {
     #[serde(rename = "Ascending")]

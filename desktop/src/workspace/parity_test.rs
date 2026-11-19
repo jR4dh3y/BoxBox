@@ -216,7 +216,9 @@ fn desktop_workflow(cx: &mut TestAppContext) {
     assert!(!fixture.join("dest/renamed.txt").exists());
     if local {
         click(cx, "sidebar-trash");
-        click(cx, "restore-renamed.txt");
+        cx.run_until_parked();
+        click(cx, "trash-row-renamed.txt");
+        click(cx, "restore-trash");
         cx.run_until_parked();
         assert_eq!(fs::read_to_string(fixture.join("dest/renamed.txt")).unwrap(), "hello");
         cx.simulate_keystrokes("alt-left");

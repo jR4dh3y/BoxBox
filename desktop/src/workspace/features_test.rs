@@ -738,10 +738,13 @@ fn trash_takes_drops_shows_restored_items_and_empties(cx: &mut TestAppContext) {
         workspace.dismiss_notice(id, cx);
     });
 
-    // Restoring offers to show the item where it went back to.
+    // Trash lists like a folder: select a row, then Restore offers to show the
+    // item where it went back to.
     click(cx, "sidebar-trash");
     cx.run_until_parked();
-    click(cx, "restore-b.txt");
+    click(cx, "trash-row-b.txt");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.selected_trash().len(), 1));
+    click(cx, "restore-trash");
     cx.run_until_parked();
     assert!(fixture.root.join("b.txt").is_file());
     view.update(cx, |workspace, cx| workspace.navigate("home/docs".into(), cx));
@@ -767,6 +770,27 @@ fn trash_takes_drops_shows_restored_items_and_empties(cx: &mut TestAppContext) {
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert!(!workspace.trash_full));
     assert_eq!(fs::read_dir(fixture.root.join(".local/share/Trash/files")).unwrap().count(), 0);
+}
+
+#[gpui::test]
+fn trash_selects_like_a_folder_and_deletes_the_selection(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a.txt", "b.txt", "c.txt"]);
+    for _ in 0..2 {
+        drag(cx, "row-0-0", "sidebar-trash");
+        cx.run_until_parked();
+    }
+    click(cx, "sidebar-trash");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.trash_items().len(), 2));
+    cx.simulate_keystrokes("ctrl-a");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.selected_trash().len(), 2, "Ctrl+A selects every row"));
+    // In Trash, Delete can only mean for good, so it asks first.
+    cx.simulate_keystrokes("delete");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.confirm.as_ref().unwrap().title.as_ref(), "Delete permanently"));
+    click(cx, "confirm-accept");
+    cx.run_until_parked();
+    assert_eq!(fs::read_dir(fixture.root.join(".local/share/Trash/files")).unwrap().count(), 0);
+    assert_eq!(["a.txt", "b.txt", "c.txt"].iter().filter(|name| fixture.root.join(name).exists()).count(), 1, "the item left out stays");
 }
 
 #[gpui::test]

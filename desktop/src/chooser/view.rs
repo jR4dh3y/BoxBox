@@ -112,6 +112,8 @@ pub struct Chooser {
     anchor: Option<usize>,
     active: Option<usize>,
     sort: Sort,
+    /// The window's folder columns; sized here for this dialog only.
+    columns: crate::components::ColumnLayout,
     show_hidden: bool,
     filter: Option<usize>,
     choices: Vec<(String, String)>,
@@ -267,6 +269,7 @@ impl Chooser {
             anchor: None,
             active: None,
             sort: Sort { field: preferences.default_sort, dir: preferences.default_sort_direction },
+            columns: preferences.columns(crate::components::Table::Files),
             show_hidden: preferences.show_hidden_files,
             choices,
             open_menu: None,
@@ -910,11 +913,10 @@ impl Chooser {
                 .icon(kind.glyph())
                 .tint(tint, None)
                 .image(EntryIcon::Glyph)
-                .details(
-                    if item.is_dir { "Folder".into() } else { type_description(&item.name) },
-                    if item.is_dir { "—".into() } else { file_size(item.size) },
-                    file_date(item.mod_time),
-                )
+                .columns(self.columns.specs(crate::components::Table::Files))
+                .value(crate::components::Column::Type, if item.is_dir { "Folder".into() } else { type_description(&item.name) })
+                .value(crate::components::Column::Size, if item.is_dir { "—".into() } else { file_size(item.size) })
+                .value(crate::components::Column::Modified, file_date(item.mod_time))
                 .selected(self.selected.contains(&index))
                 .active(self.active == Some(row))
                 .cut(dimmed)
@@ -937,20 +939,30 @@ impl Chooser {
             Listing::Ready => None,
         };
         let count = self.visible.len();
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .child(FileListHeader::new(self.sort).on_sort({
+        let table = crate::components::Table::Files;
+        let header = FileListHeader::new(table, self.columns.clone(), 0)
+            .sorted(Some((self.sort.field.column(), self.sort.dir)))
+            .on_sort({
                 let view = cx.entity().downgrade();
-                move |field, _, _, cx| {
+                move |column, _, cx| {
+                    let Some(field) = crate::sort::SortField::of_column(column) else { return };
                     let _ = view.update(cx, |this, cx| {
                         this.sort = this.sort.toggled(field);
                         this.refilter(cx);
                     });
                 }
-            }))
+            })
+            .on_resize({
+                let view = cx.entity().downgrade();
+                move |columns, _, cx| {
+                    let _ = view.update(cx, |this, cx| {
+                        this.columns = columns;
+                        cx.notify();
+                    });
+                }
+            });
+        let list = crate::components::table_frame(&self.columns, table)
+            .child(header)
             .when_some(message, |list, (glyph, text)| {
                 list.child(
                     div()
@@ -970,7 +982,8 @@ impl Chooser {
                         .track_scroll(self.scroll.clone())
                         .flex_1(),
                 )
-            })
+            });
+        div().flex_1().min_h_0().child(crate::components::sideways("chooser-table", list))
     }
 
     /// A select whose list opens above it, since the footer sits at the bottom.
