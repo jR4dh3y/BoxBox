@@ -34,6 +34,9 @@ type FS interface {
 	// Readlink returns the stored target of a symbolic link.
 	Readlink(path string) (string, error)
 
+	// Symlink creates newname as a symbolic link to oldname.
+	Symlink(oldname, newname string) error
+
 	// Stat returns a FileInfo describing the named file.
 	Stat(name string) (fs.FileInfo, error)
 
@@ -266,6 +269,17 @@ func (a *AferoFS) Readlink(path string) (string, error) {
 		return reader.ReadlinkIfPossible(path)
 	}
 	return "", afero.ErrNoReadlink
+}
+
+func (a *AferoFS) Symlink(oldname, newname string) error {
+	if err := validateFilesystemPath(newname); err != nil {
+		return err
+	}
+	newname = filepath.Clean("/" + newname)
+	if linker, ok := a.fs.(afero.Linker); ok {
+		return linker.SymlinkIfPossible(oldname, newname)
+	}
+	return afero.ErrNoSymlink
 }
 
 // Stat returns a FileInfo describing the named file.

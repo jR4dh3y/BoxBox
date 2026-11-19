@@ -5,11 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/websocket"
 )
 
 // symlinkFixture builds home/photos/a.jpg and home/shortcut -> home/photos.
@@ -236,5 +238,58 @@ func TestJobsOnMountRootBehindSymlink(t *testing.T) {
 		if job.State != model.JobStateCompleted {
 			t.Fatalf("%s job state = %s (%s), want completed", jobType, job.State, job.Error)
 		}
+	}
+}
+
+type crossDeviceFS struct{ filesystem.FS }
+
+func (crossDeviceFS) RenameNoReplace(string, string) error { return syscall.EXDEV }
+
+func TestFolderCopyAndCrossDeviceMoveKeepSymlinksAndFileModes(t *testing.T) {
+	modes := map[string]os.FileMode{"run.sh": 0o755, "shared.txt": 0o664, "private.txt": 0o600}
+	for _, op := range []string{"copy", "move"} {
+		t.Run(op, func(t *testing.T) {
+			dir := t.TempDir()
+			source, destination := filepath.Join(dir, "source"), filepath.Join(dir, "destination")
+			if err := os.Mkdir(source, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for name, mode := range modes {
+				path := filepath.Join(source, name)
+				if err := os.WriteFile(path, []byte(name), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(path, mode); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Symlink("run.sh", filepath.Join(source, "link")); err != nil {
+				t.Fatal(err)
+			}
+			f := crossDeviceFS{FS: filesystem.NewOsFS()}
+			s := &jobService{fs: f, hub: websocket.NewHub(), walker: NewWalker(f)}
+			job := &model.Job{SourcePath: source, DestPath: destination}
+			var err error
+			if op == "copy" {
+				err = s.executeCopy(context.Background(), job)
+			} else {
+				err = s.executeMove(context.Background(), job)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if target, err := os.Readlink(filepath.Join(destination, "link")); err != nil || target != "run.sh" {
+				t.Fatalf("symlink = %q (%v), want run.sh", target, err)
+			}
+			for name, mode := range modes {
+				info, err := os.Stat(filepath.Join(destination, name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm() != mode {
+					t.Errorf("%s mode = %v, want %v", name, info.Mode().Perm(), mode)
+				}
+			}
+		})
 	}
 }
