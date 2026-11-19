@@ -311,6 +311,8 @@ pub struct Workspace {
     pub(crate) collapsed_sections: std::collections::HashSet<&'static str>,
     /// When each sidebar section last folded, for its animation.
     pub(crate) section_toggles: HashMap<&'static str, std::time::Instant>,
+    /// Tabs just closed, drawn folding away where they stood: index, title, when.
+    pub(crate) closing_tabs: Vec<(usize, String, std::time::Instant)>,
     pub(crate) trash_error: Option<String>,
     pub(crate) trash_provider: Option<Arc<Api>>,
     /// Whether Trash holds anything, for its icon.
@@ -482,6 +484,7 @@ impl Workspace {
             trash_table: Default::default(),
             collapsed_sections: Default::default(),
             section_toggles: Default::default(),
+            closing_tabs: Vec::new(),
             trash_error: None,
             trash_provider: None,
             trash_full: false,
@@ -1148,6 +1151,20 @@ impl Workspace {
         if self.tabs.len() <= 1 {
             return;
         }
+        if crate::components::motion::enabled(cx) {
+            let title = self.breadcrumbs(PaneTarget(self.tabs[index].id)).pop().map_or_else(|| "Overview".to_string(), |crumb| crumb.label);
+            let at = std::time::Instant::now();
+            self.closing_tabs.push((index, title, at));
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(crate::components::motion::TAB).await;
+                this.update(cx, |this, cx| {
+                    this.closing_tabs.retain(|(_, _, closed)| *closed != at);
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
+        }
         let removed = self.tabs.remove(index);
         self.split_panes.remove(&removed.id);
         if self.active_tab > index || self.active_tab >= self.tabs.len() {
@@ -1571,7 +1588,7 @@ impl Render for Workspace {
             .when(self.place_menu.is_some(), |root| root.child(self.render_place_menu(cx)))
             .when(self.drop_menu.is_some(), |root| root.child(self.render_drop_menu(cx)))
             .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
-            .child(self.render_notices(cx))
+            .child(self.render_notices(window, cx))
             .when(cfg!(target_os = "linux"), |root| {
                 #[cfg(target_os = "linux")]
                 let root = root.when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)));

@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     fill, px, Animation, AnimationExt as _, AnyElement, App, Bounds, Corners, DispatchPhase, Element, ElementId, GlobalElementId, Global,
-    Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
+    Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, ParentElement as _, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
     Rgba, ScrollWheelEvent, Styled, Window,
 };
 
@@ -48,6 +48,8 @@ pub const TAB: Duration = Duration::from_millis(160);
 pub const TURN: Duration = Duration::from_millis(180);
 /// A sidebar section folding open or shut.
 pub const FOLD: Duration = Duration::from_millis(200);
+/// A notice or other thing sliding away once dismissed.
+pub const LEAVE: Duration = Duration::from_millis(220);
 /// A usage bar growing to its value.
 pub const GROW: Duration = Duration::from_millis(520);
 /// A folder's contents arriving from the side the pane moved to.
@@ -99,14 +101,9 @@ pub fn ease_out(t: f32) -> f32 {
     1. - (1. - t).powi(3)
 }
 
-/// `element` fading in where it stands, over `duration`. The animation
-/// replays whenever the element appears again, since GPUI drops the state of
-/// an element that was not drawn.
-pub fn enter<E: IntoElement + Styled + 'static>(id: impl Into<ElementId>, element: E, duration: Duration, cx: &App) -> AnyElement {
-    enter_from(id, element, duration, (0., 0.), cx)
-}
-
-/// `element` fading in while it settles from `(dx, dy)` pixels away. The
+/// `element` fading in while it settles from `(dx, dy)` pixels away, over
+/// `duration`. The animation replays whenever the element appears again,
+/// since GPUI drops the state of an element that was not drawn. The
 /// offset is relative positioning, which moves only what is drawn: an
 /// `anchored` menu keeps its place and nothing beside it reflows. Only for an
 /// element in the normal flow: it is made relative.
@@ -201,6 +198,31 @@ pub fn arrive<E: IntoElement + Styled + 'static>(id: impl Into<ElementId>, eleme
     }
     element
         .with_animation(id, Animation::new(ARRIVE).with_easing(ease_out_quint), move |element, t| element.left(px(from * (1. - t))).opacity(0.25 + 0.75 * t))
+        .into_any_element()
+}
+
+/// How long after a folder's first listing lands its items still cascade in;
+/// items drawn later, by scrolling, simply appear.
+pub const CASCADE_WINDOW: Duration = Duration::from_millis(450);
+const CASCADE: Duration = Duration::from_millis(200);
+const CASCADE_STEP: Duration = Duration::from_millis(14);
+/// Items past this many come in with the last of them.
+const CASCADE_ITEMS: usize = 16;
+
+/// `element`, the `index`th item of a listing that just arrived, fading up and
+/// settling a few pixels a little after the one before it.
+pub fn cascade(id: impl Into<ElementId>, element: impl IntoElement, index: usize, cx: &App) -> AnyElement {
+    if !enabled(cx) {
+        return element.into_any_element();
+    }
+    let delay = (CASCADE_STEP * index.min(CASCADE_ITEMS) as u32).as_secs_f32();
+    let (own, total) = (CASCADE.as_secs_f32(), CASCADE.as_secs_f32() + delay);
+    gpui::div()
+        .child(element)
+        .with_animation(id, Animation::new(Duration::from_secs_f32(total)), move |item, t| {
+            let local = ease_out_quint(((t * total - delay) / own).clamp(0., 1.));
+            item.opacity(local).relative().top(px(6. * (1. - local)))
+        })
         .into_any_element()
 }
 

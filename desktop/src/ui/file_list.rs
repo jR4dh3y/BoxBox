@@ -56,10 +56,15 @@ impl Workspace {
                         cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                             let _span = crate::profile::span("list rows").with(|| format!("{} rows", range.len()));
                             let size = crate::components::ListMetrics::new(this.preferences.list_zoom).icon + 4.;
+                            let cascading = this.pane_by_id(target.0).is_some_and(|pane| pane.cascading());
                             range
                                 .filter_map(|index| {
                                     this.request_entry_icon(target, index, size, cx);
-                                    this.render_row(target, index, cx)
+                                    let row = this.render_row(target, index, cx)?;
+                                    Some(match cascading {
+                                        true => crate::components::motion::cascade(("row-in", index), row, index, cx),
+                                        false => row.into_any_element(),
+                                    })
                                 })
                                 .collect::<Vec<_>>()
                         }),

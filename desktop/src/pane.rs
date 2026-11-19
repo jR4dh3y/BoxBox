@@ -186,6 +186,10 @@ pub struct Pane {
     /// arrive from that side once per move.
     pub arrival: crate::components::motion::Arrival,
     pub moves: u64,
+    /// When the first listing after the last move landed, for its items to
+    /// cascade in; a refresh of the same folder does not set it again.
+    pub listed_at: Option<std::time::Instant>,
+    listed_move: u64,
 }
 
 impl Pane {
@@ -253,6 +257,8 @@ impl Pane {
             copied: false,
             arrival: Default::default(),
             moves: 0,
+            listed_at: None,
+            listed_move: 0,
         }
     }
 
@@ -441,6 +447,10 @@ impl Pane {
                     if let Some(memo) = self.restore.take() {
                         self.restore_view(memo);
                     }
+                    if self.listed_move != self.moves {
+                        self.listed_move = self.moves;
+                        self.listed_at = Some(std::time::Instant::now());
+                    }
                 }
                 self.listing = Listing::Loaded;
                 view != self.view()
@@ -450,6 +460,12 @@ impl Pane {
                 false
             }
         }
+    }
+
+    /// Whether the items of a listing that just arrived still cascade in: not
+    /// on a copied tab, whose screen did not change.
+    pub fn cascading(&self) -> bool {
+        !self.copied && self.listed_at.is_some_and(|at| at.elapsed() < crate::components::motion::CASCADE_WINDOW)
     }
 
     /// Whether anything this pane asked for is still out: its listing, its

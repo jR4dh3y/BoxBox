@@ -14,7 +14,7 @@ use crate::workspace::{NewTab, ToggleSplit, Workspace};
 const TAB_MAX_WIDTH: f32 = 260.;
 
 impl Workspace {
-    pub(crate) fn render_tabs(&self, _window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_tabs(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let closable = self.tabs.len() > 1;
         let animate = motion::enabled(cx);
         let tabs = self.tabs.iter().enumerate().map(|(index, pane)| {
@@ -69,8 +69,23 @@ impl Workspace {
                     .into_any_element(),
                 false => tab.into_any_element(),
             };
-            motion::interact(("tab-feedback", pane.id), tab).fill(c(SURFACE_SECONDARY)).rounded(4.)
+            motion::interact(("tab-feedback", pane.id), tab).fill(c(SURFACE_SECONDARY)).rounded(4.).into_any_element()
         });
+        // A closed tab folds away where it stood while its neighbours close in.
+        let mut tabs: Vec<gpui::AnyElement> = tabs.collect();
+        for (index, title, closed) in &self.closing_tabs {
+            let left = 1. - motion::progress(Some(*closed), motion::TAB, window, cx);
+            // The tab's width, reckoned from its title, so it starts shrinking at once.
+            let width = (title.chars().count() as f32 * 7. + 40.).min(176. + 24.);
+            let ghost = div()
+                .flex()
+                .flex_none()
+                .overflow_hidden()
+                .max_w(px(width * left))
+                .opacity(left)
+                .child(div().flex_none().px(px(8.)).py(px(4.)).text_xs_tw().whitespace_nowrap().text_color(c(TEXT_SECONDARY)).child(title.clone()));
+            tabs.insert((*index).min(tabs.len()), ghost.into_any_element());
+        }
         let tool = |id: &'static str, glyph: &'static str| {
             div().id(id).debug_selector(move || id.into()).p(px(4.)).cursor_pointer().child(icon(glyph, 14., c(TEXT_SECONDARY)))
         };
