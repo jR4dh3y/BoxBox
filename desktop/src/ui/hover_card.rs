@@ -369,7 +369,7 @@ impl Render for DriveHover {
                         .flex()
                         .justify_between()
                         .gap(px(8.))
-                        .child(div().min_w_0().truncate().text_color(c(TEXT_PRIMARY)).child(format!("{} free of {}", file_size(usage.free), file_size(usage.total))))
+                        .child(div().min_w_0().truncate().text_color(c(TEXT_PRIMARY)).child(format!("{} / {}", file_size(usage.used), file_size(usage.total))))
                         .child(div().flex_none().text_color(c(TEXT_SECONDARY)).child(format!("{:.0}% used", usage.pct))),
                 )
                 .into_any_element(),
