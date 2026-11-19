@@ -921,7 +921,7 @@ type shareFiles struct {
 func (s *shareService) creatorFiles(share *model.Share) (*shareFiles, error) {
 	files, err := s.files(share.CreatedBy)
 	if err != nil {
-		if errors.Is(err, ErrPermissionDenied) {
+		if errors.Is(err, ErrNoFileAccess) || errors.Is(err, ErrPermissionDenied) {
 			return nil, ErrShareNotFound
 		}
 		return nil, err

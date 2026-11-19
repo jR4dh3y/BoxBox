@@ -29,7 +29,7 @@ func TestShareRecipientsUseTheCreatorsFiles(t *testing.T) {
 			if fsys, ok := mapped[account]; ok {
 				return fsys, nil
 			}
-			return nil, ErrPermissionDenied
+			return nil, ErrNoFileAccess
 		},
 	})
 	ctx := context.Background()
@@ -38,7 +38,7 @@ func TestShareRecipientsUseTheCreatorsFiles(t *testing.T) {
 	if _, err := shares.Create(ctx, "bob", "media/note.txt", ShareSettings{}, time.Time{}); !errors.Is(err, ErrPathNotFound) {
 		t.Fatalf("bob shared alice's file: %v", err)
 	}
-	if _, err := shares.Create(ctx, "carol", "media/note.txt", ShareSettings{}, time.Time{}); !errors.Is(err, ErrPermissionDenied) {
+	if _, err := shares.Create(ctx, "carol", "media/note.txt", ShareSettings{}, time.Time{}); !errors.Is(err, ErrNoFileAccess) {
 		t.Fatalf("unmapped account created a share: %v", err)
 	}
 
