@@ -34,12 +34,17 @@ zbus = { version = "5.19", default-features = false, features = ["async-io", "bl
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+backhand = { version = "0.25.5", default-features = false, features = ["gzip", "xz", "zstd"] }
+flate2 = "1"
+liblzma = { version = "0.4", default-features = false }
 raw-window-handle = "0.6"
+tar = { version = "0.4.46", default-features = false }
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
 x11rb = "0.13"
 yeslogic-fontconfig-sys = "6.0.1"
+zstd = { version = "0.13", default-features = false }
 
 [profile.dev]
 opt-level = 1

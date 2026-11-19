@@ -21,6 +21,8 @@ mod custom_actions;
 mod media;
 mod open_with;
 mod os_clipboard;
+#[cfg(target_os = "linux")]
+mod package_icons;
 mod pane;
 mod progress;
 #[cfg(target_os = "linux")]

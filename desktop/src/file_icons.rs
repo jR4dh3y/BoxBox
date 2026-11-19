@@ -53,12 +53,13 @@ impl IconKey {
 }
 
 /// The pixel sizes icons are drawn at, so zooming reuses them.
-const BUCKETS: [u32; 9] = [16, 24, 32, 48, 64, 96, 128, 192, 256];
+const BUCKETS: [u32; 9] = [16, 24, 32, 48, 64, 96, 128, 192, LARGEST_BUCKET];
+pub const LARGEST_BUCKET: u32 = 256;
 
 /// The bucket for an icon drawn at `size` logical pixels on a `scale` display.
 pub fn bucket(size: f32, scale: f32) -> u32 {
     let wanted = (size * scale).ceil() as u32;
-    BUCKETS.iter().copied().find(|bucket| *bucket >= wanted).unwrap_or(256)
+    BUCKETS.iter().copied().find(|bucket| *bucket >= wanted).unwrap_or(LARGEST_BUCKET)
 }
 
 /// The theme's icon for `key`, `size` pixels square. `None` when the theme has
@@ -99,20 +100,30 @@ fn bgra(mut pixels: image::RgbaImage) -> Arc<RenderImage> {
     Arc::new(RenderImage::new(vec![image::Frame::new(pixels)]))
 }
 
-/// An SVG drawn at `size`, or a PNG scaled down to it, as GPUI's BGRA pixels.
+/// A package's own icon file, SVG or raster, `size` pixels square.
+#[cfg(target_os = "linux")]
+pub fn package_image(bytes: &[u8], size: u32) -> Option<Arc<RenderImage>> {
+    let svg = image::guess_format(bytes).is_err();
+    pixels(bytes, svg, size).map(bgra).map_err(|error| log::debug!("package icon: {error:#}")).ok()
+}
+
+/// An icon file (a theme's, an app's), as GPUI's BGRA pixels.
 pub(crate) fn rasterize(path: &Path, size: u32) -> anyhow::Result<Arc<RenderImage>> {
-    let bytes = std::fs::read(path)?;
-    let pixels = if path.extension().is_some_and(|extension| extension == "svg") {
-        svg_pixels(&bytes, size)?
-    } else {
-        let decoded = image::load_from_memory(&bytes)?.into_rgba8();
-        // Never scaled up: a small PNG stays sharp at its own size.
-        match decoded.width().max(decoded.height()) > size {
-            true => image::imageops::thumbnail(&decoded, size, size),
-            false => decoded,
-        }
-    };
-    Ok(bgra(pixels))
+    let svg = path.extension().is_some_and(|extension| extension == "svg");
+    Ok(bgra(pixels(&std::fs::read(path)?, svg, size)?))
+}
+
+/// An SVG drawn at `size`, or a PNG scaled down to it.
+fn pixels(bytes: &[u8], svg: bool, size: u32) -> anyhow::Result<image::RgbaImage> {
+    if svg {
+        return svg_pixels(bytes, size);
+    }
+    let decoded = image::load_from_memory(bytes)?.into_rgba8();
+    // Never scaled up: a small PNG stays sharp at its own size.
+    Ok(match decoded.width().max(decoded.height()) > size {
+        true => image::imageops::thumbnail(&decoded, size, size),
+        false => decoded,
+    })
 }
 
 #[cfg(test)]
