@@ -72,11 +72,13 @@ Most valuable first.
 - Properties: image dimensions, EXIF date and camera, MIME type,
   free space, a group picker; values selectable. (Folder size and counts, all dates, link target and the permissions grid are done.)
 - Reorder tabs; restore tabs and split panes on launch.
-- Details view: choose, resize and reorder columns (owner, permissions, MIME
-  type, created, accessed), remembered per folder.
+- Details view: choose and reorder columns (owner, permissions, MIME type,
+  created, accessed), remembered per folder. (Dragging a border resizes the
+  columns, kept for every folder.)
 - Ask on a right-button drag: GPUI 0.2.2 starts drags only with the left
   button and keeps its drag state private, so Alt-drag asks instead.
-- Middle-ellipsis for long names, keeping the extension.
+- Middle-ellipsis for long names in the list, keeping the extension. (The
+  grid's second line already loses its middle.)
 - Undo for copy, move, create and link as well as Trash and rename; Redo.
 - Transfer pause and resume, current file, rate and time left.
 - Folder tree in the sidebar.
