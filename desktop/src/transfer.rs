@@ -194,8 +194,8 @@ impl Run<'_> {
             self.put(source, child, target, true)?;
         }
         // A moved folder is gone once everything left it; a skipped item keeps it.
-        let empty = source.list(&item.path).is_ok_and(|left| left.is_empty()) && unlisted_name(source, &item.path).is_none();
-        if self.job.mode == Mode::Move && empty {
+        let empty = || source.list(&item.path).is_ok_and(|left| left.is_empty()) && unlisted_name(source, &item.path).is_none();
+        if self.job.mode == Mode::Move && empty() {
             let _ = source.delete(&item.path, false);
         }
         self.outcome.done += 1;
@@ -587,6 +587,7 @@ mod tests {
         assert!(root.0.join("A/A/a.txt").exists() && root.0.join("A/b.txt").exists());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn replacing_a_link_to_the_items_folder_replaces_only_the_link() {
         let (root, api) = fixture(&["src/A/a.txt", "dst/"]);
