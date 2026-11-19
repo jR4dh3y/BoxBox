@@ -8,13 +8,15 @@ pub enum Runnable {
     Document,
 }
 
+/// Whether opening `path` runs code: a known program type, or one Windows
+/// itself marks as unsafe to open from the web (`AssocIsDangerous`).
 pub fn program(path: &Path) -> bool {
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default();
-    matches!(
-        extension.to_ascii_lowercase().as_str(),
+    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    let extension = extension.to_ascii_lowercase();
+    let known = matches!(
+        extension.as_str(),
         "exe"
             | "com"
             | "bat"
@@ -37,7 +39,10 @@ pub fn program(path: &Path) -> bool {
             | "hta"
             | "reg"
             | "msc"
-    )
+            | "cpl"
+    );
+    let association = crate::windows::wide(format!(".{extension}"));
+    known || unsafe { windows_sys::Win32::UI::Shell::AssocIsDangerous(association.as_ptr()) != 0 }
 }
 
 pub fn classify(path: &Path) -> Runnable {

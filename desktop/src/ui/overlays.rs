@@ -63,10 +63,14 @@ impl Workspace {
                     }
                 }, cx));
             }
-            // Windows lists its own Open With among the Shell commands.
             #[cfg(target_os = "linux")]
             if single_file && local {
                 entries.extend(self.open_with_entries(&menu.extras, cx));
+            }
+            // The Shell's own `openas` row is left out of its commands for this one.
+            #[cfg(windows)]
+            if single_file && local {
+                entries.push(self.menu_item("context-open-with", "Open With…", "app-window", |this, window, cx| this.context_open_with(window, cx), cx));
             }
             let folders = items.iter().filter(|item| item.is_dir).count();
             if folders > 0 {

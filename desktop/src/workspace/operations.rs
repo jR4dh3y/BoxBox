@@ -618,7 +618,8 @@ impl Workspace {
     /// Files from another app, pasted or dropped. Paths this provider can reach go
     /// through the normal transfer, so a cut moves them; anything else is copied in.
     pub(crate) fn receive_files(&mut self, target: PaneTarget, destination: Arc<Api>, parent: String, files: os_clipboard::Files, cx: &mut Context<Self>) {
-        let reachable: Option<Vec<String>> = files.paths.iter().map(|path| destination.virtual_path(path)).collect();
+        // The entries themselves: cutting a link moves the link, not what it points to.
+        let reachable: Option<Vec<String>> = files.paths.iter().map(|path| destination.virtual_entry_path(path)).collect();
         let Some(virtual_paths) = reachable else {
             self.import_paths_to(destination, parent, files.paths, cx);
             return;

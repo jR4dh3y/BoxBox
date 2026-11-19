@@ -100,16 +100,20 @@ fn rejects_windows_device_names_and_path_components() {
 #[test]
 fn windows_remote_programs_are_not_opened_as_documents() {
     let api = Api::new("http://127.0.0.1:1", None);
-    let item = crate::api::FileInfo {
-        name: "hello.exe.".into(),
-        path: "home/hello.exe.".into(),
-        size: 0,
-        is_dir: false,
-        hidden: false,
-        mod_time: None,
-    };
-    let error = crate::media::open_file(&api, &item).unwrap_err();
-    assert_eq!(error.to_string(), "Download this program before running it");
+    // A Control Panel applet and a Shell command file run code too.
+    for name in ["hello.exe.", "applet.cpl", "explorer.scf"] {
+        let item = crate::api::FileInfo {
+            name: name.into(),
+            path: format!("home/{name}"),
+            size: 0,
+            is_dir: false,
+            hidden: false,
+            mod_time: None,
+        };
+        let error = crate::media::open_file(&api, &item).unwrap_err();
+        assert_eq!(error.to_string(), "Download this program before running it", "{name}");
+    }
+    assert!(!crate::launch::program(Path::new("notes.txt")));
 }
 
 #[test]

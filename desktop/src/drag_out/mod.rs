@@ -183,6 +183,9 @@ pub fn moved(event: &DragMoveEvent<DraggedItem>, window: &mut Window, cx: &mut A
     windows::moved(event, window, cx);
 }
 
+/// Names the temporary folder of each staged drag.
+const STAGE_PREFIX: &str = "boxbox-gpui-drag-";
+
 /// Remote files are staged for other apps; local files keep their original filesystem paths.
 fn stage(api: &Api, files: &[FileInfo]) -> Result<Vec<PathBuf>> {
     if api.is_local() {
@@ -197,7 +200,7 @@ fn stage(api: &Api, files: &[FileInfo]) -> Result<Vec<PathBuf>> {
     }
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     // Only this user may read authenticated downloads, whatever the umask.
-    let dir = std::env::temp_dir().join(format!("boxbox-gpui-drag-{}-{stamp}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("{STAGE_PREFIX}{}-{stamp}", std::process::id()));
     let builder = std::fs::DirBuilder::new();
     #[cfg(unix)]
     let builder = {

@@ -75,7 +75,7 @@ pub(super) fn moved(event: &DragMoveEvent<DraggedItem>, window: &mut Window, cx:
                 return;
             }
         };
-        handle
+        let started = handle
             .update(cx, |_, window, cx| {
                 let same_drag = cx.global::<Pending>().sequence == sequence;
                 let held = unsafe { GetAsyncKeyState(i32::from(VK_LBUTTON.0)) } < 0;
@@ -84,10 +84,26 @@ pub(super) fn moved(event: &DragMoveEvent<DraggedItem>, window: &mut Window, cx:
                         log::warn!("Could not drag files to another app: {error:#}");
                     }
                 }
+                same_drag && held
             })
-            .ok();
+            .unwrap_or(false);
+        // Released, replaced or closed while downloading: no app took the copies.
+        if !started && !local {
+            discard_staged(&paths);
+        }
     })
     .detach();
+}
+
+/// Removes the folder `stage` downloaded remote files into.
+fn discard_staged(paths: &[PathBuf]) {
+    let Some(folder) = paths.first().and_then(|path| path.parent()) else { return };
+    let staged = folder.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with(super::STAGE_PREFIX));
+    if staged && folder.starts_with(std::env::temp_dir()) {
+        if let Err(error) = std::fs::remove_dir_all(folder) {
+            log::debug!("Could not remove {}: {error}", folder.display());
+        }
+    }
 }
 
 struct Pidl(*mut ITEMIDLIST);
@@ -137,6 +153,20 @@ fn drag(window: &Window, paths: &[PathBuf], local: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_abandoned_drag_removes_only_its_own_downloads() {
+        let staged = std::env::temp_dir().join(format!("{}test-{}", super::super::STAGE_PREFIX, std::process::id()));
+        std::fs::create_dir_all(&staged).unwrap();
+        std::fs::write(staged.join("a.txt"), "a").unwrap();
+        discard_staged(&[staged.join("a.txt")]);
+        assert!(!staged.exists());
+
+        let other = tempfile::tempdir().unwrap();
+        std::fs::write(other.path().join("b.txt"), "b").unwrap();
+        discard_staged(&[other.path().join("b.txt")]);
+        assert!(other.path().join("b.txt").exists(), "a folder the drag did not make stays");
+    }
 
     #[test]
     fn explorer_can_read_the_drag_as_files() {

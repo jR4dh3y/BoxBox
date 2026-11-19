@@ -243,6 +243,14 @@ impl Api {
         }
     }
 
+    /// Like `virtual_path`, but a final link or junction names itself, not its target.
+    pub fn virtual_entry_path(&self, real: &std::path::Path) -> Option<String> {
+        match &self.provider {
+            Provider::Local(local) => local.virtual_entry_path(real),
+            Provider::Remote(_) => None,
+        }
+    }
+
     /// Virtual paths of the home and XDG user folders with their theme icons.
     /// Reads `user-dirs.dirs`, so call it off the UI thread.
     pub fn special_folders(&self) -> Vec<(String, &'static str)> {

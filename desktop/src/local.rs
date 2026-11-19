@@ -330,6 +330,16 @@ impl LocalFiles {
         Some(path)
     }
 
+    /// Like `virtual_path`, but a final link or junction names itself, not its
+    /// target, so moving the entry moves the link. Only Windows resolves links there.
+    pub fn virtual_entry_path(&self, real: &Path) -> Option<String> {
+        #[cfg(windows)]
+        if let (Some(parent), Some(name)) = (real.parent(), real.file_name()) {
+            return Some(format!("{}/{}", self.virtual_path(parent)?, name.to_string_lossy()));
+        }
+        self.virtual_path(real)
+    }
+
     /// The home folder and the XDG user folders by every virtual path that
     /// reaches them, with the theme icon each one has.
     pub fn special_folders(&self) -> Vec<(String, &'static str)> {
