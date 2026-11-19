@@ -65,12 +65,20 @@ type UploadStatus struct {
 type UploadService interface {
 	StartCleanup(context.Context)
 	StopCleanup()
-	AcceptChunk(context.Context, string, UploadChunk, io.Reader) (*UploadResult, error)
-	Status(string) (*UploadStatus, error)
-	Discard(string)
+	// Sessions belong to the account that sent the first chunk. Another account
+	// using the same upload ID gets its own session and never sees this one.
+	AcceptChunk(ctx context.Context, owner, path string, chunk UploadChunk, body io.Reader) (*UploadResult, error)
+	Status(owner, id string) (*UploadStatus, error)
+	Discard(owner, id string)
+}
+
+type uploadKey struct {
+	owner string
+	id    string
 }
 
 type uploadSession struct {
+	key            uploadKey
 	id             string
 	path           string
 	totalChunks    int
@@ -94,7 +102,7 @@ type uploadSession struct {
 type uploadService struct {
 	files    FileStreamer
 	tempRoot string
-	sessions map[string]*uploadSession
+	sessions map[uploadKey]*uploadSession
 	mu       sync.RWMutex
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
@@ -107,7 +115,7 @@ func NewUploadService(files FileStreamer, tempRoot string) UploadService {
 	return &uploadService{
 		files:    files,
 		tempRoot: tempRoot,
-		sessions: make(map[string]*uploadSession),
+		sessions: make(map[uploadKey]*uploadSession),
 	}
 }
 
@@ -148,6 +156,7 @@ func (s *uploadService) StopCleanup() {
 
 func (s *uploadService) AcceptChunk(
 	ctx context.Context,
+	owner string,
 	path string,
 	chunk UploadChunk,
 	body io.Reader,
@@ -166,7 +175,7 @@ func (s *uploadService) AcceptChunk(
 	if err != nil {
 		return nil, err
 	}
-	session, err := s.getOrCreate(path, chunk)
+	session, err := s.getOrCreate(owner, path, chunk)
 	if err != nil {
 		return nil, err
 	}
@@ -224,15 +233,16 @@ func (s *uploadService) AcceptChunk(
 }
 
 // Discard prevents future publication and removes temporary chunks after active readers exit.
-func (s *uploadService) Discard(id string) {
+func (s *uploadService) Discard(owner, id string) {
+	key := uploadKey{owner: owner, id: id}
 	s.mu.Lock()
-	session := s.sessions[id]
+	session := s.sessions[key]
 	var temporary string
 	if session != nil {
 		session.mu.Lock()
 		session.discarded = true
 		if session.activeRequests == 0 {
-			delete(s.sessions, id)
+			delete(s.sessions, key)
 			temporary = session.tempDir
 		}
 		session.mu.Unlock()
@@ -243,9 +253,9 @@ func (s *uploadService) Discard(id string) {
 	}
 }
 
-func (s *uploadService) Status(id string) (*UploadStatus, error) {
+func (s *uploadService) Status(owner, id string) (*UploadStatus, error) {
 	s.mu.RLock()
-	session := s.sessions[id]
+	session := s.sessions[uploadKey{owner: owner, id: id}]
 	s.mu.RUnlock()
 	if session == nil {
 		return nil, ErrUploadNotFound
@@ -253,10 +263,11 @@ func (s *uploadService) Status(id string) (*UploadStatus, error) {
 	return session.status(), nil
 }
 
-func (s *uploadService) getOrCreate(path string, chunk UploadChunk) (*uploadSession, error) {
+func (s *uploadService) getOrCreate(owner, path string, chunk UploadChunk) (*uploadSession, error) {
+	key := uploadKey{owner: owner, id: chunk.UploadID}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if existing := s.sessions[chunk.UploadID]; existing != nil {
+	if existing := s.sessions[key]; existing != nil {
 		if existing.path != path || existing.totalChunks != chunk.TotalChunks ||
 			existing.chunkSize != chunk.ChunkSize || existing.totalSize != chunk.TotalSize || existing.createOnly != chunk.CreateOnly {
 			return nil, ErrUploadConflict
@@ -277,6 +288,7 @@ func (s *uploadService) getOrCreate(path string, chunk UploadChunk) (*uploadSess
 	}
 	now := time.Now()
 	session := &uploadSession{
+		key:            key,
 		id:             chunk.UploadID,
 		path:           path,
 		totalChunks:    chunk.TotalChunks,
@@ -289,7 +301,7 @@ func (s *uploadService) getOrCreate(path string, chunk UploadChunk) (*uploadSess
 		lastActivity:   now,
 		activeRequests: 1,
 	}
-	s.sessions[chunk.UploadID] = session
+	s.sessions[key] = session
 	return session, nil
 }
 
@@ -388,7 +400,7 @@ func (s *uploadService) cleanupExpired() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
-	maps.DeleteFunc(s.sessions, func(_ string, session *uploadSession) bool {
+	maps.DeleteFunc(s.sessions, func(_ uploadKey, session *uploadSession) bool {
 		session.mu.RLock()
 		expired := session.activeRequests == 0 &&
 			now.Sub(session.lastActivity) > config.SessionTimeout
@@ -407,9 +419,9 @@ func (s *uploadService) releaseSession(session *uploadSession) {
 	session.mu.Lock()
 	session.activeRequests--
 	session.lastActivity = time.Now()
-	if (session.terminal || session.discarded) && session.activeRequests == 0 && s.sessions[session.id] == session {
+	if (session.terminal || session.discarded) && session.activeRequests == 0 && s.sessions[session.key] == session {
 		tempDir = session.tempDir
-		delete(s.sessions, session.id)
+		delete(s.sessions, session.key)
 	}
 	session.mu.Unlock()
 	s.mu.Unlock()
