@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 import signal
-import subprocess
 import sys
 import time
 import urllib.error
@@ -32,7 +31,8 @@ def request(method, path, token=None, body=None, headers=None, raw=False):
     for key, value in (headers or {}).items():
         req.add_header(key, value)
     try:
-        with urllib.request.urlopen(req) as response:
+        # Bounded so a stuck API fails the check and still reaches shutdown.
+        with urllib.request.urlopen(req, timeout=30) as response:
             text = response.read()
             return response.status, (json.loads(text) if text and not raw else text)
     except urllib.error.HTTPError as error:
@@ -41,6 +41,8 @@ def request(method, path, token=None, body=None, headers=None, raw=False):
             return error.code, json.loads(text)
         except ValueError:
             return error.code, text
+    except (urllib.error.URLError, TimeoutError) as error:
+        return 0, {"error": f"{method} {path}: {error}"}
 
 
 def login(user):
@@ -49,14 +51,22 @@ def login(user):
     return body["accessToken"]
 
 
-def upload(token, path, content, upload_id):
-    digest = hashlib.sha256(content).hexdigest()
-    return request("POST", "/stream/upload/" + path, token, content, raw=True, headers={
-        "Content-Type": "application/octet-stream",
-        "X-Upload-ID": upload_id, "X-Chunk-Index": "0", "X-Total-Chunks": "1",
-        "X-Chunk-Size": str(max(len(content), 1)), "X-Total-Size": str(len(content)),
-        "X-Checksum": "sha256:" + digest, "X-Create-Only": "true",
-    })
+def upload(token, path, content, upload_id, chunk_size=None, chunks=None):
+    """Sends the given chunk indexes of content (all by default) and returns the last status."""
+    chunk_size = chunk_size or max(len(content), 1)
+    total = max(1, -(-len(content) // chunk_size))
+    result = None
+    for index in range(total) if chunks is None else chunks:
+        headers = {
+            "Content-Type": "application/octet-stream",
+            "X-Upload-ID": upload_id, "X-Chunk-Index": str(index), "X-Total-Chunks": str(total),
+            "X-Chunk-Size": str(chunk_size), "X-Total-Size": str(len(content)), "X-Create-Only": "true",
+        }
+        if index == total - 1:
+            headers["X-Checksum"] = "sha256:" + hashlib.sha256(content).hexdigest()
+        chunk = content[index * chunk_size:(index + 1) * chunk_size]
+        result = request("POST", "/stream/upload/" + path, token, chunk, raw=True, headers=headers)
+    return result
 
 
 def owner(path):
@@ -99,13 +109,22 @@ alice, bob, carol = login("alice"), login("bob"), login("carol")
 status, body = request("GET", "/files/", carol)
 check(status == 403 and "no NAS identity" in json.dumps(body), f"unmapped account is refused file access ({status})")
 
-# Uploads into a setgid shared folder belong to the uploader and the folder's group.
-status, _ = upload(alice, "tank/shared/from-alice.txt", b"alice wrote this", "u1")
-check(status in (200, 201), f"alice uploads into the shared folder ({status})")
-check(owner(f"{TANK}/shared/from-alice.txt") == (3000, 4000), f"alice's upload is owned by 3000:4000, got {owner(f'{TANK}/shared/from-alice.txt')}")
-status, _ = upload(bob, "tank/shared/from-bob.txt", b"bob wrote this", "u1")
-check(status in (200, 201), f"bob uploads into the shared folder with the same upload ID ({status})")
-check(owner(f"{TANK}/shared/from-bob.txt") == (3001, 4000), f"bob's upload is owned by 3001:4000, got {owner(f'{TANK}/shared/from-bob.txt')}")
+# Uploads into a setgid shared folder belong to the uploader and the folder's
+# group. Both sessions use the same upload ID and are open at the same time.
+ALICE_TEXT, BOB_TEXT = b"alice wrote this, in two chunks", b"bob wrote this, also in two chunks"
+CHUNK = 16
+status, _ = upload(alice, "tank/shared/from-alice.txt", ALICE_TEXT, "u1", CHUNK, [0])
+check(status in (200, 201), f"alice starts an upload in the shared folder ({status})")
+status, _ = upload(bob, "tank/shared/from-bob.txt", BOB_TEXT, "u1", CHUNK, [0])
+check(status in (200, 201), f"bob starts an upload with the same upload ID ({status})")
+status, _ = upload(alice, "tank/shared/from-alice.txt", ALICE_TEXT, "u1", CHUNK, [1])
+check(status in (200, 201), f"alice finishes her upload ({status})")
+status, _ = upload(bob, "tank/shared/from-bob.txt", BOB_TEXT, "u1", CHUNK, [1, 2])
+check(status in (200, 201), f"bob finishes his upload ({status})")
+for name, text, expected in (("from-alice.txt", ALICE_TEXT, (3000, 4000)), ("from-bob.txt", BOB_TEXT, (3001, 4000))):
+    path = f"{TANK}/shared/{name}"
+    got = (open(path, "rb").read(), owner(path)) if os.path.exists(path) else (None, None)
+    check(got == (text, expected), f"{name} has its own content and is owned by {expected[0]}:{expected[1]}, got {got[1]}")
 
 # The kernel keeps private folders private, and BoxBox reports it as a 403.
 status, _ = request("GET", "/files/tank/alice", bob)
@@ -156,8 +175,17 @@ with open(f"{TANK}/shared/big.bin", "wb") as big:
     big.truncate(512 << 20)
 os.chown(f"{TANK}/shared/big.bin", 3000, 4000)
 status, job = request("POST", "/jobs", alice, {"type": "copy", "sourcePath": "tank/shared/big.bin", "destPath": "tank/alice/big.bin"})
+# Kill only once the copy is moving and not yet done, so the check really
+# interrupts it.
+progress, deadline = None, time.time() + 30
+while time.time() < deadline:
+    _, progress = request("GET", "/jobs/" + job["id"], alice)
+    if progress.get("state") != "pending" and 0 < progress.get("progress", 0) < 100:
+        break
+    time.sleep(0.01)
 alice_worker = next(pid for pid, (uid, cmd, _, _) in processes().items() if uid == 3000 and "--nas-worker" in cmd)
 os.kill(alice_worker, signal.SIGKILL)
+check(progress.get("state") == "running" and 0 < progress.get("progress", 0) < 100, f"worker killed mid-copy ({progress.get('state')}, {progress.get('progress')}%)")
 job = wait_job(alice, job["id"], timeout=120)
 size = os.path.getsize(f"{TANK}/alice/big.bin") if os.path.exists(f"{TANK}/alice/big.bin") else -1
 if job["state"] == "completed":

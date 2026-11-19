@@ -4,6 +4,20 @@ set -euo pipefail
 work=$1
 client=$2
 root=$work/root
+supervisor=
+# The fixture tree belongs to subordinate ids that only this namespace can
+# remove, so tear down here on every exit, keeping the exit status.
+cleanup() {
+  status=$?
+  if [ -n "$supervisor" ] && kill -0 "$supervisor" 2>/dev/null; then
+    kill -KILL "$supervisor" 2>/dev/null || true
+  fi
+  pkill -KILL -f "^$work/server" 2>/dev/null || true
+  wait 2>/dev/null || true
+  rm -rf "$root"
+  exit "$status"
+}
+trap cleanup EXIT
 mkdir -p "$root/tank/alice" "$root/tank/bob" "$root/tank/shared" "$root/data"
 chmod 0755 "$root" "$root/tank"
 chown 3000:3000 "$root/tank/alice" && chmod 0700 "$root/tank/alice"
@@ -67,5 +81,4 @@ else
   echo "FAIL API did not shut down gracefully"
   status=1
 fi
-rm -rf "$root"
 exit "$status"
