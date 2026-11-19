@@ -65,7 +65,9 @@ func parseHostMounts(r io.Reader) ([]hostMount, error) {
 			continue
 		}
 		// Fields: mount ID, parent ID, major:minor, root, mount point, ...
-		fields := strings.Fields(before)
+		// They are separated by single ASCII spaces; other whitespace, such as
+		// a no-break space, belongs to a path.
+		fields := strings.Split(before, " ")
 		if len(fields) < 5 {
 			continue
 		}

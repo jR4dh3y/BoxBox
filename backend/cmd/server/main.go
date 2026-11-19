@@ -435,5 +435,7 @@ func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService 
 	// Stop background cleanups
 	authService.StopCleanup()
 	streamHandler.StopCleanup()
-	shareService.StopExpiryCleanup()
+	if err := shareService.StopExpiryCleanup(shutdownCtx); err != nil {
+		log.Warn().Err(err).Msg("Stopped waiting for expired share cleanup")
+	}
 }

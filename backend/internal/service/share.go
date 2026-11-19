@@ -30,6 +30,8 @@ var (
 	// ErrShareNotFound is the uniform failure for unknown, expired, and revoked
 	// share tokens so recipients cannot distinguish between them.
 	ErrShareNotFound = errors.New("share not found")
+	// ErrShareTargetChanged means the file changed while its link was created.
+	ErrShareTargetChanged = errors.New("shared file changed while the link was created")
 	// ErrShareTooLarge is returned when a recipient upload exceeds the size limit.
 	ErrShareTooLarge = errors.New("share upload exceeds size limit")
 )
@@ -48,9 +50,9 @@ type ShareService interface {
 	// StartExpiryCleanup deletes the files of expired delete-on-expiry shares
 	// now and then periodically until ctx ends.
 	StartExpiryCleanup(ctx context.Context)
-	// StopExpiryCleanup waits for the cleanup to return after its ctx ends, so
-	// shutdown never interrupts a file that is being removed.
-	StopExpiryCleanup()
+	// StopExpiryCleanup waits, until ctx ends, for the cleanup to return after
+	// its own context ends, so shutdown does not interrupt a file being removed.
+	StopExpiryCleanup(ctx context.Context) error
 	// ResolveForRecipient returns the share for a token, or ErrShareNotFound for
 	// unknown, expired, or revoked tokens.
 	ResolveForRecipient(token string) (*model.Share, error)
@@ -107,6 +109,8 @@ type shareService struct {
 	storageErr     error
 	mu             sync.RWMutex
 	cleanup        sync.WaitGroup
+	// readMounts reads the host's mount table for expiry cleanup.
+	readMounts func() ([]hostMount, error)
 }
 
 // shareRecord is the persistence shape for a share. It is separate from
@@ -153,6 +157,7 @@ func NewShareService(fsys filesystem.FS, cfg ShareServiceConfig) ShareService {
 		filePath:       filepath.Join(dataDir, config.SharesFileName),
 		maxUploadBytes: maxUploadBytes,
 		mounts:         newMounts(fsys, mountList),
+		readMounts:     readHostMounts,
 	}
 	shareSvc.storageErr = shareSvc.secureExistingStore()
 	return shareSvc
@@ -255,6 +260,17 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 	// above may be gone now. Check again before handing out a link to it.
 	if _, err := s.statTarget(fsPath); err != nil {
 		return nil, err
+	}
+	// A save may have replaced the file since its identity was recorded. That
+	// file was not the one the owner chose to delete, so ask for a retry.
+	if deleteOnExpiry != nil {
+		current, err := s.identifyDeletableFile(path, mount, fsPath)
+		if err != nil {
+			return nil, err
+		}
+		if !sameIdentity(*current, *deleteOnExpiry) {
+			return nil, ErrShareTargetChanged
+		}
 	}
 	data := s.loadLocked()
 	data.Shares = append(data.Shares, toShareRecord(share))

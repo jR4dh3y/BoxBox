@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,7 +20,14 @@ import (
 func afterExpiry() time.Time { return time.Now().Add(2 * time.Hour) }
 
 func newExpiryTestService(fsys filesystem.FS, mounts func() []model.MountPoint) *shareService {
-	return newShareTestService(fsys, mounts).(*shareService)
+	shares := newShareTestService(fsys, mounts).(*shareService)
+	shares.readMounts = rootOnlyMountTable
+	return shares
+}
+
+// rootOnlyMountTable keeps the tests independent of the host's mounts.
+func rootOnlyMountTable() ([]hostMount, error) {
+	return []hostMount{{id: "1", parent: "0", path: "/", device: "0:1", root: "/"}}, nil
 }
 
 func createExpiringShare(t *testing.T, shares *shareService, path string, deleteOnExpiry bool) *model.Share {
@@ -64,10 +72,10 @@ func TestShareExpiryDeletesSharedFileOnce(t *testing.T) {
 		t.Fatal("created share does not report delete on expiry")
 	}
 
-	shares.deleteExpiredFiles(time.Now())
+	shares.deleteExpiredFiles(context.Background(), time.Now())
 	assertFileExists(t, fsys, "/data/media/file.txt", true)
 
-	shares.deleteExpiredFiles(afterExpiry())
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
 	assertFileExists(t, fsys, "/data/media/file.txt", false)
 	if storedDeleteOnExpiry(t, shares, share.ID) {
 		t.Fatal("deletion request was not consumed")
@@ -77,7 +85,7 @@ func TestShareExpiryDeletesSharedFileOnce(t *testing.T) {
 	if err := fsys.WriteFile("/data/media/file.txt", []byte("shared content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	shares.deleteExpiredFiles(afterExpiry())
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
 	assertFileExists(t, fsys, "/data/media/file.txt", true)
 }
 
@@ -135,7 +143,7 @@ func TestShareExpiryKeepsFileReachedByAnotherActiveShare(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			shares.deleteExpiredFiles(afterExpiry())
+			shares.deleteExpiredFiles(context.Background(), afterExpiry())
 			assertFileExists(t, fsys, "/data/media/file.txt", true)
 			if storedDeleteOnExpiry(t, shares, expiring.ID) {
 				t.Fatal("deletion request was not consumed")
@@ -146,7 +154,7 @@ func TestShareExpiryKeepsFileReachedByAnotherActiveShare(t *testing.T) {
 			if err := shares.Revoke("someone-else", other.ID); err != nil {
 				t.Fatal(err)
 			}
-			shares.deleteExpiredFiles(afterExpiry())
+			shares.deleteExpiredFiles(context.Background(), afterExpiry())
 			assertFileExists(t, fsys, "/data/media/file.txt", true)
 		})
 	}
@@ -176,7 +184,7 @@ func TestShareExpiryIgnoresSharesThatCannotReachTheFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	shares.deleteExpiredFiles(afterExpiry())
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
 	assertFileExists(t, fsys, "/data/media/sub-old/file.txt", false)
 }
 
@@ -221,7 +229,7 @@ func TestShareExpiryKeepsFileSharedAtTheDeadlineAfterDowntime(t *testing.T) {
 			expiring := createExpiringShare(t, shares, "media/file.txt", true)
 			test.other(t, shares, expiring.ExpiresAt)(expiring.ExpiresAt.Add(30 * time.Minute))
 
-			shares.deleteExpiredFiles(afterExpiry())
+			shares.deleteExpiredFiles(context.Background(), afterExpiry())
 			assertFileExists(t, fsys, "/data/media/file.txt", true)
 		})
 	}
@@ -239,7 +247,7 @@ func TestShareExpiryRevokeNeverDeletes(t *testing.T) {
 	if storedDeleteOnExpiry(t, shares, share.ID) {
 		t.Fatal("revoke kept the deletion request")
 	}
-	shares.deleteExpiredFiles(afterExpiry())
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
 	assertFileExists(t, fsys, "/data/media/file.txt", true)
 }
 
@@ -304,7 +312,7 @@ func TestShareExpiryKeepsChangedOrUnavailableFile(t *testing.T) {
 			share := createExpiringShare(t, shares, "media/file.txt", true)
 
 			test.change(t, fsys, &mounts)
-			shares.deleteExpiredFiles(afterExpiry())
+			shares.deleteExpiredFiles(context.Background(), afterExpiry())
 			assertFileExists(t, fsys, test.survivor, true)
 			if storedDeleteOnExpiry(t, shares, share.ID) {
 				t.Fatal("deletion request was not consumed")
@@ -324,7 +332,7 @@ func TestShareExpiryKeepsFilesOfLegacyShares(t *testing.T) {
 	}
 	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
 
-	shares.deleteExpiredFiles(time.Now())
+	shares.deleteExpiredFiles(context.Background(), time.Now())
 	assertFileExists(t, fsys, "/data/media/file.txt", true)
 }
 
@@ -349,7 +357,7 @@ func TestShareExpiryKeepsFileWhenTheStoreCannotBeSaved(t *testing.T) {
 	createExpiringShare(t, shares, "media/file.txt", true)
 
 	fsys.fail = true
-	shares.deleteExpiredFiles(afterExpiry())
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
 	assertFileExists(t, backing, "/data/media/file.txt", true)
 }
 
@@ -366,8 +374,9 @@ func newDiskExpiryTestService(t *testing.T) (*shareService, string) {
 	shares := NewShareService(filesystem.NewOsFS(), ShareServiceConfig{
 		DataDir: filepath.Join(root, "data"),
 		Mounts:  fixedMounts([]model.MountPoint{{Name: "media", Path: media}}),
-	})
-	return shares.(*shareService), media
+	}).(*shareService)
+	shares.readMounts = rootOnlyMountTable
+	return shares, media
 }
 
 func assertDiskFileExists(t *testing.T, path string, want bool) {
@@ -382,7 +391,7 @@ func TestShareExpiryDeletesFileOnDisk(t *testing.T) {
 	shares, media := newDiskExpiryTestService(t)
 	createExpiringShare(t, shares, "media/file.txt", true)
 
-	shares.deleteExpiredFiles(afterExpiry())
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
 	assertDiskFileExists(t, filepath.Join(media, "file.txt"), false)
 	assertDiskFileExists(t, media, true)
 }
@@ -411,7 +420,7 @@ func TestShareExpiryKeepsSameSizeSameTimeReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	shares.deleteExpiredFiles(afterExpiry())
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
 	assertDiskFileExists(t, target, true)
 }
 
@@ -440,7 +449,7 @@ func TestShareExpiryKeepsFileSwappedForSymlink(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	shares.deleteExpiredFiles(afterExpiry())
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
 	assertDiskFileExists(t, target, true)
 	assertDiskFileExists(t, other, true)
 }
@@ -458,7 +467,7 @@ func TestShareExpiryKeepsFileReachedThroughHardLink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	shares.deleteExpiredFiles(afterExpiry())
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
 	assertDiskFileExists(t, filepath.Join(media, "file.txt"), true)
 }
 
@@ -490,22 +499,20 @@ func TestShareReachCoversFolderByIdentity(t *testing.T) {
 	}
 }
 
-// rereadFailingFS fails to read the share store once cleanup has saved it.
+// rereadFailingFS fails every read of the share store after the first once armed,
+// so cleanup reads its snapshot and then cannot read the store again.
 type rereadFailingFS struct {
 	filesystem.FS
-	armed, saved bool
-}
-
-func (f *rereadFailingFS) Rename(oldpath, newpath string) error {
-	if f.armed && strings.Contains(oldpath, "shares.json.tmp.") {
-		f.saved = true
-	}
-	return f.FS.Rename(oldpath, newpath)
+	armed bool
+	reads int
 }
 
 func (f *rereadFailingFS) ReadFile(name string) ([]byte, error) {
-	if f.saved && strings.HasSuffix(name, "shares.json") {
-		return nil, errors.New("I/O error")
+	if f.armed && strings.HasSuffix(name, "shares.json") {
+		f.reads++
+		if f.reads > 1 {
+			return nil, errors.New("I/O error")
+		}
 	}
 	return f.FS.ReadFile(name)
 }
@@ -518,7 +525,7 @@ func TestShareExpiryKeepsFileWhenTheStoreCannotBeReread(t *testing.T) {
 	createExpiringShare(t, shares, "media/file.txt", true)
 
 	fsys.armed = true
-	shares.deleteExpiredFiles(afterExpiry())
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
 	assertFileExists(t, backing, "/data/media/file.txt", true)
 }
 
@@ -546,7 +553,7 @@ func TestShareExpiryKeepsFileForLinkSavedWhileCleanupWaited(t *testing.T) {
 	}
 	shares.mu.Unlock()
 
-	shares.deleteExpiredFiles(now)
+	shares.deleteExpiredFiles(context.Background(), now)
 	assertFileExists(t, fsys, "/data/media/file.txt", true)
 }
 
@@ -586,7 +593,7 @@ func TestShareExpiryKeepsFileWhenAnIdentityCheckFails(t *testing.T) {
 			}
 
 			fsys.armed = true
-			shares.deleteExpiredFiles(afterExpiry())
+			shares.deleteExpiredFiles(context.Background(), afterExpiry())
 			assertFileExists(t, mem, "/data/media/file.txt", true)
 		})
 	}
@@ -604,7 +611,7 @@ func TestShareExpiryStopWaitsForARunningPass(t *testing.T) {
 	cancel()
 	stopped := make(chan struct{})
 	go func() {
-		shares.StopExpiryCleanup()
+		_ = shares.StopExpiryCleanup(context.Background())
 		close(stopped)
 	}()
 	select {
@@ -691,16 +698,16 @@ func TestShareExpiryKeepsFileReachedThroughMountBelowSharedFolder(t *testing.T) 
 	}
 
 	links := newShareLinks(shares, shares.loadLocked().Shares, mounts)
-	if err := shares.deleteExpiredFile(record, links.protecting(record.ExpiresAt, now), mounts); !errors.Is(err, errExpiryFileShared) {
-		t.Fatalf("deleteExpiredFile() with the mount = %v, want %v", err, errExpiryFileShared)
+	if err := shares.removePlanned(shares.planExpiredFile(record, links.protecting(record.ExpiresAt, now), mounts)); !errors.Is(err, errExpiryFileShared) {
+		t.Fatalf("removal with the mount = %v, want %v", err, errExpiryFileShared)
 	}
 	assertDiskFileExists(t, filepath.Join(photos, "a.jpg"), true)
 
 	// Without the nested mount, nothing else reaches the file.
 	mounts = mounts[:2]
 	links = newShareLinks(shares, shares.loadLocked().Shares, mounts)
-	if err := shares.deleteExpiredFile(record, links.protecting(record.ExpiresAt, now), mounts); err != nil {
-		t.Fatalf("deleteExpiredFile() without the mount = %v", err)
+	if err := shares.removePlanned(shares.planExpiredFile(record, links.protecting(record.ExpiresAt, now), mounts)); err != nil {
+		t.Fatalf("removal without the mount = %v", err)
 	}
 	assertDiskFileExists(t, filepath.Join(photos, "a.jpg"), false)
 }
@@ -744,4 +751,143 @@ func TestVisibleMountAtStopsOnALoopingTable(t *testing.T) {
 		{id: "3", parent: "2", path: "/a", device: "8:2", root: "/"},
 	}
 	visibleMountAt(mounts, "/a/b")
+}
+
+func TestShareExpiryChecksRunWithoutTheLockAndRetryWhenLinksChange(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	_ = fsys.MkdirAll("/data/media/other", 0o755)
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+	expiring := createExpiringShare(t, shares, "media/file.txt", true)
+
+	shares.readMounts = func() ([]hostMount, error) {
+		if !shares.mu.TryLock() {
+			t.Error("the share lock is held while links are checked")
+		} else {
+			shares.mu.Unlock()
+		}
+		// A link created during the checks changes the store.
+		if _, err := shares.Create(context.Background(), "owner", "media/other", ShareSettings{}, time.Time{}); err != nil {
+			t.Fatal(err)
+		}
+		return rootOnlyMountTable()
+	}
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
+	assertFileExists(t, fsys, "/data/media/file.txt", true)
+	if !storedDeleteOnExpiry(t, shares, expiring.ID) {
+		t.Fatal("a pass that saw the store change consumed the deletion request")
+	}
+
+	shares.readMounts = rootOnlyMountTable
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
+	assertFileExists(t, fsys, "/data/media/file.txt", false)
+}
+
+func TestShareExpiryTouchesNothingAfterCancellation(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+	expiring := createExpiringShare(t, shares, "media/file.txt", true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	shares.readMounts = func() ([]hostMount, error) {
+		cancel()
+		return rootOnlyMountTable()
+	}
+	shares.deleteExpiredFiles(ctx, afterExpiry())
+	assertFileExists(t, fsys, "/data/media/file.txt", true)
+	if !storedDeleteOnExpiry(t, shares, expiring.ID) {
+		t.Fatal("a cancelled pass consumed the deletion request")
+	}
+}
+
+func TestShareExpiryKeepsFileWhenTheMountTableCannotBeRead(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+	expiring := createExpiringShare(t, shares, "media/file.txt", true)
+
+	shares.readMounts = func() ([]hostMount, error) { return nil, errors.New("no /proc") }
+	shares.deleteExpiredFiles(context.Background(), afterExpiry())
+	assertFileExists(t, fsys, "/data/media/file.txt", true)
+	if !storedDeleteOnExpiry(t, shares, expiring.ID) {
+		t.Fatal("a pass without a mount table consumed the deletion request")
+	}
+}
+
+func TestShareReachCoversFileShownByABindMountOfItsFolder(t *testing.T) {
+	mounts := []hostMount{
+		{id: "1", parent: "0", path: "/", device: "8:1", root: "/"},
+		// /vault/photos is also mounted at /copies/photos.
+		{id: "2", parent: "1", path: "/copies/photos", device: "8:1", root: "/vault/photos"},
+	}
+	target := expiringTarget{
+		virtualPath: "copies/photos/a.jpg",
+		realPath:    "/copies/photos/a.jpg",
+		shownAs:     mountedFoldersOf(mounts, "/copies/photos/a.jpg"),
+	}
+	reach := func(folder string) shareReach {
+		return shareReach{virtualPath: "x", realPath: folder, folder: true, self: mountedFoldersOf(mounts, folder)[0]}
+	}
+	if !reach("/vault").covers(target) {
+		t.Fatal("covers() = false for a link to the folder the bind mount shows")
+	}
+	if reach("/elsewhere").covers(target) {
+		t.Fatal("covers() = true for an unrelated folder")
+	}
+}
+
+// replacingFS replaces the target file after the first Lstat of it, as a save
+// that lands while Create waits for the lock.
+type replacingFS struct {
+	filesystem.FS
+	target string
+	lstats int
+}
+
+func (f *replacingFS) Lstat(name string) (fs.FileInfo, error) {
+	info, err := f.FS.Lstat(name)
+	if name == f.target {
+		f.lstats++
+		if f.lstats == 1 {
+			// Remove first: an in-memory FileInfo reads the file's live data.
+			if removeErr := f.FS.Remove(name); removeErr != nil {
+				return nil, removeErr
+			}
+			if writeErr := f.FS.WriteFile(name, []byte("a different, longer file"), 0o644); writeErr != nil {
+				return nil, writeErr
+			}
+		}
+	}
+	return info, err
+}
+
+func TestShareExpiryCreateRejectsAFileReplacedBeforeSaving(t *testing.T) {
+	backing := filesystem.NewMemMapFS()
+	setupShareTestFS(backing)
+	fsys := &replacingFS{FS: backing, target: "/data/media/file.txt"}
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+
+	_, err := shares.Create(context.Background(), "owner", "media/file.txt", ShareSettings{DeleteOnExpiry: true}, time.Now().Add(time.Hour))
+	if !errors.Is(err, ErrShareTargetChanged) {
+		t.Fatalf("Create() error = %v, want %v", err, ErrShareTargetChanged)
+	}
+}
+
+func TestShareExpiryStopGivesUpWhenItsContextEnds(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+
+	// Hold the lock so the pass stays blocked, as on an unresponsive mount.
+	shares.mu.Lock()
+	defer shares.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	shares.StartExpiryCleanup(ctx)
+	cancel()
+	wait, stop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer stop()
+	if err := shares.StopExpiryCleanup(wait); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("StopExpiryCleanup() = %v, want %v", err, context.DeadlineExceeded)
+	}
 }

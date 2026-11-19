@@ -1,7 +1,9 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"path/filepath"
@@ -64,12 +66,16 @@ func sameFile(want model.ShareFileIdentity, info fs.FileInfo) bool {
 		got.Inode == want.Inode
 }
 
+func sameIdentity(a, b model.ShareFileIdentity) bool {
+	return a.Size == b.Size && a.ModTime.Equal(b.ModTime) && a.Device == b.Device && a.Inode == b.Inode
+}
+
 func (s *shareService) StartExpiryCleanup(ctx context.Context) {
 	s.cleanup.Go(func() {
 		ticker := time.NewTicker(config.ShareExpiryCleanupInterval)
 		defer ticker.Stop()
 		for {
-			s.deleteExpiredFiles(time.Now())
+			s.deleteExpiredFiles(ctx, time.Now())
 			select {
 			case <-ctx.Done():
 				return
@@ -79,70 +85,101 @@ func (s *shareService) StartExpiryCleanup(ctx context.Context) {
 	})
 }
 
-func (s *shareService) StopExpiryCleanup() {
-	s.cleanup.Wait()
+// StopExpiryCleanup waits for a running pass until ctx ends. A pass stops
+// before touching any file once its context ends, so the wait is only long
+// when a check is stuck on an unresponsive mount.
+func (s *shareService) StopExpiryCleanup(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.cleanup.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// expiryPlan is the decision for one expired share, made without the lock.
+type expiryPlan struct {
+	record   shareRecord
+	root     string
+	relPath  string
+	identity model.ShareFileIdentity
+	// kept is why the file stays; nil means it may be removed.
+	kept error
 }
 
 // deleteExpiredFiles makes one deletion attempt for each delete-on-expiry
-// share that has expired. The flag is cleared and saved before any file is
-// touched, so a crash during the pass keeps the file instead of retrying it.
-// A failed save touches no file. If the store was not replaced, the flag stays
-// for the next pass, since no decision about the file was made; if only the
-// final permission change failed, the flag is already cleared and the file
-// kept. A store that cannot be read keeps every file. Holding the lock keeps
-// Create and Revoke out of the pass.
-func (s *shareService) deleteExpiredFiles(now time.Time) {
+// share that has expired.
+//
+// Resolving links and files can block on an unresponsive mount, and every
+// share request needs the lock, so the checks run on a snapshot without it.
+// The pass then takes the lock and acts only if the store still matches the
+// snapshot; otherwise it leaves every flag for the next pass. The flags are
+// cleared and saved before any file is touched, so a crash keeps the file
+// instead of retrying it, and a failed save touches no file. Holding the lock
+// while removing keeps Create from adding a link to a file being removed.
+func (s *shareService) deleteExpiredFiles(ctx context.Context, now time.Time) {
 	if s.storageErr != nil {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	data, err := s.readStoreLocked()
+	s.mu.RLock()
+	snapshot, err := s.readStoreLocked()
+	s.mu.RUnlock()
 	if err != nil {
 		log.Error().Err(err).Msg("Skipped expired share cleanup: could not read the share store")
 		return
 	}
-	var due []shareRecord
-	for i := range data.Shares {
-		record := &data.Shares[i]
-		if record.DeleteOnExpiry == nil || record.Revoked || !isExpired(record.ExpiresAt, now) {
-			continue
-		}
-		due = append(due, *record)
-		record.DeleteOnExpiry = nil
-	}
+	due := dueForExpiry(snapshot, now)
 	if len(due) == 0 {
 		return
+	}
+	// A folder mounted inside a shared folder exposes files that live
+	// elsewhere, so each pass needs the host's mount table.
+	mounts, err := s.readMounts()
+	if err != nil {
+		log.Error().Err(err).Int("shares", len(due)).Msg("Skipped expired share cleanup: could not read the mount table")
+		return
+	}
+	links := newShareLinks(s, snapshot.Shares, mounts)
+	plans := make([]expiryPlan, 0, len(due))
+	for _, record := range due {
+		plans = append(plans, s.planExpiredFile(record, links.protecting(record.ExpiresAt, now), mounts))
+	}
+	if ctx.Err() != nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, err := s.readStoreLocked()
+	if err != nil {
+		log.Error().Err(err).Int("shares", len(due)).Msg("Skipped expired share cleanup: could not reread the share store")
+		return
+	}
+	if !sameShares(snapshot, data) {
+		log.Info().Int("shares", len(due)).Msg("Share links changed during expired share cleanup; checking again on the next pass")
+		return
+	}
+	for i := range data.Shares {
+		if slices.ContainsFunc(due, func(record shareRecord) bool { return record.ID == data.Shares[i].ID }) {
+			data.Shares[i].DeleteOnExpiry = nil
+		}
 	}
 	if err := s.saveLocked(data); err != nil {
 		log.Error().Err(err).Int("shares", len(due)).Msg("Kept files of expired shares: could not save the share store")
 		return
 	}
-
-	// Reread once after the save, so a link another process saved is seen. A
-	// failed read must not look like a store without links.
-	current, err := s.readStoreLocked()
-	if err != nil {
-		log.Error().Err(err).Int("shares", len(due)).Msg("Kept files of expired shares: could not reread the share store")
-		return
-	}
-	// A folder mounted below a shared folder exposes files that live elsewhere,
-	// so each pass needs the host's mount table.
-	mounts, err := readHostMounts()
-	if err != nil {
-		log.Error().Err(err).Int("shares", len(due)).Msg("Kept files of expired shares: could not read the mount table")
-		return
-	}
-	links := newShareLinks(s, current.Shares, mounts)
-	for _, record := range due {
-		reaches := links.protecting(record.ExpiresAt, now)
+	for _, plan := range plans {
 		logger := log.With().
-			Str("share", record.ID).
-			Str("owner", record.CreatedBy).
-			Str("path", shareVirtualPath(record)).
+			Str("share", plan.record.ID).
+			Str("owner", plan.record.CreatedBy).
+			Str("path", shareVirtualPath(plan.record)).
 			Logger()
-		if err := s.deleteExpiredFile(record, reaches, mounts); err != nil {
+		if err := s.removePlanned(plan); err != nil {
 			logger.Warn().Err(err).Msg("Kept file of expired share")
 			continue
 		}
@@ -150,46 +187,80 @@ func (s *shareService) deleteExpiredFiles(now time.Time) {
 	}
 }
 
-// deleteExpiredFile deletes the file of one expired share when it is still
-// the exact file that was shared. Any error means the file was kept.
-func (s *shareService) deleteExpiredFile(record shareRecord, reaches []shareReach, mounts []hostMount) error {
-	if record.IsFolder || record.DeleteOnExpiry == nil {
-		return ErrInvalidOperation
+func dueForExpiry(data *sharesData, now time.Time) []shareRecord {
+	var due []shareRecord
+	for _, record := range data.Shares {
+		if record.DeleteOnExpiry != nil && !record.Revoked && isExpired(record.ExpiresAt, now) {
+			due = append(due, record)
+		}
 	}
+	return due
+}
+
+// sameShares reports whether two reads of the store hold the same links.
+func sameShares(a, b *sharesData) bool {
+	left, leftErr := json.Marshal(a.Shares)
+	right, rightErr := json.Marshal(b.Shares)
+	return leftErr == nil && rightErr == nil && bytes.Equal(left, right)
+}
+
+// planExpiredFile decides whether the file of one expired share may be
+// removed: it must still be the exact file that was shared, and no other link
+// may reach it.
+func (s *shareService) planExpiredFile(record shareRecord, reaches []shareReach, mounts []hostMount) expiryPlan {
+	plan := expiryPlan{record: record}
+	if record.IsFolder || record.DeleteOnExpiry == nil {
+		plan.kept = ErrInvalidOperation
+		return plan
+	}
+	plan.identity = *record.DeleteOnExpiry
 	// writeEntry rejects read-only and missing mounts and does not follow a
 	// final symlink, so a file swapped for a link is kept.
 	mount, entry, err := s.mounts.resolve(shareVirtualPath(record), writeEntry)
 	if err != nil {
-		return err
+		plan.kept = err
+		return plan
 	}
 	root, err := s.fs.EvalSymlinks(mount.Path)
 	if err != nil {
-		return err
+		plan.kept = err
+		return plan
 	}
-	relPath := filepath.FromSlash(record.RelPath)
+	plan.root = root
+	plan.relPath = filepath.FromSlash(record.RelPath)
 	// A parent folder replaced by a symlink would point the share elsewhere.
-	if filepath.Join(root, relPath) != entry {
-		return errExpiryFileChanged
+	if filepath.Join(root, plan.relPath) != entry {
+		plan.kept = errExpiryFileChanged
+		return plan
 	}
-	identity := *record.DeleteOnExpiry
 	folders, err := s.folderKeysAbove(entry)
 	if err != nil {
-		return err
+		plan.kept = err
+		return plan
 	}
 	target := expiringTarget{
 		virtualPath: shareVirtualPath(record),
 		realPath:    entry,
-		file:        fileKey{device: identity.Device, inode: identity.Inode},
+		file:        fileKey{device: plan.identity.Device, inode: plan.identity.Inode},
 		folders:     folders,
 		shownAs:     mountedFoldersOf(mounts, entry),
 	}
 	for _, reach := range reaches {
 		if reach.covers(target) {
-			return errExpiryFileShared
+			plan.kept = errExpiryFileShared
+			return plan
 		}
 	}
-	return s.fs.RemoveFileWithin(root, relPath, func(info fs.FileInfo) error {
-		if !sameFile(identity, info) {
+	return plan
+}
+
+// removePlanned removes a planned file if it is still the shared file.
+func (s *shareService) removePlanned(plan expiryPlan) error {
+	if plan.kept != nil {
+		return plan.kept
+	}
+	return s.fs.RemoveFileWithin(plan.root, plan.relPath, func(info fs.FileInfo) error {
+		if !sameFile(plan.identity, info) {
 			return errExpiryFileChanged
 		}
 		return nil
@@ -328,6 +399,16 @@ func hasChildAt(mounts []hostMount, parent string, path string) bool {
 	return false
 }
 
+// contains reports whether the target file lies inside folder on the same
+// filesystem, wherever each of them is mounted.
+func (folder mountedFolder) contains(target expiringTarget) bool {
+	if folder.device == "" || len(target.shownAs) == 0 {
+		return false
+	}
+	file := target.shownAs[0]
+	return file.device == folder.device && pathWithinRoot(folder.path, file.path)
+}
+
 // shareReach is the part of the mounts one active share exposes.
 type shareReach struct {
 	virtualPath string
@@ -338,6 +419,9 @@ type shareReach struct {
 	// nested holds what each mount strictly inside a folder link's target
 	// shows, since recipients can reach it through the link.
 	nested []mountedFolder
+	// self names a folder link's target as the mount table would, so a file
+	// shown elsewhere by a bind mount of a folder inside it is found.
+	self   mountedFolder
 	folder bool
 	// unknown is set when an I/O error hid the target; it protects every file.
 	unknown bool
@@ -390,6 +474,9 @@ func (s *shareService) resolveReach(record shareRecord, mounts []hostMount) shar
 		reach.id = keyOf(info)
 		if record.IsFolder {
 			reach.nested = mountsInside(mounts, realPath)
+			if names := mountedFoldersOf(mounts, realPath); len(names) > 0 {
+				reach.self = names[0]
+			}
 		}
 	case errors.Is(err, ErrMountPointNotFound), errors.Is(err, ErrPathNotFound), errors.Is(err, ErrPermissionDenied):
 		// The share cannot serve anything now; its logical path still protects the file.
@@ -431,7 +518,8 @@ func (r shareReach) covers(target expiringTarget) bool {
 		return pathWithinRoot(reachVirtual, virtualPath) ||
 			(r.realPath != "" && pathWithinRoot(r.realPath, target.realPath)) ||
 			(r.id.known() && slices.Contains(target.folders, r.id)) ||
-			slices.ContainsFunc(r.nested, func(m mountedFolder) bool { return slices.Contains(target.shownAs, m) })
+			slices.ContainsFunc(r.nested, func(m mountedFolder) bool { return slices.Contains(target.shownAs, m) }) ||
+			r.self.contains(target)
 	}
 	return reachVirtual == virtualPath || r.realPath == target.realPath ||
 		(r.id.known() && r.id == target.file)
