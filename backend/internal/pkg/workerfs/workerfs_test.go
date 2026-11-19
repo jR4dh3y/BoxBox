@@ -22,13 +22,15 @@ import (
 type worker struct {
 	dials atomic.Int32
 	conns chan *fdconn.Conn
+	// exits receives Serve's result each time a worker ends.
+	exits chan error
 }
 
 // startWorker serves the real filesystem in-process, one server per dial, as a
 // worker process would.
 func startWorker(t *testing.T) (*Client, *worker) {
 	t.Helper()
-	w := &worker{conns: make(chan *fdconn.Conn, 4096)}
+	w := &worker{conns: make(chan *fdconn.Conn, 4096), exits: make(chan error, 4096)}
 	client := NewClient(func() (*fdconn.Conn, error) {
 		w.dials.Add(1)
 		local, peer, err := fdconn.Pair()
@@ -40,7 +42,7 @@ func startWorker(t *testing.T) (*Client, *worker) {
 			return nil, err
 		}
 		w.conns <- remote
-		go func() { _ = Serve(remote, filesystem.NewOsFS()) }()
+		go func() { w.exits <- Serve(remote, filesystem.NewOsFS()) }()
 		return local, nil
 	}, 0)
 	t.Cleanup(func() { _ = client.Close() })
@@ -227,8 +229,12 @@ func TestClientClosesIdleWorker(t *testing.T) {
 	if _, err := client.Stat(root); err != nil {
 		t.Fatal(err)
 	}
-	remote := <-w.conns
-	if _, err := remote.Receive(); err == nil {
+	select {
+	case err := <-w.exits:
+		if err != nil {
+			t.Fatalf("worker exited with %v, want a clean exit", err)
+		}
+	case <-time.After(5 * time.Second):
 		t.Fatal("worker connection stayed open after the idle timeout")
 	}
 	if _, err := client.Stat(root); err != nil {
@@ -368,5 +374,57 @@ func TestClientRejectsOversizedMessagesWithoutHanging(t *testing.T) {
 	}
 	if dials := w.dials.Load(); dials != 1 {
 		t.Fatalf("worker dialed %d times; an oversized message must not end the session", dials)
+	}
+}
+
+// A local ReadDir hands every Info error to its caller; a move must abort on
+// an entry that vanished rather than delete it uncopied.
+func TestEntryInfosKeepsEveryInfoError(t *testing.T) {
+	wire := entryInfos([]fs.DirEntry{
+		failingEntry{name: "gone", err: &fs.PathError{Op: "lstat", Path: "/x/gone", Err: syscall.ENOENT}},
+		failingEntry{name: "locked", err: &fs.PathError{Op: "lstat", Path: "/x/locked", Err: syscall.EACCES}},
+	})
+	listed := entries(wire)
+	if len(listed) != 2 {
+		t.Fatalf("entries = %d, want 2", len(listed))
+	}
+	if _, err := listed[0].Info(); listed[0].Name() != "gone" || !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("vanished entry = %q, %v", listed[0].Name(), err)
+	}
+	if _, err := listed[1].Info(); !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("locked entry Info = %v", err)
+	}
+}
+
+type failingEntry struct {
+	name string
+	err  error
+}
+
+func (e failingEntry) Name() string               { return e.name }
+func (e failingEntry) IsDir() bool                { return false }
+func (e failingEntry) Type() fs.FileMode          { return 0 }
+func (e failingEntry) Info() (fs.FileInfo, error) { return nil, e.err }
+
+func TestClientKeepsModTimesOutsideTheNanosecondRange(t *testing.T) {
+	client, _ := startWorker(t)
+	path := filepath.Join(t.TempDir(), "future.txt")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Date(2300, 1, 1, 0, 0, 0, 123456789, time.UTC)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatal(err)
+	}
+	local, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote, err := client.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !remote.ModTime().Equal(local.ModTime()) {
+		t.Fatalf("ModTime = %v, want %v", remote.ModTime(), local.ModTime())
 	}
 }

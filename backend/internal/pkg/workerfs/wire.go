@@ -83,17 +83,19 @@ type response struct {
 // wireInfo carries what the services read from fs.FileInfo. Sys() is not
 // carried; nothing outside the desktop app reads it.
 type wireInfo struct {
-	Name    rawString   `json:"name"`
-	Size    int64       `json:"size"`
-	Mode    fs.FileMode `json:"mode"`
-	ModTime int64       `json:"modTime"`
+	Name rawString   `json:"name"`
+	Size int64       `json:"size"`
+	Mode fs.FileMode `json:"mode"`
+	// Seconds and nanoseconds: UnixNano only covers the years 1678 to 2262.
+	ModSec  int64 `json:"modSec"`
+	ModNsec int   `json:"modNsec"`
 	// Err is a directory entry's failed Info. Name and Mode's type bits stay
 	// valid, as they do for an os.ReadDir entry.
 	Err *wireError `json:"err,omitempty"`
 }
 
 func toWireInfo(info fs.FileInfo) wireInfo {
-	return wireInfo{Name: rawString(info.Name()), Size: info.Size(), Mode: info.Mode(), ModTime: info.ModTime().UnixNano()}
+	return wireInfo{Name: rawString(info.Name()), Size: info.Size(), Mode: info.Mode(), ModSec: info.ModTime().Unix(), ModNsec: info.ModTime().Nanosecond()}
 }
 
 type fileInfo struct{ wire wireInfo }
@@ -101,7 +103,7 @@ type fileInfo struct{ wire wireInfo }
 func (i fileInfo) Name() string       { return string(i.wire.Name) }
 func (i fileInfo) Size() int64        { return i.wire.Size }
 func (i fileInfo) Mode() fs.FileMode  { return i.wire.Mode }
-func (i fileInfo) ModTime() time.Time { return time.Unix(0, i.wire.ModTime) }
+func (i fileInfo) ModTime() time.Time { return time.Unix(i.wire.ModSec, int64(i.wire.ModNsec)) }
 func (i fileInfo) IsDir() bool        { return i.wire.Mode.IsDir() }
 func (i fileInfo) Sys() any           { return nil }
 

@@ -144,18 +144,17 @@ func handle(fsys filesystem.FS, payload []byte) (response, *os.File) {
 }
 
 // Directory entries carry their metadata so callers never need a round trip
-// per entry. An entry that vanished before Info is left out, like os.ReadDir.
-// Any other Info error goes to the caller, which decides whether to skip it.
+// per entry. Every Info error goes to the caller, as with a local ReadDir: a
+// move must abort on an entry that vanished, not delete it uncopied.
 func entryInfos(entries []fs.DirEntry) []wireInfo {
-	wire := make([]wireInfo, 0, len(entries))
-	for _, entry := range entries {
+	wire := make([]wireInfo, len(entries))
+	for i, entry := range entries {
 		info, err := entry.Info()
-		switch {
-		case err == nil:
-			wire = append(wire, toWireInfo(info))
-		case !errors.Is(err, fs.ErrNotExist):
-			wire = append(wire, wireInfo{Name: rawString(entry.Name()), Mode: entry.Type(), Err: encodeError(err)})
+		if err != nil {
+			wire[i] = wireInfo{Name: rawString(entry.Name()), Mode: entry.Type(), Err: encodeError(err)}
+			continue
 		}
+		wire[i] = toWireInfo(info)
 	}
 	return wire
 }
