@@ -42,6 +42,7 @@ fn record(item: &IShellItem) -> Result<TrashItem> {
             item.GetAttributes(SFGAO_FOLDER)? == SFGAO_FOLDER,
         )
     };
+    let name = full_name(name, &id);
     let original = Path::new(&folder).join(&name);
     ensure!(
         original.is_absolute() && original.parent() == Some(Path::new(&folder)),
@@ -64,6 +65,20 @@ fn record(item: &IShellItem) -> Result<TrashItem> {
         is_dir,
         can_restore: can_restore(&original),
     })
+}
+
+/// The item's name with its extension. The Shell's label drops a known
+/// extension when Explorer hides them (`report` for `report.txt`), but the
+/// bin's own copy (`$R1A2B3C.txt`, the parsing path) keeps it.
+fn full_name(label: String, parsing: &str) -> String {
+    let Some(extension) = Path::new(parsing).extension().and_then(|value| value.to_str()) else {
+        return label;
+    };
+    let suffix = format!(".{extension}");
+    let has = label.len() >= suffix.len()
+        && label.is_char_boundary(label.len() - suffix.len())
+        && label[label.len() - suffix.len()..].eq_ignore_ascii_case(&suffix);
+    if has { label } else { label + &suffix }
 }
 
 fn can_restore(original: &Path) -> bool {
@@ -184,4 +199,78 @@ pub(crate) fn purge(id: Option<&str>) -> Result<usize> {
         perform(&op)?;
         Ok(items.len())
     })
+}
+
+/// Sends once after each burst of changes to any drive's Recycle Bin, made by
+/// BoxBox, Explorer or another app, until the receiver is gone. One thread
+/// waits on a change notification per drive; a drive added later is not watched.
+pub(crate) fn watch(changed: async_channel::Sender<()>) {
+    use std::time::Duration;
+    use windows_sys::Win32::{
+        Foundation::{HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0},
+        Storage::FileSystem::{
+            FindCloseChangeNotification, FindFirstChangeNotificationW, FindNextChangeNotification,
+            FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME,
+        },
+        System::Threading::{WaitForMultipleObjects, WaitForSingleObject},
+    };
+    /// Deleting a folder writes many entries; one signal covers them.
+    const SETTLE: Duration = Duration::from_millis(300);
+    /// How often the thread checks whether anyone still listens.
+    const CHECK_MS: u32 = 2_000;
+
+    let started = std::thread::Builder::new().name("recycle bin".into()).spawn(move || {
+        let mask = super::drive_mask();
+        // Each user's bin is a subfolder named by their SID, so the whole tree is watched.
+        let mut handles: Vec<HANDLE> = ('a'..='z')
+            .filter(|letter| super::has_drive(&letter.to_string(), mask))
+            .map(|letter| format!("{letter}:\\$Recycle.Bin"))
+            .filter(|bin| Path::new(bin).is_dir())
+            .map(|bin| unsafe {
+                FindFirstChangeNotificationW(super::wide(&bin).as_ptr(), 1, FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME)
+            })
+            .filter(|handle| *handle != INVALID_HANDLE_VALUE)
+            .collect();
+        while !handles.is_empty() && !changed.is_closed() {
+            let count = u32::try_from(handles.len()).unwrap_or(u32::MAX);
+            let index = unsafe { WaitForMultipleObjects(count, handles.as_ptr(), 0, CHECK_MS) }.wrapping_sub(WAIT_OBJECT_0);
+            if index as usize >= handles.len() {
+                continue;
+            }
+            std::thread::sleep(SETTLE);
+            // Re-arm every bin signalled meanwhile too, so the burst is one signal.
+            // A bin that cannot be re-armed (its drive left) is dropped, or it would signal for ever.
+            handles.retain(|&handle| {
+                if unsafe { WaitForSingleObject(handle, 0) } != WAIT_OBJECT_0 || unsafe { FindNextChangeNotification(handle) } != 0 {
+                    return true;
+                }
+                unsafe { FindCloseChangeNotification(handle) };
+                false
+            });
+            if changed.send_blocking(()).is_err() {
+                break;
+            }
+        }
+        for handle in handles {
+            unsafe { FindCloseChangeNotification(handle) };
+        }
+    });
+    if let Err(error) = started {
+        log::warn!("Could not watch the Recycle Bin: {error}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::full_name;
+
+    #[test]
+    fn hidden_extensions_come_back_from_the_bins_copy() {
+        let bin = r"C:\$Recycle.Bin\S-1-5-21\$R1A2B3C";
+        assert_eq!(full_name("report".into(), &format!("{bin}.txt")), "report.txt");
+        assert_eq!(full_name("a.b".into(), &format!("{bin}.txt")), "a.b.txt");
+        assert_eq!(full_name("report.TXT".into(), &format!("{bin}.TXT")), "report.TXT");
+        assert_eq!(full_name("my.folder".into(), &format!("{bin}.folder")), "my.folder");
+        assert_eq!(full_name("Makefile".into(), bin), "Makefile");
+    }
 }

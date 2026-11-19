@@ -25,6 +25,20 @@ impl Workspace {
         if let Some(folder) = self.local_api().and_then(|api| api.trash_files()) {
             self.directory_watches.watch(TRASH_WATCH, folder);
         }
+        // Windows lists the shared Recycle Bin, which Explorer and other apps change too.
+        #[cfg(windows)]
+        {
+            let (changed, changes) = async_channel::unbounded();
+            crate::windows::recycle_bin::watch(changed);
+            cx.spawn(async move |this, cx| {
+                while changes.recv().await.is_ok() {
+                    if this.update(cx, |this, cx| this.refresh_trash_state(cx)).is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
         self.refresh_trash_state(cx);
     }
 
