@@ -194,7 +194,8 @@ impl Run<'_> {
             self.put(source, child, target, true)?;
         }
         // A moved folder is gone once everything left it; a skipped item keeps it.
-        if self.job.mode == Mode::Move && source.list(&item.path).is_ok_and(|left| left.is_empty()) {
+        let empty = source.list(&item.path).is_ok_and(|left| left.is_empty()) && unlisted_name(source, &item.path).is_none();
+        if self.job.mode == Mode::Move && empty {
             let _ = source.delete(&item.path, false);
         }
         self.outcome.done += 1;
@@ -305,6 +306,9 @@ impl Run<'_> {
                     bail!("{} is a link to a folder; links cannot be copied to another place", item.name);
                 }
             }
+            if let Some(unlisted) = unlisted_name(source, &item.path) {
+                bail!("{} holds {unlisted:?}, a name that is not UTF-8, which BoxBox cannot copy", item.name);
+            }
             dest.create_directory(parent, name).with_context(|| format!("cannot create folder {name}"))?;
             let inside = join(parent, name);
             for child in source.list(&item.path).with_context(|| format!("cannot list {}", item.path))? {
@@ -342,12 +346,20 @@ impl Run<'_> {
     }
 }
 
-/// Whether `item` lies inside `folder`, by its path or through links to either.
+/// A name in a local folder that is not UTF-8. Listings leave such entries out,
+/// so a folder holding one is never wholly copied or emptied by a move.
+fn unlisted_name(api: &Api, path: &str) -> Option<std::ffi::OsString> {
+    let real = api.local_path(path).ok().flatten()?;
+    fs::read_dir(real).ok()?.flatten().map(|entry| entry.file_name()).find(|name| name.to_str().is_none())
+}
+
+/// Whether `item` lies inside `folder`, by its path or through links on the
+/// way. A final link at `folder` is the entry Replace deletes, not its target.
 fn contains(api: &Api, folder: &str, item: &str) -> bool {
     if item.starts_with(&format!("{folder}/")) {
         return true;
     }
-    let folder = api.local_path(folder).ok().flatten();
+    let folder = api.entry_path(folder).ok().flatten();
     let item = api.entry_path(item).ok().flatten();
     matches!((folder, item), (Some(folder), Some(item)) if item != folder && item.starts_with(&folder))
 }
@@ -573,6 +585,22 @@ mod tests {
         assert!(matches!(&asked.borrow()[1], Question::Failed { .. }), "the refusal is reported");
         assert_eq!(outcome.done, 0);
         assert!(root.0.join("A/A/a.txt").exists() && root.0.join("A/b.txt").exists());
+    }
+
+    #[test]
+    fn replacing_a_link_to_the_items_folder_replaces_only_the_link() {
+        let (root, api) = fixture(&["src/A/a.txt", "dst/"]);
+        std::os::unix::fs::symlink("../src", root.0.join("dst/A")).unwrap();
+        let (asked, answers) = scripted(vec![(Answer::Replace, false)]);
+        let ask = |question: Question, _| {
+            asked.borrow_mut().push(question);
+            answers.borrow_mut().next().unwrap()
+        };
+        let outcome = run(&job(&api, Mode::Copy, &["src/A"], "dst"), &ask).unwrap();
+        assert_eq!(outcome.done, 1);
+        assert!(!fs::symlink_metadata(root.0.join("dst/A")).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(root.0.join("dst/A/a.txt")).unwrap(), "src/A/a.txt");
+        assert!(root.0.join("src/A/a.txt").exists());
     }
 
     #[test]
