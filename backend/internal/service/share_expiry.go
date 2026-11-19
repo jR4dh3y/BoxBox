@@ -28,26 +28,41 @@ var (
 // The selected entry must itself be a regular file on a writable mount: for a
 // symlink, deleting its target would also break the link and anything else
 // that uses the target.
-func (s *shareService) identifyDeletableFile(virtualPath string, mount *model.MountPoint, fsPath string) (*model.ShareFileIdentity, error) {
+//
+// It returns the selected entry's real path, so the identity can be checked
+// again without resolving the mounts.
+func (s *shareService) identifyDeletableFile(virtualPath string, mount *model.MountPoint, fsPath string) (*model.ShareFileIdentity, string, error) {
 	if mount.ReadOnly {
-		return nil, ErrPermissionDenied
+		return nil, "", ErrPermissionDenied
 	}
 	if err := s.mounts.requireWritablePath(fsPath, false); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	_, entry, err := s.mounts.resolve(virtualPath, readEntry)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	info, err := s.fs.Lstat(entry)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, ErrInvalidOperation
+		return nil, "", ErrInvalidOperation
 	}
 	identity := fileIdentity(info)
-	return &identity, nil
+	return &identity, entry, nil
+}
+
+// stillIdentifies reports whether entry is still the file identity names.
+func (s *shareService) stillIdentifies(entry string, identity model.ShareFileIdentity) error {
+	info, err := s.fs.Lstat(entry)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || !sameIdentity(fileIdentity(info), identity) {
+		return ErrShareTargetChanged
+	}
+	return nil
 }
 
 func fileIdentity(info fs.FileInfo) model.ShareFileIdentity {
@@ -88,9 +103,11 @@ func (s *shareService) StartExpiryCleanup(ctx context.Context) {
 	})
 }
 
-// StopExpiryCleanup waits for a running pass until ctx ends. A pass stops
-// before touching any file once its context ends, so the wait is only long
-// when a check is stuck on an unresponsive mount.
+// StopExpiryCleanup waits for a running pass until ctx ends. Checks that have
+// not touched the store or a file are abandoned then, since they may be stuck
+// on an unresponsive mount. Changes that already started are always waited
+// for, so a file moved aside for removal is never left under its temporary
+// name, and no new changes start once ctx ends.
 func (s *shareService) StopExpiryCleanup(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
@@ -101,8 +118,24 @@ func (s *shareService) StopExpiryCleanup(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
 	}
+	s.cleanupGate.Lock()
+	s.cleanupStopped = true
+	s.cleanupGate.Unlock()
+	s.cleanupChanges.Wait()
+	return ctx.Err()
+}
+
+// beginExpiryChanges admits a pass to the store and files unless the pass or
+// the cleanup was stopped. The caller must call cleanupChanges.Done.
+func (s *shareService) beginExpiryChanges(ctx context.Context) bool {
+	s.cleanupGate.Lock()
+	defer s.cleanupGate.Unlock()
+	if ctx.Err() != nil || s.cleanupStopped {
+		return false
+	}
+	s.cleanupChanges.Add(1)
+	return true
 }
 
 // expiryPlan is the decision for one expired share, made without the lock.
@@ -163,6 +196,11 @@ func (s *shareService) deleteExpiredFiles(ctx context.Context, now time.Time) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Shutdown may have started while the pass waited for the lock.
+	if !s.beginExpiryChanges(ctx) {
+		return
+	}
+	defer s.cleanupChanges.Done()
 	data, err := s.readStoreLocked()
 	if err != nil {
 		log.Error().Err(err).Int("shares", len(due)).Msg("Skipped expired share cleanup: could not reread the share store")

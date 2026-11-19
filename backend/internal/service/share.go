@@ -109,6 +109,12 @@ type shareService struct {
 	storageErr     error
 	mu             sync.RWMutex
 	cleanup        sync.WaitGroup
+	// cleanupGate guards cleanupStopped, which keeps new cleanup changes from
+	// starting once shutdown stops waiting; cleanupChanges counts changes in
+	// progress, which shutdown always waits for.
+	cleanupGate    sync.Mutex
+	cleanupStopped bool
+	cleanupChanges sync.WaitGroup
 	// readMounts reads the host's mount table for expiry cleanup.
 	readMounts func() ([]hostMount, error)
 }
@@ -214,11 +220,12 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		}
 	}
 	var deleteOnExpiry *model.ShareFileIdentity
+	var deleteEntry string
 	if settings.DeleteOnExpiry {
 		if isFolder || !expiresAt.After(time.Now()) {
 			return nil, ErrInvalidOperation
 		}
-		deleteOnExpiry, err = s.identifyDeletableFile(path, mount, fsPath)
+		deleteOnExpiry, deleteEntry, err = s.identifyDeletableFile(path, mount, fsPath)
 		if err != nil {
 			return nil, err
 		}
@@ -262,14 +269,12 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		return nil, err
 	}
 	// A save may have replaced the file since its identity was recorded. That
-	// file was not the one the owner chose to delete, so ask for a retry.
+	// file was not the one the owner chose to delete, so ask for a retry. Only
+	// the file itself is checked here, so a slow mount elsewhere cannot hold
+	// the lock.
 	if deleteOnExpiry != nil {
-		current, err := s.identifyDeletableFile(path, mount, fsPath)
-		if err != nil {
+		if err := s.stillIdentifies(deleteEntry, *deleteOnExpiry); err != nil {
 			return nil, err
-		}
-		if !sameIdentity(*current, *deleteOnExpiry) {
-			return nil, ErrShareTargetChanged
 		}
 	}
 	data := s.loadLocked()

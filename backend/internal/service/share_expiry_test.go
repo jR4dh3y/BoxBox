@@ -908,3 +908,73 @@ func TestShareExpiryKeepsFileWhenTheMountTableHasNoRoot(t *testing.T) {
 		t.Fatal("a pass without a root mount consumed the deletion request")
 	}
 }
+
+func TestShareExpiryTouchesNothingWhenCancelledWhileWaitingForTheLock(t *testing.T) {
+	fsys := filesystem.NewMemMapFS()
+	setupShareTestFS(fsys)
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+	expiring := createExpiringShare(t, shares, "media/file.txt", true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	shares.readMounts = func() ([]hostMount, error) {
+		// Hold the lock past the pass's last check before it locks, then
+		// cancel while it waits.
+		shares.mu.Lock()
+		go func() {
+			time.Sleep(30 * time.Millisecond)
+			cancel()
+			shares.mu.Unlock()
+		}()
+		return rootOnlyMountTable()
+	}
+	shares.deleteExpiredFiles(ctx, afterExpiry())
+	assertFileExists(t, fsys, "/data/media/file.txt", true)
+	if !storedDeleteOnExpiry(t, shares, expiring.ID) {
+		t.Fatal("a pass cancelled while waiting for the lock consumed the deletion request")
+	}
+}
+
+// blockingRemoveFS blocks a removal until released, as a stalled drive.
+type blockingRemoveFS struct {
+	filesystem.FS
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (f *blockingRemoveFS) RemoveFileWithin(root, path string, verify func(fs.FileInfo) error) error {
+	close(f.entered)
+	<-f.release
+	return f.FS.RemoveFileWithin(root, path, verify)
+}
+
+func TestShareExpiryStopWaitsForARemovalInProgress(t *testing.T) {
+	backing := filesystem.NewMemMapFS()
+	setupShareTestFS(backing)
+	fsys := &blockingRemoveFS{FS: backing, entered: make(chan struct{}), release: make(chan struct{})}
+	shares := newExpiryTestService(fsys, fixedMounts(shareTestMounts()))
+	createExpiringShare(t, shares, "media/file.txt", true)
+
+	go shares.deleteExpiredFiles(context.Background(), afterExpiry())
+	<-fsys.entered
+	shares.cleanup.Add(1) // stands in for the running cleanup goroutine
+	wait, stop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer stop()
+	stopped := make(chan error, 1)
+	go func() { stopped <- shares.StopExpiryCleanup(wait) }()
+	select {
+	case err := <-stopped:
+		t.Fatalf("StopExpiryCleanup() = %v while a removal was in progress", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(fsys.release)
+	select {
+	case err := <-stopped:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("StopExpiryCleanup() = %v, want %v", err, context.DeadlineExceeded)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("StopExpiryCleanup did not return after the removal finished")
+	}
+	shares.cleanup.Done()
+	assertFileExists(t, backing, "/data/media/file.txt", false)
+}
