@@ -485,10 +485,13 @@ struct BuiltMenu {
     _selection: Selection,
     owner: HWND,
     shift: bool,
+    /// Every item is a folder, which BoxBox opens itself.
+    folders: bool,
 }
 
 impl BuiltMenu {
     fn new(owner: HWND, target: &Target, shift: bool) -> Result<Self> {
+        let folders = matches!(target, Target::Items(paths) if paths.iter().all(|path| path.is_dir()));
         let selection = Selection::parse(target)?;
         let shell = shell_menu(owner, &selection)?;
         let flags = if shift { CMF_EXTENDEDVERBS } else { CMF_NORMAL };
@@ -501,6 +504,7 @@ impl BuiltMenu {
             _selection: selection,
             owner,
             shift,
+            folders,
         })
     }
 
@@ -510,9 +514,9 @@ impl BuiltMenu {
         let mut send_to: Option<Vec<String>> = None;
         let mut entries = menu_entries(self.menu.0);
         entries.retain(|entry| match entry {
-            Entry::Action { id, .. } => !self.verb(*id).is_some_and(|verb| is_boxbox_verb(&verb)),
+            Entry::Action { id, .. } => !self.verb(*id).is_some_and(|verb| is_boxbox_verb(&verb, self.folders)),
             Entry::Submenu { branch, .. } => match self.verb(branch.command) {
-                Some(verb) => !is_boxbox_verb(&verb),
+                Some(verb) => !is_boxbox_verb(&verb, self.folders),
                 // "Send to" has no verb. Its rows are the items of the SendTo folder.
                 None => !self.lists_any(*branch, send_to.get_or_insert_with(send_to_names)),
             },
@@ -595,9 +599,10 @@ impl BuiltMenu {
 
 /// BoxBox shows these as its own rows: clipboard, rename, trash, properties,
 /// Open With and Favorites. `pintohome*` pins to Explorer's Quick Access, which
-/// BoxBox's Favorites would be confused with.
-fn is_boxbox_verb(verb: &str) -> bool {
-    [
+/// BoxBox's Favorites would be confused with. For `folders`, BoxBox's Open and
+/// Open in New Tab replace the Shell's `open` and `explore`, which start Explorer.
+fn is_boxbox_verb(verb: &str, folders: bool) -> bool {
+    const ROWS: [&str; 9] = [
         "cut",
         "copy",
         "paste",
@@ -607,9 +612,10 @@ fn is_boxbox_verb(verb: &str) -> bool {
         "openas",
         "pintohome",
         "pintohomefile",
-    ]
-    .iter()
-    .any(|name| verb.eq_ignore_ascii_case(name))
+    ];
+    const FOLDER_ROWS: [&str; 2] = ["open", "explore"];
+    let named = |names: &[&str]| names.iter().any(|name| verb.eq_ignore_ascii_case(name));
+    named(&ROWS) || (folders && named(&FOLDER_ROWS))
 }
 
 /// Drops leading, trailing and repeated separators left by removed rows.
@@ -871,21 +877,25 @@ mod tests {
         let folder = tempfile::tempdir()?;
         let file = folder.path().join("notes.txt");
         std::fs::write(&file, "")?;
+        let inner = folder.path().join("inner");
+        std::fs::create_dir(&inner)?;
         crate::windows::with_shell(move || {
-            let menu = BuiltMenu::new(HWND(null_mut()), &Target::Items(vec![file]), false)?;
             let names = send_to_names();
             assert!(!names.is_empty(), "this Windows profile has a SendTo folder");
-            for entry in menu.entries() {
-                let command = match &entry {
-                    Entry::Action { id, .. } => *id,
-                    Entry::Submenu { branch, .. } => {
-                        assert!(!menu.lists_any(*branch, &names), "Send to is BoxBox's row");
-                        branch.command
+            for (item, folders) in [(file, false), (inner, true)] {
+                let menu = BuiltMenu::new(HWND(null_mut()), &Target::Items(vec![item]), false)?;
+                for entry in menu.entries() {
+                    let command = match &entry {
+                        Entry::Action { id, .. } => *id,
+                        Entry::Submenu { branch, .. } => {
+                            assert!(!menu.lists_any(*branch, &names), "Send to is BoxBox's row");
+                            branch.command
+                        }
+                        Entry::Separator => continue,
+                    };
+                    if let Some(verb) = menu.verb(command) {
+                        assert!(!is_boxbox_verb(&verb, folders), "{verb} is BoxBox's row");
                     }
-                    Entry::Separator => continue,
-                };
-                if let Some(verb) = menu.verb(command) {
-                    assert!(!is_boxbox_verb(&verb), "{verb} is BoxBox's row");
                 }
             }
             Ok(())

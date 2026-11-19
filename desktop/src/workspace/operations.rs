@@ -618,30 +618,31 @@ impl Workspace {
     /// Files from another app, pasted or dropped. Paths this provider can reach go
     /// through the normal transfer, so a cut moves them; anything else is copied in.
     pub(crate) fn receive_files(&mut self, target: PaneTarget, destination: Arc<Api>, parent: String, files: os_clipboard::Files, cx: &mut Context<Self>) {
-        // The entries themselves: cutting a link moves the link, not what it points to.
-        let reachable: Option<Vec<String>> = files.paths.iter().map(|path| destination.virtual_entry_path(path)).collect();
-        let Some(virtual_paths) = reachable else {
-            self.import_paths_to(destination, parent, files.paths, cx);
-            return;
-        };
         let mode = match files.op {
             os_clipboard::FileOp::Copy => ClipboardMode::Copy,
             os_clipboard::FileOp::Cut => ClipboardMode::Cut,
         };
-        let api = destination.clone();
+        let (api, paths) = (destination.clone(), files.paths.clone());
         cx.spawn(async move |this, cx| {
+            // Off the window thread: resolving a path can wait on a slow network share.
             let entries = cx
                 .background_executor()
                 .spawn(async move {
-                    virtual_paths
-                        .iter()
-                        .map(|path| api.stat(path).map(|item| ClipboardEntry { api: api.clone(), item }))
-                        .collect::<anyhow::Result<Vec<_>>>()
+                    // The entries themselves: cutting a link moves the link, not what it points to.
+                    let virtual_paths = paths.iter().map(|path| api.virtual_entry_path(path)).collect::<Option<Vec<_>>>()?;
+                    Some(
+                        virtual_paths
+                            .iter()
+                            .map(|path| api.stat(path).map(|item| ClipboardEntry { api: api.clone(), item }))
+                            .collect::<anyhow::Result<Vec<_>>>(),
+                    )
                 })
                 .await;
             this.update(cx, |this, cx| match entries {
-                Ok(entries) => this.run_paste(target, FileClipboard { mode, entries }, destination, parent, cx),
-                Err(error) => this.report(Err(format!("Could not paste: {error:#}")), cx),
+                Some(Ok(entries)) => this.run_paste(target, FileClipboard { mode, entries }, destination, parent, cx),
+                Some(Err(error)) => this.report(Err(format!("Could not paste: {error:#}")), cx),
+                // Not reachable through this provider: copied in instead.
+                None => this.import_paths_to(destination, parent, files.paths, cx),
             })
             .ok();
         })

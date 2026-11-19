@@ -1,0 +1,4 @@
+# The portable Windows ZIP runs on machines without the Visual C++
+# Redistributable, so the C runtime is linked into the executable.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

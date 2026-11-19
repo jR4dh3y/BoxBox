@@ -26,6 +26,13 @@ try {
     cargo build --locked --release --manifest-path desktop/Cargo.toml
     $targetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { 'desktop/target' }
     $executable = Join-Path $targetDir 'release/boxbox-gpui.exe'
+    # The ZIP ships no Visual C++ runtime; desktop/.cargo/config.toml links it in.
+    $imports = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Resolve-Path $executable).ProviderPath))
+    foreach ($runtime in 'VCRUNTIME140.dll', 'MSVCP140.dll') {
+        if ($imports.Contains($runtime, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "boxbox-gpui.exe needs $runtime, which the portable ZIP does not include"
+        }
+    }
     $output = New-Item -Path dist/release -ItemType Directory -Force
     $stage = New-Item -Path $output.FullName -Name (".stage-" + [guid]::NewGuid().ToString('N')) -ItemType Directory
     $name = "boxbox-desktop-v$version-windows-amd64"
