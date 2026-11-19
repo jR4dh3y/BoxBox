@@ -978,3 +978,52 @@ func TestShareExpiryStopWaitsForARemovalInProgress(t *testing.T) {
 	shares.cleanup.Done()
 	assertFileExists(t, backing, "/data/media/file.txt", false)
 }
+
+// stallingRereadFS blocks the second read of the share store until released,
+// as a data drive that stops responding.
+type stallingRereadFS struct {
+	filesystem.FS
+	reads   int
+	stalled chan struct{}
+	release chan struct{}
+}
+
+func (f *stallingRereadFS) ReadFile(name string) ([]byte, error) {
+	if strings.HasSuffix(name, "shares.json") {
+		f.reads++
+		if f.reads == 2 {
+			close(f.stalled)
+			<-f.release
+		}
+	}
+	return f.FS.ReadFile(name)
+}
+
+func TestShareExpiryStopDoesNotWaitForAStalledStoreRead(t *testing.T) {
+	backing := filesystem.NewMemMapFS()
+	setupShareTestFS(backing)
+	shares := newExpiryTestService(backing, fixedMounts(shareTestMounts()))
+	expiring := createExpiringShare(t, shares, "media/file.txt", true)
+	fsys := &stallingRereadFS{FS: backing, stalled: make(chan struct{}), release: make(chan struct{})}
+	shares.fs = fsys
+
+	ctx, cancel := context.WithCancel(context.Background())
+	shares.cleanup.Add(1) // stands in for the running cleanup goroutine
+	go func() {
+		defer shares.cleanup.Done()
+		shares.deleteExpiredFiles(ctx, afterExpiry())
+	}()
+	<-fsys.stalled
+	cancel()
+	wait, stop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer stop()
+	if err := shares.StopExpiryCleanup(wait); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("StopExpiryCleanup() = %v, want %v", err, context.DeadlineExceeded)
+	}
+	close(fsys.release)
+	shares.cleanup.Wait()
+	assertFileExists(t, backing, "/data/media/file.txt", true)
+	if !storedDeleteOnExpiry(t, shares, expiring.ID) {
+		t.Fatal("a pass stopped during its store read consumed the deletion request")
+	}
+}

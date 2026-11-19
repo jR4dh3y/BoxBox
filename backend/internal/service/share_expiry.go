@@ -196,11 +196,6 @@ func (s *shareService) deleteExpiredFiles(ctx context.Context, now time.Time) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Shutdown may have started while the pass waited for the lock.
-	if !s.beginExpiryChanges(ctx) {
-		return
-	}
-	defer s.cleanupChanges.Done()
 	data, err := s.readStoreLocked()
 	if err != nil {
 		log.Error().Err(err).Int("shares", len(due)).Msg("Skipped expired share cleanup: could not reread the share store")
@@ -210,6 +205,14 @@ func (s *shareService) deleteExpiredFiles(ctx context.Context, now time.Time) {
 		log.Info().Int("shares", len(due)).Msg("Share links changed during expired share cleanup; checking again on the next pass")
 		return
 	}
+	// Shutdown may have started while the pass waited for the lock or read the
+	// store. From here on the pass changes the store and files; once the
+	// requests are cleared it finishes the batch, since stopping midway would
+	// keep the remaining files forever.
+	if !s.beginExpiryChanges(ctx) {
+		return
+	}
+	defer s.cleanupChanges.Done()
 	for i := range data.Shares {
 		if slices.ContainsFunc(due, func(record shareRecord) bool { return record.ID == data.Shares[i].ID }) {
 			data.Shares[i].DeleteOnExpiry = nil
