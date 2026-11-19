@@ -366,3 +366,32 @@ func TestRemoveFileWithinRestoresRejectedEntry(t *testing.T) {
 	}
 	assertOnlyEntries(t, root, "file.txt")
 }
+
+func TestRemoveFileWithinKeepsFileWhoseFolderMovedBeforeRemoval(t *testing.T) {
+	root := t.TempDir()
+	for _, folder := range []string{"a", "shared"} {
+		if err := os.Mkdir(filepath.Join(root, folder), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "a", "file.txt"), []byte("shared"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := NewOsFS().RemoveFileWithin(root, filepath.Join("a", "file.txt"), func(fs.FileInfo) error {
+		// A user moves the folder into a shared folder after it was checked.
+		if _, err := os.Stat(filepath.Join(root, "a")); err == nil {
+			if err := os.Rename(filepath.Join(root, "a"), filepath.Join(root, "shared", "a")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		t.Fatal("RemoveFileWithin() removed a file whose folder moved")
+	}
+	data, err := os.ReadFile(filepath.Join(root, "shared", "a", "file.txt"))
+	if err != nil || string(data) != "shared" {
+		t.Fatalf("moved file = %q, %v; want it kept", data, err)
+	}
+	assertOnlyEntries(t, filepath.Join(root, "shared", "a"), "file.txt")
+}

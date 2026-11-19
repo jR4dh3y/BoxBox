@@ -424,16 +424,19 @@ func (a *AferoFS) RemoveFileWithin(root, path string, verify func(fs.FileInfo) e
 // removeVerifiedEntry renames path to a private sibling and checks that entry,
 // so a save that replaces path after the check cannot be the entry removed.
 // A rejected entry, or one that cannot be removed, goes back to path unless
-// something new has taken its name. Every step uses one handle on the folder,
-// so renaming that folder mid-removal cannot strand the entry.
+// something new has taken its name.
+//
+// The first check and the move go by path from directory, so a folder moved
+// after the caller's checks no longer names the file and nothing is removed.
+// The later steps use a handle on the folder, so a folder renamed after the
+// move still gets its entry back.
 func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInfo) error) error {
 	folder, err := directory.OpenRoot(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
 	defer folder.Close()
-	name := filepath.Base(path)
-	info, err := folder.Lstat(name)
+	info, err := directory.Lstat(path)
 	if err != nil {
 		return err
 	}
@@ -441,11 +444,20 @@ func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInf
 	if err := verify(info); err != nil {
 		return err
 	}
+	name := filepath.Base(path)
 	aside := ".boxbox-removing-" + rand.Text()
-	if err := folder.Rename(name, aside); err != nil {
+	asidePath := filepath.Join(filepath.Dir(path), aside)
+	if err := directory.Rename(path, asidePath); err != nil {
 		return err
 	}
 	info, err = folder.Lstat(aside)
+	if errors.Is(err, fs.ErrNotExist) {
+		// path named another folder than the handle; undo the move by path.
+		if restoreErr := restoreEntry(directory, asidePath, path); restoreErr != nil {
+			return fmt.Errorf("%w; entry left at %s: %w", err, asidePath, restoreErr)
+		}
+		return err
+	}
 	if err == nil {
 		err = verify(info)
 	}
@@ -455,7 +467,7 @@ func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInf
 		}
 	}
 	if restoreErr := restoreEntry(folder, aside, name); restoreErr != nil {
-		return fmt.Errorf("%w; entry left at %s: %w", err, filepath.Join(filepath.Dir(path), aside), restoreErr)
+		return fmt.Errorf("%w; entry left at %s: %w", err, asidePath, restoreErr)
 	}
 	return err
 }
