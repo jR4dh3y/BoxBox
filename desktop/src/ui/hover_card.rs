@@ -169,7 +169,10 @@ fn read_extra(api: &Api, item: &FileInfo, cancel: &AtomicBool) -> Extra {
     let dimensions = crate::local::mime::from_name(&real)
         .filter(|mime| mime.starts_with("image/"))
         .and_then(|_| image::image_dimensions(&real).ok());
+    #[cfg(target_os = "linux")]
     let opens_with = crate::open_with::recommended(&real).ok().and_then(|apps| apps.into_iter().find(|app| app.is_default)).map(|app| app.name);
+    #[cfg(windows)]
+    let opens_with = crate::windows::default_app_name(&real);
     Extra { contents: None, dimensions, opens_with }
 }
 

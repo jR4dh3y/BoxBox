@@ -302,16 +302,20 @@ impl Workspace {
         };
 
         // Selects are w-40.
-        let icons = vec![
+        let mut icons = vec![
             SettingsRow::new("File icons").control(self.select("setting-icons", preferences.file_icons, &IconStyle::OPTIONS, 160., cx, |this, value, cx| {
                 this.preferences.file_icons = value;
                 this.commit_preferences(cx);
             })),
-            SettingsRow::new("Files show their app's icon").control(self.preference_toggle("setting-app-icons", preferences.app_icons, |p| &mut p.app_icons, cx)),
+        ];
+        // Windows' own file icons already are the app's.
+        #[cfg(target_os = "linux")]
+        icons.push(SettingsRow::new("Files show their app's icon").control(self.preference_toggle("setting-app-icons", preferences.app_icons, |p| &mut p.app_icons, cx)));
+        icons.extend([
             SettingsRow::new("Details on hover").control(self.preference_toggle("setting-hover-details", preferences.hover_details, |p| &mut p.hover_details, cx)),
             // The desktop's own setting also turns them off (`motion`).
             SettingsRow::new("Animations").control(self.preference_toggle("setting-animations", preferences.animations, |p| &mut p.animations, cx)),
-        ];
+        ]);
         div()
             .flex()
             .flex_col()

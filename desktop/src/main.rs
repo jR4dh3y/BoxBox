@@ -23,6 +23,7 @@ mod icon_theme;
 mod local;
 #[cfg_attr(windows, path = "windows/launch.rs")]
 mod launch;
+#[cfg(target_os = "linux")]
 mod custom_actions;
 #[cfg(target_os = "linux")]
 mod associations;

@@ -50,6 +50,7 @@ pub fn enabled(cx: &App) -> bool {
 }
 
 /// The desktop's animation setting, when its settings portal has one. Blocks on D-Bus.
+#[cfg(target_os = "linux")]
 pub fn desktop_enabled() -> Option<bool> {
     let connection = zbus::blocking::connection::Builder::session().ok()?.method_timeout(Duration::from_secs(1)).build().ok()?;
     let reply = connection
@@ -63,6 +64,15 @@ pub fn desktop_enabled() -> Option<bool> {
         .ok()?;
     let value: zbus::zvariant::OwnedValue = reply.body().deserialize().ok()?;
     bool::try_from(value).ok()
+}
+
+/// Windows' "Animation effects" setting (Settings > Accessibility > Visual effects).
+#[cfg(windows)]
+pub fn desktop_enabled() -> Option<bool> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETCLIENTAREAANIMATION};
+    let mut enabled: i32 = 0;
+    let read = unsafe { SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&raw mut enabled).cast(), 0) };
+    (read != 0).then_some(enabled != 0)
 }
 
 /// Fast at first, settling gently.

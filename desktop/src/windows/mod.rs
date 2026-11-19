@@ -469,6 +469,22 @@ pub(super) fn add_recent(path: &Path) {
     unsafe { SHAddToRecentDocs(SHARD_PATHW as u32, target.as_ptr().cast()) };
 }
 
+/// The name of the app that opens files like `path`, such as "Photos". `None`
+/// for a program, which opens itself, or a type without a default app.
+pub(super) fn default_app_name(path: &Path) -> Option<String> {
+    if crate::launch::program(path) {
+        return None;
+    }
+    let extension = wide(format!(".{}", path.extension()?.to_str()?));
+    let mut name = [0u16; 260];
+    let mut length = name.len() as u32;
+    let result = unsafe {
+        AssocQueryStringW(ASSOCF_NONE, ASSOCSTR_FRIENDLYAPPNAME, extension.as_ptr(), null(), name.as_mut_ptr(), &mut length)
+    };
+    // `length` counts the terminating null.
+    (result == 0 && length > 1).then(|| String::from_utf16_lossy(&name[..length as usize - 1]))
+}
+
 pub(super) fn open(path: &Path) -> Result<()> {
     let target = shell_path(path);
     with_shell(|| {
