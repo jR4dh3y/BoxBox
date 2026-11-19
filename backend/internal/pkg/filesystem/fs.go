@@ -90,17 +90,18 @@ type AferoFS struct {
 	fs afero.Fs
 }
 
-var errInvalidFilesystemPath = errors.New("invalid filesystem path")
+// ErrInvalidPath reports a path with a NUL byte or a ".." component.
+var ErrInvalidPath = errors.New("invalid filesystem path")
 
 func validateFilesystemPath(path string) error {
 	if strings.ContainsRune(path, '\x00') {
-		return errInvalidFilesystemPath
+		return ErrInvalidPath
 	}
 
 	normalizedPath := strings.ReplaceAll(path, `\`, "/")
 	for _, component := range strings.Split(normalizedPath, "/") {
 		if component == ".." {
-			return errInvalidFilesystemPath
+			return ErrInvalidPath
 		}
 	}
 	return nil
@@ -366,7 +367,7 @@ func (a *AferoFS) MkdirAllWithin(root, path string, perm os.FileMode) error {
 		return err
 	}
 	if !fs.ValidPath(filepath.ToSlash(path)) {
-		return errInvalidFilesystemPath
+		return ErrInvalidPath
 	}
 	root = filepath.Clean("/" + root)
 	if _, ok := a.fs.(*afero.OsFs); ok {

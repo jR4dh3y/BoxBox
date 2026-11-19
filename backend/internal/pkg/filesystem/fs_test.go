@@ -34,7 +34,7 @@ func TestAferoFSKeepsSafePathsAndRejectsTraversal(t *testing.T) {
 		"/data/media/\x00secret.txt",
 	} {
 		_, err := fsys.ReadFile(path)
-		if !errors.Is(err, errInvalidFilesystemPath) {
+		if !errors.Is(err, ErrInvalidPath) {
 			t.Errorf("read %q error = %v, want invalid filesystem path", path, err)
 		}
 	}
