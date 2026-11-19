@@ -140,8 +140,8 @@ impl Workspace {
         };
         let position = gpui::point(position.x.clamp(bounds.left(), bounds.right()), position.y.clamp(bounds.top(), bounds.bottom()));
         match cursor {
-            Some(index) => self.show_item_context_menu(target, index, position, cx),
-            None => self.show_folder_context_menu(target, position, cx),
+            Some(index) => self.show_item_context_menu(target, index, position, window, cx),
+            None => self.show_folder_context_menu(target, position, window, cx),
         }
     }
 

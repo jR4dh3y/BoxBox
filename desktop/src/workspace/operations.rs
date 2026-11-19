@@ -2,7 +2,6 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::Arc,
 };
 
@@ -105,6 +104,7 @@ pub(crate) struct ContextMenuState {
     pub target_id: usize,
     pub items: Vec<FileInfo>,
     pub position: gpui::Point<gpui::Pixels>,
+    pub extras: super::menu_extras::MenuExtras,
 }
 
 #[derive(Clone)]
@@ -1102,13 +1102,14 @@ impl Workspace {
     }
 
     /// The menu for the folder a pane shows, which clears the selection first.
-    pub(crate) fn show_folder_context_menu(&mut self, target: PaneTarget, position: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+    pub(crate) fn show_folder_context_menu(&mut self, target: PaneTarget, position: gpui::Point<gpui::Pixels>, window: &Window, cx: &mut Context<Self>) {
         if let Some(pane) = self.pane_mut_by_id(target.0) {
             pane.clear_selection();
         }
         self.open_submenu = None;
         self.refresh_templates(cx);
-        self.context_menu = Some(ContextMenuState { target_id: target.0, items: Vec::new(), position });
+        self.context_menu = Some(ContextMenuState { target_id: target.0, items: Vec::new(), position, extras: Default::default() });
+        self.load_menu_extras(window, cx);
         cx.notify();
     }
 
@@ -1117,6 +1118,7 @@ impl Workspace {
         target: PaneTarget,
         index: usize,
         position: gpui::Point<gpui::Pixels>,
+        window: &Window,
         cx: &mut Context<Self>,
     ) {
         let Some(pane) = self.pane_mut_by_id(target.0) else {
@@ -1132,7 +1134,9 @@ impl Workspace {
             target_id: target.0,
             items,
             position,
+            extras: Default::default(),
         });
+        self.load_menu_extras(window, cx);
         cx.notify();
     }
 
@@ -1286,19 +1290,18 @@ impl Workspace {
             return;
         };
         self.context_menu = None;
-        let Some(item) = items.into_iter().next() else {
+        let Some((_, api, path)) = self.operation_target(target) else {
             return;
         };
-        let Some((_, api, _)) = self.operation_target(target) else {
-            return;
-        };
+        // The menu for empty space opens the folder itself.
+        let path = items.into_iter().next().map_or(path, |item| item.path);
         let generation = self.begin_operation("Opening terminal…");
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
                 .spawn(async move {
                     let path = api
-                        .local_path(&item.path)?
+                        .local_path(&path)?
                         .ok_or_else(|| anyhow!("Open Terminal is only available for local files."))?;
                     let directory = if path.is_dir() {
                         path
@@ -1307,7 +1310,7 @@ impl Workspace {
                             .map(Path::to_path_buf)
                             .ok_or_else(|| anyhow!("item has no parent directory"))?
                     };
-                    open_terminal(&directory)
+                    crate::launch::terminal_in(&directory)
                 })
                 .await;
             let _ = this.update(cx, |this, cx| this.finish_operation(generation, result, cx));
@@ -1485,39 +1488,6 @@ fn import_path_recursive(api: &Arc<Api>, path: &Path, parent: &str) -> anyhow::R
         bail!("unsupported item type: {}", path.display());
     }
     Ok(())
-}
-
-fn open_terminal(directory: &Path) -> anyhow::Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        let candidates: [(&str, &[&str]); 4] = [
-            ("kgx", &["--working-directory"]),
-            ("gnome-terminal", &["--working-directory"]),
-            ("konsole", &["--workdir"]),
-            ("xfce4-terminal", &["--working-directory"]),
-        ];
-        for (program, args) in candidates {
-            let mut command = Command::new(program);
-            for arg in args {
-                command.arg(arg);
-            }
-            command.arg(directory);
-            if command.spawn().is_ok() {
-                return Ok(());
-            }
-        }
-        bail!("no supported terminal application was found")
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let terminal = std::env::var_os("TERMINAL")
-            .ok_or_else(|| anyhow!("set TERMINAL to use Open Terminal"))?;
-        Command::new(terminal)
-            .current_dir(directory)
-            .spawn()
-            .context("could not open terminal")?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]

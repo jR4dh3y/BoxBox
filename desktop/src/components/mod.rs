@@ -24,7 +24,7 @@ mod tooltip;
 
 pub use button::{Button, ButtonSize, ButtonVariant};
 pub use drive_card::{usage_bar, usage_text, DriveCard, DriveInfo, DriveState, Usage};
-pub use context_menu::{ContextMenu, MenuItem};
+pub use context_menu::{ContextMenu, MenuItem, MENU_MARGIN};
 pub use file_grid::{FileTile, GridMetrics};
 pub use file_list::{emblemed, rename_box, EntryIcon, FileListHeader, FileRow, ListMetrics, Selection, HEADER_HEIGHT};
 pub use input::Input;

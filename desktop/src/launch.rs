@@ -122,28 +122,55 @@ const TERMINALS: &[(&str, &[&str])] = &[
 /// proposed freedesktop default-terminal spec), else `$TERMINAL`, else the
 /// first installed terminal known here.
 fn in_terminal(argv: &[String]) -> Option<Command> {
+    in_terminal_with(argv, std::env::var("TERMINAL").ok(), &installed)
+}
+
+fn installed(name: &str) -> bool {
     let path = std::env::var_os("PATH").unwrap_or_default();
-    in_terminal_with(argv, std::env::var("TERMINAL").ok(), &|name| std::env::split_paths(&path).any(|folder| executable(&folder.join(name))))
+    std::env::split_paths(&path).any(|folder| executable(&folder.join(name)))
+}
+
+/// The user's terminal and the options that make it run a command.
+fn user_terminal(variable: Option<String>, installed: &dyn Fn(&str) -> bool) -> Option<(String, &'static [&'static str])> {
+    if installed("xdg-terminal-exec") {
+        return Some(("xdg-terminal-exec".into(), &[]));
+    }
+    if let Some(terminal) = variable.filter(|terminal| !terminal.trim().is_empty()) {
+        // A known terminal keeps its own option; anything else gets the common `-e`.
+        let options = TERMINALS.iter().find(|(name, _)| Path::new(&terminal).file_name().is_some_and(|file| file == *name)).map_or(&["-e"][..], |(_, options)| options);
+        return Some((terminal, options));
+    }
+    TERMINALS.iter().find(|(name, _)| installed(name)).map(|(name, options)| ((*name).into(), *options))
 }
 
 fn in_terminal_with(argv: &[String], variable: Option<String>, installed: &dyn Fn(&str) -> bool) -> Option<Command> {
-    let (program, before): (String, &[&str]) = if installed("xdg-terminal-exec") {
-        ("xdg-terminal-exec".into(), &[])
-    } else if let Some(terminal) = variable.filter(|terminal| !terminal.trim().is_empty()) {
-        // A known terminal keeps its own option; anything else gets the common `-e`.
-        let options = TERMINALS.iter().find(|(name, _)| Path::new(&terminal).file_name().is_some_and(|file| file == *name)).map_or(&["-e"][..], |(_, options)| options);
-        (terminal, options)
-    } else {
-        let (name, options) = TERMINALS.iter().find(|(name, _)| installed(name))?;
-        ((*name).into(), *options)
-    };
+    let (program, before) = user_terminal(variable, installed)?;
     let mut command = Command::new(program);
     command.args(before).args(argv);
     Some(command)
 }
 
+/// Opens the user's terminal in `folder`. Every terminal starts its shell in
+/// its working directory, so no terminal-specific option is needed.
+pub fn terminal_in(folder: &Path) -> Result<()> {
+    let (program, _) = user_terminal(std::env::var("TERMINAL").ok(), &installed).context("no terminal was found; set $TERMINAL or install xdg-terminal-exec")?;
+    let mut command = Command::new(program);
+    command.current_dir(folder);
+    detach(command)
+}
+
+/// Whether `program` (a name or a path) is a terminal, so a custom action that
+/// only opens one repeats Open in Terminal.
+pub fn is_terminal(program: &str) -> bool {
+    let Some(name) = Path::new(program).file_name().and_then(|name| name.to_str()) else { return false };
+    let variable = std::env::var("TERMINAL").ok();
+    name == "xdg-terminal-exec"
+        || TERMINALS.iter().any(|(known, _)| *known == name)
+        || variable.as_deref().and_then(|terminal| Path::new(terminal).file_name()).is_some_and(|terminal| terminal == name)
+}
+
 /// Spawns `command` and reaps it when it exits, so it never lingers as a zombie.
-fn detach(mut command: Command) -> Result<()> {
+pub(crate) fn detach(mut command: Command) -> Result<()> {
     let mut child = command.spawn().context("could not start it")?;
     std::thread::spawn(move || {
         let _ = child.wait();
@@ -183,6 +210,20 @@ impl DesktopEntry {
 /// a backslash escapes inside them, and field codes expand. No file is passed,
 /// so the file codes drop out.
 fn exec_argv(exec: &str, name: &str, icon: &str, path: &Path) -> Option<Vec<String>> {
+    let mut argv = Vec::new();
+    for word in exec_words(exec)? {
+        match word.as_str() {
+            "%f" | "%F" | "%u" | "%U" | "%d" | "%D" | "%n" | "%N" | "%v" | "%m" => {}
+            "%i" if !icon.is_empty() => argv.extend(["--icon".to_string(), icon.to_string()]),
+            "%i" => {}
+            _ => argv.push(expand(&word, name, path)),
+        }
+    }
+    (!argv.is_empty()).then_some(argv)
+}
+
+/// An Exec line split into words with its field codes kept; `None` when a quote is left open.
+pub(crate) fn exec_words(exec: &str) -> Option<Vec<String>> {
     let mut words: Vec<String> = Vec::new();
     let mut current = String::new();
     let (mut quoted, mut in_word, mut chars) = (false, false, exec.chars());
@@ -211,16 +252,7 @@ fn exec_argv(exec: &str, name: &str, icon: &str, path: &Path) -> Option<Vec<Stri
     if in_word {
         words.push(current);
     }
-    let mut argv = Vec::new();
-    for word in words {
-        match word.as_str() {
-            "%f" | "%F" | "%u" | "%U" | "%d" | "%D" | "%n" | "%N" | "%v" | "%m" => {}
-            "%i" if !icon.is_empty() => argv.extend(["--icon".to_string(), icon.to_string()]),
-            "%i" => {}
-            _ => argv.push(expand(&word, name, path)),
-        }
-    }
-    (!argv.is_empty()).then_some(argv)
+    Some(words)
 }
 
 /// `%c` is the name, `%k` the launcher's own path, `%%` a percent sign.

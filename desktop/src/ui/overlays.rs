@@ -44,24 +44,23 @@ impl Workspace {
         let single = items.len() == 1;
         let single_folder = single && items[0].is_dir;
         let single_file = single && !items[0].is_dir;
-
-        let mut entries = vec![
-            self.menu_item("context-file", "New File", "file-plus", |this, window, cx| this.context_create_file(window, cx), cx)
-                .disabled(read_only || !can_create),
-            self.menu_item("context-folder", "New Folder", "folder-plus", |this, window, cx| this.context_create_folder(window, cx), cx)
-                .disabled(read_only || !can_create),
-        ];
-        if items_empty {
-            entries.extend(self.template_menu(crate::workspace::operations::PaneTarget(pane.id), |this| this.context_menu = None, cx));
+        if menu.extras.pending() {
+            return div().into_any_element();
         }
-        entries.push(MenuItem::Separator);
-        let paste = self
-            .menu_item("context-paste", "Paste", "clipboard-paste", |this, window, cx| this.context_paste(window, cx), cx)
-            .shortcut("Ctrl+V")
-            .disabled(read_only || !can_paste);
-        if items.is_empty() {
-            entries.push(paste);
-        } else {
+
+        // Opening comes first, as in Thunar and Nautilus.
+        let mut entries = Vec::new();
+        if !items_empty {
+            if single_folder {
+                entries.push(self.menu_item("context-open", "Open", "folder-open", |this, _, cx| {
+                    if let Some((target, mut items)) = this.context_selection() {
+                        this.activate_item(target, items.remove(0), cx);
+                    }
+                }, cx));
+            }
+            if single_file && local {
+                entries.extend(self.open_with_entries(&menu.extras, cx));
+            }
             let folders = items.iter().filter(|item| item.is_dir).count();
             if folders > 0 {
                 entries.push(self.menu_item(
@@ -76,14 +75,37 @@ impl Workspace {
                     cx,
                 ));
             }
-            if single_folder && local {
-                entries.push(self.menu_item("context-terminal", "Open in Terminal", "square-terminal", |this, _, cx| this.context_open_terminal(cx), cx));
+        }
+        // Here, or in the open folder for empty space when it is on this computer.
+        let terminal = local && (single_folder || (items_empty && pane.real_path.is_some()));
+        if terminal {
+            entries.push(self.menu_item("context-terminal", "Open in Terminal", "square-terminal", |this, _, cx| this.context_open_terminal(cx), cx));
+        }
+        if !entries.is_empty() {
+            entries.push(MenuItem::Separator);
+        }
+        entries.extend([
+            self.menu_item("context-file", "New File", "file-plus", |this, window, cx| this.context_create_file(window, cx), cx)
+                .disabled(read_only || !can_create),
+            self.menu_item("context-folder", "New Folder", "folder-plus", |this, window, cx| this.context_create_folder(window, cx), cx)
+                .disabled(read_only || !can_create),
+        ]);
+        if items_empty {
+            entries.extend(self.template_menu(crate::workspace::operations::PaneTarget(pane.id), |this| this.context_menu = None, cx));
+        }
+        entries.push(MenuItem::Separator);
+        let paste = self
+            .menu_item("context-paste", "Paste", "clipboard-paste", |this, window, cx| this.context_paste(window, cx), cx)
+            .shortcut("Ctrl+V")
+            .disabled(read_only || !can_paste);
+        let actions = self.custom_action_entries(&menu.extras, terminal, cx);
+        if items.is_empty() {
+            entries.push(paste);
+            if !actions.is_empty() {
+                entries.push(MenuItem::Separator);
+                entries.extend(actions);
             }
-            if single_file && local {
-                entries.push(self.menu_item("context-open-with", "Open With…", "app-window", |this, window, cx| this.context_open_with(window, cx), cx));
-            }
-            if single_file {
-            }
+        } else {
             entries.push(self.menu_item("context-copy", "Copy", "copy", |this, _, cx| this.context_copy(cx), cx).shortcut("Ctrl+C"));
             entries.push(
                 self.menu_item("context-cut", "Cut", "scissors", |this, _, cx| this.context_cut(cx), cx).shortcut("Ctrl+X").disabled(read_only),
@@ -110,6 +132,7 @@ impl Workspace {
                     .disabled(read_only),
                 );
                 entries.extend(self.send_to_menu(crate::workspace::operations::PaneTarget(pane.id), items, cx));
+                entries.extend(actions);
             }
             entries.push(MenuItem::Separator);
             entries.push(
@@ -168,7 +191,7 @@ impl Workspace {
                 cx.notify();
             }))
             .child(
-                anchored().position(menu.position).snap_to_window().child(
+                anchored().position(menu.position).snap_to_window_with_margin(crate::components::MENU_MARGIN).child(
                     div()
                         .id("file-context-menu")
                         .debug_selector(|| "file-context-menu".into())

@@ -95,9 +95,9 @@ impl Workspace {
                 this.focus_handle.focus(window);
                 cx.notify();
             }))
-            .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+            .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
                 // Rows stop the event, so this is empty space: the menu is for the folder.
-                this.show_folder_context_menu(target, event.position, cx);
+                this.show_folder_context_menu(target, event.position, window, cx);
             }))
             // A mouse's side buttons go back and forward in the pane under the pointer,
             // which the capture above made active.

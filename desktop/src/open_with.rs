@@ -9,6 +9,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use anyhow::{bail, Context as _, Result};
 
@@ -194,7 +196,32 @@ fn read_entry(path: &Path, id: &str) -> Option<Result<Entry, ()>> {
     }))
 }
 
-fn installed() -> HashMap<String, Entry> {
+/// The installed apps. Installing, removing or replacing an app's file changes
+/// its folder's modification time, so the folders' times tell when to read again.
+fn installed() -> Arc<HashMap<String, Entry>> {
+    type Cache = Option<(Vec<Option<SystemTime>>, Arc<HashMap<String, Entry>>)>;
+    static CACHE: Mutex<Cache> = Mutex::new(None);
+    let stamps: Vec<_> = application_dirs().iter().map(|dir| std::fs::metadata(dir).and_then(|metadata| metadata.modified()).ok()).collect();
+    let mut cache = CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    match &*cache {
+        Some((read, entries)) if *read == stamps => entries.clone(),
+        _ => {
+            let entries = Arc::new(read_installed());
+            *cache = Some((stamps, entries.clone()));
+            entries
+        }
+    }
+}
+
+/// Reads the app list and the icon theme off the UI thread at startup, so the
+/// first item menu lists its apps.
+pub fn warm() {
+    let _span = crate::profile::span("open with warm");
+    installed();
+    IconTheme::shared();
+}
+
+fn read_installed() -> HashMap<String, Entry> {
     let mut entries = HashMap::new();
     let mut seen = HashSet::new();
     for root in application_dirs() {
@@ -271,7 +298,12 @@ fn by_name(entries: &HashMap<String, Entry>, ids: &mut [String]) {
     });
 }
 
+/// The type from the name when a glob gives one, which is what GIO uses then,
+/// else GIO's, which reads the content.
 fn content_type(path: &Path) -> Result<String> {
+    if let Some(mime) = crate::local::mime::from_name(path) {
+        return Ok(mime);
+    }
     let output = Command::new("gio")
         .args(["info", "--attributes=standard::content-type"])
         .arg(path)
@@ -335,6 +367,20 @@ pub fn list(path: &Path) -> Result<Apps> {
     let _span = crate::profile::span("open with icons");
     let theme = IconTheme::shared();
     for app in apps.recommended.iter_mut().chain(&mut apps.other) {
+        app.icon = theme.find(&entries[&app.id].icon);
+    }
+    Ok(apps)
+}
+
+/// The recommended apps alone, the default first, for the item menu: it looks
+/// up icons for these only.
+pub fn recommended(path: &Path) -> Result<Vec<App>> {
+    let _span = crate::profile::span("open with recommended");
+    let mime_type = content_type(path)?;
+    let entries = installed();
+    let mut apps = list_for(&mime_type, &entries).recommended;
+    let theme = IconTheme::shared();
+    for app in &mut apps {
         app.icon = theme.find(&entries[&app.id].icon);
     }
     Ok(apps)

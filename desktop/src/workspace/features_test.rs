@@ -1681,3 +1681,43 @@ fn wallpaper_options_show_only_while_the_wallpaper_does(cx: &mut TestAppContext)
         assert_eq!(workspace.accent_hex(), wallpaper_accent);
     });
 }
+
+#[gpui::test]
+fn custom_actions_run_on_their_files_and_terminal_ones_give_way(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["notes.txt", "work/"]);
+    // `open` points XDG_CONFIG_HOME at the fixture's own config folder.
+    let thunar = fixture.root.with_extension("config").join("Thunar");
+    fs::create_dir_all(&thunar).unwrap();
+    fs::write(
+        thunar.join("uca.xml"),
+        r#"<actions>
+<action><name>Open Terminal Here</name><command>kitty --directory %f</command><patterns>*</patterns><directories/></action>
+<action><name>Mark</name><command>sh -c 'touch "$1.marked"' sh %f</command><patterns>*.txt</patterns><text-files/></action>
+</actions>"#,
+    )
+    .unwrap();
+    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
+    cx.run_until_parked();
+    assert_eq!(names(&view, cx), ["work", "notes.txt"]);
+
+    // A folder's menu has BoxBox's own terminal row, so the Thunar one is left out.
+    menu_on(cx, "row-0-0");
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("context-terminal").is_some());
+    assert!(cx.debug_bounds("context-action-0").is_none(), "the terminal action repeats Open in Terminal");
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+
+    menu_on(cx, "row-0-1");
+    cx.run_until_parked();
+    click(cx, "context-action-0");
+    let marker = fixture.root.join("notes.txt.marked");
+    for _ in 0..100 {
+        if marker.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(marker.is_file(), "the action ran on the file");
+    view.read_with(cx, |workspace, _| assert!(workspace.context_menu.is_none()));
+}

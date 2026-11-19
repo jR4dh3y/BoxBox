@@ -99,8 +99,8 @@ impl Workspace {
             false => row,
         };
         let (workspace, api) = (cx.entity().downgrade(), pane.api.clone());
-        let on_menu = cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
-            this.show_item_context_menu(target, index, event.position, cx);
+        let on_menu = cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
+            this.show_item_context_menu(target, index, event.position, window, cx);
             cx.stop_propagation();
         });
         let tab = path.clone();

@@ -100,7 +100,7 @@ fn bgra(mut pixels: image::RgbaImage) -> Arc<RenderImage> {
 }
 
 /// An SVG drawn at `size`, or a PNG scaled down to it, as GPUI's BGRA pixels.
-fn rasterize(path: &Path, size: u32) -> anyhow::Result<Arc<RenderImage>> {
+pub(crate) fn rasterize(path: &Path, size: u32) -> anyhow::Result<Arc<RenderImage>> {
     let bytes = std::fs::read(path)?;
     let pixels = if path.extension().is_some_and(|extension| extension == "svg") {
         svg_pixels(&bytes, size)?

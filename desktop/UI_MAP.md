@@ -79,7 +79,6 @@ Most valuable first.
 - Middle-ellipsis for long names, keeping the extension.
 - Undo for copy, move, create and link as well as Trash and rename; Redo.
 - Transfer pause and resume, current file, rate and time left.
-- Custom actions: user commands filtered by file type, in the context menu.
 - Folder tree in the sidebar.
 - Accessibility: names and roles for screen readers.
 
@@ -188,7 +187,7 @@ the web app renders the same manifest at `/dev/gallery` (dev server only).
 | `Toggle` | `ui/Toggle.svelte` | ✓ (disabled knob is an exception: GPUI has no group opacity) | ✓ settings |
 | `Select` | `ui/Select.svelte` | ✓ | ✓ settings |
 | `ProgressBar` | `ui/ProgressBar.svelte` | ✓ | not yet |
-| `ContextMenu`, `MenuItem` | `ui/ContextMenu.svelte` | ✓ | ✓ file menu, **+** menu |
+| `ContextMenu`, `MenuItem` | `ui/ContextMenu.svelte` | ✓ | ✓ file menu, **+** menu; 24 px rows with 12 px text as desktop menus have; a row shows a glyph or a picture (an app's icon); long labels end in an ellipsis; a menu taller than the window keeps 8 px from its edges and scrolls, and its submenus are drawn outside the scroll |
 | `Modal` | `ui/Modal.svelte` | ✓ | ✓ dialogs, properties |
 | `Toast` | `ui/Toast.svelte` | ✓ | ✓ notices |
 | `FileListHeader`, `FileRow` | `FileList.svelte` | full-window shot | ✓ `ui/file_list.rs` |
@@ -243,7 +242,7 @@ copying in uses transfers), `AnimatedLogo.svelte`, `PicoLogo.svelte`.
 | Favorites | — | ✓ local favorites are the GTK bookmarks file, shared with other file managers and watched; server favorites stay in BoxBox's file; drag to reorder |
 | Trash | — | ✓ `workspace/trash.rs`: Empty Trash, a full or empty icon kept current by watching Trash, drops onto Trash, Restore offers Show and recreates folders deleted since; folders list first, then the most recently deleted; the page keeps the toolbar (Back works, the rest greyed out, Empty Trash at its end); `.trashinfo` written 0644 by other apps lists, a broken entry or a mount the user cannot read is skipped, as Nautilus does |
 | Templates | — | ✓ `workspace/templates.rs`: "New from Template" in the folder and + menus; the copy opens for renaming |
-| Item menu | — | ✓ `workspace/item_actions.rs`: Open in New Tab, Compress (ZIP); no "Create Link" beside the item (links are made where they are dropped), and Open With, Open in Terminal and Properties each have their own icon; Send To (Desktop, removable drives, mail through the Email portal; mail untested, as it opens the mail app) |
+| Item menu | — | ✓ `workspace/item_actions.rs`, `workspace/menu_extras.rs`: opening rows first, as in Thunar and Nautilus: Open (a folder), "Open With <default app>" with the app's icon and an Open With submenu of the other recommended apps, with Other Application… for the dialog (`open_with.rs`; the app list is read again only when an applications folder changes, and is warmed a second after launch); Open in New Tab, Open in Terminal (also in the folder's own menu, in the user's terminal: `xdg-terminal-exec`, `$TERMINAL`, then a common one); custom actions (`custom_actions.rs`) from KDE service menus (`kio/servicemenus`, and KF5's `kservices5/ServiceMenus`; type, count and protocol rules, `X-KDE-Submenu`, top-level ones inline and the rest under Actions as Dolphin does; menus needing a running app or a D-Bus call are left out, and the user's own must be executable as KDE requires) and Thunar's `uca.xml` (patterns, file classes, range, submenu), each with its icon, also on the folder's own menu; an action that only opens a terminal gives way to Open in Terminal. The menu waits up to 150 ms for apps and actions so it opens complete (warm: under 10 ms). Compress (ZIP); no "Create Link" beside the item (links are made where they are dropped), and Open With, Open in Terminal and Properties each have their own icon; Send To (Desktop, removable drives, mail through the Email portal; mail untested, as it opens the mail app) |
 | Running files | — | ✓ `launch.rs`, `workspace/run.rs`: executable scripts and programs ask first; launchers run when trusted (executable or installed) and ask otherwise; a `Terminal=true` launcher runs in the default terminal (`xdg-terminal-exec`, then `$TERMINAL`, then a common one) |
 | Properties | — | ✓ `workspace/properties.rs`, `ui/properties.rs`: the name and icon in the title; rows with the label left and the value right, grouped: type, size, contents, location (its end kept when long), link target; modified, accessed, created; then owner, group and others each with a Read · Write · Run control (Open for folders) whose parts toggle one bit each; Run shows only for things that can run (already executable, a program, script, AppImage or launcher type, or a file starting with `#!` or ELF), so a video has none; "Apply to contents" for folders (files lose execute unless they were programs), and the mode as `ls` and octal show it. Changes chmod at once; for anyone but the owner the controls are dimmed and inert. For several items, counts and total size, read off the UI thread |
 
