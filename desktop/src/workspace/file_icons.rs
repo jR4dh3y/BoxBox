@@ -2,7 +2,7 @@
 //! thread the first time a row or tile asks. A package's own icon wins once
 //! ready; until then, or without one, views show the selected icon style.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use gpui::{Context, RenderImage};
@@ -14,7 +14,7 @@ use crate::components::EntryIcon;
 use crate::file_icons::{bucket, IconKey};
 
 /// Enough for every type in a few folders at two zoom steps; past it, the
-/// icons not asked for since the last pass are dropped.
+/// icons not drawn in the last two frames are dropped.
 const CAPACITY: usize = 512;
 
 enum Slot {
@@ -40,8 +40,11 @@ type CacheKey = (IconSource, u32);
 #[derive(Default)]
 pub(crate) struct FileIcons {
     slots: HashMap<CacheKey, Slot>,
-    /// Keys asked for since the cache last made room: the ones on screen.
-    asked: HashSet<CacheKey>,
+    /// The frame each key was last asked for in. Views ask for what they draw
+    /// every frame, so a recent frame means the icon is on screen.
+    drawn: HashMap<CacheKey, u64>,
+    /// Counts the window's renders.
+    pub frame: u64,
     /// The size that starts the next pass, past `CAPACITY` when more are on screen.
     limit: usize,
     /// Virtual paths of the home and user folders on the local provider.
@@ -199,27 +202,33 @@ impl Workspace {
 
     fn request_icon(&mut self, key: CacheKey, _api: &Arc<Api>, cx: &mut Context<Self>) {
         let icons = &mut self.file_icons;
-        if !icons.asked.contains(&key) {
-            icons.asked.insert(key.clone());
+        let frame = icons.frame;
+        match icons.drawn.get_mut(&key) {
+            Some(seen) => *seen = frame,
+            None => {
+                icons.drawn.insert(key.clone(), frame);
+            }
         }
         if icons.slots.contains_key(&key) {
             return;
         }
         if icons.slots.len() >= icons.limit.max(CAPACITY) {
-            // Views ask for what they draw each frame, so what was asked for
-            // since the last pass is on screen and stays.
-            let asked = std::mem::take(&mut icons.asked);
+            // This frame may not have reached every row yet, so the last one counts too.
+            let on_screen = |drawn: &HashMap<CacheKey, u64>, key: &CacheKey| drawn.get(key).is_some_and(|seen| *seen + 1 >= frame);
+            let drawn = &icons.drawn;
             icons.slots.retain(|key, slot| {
-                let keep = asked.contains(key);
+                let keep = on_screen(drawn, key);
                 if let (false, Slot::Ready(image)) = (keep, &*slot) {
                     cx.drop_image(image.clone(), None);
                 }
                 keep
             });
-            // Room for twice what stayed, so a screen of more than `CAPACITY`
-            // icons is all asked for again before the next pass.
+            let slots = &icons.slots;
+            icons.drawn.retain(|key, _| slots.contains_key(key));
+            icons.drawn.insert(key.clone(), frame);
+            // Room for twice what is on screen, so a screen of more than
+            // `CAPACITY` icons does not start a pass every frame.
             icons.limit = icons.slots.len() * 2;
-            icons.asked.insert(key.clone());
         }
         self.file_icons.slots.insert(key.clone(), Slot::Pending);
         let (icon, pixels) = key.clone();

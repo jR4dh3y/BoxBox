@@ -1372,6 +1372,7 @@ impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::profile::frame_started();
         self.file_icons.scale = window.scale_factor();
+        self.file_icons.frame += 1;
         let _span = crate::profile::span("render");
         self.sync_search_fields(window, cx);
         if let Some(field) = self.pending_field_focus.take() {
