@@ -426,17 +426,18 @@ func (a *AferoFS) RemoveFileWithin(root, path string, verify func(fs.FileInfo) e
 // A rejected entry, or one that cannot be removed, goes back to path unless
 // something new has taken its name.
 //
-// The first check and the move go by path from directory, so a folder moved
-// after the caller's checks no longer names the file and nothing is removed.
-// The later steps use a handle on the folder, so a folder renamed after the
-// move still gets its entry back.
+// Every step uses one handle on the folder, so renaming the folder cannot
+// strand the entry. Once the entry is out of its name, the folder must still
+// be at its path, reached without symlinks; a folder moved since the caller's
+// checks, perhaps into a shared folder, keeps its file.
 func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInfo) error) error {
 	folder, err := directory.OpenRoot(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
 	defer folder.Close()
-	info, err := directory.Lstat(path)
+	name := filepath.Base(path)
+	info, err := folder.Lstat(name)
 	if err != nil {
 		return err
 	}
@@ -444,19 +445,13 @@ func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInf
 	if err := verify(info); err != nil {
 		return err
 	}
-	name := filepath.Base(path)
 	aside := ".boxbox-removing-" + rand.Text()
-	asidePath := filepath.Join(filepath.Dir(path), aside)
-	if err := directory.Rename(path, asidePath); err != nil {
+	if err := folder.Rename(name, aside); err != nil {
 		return err
 	}
-	info, err = folder.Lstat(aside)
-	if errors.Is(err, fs.ErrNotExist) {
-		// path named another folder than the handle; undo the move by path.
-		if restoreErr := restoreEntry(directory, asidePath, path); restoreErr != nil {
-			return fmt.Errorf("%w; entry left at %s: %w", err, asidePath, restoreErr)
-		}
-		return err
+	err = folderStillAt(directory, folder, filepath.Dir(path))
+	if err == nil {
+		info, err = folder.Lstat(aside)
 	}
 	if err == nil {
 		err = verify(info)
@@ -467,9 +462,41 @@ func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInf
 		}
 	}
 	if restoreErr := restoreEntry(folder, aside, name); restoreErr != nil {
-		return fmt.Errorf("%w; entry left at %s: %w", err, asidePath, restoreErr)
+		return fmt.Errorf("%w; entry left at %s: %w", err, filepath.Join(filepath.Dir(path), aside), restoreErr)
 	}
 	return err
+}
+
+// errFolderMoved reports that a folder no longer sits at the path it was
+// opened from.
+var errFolderMoved = errors.New("folder moved during removal")
+
+// folderStillAt reports whether folder is the directory at path below
+// directory, with every step of path a real directory rather than a symlink.
+func folderStillAt(directory *os.Root, folder *os.Root, path string) error {
+	if path == "." {
+		return nil
+	}
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	var step os.FileInfo
+	for i := range parts {
+		info, err := directory.Lstat(filepath.Join(parts[:i+1]...))
+		if err != nil {
+			return errors.Join(errFolderMoved, err)
+		}
+		if !info.IsDir() {
+			return errFolderMoved
+		}
+		step = info
+	}
+	opened, err := folder.Stat(".")
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(step, opened) {
+		return errFolderMoved
+	}
+	return nil
 }
 
 // restoreByLink moves from back to to without replacing an entry at to. Where
