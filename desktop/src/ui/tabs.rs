@@ -8,7 +8,7 @@ use crate::theme::*;
 use crate::workspace::operations::PaneTarget;
 use crate::workspace::{NewTab, ToggleSplit, Workspace};
 
-/// Wide enough for any tab, so the slide never clips one that has finished opening.
+/// Wider than any tab, so the clip never cuts one that has finished opening.
 const TAB_MAX_WIDTH: f32 = 260.;
 
 impl Workspace {
@@ -52,12 +52,17 @@ impl Workspace {
                         .rounded(4.),
                     )
                 });
-            // A tab opened after launch grows from nothing while it fades in.
+            // A tab opened after launch slides out of the + button, as in File Pilot:
+            // a clip widens from nothing while the tab stays pinned to its right
+            // edge, against +, so the tab is drawn out of it and + moves aside.
             let tab = match animate && pane.id >= self.first_new_pane {
-                true => tab
+                true => div()
+                    .flex()
+                    .justify_end()
                     .overflow_hidden()
-                    .with_animation(("tab-open", pane.id), Animation::new(motion::TAB).with_easing(motion::ease_out), |tab, t| {
-                        tab.max_w(px(TAB_MAX_WIDTH * t)).opacity(t)
+                    .child(tab.flex_none())
+                    .with_animation(("tab-open", pane.id), Animation::new(motion::TAB).with_easing(motion::ease_out), |clip, t| {
+                        clip.max_w(px(TAB_MAX_WIDTH * t)).opacity(0.3 + 0.7 * t)
                     })
                     .into_any_element(),
                 false => tab.into_any_element(),

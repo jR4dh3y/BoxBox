@@ -1,7 +1,8 @@
 //! Motion: short eased transitions for things that appear (menus, dialogs,
 //! notices, tabs, a folder's contents) and for hover and press feedback.
 //! Things appear as macOS shows them: they fade in where they stand, quickest
-//! for menus, a little slower for popovers and dialogs, and never slide.
+//! for menus, a little slower for popovers and dialogs. Only a new tab moves:
+//! it slides out of the + button, as in File Pilot.
 //!
 //! GPUI swaps `.hover()` and `.active()` styles instantly, so `Interact` tracks
 //! hover and press itself and paints an eased fill behind its child and a state
@@ -32,7 +33,7 @@ pub const POPOVER: Duration = Duration::from_millis(150);
 pub const DIALOG: Duration = Duration::from_millis(180);
 /// A folder's contents after navigating.
 pub const CONTENT: Duration = Duration::from_millis(120);
-/// A new tab sliding open.
+/// A new tab sliding out of the + button.
 pub const TAB: Duration = Duration::from_millis(160);
 
 /// Whether things move: Settings → Appearance → Animations and the desktop's own
