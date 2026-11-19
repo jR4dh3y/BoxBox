@@ -1,3 +1,6 @@
+# Cargo reads this from the directory it runs in, and the root scripts run it
+# from here with `--manifest-path desktop/Cargo.toml`.
+#
 # The portable Windows ZIP runs on machines without the Visual C++
 # Redistributable, so the C runtime is linked into the executable.
 [target.x86_64-pc-windows-msvc]
