@@ -620,25 +620,38 @@ func TestShareExpiryStopWaitsForARunningPass(t *testing.T) {
 }
 
 func TestShareReachCoversFolderMountedBelowSharedFolder(t *testing.T) {
-	file := fileKey{device: 1, inode: 11}
-	photos := fileKey{device: 1, inode: 10}
+	mounts := []hostMount{
+		{path: "/", device: "8:1", root: "/"},
+		{path: "/srv", device: "8:2", root: "/"},
+		// /srv/files/photos is also mounted at /srv/shared/photos.
+		{path: "/srv/shared/photos", device: "8:2", root: "/files/photos"},
+		{path: "/srv/shared/music", device: "8:2", root: "/files/music"},
+		// A single file bind-mounted inside the shared folder.
+		{path: "/srv/shared/a.jpg", device: "8:2", root: "/files/photos/a.jpg"},
+	}
 	target := expiringTarget{
 		virtualPath: "files/photos/a.jpg",
 		realPath:    "/srv/files/photos/a.jpg",
-		file:        file,
-		folders:     []fileKey{photos, {device: 1, inode: 2}},
+		shownAs:     mountedFoldersOf(mounts, "/srv/files/photos/a.jpg"),
 	}
-	shared := shareReach{virtualPath: "shared", realPath: "/srv/shared", id: fileKey{device: 1, inode: 20}, folder: true}
-	if shared.covers(target) {
-		t.Fatal("covers() without a mount below the shared folder = true")
+	tests := []struct {
+		name   string
+		folder string
+		want   bool
+	}{
+		{"folder mount of the file's folder", "/srv/shared", true},
+		{"unrelated folder", "/srv/other", false},
+		{"mount at the link's own folder is not inside it", "/srv/shared/music", false},
 	}
-	shared.mounted = []fileKey{photos}
-	if !shared.covers(target) {
-		t.Fatal("covers() with the file's folder mounted below the shared folder = false")
+	for _, test := range tests {
+		reach := shareReach{virtualPath: "x", realPath: test.folder, folder: true, nested: mountsInside(mounts[:4], test.folder)}
+		if got := reach.covers(target); got != test.want {
+			t.Errorf("%s: covers() = %v, want %v", test.name, got, test.want)
+		}
 	}
-	shared.mounted = []fileKey{file}
-	if !shared.covers(target) {
-		t.Fatal("covers() with the file bind-mounted below the shared folder = false")
+	fileMount := shareReach{virtualPath: "x", realPath: "/srv/shared", folder: true, nested: mountsInside(mounts[4:], "/srv/shared")}
+	if !fileMount.covers(target) {
+		t.Error("covers() with the file bind-mounted inside the folder = false")
 	}
 }
 
@@ -655,14 +668,8 @@ func TestShareExpiryKeepsFileReachedThroughMountBelowSharedFolder(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(photos, "a.jpg"), []byte("photo"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(media, "shared"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(media, "shared", "photos"), 0o755); err != nil {
 		t.Fatal(err)
-	}
-	// Stat follows a symlink as it follows a mount, so this stands in for
-	// photos bind-mounted at shared/photos.
-	mountPoint := filepath.Join(media, "shared", "photos")
-	if err := os.Symlink(photos, mountPoint); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
 	}
 	expiring := createExpiringShare(t, shares, "media/files/photos/a.jpg", true)
 	if _, err := shares.Create(context.Background(), "owner", "media/shared", ShareSettings{}, time.Time{}); err != nil {
@@ -675,16 +682,22 @@ func TestShareExpiryKeepsFileReachedThroughMountBelowSharedFolder(t *testing.T) 
 		}
 	}
 	now := afterExpiry()
+	// The mount table says files/photos is also mounted at shared/photos.
+	mounts := []hostMount{
+		{path: media, device: "0:99", root: "/"},
+		{path: filepath.Join(media, "shared", "photos"), device: "0:99", root: "/files/photos"},
+	}
 
-	links := newShareLinks(shares, shares.loadLocked().Shares, []string{mountPoint})
-	if err := shares.deleteExpiredFile(record, links.protecting(record.ExpiresAt, now)); !errors.Is(err, errExpiryFileShared) {
+	links := newShareLinks(shares, shares.loadLocked().Shares, mounts)
+	if err := shares.deleteExpiredFile(record, links.protecting(record.ExpiresAt, now), mounts); !errors.Is(err, errExpiryFileShared) {
 		t.Fatalf("deleteExpiredFile() with the mount = %v, want %v", err, errExpiryFileShared)
 	}
 	assertDiskFileExists(t, filepath.Join(photos, "a.jpg"), true)
 
-	// Without the mount, nothing else reaches the file.
-	links = newShareLinks(shares, shares.loadLocked().Shares, nil)
-	if err := shares.deleteExpiredFile(record, links.protecting(record.ExpiresAt, now)); err != nil {
+	// Without the nested mount, nothing else reaches the file.
+	mounts = mounts[:1]
+	links = newShareLinks(shares, shares.loadLocked().Shares, mounts)
+	if err := shares.deleteExpiredFile(record, links.protecting(record.ExpiresAt, now), mounts); err != nil {
 		t.Fatalf("deleteExpiredFile() without the mount = %v", err)
 	}
 	assertDiskFileExists(t, filepath.Join(photos, "a.jpg"), false)

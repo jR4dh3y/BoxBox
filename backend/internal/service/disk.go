@@ -4,8 +4,9 @@ package service
 
 import (
 	"bufio"
+	"io"
 	"os"
-	"strconv"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -43,37 +44,38 @@ func getMountInfo() ([]mountInfo, error) {
 	return mounts, scanner.Err()
 }
 
-// mountPointPaths lists the host's mount points.
-func mountPointPaths() ([]string, error) {
-	mounts, err := getMountInfo()
+// readHostMounts reads the mount table. It parses text only and never touches
+// a mount, so an offline network mount cannot block it.
+func readHostMounts() ([]hostMount, error) {
+	file, err := os.Open("/proc/self/mountinfo")
 	if err != nil {
 		return nil, err
 	}
-	paths := make([]string, 0, len(mounts))
-	for _, mount := range mounts {
-		paths = append(paths, unescapeMountPath(mount.MountPoint))
-	}
-	return paths, nil
+	defer file.Close()
+	return parseHostMounts(file)
 }
 
-// unescapeMountPath decodes the octal escapes /proc/mounts uses for space,
-// tab, newline, and backslash in a mount point.
-func unescapeMountPath(path string) string {
-	if !strings.Contains(path, `\`) {
-		return path
-	}
-	var out strings.Builder
-	for i := 0; i < len(path); i++ {
-		if path[i] == '\\' && i+3 < len(path) {
-			if value, err := strconv.ParseUint(path[i+1:i+4], 8, 8); err == nil {
-				out.WriteByte(byte(value))
-				i += 3
-				continue
-			}
+func parseHostMounts(r io.Reader) ([]hostMount, error) {
+	var mounts []hostMount
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	for scanner.Scan() {
+		before, _, ok := strings.Cut(scanner.Text(), " - ")
+		if !ok {
+			continue
 		}
-		out.WriteByte(path[i])
+		// Fields: mount ID, parent ID, major:minor, root, mount point, ...
+		fields := strings.Fields(before)
+		if len(fields) < 5 {
+			continue
+		}
+		mounts = append(mounts, hostMount{
+			path:   filepath.Clean(decodeMountField(fields[4])),
+			device: fields[2],
+			root:   filepath.Clean(decodeMountField(fields[3])),
+		})
 	}
-	return out.String()
+	return mounts, scanner.Err()
 }
 
 // findMountPoint finds the mount point for a given path

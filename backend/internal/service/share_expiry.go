@@ -128,13 +128,13 @@ func (s *shareService) deleteExpiredFiles(now time.Time) {
 		return
 	}
 	// A folder mounted below a shared folder exposes files that live elsewhere,
-	// so each pass needs the host's mount points.
-	mountPoints, err := mountPointPaths()
+	// so each pass needs the host's mount table.
+	mounts, err := readHostMounts()
 	if err != nil {
-		log.Error().Err(err).Int("shares", len(due)).Msg("Kept files of expired shares: could not list mount points")
+		log.Error().Err(err).Int("shares", len(due)).Msg("Kept files of expired shares: could not read the mount table")
 		return
 	}
-	links := newShareLinks(s, current.Shares, mountPoints)
+	links := newShareLinks(s, current.Shares, mounts)
 	for _, record := range due {
 		reaches := links.protecting(record.ExpiresAt, now)
 		logger := log.With().
@@ -142,7 +142,7 @@ func (s *shareService) deleteExpiredFiles(now time.Time) {
 			Str("owner", record.CreatedBy).
 			Str("path", shareVirtualPath(record)).
 			Logger()
-		if err := s.deleteExpiredFile(record, reaches); err != nil {
+		if err := s.deleteExpiredFile(record, reaches, mounts); err != nil {
 			logger.Warn().Err(err).Msg("Kept file of expired share")
 			continue
 		}
@@ -152,7 +152,7 @@ func (s *shareService) deleteExpiredFiles(now time.Time) {
 
 // deleteExpiredFile deletes the file of one expired share when it is still
 // the exact file that was shared. Any error means the file was kept.
-func (s *shareService) deleteExpiredFile(record shareRecord, reaches []shareReach) error {
+func (s *shareService) deleteExpiredFile(record shareRecord, reaches []shareReach, mounts []hostMount) error {
 	if record.IsFolder || record.DeleteOnExpiry == nil {
 		return ErrInvalidOperation
 	}
@@ -181,6 +181,7 @@ func (s *shareService) deleteExpiredFile(record shareRecord, reaches []shareReac
 		realPath:    entry,
 		file:        fileKey{device: identity.Device, inode: identity.Inode},
 		folders:     folders,
+		shownAs:     mountedFoldersOf(mounts, entry),
 	}
 	for _, reach := range reaches {
 		if reach.covers(target) {
@@ -236,12 +237,52 @@ type expiringTarget struct {
 	file        fileKey
 	// folders holds the identities of the folders that contain the file.
 	folders []fileKey
+	// shownAs names the file and its folders as the mount table would, so a
+	// mount of any of them inside a folder link is found.
+	shownAs []mountedFolder
 }
 
-// reachedThrough reports whether a mounted folder with identity key shows the
-// file: the mount is one of the file's folders, or a bind mount of the file.
-func (t expiringTarget) reachedThrough(key fileKey) bool {
-	return key == t.file || slices.Contains(t.folders, key)
+// hostMount is one mount from the host's mount table.
+type hostMount struct {
+	path string
+	// device and root name what the mount shows: a folder (or file) of the
+	// filesystem on device. Two mounts of one folder share both.
+	device string
+	root   string
+}
+
+// mountedFolder names a folder or file by the filesystem that holds it and its
+// path inside that filesystem, as the mount table does.
+type mountedFolder struct {
+	device string
+	path   string
+}
+
+// mountedFoldersOf names entry and each folder above it, up to the mount that
+// holds them, as the mount table would. It reads only the table, so no mount
+// is touched.
+func mountedFoldersOf(mounts []hostMount, entry string) []mountedFolder {
+	var holder *hostMount
+	for i := range mounts {
+		// A later entry for the same mount point covers the earlier one.
+		if pathWithinRoot(mounts[i].path, entry) && (holder == nil || len(mounts[i].path) >= len(holder.path)) {
+			holder = &mounts[i]
+		}
+	}
+	if holder == nil {
+		return nil
+	}
+	var names []mountedFolder
+	for current := entry; ; current = filepath.Dir(current) {
+		relative, err := filepath.Rel(holder.path, current)
+		if err != nil {
+			return names
+		}
+		names = append(names, mountedFolder{device: holder.device, path: filepath.Join(holder.root, relative)})
+		if current == holder.path {
+			return names
+		}
+	}
 }
 
 // shareReach is the part of the mounts one active share exposes.
@@ -251,10 +292,10 @@ type shareReach struct {
 	realPath string
 	// id is the resolved target's identity, zero when it is unknown.
 	id fileKey
-	// mounted holds the identities of folders mounted below a folder link's
-	// target. Each is the root of what that mount shows inside the link.
-	mounted []fileKey
-	folder  bool
+	// nested holds what each mount strictly inside a folder link's target
+	// shows, since recipients can reach it through the link.
+	nested []mountedFolder
+	folder bool
 	// unknown is set when an I/O error hid the target; it protects every file.
 	unknown bool
 }
@@ -262,14 +303,14 @@ type shareReach struct {
 // shareLinks resolves the stored links for one cleanup pass. Each link is
 // resolved at most once, however many expired shares are checked against it.
 type shareLinks struct {
-	service     *shareService
-	records     []shareRecord
-	mountPoints []string
-	resolved    map[int]shareReach
+	service  *shareService
+	records  []shareRecord
+	mounts   []hostMount
+	resolved map[int]shareReach
 }
 
-func newShareLinks(s *shareService, records []shareRecord, mountPoints []string) *shareLinks {
-	return &shareLinks{service: s, records: records, mountPoints: mountPoints, resolved: make(map[int]shareReach)}
+func newShareLinks(s *shareService, records []shareRecord, mounts []hostMount) *shareLinks {
+	return &shareLinks{service: s, records: records, mounts: mounts, resolved: make(map[int]shareReach)}
 }
 
 // protecting returns the links active at the expired share's deadline or now.
@@ -283,7 +324,7 @@ func (l *shareLinks) protecting(deadline, now time.Time) []shareReach {
 		}
 		reach, ok := l.resolved[i]
 		if !ok {
-			reach = l.service.resolveReach(record, l.mountPoints)
+			reach = l.service.resolveReach(record, l.mounts)
 			l.resolved[i] = reach
 		}
 		reaches = append(reaches, reach)
@@ -291,7 +332,7 @@ func (l *shareLinks) protecting(deadline, now time.Time) []shareReach {
 	return reaches
 }
 
-func (s *shareService) resolveReach(record shareRecord, mountPoints []string) shareReach {
+func (s *shareService) resolveReach(record shareRecord, mounts []hostMount) shareReach {
 	reach := shareReach{virtualPath: shareVirtualPath(record), folder: record.IsFolder}
 	_, realPath, err := s.mounts.resolve(reach.virtualPath, readExisting)
 	switch {
@@ -305,13 +346,7 @@ func (s *shareService) resolveReach(record shareRecord, mountPoints []string) sh
 		}
 		reach.id = keyOf(info)
 		if record.IsFolder {
-			mounted, mountErr := s.mountedBelow(realPath, mountPoints)
-			if mountErr != nil {
-				// A mount that cannot be checked might expose the file.
-				reach.unknown = true
-				break
-			}
-			reach.mounted = mounted
+			reach.nested = mountsInside(mounts, realPath)
 		}
 	case errors.Is(err, ErrMountPointNotFound), errors.Is(err, ErrPathNotFound), errors.Is(err, ErrPermissionDenied):
 		// The share cannot serve anything now; its logical path still protects the file.
@@ -321,23 +356,16 @@ func (s *shareService) resolveReach(record shareRecord, mountPoints []string) sh
 	return reach
 }
 
-// mountedBelow returns the identity of each mount point strictly inside folder.
-// Stat follows the mount, so the identity is that of the mounted folder.
-func (s *shareService) mountedBelow(folder string, mountPoints []string) ([]fileKey, error) {
-	var keys []fileKey
-	for _, mountPoint := range mountPoints {
-		if mountPoint == folder || !pathWithinRoot(folder, mountPoint) {
-			continue
-		}
-		info, err := s.fs.Stat(mountPoint)
-		if err != nil {
-			return nil, err
-		}
-		if key := keyOf(info); key.known() {
-			keys = append(keys, key)
+// mountsInside returns what each mount strictly inside folder shows. It reads
+// only the mount table, so an offline mount cannot stall the pass.
+func mountsInside(mounts []hostMount, folder string) []mountedFolder {
+	var nested []mountedFolder
+	for _, mount := range mounts {
+		if mount.path != folder && pathWithinRoot(folder, mount.path) {
+			nested = append(nested, mountedFolder{device: mount.device, path: mount.root})
 		}
 	}
-	return keys, nil
+	return nested
 }
 
 // covers reports whether the active share can reach the expired share's file:
@@ -355,7 +383,7 @@ func (r shareReach) covers(target expiringTarget) bool {
 		return pathWithinRoot(reachVirtual, virtualPath) ||
 			(r.realPath != "" && pathWithinRoot(r.realPath, target.realPath)) ||
 			(r.id.known() && slices.Contains(target.folders, r.id)) ||
-			slices.ContainsFunc(r.mounted, target.reachedThrough)
+			slices.ContainsFunc(r.nested, func(m mountedFolder) bool { return slices.Contains(target.shownAs, m) })
 	}
 	return reachVirtual == virtualPath || r.realPath == target.realPath ||
 		(r.id.known() && r.id == target.file)
