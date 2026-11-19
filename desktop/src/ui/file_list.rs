@@ -62,7 +62,7 @@ impl Workspace {
                                     this.request_entry_icon(target, index, size, cx);
                                     let row = this.render_row(target, index, cx)?;
                                     Some(match cascading {
-                                        true => crate::components::motion::cascade(("row-in", index), row, index, cx),
+                                        true => crate::components::motion::cascade(("row-in", index), div().child(row), index, cx),
                                         false => row.into_any_element(),
                                     })
                                 })

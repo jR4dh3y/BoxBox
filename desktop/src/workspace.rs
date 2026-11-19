@@ -1389,7 +1389,9 @@ impl Workspace {
             };
             let id = self.next_pane_id;
             self.next_pane_id += 1;
-            let secondary = Pane::with_api(id, path, api, show_hidden_files, sort, view_mode);
+            let mut secondary = Pane::with_api(id, path, api, show_hidden_files, sort, view_mode);
+            // The new pane comes in from the right, where it opens.
+            secondary.arrival = crate::components::motion::Arrival::FromRight;
             self.split_panes.insert(primary_id, secondary);
             self.active_pane = PaneTarget(id);
             self.load_drives(PaneTarget(id), cx);

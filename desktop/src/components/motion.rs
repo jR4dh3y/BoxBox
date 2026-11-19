@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     fill, px, Animation, AnimationExt as _, AnyElement, App, Bounds, Corners, DispatchPhase, Element, ElementId, GlobalElementId, Global,
-    Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, ParentElement as _, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
+    Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
     Rgba, ScrollWheelEvent, Styled, Window,
 };
 
@@ -211,14 +211,13 @@ const CASCADE_ITEMS: usize = 16;
 
 /// `element`, the `index`th item of a listing that just arrived, fading up and
 /// settling a few pixels a little after the one before it.
-pub fn cascade(id: impl Into<ElementId>, element: impl IntoElement, index: usize, cx: &App) -> AnyElement {
+pub fn cascade<E: IntoElement + Styled + 'static>(id: impl Into<ElementId>, element: E, index: usize, cx: &App) -> AnyElement {
     if !enabled(cx) {
         return element.into_any_element();
     }
     let delay = (CASCADE_STEP * index.min(CASCADE_ITEMS) as u32).as_secs_f32();
     let (own, total) = (CASCADE.as_secs_f32(), CASCADE.as_secs_f32() + delay);
-    gpui::div()
-        .child(element)
+    element
         .with_animation(id, Animation::new(Duration::from_secs_f32(total)), move |item, t| {
             let local = ease_out_quint(((t * total - delay) / own).clamp(0., 1.));
             item.opacity(local).relative().top(px(6. * (1. - local)))

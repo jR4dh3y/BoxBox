@@ -60,7 +60,7 @@ impl Workspace {
                                         this.request_entry_icon(target, index, metrics.theme_icon(), cx);
                                         let tile = this.render_tile(target, index, cx)?;
                                         Some(match cascading {
-                                            true => crate::components::motion::cascade(("tile-in", index), tile, index, cx),
+                                            true => crate::components::motion::cascade(("tile-in", index), div().child(tile), index, cx),
                                             false => tile.into_any_element(),
                                         })
                                     }))
