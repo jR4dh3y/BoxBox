@@ -179,6 +179,9 @@ pub struct Pane {
     pub grid_scroll: UniformListScrollHandle,
     /// A history entry's view, put back when its listing arrives.
     restore: Option<ViewMemo>,
+    /// Set on a copy of another pane, until it leaves the folder it opened on:
+    /// the screen did not change, so its contents do not fade up.
+    pub copied: bool,
 }
 
 impl Pane {
@@ -243,7 +246,35 @@ impl Pane {
             list_scroll: UniformListScrollHandle::new(),
             grid_scroll: UniformListScrollHandle::new(),
             restore: None,
+            copied: false,
         }
+    }
+
+    /// A new pane at this one's place, as a new tab opens: the same folder,
+    /// listing, drives and view, shown at once while the caller reads them again
+    /// behind it. History, selection and search stay with this pane.
+    pub(crate) fn duplicate(&self, id: usize) -> Self {
+        let mut pane = Self::with_api(id, self.path.clone(), self.api.clone(), self.show_hidden_files, self.sort, self.view_mode);
+        pane.drive_view_mode = self.drive_view_mode;
+        pane.roots = self.roots.clone();
+        pane.drives = self.drives.clone();
+        pane.writable = self.writable;
+        pane.real_path = self.real_path.clone();
+        // While searching, `items` are the results; the copy shows the folder from
+        // its top. Otherwise it keeps this pane's scroll, so the screen holds still.
+        pane.items = if self.is_searching() { self.folder_items.clone() } else { self.items.clone() };
+        if !self.is_searching() {
+            let memo = self.view_memo();
+            pane.set_scroll(memo.list_offset, memo.grid_offset);
+        }
+        pane.listing = match self.listing {
+            Listing::Root => Listing::Root,
+            Listing::Loaded => Listing::Loaded,
+            // Not shown yet, or failed: the copy reads it like any folder.
+            Listing::Loading | Listing::Failed(_) => Listing::Loading,
+        };
+        pane.copied = true;
+        pane
     }
 
     pub fn is_at_root(&self) -> bool {
@@ -361,6 +392,7 @@ impl Pane {
     }
 
     fn reset(&mut self) {
+        self.copied = false;
         self.items = Arc::default();
         self.folder_items = Arc::default();
         self.search_input.clear();
@@ -798,6 +830,23 @@ mod tests {
         let mut root = Pane::new(0, String::new(), false, Sort::default(), ViewMode::List);
         root.begin_load();
         assert!(!root.busy, "the Overview asks for no listing");
+    }
+
+    #[test]
+    fn a_new_tab_shows_the_folder_at_once_and_reloads_it_quietly() {
+        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
+        load(&mut pane, ["a", "b"].map(file).to_vec());
+        let mut tab = pane.duplicate(1);
+        assert_eq!((tab.id, tab.path.as_str()), (1, "d"));
+        assert!(matches!(tab.listing, Listing::Loaded) && Arc::ptr_eq(&tab.items, &pane.items), "shown at once, not re-read");
+        assert!(tab.copied);
+        tab.begin_load();
+        assert!(matches!(tab.listing, Listing::Loaded), "the reload keeps the entries on screen");
+        load(&mut tab, ["a", "b", "c"].map(file).to_vec());
+        assert_eq!(tab.items.len(), 3);
+        assert!(tab.copied, "still the same folder, so it does not fade up");
+        assert!(tab.navigate("d/a".into()));
+        assert!(!tab.copied);
     }
 
     #[test]

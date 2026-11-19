@@ -1038,8 +1038,24 @@ impl Workspace {
         cx.notify();
     }
 
+    /// A new tab at the active pane's place, as Nautilus and Dolphin open one. It
+    /// shows what that pane shows at once, then reads the folder (or the drives)
+    /// again in the background, so the screen does not flash a reload.
     pub(crate) fn new_tab(&mut self, _: &NewTab, _: &mut Window, cx: &mut Context<Self>) {
-        self.open_tab(String::new(), cx);
+        let id = self.next_pane_id;
+        self.next_pane_id += 1;
+        let pane = self.pane().duplicate(id);
+        let at_root = pane.is_at_root();
+        self.tabs.push(pane);
+        let target = PaneTarget(id);
+        self.active_tab = self.tabs.len() - 1;
+        self.active_pane = target;
+        self.trash_open = false;
+        match at_root {
+            true => self.load_drives(target, cx),
+            false => self.load_pane(target, cx),
+        }
+        cx.notify();
     }
 
     /// Opens a new tab at a virtual path, on the active provider; the Overview is

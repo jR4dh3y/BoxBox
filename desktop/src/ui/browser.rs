@@ -86,13 +86,15 @@ impl Workspace {
 
         };
         // A folder's contents fade up when it opens and again when its listing
-        // arrives; a refresh of the same folder keeps the key and does not.
+        // arrives; a refresh of the same folder keeps the key and does not, nor
+        // does a new tab that opened as a copy of what was on screen.
         let shown = match (self.trash_open, &pane.listing) {
             (true, _) => "trash".to_string(),
             (false, Listing::Loading) => format!("loading:{}", pane.path),
             (false, _) => format!("folder:{}", pane.path),
         };
         let reveal_id = gpui::ElementId::Name(format!("content-{}-{shown}", target.0).into());
+        let still = pane.copied && !self.trash_open;
         let dropping = self.drop_hover(cx) == Some(&DropTarget::Pane(target));
         drop_zone(div(), DropTarget::Pane(target), cx.entity().downgrade())
             .id(("browser-pane", target.0))
@@ -141,9 +143,8 @@ impl Workspace {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(crate::components::motion::reveal(
-                        reveal_id,
-                        div()
+                    .child({
+                        let body = div()
                             .relative()
                             .flex()
                             .flex_col()
@@ -153,9 +154,12 @@ impl Workspace {
                             .overflow_hidden()
                             .child(content)
                             // The folder this pane shows would take the drop.
-                            .when(dropping, |content| content.child(div().absolute().inset_0().border_2().border_color(c(self.accent_hex())))),
-                        cx,
-                    ))
+                            .when(dropping, |content| content.child(div().absolute().inset_0().border_2().border_color(c(self.accent_hex()))));
+                        match still {
+                            true => body.into_any_element(),
+                            false => crate::components::motion::reveal(reveal_id, body, cx),
+                        }
+                    })
                     // Under the toolbar of the rightmost pane, as in Dolphin.
                     .when(self.preferences.details_panel && self.is_rightmost_pane(target), |row| row.child(self.render_details(cx))),
             )
