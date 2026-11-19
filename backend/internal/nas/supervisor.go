@@ -93,7 +93,7 @@ func RunSupervisor(cfg model.NASConfig, apiArgs []string, shutdownGrace time.Dur
 		apiDone <- code
 	}()
 
-	s := &supervisor{cfg: cfg, executable: executable, control: control}
+	s := &supervisor{cfg: cfg, executable: executable, control: control, served: make(chan struct{})}
 	go s.serve()
 
 	signals := make(chan os.Signal, 1)
@@ -119,10 +119,13 @@ type supervisor struct {
 	cfg        model.NASConfig
 	executable string
 	control    *fdconn.Conn
-	workers    sync.WaitGroup
+	// served closes when serve returns; no worker is registered after that.
+	served  chan struct{}
+	workers sync.WaitGroup
 }
 
 func (s *supervisor) serve() {
+	defer close(s.served)
 	for {
 		request, err := s.control.Receive()
 		if err != nil {
@@ -139,13 +142,27 @@ func (s *supervisor) serve() {
 			log.Warn().Err(err).Str("account", account).Msg("Could not start NAS worker")
 			reply = []byte(err.Error())
 		}
-		if err := s.control.Send(request.ID, reply, apiEnd); err != nil {
-			log.Warn().Err(err).Msg("Reply to API")
-		}
+		sent := s.control.Send(request.ID, reply, apiEnd)
 		if apiEnd != nil {
+			// Closing our copy is enough to make an undelivered worker exit.
 			_ = apiEnd.Close()
 		}
+		if sent != nil && !s.replyFailure(request.ID, sent) {
+			return
+		}
 	}
+}
+
+// replyFailure tells the API a reply was lost. The API waits on every dial
+// with the control lock held, so if even this fails the connection is closed:
+// every dial then fails instead of blocking file access for all accounts.
+func (s *supervisor) replyFailure(id uint64, err error) bool {
+	log.Warn().Err(err).Msg("Reply to API")
+	if s.control.Send(id, []byte("supervisor could not hand over the worker: "+err.Error()), nil) == nil {
+		return true
+	}
+	_ = s.control.Close()
+	return false
 }
 
 // start runs a worker for account and returns the API's end of its socket.
@@ -181,10 +198,12 @@ func (s *supervisor) start(account string) (*os.File, error) {
 	return apiEnd, nil
 }
 
-// wait reaps workers, which exit once the API's sockets close.
+// wait reaps workers, which exit once the API's sockets close. serve must
+// finish first: a worker it is still starting would miss an earlier Wait.
 func (s *supervisor) wait() {
 	done := make(chan struct{})
 	go func() {
+		<-s.served
 		s.workers.Wait()
 		close(done)
 	}()
