@@ -275,3 +275,63 @@ func assertOnlyEntries(t *testing.T, directory string, want ...string) {
 		}
 	}
 }
+
+func TestRemoveFileWithinNeverRestoresOverANewEntry(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "file.txt")
+	if err := os.WriteFile(target, []byte("shared"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	errChanged := errors.New("changed")
+	calls := 0
+	err := NewOsFS().RemoveFileWithin(root, "file.txt", func(fs.FileInfo) error {
+		calls++
+		if calls == 1 {
+			return nil
+		}
+		// A new file takes the name while the checked entry is aside.
+		if err := os.WriteFile(target, []byte("new"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return errChanged
+	})
+	if !errors.Is(err, errChanged) || !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("RemoveFileWithin() error = %v, want %v and fs.ErrExist", err, errChanged)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "new" {
+		t.Fatalf("new file = %q, %v; want it untouched", data, err)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %v, want the new file and the entry left aside", entries)
+	}
+}
+
+func TestRemoveFileWithinRestoresRejectedEntry(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "file.txt")
+	if err := os.WriteFile(target, []byte("shared"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	errChanged := errors.New("changed")
+	calls := 0
+	err := NewOsFS().RemoveFileWithin(root, "file.txt", func(fs.FileInfo) error {
+		calls++
+		if calls == 1 {
+			return nil
+		}
+		return errChanged
+	})
+	if !errors.Is(err, errChanged) {
+		t.Fatalf("RemoveFileWithin() error = %v, want %v", err, errChanged)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "shared" {
+		t.Fatalf("restored file = %q, %v", data, err)
+	}
+	assertOnlyEntries(t, root, "file.txt")
+}

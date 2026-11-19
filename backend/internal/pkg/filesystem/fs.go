@@ -453,11 +453,10 @@ func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInf
 	return err
 }
 
-// restoreEntry moves from back to to without replacing an entry at to. Link is
-// the only no-replace move os.Root offers; where it fails, the entry stays at
-// from, because a checked rename could still overwrite a file created between
-// the check and the rename.
-func restoreEntry(directory *os.Root, from, to string) error {
+// restoreByLink moves from back to to without replacing an entry at to. Where
+// hard links are unsupported the entry stays at from, because a checked rename
+// could still overwrite a file created between the check and the rename.
+func restoreByLink(directory *os.Root, from, to string) error {
 	if err := directory.Link(from, to); err != nil {
 		return err
 	}
