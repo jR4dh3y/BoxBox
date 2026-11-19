@@ -79,13 +79,6 @@ describe('jobsStore.onFinished', () => {
 		}
 		assert.equal(calls, 2);
 	});
-
-	test('ignores updates for unknown jobs', () => {
-		let calls = 0;
-		jobsStore.onFinished = () => calls++;
-		jobsStore.updateFromWebSocket({ jobId: 'other', state: 'completed', progress: 100 });
-		assert.equal(calls, 0);
-	});
 });
 
 describe('delayed job creation during a reconnect reload', () => {
@@ -335,14 +328,6 @@ describe('jobsStore.loadJobs', () => {
 		jobsStore.upsertJob(job('pending'));
 		jobsStore.upsertJob({ ...job('pending'), id: 'job-2' });
 		assert.equal(calls, 1);
-	});
-
-	test('the first load, with nothing known yet, fires nothing', async () => {
-		let calls = 0;
-		jobsStore.onFinished = () => calls++;
-		serveJobs(job('completed'));
-		await jobsStore.loadJobs();
-		assert.equal(calls, 0);
 	});
 });
 

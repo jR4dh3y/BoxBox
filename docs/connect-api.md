@@ -2,7 +2,7 @@
 
 BoxBox can authorize a client to use its file API without giving that client an account session. Use HTTPS with a trusted certificate when exposing these endpoints. Existing mount permissions and path confinement continue to apply.
 
-The [Linux desktop app](/docs/desktop/) uses this API through its local gateway. This page describes the server authorization contract; the desktop guide covers pairing and native file actions.
+The [Linux desktop app](desktop.md) uses this API through its local gateway. This page describes the server authorization contract; the desktop guide covers pairing and native file actions.
 
 ## Authorize a device
 

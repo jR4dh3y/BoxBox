@@ -1,0 +1,43 @@
+---
+// Mirrors the app's DriveList.svelte and DriveRow.svelte: the This Server list view.
+import { HardDrive } from '@lucide/astro';
+import { drives, usageClasses } from '../lib/demo/drives';
+
+// A narrow pane drops device and filesystem rather than scrolling sideways.
+const columns = 'grid-cols-[minmax(0,1fr)_96px_minmax(80px,0.8fr)] @sm:grid-cols-[minmax(80px,1fr)_96px_96px_minmax(90px,1fr)] @3xl:grid-cols-[minmax(140px,1fr)_minmax(140px,1fr)_104px_96px_96px_minmax(180px,1.4fr)]';
+const headers = [
+  { label: 'Name', class: '' },
+  { label: 'Device', class: 'hidden @3xl:block' },
+  { label: 'Filesystem', class: 'hidden @3xl:block' },
+  { label: 'Size', class: 'text-right' },
+  { label: 'Free', class: 'hidden text-right @sm:block' },
+  { label: 'Used', class: '' }
+];
+---
+
+<div data-part="drive-list" hidden class="@container min-w-0">
+  <div class:list={['sticky top-0 z-[5] grid h-8 items-center border-b border-border-primary bg-surface-secondary/90 text-[13px] font-medium whitespace-nowrap text-text-secondary backdrop-blur-md select-none', columns]}>
+    {headers.map((header) => <span class:list={['px-3', header.class]}>{header.label}</span>)}
+  </div>
+  {drives.map((drive) => {
+    const usage = usageClasses(drive.percent);
+    return (
+      <button type="button" data-action="go" data-path={drive.path} class:list={['grid h-8 w-full items-center border-b border-border-secondary text-left text-[13px] transition-colors duration-50 hover:bg-surface-secondary/70', columns]}>
+        <span class="flex min-w-0 items-center gap-2 px-3">
+          <HardDrive class="h-4 w-4 shrink-0 text-text-secondary" />
+          <span class="min-w-0 truncate text-text-primary">{drive.path}</span>
+        </span>
+        <span class="hidden truncate px-3 font-mono text-[12px] text-text-muted @3xl:block">{drive.device}</span>
+        <span class="hidden truncate px-3 font-mono text-[12px] text-text-secondary @3xl:block">{drive.fs}</span>
+        <span class="truncate px-3 text-right text-text-secondary tabular-nums">{drive.total}</span>
+        <span class="hidden truncate px-3 text-right text-text-secondary tabular-nums @sm:block">{drive.free}</span>
+        <span class="flex items-center gap-3 px-3">
+          <span class="h-1 flex-1 overflow-hidden rounded-full bg-surface-elevated">
+            <span class:list={['block h-full rounded-full', usage.bar]} style={`width: ${drive.percent}%`}></span>
+          </span>
+          <span class:list={['w-11 shrink-0 text-right text-[11px] font-medium', usage.text]}>{drive.percent.toFixed(1)}%</span>
+        </span>
+      </button>
+    );
+  })}
+</div>

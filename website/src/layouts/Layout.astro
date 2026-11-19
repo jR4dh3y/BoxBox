@@ -20,13 +20,13 @@ const { title, description = "Fast, lightweight file manager for Linux servers."
     <title>{title}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Caveat:wght@700&display=swap" rel="stylesheet">
+    <slot name="head" />
   </head>
-  <body class="bg-[#0d0d0d] text-text-primary min-h-screen flex flex-col antialiased">
-    <!-- Subtle background glow -->
-    <div class="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-accent/20 rounded-full blur-[120px] pointer-events-none z-0"></div>
-    <div class="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-accent-muted/20 rounded-full blur-[120px] pointer-events-none z-0"></div>
-    
+  <body class="relative bg-[#0d0d0d] text-text-primary min-h-screen flex flex-col antialiased">
+    <!-- A faint dot grid behind the top of the page, fading out as it scrolls away. -->
+    <div class="dot-grid pointer-events-none absolute inset-x-0 top-0 z-0 h-[900px]" aria-hidden="true"></div>
+
     <slot />
   </body>
 </html>

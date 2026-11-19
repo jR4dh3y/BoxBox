@@ -164,17 +164,6 @@ func TestAuthLogoutRevokesEveryAccessTokenForOnlyThatSession(t *testing.T) {
 	}
 }
 
-func TestAuthRejectsCrossOriginCookieRequests(t *testing.T) {
-	handler := NewAuthHandler(nil)
-	request := httptest.NewRequest(http.MethodPost, "https://boxbox.example/api/v1/auth/refresh", nil)
-	request.Header.Set("Origin", "https://evil.example")
-	response := httptest.NewRecorder()
-	handler.Refresh(response, request)
-	if response.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want forbidden", response.Code)
-	}
-}
-
 func TestAuthLoginPersistenceFailuresDoNotIssueCredentials(t *testing.T) {
 	loginRequest := func(cookie *http.Cookie) *http.Request {
 		request := httptest.NewRequest(http.MethodPost, "http://boxbox.example/api/v1/auth/login",

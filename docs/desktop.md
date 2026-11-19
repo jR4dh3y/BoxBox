@@ -47,6 +47,8 @@ Run the installer **without sudo**. It puts `boxbox-files` in `~/.local/bin` and
 ./install.sh --set-default
 ```
 
+Pass `--set-picker` to use BoxBox Files for other apps' Open and Save dialogs through the xdg-desktop-portal FileChooser. `boxbox-files --disable-picker`, or **Settings → General**, undoes it.
+
 To update, install a newer archive the same way. To remove it, run `./install.sh --uninstall`. Settings in `~/.config/boxbox-gpui` and saved state in `~/.local/state/boxbox-gpui` are kept; delete them yourself to start fresh.
 
 ### AppImage
@@ -84,4 +86,4 @@ bun run build:desktop
 bun run install:desktop
 ```
 
-See the [desktop README](https://github.com/jR4dh3y/BoxBox/blob/master/desktop/README.md) for development, profiling and tests, and [the paired-client API](/docs/connect-api/) for the authorization contract.
+See the [desktop README](https://github.com/jR4dh3y/BoxBox/blob/master/desktop/README.md) for development, profiling and tests, and [the paired-client API](connect-api.md) for the authorization contract.

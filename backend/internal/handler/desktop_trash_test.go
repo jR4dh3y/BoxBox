@@ -79,27 +79,28 @@ func TestDesktopTrashHandlerRoutesListAndMove(t *testing.T) {
 	}
 }
 
-func TestDesktopTrashHandlerRoutesRestoreAndDelete(t *testing.T) {
-	stub := &stubDesktopTrashService{}
-	router := desktopTrashRouter(stub)
+func TestDesktopTrashHandlerRestoreAndDeleteForwardID(t *testing.T) {
 	for _, tc := range []struct {
 		path string
-		want func() string
+		got  func(*stubDesktopTrashService) string
 	}{
-		{path: "/trash/restore", want: func() string { return stub.restoredID }},
-		{path: "/trash/delete", want: func() string { return stub.deletedID }},
+		{path: "/trash/restore", got: func(s *stubDesktopTrashService) string { return s.restoredID }},
+		{path: "/trash/delete", got: func(s *stubDesktopTrashService) string { return s.deletedID }},
 	} {
-		recorder := httptest.NewRecorder()
-		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(`{"id":"entry-1"}`)))
-		if recorder.Code != http.StatusOK || tc.want() != "entry-1" {
-			t.Fatalf("%s status=%d id=%q", tc.path, recorder.Code, tc.want())
-		}
-		var response struct {
-			OK bool `json:"ok"`
-		}
-		if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil || !response.OK {
-			t.Fatalf("%s response = %#v, error = %v", tc.path, response, err)
-		}
+		t.Run(tc.path, func(t *testing.T) {
+			stub := &stubDesktopTrashService{}
+			recorder := httptest.NewRecorder()
+			desktopTrashRouter(stub).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(`{"id":"entry-1"}`)))
+			if recorder.Code != http.StatusOK || tc.got(stub) != "entry-1" {
+				t.Fatalf("status=%d id=%q", recorder.Code, tc.got(stub))
+			}
+			var response struct {
+				OK bool `json:"ok"`
+			}
+			if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil || !response.OK {
+				t.Fatalf("response = %#v, error = %v", response, err)
+			}
+		})
 	}
 }
 
