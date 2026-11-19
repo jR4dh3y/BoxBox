@@ -45,7 +45,20 @@ impl DirectoryWatches {
         }
     }
 
-    fn remove(&mut self, pane: usize) {
+    /// Whether `pane` already watches `path`.
+    #[cfg(windows)]
+    fn watches(&self, pane: usize, path: &std::path::Path) -> bool {
+        self.paths.get(&pane).is_some_and(|(current, _)| current == path)
+    }
+
+    /// Takes a watch made off the window thread.
+    #[cfg(windows)]
+    fn install(&mut self, pane: usize, path: PathBuf, watch: ChangeNotification) {
+        self.remove(pane);
+        self.paths.insert(pane, (path, watch));
+    }
+
+    pub(crate) fn remove(&mut self, pane: usize) {
         #[cfg(windows)]
         self.paths.remove(&pane);
         #[cfg(target_os = "linux")]
@@ -109,6 +122,10 @@ impl DirectoryWatches {
 #[cfg(windows)]
 struct ChangeNotification(windows_sys::Win32::Foundation::HANDLE);
 
+// SAFETY: a change notification handle is a kernel object; any thread may wait on or close it.
+#[cfg(windows)]
+unsafe impl Send for ChangeNotification {}
+
 #[cfg(windows)]
 impl ChangeNotification {
     fn new(path: &std::path::Path) -> Option<Self> {
@@ -142,6 +159,39 @@ impl Drop for ChangeNotification {
 }
 
 impl Workspace {
+    /// Watches the folder a pane's listing came from. On Windows the watch is made
+    /// off the window thread, since opening one on a slow share waits on the network;
+    /// it is kept only if the pane still shows that folder.
+    pub(crate) fn watch_pane_folder(&mut self, target: PaneTarget, path: PathBuf, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        {
+            let _ = cx;
+            self.directory_watches.watch(target.0, path);
+        }
+        #[cfg(windows)]
+        {
+            if self.directory_watches.watches(target.0, &path) {
+                return;
+            }
+            // The folder it showed before is not this pane's any more.
+            self.directory_watches.remove(target.0);
+            cx.spawn(async move |this, cx| {
+                let watch = cx.background_executor().spawn({
+                    let path = path.clone();
+                    async move { ChangeNotification::new(&path) }
+                }).await;
+                this.update(cx, |this, _| {
+                    let shown = this.pane_by_id(target.0).is_some_and(|pane| pane.real_path.as_deref() == Some(path.as_path()));
+                    if let (true, Some(watch)) = (shown, watch) {
+                        this.directory_watches.install(target.0, path, watch);
+                    }
+                })
+                .ok();
+            })
+            .detach();
+        }
+    }
+
     pub(crate) fn poll_directory_changes(&mut self, cx: &mut Context<Self>) {
         if self.operation_status.is_busy() { return; }
         let mut watched = self.all_pane_ids();
