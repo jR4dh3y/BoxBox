@@ -188,6 +188,9 @@ def kill_worker_mid_copy(attempts=5):
         while time.time() < deadline:
             _, progress = request("GET", "/jobs/" + job["id"], alice)
             if progress.get("state") in ("completed", "failed", "cancelled"):
+                # Finished too soon to prove anything; free its space for the next try.
+                if os.path.exists(f"{ROOT}/{dest}"):
+                    os.remove(f"{ROOT}/{dest}")
                 break
             if progress.get("state") == "running" and 0 < progress.get("progress", 0) < 100:
                 worker = next(pid for pid, (uid, cmd, _, _) in processes().items() if uid == 3000 and "--nas-worker" in cmd)
