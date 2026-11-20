@@ -13,7 +13,9 @@ func (r *LoadResult) Encode(w io.Writer) error {
 	return gob.NewEncoder(w).Encode(r)
 }
 
-// Decode reads a configuration written by Encode.
+// Decode reads a configuration written by Encode and validates it again as
+// this process. Some checks look at the filesystem, such as whether a mount
+// resolves to "/", and root without a DAC override may see less than the API.
 func Decode(r io.Reader) (*LoadResult, error) {
 	var result LoadResult
 	if err := gob.NewDecoder(r).Decode(&result); err != nil {
@@ -21,6 +23,9 @@ func Decode(r io.Reader) (*LoadResult, error) {
 	}
 	if result.Config == nil {
 		return nil, fmt.Errorf("read configuration from the NAS supervisor: no configuration")
+	}
+	if err := result.Config.Validate(); err != nil {
+		return nil, err
 	}
 	return &result, nil
 }

@@ -5,7 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 )
 
 // The API decodes exactly what the supervisor loaded, so it never needs to
@@ -58,5 +61,29 @@ nas:
 func TestDecodeRejectsAnEmptyHandoff(t *testing.T) {
 	if _, err := Decode(bytes.NewReader(nil)); err == nil {
 		t.Fatal("Decode of nothing succeeded")
+	}
+}
+
+// The supervisor may fail to resolve a mount that the API can, so the API
+// repeats the checks rather than trusting the supervisor's view.
+func TestDecodeValidatesAsTheReadingProcess(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.Symlink("/", filepath.Join(parent, "everything")); err != nil {
+		t.Fatal(err)
+	}
+	unchecked := &LoadResult{Config: &model.ServerConfig{
+		Port:        8080,
+		JWTSecret:   "unit-test-secret-at-least-thirty-two-bytes",
+		MaxUploadMB: 1,
+		ChunkSizeMB: 1,
+		Users:       map[string]string{"alice": testHashA},
+		MountPoints: []model.MountPoint{{Name: "everything", Path: filepath.Join(parent, "everything")}},
+	}}
+	var wire bytes.Buffer
+	if err := unchecked.Encode(&wire); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(&wire); err == nil || !strings.Contains(err.Error(), "filesystem root") {
+		t.Fatalf("Decode of a mount aliasing / = %v, want the root mount check", err)
 	}
 }
