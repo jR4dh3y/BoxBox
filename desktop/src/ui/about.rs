@@ -1,6 +1,6 @@
-//! Settings → About: the app and its version, centred as an About window shows
-//! them; when and where it was installed; then the project on GitHub with
-//! Star, Sponsor and Report an issue.
+//! Settings → About: the logo with the app's name and version beside it; when
+//! and where it was installed; then the project on GitHub with Star, Sponsor
+//! and Report an issue.
 
 use gpui::{div, img, prelude::*, px, Context};
 
@@ -47,28 +47,41 @@ impl Workspace {
             _ => (None, "…".to_string(), "…".to_string()),
         };
         let accent = self.accent_hex();
-        // The logo, the name and what it is, centred as an About window shows them,
-        // with the version as a badge under the name.
+        // The logo at the left and, on the same line, the name with its version
+        // badge over what it is.
+        let badge = div()
+            .flex_none()
+            .px(px(8.))
+            .py(px(2.))
+            .rounded(px(999.))
+            .bg(alpha(accent, 0.14))
+            .border_1()
+            .border_color(alpha(accent, 0.3))
+            .text_xs_tw()
+            .text_color(c(TEXT_PRIMARY))
+            .child(version_label(env!("BOXBOX_VERSION")));
         let header = div()
+            .w_full()
             .flex()
-            .flex_col()
             .items_center()
-            .gap(px(6.))
-            .child(div().size(px(LOGO_SIZE)).flex_none().mb(px(4.)).when_some(logo, |slot, logo| slot.child(img(logo).size_full())))
-            .child(div().text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(c(TEXT_PRIMARY)).child("BoxBox Files"))
-            .child(div().text_xs_tw().text_color(c(TEXT_SECONDARY)).child("A native file manager for Linux"))
+            .gap(px(16.))
+            .child(div().size(px(LOGO_SIZE)).flex_none().when_some(logo, |slot, logo| slot.child(img(logo).size_full())))
             .child(
                 div()
-                    .mt(px(4.))
-                    .px(px(8.))
-                    .py(px(2.))
-                    .rounded(px(999.))
-                    .bg(alpha(accent, 0.14))
-                    .border_1()
-                    .border_color(alpha(accent, 0.3))
-                    .text_xs_tw()
-                    .text_color(c(TEXT_PRIMARY))
-                    .child(version_label(env!("BOXBOX_VERSION"))),
+                    .flex()
+                    .flex_col()
+                    .min_w_0()
+                    .gap(px(4.))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(div().text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(c(TEXT_PRIMARY)).child("BoxBox Files"))
+                            .child(badge),
+                    )
+                    .child(div().text_13().text_color(c(TEXT_SECONDARY)).child("A native file manager for Linux")),
             );
         let facts = div()
             .w_full()
@@ -84,7 +97,7 @@ impl Workspace {
             .flex_col()
             .items_center()
             .gap(px(10.))
-            .child(div().text_xs_tw().text_color(c(TEXT_SECONDARY)).text_center().child("BoxBox is free and open source. A star helps others find it; sponsoring keeps it going."))
+            .child(div().text_xs_tw().text_color(c(TEXT_SECONDARY)).text_center().child("Free and open source. A star or a sponsorship keeps it going."))
             .child(
                 div()
                     .flex()
