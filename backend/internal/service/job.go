@@ -533,6 +533,9 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, onCopied func
 	}
 
 	// OpenFile's mode is reduced by the umask; set the source's bits exactly.
+	if f, ok := dst.(interface{ Chmod(os.FileMode) error }); ok {
+		return f.Chmod(srcInfo.Mode().Perm())
+	}
 	return s.fs.Chmod(destPath, srcInfo.Mode().Perm())
 }
 
