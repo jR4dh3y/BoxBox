@@ -47,7 +47,9 @@ nas:
     alice: { uid: 3000, gid: 3000, groups: [4000] }
     bob: { uid: 3001, gid: 3001, groups: [4000] }
 EOF
-chmod 0644 "$root/config.yaml"
+# Root-owned and private: only the supervisor reads it, and hands the result
+# to the API.
+chmod 0600 "$root/config.yaml"
 
 # Like Compose with user 0:0, cap_drop ALL, cap_add SETUID and SETGID, and
 # no-new-privileges.

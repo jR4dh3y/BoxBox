@@ -91,6 +91,12 @@ func (w *Workers) dial(account string) (*fdconn.Conn, error) {
 	return fdconn.New(reply.File)
 }
 
+// SupervisorConfig is the configuration the supervisor loaded, readable once.
+// The API reads it instead of config.yaml, which may be readable only by root.
+func SupervisorConfig() io.ReadCloser {
+	return os.NewFile(configFD, "supervisor-config")
+}
+
 // WatchShutdown sends SIGTERM on signals once the supervisor asks the API to
 // exit, so shutdown takes the same path as a real signal would.
 func WatchShutdown(signals chan<- os.Signal) {

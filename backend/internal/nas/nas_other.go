@@ -4,7 +4,9 @@ package nas
 
 import (
 	"errors"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -22,12 +24,14 @@ var errUnsupported = errors.New("NAS mode requires Linux")
 
 type Workers struct{}
 
-func RunSupervisor(model.NASConfig, []string, time.Duration) int {
+func RunSupervisor(model.NASConfig, []string, time.Duration, []byte) int {
 	log.Error().Err(errUnsupported).Msg("Cannot start NAS mode")
 	return 1
 }
 
 func RunWorker() error { return errUnsupported }
+
+func SupervisorConfig() io.ReadCloser { return io.NopCloser(strings.NewReader("")) }
 
 func ConnectToSupervisor(model.NASConfig) (*Workers, error) { return nil, errUnsupported }
 

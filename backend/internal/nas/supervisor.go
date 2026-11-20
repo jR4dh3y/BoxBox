@@ -40,12 +40,15 @@ const (
 	// Descriptors the supervisor passes to its children.
 	controlFD  = 3
 	shutdownFD = 4
+	configFD   = 5
 	workerFD   = 3
 )
 
 // RunSupervisor starts the API and serves its worker requests until the API
-// exits. It returns the exit code for the process.
-func RunSupervisor(cfg model.NASConfig, apiArgs []string, shutdownGrace time.Duration) int {
+// exits. It returns the exit code for the process. apiConfig is the encoded
+// configuration the API reads instead of config.yaml, which it may not be
+// allowed to open.
+func RunSupervisor(cfg model.NASConfig, apiArgs []string, shutdownGrace time.Duration, apiConfig []byte) int {
 	if os.Geteuid() != 0 {
 		log.Error().Msg("NAS mode must start as root with only SETUID and SETGID capabilities; see docs/nas.md")
 		return 1
@@ -65,10 +68,15 @@ func RunSupervisor(cfg model.NASConfig, apiArgs []string, shutdownGrace time.Dur
 		log.Error().Err(err).Msg("Create shutdown pipe")
 		return 1
 	}
+	configRead, configWrite, err := os.Pipe()
+	if err != nil {
+		log.Error().Err(err).Msg("Create configuration pipe")
+		return 1
+	}
 
 	api := exec.Command(executable, append([]string{"--" + APIFlag}, apiArgs...)...)
 	api.Stdin, api.Stdout, api.Stderr = nil, os.Stdout, os.Stderr
-	api.ExtraFiles = []*os.File{controlPeer, shutdownRead}
+	api.ExtraFiles = []*os.File{controlPeer, shutdownRead, configRead}
 	api.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{Uid: cfg.ServiceUID, Gid: cfg.ServiceGID, Groups: []uint32{}},
 		Pdeathsig:  syscall.SIGTERM,
@@ -79,6 +87,14 @@ func RunSupervisor(cfg model.NASConfig, apiArgs []string, shutdownGrace time.Dur
 	}
 	_ = controlPeer.Close()
 	_ = shutdownRead.Close()
+	_ = configRead.Close()
+	// A large config can exceed the pipe buffer, so write while the API reads.
+	go func() {
+		if _, err := configWrite.Write(apiConfig); err != nil {
+			log.Error().Err(err).Msg("Send configuration to API")
+		}
+		_ = configWrite.Close()
+	}()
 	log.Info().Int("pid", api.Process.Pid).Uint32("uid", cfg.ServiceUID).Msg("NAS supervisor started API")
 
 	apiDone := make(chan int, 1)

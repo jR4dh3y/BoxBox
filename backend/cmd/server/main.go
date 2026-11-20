@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -67,8 +68,17 @@ func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
-	// Load configuration
-	loadResult, err := config.LoadWithReport(*configPath)
+	// Under the NAS supervisor, the API uses the configuration the supervisor
+	// loaded as root: the API's identity may not be able to read the file.
+	var loadResult *config.LoadResult
+	var err error
+	if *nasAPI {
+		handoff := nas.SupervisorConfig()
+		loadResult, err = config.Decode(handoff)
+		_ = handoff.Close()
+	} else {
+		loadResult, err = config.LoadWithReport(*configPath)
+	}
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
@@ -89,7 +99,11 @@ func main() {
 	case cfg.NAS.Enabled() && (*devMode || *desktopMode):
 		log.Fatal().Msg("NAS identities cannot be used with --dev or --desktop")
 	case cfg.NAS.Enabled() && !*nasAPI:
-		os.Exit(nas.RunSupervisor(cfg.NAS, os.Args[1:], config.ShutdownTimeout+5*time.Second))
+		var handoff bytes.Buffer
+		if err := loadResult.Encode(&handoff); err != nil {
+			log.Fatal().Err(err).Msg("Failed to prepare configuration for the API")
+		}
+		os.Exit(nas.RunSupervisor(cfg.NAS, os.Args[1:], config.ShutdownTimeout+5*time.Second, handoff.Bytes()))
 	case cfg.NAS.Enabled():
 		workers, err = nas.ConnectToSupervisor(cfg.NAS)
 		if err != nil {

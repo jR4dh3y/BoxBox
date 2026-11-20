@@ -103,6 +103,9 @@ def processes():
     return found
 
 
+# The API runs as 10001 yet signs people in, though only root can read the config.
+config_stat = os.stat(os.path.join(ROOT, "config.yaml"))
+check((config_stat.st_uid, config_stat.st_mode & 0o777) == (0, 0o600), f"config.yaml is root-owned 0600 ({config_stat.st_uid}, {oct(config_stat.st_mode & 0o777)})")
 alice, bob, carol = login("alice"), login("bob"), login("carol")
 
 # An account without a NAS identity gets no file access at all.
