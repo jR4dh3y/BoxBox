@@ -70,10 +70,9 @@ impl Workspace {
 
     /// The panel while it is open, opening or closing.
     pub(crate) fn render_details(&self, window: &gpui::Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        use crate::components::motion;
-        let shown = self.preferences.details_panel;
-        let t = motion::progress(self.details_toggled, motion::PANEL, window, cx);
-        let open = if shown { t } else { 1. - t };
+        // Asks for frames while it moves; the panel and the panes read one share.
+        crate::components::motion::progress(self.details_toggled, crate::components::motion::PANEL, window, cx);
+        let open = self.details_share();
         if open <= 0. {
             return None;
         }

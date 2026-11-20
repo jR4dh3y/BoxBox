@@ -81,7 +81,7 @@ impl Workspace {
     /// A table's columns as drawn in `target`'s pane, which the Details panel or
     /// a split may have narrowed since they were sized.
     pub(crate) fn table_columns(&self, table: Table, target: PaneTarget, window: &gpui::Window) -> ColumnLayout {
-        self.preferences.columns(table).fit(self.pane_width(target, window))
+        self.preferences.columns(table).fit(table, self.pane_width(target, window))
     }
 
     /// A table's header with what every table does: border drags and double

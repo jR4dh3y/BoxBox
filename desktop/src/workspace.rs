@@ -644,8 +644,16 @@ impl Workspace {
 
     /// The width a pane's list or grid gets: its share of the window, less the Details panel beside it.
     pub(crate) fn pane_width(&self, target: PaneTarget, window: &Window) -> f32 {
-        let details = self.preferences.details_panel && self.is_rightmost_pane(target);
-        self.browser_width(window) - if details { crate::ui::DETAILS_WIDTH + 1. } else { 0. }
+        let details = if self.is_rightmost_pane(target) { self.details_share() } else { 0. };
+        self.browser_width(window) - (crate::ui::DETAILS_WIDTH + 1.) * details
+    }
+
+    /// How much of its width the Details panel has, 0 to 1, as it opens or closes.
+    pub(crate) fn details_share(&self) -> f32 {
+        let motion = crate::components::motion::PANEL.as_secs_f32();
+        let t = self.details_toggled.map_or(1., |at| (at.elapsed().as_secs_f32() / motion).min(1.));
+        let t = crate::components::motion::ease_in_out(t);
+        if self.preferences.details_panel { t } else { 1. - t }
     }
 
     /// Scrolls the item at `index` into view in its pane's list or grid.
@@ -662,7 +670,7 @@ impl Workspace {
 
     pub(crate) fn toggle_details(&mut self, _: &ToggleDetails, _: &mut Window, cx: &mut Context<Self>) {
         self.preferences.details_panel = !self.preferences.details_panel;
-        self.details_toggled = Some(std::time::Instant::now());
+        self.details_toggled = crate::components::motion::enabled(cx).then(std::time::Instant::now);
         self.commit_preferences(cx);
     }
 

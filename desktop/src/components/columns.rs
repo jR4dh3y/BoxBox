@@ -100,10 +100,12 @@ impl ColumnLayout {
     }
 
     /// The layout as drawn in a pane `pane` pixels wide: a sized Name narrower
-    /// by the width the pane lost since it was sized, down to its minimum.
-    pub fn fit(&self, pane: f32) -> Self {
+    /// by the width the pane lost since it was sized, down to its minimum. A
+    /// layout saved without its pane width is taken to have fit it exactly.
+    pub fn fit(&self, table: Table, pane: f32) -> Self {
         let mut layout = self.clone();
-        if let (Some(name), Some(fitted)) = (self.widths.get(&Column::Name), self.fitted) {
+        if let Some(name) = self.widths.get(&Column::Name) {
+            let fitted = self.fitted.unwrap_or_else(|| self.columns(table).into_iter().map(|column| self.width(column)).sum());
             let lost = (fitted - pane).max(0.);
             layout.widths.insert(Column::Name, (name - lost).max(MIN_NAME).round());
         }
@@ -246,7 +248,7 @@ mod tests {
 
     #[test]
     fn dragging_a_border_sizes_only_the_column_to_its_left() {
-        let layout = ColumnLayout::new(Table::Files).fit(1000.);
+        let layout = ColumnLayout::new(Table::Files).fit(Table::Files, 1000.);
         // 1000px: Name fills 1000 - (96 + 160 + 176) = 568; Size spans 568..664.
         let wider = layout.resized(Table::Files, Column::Size, 700., 1000.);
         assert_eq!(wider.widths.get(&Column::Size), Some(&132.));
@@ -276,20 +278,28 @@ mod tests {
 
     #[test]
     fn a_narrower_pane_takes_its_room_from_name() {
-        let sized = ColumnLayout::new(Table::Files).fit(1000.).resized(Table::Files, Column::Size, 700., 1000.);
+        let sized = ColumnLayout::new(Table::Files).fit(Table::Files, 1000.).resized(Table::Files, Column::Size, 700., 1000.);
         assert_eq!(sized.fitted, Some(1000.));
         // A Details panel takes 300px: Name gives them up, the others keep theirs.
-        let narrow = sized.fit(700.);
+        let narrow = sized.fit(Table::Files, 700.);
         assert_eq!(narrow.specs(Table::Files)[0].width, Width::Fixed(268.));
         assert_eq!(narrow.specs(Table::Files)[1].width, Width::Fixed(132.));
-        assert_eq!(narrow.fit(100.).widths.get(&Column::Name), Some(&MIN_NAME));
+        assert_eq!(narrow.fit(Table::Files, 100.).widths.get(&Column::Name), Some(&MIN_NAME));
         // Closed again, Name is back; a wider window leaves it be.
-        assert_eq!(sized.fit(1000.), sized);
-        assert_eq!(sized.fit(1400.).specs(Table::Files)[0].width, Width::Fixed(568.));
+        assert_eq!(sized.fit(Table::Files, 1000.), sized);
+        assert_eq!(sized.fit(Table::Files, 1400.).specs(Table::Files)[0].width, Width::Fixed(568.));
         // A drag in the narrow pane follows the pointer from where Name is drawn.
         let typed = narrow.resized(Table::Files, Column::Type, 600., 700.);
         assert_eq!(typed.widths.get(&Column::Type), Some(&200.));
         assert_eq!(typed.fitted, Some(700.));
+    }
+
+    #[test]
+    fn a_layout_saved_without_its_pane_width_fits_the_pane() {
+        let saved: ColumnLayout = serde_json::from_str(r#"{"shown": ["Size", "Type", "Modified"], "widths": {"Name": 955.0, "Size": 94.0, "Type": 286.0}}"#).unwrap();
+        // Its columns add up to 1511px; in 1200 Name gives up the 311 it lacks.
+        assert_eq!(saved.fit(Table::Files, 1200.).widths.get(&Column::Name), Some(&644.));
+        assert_eq!(saved.fit(Table::Files, 1600.).widths.get(&Column::Name), Some(&955.));
     }
 
     #[test]
