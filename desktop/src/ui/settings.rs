@@ -159,6 +159,9 @@ impl Workspace {
                 this.preferences.default_view = value;
                 this.commit_preferences(cx);
             })),
+            // Off, List or Grid picked in any folder is the view of every folder.
+            SettingsRow::new("Remember view per folder")
+                .control(self.preference_toggle("setting-view-per-folder", p.view_per_folder, |p| &mut p.view_per_folder, cx)),
             #[cfg(target_os = "linux")]
             SettingsRow::new("Use BoxBox for Open and Save dialogs").control(picker),
             SettingsRow::new("Start location").control(self.select(

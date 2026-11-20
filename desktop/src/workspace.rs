@@ -86,6 +86,9 @@ pub(crate) struct Preferences {
     pub default_sort: SortField,
     pub default_sort_direction: SortDir,
     pub default_view: ViewMode,
+    /// Each folder keeps the List or Grid picked in it, as in Nautilus and
+    /// Dolphin; off, the pick is the view of every folder.
+    pub view_per_folder: bool,
     pub start_location: StartLocation,
     pub file_icons: IconStyle,
     /// Zoom steps of the list and the grid (`ListMetrics`, `GridMetrics`).
@@ -150,6 +153,7 @@ impl Default for Preferences {
             default_sort: SortField::Modified,
             default_sort_direction: SortDir::Desc,
             default_view: ViewMode::List,
+            view_per_folder: true,
             start_location: StartLocation::Overview,
             file_icons: IconStyle::System,
             list_zoom: 1,
@@ -446,7 +450,9 @@ impl Workspace {
             preference_view(&preferences),
         );
         if !initial_pane.is_at_root() {
-            initial_pane.view_mode = folder_views.mode(&api, &initial_pane.path, preference_view(&preferences));
+            if preferences.view_per_folder {
+                initial_pane.view_mode = folder_views.mode(&api, &initial_pane.path, preference_view(&preferences));
+            }
             initial_pane.sort = folder_views.sort(&api, &initial_pane.path, preference_sort(&preferences));
         }
         let dialog_field = cx.new(|cx| TextField::new("", cx));

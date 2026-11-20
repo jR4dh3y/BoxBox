@@ -67,12 +67,18 @@ impl FolderViews {
 }
 
 impl Workspace {
-    /// The status bar's List or Grid: in a folder, that folder keeps it.
+    /// The status bar's List or Grid: in a folder, that folder keeps it, or
+    /// every folder does when views are not kept per folder.
     pub(crate) fn choose_view_mode(&mut self, target: PaneTarget, mode: ViewMode, cx: &mut Context<Self>) {
-        let default = self.preferences.default_view;
+        let (default, per_folder) = (self.preferences.default_view, self.preferences.view_per_folder);
         let Some(pane) = self.pane_mut_by_id(target.0) else { return };
         pane.set_view_mode(mode);
         if pane.is_at_root() {
+            return;
+        }
+        if !per_folder {
+            self.preferences.default_view = mode;
+            self.commit_preferences(cx);
             return;
         }
         let (api, path) = (pane.api.clone(), pane.path.clone());
@@ -110,7 +116,10 @@ impl Workspace {
         let default_mode = self.preferences.default_view;
         let default_sort = super::preference_sort(&self.preferences);
         let Some(pane) = self.pane_by_id(target.0).filter(|pane| !pane.is_at_root()) else { return false };
-        let mode = self.folder_views.mode(&pane.api, &pane.path, default_mode);
+        let mode = match self.preferences.view_per_folder {
+            true => self.folder_views.mode(&pane.api, &pane.path, default_mode),
+            false => default_mode,
+        };
         let sort = self.folder_views.sort(&pane.api, &pane.path, default_sort);
         let Some(pane) = self.pane_mut_by_id(target.0) else { return false };
         pane.view_mode = mode;

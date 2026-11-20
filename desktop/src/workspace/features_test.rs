@@ -46,6 +46,9 @@ pub(super) fn open<'a>(cx: &'a mut TestAppContext, files: &[&str]) -> (Entity<Wo
     cx.update(|_, app| {
         view.update(app, |workspace, cx| {
             workspace.preferences = Preferences { default_sort: crate::sort::SortField::Name, default_sort_direction: crate::sort::SortDir::Asc, ..Preferences::default() };
+            // The settings file is shared by every test in the process: what another
+            // test saved must not reach the panes.
+            workspace.apply_preferences(cx);
             workspace.choose_sort(PaneTarget(0), Sort { field: crate::sort::SortField::Name, dir: crate::sort::SortDir::Asc }, cx);
         })
     });
@@ -1377,6 +1380,46 @@ fn a_folder_keeps_the_view_picked_in_it(cx: &mut TestAppContext) {
     click(cx, "view-list");
     cx.run_until_parked();
     assert_eq!(super::folder_views::FolderViews::load().encode(), b"{}");
+}
+
+#[gpui::test]
+fn one_view_serves_every_folder_when_views_are_not_kept_per_folder(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["photos/a.jpg", "music/b.txt"]);
+    let mode = |view: &Entity<Workspace>, cx: &mut VisualTestContext| view.read_with(cx, |workspace, _| workspace.pane().current_view_mode());
+    view.update(cx, |workspace, cx| {
+        workspace.preferences.view_per_folder = false;
+        workspace.apply_preferences(cx);
+        workspace.navigate("home/photos".into(), cx);
+    });
+    cx.run_until_parked();
+    click(cx, "view-grid");
+    view.update(cx, |workspace, cx| workspace.navigate("home/music".into(), cx));
+    cx.run_until_parked();
+    assert_eq!(mode(&view, cx), ViewMode::Grid, "picked in one folder, kept in the next");
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.preferences.default_view, ViewMode::Grid, "and kept for the next window"));
+
+    // The Overview keeps its own view, also when a setting is saved there.
+    view.update(cx, |workspace, cx| workspace.navigate(String::new(), cx));
+    cx.run_until_parked();
+    click(cx, "view-list");
+    view.update(cx, |workspace, cx| workspace.apply_preferences(cx));
+    assert_eq!(mode(&view, cx), ViewMode::List);
+    view.update(cx, |workspace, cx| workspace.navigate("home/photos".into(), cx));
+    cx.run_until_parked();
+    assert_eq!(mode(&view, cx), ViewMode::Grid, "the Overview's view is not the folders'");
+}
+
+#[gpui::test]
+fn the_overview_keeps_its_view_when_a_setting_is_saved(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["notes.txt"]);
+    view.update(cx, |workspace, cx| workspace.navigate(String::new(), cx));
+    cx.run_until_parked();
+    let mode = |view: &Entity<Workspace>, cx: &mut VisualTestContext| view.read_with(cx, |workspace, _| workspace.pane().current_view_mode());
+    assert_eq!(mode(&view, cx), ViewMode::Grid);
+    // Opening the Details panel saves the settings; the drives stay as cards.
+    cx.simulate_keystrokes("f11");
+    cx.run_until_parked();
+    assert_eq!(mode(&view, cx), ViewMode::Grid);
 }
 
 #[gpui::test]

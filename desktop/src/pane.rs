@@ -620,7 +620,8 @@ impl Pane {
         if sort != self.sort {
             self.set_sort(sort);
         }
-        self.set_view_mode(view_mode);
+        // The Overview keeps its own view: a setting saved there must not flip it.
+        self.view_mode = view_mode;
         hidden_changed
     }
 
