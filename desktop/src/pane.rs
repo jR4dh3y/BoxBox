@@ -179,17 +179,6 @@ pub struct Pane {
     pub grid_scroll: UniformListScrollHandle,
     /// A history entry's view, put back when its listing arrives.
     restore: Option<ViewMemo>,
-    /// Set on a copy of another pane, until it leaves the folder it opened on:
-    /// the screen did not change, so its contents do not fade up.
-    pub copied: bool,
-    /// Which way the pane last moved, and a count of moves, so the contents
-    /// arrive from that side once per move.
-    pub arrival: crate::components::motion::Arrival,
-    pub moves: u64,
-    /// When the first listing after the last move landed, for its items to
-    /// cascade in; a refresh of the same folder does not set it again.
-    pub listed_at: Option<std::time::Instant>,
-    listed_move: u64,
 }
 
 impl Pane {
@@ -254,11 +243,6 @@ impl Pane {
             list_scroll: UniformListScrollHandle::new(),
             grid_scroll: UniformListScrollHandle::new(),
             restore: None,
-            copied: false,
-            arrival: Default::default(),
-            moves: 0,
-            listed_at: None,
-            listed_move: 0,
         }
     }
 
@@ -285,7 +269,6 @@ impl Pane {
             // Not shown yet, or failed: the copy reads it like any folder.
             Listing::Loading | Listing::Failed(_) => Listing::Loading,
         };
-        pane.copied = true;
         pane
     }
 
@@ -349,8 +332,6 @@ impl Pane {
 
     /// Makes `place` current and returns the place it replaces.
     fn enter(&mut self, place: Place) -> Place {
-        self.arrival = crate::components::motion::Arrival::between(&self.path, &place.path, Arc::ptr_eq(&self.api, &place.api));
-        self.moves += 1;
         let view = self.view_memo();
         let previous = Place { api: std::mem::replace(&mut self.api, place.api), path: std::mem::replace(&mut self.path, place.path), view };
         self.reset();
@@ -390,10 +371,6 @@ impl Pane {
         let mut destination = from.pop().expect("checked above");
         let view = std::mem::take(&mut destination.view);
         let previous = self.enter(destination);
-        // History has a direction even between unrelated folders.
-        if self.arrival == crate::components::motion::Arrival::InPlace {
-            self.arrival = if back { crate::components::motion::Arrival::FromLeft } else { crate::components::motion::Arrival::FromRight };
-        }
         // Where it was, once its entries load: an empty list cannot hold a scroll position.
         self.restore = Some(view);
         let to = if back { &mut self.forward } else { &mut self.back };
@@ -410,7 +387,6 @@ impl Pane {
     }
 
     fn reset(&mut self) {
-        self.copied = false;
         self.items = Arc::default();
         self.folder_items = Arc::default();
         self.search_input.clear();
@@ -447,10 +423,6 @@ impl Pane {
                     if let Some(memo) = self.restore.take() {
                         self.restore_view(memo);
                     }
-                    if self.listed_move != self.moves {
-                        self.listed_move = self.moves;
-                        self.listed_at = Some(std::time::Instant::now());
-                    }
                 }
                 self.listing = Listing::Loaded;
                 view != self.view()
@@ -460,12 +432,6 @@ impl Pane {
                 false
             }
         }
-    }
-
-    /// Whether the items of a listing that just arrived still cascade in: not
-    /// on a copied tab, whose screen did not change.
-    pub fn cascading(&self) -> bool {
-        !self.copied && self.listed_at.is_some_and(|at| at.elapsed() < crate::components::motion::CASCADE_WINDOW)
     }
 
     /// Whether anything this pane asked for is still out: its listing, its
@@ -867,14 +833,10 @@ mod tests {
         let mut tab = pane.duplicate(1);
         assert_eq!((tab.id, tab.path.as_str()), (1, "d"));
         assert!(matches!(tab.listing, Listing::Loaded) && Arc::ptr_eq(&tab.items, &pane.items), "shown at once, not re-read");
-        assert!(tab.copied);
         tab.begin_load();
         assert!(matches!(tab.listing, Listing::Loaded), "the reload keeps the entries on screen");
         load(&mut tab, ["a", "b", "c"].map(file).to_vec());
         assert_eq!(tab.items.len(), 3);
-        assert!(tab.copied, "still the same folder, so it does not fade up");
-        assert!(tab.navigate("d/a".into()));
-        assert!(!tab.copied);
     }
 
     #[test]

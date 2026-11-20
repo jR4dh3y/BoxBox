@@ -34,10 +34,8 @@ impl Workspace {
             for (offset, drive) in chunk.iter().enumerate() {
                 // Taffy floors a flex item's base size at its padding and border, so a padded
                 // card would outgrow an empty column; a bare cell keeps columns equal, as grid does.
-                // The cards come in one after another each time the Overview opens.
                 let index = row_index * columns + offset;
-                let cell = div().flex_1().flex_basis(px(0.)).min_w_0().flex().child(self.render_drive_card(index, drive, cx));
-                row = row.child(crate::components::motion::cascade(("drive-card-in", index), cell, index * 2, cx));
+                row = row.child(div().flex_1().flex_basis(px(0.)).min_w_0().flex().child(self.render_drive_card(index, drive, cx)));
             }
             for _ in chunk.len()..columns {
                 row = row.child(div().flex_1().flex_basis(px(0.)));

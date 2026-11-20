@@ -40,7 +40,6 @@ impl Workspace {
                     cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                         let _span = crate::profile::span("grid rows").with(|| format!("{} rows", range.len()));
                         let count = this.pane_by_id(target.0).map_or(0, |pane| pane.items.len());
-                        let cascading = this.pane_by_id(target.0).is_some_and(|pane| pane.cascading());
                         range
                             .map(|row| {
                                 let start = row * columns;
@@ -58,11 +57,7 @@ impl Workspace {
                                         let item = this.pane_by_id(target.0)?.items.get(index)?.clone();
                                         this.request_thumbnail(target, item, cx);
                                         this.request_entry_icon(target, index, metrics.theme_icon(), cx);
-                                        let tile = this.render_tile(target, index, cx)?;
-                                        Some(match cascading {
-                                            true => crate::components::motion::cascade(("tile-in", index), div().child(tile), index, cx),
-                                            false => tile.into_any_element(),
-                                        })
+                                        this.render_tile(target, index, cx)
                                     }))
                             })
                             .collect::<Vec<_>>()

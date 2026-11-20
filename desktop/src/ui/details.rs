@@ -68,7 +68,15 @@ impl Workspace {
         self.request_item_icon(&api, &item, ICON_SIZE, cx);
     }
 
-    pub(crate) fn render_details(&self, cx: &mut Context<Self>) -> AnyElement {
+    /// The panel while it is open, opening or closing.
+    pub(crate) fn render_details(&self, window: &gpui::Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use crate::components::motion;
+        let shown = self.preferences.details_panel;
+        let t = motion::progress(self.details_toggled, motion::PANEL, window, cx);
+        let open = if shown { t } else { 1. - t };
+        if open <= 0. {
+            return None;
+        }
         let pane = self.pane();
         let selected = if self.trash_open { Vec::new() } else { pane.selected_items() };
         let body = match selected.as_slice() {
@@ -89,9 +97,21 @@ impl Workspace {
             .text_xs_tw()
             .p(px(16.))
             .child(body);
-        // Its width is there from the first frame, so the grid beside it reflows
-        // once; only what is drawn slides in from the right.
-        crate::components::motion::enter_from("details-enter", panel, crate::components::motion::DIALOG, (24., 0.), cx)
+        // It opens by its width, so the contents beside it make room as it comes
+        // and take it back as it goes; the panel itself is drawn whole and slides
+        // out from the right edge.
+        Some(
+            div()
+                .flex()
+                .justify_end()
+                .flex_none()
+                .h_full()
+                .w(px(DETAILS_WIDTH * open))
+                .overflow_hidden()
+                .opacity(open)
+                .child(panel)
+                .into_any_element(),
+        )
     }
 
     fn preview(&self, item: &FileInfo) -> gpui::Div {

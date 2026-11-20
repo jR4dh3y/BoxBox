@@ -58,15 +58,10 @@ impl Workspace {
                             let specs = specs.clone();
                             let _span = crate::profile::span("list rows").with(|| format!("{} rows", range.len()));
                             let size = crate::components::ListMetrics::new(this.preferences.list_zoom).icon + 4.;
-                            let cascading = this.pane_by_id(target.0).is_some_and(|pane| pane.cascading());
                             range
                                 .filter_map(|index| {
                                     this.request_entry_icon(target, index, size, cx);
-                                    let row = this.render_row(target, index, specs.clone(), cx)?;
-                                    Some(match cascading {
-                                        true => crate::components::motion::cascade(("row-in", index), div().child(row), index, cx),
-                                        false => row.into_any_element(),
-                                    })
+                                    this.render_row(target, index, specs.clone(), cx)
                                 })
                                 .collect::<Vec<_>>()
                         }),

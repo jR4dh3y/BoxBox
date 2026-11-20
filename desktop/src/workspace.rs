@@ -311,6 +311,8 @@ pub struct Workspace {
     pub(crate) collapsed_sections: std::collections::HashSet<&'static str>,
     /// When each sidebar section last folded, for its animation.
     pub(crate) section_toggles: HashMap<&'static str, std::time::Instant>,
+    /// When the Details panel was last opened or closed, so it can open or close by its width.
+    pub(crate) details_toggled: Option<std::time::Instant>,
     /// Tabs just closed, drawn folding away where they stood: index, title, when.
     pub(crate) closing_tabs: Vec<(usize, String, std::time::Instant)>,
     pub(crate) trash_error: Option<String>,
@@ -484,6 +486,7 @@ impl Workspace {
             trash_table: Default::default(),
             collapsed_sections: Default::default(),
             section_toggles: Default::default(),
+            details_toggled: None,
             closing_tabs: Vec::new(),
             trash_error: None,
             trash_provider: None,
@@ -653,6 +656,7 @@ impl Workspace {
 
     pub(crate) fn toggle_details(&mut self, _: &ToggleDetails, _: &mut Window, cx: &mut Context<Self>) {
         self.preferences.details_panel = !self.preferences.details_panel;
+        self.details_toggled = Some(std::time::Instant::now());
         self.commit_preferences(cx);
     }
 
@@ -1389,9 +1393,7 @@ impl Workspace {
             };
             let id = self.next_pane_id;
             self.next_pane_id += 1;
-            let mut secondary = Pane::with_api(id, path, api, show_hidden_files, sort, view_mode);
-            // The new pane comes in from the right, where it opens.
-            secondary.arrival = crate::components::motion::Arrival::FromRight;
+            let secondary = Pane::with_api(id, path, api, show_hidden_files, sort, view_mode);
             self.split_panes.insert(primary_id, secondary);
             self.active_pane = PaneTarget(id);
             self.load_drives(PaneTarget(id), cx);

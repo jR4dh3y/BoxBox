@@ -85,18 +85,6 @@ impl Workspace {
         }
 
         };
-        // A folder's contents fade up when it opens, when its listing arrives and
-        // when its view or order changes; a refresh of the same folder keeps the
-        // key and does not, nor does a new tab that opened as a copy of what was
-        // on screen.
-        let shown = match (self.trash_open, &pane.listing) {
-            (true, _) => "trash".to_string(),
-            (false, Listing::Loading) => format!("loading:{}", pane.path),
-            // A new view or order of the same folder fades up as well.
-            (false, _) => format!("folder:{}:{:?}:{:?}:{:?}", pane.path, pane.current_view_mode(), pane.sort.field, pane.sort.dir),
-        };
-        let reveal_id = gpui::ElementId::Name(format!("content-{}-{shown}", target.0).into());
-        let still = pane.copied && !self.trash_open;
         let dropping = self.drop_hover(cx) == Some(&DropTarget::Pane(target));
         drop_zone(div(), DropTarget::Pane(target), cx.entity().downgrade())
             .id(("browser-pane", target.0))
@@ -145,10 +133,8 @@ impl Workspace {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    // Arriving contents start beside their place; keep them off the details panel.
-                    .overflow_hidden()
-                    .child({
-                        let body = div()
+                    .child(
+                        div()
                             .relative()
                             .flex()
                             .flex_col()
@@ -158,19 +144,10 @@ impl Workspace {
                             .overflow_hidden()
                             .child(content)
                             // The folder this pane shows would take the drop.
-                            .when(dropping, |content| content.child(div().absolute().inset_0().border_2().border_color(c(self.accent_hex()))));
-                        match still {
-                            true => body.into_any_element(),
-                            false => {
-                                // The fade replays when the listing arrives; the slide plays once per move.
-                                let faded = div().relative().flex().flex_col().flex_1().min_w_0().min_h_0().child(crate::components::motion::reveal(reveal_id, body, cx));
-                                let arrival = if self.trash_open { crate::components::motion::Arrival::InPlace } else { pane.arrival };
-                                crate::components::motion::arrive(gpui::ElementId::Name(format!("content-arrive-{}-{}", target.0, pane.moves).into()), faded, arrival, cx)
-                            }
-                        }
-                    })
+                            .when(dropping, |content| content.child(div().absolute().inset_0().border_2().border_color(c(self.accent_hex())))),
+                    )
                     // Under the toolbar of the rightmost pane, as in Dolphin.
-                    .when(self.preferences.details_panel && self.is_rightmost_pane(target), |row| row.child(self.render_details(cx))),
+                    .when(self.is_rightmost_pane(target), |row| row.children(self.render_details(window, cx))),
             )
             .when(!self.trash_open, |browser| {
                 browser.child(self.render_status_bar(target, cx))

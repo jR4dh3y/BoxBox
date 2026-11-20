@@ -1,13 +1,13 @@
-//! Motion: short eased transitions for things that appear (menus, dialogs,
-//! notices, tabs, a folder's contents), for hover, press and selection
-//! feedback, and for things that fold, turn or fill.
+//! Motion: eased transitions for things that appear (menus, dialogs, notices,
+//! tabs, the Details panel), for hover, press and selection feedback, and for
+//! things that fold, turn or fill. A folder's contents and the Overview's
+//! drives are not animated: they are there the moment they are listed.
 //!
-//! Movement is offset only, never size, so nothing beside a moving thing
-//! reflows: a folder's contents arrive from the side the pane moved to,
-//! menus drop and dialogs rise a few pixels into place, notices rise into
-//! their stack and the Details panel slides in from the right. A new tab
-//! slides out of the + button. Sidebar sections fold through a clip, sort
-//! arrows and chevrons turn, and usage bars grow to their value.
+//! Menus drop and dialogs rise a few pixels into place, notices rise into
+//! their stack, and a new tab slides out of the + button. The Details panel
+//! opens and closes by its width, so the contents beside it make room as it
+//! goes. Sidebar sections fold through a clip, sort arrows and chevrons turn,
+//! and usage bars grow to their value.
 //!
 //! GPUI swaps `.hover()` and `.active()` styles instantly, so `Interact` tracks
 //! hover, press and selection itself and paints eased fills behind its child
@@ -26,36 +26,35 @@ use gpui::{
     Rgba, ScrollWheelEvent, Styled, Window,
 };
 
+// Long enough to be seen moving, eased so the start does not jump: snappier
+// timings read as flicker rather than motion.
+
 /// Hover fills come in and leave a little slower, as desktop toolkits do.
-const HOVER_IN: Duration = Duration::from_millis(130);
-const HOVER_OUT: Duration = Duration::from_millis(220);
-const PRESS_IN: Duration = Duration::from_millis(40);
-const PRESS_OUT: Duration = Duration::from_millis(180);
-/// A selection washes in quickly, so a click answers at once, and leaves softly.
-const SELECT_IN: Duration = Duration::from_millis(90);
-const SELECT_OUT: Duration = Duration::from_millis(200);
-/// A menu, which should be there almost as the button goes down.
-pub const MENU: Duration = Duration::from_millis(100);
-/// A hover card, a notice or a side panel.
-pub const POPOVER: Duration = Duration::from_millis(150);
+const HOVER_IN: Duration = Duration::from_millis(180);
+const HOVER_OUT: Duration = Duration::from_millis(280);
+const PRESS_IN: Duration = Duration::from_millis(60);
+const PRESS_OUT: Duration = Duration::from_millis(240);
+/// A selection washes in a little quicker than it leaves.
+const SELECT_IN: Duration = Duration::from_millis(150);
+const SELECT_OUT: Duration = Duration::from_millis(260);
+/// A menu.
+pub const MENU: Duration = Duration::from_millis(180);
+/// A hover card or a notice.
+pub const POPOVER: Duration = Duration::from_millis(220);
 /// A dialog and the shade behind it.
-pub const DIALOG: Duration = Duration::from_millis(180);
-/// A folder's contents after navigating.
-pub const CONTENT: Duration = Duration::from_millis(120);
-/// A new tab sliding out of the + button.
-pub const TAB: Duration = Duration::from_millis(160);
+pub const DIALOG: Duration = Duration::from_millis(260);
+/// The Details panel opening or closing beside the contents.
+pub const PANEL: Duration = Duration::from_millis(300);
+/// A new tab sliding out of the + button, or folding away.
+pub const TAB: Duration = Duration::from_millis(240);
 /// A chevron or sort arrow turning over.
-pub const TURN: Duration = Duration::from_millis(180);
+pub const TURN: Duration = Duration::from_millis(260);
 /// A sidebar section folding open or shut.
-pub const FOLD: Duration = Duration::from_millis(200);
+pub const FOLD: Duration = Duration::from_millis(300);
 /// A notice or other thing sliding away once dismissed.
-pub const LEAVE: Duration = Duration::from_millis(220);
+pub const LEAVE: Duration = Duration::from_millis(300);
 /// A usage bar growing to its value.
 pub const GROW: Duration = Duration::from_millis(520);
-/// A folder's contents arriving from the side the pane moved to.
-pub const ARRIVE: Duration = Duration::from_millis(220);
-/// How far they travel: enough to read as a direction, short enough not to blur.
-const ARRIVE_DISTANCE: f32 = 28.;
 
 /// Whether things move: Settings → Appearance → Animations and the desktop's own
 /// `enable-animations`, read from the settings portal.
@@ -112,7 +111,7 @@ pub fn enter_from<E: IntoElement + Styled + 'static>(id: impl Into<ElementId>, e
         return element.into_any_element();
     }
     element
-        .with_animation(id, Animation::new(duration).with_easing(ease_out_quint), move |element, t| {
+        .with_animation(id, Animation::new(duration).with_easing(ease_out), move |element, t| {
             let element = element.opacity(t);
             if dx == 0. && dy == 0. {
                 return element;
@@ -131,7 +130,7 @@ pub fn progress(since: Option<Instant>, duration: Duration, window: &Window, cx:
         return 1.;
     }
     window.request_animation_frame();
-    ease_out_quint(t)
+    ease_in_out(t)
 }
 
 /// A chevron or arrow turning to `degrees`, from where `from` says it was,
@@ -152,80 +151,13 @@ pub fn hover_fill() -> Rgba {
     Rgba { r: 1., g: 1., b: 1., a: 0.12 }
 }
 
-/// `element` fading up from 60%, for content that replaced what was there.
-pub fn reveal<E: IntoElement + Styled + 'static>(id: impl Into<ElementId>, element: E, cx: &App) -> AnyElement {
-    if !enabled(cx) {
-        return element.into_any_element();
-    }
-    element
-        .with_animation(id, Animation::new(CONTENT).with_easing(ease_out), |element, t| element.opacity(0.6 + 0.4 * t))
-        .into_any_element()
+/// Gathering pace and settling again, for things that change size or fold, so
+/// what moves beside them glides rather than jumps.
+pub fn ease_in_out(t: f32) -> f32 {
+    if t < 0.5 { 4. * t * t * t } else { 1. - (-2. * t + 2.).powi(3) / 2. }
 }
 
-/// Which side a folder's contents come from, as pages do in Nautilus: a deeper
-/// folder from the right, a shallower one from the left.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Arrival {
-    /// Somewhere unrelated, or another provider: the contents only fade up.
-    #[default]
-    InPlace,
-    FromRight,
-    FromLeft,
-}
-
-impl Arrival {
-    /// The way from `from` to `to`, two virtual paths; the Overview is `""`.
-    pub fn between(from: &str, to: &str, same_provider: bool) -> Self {
-        let under = |child: &str, parent: &str| parent.is_empty() && !child.is_empty() || child.strip_prefix(parent).is_some_and(|rest| rest.starts_with('/'));
-        match (same_provider, under(to, from), under(from, to)) {
-            (true, true, _) => Self::FromRight,
-            (true, _, true) => Self::FromLeft,
-            _ => Self::InPlace,
-        }
-    }
-}
-
-/// `element` sliding in from `arrival`'s side while it fades up; it only moves,
-/// so nothing beside it reflows. Plays once per `id`.
-pub fn arrive<E: IntoElement + Styled + 'static>(id: impl Into<ElementId>, element: E, arrival: Arrival, cx: &App) -> AnyElement {
-    let from = match arrival {
-        Arrival::FromRight => ARRIVE_DISTANCE,
-        Arrival::FromLeft => -ARRIVE_DISTANCE,
-        Arrival::InPlace => return element.into_any_element(),
-    };
-    if !enabled(cx) {
-        return element.into_any_element();
-    }
-    element
-        .with_animation(id, Animation::new(ARRIVE).with_easing(ease_out_quint), move |element, t| element.left(px(from * (1. - t))).opacity(0.25 + 0.75 * t))
-        .into_any_element()
-}
-
-/// How long after a folder's first listing lands its items still cascade in;
-/// items drawn later, by scrolling, simply appear.
-pub const CASCADE_WINDOW: Duration = Duration::from_millis(450);
-const CASCADE: Duration = Duration::from_millis(200);
-const CASCADE_STEP: Duration = Duration::from_millis(14);
-/// Items past this many come in with the last of them.
-const CASCADE_ITEMS: usize = 16;
-
-/// `element`, the `index`th item of a listing that just arrived, fading up and
-/// settling a few pixels a little after the one before it.
-pub fn cascade<E: IntoElement + Styled + 'static>(id: impl Into<ElementId>, element: E, index: usize, cx: &App) -> AnyElement {
-    if !enabled(cx) {
-        return element.into_any_element();
-    }
-    let delay = (CASCADE_STEP * index.min(CASCADE_ITEMS) as u32).as_secs_f32();
-    let (own, total) = (CASCADE.as_secs_f32(), CASCADE.as_secs_f32() + delay);
-    element
-        .with_animation(id, Animation::new(Duration::from_secs_f32(total)), move |item, t| {
-            let local = ease_out_quint(((t * total - delay) / own).clamp(0., 1.));
-            item.opacity(local).relative().top(px(6. * (1. - local)))
-        })
-        .into_any_element()
-}
-
-/// Quicker off the mark than `ease_out` and longer to settle, for movement.
+/// Quicker off the mark than `ease_out` and longer to settle: a usage bar filling.
 pub fn ease_out_quint(t: f32) -> f32 {
     1. - (1. - t).powi(5)
 }
@@ -503,16 +435,6 @@ impl Element for Interact {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn contents_arrive_from_the_side_the_pane_moved_to() {
-        assert_eq!(Arrival::between("home", "home/docs", true), Arrival::FromRight);
-        assert_eq!(Arrival::between("", "home", true), Arrival::FromRight, "out of the Overview is deeper");
-        assert_eq!(Arrival::between("home/docs/a", "home", true), Arrival::FromLeft);
-        assert_eq!(Arrival::between("home/docs", "", true), Arrival::FromLeft);
-        assert_eq!(Arrival::between("home/docs", "home/documents", true), Arrival::InPlace, "a sibling is not under it");
-        assert_eq!(Arrival::between("home", "home/docs", false), Arrival::InPlace, "another provider only fades");
-    }
 
     #[test]
     fn transitions_ease_toward_the_target_from_where_they_are() {
