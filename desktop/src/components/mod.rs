@@ -27,7 +27,7 @@ mod toggle;
 mod tooltip;
 
 pub use button::{Button, ButtonSize, ButtonVariant};
-pub use columns::{Column, ColumnLayout, Table};
+pub use columns::{Column, ColumnLayout, ColumnSpec, Table};
 pub use ellipsis::Ellipsis;
 pub use drive_card::{card_usage_bar, usage_bar, usage_text, DriveCard, DriveInfo, DriveState, Usage};
 pub use context_menu::{ContextMenu, MenuItem, MENU_MARGIN};

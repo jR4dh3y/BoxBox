@@ -7,7 +7,7 @@ use gpui::{div, prelude::*, px, uniform_list, AnyElement, ClickEvent, Context, S
 
 use super::{icon, TextScale};
 use crate::api::{FileInfo, TrashItem};
-use crate::components::{sideways, table_frame, Button, ButtonSize, ButtonVariant, Column, FileRow, ListMetrics, Table};
+use crate::components::{sideways, table_frame, Button, ButtonSize, ButtonVariant, Column, ColumnSpec, FileRow, ListMetrics, Table};
 use crate::format::{deletion_millis, file_date, type_description, Kind};
 use crate::theme::*;
 use crate::workspace::trash_table::location;
@@ -40,7 +40,7 @@ impl Workspace {
             .on_click(cx.listener(|this, _, _, cx| this.restore_trash(this.selected_trash(), cx)))
     }
 
-    pub(crate) fn render_trash(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_trash(&self, window: &gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         let message = |text: SharedString, glyph: Option<&str>| {
             div()
                 .flex()
@@ -60,7 +60,8 @@ impl Workspace {
             Load::Failed(error) => message(error.clone().into(), Some("alert-triangle")),
             Load::Loaded(items) if items.is_empty() => message("Trash is empty".into(), Some("trash-2")),
             Load::Loaded(items) => {
-                let layout = self.preferences.columns(Table::Trash);
+                let layout = self.table_columns(Table::Trash, self.active_pane, window);
+                let specs = layout.specs(Table::Trash);
                 let header = self
                     .table_header(Table::Trash, layout.clone(), self.active_pane, cx)
                     .sorted(Some(self.trash_table.sort))
@@ -73,8 +74,8 @@ impl Workspace {
                 let rows = uniform_list(
                     "trash-list",
                     items.len(),
-                    cx.processor(|this, range: std::ops::Range<usize>, _window, cx| {
-                        range.filter_map(|index| this.render_trash_row(index, cx)).collect::<Vec<_>>()
+                    cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                        range.filter_map(|index| this.render_trash_row(index, specs.clone(), cx)).collect::<Vec<_>>()
                     }),
                 )
                 .track_scroll(self.trash_table.scroll.clone())
@@ -85,7 +86,7 @@ impl Workspace {
         div().id("trash-page").size_full().flex().flex_col().bg(self.file_background()).child(body)
     }
 
-    fn render_trash_row(&mut self, index: usize, cx: &mut Context<Self>) -> Option<FileRow> {
+    fn render_trash_row(&mut self, index: usize, specs: Vec<ColumnSpec>, cx: &mut Context<Self>) -> Option<FileRow> {
         let item = self.trash_items().get(index)?.clone();
         let api = self.trash_provider.clone()?;
         let size = ListMetrics::new(self.preferences.list_zoom).icon + 4.;
@@ -98,7 +99,7 @@ impl Workspace {
             .icon(kind.glyph())
             .tint(self.kind_tint(kind), None)
             .image(self.item_icon(&api, &entry, size))
-            .columns(self.preferences.columns(Table::Trash).specs(Table::Trash))
+            .columns(specs)
             .value(Column::Location, location(&item.original_path))
             .value(Column::Deleted, file_date(deleted))
             .value(Column::Type, if item.is_dir { "Folder".into() } else { type_description(&item.name) })

@@ -4,7 +4,7 @@
 use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context};
 
 use super::{icon, TextScale};
-use crate::components::{sideways, table_frame, Column, ColumnLayout, FileListHeader, FileRow, Selection, Table};
+use crate::components::{sideways, table_frame, Column, ColumnLayout, ColumnSpec, FileListHeader, FileRow, Selection, Table};
 use crate::api::FileInfo;
 use crate::format::{display_name, file_date, file_size, type_description};
 use crate::theme::*;
@@ -20,7 +20,8 @@ impl Workspace {
         let count = pane.items.len();
         let placeholder = pane.placeholder();
         let empty = placeholder.is_some();
-        let layout = self.preferences.columns(Table::Files);
+        let layout = self.table_columns(Table::Files, target, window);
+        let specs = layout.specs(Table::Files);
         let sorted = (!pane.shows_ranked()).then(|| (pane.sort.field.column(), pane.sort.dir));
         let table = table_frame(&layout, Table::Files).child(
             self.table_header(Table::Files, layout, target, cx).sorted(sorted).on_sort({
@@ -54,13 +55,14 @@ impl Workspace {
                         "file-list",
                         count,
                         cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                            let specs = specs.clone();
                             let _span = crate::profile::span("list rows").with(|| format!("{} rows", range.len()));
                             let size = crate::components::ListMetrics::new(this.preferences.list_zoom).icon + 4.;
                             let cascading = this.pane_by_id(target.0).is_some_and(|pane| pane.cascading());
                             range
                                 .filter_map(|index| {
                                     this.request_entry_icon(target, index, size, cx);
-                                    let row = this.render_row(target, index, cx)?;
+                                    let row = this.render_row(target, index, specs.clone(), cx)?;
                                     Some(match cascading {
                                         true => crate::components::motion::cascade(("row-in", index), div().child(row), index, cx),
                                         false => row.into_any_element(),
@@ -79,6 +81,12 @@ impl Workspace {
             .bg(self.file_background())
             .child(sideways(("file-table", target.0), table))
             .child(self.pointer_layer(target, window, cx))
+    }
+
+    /// A table's columns as drawn in `target`'s pane, which the Details panel or
+    /// a split may have narrowed since they were sized.
+    pub(crate) fn table_columns(&self, table: Table, target: PaneTarget, window: &gpui::Window) -> ColumnLayout {
+        self.preferences.columns(table).fit(self.pane_width(target, window))
     }
 
     /// A table's header with what every table does: border drags and double
@@ -116,7 +124,7 @@ impl Workspace {
         .detach();
     }
 
-    fn render_row(&self, target: PaneTarget, index: usize, cx: &mut Context<Self>) -> Option<FileRow> {
+    fn render_row(&self, target: PaneTarget, index: usize, specs: Vec<ColumnSpec>, cx: &mut Context<Self>) -> Option<FileRow> {
         let pane = self.pane_by_id(target.0)?;
         let item = pane.items.get(index)?;
         let (path, is_dir) = (item.path.clone(), item.is_dir);
@@ -135,7 +143,7 @@ impl Workspace {
             .cut(self.is_cut(pane, item))
             .drop_target(self.drop_hover(cx) == Some(&folder))
             .zoom(self.preferences.list_zoom)
-            .columns(self.preferences.columns(Table::Files).specs(Table::Files));
+            .columns(specs);
         let row = match self.renaming(target, &item.path) {
             true => row.editor(crate::components::rename_box(self.rename_field.clone())),
             false => row,

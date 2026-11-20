@@ -24,7 +24,7 @@ impl Workspace {
             _ => None,
         };
         let content: AnyElement = if self.trash_open {
-            self.render_trash(cx).into_any_element()
+            self.render_trash(window, cx).into_any_element()
         } else {
             match (&pane.listing, pane.current_view_mode()) {
             (Listing::Root, mode) => match (&self.home.drives, self.storage()) {

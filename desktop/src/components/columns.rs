@@ -86,11 +86,29 @@ pub struct ColumnLayout {
     pub shown: Vec<Column>,
     /// Columns sized by hand; others keep their default width, and Name fills.
     pub widths: HashMap<Column, f32>,
+    /// How wide the pane was when a column was last sized. In a narrower pane
+    /// Name gives up the difference, so the Details panel or a split moves the
+    /// columns over instead of hiding them; widening a column in the same pane
+    /// still scrolls the table, so the border follows the pointer.
+    #[serde(default)]
+    pub fitted: Option<f32>,
 }
 
 impl ColumnLayout {
     pub fn new(table: Table) -> Self {
-        Self { shown: table.shown_by_default(), widths: HashMap::new() }
+        Self { shown: table.shown_by_default(), widths: HashMap::new(), fitted: None }
+    }
+
+    /// The layout as drawn in a pane `pane` pixels wide: a sized Name narrower
+    /// by the width the pane lost since it was sized, down to its minimum.
+    pub fn fit(&self, pane: f32) -> Self {
+        let mut layout = self.clone();
+        if let (Some(name), Some(fitted)) = (self.widths.get(&Column::Name), self.fitted) {
+            let lost = (fitted - pane).max(0.);
+            layout.widths.insert(Column::Name, (name - lost).max(MIN_NAME).round());
+        }
+        layout.fitted = Some(pane);
+        layout
     }
 
     /// Name, then the shown columns this table has, each once.
@@ -134,6 +152,7 @@ impl ColumnLayout {
     /// table's left edge, in a table drawn `table_width` pixels wide.
     pub fn resized(&self, table: Table, column: Column, x: f32, table_width: f32) -> Self {
         let mut layout = self.clone();
+        layout.fitted = Some(self.fitted.unwrap_or(table_width));
         // Sizing another column pins Name where it is drawn, as GTK pins every
         // column once one is sized: otherwise a wider column would narrow Name
         // and slide away from the pointer. The last column fills from then on.
@@ -227,7 +246,7 @@ mod tests {
 
     #[test]
     fn dragging_a_border_sizes_only_the_column_to_its_left() {
-        let layout = ColumnLayout::new(Table::Files);
+        let layout = ColumnLayout::new(Table::Files).fit(1000.);
         // 1000px: Name fills 1000 - (96 + 160 + 176) = 568; Size spans 568..664.
         let wider = layout.resized(Table::Files, Column::Size, 700., 1000.);
         assert_eq!(wider.widths.get(&Column::Size), Some(&132.));
@@ -256,6 +275,24 @@ mod tests {
     }
 
     #[test]
+    fn a_narrower_pane_takes_its_room_from_name() {
+        let sized = ColumnLayout::new(Table::Files).fit(1000.).resized(Table::Files, Column::Size, 700., 1000.);
+        assert_eq!(sized.fitted, Some(1000.));
+        // A Details panel takes 300px: Name gives them up, the others keep theirs.
+        let narrow = sized.fit(700.);
+        assert_eq!(narrow.specs(Table::Files)[0].width, Width::Fixed(268.));
+        assert_eq!(narrow.specs(Table::Files)[1].width, Width::Fixed(132.));
+        assert_eq!(narrow.fit(100.).widths.get(&Column::Name), Some(&MIN_NAME));
+        // Closed again, Name is back; a wider window leaves it be.
+        assert_eq!(sized.fit(1000.), sized);
+        assert_eq!(sized.fit(1400.).specs(Table::Files)[0].width, Width::Fixed(568.));
+        // A drag in the narrow pane follows the pointer from where Name is drawn.
+        let typed = narrow.resized(Table::Files, Column::Type, 600., 700.);
+        assert_eq!(typed.widths.get(&Column::Type), Some(&200.));
+        assert_eq!(typed.fitted, Some(700.));
+    }
+
+    #[test]
     fn hiding_and_showing_keeps_the_tables_order() {
         let layout = ColumnLayout::new(Table::Files).toggled(Table::Files, Column::Size);
         assert_eq!(layout.columns(Table::Files), [Column::Name, Column::Type, Column::Modified]);
@@ -265,7 +302,7 @@ mod tests {
 
     #[test]
     fn a_column_another_table_owns_is_not_drawn() {
-        let layout = ColumnLayout { shown: vec![Column::Deleted, Column::Size], widths: HashMap::new() };
+        let layout = ColumnLayout { shown: vec![Column::Deleted, Column::Size], widths: HashMap::new(), fitted: None };
         assert_eq!(layout.columns(Table::Files), [Column::Name, Column::Size]);
     }
 
