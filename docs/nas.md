@@ -71,14 +71,12 @@ A worker starts the first time an account touches a file and exits after five id
 
 ### File Permissions for BoxBox Itself
 
-The supervisor and the API both read `config.yaml`. In NAS mode root has no override, so it reads files only through their normal permissions. A file owned by a host user with mode `0600` stops BoxBox from starting. Let root and the API read it, and nobody else, because it holds password hashes:
+Only the supervisor reads `config.yaml`. It passes the loaded configuration to the API, so neither the API nor any worker opens the file. In NAS mode root has no override, so it reads files only through their normal permissions. A file owned by a host user with mode `0600` stops BoxBox from starting. Make root its owner and let nobody else read it, because it holds password hashes:
 
 ```bash
-chown root:10001 config.yaml
-chmod 0640 config.yaml
+chown root:root config.yaml
+chmod 0600 config.yaml
 ```
-
-Do not put group `10001` in any account's `groups`, or that account's worker could read the file too.
 
 The API writes `/data` and `/tmp/boxbox`, as it does without NAS mode. The image creates both for `10001:10001`. To run the API as another identity, set `nas.service_uid` and `nas.service_gid`, or `BOXBOX_NAS_SERVICE_UID` and `BOXBOX_NAS_SERVICE_GID`. Then give that identity those two paths and the files already in them. BoxBox does not change their ownership.
 
@@ -99,7 +97,11 @@ chgrp family /mnt/tank/shared
 chmod 2770 /mnt/tank/shared
 ```
 
-Files created in it get the `family` group. BoxBox currently creates files as `0644` and folders as `0755`, so other members cannot write into each other's files directly. Because they can write to the folder, they can still delete or rename a file, or replace it with a new one. BoxBox's editor saves that way.
+Files created in it get the `family` group.
+
+> **New files are not group-writable yet.** BoxBox creates files as `0644` and folders as `0755`. Other members of the group can read and download each other's files and open each other's folders, but cannot change a file in place or add files to a folder someone else created. This lasts until a follow-up lets BoxBox create group-writable files (`0664` and `0775`).
+
+Because members can write to the shared folder itself, they can still delete or rename a file in it, or replace it with a new one. BoxBox's editor saves that way.
 
 ## Moves, Copies and Share Links
 
@@ -119,6 +121,7 @@ It does not protect against a compromised API. An attacker who controls the API 
 - NAS mode needs Linux. It cannot be combined with `--dev` or `--desktop`.
 - Drive usage on This Server is read as the API's identity. If `10001` cannot reach a mount's root, its usage is missing.
 - `auto_discover` lists drives as the API's identity, once at startup.
+- New files are `0644` and folders `0755`, so a shared group can read but not modify them. See [Shared Folders](#shared-folders).
 - Tested on Linux with plain POSIX permissions and a setgid shared folder, not yet on TrueNAS or with NFSv4 ACLs. The kernel enforces ACLs for workers too, but that is untested.
 
 ## Troubleshooting
@@ -127,6 +130,6 @@ It does not protect against a compromised API. An attacker who controls the API 
 | --- | --- |
 | `NAS mode must start as root` | The container runs as a non-root user. Set `user: "0:0"`. |
 | `Start API process; NAS mode needs the SETUID and SETGID capabilities` | Usually `cap_add` is missing `SETUID` or `SETGID`. The error that follows in the log says which. If Docker remaps user namespaces (`userns-remap`), an ID outside the container's mapping also fails here, and mapped IDs appear as different IDs on the host. |
-| `Failed to load configuration` with *permission denied* | Root cannot read `config.yaml`. See [File Permissions for BoxBox Itself](#file-permissions-for-boxbox-itself). |
+| `Failed to load configuration` with *permission denied* | Root cannot read `config.yaml`, usually because a host user owns it. See [File Permissions for BoxBox Itself](#file-permissions-for-boxbox-itself). |
 | *This account has no NAS identity* | Add the account under `nas.identities`. |
 | *File access is temporarily unavailable* | The account's worker could not start. The server log names the reason. |
