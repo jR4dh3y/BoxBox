@@ -100,7 +100,7 @@ func (n NASConfig) Enabled() bool {
 	return len(n.Identities) > 0
 }
 
-func (n NASConfig) validate(users map[string]string) error {
+func (n NASConfig) validate(accounts map[string]struct{}) error {
 	if !n.Enabled() {
 		return nil
 	}
@@ -108,7 +108,7 @@ func (n NASConfig) validate(users map[string]string) error {
 		return fmt.Errorf("nas.service_uid and nas.service_gid must not be 0")
 	}
 	for username, identity := range n.Identities {
-		if _, ok := users[username]; !ok {
+		if _, ok := accounts[username]; !ok {
 			return fmt.Errorf("nas.identities.%s does not match a configured user", username)
 		}
 		if identity.UID == 0 || identity.GID == 0 {
@@ -119,6 +119,17 @@ func (n NASConfig) validate(users map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// Accounts is every name that can sign in. Settings keyed by account, such
+// as nas.identities, check against this set, so a new sign-in source (for
+// example accounts that only use single sign-on) belongs here.
+func (c *ServerConfig) Accounts() map[string]struct{} {
+	accounts := make(map[string]struct{}, len(c.Users))
+	for username := range c.Users {
+		accounts[username] = struct{}{}
+	}
+	return accounts
 }
 
 // Validate checks that the configuration is valid
@@ -178,7 +189,7 @@ func (c *ServerConfig) Validate() error {
 	if c.ChunkSizeMB < 1 {
 		return fmt.Errorf("chunk_size_mb must be at least 1")
 	}
-	if err := c.NAS.validate(c.Users); err != nil {
+	if err := c.NAS.validate(c.Accounts()); err != nil {
 		return err
 	}
 	for _, trustedProxy := range c.TrustedProxies {
