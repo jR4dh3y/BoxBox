@@ -493,7 +493,11 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, onCopied func
 		return err
 	}
 
-	dst, err := s.fs.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	srcInfo, err := src.Stat()
+	if err != nil {
+		return err
+	}
+	dst, err := s.fs.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, srcInfo.Mode().Perm())
 	if err != nil {
 		return err
 	}
@@ -527,7 +531,11 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, onCopied func
 		}
 	}
 
-	return nil
+	// OpenFile's mode is reduced by the umask; set the source's bits exactly.
+	if f, ok := dst.(interface{ Chmod(os.FileMode) error }); ok {
+		return f.Chmod(srcInfo.Mode().Perm())
+	}
+	return s.fs.Chmod(destPath, srcInfo.Mode().Perm())
 }
 
 // copyDir builds one traversal manifest, then copies without walking the
@@ -535,7 +543,7 @@ func (s *jobService) copyFile(ctx context.Context, job *model.Job, onCopied func
 func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 	sourcePath := jobSourcePath(job)
 	destPath := jobDestPath(job)
-	manifest, _, err := s.collectManifest(ctx, sourcePath, false)
+	manifest, _, err := s.collectManifest(ctx, sourcePath, true)
 	if err != nil {
 		return err
 	}
@@ -549,7 +557,7 @@ func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 
 	var totalBytes int64
 	for _, entry := range manifest {
-		if !entry.Metadata.IsDir() {
+		if entry.Metadata.Mode().IsRegular() {
 			totalBytes += entry.Metadata.Size()
 		}
 	}
@@ -561,6 +569,16 @@ func (s *jobService) copyDir(ctx context.Context, job *model.Job) error {
 		targetPath := filepath.Join(destPath, entry.RelativePath)
 		if entry.Metadata.IsDir() {
 			if err := s.fs.MkdirAll(targetPath, entry.Metadata.Mode().Perm()); err != nil {
+				return err
+			}
+			continue
+		}
+		if entry.Metadata.Mode()&os.ModeSymlink != 0 {
+			target, err := s.fs.Readlink(entry.Path)
+			if err != nil {
+				return err
+			}
+			if err := s.fs.Symlink(target, targetPath); err != nil {
 				return err
 			}
 			continue
