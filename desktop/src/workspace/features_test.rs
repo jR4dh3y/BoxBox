@@ -1814,3 +1814,24 @@ fn hover_cards_follow_settings_and_give_way_to_menus(cx: &mut TestAppContext) {
     assert!(card(cx));
     cx.update(|_, app| assert!(!crate::components::motion::enabled(app), "Animations off reaches every component"));
 }
+
+#[gpui::test]
+fn an_open_dialog_keeps_the_folders_keys_from_acting_behind_it(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a.txt"]);
+    click(cx, "row-0-0");
+    cx.simulate_keystrokes("f1");
+    view.read_with(cx, |workspace, _| assert!(workspace.shortcuts_open));
+    cx.simulate_keystrokes("delete ctrl-a f2");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.confirm.is_none() && workspace.operation_dialog.is_none());
+        assert!(workspace.shortcuts_open);
+    });
+    assert!(fixture.root.join("a.txt").is_file());
+    // Escape still closes the dialog, and the keys work again.
+    cx.simulate_keystrokes("escape");
+    view.read_with(cx, |workspace, _| assert!(!workspace.shortcuts_open));
+    cx.simulate_keystrokes("delete");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert!(workspace.confirm.is_some() || !fixture.root.join("a.txt").exists()));
+}

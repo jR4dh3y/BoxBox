@@ -42,7 +42,7 @@ pub(crate) struct TypeAhead {
 
 pub fn bind_keys(cx: &mut App) {
     // In a text field these keys edit the text.
-    let context = Some("BrowseWorkspace && !TextField");
+    let context = Some("BrowseWorkspace && !TextField && !Dialog");
     let steps = [
         ("up", Step::Up),
         ("down", Step::Down),
@@ -149,7 +149,7 @@ impl Workspace {
     /// The same letter again goes on to the next item that starts with it.
     pub(crate) fn type_ahead(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
-        if !self.focus_handle.is_focused(window) || modifiers.control || modifiers.alt || modifiers.platform || self.trash_open {
+        if !self.focus_handle.is_focused(window) || self.dialog_open() || modifiers.control || modifiers.alt || modifiers.platform || self.trash_open {
             return;
         }
         let Some(typed) = event.keystroke.key_char.as_deref().filter(|text| text.chars().all(|ch| !ch.is_whitespace() && !ch.is_control())) else {

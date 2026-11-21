@@ -156,7 +156,8 @@ impl Workspace {
         receive(self, prefetch.listing, cx, move |this, read, cx| match read {
             // The remembered folder is gone: start on the Overview, not an error.
             Some(read) if fallback && read.items.is_err() => {
-                if let Some(pane) = this.pane_mut_by_id(target.0) {
+                // Unless the user has opened another folder since.
+                if let Some(pane) = this.pane_mut_by_id(target.0).filter(|pane| pane.generation == generation) {
                     pane.start_on_overview();
                 }
                 cx.notify();

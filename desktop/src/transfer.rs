@@ -138,6 +138,12 @@ impl Run<'_> {
         let mut name = if self.fat { fat_safe(&item.name) } else { item.name.clone() };
         let target = join(parent, &name);
         let same = same_provider(source, self.dest());
+        // Creating the folder first, as a merge or a FAT copy does, would copy it into itself.
+        if same && item.is_dir && within(source, &item.path, parent) {
+            let into_itself = || anyhow::bail!("“{}” cannot go inside itself", item.name);
+            self.attempt(&item.name, into_itself)?;
+            return Ok(());
+        }
         if let Ok(existing) = self.dest().stat(&target) {
             let itself = same && (existing.path == item.path || same_local_file(source, &item.path, &target));
             // Moved to where it already is, perhaps by another path: nothing to do.
@@ -363,6 +369,15 @@ fn contains(api: &Api, folder: &str, item: &str) -> bool {
     let Some(folder) = api.entry_path(folder).ok().flatten().and_then(|path| entry_identity(&path)) else { return false };
     let Some(item) = api.entry_path(item).ok().flatten() else { return false };
     item.ancestors().skip(1).any(|ancestor| entry_identity(ancestor) == Some(folder))
+}
+
+/// Whether `path` is `folder` or lies inside it as the disk sees them: through
+/// links, a drive mounted inside, or Windows' case-blind names.
+fn within(api: &Api, folder: &str, path: &str) -> bool {
+    let real = |path: &str| fs::canonicalize(api.local_path(path).ok().flatten()?).ok();
+    let (Some(folder), Some(path)) = (real(folder), real(path)) else { return false };
+    let Some(folder) = entry_identity(&folder) else { return false };
+    path.ancestors().any(|ancestor| entry_identity(ancestor) == Some(folder))
 }
 
 /// Two virtual paths on one local provider that name the same file, such as
@@ -663,6 +678,22 @@ mod tests {
         assert_eq!(outcome, Outcome { done: 1, skipped: 1 });
         assert!(!root.0.join("dst/a.txt").exists());
         assert!(root.0.join("dst/b.txt").exists());
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_folder_is_not_merged_into_itself_by_another_path() {
+        let (root, api) = fixture(&["a/sub/a/old.txt", "a/new.txt"]);
+        std::os::unix::fs::symlink(root.0.join("a"), root.0.join("alias")).unwrap();
+        let asked = RefCell::new(Vec::new());
+        let ask = |question: Question, _| {
+            asked.borrow_mut().push(question);
+            (Answer::Skip, false)
+        };
+        let outcome = run(&job(&api, Mode::Copy, &["a"], "alias/sub"), &ask).unwrap();
+        assert!(matches!(&asked.borrow()[..], [Question::Failed { error, .. }] if error.contains("inside itself")), "{:?}", asked.borrow());
+        assert_eq!(outcome.done, 0);
+        assert!(!root.0.join("a/sub/a/new.txt").exists());
     }
 
     #[test]

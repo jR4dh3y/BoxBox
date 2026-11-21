@@ -193,9 +193,15 @@ fn copy_regular_file(source: &Path, destination: &Path, confinement: Option<&Pat
     }
 
     let result = {
-        let mut output = OpenOptions::new()
-            .write(true)
-            .create_new(true)
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        // Private until the source's permissions apply, after the last byte.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            options.mode(0o600);
+        }
+        let mut output = options
             .open(destination)
             .with_context(|| format!("cannot create {}", destination.display()))?;
         let result = (|| -> Result<()> {

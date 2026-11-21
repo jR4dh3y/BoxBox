@@ -252,7 +252,10 @@ fn desktop_workflow(cx: &mut TestAppContext) {
     click(cx, "setting-background-0");
     view.read_with(cx, |workspace, _| assert!(!workspace.has_wallpaper()));
     assert!(DesktopSettings::load().wallpaper.is_none());
-    cx.simulate_keystrokes("escape ctrl-t ctrl-tab");
+    // Settings blocks the folder's keys behind it, so close it first.
+    click(cx, "close-settings");
+    view.read_with(cx, |workspace, _| assert!(!workspace.settings_open));
+    cx.simulate_keystrokes("ctrl-t ctrl-tab");
     view.read_with(cx, |workspace, _| assert_eq!(workspace.active_tab, 0));
     cx.simulate_keystrokes("ctrl-shift-tab");
     view.read_with(cx, |workspace, _| assert_eq!(workspace.active_tab, 1));

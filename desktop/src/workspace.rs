@@ -246,7 +246,8 @@ actions!(
 );
 
 pub fn bind_keys(cx: &mut App) {
-    let context = Some("BrowseWorkspace");
+    // An open dialog keeps the folder's keys from acting behind it.
+    let context = Some("BrowseWorkspace && !Dialog");
     cx.bind_keys([
         KeyBinding::new("alt-left", Back, context),
         KeyBinding::new("alt-up", ParentFolder, context),
@@ -264,7 +265,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-t", NewTab, context),
         KeyBinding::new("ctrl-w", CloseTab, context),
         KeyBinding::new("ctrl-a", SelectAll, context),
-        KeyBinding::new("escape", ClearSelection, context),
+        // Escape closes the dialog itself.
+        KeyBinding::new("escape", ClearSelection, Some("BrowseWorkspace")),
         KeyBinding::new("ctrl-,", OpenSettings, context),
         KeyBinding::new("ctrl-f", FocusSearch, context),
         KeyBinding::new("ctrl-l", FocusLocation, context),
@@ -274,8 +276,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("delete", DeleteSelected, context),
         KeyBinding::new("shift-delete", DeletePermanently, context),
         // Typing in a field does not reach these.
-        KeyBinding::new("ctrl-s", SelectPattern, Some("BrowseWorkspace && !TextField")),
-        KeyBinding::new("ctrl-i", InvertSelection, Some("BrowseWorkspace && !TextField")),
+        KeyBinding::new("ctrl-s", SelectPattern, Some("BrowseWorkspace && !TextField && !Dialog")),
+        KeyBinding::new("ctrl-i", InvertSelection, Some("BrowseWorkspace && !TextField && !Dialog")),
         KeyBinding::new("ctrl-d", DownloadSelected, context),
         KeyBinding::new("ctrl-c", CopySelected, context),
         KeyBinding::new("ctrl-x", CutSelected, context),
@@ -289,7 +291,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl--", ZoomOut, context),
         KeyBinding::new("ctrl-0", ZoomReset, context),
         // A text field keeps Ctrl+Z to itself, as the web shortcut skips inputs.
-        KeyBinding::new("ctrl-z", Undo, Some("BrowseWorkspace && !TextField")),
+        KeyBinding::new("ctrl-z", Undo, Some("BrowseWorkspace && !TextField && !Dialog")),
         KeyBinding::new("escape", CloseSettings, Some("SettingsPanel")),
     ]);
     keyboard::bind_keys(cx);
@@ -1394,6 +1396,22 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Whether a dialog is open. It blocks clicks behind it, and this blocks keys.
+    pub(crate) fn dialog_open(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        let open_with = self.open_with.is_some();
+        #[cfg(not(target_os = "linux"))]
+        let open_with = false;
+        open_with
+            || self.confirm.is_some()
+            || self.devices.prompt.is_some()
+            || self.transfer_question.is_some()
+            || self.shortcuts_open
+            || self.settings_open
+            || self.properties.is_some()
+            || self.operation_dialog.is_some()
+    }
+
     fn clear_selection(&mut self, _: &ClearSelection, window: &mut Window, cx: &mut Context<Self>) {
         // Escape closes the topmost dialog first, as the web Modal does.
         if self.confirm.is_some() { self.answer(false, cx); }
@@ -1537,7 +1555,7 @@ impl Render for Workspace {
                 .child(self.render_browser(PaneTarget(secondary.id), window, cx));
         }
         div()
-            .key_context("BrowseWorkspace")
+            .key_context(if self.dialog_open() { "BrowseWorkspace Dialog" } else { "BrowseWorkspace" })
             .track_focus(&self.focus_handle)
             // First, so it runs before the drop zones inside report themselves.
             .on_drag_move(cx.listener(|this, _: &gpui::DragMoveEvent<crate::drag_out::DraggedItem>, _, cx| this.track_drag(cx)))

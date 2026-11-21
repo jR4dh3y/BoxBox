@@ -26,7 +26,8 @@ pub(super) fn write_zip(
         zip.add_directory(&root, directory_options(None))?;
         let canonical = fs::canonicalize(source)?;
         ensure!(canonical.starts_with(confinement), "archive source escapes its mount");
-        let mut visited = HashSet::from([canonical.clone()]);
+        // The unfinished archive may sit inside a source; never add it.
+        let mut visited = HashSet::from([canonical.clone(), fs::canonicalize(&stage)?]);
         append_directory(&mut zip, &canonical, &root, confinement, &mut visited)?;
         let file = zip.finish()?;
         file.sync_all()?;
@@ -46,7 +47,8 @@ pub(super) fn write_zip_of(sources: &[(PathBuf, PathBuf)], destination: &Path) -
     let (stage, file) = copy::create_temp_file(parent, "archive")?;
     let result = (|| {
         let mut zip = ZipWriter::new(file);
-        let mut visited = HashSet::new();
+        // The unfinished archive may sit inside a source; never add it.
+        let mut visited = HashSet::from([fs::canonicalize(&stage)?]);
         for (source, confinement) in sources {
             let mut pending = Vec::new();
             append_entry(&mut zip, source, "", confinement, &mut visited, &mut pending)?;
@@ -97,6 +99,7 @@ fn append_entry(
     source: &Path,
     archive_directory: &str,
     confinement: &Path,
+    // Folders already added, and files never to add.
     visited: &mut HashSet<PathBuf>,
     pending: &mut Vec<(PathBuf, String)>,
 ) -> Result<()> {
@@ -121,6 +124,9 @@ fn append_entry(
         }
     } else if metadata.is_file() {
         let canonical = fs::canonicalize(source)?;
+        if visited.contains(&canonical) {
+            return Ok(());
+        }
         ensure!(canonical.starts_with(confinement), "{} escapes its mount", source.display());
         let mut input = open_no_follow(&canonical)?;
         let opened = input.metadata()?;
@@ -212,4 +218,25 @@ fn open_no_follow(path: &Path) -> Result<File> {
 #[cfg(not(unix))]
 fn open_no_follow(path: &Path) -> Result<File> {
     Ok(File::open(path)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    #[test]
+    fn an_archive_written_inside_a_source_leaves_itself_out() {
+        let root = std::env::temp_dir().join(format!("boxbox-archive-self-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let folder = root.join("reports");
+        fs::create_dir(&folder).unwrap();
+        fs::write(folder.join("report.txt"), "r").unwrap();
+        let sources = [(folder.join("report.txt"), root.clone()), (folder.clone(), root.clone())];
+        super::write_zip_of(&sources, &folder.join("bundle.zip")).unwrap();
+        let archive = zip::ZipArchive::new(fs::File::open(folder.join("bundle.zip")).unwrap()).unwrap();
+        let mut names: Vec<_> = archive.file_names().map(str::to_owned).collect();
+        names.sort();
+        fs::remove_dir_all(&root).unwrap();
+        assert_eq!(names, ["report.txt", "reports/", "reports/report.txt"]);
+    }
 }
