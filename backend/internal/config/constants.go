@@ -109,6 +109,10 @@ const (
 	// TokenCleanupInterval is how often to clean up expired sessions.
 	TokenCleanupInterval = 1 * time.Hour
 
+	// ShareExpiryCleanupInterval is how often expired delete-on-expiry shares
+	// are checked, so a file is deleted at most this long after its link expires.
+	ShareExpiryCleanupInterval = 1 * time.Minute
+
 	// LoginLockoutThreshold is the number of consecutive failures allowed
 	// before per-account exponential backoff begins.
 	LoginLockoutThreshold = 5

@@ -482,6 +482,20 @@ describe('transport facade at HTTP boundary', () => {
 		assert.equal(shares.shares.length, 2);
 		assert.equal(shares.shares[1].path, ref('media/a.txt'));
 		assert.equal(shares.shares[1].url, 'https://home.example/box/s/public-token');
+		// This server predates delete-on-expiry and omits the field.
+		assert.equal(shares.shares[1].deleteOnExpiry, false);
+	});
+
+	test('asks the owning server to delete a shared file on expiry only when chosen', async () => {
+		await createShare(ref('media/a.txt'), { expiresInSeconds: 3600, deleteOnExpiry: true });
+		const creation = requests.findLast(
+			(request) => request.path === `${proxy}/shares` && request.method === 'POST'
+		);
+		assert.deepEqual(creation?.body, {
+			path: 'media/a.txt',
+			expiresInSeconds: 3600,
+			deleteOnExpiry: true
+		});
 	});
 
 	test('uploads an empty file as one checksum-verified chunk', async () => {

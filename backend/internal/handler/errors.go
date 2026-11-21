@@ -53,6 +53,7 @@ var serviceErrorMappings = []ErrorMapping{
 
 	// Share service errors
 	{service.ErrShareNotFound, "Share not found", model.ErrCodeNotFound, http.StatusNotFound},
+	{service.ErrShareTargetChanged, "The file changed while the link was created. Try again.", model.ErrCodeConflict, http.StatusConflict},
 	{service.ErrShareTooLarge, "Upload exceeds the size limit", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
 
 	// Wallpaper errors

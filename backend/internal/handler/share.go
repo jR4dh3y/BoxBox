@@ -89,8 +89,9 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var expiresAt time.Time
 	if req.ExpiresInSeconds != nil {
-		if *req.ExpiresInSeconds <= 0 {
-			writeError(w, "expiresInSeconds must be a positive integer", model.ErrCodeValidationError, http.StatusBadRequest)
+		// A larger value overflows time.Duration into a past expiry.
+		if *req.ExpiresInSeconds <= 0 || *req.ExpiresInSeconds > maxShareExpirySeconds {
+			writeError(w, "expiresInSeconds must be a positive integer of at most 100 years", model.ErrCodeValidationError, http.StatusBadRequest)
 			return
 		}
 		expiresAt = time.Now().Add(time.Duration(*req.ExpiresInSeconds) * time.Second)
@@ -99,6 +100,7 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 	share, err := h.shareService.Create(r.Context(), username, req.Path, service.ShareSettings{
 		Permissions:    req.Permissions,
 		MaxUploadBytes: req.MaxUploadBytes,
+		DeleteOnExpiry: req.DeleteOnExpiry,
 	}, expiresAt)
 	if err != nil {
 		HandleServiceError(w, err)
@@ -115,8 +117,12 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 		IsFolder:       share.IsFolder,
 		CreatedAt:      share.CreatedAt,
 		ExpiresAt:      share.ExpiresAt,
+		DeleteOnExpiry: share.DeleteOnExpiry != nil,
 	}, http.StatusCreated)
 }
+
+// maxShareExpirySeconds is 100 years, far below the time.Duration limit.
+const maxShareExpirySeconds = 100 * 365 * 24 * 60 * 60
 
 // List returns the caller's active share links
 // GET /api/v1/shares
@@ -153,6 +159,7 @@ func shareSummary(share model.Share) model.ShareSummary {
 		IsFolder:       share.IsFolder,
 		CreatedAt:      share.CreatedAt,
 		ExpiresAt:      share.ExpiresAt,
+		DeleteOnExpiry: share.DeleteOnExpiry != nil,
 	}
 }
 

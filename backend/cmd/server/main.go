@@ -90,7 +90,7 @@ func main() {
 	defer cancel()
 
 	// Initialize components
-	server, hub, jobService, authService, streamHandler, err := initializeServer(cfg, localIdentity, *desktopMode)
+	server, hub, jobService, authService, streamHandler, shareService, err := initializeServer(cfg, localIdentity, *desktopMode)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize server")
 	}
@@ -125,6 +125,10 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to listen")
 	}
+	// Deleting files starts only once this process owns the port, so a second
+	// launch against the same data directory cannot run a pass first.
+	shareService.StartExpiryCleanup(ctx)
+	log.Info().Msg("Share expiry cleanup started")
 	if *desktopMode {
 		chooser, closeChooser := startDesktopChooser(ctx, cfg)
 		defer closeChooser()
@@ -145,11 +149,11 @@ func main() {
 	}
 
 	// Wait for shutdown signal
-	waitForShutdown(cancel, server, jobService, authService, streamHandler, *desktopMode)
+	waitForShutdown(cancel, server, jobService, authService, streamHandler, shareService, *desktopMode)
 }
 
 // initializeServer creates and configures all server components
-func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http.Server, *websocket.Hub, service.JobService, service.AuthService, *handler.StreamHandler, error) {
+func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http.Server, *websocket.Hub, service.JobService, service.AuthService, *handler.StreamHandler, service.ShareService, error) {
 	// Create filesystem abstraction (using real OS filesystem)
 	fs := filesystem.NewOsFS()
 
@@ -180,13 +184,13 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 		Users:     cfg.Users,
 	})
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("initialize auth service: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("initialize auth service: %w", err)
 	}
 	var connectService *service.ConnectService
 	if !devMode {
 		connectService, err = service.NewConnectService(fs, authService, service.ConnectServiceConfig{DataDir: cfg.DataDir, Users: cfg.Users})
 		if err != nil {
-			return nil, nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, nil, err
 		}
 	}
 
@@ -229,7 +233,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 	if desktopMode {
 		thumbnails, err = desktopThumbnails(fileService)
 		if err != nil {
-			return nil, nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, nil, err
 		}
 	}
 	streamHandler := handler.NewStreamHandlerWithThumbnails(fileService, cfg.MaxUploadMB, thumbnails)
@@ -253,7 +257,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 		IdleTimeout:  config.HTTPIdleTimeout,
 	}
 
-	return server, hub, jobService, authService, streamHandler, nil
+	return server, hub, jobService, authService, streamHandler, shareService, nil
 }
 
 // shareRateLimitRPS bounds the public share-link endpoints. It is higher than
@@ -393,7 +397,7 @@ func createRouter(
 }
 
 // waitForShutdown handles graceful shutdown on interrupt signals
-func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService service.JobService, authService service.AuthService, streamHandler *handler.StreamHandler, desktopMode bool) {
+func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService service.JobService, authService service.AuthService, streamHandler *handler.StreamHandler, shareService service.ShareService, desktopMode bool) {
 	// Create channel to receive OS signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -431,4 +435,7 @@ func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService 
 	// Stop background cleanups
 	authService.StopCleanup()
 	streamHandler.StopCleanup()
+	if err := shareService.StopExpiryCleanup(shutdownCtx); err != nil {
+		log.Warn().Err(err).Msg("Stopped waiting for expired share cleanup")
+	}
 }
