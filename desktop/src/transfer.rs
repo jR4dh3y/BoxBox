@@ -138,6 +138,10 @@ impl Run<'_> {
         let mut name = if self.fat { fat_safe(&item.name) } else { item.name.clone() };
         let target = join(parent, &name);
         let same = same_provider(source, self.dest());
+        // Before anything is replaced or copied; a folder link is pasted as a link.
+        if item.is_dir && self.goes_into_itself(source, item, parent, false)? {
+            return Ok(());
+        }
         if let Ok(existing) = self.dest().stat(&target) {
             let itself = same && (existing.path == item.path || same_local_file(source, &item.path, &target));
             // Moved to where it already is, perhaps by another path: nothing to do.
@@ -169,7 +173,7 @@ impl Run<'_> {
                     }
                 }
                 Answer::Merge => {
-                    if self.walks_into_itself(source, item, parent)? {
+                    if self.goes_into_itself(source, item, parent, true)? {
                         return Ok(());
                     }
                     return self.merge_into(source, item, &target);
@@ -179,7 +183,7 @@ impl Run<'_> {
         }
         // FAT needs every name inside checked too, so folders are walked there.
         if self.fat && item.is_dir {
-            if self.walks_into_itself(source, item, parent)? {
+            if self.goes_into_itself(source, item, parent, true)? {
                 return Ok(());
             }
             if !self.attempt(&item.name, || self.job.destination.create_directory(parent, &name).map(|_| ()))? {
@@ -194,11 +198,11 @@ impl Run<'_> {
         Ok(())
     }
 
-    /// Whether walking `item` into `parent` would copy it into itself, as a merge
-    /// or a FAT copy creates the folder first. Reports it as the item's failure.
-    /// A plain copy or move acts on a link itself, so only a walk is checked.
-    fn walks_into_itself(&mut self, source: &Arc<Api>, item: &FileInfo, parent: &str) -> Result<bool> {
-        if !same_provider(source, self.dest()) || !within(source, &item.path, parent) {
+    /// Whether `item` would go into `parent`, itself or inside it, which reports
+    /// it as the item's failure. A link to a folder is only refused when `walked`,
+    /// as a merge or a FAT copy goes through it; otherwise the link itself moves.
+    fn goes_into_itself(&mut self, source: &Arc<Api>, item: &FileInfo, parent: &str, walked: bool) -> Result<bool> {
+        if !same_provider(source, self.dest()) || (!walked && is_link(source, &item.path)) || !within(source, &item.path, parent) {
             return Ok(false);
         }
         let into_itself = || anyhow::bail!("“{}” cannot go inside itself", item.name);
@@ -383,6 +387,10 @@ fn contains(api: &Api, folder: &str, item: &str) -> bool {
     let Some(folder) = api.entry_path(folder).ok().flatten().and_then(|path| entry_identity(&path)) else { return false };
     let Some(item) = api.entry_path(item).ok().flatten() else { return false };
     item.ancestors().skip(1).any(|ancestor| entry_identity(ancestor) == Some(folder))
+}
+
+fn is_link(api: &Api, path: &str) -> bool {
+    api.entry_path(path).ok().flatten().and_then(|entry| fs::symlink_metadata(entry).ok()).is_some_and(|metadata| metadata.file_type().is_symlink())
 }
 
 /// Whether `path` is `folder` or lies inside it as the disk sees them: through
@@ -706,9 +714,27 @@ mod tests {
             (answer, false)
         };
         let outcome = run(&job(&api, Mode::Copy, &["a"], "alias/sub"), &ask).unwrap();
-        assert!(matches!(&asked.borrow()[..], [Question::Conflict { .. }, Question::Failed { error, .. }] if error.contains("inside itself")), "{:?}", asked.borrow());
+        assert!(matches!(&asked.borrow()[..], [Question::Failed { error, .. }] if error.contains("inside itself")), "{:?}", asked.borrow());
         assert_eq!(outcome.done, 0);
         assert!(!root.0.join("a/sub/a/new.txt").exists());
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn replacing_inside_the_source_by_another_path_deletes_nothing() {
+        let (root, api) = fixture(&["a/sub/a/old.txt"]);
+        std::os::unix::fs::symlink(root.0.join("a"), root.0.join("alias")).unwrap();
+        for mode in [Mode::Copy, Mode::Move] {
+            let asked = RefCell::new(Vec::new());
+            let ask = |question: Question, _| {
+                let answer = if matches!(question, Question::Conflict { .. }) { Answer::Replace } else { Answer::Skip };
+                asked.borrow_mut().push(question);
+                (answer, false)
+            };
+            run(&job(&api, mode, &["a"], "alias/sub"), &ask).unwrap();
+            assert!(matches!(&asked.borrow()[..], [Question::Failed { error, .. }] if error.contains("inside itself")), "{:?}", asked.borrow());
+            assert!(root.0.join("a/sub/a/old.txt").is_file());
+        }
     }
 
     #[test]
