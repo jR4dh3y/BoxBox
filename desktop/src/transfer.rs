@@ -138,12 +138,6 @@ impl Run<'_> {
         let mut name = if self.fat { fat_safe(&item.name) } else { item.name.clone() };
         let target = join(parent, &name);
         let same = same_provider(source, self.dest());
-        // Creating the folder first, as a merge or a FAT copy does, would copy it into itself.
-        if same && item.is_dir && within(source, &item.path, parent) {
-            let into_itself = || anyhow::bail!("“{}” cannot go inside itself", item.name);
-            self.attempt(&item.name, into_itself)?;
-            return Ok(());
-        }
         if let Ok(existing) = self.dest().stat(&target) {
             let itself = same && (existing.path == item.path || same_local_file(source, &item.path, &target));
             // Moved to where it already is, perhaps by another path: nothing to do.
@@ -174,12 +168,20 @@ impl Run<'_> {
                         return Ok(());
                     }
                 }
-                Answer::Merge => return self.merge_into(source, item, &target),
+                Answer::Merge => {
+                    if self.walks_into_itself(source, item, parent)? {
+                        return Ok(());
+                    }
+                    return self.merge_into(source, item, &target);
+                }
                 _ => bail!("Cancelled"),
             }
         }
         // FAT needs every name inside checked too, so folders are walked there.
         if self.fat && item.is_dir {
+            if self.walks_into_itself(source, item, parent)? {
+                return Ok(());
+            }
             if !self.attempt(&item.name, || self.job.destination.create_directory(parent, &name).map(|_| ()))? {
                 return Ok(());
             }
@@ -190,6 +192,18 @@ impl Run<'_> {
             self.outcome.done += 1;
         }
         Ok(())
+    }
+
+    /// Whether walking `item` into `parent` would copy it into itself, as a merge
+    /// or a FAT copy creates the folder first. Reports it as the item's failure.
+    /// A plain copy or move acts on a link itself, so only a walk is checked.
+    fn walks_into_itself(&mut self, source: &Arc<Api>, item: &FileInfo, parent: &str) -> Result<bool> {
+        if !same_provider(source, self.dest()) || !within(source, &item.path, parent) {
+            return Ok(false);
+        }
+        let into_itself = || anyhow::bail!("“{}” cannot go inside itself", item.name);
+        self.attempt(&item.name, into_itself)?;
+        Ok(true)
     }
 
     /// Two folders become one: each item goes inside, asking again where names meet.
@@ -687,13 +701,25 @@ mod tests {
         std::os::unix::fs::symlink(root.0.join("a"), root.0.join("alias")).unwrap();
         let asked = RefCell::new(Vec::new());
         let ask = |question: Question, _| {
+            let answer = if matches!(question, Question::Conflict { .. }) { Answer::Merge } else { Answer::Skip };
             asked.borrow_mut().push(question);
-            (Answer::Skip, false)
+            (answer, false)
         };
         let outcome = run(&job(&api, Mode::Copy, &["a"], "alias/sub"), &ask).unwrap();
-        assert!(matches!(&asked.borrow()[..], [Question::Failed { error, .. }] if error.contains("inside itself")), "{:?}", asked.borrow());
+        assert!(matches!(&asked.borrow()[..], [Question::Conflict { .. }, Question::Failed { error, .. }] if error.contains("inside itself")), "{:?}", asked.borrow());
         assert_eq!(outcome.done, 0);
         assert!(!root.0.join("a/sub/a/new.txt").exists());
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_link_to_a_folder_pastes_into_that_folder() {
+        let (root, api) = fixture(&["docs/a.txt"]);
+        std::os::unix::fs::symlink(root.0.join("docs"), root.0.join("shortcut")).unwrap();
+        let ask = |question: Question, _| panic!("nothing to ask: {question:?}");
+        let outcome = run(&job(&api, Mode::Copy, &["shortcut"], "docs"), &ask).unwrap();
+        assert_eq!(outcome.done, 1);
+        assert!(fs::symlink_metadata(root.0.join("docs/shortcut")).unwrap().file_type().is_symlink());
     }
 
     #[test]

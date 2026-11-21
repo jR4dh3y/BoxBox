@@ -228,6 +228,8 @@ mod tests {
     fn an_archive_written_inside_a_source_leaves_itself_out() {
         let root = std::env::temp_dir().join(format!("boxbox-archive-self-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
+        // Confinement is a real path, as `canonicalize` gives on Windows (`\\?\`).
+        let root = fs::canonicalize(root).unwrap();
         let folder = root.join("reports");
         fs::create_dir(&folder).unwrap();
         fs::write(folder.join("report.txt"), "r").unwrap();
