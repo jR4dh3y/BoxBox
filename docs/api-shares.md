@@ -107,6 +107,7 @@ GET /api/v1/share/{token}/preview
 GET /api/v1/share/{token}/items?path=reports
 GET /api/v1/share/{token}/archive?path=reports
 GET /api/v1/share/{token}/wallpaper
+GET /api/v1/share/{token}/thumbnail
 POST /api/v1/share/{token}/folders?path=reports/new-folder
 POST /api/v1/share/{token}/upload?path=reports/new.txt
 DELETE /api/v1/share/{token}/items?path=reports/old.txt
@@ -117,6 +118,16 @@ Folder item paths are relative to the share root. Archive downloads include only
 Unknown, expired, and revoked tokens all return the same `404`, so recipients cannot distinguish between them. Requests the share's permissions do not allow return `403`.
 
 Folder creation requires `manage` and a writable mount. It creates missing parents below the shared root and returns `201` with `{"success": true}`. Traversal outside the shared root is denied.
+
+The thumbnail endpoint serves the link-preview image for a single-file share. It returns a JPEG up to 1200 px per side for JPEG, PNG, GIF, WebP, MP4, M4V, MOV, MKV, and WebM files. Video thumbnails use a frame near one second, or the opening frame for short clips. Folders and files that cannot be rendered use `og-default.png`.
+
+Video thumbnails require Linux with FFmpeg 6 or later and util-linux `prlimit` on the server's `PATH`. The BoxBox Docker image includes both. When either tool is missing, video shares use the default image.
+
+The server caches rendered JPEGs in memory by share token, file modification time, file size, and thumbnail dimensions. The endpoint sends an `ETag` and uses `Cache-Control: no-cache`. Every request checks the share before serving cached bytes or returning `304`.
+
+File-browser and share image renders share a 256 MiB budget for decoded pixels and scaling workspace. WebP chunk types determine its decoder reservation; table construction, pixel decoding, inverse transforms, and scaling are counted as separate memory peaks. An image whose estimated workspace exceeds that budget uses the default share preview; other renders wait for memory or request cancellation. The existing source limits of 64 MiB, 32 million pixels, and 8192 pixels per dimension also apply.
+
+The share page itself, `GET /s/{token}`, is the app document with Open Graph and Twitter card tags added for link-preview crawlers: the file or folder name, a short description, the page URL and the preview image. Unknown, expired and revoked tokens, and any lookup error, get the same generic tags without a name. Over the share rate limit, the page still loads with the generic tags.
 
 The wallpaper endpoint serves the owner's image with the sandboxed content policy and returns `404` when no image is stored. Share metadata optionally includes `wallpaper` with `mode`, `frostedGlass`, and a numeric `version` for cache invalidation.
 

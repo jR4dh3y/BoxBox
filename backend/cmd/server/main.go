@@ -331,7 +331,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool, worker
 	shareHandler := handler.NewShareHandler(shareService, settingsService, cfg.MaxUploadMB)
 
 	// Create router
-	router := createRouter(cfg, devMode, authService, authHandler, stacks, wsHandler, systemHandler, settingsHandler, shareHandler, desktopMode, connectService, oidcHandler, authConfig)
+	router := createRouter(cfg, devMode, authService, authHandler, stacks, wsHandler, systemHandler, settingsHandler, shareHandler, shareService, desktopMode, connectService, oidcHandler, authConfig)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -362,12 +362,20 @@ func createRouter(
 	systemHandler *handler.SystemHandler,
 	settingsHandler *handler.SettingsHandler,
 	shareHandler *handler.ShareHandler,
+	shareService service.ShareService,
 	desktopMode bool,
 	connectService *service.ConnectService,
 	oidcHandler *handler.OIDCHandler,
 	authConfig handler.AuthConfigResponse,
 ) chi.Router {
 	r := chi.NewRouter()
+
+	staticHandler, staticErr := static.NewHandler(devMode, desktopMode)
+	// Crawlers cannot pass the desktop host and cookie gate, so desktop mode has no previews.
+	var sharePreview *handler.SharePreviewHandler
+	if staticErr == nil && !desktopMode {
+		sharePreview = handler.NewSharePreviewHandler(shareService, staticHandler, cfg.PublicURL)
+	}
 
 	// Global middleware
 	r.Use(chimiddleware.RequestID)
@@ -420,6 +428,9 @@ func createRouter(
 		r.Route("/share", func(r chi.Router) {
 			r.Use(middleware.RateLimit(shareRateLimitRPS, cfg.TrustedProxies...))
 			shareHandler.RegisterPublicRoutes(r)
+			if sharePreview != nil {
+				r.Get("/{token}/thumbnail", sharePreview.Image)
+			}
 		})
 
 		// Protected routes (auth required)
@@ -459,10 +470,16 @@ func createRouter(
 
 	// Static file handler for SPA frontend (catch-all)
 	// This must be after all API routes
-	staticHandler, err := static.NewHandler(devMode, desktopMode)
-	if err != nil {
-		log.Warn().Err(err).Msg("Static handler not available, frontend will not be served")
+	if staticErr != nil {
+		log.Warn().Err(staticErr).Msg("Static handler not available, frontend will not be served")
 	} else {
+		if sharePreview != nil {
+			// A separate budget from the share API; over it, crawlers still get generic tags.
+			page := middleware.RateLimitOr(shareRateLimitRPS, http.HandlerFunc(sharePreview.GenericPage),
+				cfg.TrustedProxies...)(http.HandlerFunc(sharePreview.Page))
+			r.Method(http.MethodGet, "/s/{token}", page)
+			r.Method(http.MethodHead, "/s/{token}", page)
+		}
 		r.NotFound(staticHandler.ServeHTTP)
 		log.Info().Msg("Static file handler initialized for SPA frontend")
 	}

@@ -118,6 +118,7 @@ func loadWithReport(configPath string, searchPaths []configSearchPath, localIden
 		"chunk_size_mb",
 		"data_dir",
 		"allow_root_mount",
+		"public_url",
 		"oidc.issuer_url",
 		"oidc.client_id",
 		"oidc.client_secret",
@@ -218,6 +219,7 @@ func loadWithReport(configPath string, searchPaths []configSearchPath, localIden
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	cfg.PublicURL = strings.TrimSuffix(cfg.PublicURL, "/")
 
 	// Resolve once before filesystem adapters interpret persistence paths.
 	if cfg.DataDir == "" {

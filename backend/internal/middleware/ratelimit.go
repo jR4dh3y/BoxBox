@@ -89,22 +89,27 @@ func (rl *RateLimiter) cleanupIfDue() {
 // RateLimit returns a middleware that limits requests per IP address.
 // Requests that exceed the rate limit receive a 429 Too Many Requests response.
 func RateLimit(rps float64, trustedProxyValues ...string) func(http.Handler) http.Handler {
+	retryAfter := strconv.Itoa(max(1, int(math.Ceil(1/NewRateLimiter(rps).rps))))
+	tooMany := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", retryAfter)
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error":"Too many requests","code":"rate_limit_exceeded"}`))
+	})
+	return RateLimitOr(rps, tooMany, trustedProxyValues...)
+}
+
+// RateLimitOr is RateLimit, but hands over-limit requests to limited instead of answering 429.
+func RateLimitOr(rps float64, limited http.Handler, trustedProxyValues ...string) func(http.Handler) http.Handler {
 	limiter := NewRateLimiter(rps)
-	retryAfter := strconv.Itoa(max(1, int(math.Ceil(1/limiter.rps))))
 	trustedProxies := parseTrustedProxies(trustedProxyValues)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := getClientIPFromTrustedProxies(r, trustedProxies)
-
-			if !limiter.Allow(ip) {
-				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("Retry-After", retryAfter)
-				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error":"Too many requests","code":"rate_limit_exceeded"}`))
+			if !limiter.Allow(getClientIPFromTrustedProxies(r, trustedProxies)) {
+				limited.ServeHTTP(w, r)
 				return
 			}
-
 			next.ServeHTTP(w, r)
 		})
 	}
