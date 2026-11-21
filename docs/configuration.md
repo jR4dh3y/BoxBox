@@ -70,6 +70,7 @@ mount_points:
 | `rate_limit_rps` | `2` | Auth endpoint requests per second per client IP. |
 | `allowed_origins` | `[]` | WebSocket origin allow-list. Empty enforces same-origin; `*` explicitly allows all. |
 | `trusted_proxies` | `[]` | Proxy IPs/CIDRs allowed to supply client-IP headers. |
+| `public_url` | `""` | External origin, such as `https://files.example.com`, used for absolute URLs in share link previews. Empty derives it from each request's `Host` and `X-Forwarded-Proto`. Must have no path: BoxBox is served from the root of its origin. |
 | `allow_root_mount` | `false` | Explicit override required for a mount resolving to `/`. |
 | `max_upload_mb` | `10240` | Maximum upload size in MiB. |
 | `chunk_size_mb` | `10` | Chunk size in MiB that the browser uses for uploads. Lower it when a reverse proxy limits request body size. |
@@ -98,7 +99,72 @@ BOXBOX_USERS_admin='$2b$12$...'
 BOXBOX_USERS_radhey='$2b$12$...'
 ```
 
-Generate a hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`. If no users are configured, or a configured value is plaintext, BoxBox fails to start.
+Generate a hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`. If no users are configured, or a configured value is plaintext, BoxBox fails to start. With single sign-on enabled, accounts listed in `oidc.users` count, so a server can have no password users.
+
+YAML lowercases `users:` keys, so `Admin:` in YAML becomes the account `admin`. Names from `BOXBOX_USERS_<name>` and `oidc.users` keep their case.
+
+## Single Sign-On (OIDC)
+
+BoxBox can sign users in through any OpenID Connect provider: one that publishes `/.well-known/openid-configuration` and supports the authorization code flow. Nothing in BoxBox is specific to one provider. Sign-in is off until `oidc.issuer_url` is set, and password users keep working unless you turn them off.
+
+```yaml
+oidc:
+  issuer_url: "https://auth.example.com"
+  client_id: "boxbox"
+  client_secret: "..."
+  redirect_url: "https://files.example.com/api/v1/auth/oidc/callback"
+  provider_name: "My SSO"
+  users:
+    - carol
+```
+
+Two URLs must match exactly:
+
+- `redirect_url` is the full address browsers use to reach BoxBox, with scheme and host, followed by `/api/v1/auth/oidc/callback`. Behind a reverse proxy, use the public URL, not the container address. Register the same URL as the client's redirect URI at the provider. If they differ, the provider rejects the sign-in. BoxBox runs at the root of its origin, so prefixes such as `/boxbox/` are not supported.
+- `issuer_url` must equal the `issuer` field in `<issuer_url>/.well-known/openid-configuration`, including the trailing slash or its absence. Copy it from that document.
+
+BoxBox trusts the `username_claim` value as the user's identity. Choose a claim that users cannot change at the provider; if users can rename themselves, one could take another account's name. The claim must be present for every account. `preferred_username` is optional in OpenID Connect, so if your provider does not always send it, use `email` or another claim it always sends.
+
+The value must exactly match a BoxBox account. Matching is case-sensitive. There are two kinds of account:
+
+- `users` holds password accounts, each with a bcrypt hash. They can sign in with a password or through the provider.
+- `oidc.users` lists names that sign in only through the provider. They have no hash.
+
+Any other account at the provider is refused, and the server logs the name so you can add it.
+
+Behind a reverse proxy, set [`trusted_proxies`](#server-options) to the proxy's address. Otherwise the login rate limit sees every request as coming from the proxy, and users share one limit.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `oidc.issuer_url` | `""` (off) | Provider issuer. It must match the provider's `iss` exactly, including any trailing slash. |
+| `oidc.client_id` | Required | OAuth client ID. |
+| `oidc.client_secret` | `""` | Client secret. Leave empty for a public client; PKCE is always used. |
+| `oidc.redirect_url` | Required | Full browser-visible callback URL, as above. |
+| `oidc.provider_name` | `SSO` | Button label: "Sign in with <name>". |
+| `oidc.username_claim` | `preferred_username` | Claim trusted as the account name. Users must not be able to change it. `email` also requires `email_verified`. BoxBox reads UserInfo when the ID token lacks the claim. |
+| `oidc.scopes` | `openid, profile, email` | Requested scopes; must include `openid`. |
+| `oidc.users` | `[]` | Names that sign in only through the provider, with no password hash. They cannot pair desktop clients, which asks for a password. |
+| `oidc.disable_password_login` | `false` | Hides the password form and rejects password login with `403`. If the provider is down, unset it and restart to sign in with a password. |
+
+Common providers, as a starting point; they have not each been tested with BoxBox. Check the issuer in your provider's discovery document, since it must match exactly:
+
+| Provider | `issuer_url` | `username_claim` |
+| --- | --- | --- |
+| Authelia | `https://auth.example.com` | `preferred_username` |
+| Authentik | `https://authentik.example.com/application/o/<app-slug>/` (trailing slash) | `preferred_username` |
+| Keycloak | `https://keycloak.example.com/realms/<realm>` | `preferred_username` |
+| Pocket ID | `https://id.example.com` | `preferred_username` |
+| Kanidm | `https://idm.example.com/oauth2/openid/<client-id>` | `preferred_username` |
+| Zitadel | `https://<instance>.zitadel.cloud` | `preferred_username` |
+| Google | `https://accounts.google.com` | `email` |
+| Microsoft Entra ID | `https://login.microsoftonline.com/<tenant-id>/v2.0` | `preferred_username` or `email` |
+| GitLab | `https://gitlab.com` | `preferred_username` |
+
+Only one provider can be configured. OAuth2-only logins without OpenID Connect, such as GitHub, and reverse-proxy header login (forward auth) are not supported.
+
+A sign-in stays valid for the normal 7-day rolling refresh, even after the user is removed at the provider. Remove the name from BoxBox and restart to end it. Single sign-on settings are ignored before validation in `--dev` and desktop mode, so incomplete provider settings do not block local startup.
+
+On a NAS where each person owns their files under their own UID, map accounts to NAS identities so BoxBox reads and writes as each person. See [NAS users](nas.md).
 
 ## Environment Variables
 
@@ -114,9 +180,19 @@ Environment overrides use the `BOXBOX_` prefix:
 | `BOXBOX_CHUNK_SIZE_MB` | `chunk_size_mb` |
 | `BOXBOX_ALLOWED_ORIGINS` | `allowed_origins`, comma-separated |
 | `BOXBOX_TRUSTED_PROXIES` | `trusted_proxies`, comma-separated CIDRs |
+| `BOXBOX_PUBLIC_URL` | `public_url` |
 | `BOXBOX_ALLOW_ROOT_MOUNT` | `allow_root_mount` |
 | `BOXBOX_DATA_DIR` | `data_dir` |
 | `BOXBOX_USERS_<username>` | `users.<username>` |
+| `BOXBOX_OIDC_ISSUER_URL` | `oidc.issuer_url` |
+| `BOXBOX_OIDC_CLIENT_ID` | `oidc.client_id` |
+| `BOXBOX_OIDC_CLIENT_SECRET` | `oidc.client_secret` |
+| `BOXBOX_OIDC_REDIRECT_URL` | `oidc.redirect_url` |
+| `BOXBOX_OIDC_PROVIDER_NAME` | `oidc.provider_name` |
+| `BOXBOX_OIDC_USERNAME_CLAIM` | `oidc.username_claim` |
+| `BOXBOX_OIDC_SCOPES` | `oidc.scopes`, comma-separated |
+| `BOXBOX_OIDC_USERS` | `oidc.users`, comma-separated |
+| `BOXBOX_OIDC_DISABLE_PASSWORD_LOGIN` | `oidc.disable_password_login` |
 
 `CONFIG_PATH` is also supported as a convenience for selecting the YAML file path.
 

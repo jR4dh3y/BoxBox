@@ -29,6 +29,9 @@ Before exposing BoxBox beyond your own machine:
 - `auth-revocations.json` is ignored and is not deleted. Its denylist cannot identify sessions to load. Legacy tokens without a session ID are rejected on first use and never auto-enrolled; users sign in again. A missing registry file or valid empty registry after restart rejects old tokens without requiring JWT-secret rotation solely because the registry was lost.
 - Restoring an older valid `auth-sessions.json` backup can revive sessions, access tokens, and their current refresh tokens. Rotate `BOXBOX_JWT_SECRET` after restoring a backup. An older validator that ignores session IDs and the registry may accept tokens after downgrade; rotate the secret if you downgrade.
 - After startup with a user removed from configuration, that user's tokens fail validation. Session deadlines preserve the existing sliding refresh lifetime and retain the longest existing deadline when configured token TTLs shrink.
+- Single sign-on uses the authorization code flow with PKCE, `state` and `nonce`. The ID token's signature, issuer, audience, expiry and `azp` are checked. The sign-in state lives in a signed, 10-minute, `HttpOnly`, `SameSite=Lax` cookie; with an `https` redirect URL it is a `__Host-` cookie, so a sibling subdomain cannot plant one. Redirects after sign-in go only to fixed paths.
+- A provider identity signs in only as an account already configured in `users` or `oidc.users`, matched exactly on `oidc.username_claim`. Choose a claim users cannot change at the provider.
+- `oidc.disable_password_login` rejects password login on the server, not only in the page.
 - Auth endpoints are rate-limited per client IP.
 - Repeated failures trigger exponential per-account lockouts.
 
@@ -113,6 +116,8 @@ If you use Traefik or another reverse proxy, add routing and TLS configuration a
 
 Forwarded client-IP headers are ignored unless the direct proxy IP/CIDR is configured in `trusted_proxies` or `BOXBOX_TRUSTED_PROXIES`.
 
+Set `public_url` behind a proxy. Otherwise share link previews build their absolute URLs from the request's `Host` and `X-Forwarded-Proto`.
+
 ## Upload Safety
 
 Chunked uploads are assembled in `/tmp/boxbox` by default and moved into the final destination when complete. Configure enough disk space for temporary chunks:
@@ -133,6 +138,7 @@ Share links expose one file or a folder tree to anyone holding the token URL:
 - Unknown, expired, and revoked tokens all return the same `404`, so recipients cannot probe why a link stopped working.
 - Share management is scoped to the creating account: users can list, update, and revoke only their own links.
 - Owners can revoke a link at any time; expiry is optional (`expiresInSeconds` at creation). A revocation that completes during an upload prevents that upload from being published.
+- A file link can delete its file when it expires (`deleteOnExpiry`, off by default; files on writable mounts only). The background job makes one attempt per link. It keeps the file unless the path still names the same file (size, modification time, and device and inode on Unix; on Windows, a replacement with the same size and modification time passes this check), the mount is writable, and no other link reaches the file, either at the expiry time or when the job runs. Other links are matched by path and, on Unix, by file and folder identity, so hard links and bind mounts are covered, including a folder mounted inside another shared folder and a file shown elsewhere by a bind mount of its folder. Mounts are compared from the mount table without touching them, and the checks run without the share lock, so an unresponsive mount cannot stall other links. The removal runs through an opened mount root, so it cannot leave the mount, and it moves the file aside before its final check, so it removes only that file and never a save that replaced it. Revoking a link never deletes its file. Each deletion and each kept file is logged.
 - Shared targets are re-resolved against the current mount configuration on every recipient access. Removed or renamed mounts invalidate the link, and a mount that became read-only still serves reads while denying uploads or deletes.
 - Recipient downloads and previews carry the same sandboxed `Content-Security-Policy` as the app's streaming endpoints, and active document formats (HTML, SVG, XML) are forced to download instead of rendering inline.
 - Folder uploads are capped by both the per-link `maxUploadBytes` and server `max_upload_mb` limits. Upload-only links cannot replace existing items; delete permission also permits replacement and deletion below (never at) the shared root.
@@ -140,8 +146,9 @@ Share links expose one file or a folder tree to anyone holding the token URL:
 - Full-access links also allow folder creation and empty file edits. Folder creation uses an opened filesystem root to confine mutations if another writer swaps a parent directory for a symlink.
 - Anyone holding an active share link can view the owner's stored wallpaper. The browser keeps the wallpaper owner marker and cancels pending synchronization when the authenticated session ends.
 - Recipient metadata responses never include mount names or internal paths.
+- Share pages expose the shared file or folder name to chat preview services. Supported image and video shares also expose a thumbnail. Inactive links get generic tags only.
 - The share store directory is restricted to owner access (`0700`) and its token-bearing `shares.json` file to `0600`, including existing stores when the service initializes.
-- Before downgrading to a version predating split upload/delete permissions, back up `shares.json`; older versions cannot preserve the new per-link permissions and upload caps if they rewrite the store.
+- Before downgrading to a version predating split upload/delete permissions, back up `shares.json`; older versions cannot preserve the new per-link permissions and upload caps if they rewrite the store. An older version that rewrites the store also drops `deleteOnExpiry`, so those files are kept.
 
 ## Operational Checklist
 

@@ -38,6 +38,8 @@ export interface ShareRecord {
 	maxUploadBytes: number;
 	createdAt: string;
 	expiresAt?: string;
+	/** The shared file is deleted when the link expires. */
+	deleteOnExpiry: boolean;
 }
 
 /**
@@ -57,22 +59,14 @@ export interface CreateShareOptions {
 	maxUploadBytes?: number;
 	/** Seconds until the share expires; omitted means it never expires */
 	expiresInSeconds?: number;
+	/** Delete the shared file when the link expires. Needs a file on a writable mount and an expiry. */
+	deleteOnExpiry?: boolean;
 }
 
 /**
  * Response when a share link is created
  */
-export interface CreateShareResponse {
-	id: string;
-	token: string;
-	url: string;
-	fileName: string;
-	isFolder: boolean;
-	permissions: SharePermissions;
-	maxUploadBytes: number;
-	createdAt: string;
-	expiresAt?: string;
-}
+export type CreateShareResponse = Omit<ShareRecord, 'path'>;
 
 /**
  * Recipient-facing share metadata (no internal paths)

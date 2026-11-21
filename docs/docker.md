@@ -107,3 +107,5 @@ The health response is:
 ## Permission Notes
 
 The container runs as UID/GID `10001:10001` by default and drops all Linux capabilities. Set `PUID`/`PGID` before first start if your mounted files use another identity. BoxBox does not chown host paths or existing named volumes; grant that identity only the host permissions it needs.
+
+If each person on your NAS owns their own folders, [NAS users](nas.md) lets BoxBox act as each person instead of one shared identity.

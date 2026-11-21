@@ -391,7 +391,12 @@
 
 {#if actions.shareItem}
 	{#await import('#lib/components/ShareModal.svelte') then { default: ShareModal }}
-		<ShareModal open item={actions.shareItem} onclose={actions.closeShare} />
+		<ShareModal
+			open
+			item={actions.shareItem}
+			readOnly={data.isReadOnly}
+			onclose={actions.closeShare}
+		/>
 	{:catch}
 		<LoadError label="share window" onClose={actions.closeShare} />
 	{/await}

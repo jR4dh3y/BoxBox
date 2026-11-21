@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -23,6 +24,7 @@ import (
 	"github.com/jR4dh3y/BoxBox/backend/internal/handler"
 	"github.com/jR4dh3y/BoxBox/backend/internal/middleware"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/nas"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 	"github.com/jR4dh3y/BoxBox/backend/internal/static"
@@ -34,7 +36,18 @@ func main() {
 	configPath := flag.String("config", "", "Path to configuration file")
 	devMode := flag.Bool("dev", false, "Run locally without authentication (forces host to 127.0.0.1)")
 	desktopMode := flag.Bool("desktop", false, "Run a private loopback server for the desktop app")
+	nasAPI := flag.Bool(nas.APIFlag, false, "Internal: run as the NAS-mode API under the supervisor")
+	nasWorker := flag.Bool(nas.WorkerFlag, false, "Internal: run as a NAS-mode file worker")
 	flag.Parse()
+
+	// A worker reads no config and no environment; it only serves files.
+	if *nasWorker {
+		if err := nas.RunWorker(); err != nil {
+			fmt.Fprintln(os.Stderr, "NAS worker:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	var token string
 	if *desktopMode {
@@ -55,8 +68,17 @@ func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
-	// Load configuration
-	loadResult, err := config.LoadWithReport(*configPath)
+	// Under the NAS supervisor, the API uses the configuration the supervisor
+	// loaded as root: the API's identity may not be able to read the file.
+	var loadResult *config.LoadResult
+	var err error
+	if *nasAPI {
+		handoff := nas.SupervisorConfig()
+		loadResult, err = config.Decode(handoff)
+		_ = handoff.Close()
+	} else {
+		loadResult, err = config.LoadWithReport(*configPath, localIdentity)
+	}
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
@@ -70,6 +92,30 @@ func main() {
 		cfg.Port = 0
 		cfg.AllowedOrigins = nil
 		cfg.TrustedProxies = nil
+	}
+
+	if localIdentity {
+		log.Info().Msg("OIDC sign-in is disabled in development and desktop mode")
+	}
+
+	var workers *nas.Workers
+	switch {
+	case cfg.NAS.Enabled() && (*devMode || *desktopMode):
+		log.Fatal().Msg("NAS identities cannot be used with --dev or --desktop")
+	case cfg.NAS.Enabled() && !*nasAPI:
+		var handoff bytes.Buffer
+		if err := loadResult.Encode(&handoff); err != nil {
+			log.Fatal().Err(err).Msg("Failed to prepare configuration for the API")
+		}
+		os.Exit(nas.RunSupervisor(cfg.NAS, os.Args[1:], config.ShutdownTimeout+5*time.Second, handoff.Bytes()))
+	case cfg.NAS.Enabled():
+		workers, err = nas.ConnectToSupervisor(cfg.NAS)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to start NAS mode")
+		}
+		log.Info().Strs("accounts", workers.Accounts()).Msg("NAS mode: file access runs as each account's identity")
+	case *nasAPI:
+		log.Fatal().Msg("--nas-api needs NAS identities in the configuration")
 	}
 
 	for _, warning := range loadResult.Warnings {
@@ -90,26 +136,13 @@ func main() {
 	defer cancel()
 
 	// Initialize components
-	server, hub, jobService, authService, streamHandler, err := initializeServer(cfg, localIdentity, *desktopMode)
+	app, err := initializeServer(cfg, localIdentity, *desktopMode, workers)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize server")
 	}
-
-	// Start WebSocket hub in background
-	go hub.Run(ctx)
-	log.Info().Msg("WebSocket hub started")
-
-	// Start job service workers
-	jobService.Start(ctx)
-	log.Info().Msg("Job service started")
-
-	// Start auth service cleanup
-	authService.StartCleanup(ctx)
-	log.Info().Msg("Auth service cleanup started")
-
-	// Start upload session cleanup
-	streamHandler.StartCleanup(ctx)
-	log.Info().Msg("Upload session cleanup started")
+	server := app.server
+	app.start(ctx)
+	log.Info().Msg("WebSocket hub, jobs, and auth and upload cleanup started")
 
 	// Ensure data directory exists for settings storage
 	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
@@ -125,6 +158,10 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to listen")
 	}
+	// Deleting files starts only once this process owns the port, so a second
+	// launch against the same data directory cannot run a pass first.
+	app.shares.StartExpiryCleanup(ctx)
+	log.Info().Msg("Share expiry cleanup started")
 	if *desktopMode {
 		chooser, closeChooser := startDesktopChooser(ctx, cfg)
 		defer closeChooser()
@@ -145,11 +182,43 @@ func main() {
 	}
 
 	// Wait for shutdown signal
-	waitForShutdown(cancel, server, jobService, authService, streamHandler, *desktopMode)
+	waitForShutdown(cancel, app, *desktopMode, workers != nil)
 }
 
-// initializeServer creates and configures all server components
-func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http.Server, *websocket.Hub, service.JobService, service.AuthService, *handler.StreamHandler, error) {
+// app is the assembled server and the background work it owns.
+type app struct {
+	server *http.Server
+	hub    *websocket.Hub
+	auth   service.AuthService
+	shares service.ShareService
+	stacks fileStacks
+}
+
+func (a *app) start(ctx context.Context) {
+	go a.hub.Run(ctx)
+	for _, stack := range a.stacks.all() {
+		stack.start(ctx)
+	}
+	a.auth.StartCleanup(ctx)
+}
+
+// stopJobs stops the job workers, which must end before the HTTP server.
+func (a *app) stopJobs() {
+	for _, stack := range a.stacks.all() {
+		stack.jobs.Stop()
+	}
+}
+
+func (a *app) stopCleanups() {
+	a.auth.StopCleanup()
+	for _, stack := range a.stacks.all() {
+		stack.streams.StopCleanup()
+	}
+}
+
+// initializeServer creates and configures all server components. With
+// workers, each mapped account reaches user files only through its worker.
+func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool, workers *nas.Workers) (*app, error) {
 	// Create filesystem abstraction (using real OS filesystem)
 	fs := filesystem.NewOsFS()
 
@@ -175,35 +244,65 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 
 	// Create services
 	authService, err := service.NewAuthService(fs, service.AuthServiceConfig{
-		DataDir:   cfg.DataDir,
-		JWTSecret: cfg.JWTSecret,
-		Users:     cfg.Users,
+		DataDir:               cfg.DataDir,
+		JWTSecret:             cfg.JWTSecret,
+		Users:                 cfg.Users,
+		SSOUsers:              cfg.OIDC.Users,
+		PasswordLoginDisabled: cfg.OIDC.DisablePasswordLogin,
 	})
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("initialize auth service: %w", err)
+		return nil, fmt.Errorf("initialize auth service: %w", err)
+	}
+	authConfig := handler.AuthConfigResponse{PasswordLogin: !cfg.OIDC.DisablePasswordLogin}
+	var oidcHandler *handler.OIDCHandler
+	if cfg.OIDC.Enabled() {
+		oidcService := service.NewOIDCService(service.OIDCServiceConfig{
+			IssuerURL:     cfg.OIDC.IssuerURL,
+			ClientID:      cfg.OIDC.ClientID,
+			ClientSecret:  cfg.OIDC.ClientSecret,
+			RedirectURL:   cfg.OIDC.RedirectURL,
+			UsernameClaim: cfg.OIDC.UsernameClaim,
+			Scopes:        cfg.OIDC.Scopes,
+			JWTSecret:     cfg.JWTSecret,
+		})
+		go oidcService.Warm()
+		oidcHandler = handler.NewOIDCHandler(oidcService, authService, cfg.OIDC.RedirectURL)
+		authConfig.OIDC = &handler.AuthConfigOIDC{Name: cfg.OIDC.ProviderName}
+		log.Info().Str("issuer", cfg.OIDC.IssuerURL).Int("sso_only_users", len(cfg.OIDC.Users)).
+			Bool("password_login", authConfig.PasswordLogin).Msg("OIDC sign-in enabled")
 	}
 	var connectService *service.ConnectService
 	if !devMode {
 		connectService, err = service.NewConnectService(fs, authService, service.ConnectServiceConfig{DataDir: cfg.DataDir, Users: cfg.Users})
 		if err != nil {
-			return nil, nil, nil, nil, nil, err
+			return nil, err
 		}
 	}
 
-	fileConfig := service.FileServiceConfig{MountPoints: mountPoints}
-	if desktopMode {
-		fileConfig.DirectoryEntryLimit = -1
+	var stacks fileStacks
+	thumbnailLimit := service.NewThumbnailLimit()
+	var userFiles func(account string) (filesystem.FS, error)
+	if workers == nil {
+		stacks.shared, err = newFileStack(fs, mountPoints, hub, cfg, desktopMode, thumbnailLimit)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		stacks.byAccount = make(map[string]*fileStack)
+		for _, account := range workers.Accounts() {
+			accountFS, _ := workers.FS(account)
+			stacks.byAccount[account], err = newFileStack(accountFS, mountPoints, hub, cfg, desktopMode, thumbnailLimit)
+			if err != nil {
+				return nil, err
+			}
+		}
+		userFiles = func(account string) (filesystem.FS, error) {
+			if accountFS, ok := workers.FS(account); ok {
+				return accountFS, nil
+			}
+			return nil, service.ErrNoFileAccess
+		}
 	}
-	fileService := service.NewFileService(fs, fileConfig)
-
-	searchService := service.NewSearchService(fs, service.SearchServiceConfig{
-		MountPoints: mountPoints,
-	})
-
-	jobService := service.NewJobService(fs, hub, service.JobServiceConfig{
-		Workers:     config.DefaultJobWorkers,
-		MountPoints: mountPoints,
-	})
 
 	systemService := service.NewSystemService()
 
@@ -220,21 +319,11 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 		DataDir:        cfg.DataDir,
 		MaxUploadBytes: int64(cfg.MaxUploadMB) * 1024 * 1024,
 		Mounts:         func() []model.MountPoint { return shareMountPoints },
+		Files:          userFiles,
 	})
 
 	// Create handlers
-	authHandler := handler.NewAuthHandler(authService)
-	fileHandler := handler.NewFileHandler(fileService)
-	thumbnails := service.NewThumbnailService(fileService)
-	if desktopMode {
-		thumbnails, err = desktopThumbnails(fileService)
-		if err != nil {
-			return nil, nil, nil, nil, nil, err
-		}
-	}
-	streamHandler := handler.NewStreamHandlerWithThumbnails(fileService, cfg.MaxUploadMB, thumbnails)
-	jobHandler := handler.NewJobHandler(jobService)
-	searchHandler := handler.NewSearchHandler(searchService)
+	authHandler := handler.NewAuthHandler(authService, cfg.OIDC.RedirectURL)
 	wsHandler := handler.NewWebSocketHandler(hub, authService, cfg.AllowedOrigins)
 	wsHandler.SetDevMode(devMode)
 	systemHandler := handler.NewSystemHandler(systemService, cfg.ChunkSizeMB)
@@ -242,7 +331,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 	shareHandler := handler.NewShareHandler(shareService, settingsService, cfg.MaxUploadMB)
 
 	// Create router
-	router := createRouter(cfg, devMode, authService, authHandler, fileHandler, streamHandler, jobHandler, searchHandler, wsHandler, systemHandler, settingsHandler, shareHandler, mountPoints, desktopMode, connectService)
+	router := createRouter(cfg, devMode, authService, authHandler, stacks, wsHandler, systemHandler, settingsHandler, shareHandler, shareService, desktopMode, connectService, oidcHandler, authConfig)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -253,7 +342,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool) (*http
 		IdleTimeout:  config.HTTPIdleTimeout,
 	}
 
-	return server, hub, jobService, authService, streamHandler, nil
+	return &app{server: server, hub: hub, auth: authService, shares: shareService, stacks: stacks}, nil
 }
 
 // shareRateLimitRPS bounds the public share-link endpoints. It is higher than
@@ -268,19 +357,25 @@ func createRouter(
 	devMode bool,
 	authService service.AuthService,
 	authHandler *handler.AuthHandler,
-	fileHandler *handler.FileHandler,
-	streamHandler *handler.StreamHandler,
-	jobHandler *handler.JobHandler,
-	searchHandler *handler.SearchHandler,
+	stacks fileStacks,
 	wsHandler *handler.WebSocketHandler,
 	systemHandler *handler.SystemHandler,
 	settingsHandler *handler.SettingsHandler,
 	shareHandler *handler.ShareHandler,
-	mountPoints []model.MountPoint,
+	shareService service.ShareService,
 	desktopMode bool,
 	connectService *service.ConnectService,
+	oidcHandler *handler.OIDCHandler,
+	authConfig handler.AuthConfigResponse,
 ) chi.Router {
 	r := chi.NewRouter()
+
+	staticHandler, staticErr := static.NewHandler(devMode, desktopMode)
+	// Crawlers cannot pass the desktop host and cookie gate, so desktop mode has no previews.
+	var sharePreview *handler.SharePreviewHandler
+	if staticErr == nil && !desktopMode {
+		sharePreview = handler.NewSharePreviewHandler(shareService, staticHandler, cfg.PublicURL)
+	}
 
 	// Global middleware
 	r.Use(chimiddleware.RequestID)
@@ -307,8 +402,15 @@ func createRouter(
 		// Auth routes are rate-limited to prevent brute force attacks
 		r.Route("/auth", func(r chi.Router) {
 			r.Use(middleware.RejectClientCredentials)
-			r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
-			authHandler.RegisterRoutes(r)
+			// Constant and public: loading the login page must not spend the sign-in budget.
+			r.Get("/config", handler.AuthConfig(authConfig))
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
+				authHandler.RegisterRoutes(r)
+				if oidcHandler != nil {
+					oidcHandler.RegisterRoutes(r)
+				}
+			})
 		})
 		if connectService != nil {
 			connectHandler := handler.NewConnectHandler(connectService)
@@ -326,6 +428,9 @@ func createRouter(
 		r.Route("/share", func(r chi.Router) {
 			r.Use(middleware.RateLimit(shareRateLimitRPS, cfg.TrustedProxies...))
 			shareHandler.RegisterPublicRoutes(r)
+			if sharePreview != nil {
+				r.Get("/{token}/thumbnail", sharePreview.Image)
+			}
 		})
 
 		// Protected routes (auth required)
@@ -337,27 +442,11 @@ func createRouter(
 				r.Use(middleware.JWTAuth(authService, connectService))
 			}
 
-			// File operations with mount point guard
-			r.Route("/files", func(r chi.Router) {
-				r.Use(middleware.MountPointGuard(mountPoints))
-				fileHandler.RegisterRoutes(r)
-			})
-
-			// Streaming operations with mount point guard
-			r.Route("/stream", func(r chi.Router) {
-				r.Use(middleware.MountPointGuard(mountPoints))
-				streamHandler.RegisterRoutes(r)
-			})
-
-			// Search operations
-			r.Route("/search", func(r chi.Router) {
-				searchHandler.RegisterRoutes(r)
-			})
-
-			// Job operations
-			r.Route("/jobs", func(r chi.Router) {
-				jobHandler.RegisterRoutes(r)
-			})
+			// User-file routes use the signed-in account's file stack.
+			r.Mount("/files", stacks.route(func(s *fileStack) http.Handler { return s.files }))
+			r.Mount("/stream", stacks.route(func(s *fileStack) http.Handler { return s.stream }))
+			r.Mount("/search", stacks.route(func(s *fileStack) http.Handler { return s.search }))
+			r.Mount("/jobs", stacks.route(func(s *fileStack) http.Handler { return s.job }))
 
 			// System operations
 			r.Route("/system", func(r chi.Router) {
@@ -381,10 +470,16 @@ func createRouter(
 
 	// Static file handler for SPA frontend (catch-all)
 	// This must be after all API routes
-	staticHandler, err := static.NewHandler(devMode, desktopMode)
-	if err != nil {
-		log.Warn().Err(err).Msg("Static handler not available, frontend will not be served")
+	if staticErr != nil {
+		log.Warn().Err(staticErr).Msg("Static handler not available, frontend will not be served")
 	} else {
+		if sharePreview != nil {
+			// A separate budget from the share API; over it, crawlers still get generic tags.
+			page := middleware.RateLimitOr(shareRateLimitRPS, http.HandlerFunc(sharePreview.GenericPage),
+				cfg.TrustedProxies...)(http.HandlerFunc(sharePreview.Page))
+			r.Method(http.MethodGet, "/s/{token}", page)
+			r.Method(http.MethodHead, "/s/{token}", page)
+		}
 		r.NotFound(staticHandler.ServeHTTP)
 		log.Info().Msg("Static file handler initialized for SPA frontend")
 	}
@@ -393,10 +488,14 @@ func createRouter(
 }
 
 // waitForShutdown handles graceful shutdown on interrupt signals
-func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService service.JobService, authService service.AuthService, streamHandler *handler.StreamHandler, desktopMode bool) {
+func waitForShutdown(cancel context.CancelFunc, app *app, desktopMode, nasMode bool) {
 	// Create channel to receive OS signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	if nasMode {
+		// After Notify, so a stop requested during startup is still graceful.
+		nas.WatchShutdown(sigCh)
+	}
 	if desktopMode {
 		// The desktop parent keeps stdin open; EOF also handles a crashed parent.
 		go func() {
@@ -418,17 +517,19 @@ func waitForShutdown(cancel context.CancelFunc, server *http.Server, jobService 
 
 	// Stop job service
 	log.Info().Msg("Stopping job service...")
-	jobService.Stop()
+	app.stopJobs()
 
 	// Shutdown HTTP server
 	log.Info().Msg("Shutting down HTTP server...")
-	if err := server.Shutdown(shutdownCtx); err != nil {
+	if err := app.server.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("Error during server shutdown")
 	}
 
 	log.Info().Msg("Server shutdown complete")
 
 	// Stop background cleanups
-	authService.StopCleanup()
-	streamHandler.StopCleanup()
+	app.stopCleanups()
+	if err := app.shares.StopExpiryCleanup(shutdownCtx); err != nil {
+		log.Warn().Err(err).Msg("Stopped waiting for expired share cleanup")
+	}
 }

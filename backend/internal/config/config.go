@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
@@ -54,7 +55,7 @@ var defaultConfigSearchPaths = []configSearchPath{
 
 // Load reads configuration from file and environment variables
 func Load(configPath string) (*model.ServerConfig, error) {
-	result, err := LoadWithReport(configPath)
+	result, err := LoadWithReport(configPath, false)
 	if err != nil {
 		return nil, err
 	}
@@ -63,11 +64,12 @@ func Load(configPath string) (*model.ServerConfig, error) {
 
 // LoadWithReport reads configuration from file and environment variables,
 // returning deprecated migration inputs that should be surfaced to operators.
-func LoadWithReport(configPath string) (*LoadResult, error) {
-	return loadWithReport(configPath, defaultConfigSearchPaths)
+// Local identity modes discard OIDC settings before validation.
+func LoadWithReport(configPath string, localIdentity bool) (*LoadResult, error) {
+	return loadWithReport(configPath, defaultConfigSearchPaths, localIdentity)
 }
 
-func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadResult, error) {
+func loadWithReport(configPath string, searchPaths []configSearchPath, localIdentity bool) (*LoadResult, error) {
 	v := viper.New()
 	warnings := make([]MigrationWarning, 0)
 
@@ -78,6 +80,11 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 	v.SetDefault("chunk_size_mb", DefaultChunkSizeMB)
 	v.SetDefault("rate_limit_rps", 2.0)
 	v.SetDefault("data_dir", DefaultDataDir)
+	v.SetDefault("oidc.provider_name", "SSO")
+	v.SetDefault("oidc.username_claim", "preferred_username")
+	v.SetDefault("oidc.scopes", []string{"openid", "profile", "email"})
+	v.SetDefault("nas.service_uid", DefaultNASServiceID)
+	v.SetDefault("nas.service_gid", DefaultNASServiceID)
 
 	if configPath == "" {
 		configPath = os.Getenv("CONFIG_PATH")
@@ -111,6 +118,16 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 		"chunk_size_mb",
 		"data_dir",
 		"allow_root_mount",
+		"public_url",
+		"oidc.issuer_url",
+		"oidc.client_id",
+		"oidc.client_secret",
+		"oidc.redirect_url",
+		"oidc.provider_name",
+		"oidc.username_claim",
+		"oidc.disable_password_login",
+		"nas.service_uid",
+		"nas.service_gid",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind environment variable %q: %w", key, err)
@@ -136,8 +153,18 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 		warnings = append(warnings, configSearchWarnings(v.ConfigFileUsed(), searchPaths)...)
 	}
 
+	source := v
+	if localIdentity {
+		// Drop OIDC before decoding so invalid values in ignored settings cannot fail local startup.
+		settings := v.AllSettings()
+		delete(settings, "oidc")
+		source = viper.New()
+		if err := source.MergeConfigMap(settings); err != nil {
+			return nil, fmt.Errorf("error unmarshaling config: %w", err)
+		}
+	}
 	var cfg model.ServerConfig
-	if err := v.Unmarshal(&cfg); err != nil {
+	if err := source.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 	cfg.MountPoints = model.ClassifyMountPoints(cfg.MountPoints)
@@ -161,6 +188,10 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 		}
 	}
 
+	if err := applyNASIdentityEnv(&cfg); err != nil {
+		return nil, err
+	}
+
 	if origins, ok := os.LookupEnv("FM_ALLOWED_ORIGINS"); ok {
 		warnings = append(warnings, envWarning("FM_ALLOWED_ORIGINS", "BOXBOX_ALLOWED_ORIGINS"))
 		if _, replacementSet := os.LookupEnv("BOXBOX_ALLOWED_ORIGINS"); !replacementSet {
@@ -174,10 +205,21 @@ func loadWithReport(configPath string, searchPaths []configSearchPath) (*LoadRes
 	if proxies := os.Getenv("BOXBOX_TRUSTED_PROXIES"); proxies != "" {
 		cfg.TrustedProxies = splitEnvList(proxies)
 	}
+	if users := os.Getenv("BOXBOX_OIDC_USERS"); users != "" {
+		cfg.OIDC.Users = splitEnvList(users)
+	}
+	if scopes := os.Getenv("BOXBOX_OIDC_SCOPES"); scopes != "" {
+		cfg.OIDC.Scopes = splitEnvList(scopes)
+	}
 
+	if localIdentity {
+		// Local modes have no external callback and never use provider credentials.
+		cfg.OIDC = model.OIDCConfig{}
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	cfg.PublicURL = strings.TrimSuffix(cfg.PublicURL, "/")
 
 	// Resolve once before filesystem adapters interpret persistence paths.
 	if cfg.DataDir == "" {
@@ -215,6 +257,53 @@ func splitEnvList(value string) []string {
 		}
 	}
 	return result
+}
+
+// applyNASIdentityEnv reads BOXBOX_NAS_IDENTITY_<user>=uid:gid[:group,group].
+func applyNASIdentityEnv(cfg *model.ServerConfig) error {
+	const prefix = "BOXBOX_NAS_IDENTITY_"
+	for _, env := range os.Environ() {
+		name, value, ok := strings.Cut(env, "=")
+		if !ok || !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		username := strings.TrimPrefix(name, prefix)
+		identity, err := parseNASIdentity(value)
+		if username == "" || err != nil {
+			return fmt.Errorf("%s must be uid:gid or uid:gid:group,group: %v", name, err)
+		}
+		if cfg.NAS.Identities == nil {
+			cfg.NAS.Identities = make(map[string]model.NASIdentity)
+		}
+		cfg.NAS.Identities[username] = identity
+	}
+	return nil
+}
+
+func parseNASIdentity(value string) (model.NASIdentity, error) {
+	parts := strings.Split(value, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return model.NASIdentity{}, fmt.Errorf("got %q", value)
+	}
+	ids := make([]uint32, 0, 2)
+	for _, part := range parts[:2] {
+		id, err := strconv.ParseUint(part, 10, 32)
+		if err != nil {
+			return model.NASIdentity{}, err
+		}
+		ids = append(ids, uint32(id))
+	}
+	identity := model.NASIdentity{UID: ids[0], GID: ids[1]}
+	if len(parts) == 3 && parts[2] != "" {
+		for _, part := range strings.Split(parts[2], ",") {
+			group, err := strconv.ParseUint(strings.TrimSpace(part), 10, 32)
+			if err != nil {
+				return model.NASIdentity{}, err
+			}
+			identity.Groups = append(identity.Groups, uint32(group))
+		}
+	}
+	return identity, nil
 }
 
 func applyLegacyUserEnv(cfg *model.ServerConfig, warnings *[]MigrationWarning) {

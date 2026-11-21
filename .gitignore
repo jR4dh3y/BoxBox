@@ -59,3 +59,4 @@ vendor/
 /sec-audit.md
 /sec-audit-2026-08-07.md
 
+__pycache__/

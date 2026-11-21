@@ -62,8 +62,15 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
+      - name: Install video-thumbnail test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg util-linux
+
       - name: Run Go tests
         working-directory: backend
+        env:
+          BOXBOX_REQUIRE_VIDEO_THUMBNAIL_TEST: "1"
         run: go test ./...
 
       - name: Set up Bun for benchmark comparison

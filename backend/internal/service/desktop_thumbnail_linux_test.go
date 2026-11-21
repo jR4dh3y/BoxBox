@@ -105,7 +105,7 @@ func TestDesktopThumbnailUsesConfinedDescriptorAndCache(t *testing.T) {
 		}
 		return native(ctx, file, info, w, h)
 	}
-	service := NewThumbnailServiceWithRenderer(files, renderer)
+	service := NewThumbnailServiceWithRenderer(files, renderer, NewThumbnailLimit())
 	result, err := service.Render(context.Background(), "media/photo.jpg", 64, 64, "")
 	if err != nil {
 		t.Fatal(err)

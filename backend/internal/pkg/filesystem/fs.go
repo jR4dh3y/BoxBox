@@ -4,7 +4,9 @@
 package filesystem
 
 import (
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -60,6 +62,13 @@ type FS interface {
 	// keeping the mutation confined even if a parent is replaced by a symlink.
 	MkdirAllWithin(root, path string, perm os.FileMode) error
 
+	// RemoveFileWithin removes the entry at path below an already resolved root
+	// after verify accepts its Lstat info. The check and the removal resolve path
+	// through the same opened root, so neither can leave it. On disk the entry is
+	// moved aside before the final check, so an entry that replaces path during
+	// the call is never removed. verify may run more than once.
+	RemoveFileWithin(root, path string, verify func(fs.FileInfo) error) error
+
 	// MkdirAll creates a directory named path, along with any necessary parents.
 	MkdirAll(path string, perm os.FileMode) error
 
@@ -90,17 +99,23 @@ type AferoFS struct {
 	fs afero.Fs
 }
 
-var errInvalidFilesystemPath = errors.New("invalid filesystem path")
+// ErrWorkerUnavailable means a NAS file worker could not be started, or
+// stopped while a call was in flight. That call may or may not have taken
+// effect, so callers must not replay it.
+var ErrWorkerUnavailable = errors.New("file worker unavailable")
+
+// ErrInvalidPath reports a path with a NUL byte or a ".." component.
+var ErrInvalidPath = errors.New("invalid filesystem path")
 
 func validateFilesystemPath(path string) error {
 	if strings.ContainsRune(path, '\x00') {
-		return errInvalidFilesystemPath
+		return ErrInvalidPath
 	}
 
 	normalizedPath := strings.ReplaceAll(path, `\`, "/")
 	for _, component := range strings.Split(normalizedPath, "/") {
 		if component == ".." {
-			return errInvalidFilesystemPath
+			return ErrInvalidPath
 		}
 	}
 	return nil
@@ -366,7 +381,7 @@ func (a *AferoFS) MkdirAllWithin(root, path string, perm os.FileMode) error {
 		return err
 	}
 	if !fs.ValidPath(filepath.ToSlash(path)) {
-		return errInvalidFilesystemPath
+		return ErrInvalidPath
 	}
 	root = filepath.Clean("/" + root)
 	if _, ok := a.fs.(*afero.OsFs); ok {
@@ -379,6 +394,127 @@ func (a *AferoFS) MkdirAllWithin(root, path string, perm os.FileMode) error {
 	}
 	// MemMapFs has no symlinks or external filesystem writers.
 	return a.fs.MkdirAll(filepath.Join(root, filepath.Clean("/"+path)), perm)
+}
+
+func (a *AferoFS) RemoveFileWithin(root, path string, verify func(fs.FileInfo) error) error {
+	if err := validateFilesystemPath(root); err != nil {
+		return err
+	}
+	if err := validateFilesystemPath(path); err != nil {
+		return err
+	}
+	if !fs.ValidPath(filepath.ToSlash(path)) {
+		return ErrInvalidPath
+	}
+	root = filepath.Clean("/" + root)
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		directory, err := os.OpenRoot(root)
+		if err != nil {
+			return err
+		}
+		defer directory.Close()
+		return removeVerifiedEntry(directory, path, verify)
+	}
+	// MemMapFs has no symlinks or external filesystem writers.
+	target := filepath.Join(root, filepath.Clean("/"+path))
+	info, err := a.Lstat(target)
+	if err != nil {
+		return err
+	}
+	if err := verify(info); err != nil {
+		return err
+	}
+	return a.fs.Remove(target)
+}
+
+// removeVerifiedEntry renames path to a private sibling and checks that entry,
+// so a save that replaces path after the check cannot be the entry removed.
+// A rejected entry, or one that cannot be removed, goes back to path unless
+// something new has taken its name.
+//
+// Every step uses one handle on the folder, so renaming the folder cannot
+// strand the entry. Once the entry is out of its name, the folder must still
+// be at its path, reached without symlinks; a folder moved since the caller's
+// checks, perhaps into a shared folder, keeps its file.
+func removeVerifiedEntry(directory *os.Root, path string, verify func(fs.FileInfo) error) error {
+	folder, err := directory.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer folder.Close()
+	name := filepath.Base(path)
+	info, err := folder.Lstat(name)
+	if err != nil {
+		return err
+	}
+	// Checking first leaves a changed file in place instead of moving it twice.
+	if err := verify(info); err != nil {
+		return err
+	}
+	aside := ".boxbox-removing-" + rand.Text()
+	if err := folder.Rename(name, aside); err != nil {
+		return err
+	}
+	info, err = folder.Lstat(aside)
+	if err == nil {
+		err = verify(info)
+	}
+	// Checked last, right before removal, to leave the smallest window for a
+	// folder move.
+	if err == nil {
+		err = folderStillAt(directory, folder, filepath.Dir(path))
+	}
+	if err == nil {
+		if err = folder.Remove(aside); err == nil {
+			return nil
+		}
+	}
+	if restoreErr := restoreEntry(folder, aside, name); restoreErr != nil {
+		return fmt.Errorf("%w; entry left at %s: %w", err, filepath.Join(filepath.Dir(path), aside), restoreErr)
+	}
+	return err
+}
+
+// errFolderMoved reports that a folder no longer sits at the path it was
+// opened from.
+var errFolderMoved = errors.New("folder moved during removal")
+
+// folderStillAt reports whether folder is the directory at path below
+// directory, with every step of path a real directory rather than a symlink.
+func folderStillAt(directory *os.Root, folder *os.Root, path string) error {
+	if path == "." {
+		return nil
+	}
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	var step os.FileInfo
+	for i := range parts {
+		info, err := directory.Lstat(filepath.Join(parts[:i+1]...))
+		if err != nil {
+			return errors.Join(errFolderMoved, err)
+		}
+		if !info.IsDir() {
+			return errFolderMoved
+		}
+		step = info
+	}
+	opened, err := folder.Stat(".")
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(step, opened) {
+		return errFolderMoved
+	}
+	return nil
+}
+
+// restoreByLink moves from back to to without replacing an entry at to. Where
+// hard links are unsupported the entry stays at from, because a checked rename
+// could still overwrite a file created between the check and the rename.
+func restoreByLink(directory *os.Root, from, to string) error {
+	if err := directory.Link(from, to); err != nil {
+		return err
+	}
+	return directory.Remove(from)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.

@@ -114,7 +114,16 @@
 							: undefined}>{getShareAccessLabel(share.permissions)}</td
 					>
 				{/if}
-				<td class="{tdClass} text-text-secondary">{formatExpiry(share)}</td>
+				<td class="{tdClass} text-text-secondary">
+					{formatExpiry(share)}
+					{#if share.deleteOnExpiry}
+						<span
+							class="ml-1.5 text-danger"
+							title="The file is deleted when this link expires, unless it changed or another active link shares it"
+							>· Deletes file</span
+						>
+					{/if}
+				</td>
 				<td class="{tdClass} px-1.5">
 					<div class="flex justify-end gap-0.5">
 						<button

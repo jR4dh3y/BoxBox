@@ -20,6 +20,18 @@ Content-Type: application/json
 
 Full-access folder links set `manage`, `upload`, and `delete` to `true`. `manage` permits folder creation and empty file edits. File links cannot grant these capabilities.
 
+### Delete a File When Its Link Expires
+
+Set `"deleteOnExpiry": true` to delete the shared file when the link expires. It is off by default. The request needs a file, not a folder or a symlink, on a writable mount, and an `expiresInSeconds` value. Otherwise it returns `400`, or `403` for a read-only mount. If the file is replaced while the link is created, the request returns `409`; retry it. `expiresInSeconds` cannot exceed 100 years. In [NAS mode](nas.md) the option is off and the request returns `400`.
+
+A background job checks expired links every minute, and once when the server starts, so a link that expired while the server was down is handled at startup. Each link gets one attempt. The job deletes the file only if all of these are true at that moment:
+
+- The path still names the same file. The server compares size and modification time, and also device and inode on Unix systems. A file that was edited, renamed, or replaced is kept. On Windows, which has no device and inode here, a replacement with the same size and modification time is not detected.
+- The mount still exists and is writable.
+- No other link reaches the file, counting links active at the expiry time as well as now, so a server that was down at the expiry decides the same way. That includes a link to the same file, a folder link that contains it, links through another mount name for the same folder, and, on Unix systems, links through a hard link to the file or a bind mount of a folder that contains it, including a folder mounted inside another shared folder and a file shown elsewhere by a bind mount of its folder. A file kept for this reason stays, even after the other link ends.
+
+The job checks links without blocking other share requests. If links are created, changed, or revoked while it checks, or it cannot read the store or the mount table, it touches no file and tries again on the next run. The file is moved aside before the final check, so a save that replaces it at that moment is kept, and a file whose folder moved during removal is put back. Every other outcome keeps the file, and the server logs each deletion and each kept file. Revoking a link never deletes its file. Create and list responses report `deleteOnExpiry`; recipient metadata does not.
+
 Response uses `201 Created`:
 
 ```json
@@ -32,7 +44,8 @@ Response uses `201 Created`:
   "maxUploadBytes": 104857600,
   "isFolder": true,
   "createdAt": "2026-09-02T09:00:00Z",
-  "expiresAt": "2026-09-02T10:00:00Z"
+  "expiresAt": "2026-09-02T10:00:00Z",
+  "deleteOnExpiry": false
 }
 ```
 
@@ -42,7 +55,7 @@ Response uses `201 Created`:
 GET /api/v1/shares
 ```
 
-Returns only the authenticated caller's active (non-revoked, non-expired) shares. Each entry includes the `token`, `url`, `fileName`, mount-relative `path`, `permissions`, `maxUploadBytes`, `isFolder`, and expiry.
+Returns only the authenticated caller's active (non-revoked, non-expired) shares. Each entry includes the `token`, `url`, `fileName`, mount-relative `path`, `permissions`, `maxUploadBytes`, `isFolder`, expiry, and `deleteOnExpiry`.
 
 ## Update a Folder Share
 
@@ -94,6 +107,7 @@ GET /api/v1/share/{token}/preview
 GET /api/v1/share/{token}/items?path=reports
 GET /api/v1/share/{token}/archive?path=reports
 GET /api/v1/share/{token}/wallpaper
+GET /api/v1/share/{token}/thumbnail
 POST /api/v1/share/{token}/folders?path=reports/new-folder
 POST /api/v1/share/{token}/upload?path=reports/new.txt
 DELETE /api/v1/share/{token}/items?path=reports/old.txt
@@ -104,6 +118,16 @@ Folder item paths are relative to the share root. Archive downloads include only
 Unknown, expired, and revoked tokens all return the same `404`, so recipients cannot distinguish between them. Requests the share's permissions do not allow return `403`.
 
 Folder creation requires `manage` and a writable mount. It creates missing parents below the shared root and returns `201` with `{"success": true}`. Traversal outside the shared root is denied.
+
+The thumbnail endpoint serves the link-preview image for a single-file share. It returns a JPEG up to 1200 px per side for JPEG, PNG, GIF, WebP, MP4, M4V, MOV, MKV, and WebM files. Video thumbnails use a frame near one second, or the opening frame for short clips. Folders and files that cannot be rendered use `og-default.png`.
+
+Video thumbnails require Linux with FFmpeg 6 or later and util-linux `prlimit` on the server's `PATH`. The BoxBox Docker image includes both. When either tool is missing, video shares use the default image.
+
+The server caches rendered JPEGs in memory by share token, file modification time, file size, and thumbnail dimensions. The endpoint sends an `ETag` and uses `Cache-Control: no-cache`. Every request checks the share before serving cached bytes or returning `304`.
+
+File-browser and share image renders share a 256 MiB budget for decoded pixels and scaling workspace. WebP chunk types determine its decoder reservation; table construction, pixel decoding, inverse transforms, and scaling are counted as separate memory peaks. An image whose estimated workspace exceeds that budget uses the default share preview; other renders wait for memory or request cancellation. The existing source limits of 64 MiB, 32 million pixels, and 8192 pixels per dimension also apply.
+
+The share page itself, `GET /s/{token}`, is the app document with Open Graph and Twitter card tags added for link-preview crawlers: the file or folder name, a short description, the page URL and the preview image. Unknown, expired and revoked tokens, and any lookup error, get the same generic tags without a name. Over the share rate limit, the page still loads with the generic tags.
 
 The wallpaper endpoint serves the owner's image with the sandboxed content policy and returns `404` when no image is stored. Share metadata optionally includes `wallpaper` with `mode`, `frostedGlass`, and a numeric `version` for cache invalidation.
 

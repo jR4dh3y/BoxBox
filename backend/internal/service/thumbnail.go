@@ -21,13 +21,16 @@ var (
 
 const (
 	maxThumbnailSourceBytes = 64 << 20
-	// At most 128 MiB per 32 MP RGBA decode; two render slots bound peak source pixels.
+	// A separate shared memory budget accounts for high bit depth and scaling workspace.
 	maxThumbnailSourcePixels = 32_000_000
 	maxThumbnailDimension    = 8192
 	maxThumbnailOutput       = 512
 	maxConcurrentThumbnails  = 2
-	maxThumbnailCacheEntries = 128
-	maxThumbnailCacheBytes   = 16 << 20
+	// Link-preview crawlers want at least 600 px wide for a large card.
+	maxShareThumbnailOutput      = 1200
+	maxConcurrentShareThumbnails = 1
+	maxThumbnailCacheEntries     = 128
+	maxThumbnailCacheBytes       = 16 << 20
 )
 
 type Thumbnail struct {
@@ -42,24 +45,68 @@ type ThumbnailService interface {
 // A renderer receives a source already opened and confined by FileStreamer.
 type ThumbnailRenderer func(context.Context, File, *model.FileInfo, int, int) ([]byte, error)
 
+type thumbnailOpener func(context.Context, string) (File, *model.FileInfo, error)
+
+// ThumbnailLimit bounds renders across every service that shares it. NAS mode
+// has a service per account, and decode memory is a server-wide budget.
+type ThumbnailLimit struct{ slots chan struct{} }
+
+func NewThumbnailLimit() *ThumbnailLimit {
+	return &ThumbnailLimit{slots: make(chan struct{}, maxConcurrentThumbnails)}
+}
+
 type thumbnailService struct {
-	files  FileStreamer
-	slots  chan struct{}
-	cache  *thumbnailCache
-	render ThumbnailRenderer
+	open              thumbnailOpener
+	slots             chan struct{}
+	cache             *thumbnailCache
+	render            ThumbnailRenderer
+	maxOutput         int
+	trustUncachedETag bool
 }
 
-func NewThumbnailService(files FileStreamer) ThumbnailService {
-	return NewThumbnailServiceWithRenderer(files, renderImageThumbnail)
+func NewThumbnailService(files FileStreamer, limit *ThumbnailLimit) ThumbnailService {
+	return NewThumbnailServiceWithRenderer(files, renderImageThumbnail, limit)
 }
 
-func NewThumbnailServiceWithRenderer(files FileStreamer, render ThumbnailRenderer) ThumbnailService {
+func NewThumbnailServiceWithRenderer(files FileStreamer, render ThumbnailRenderer, limit *ThumbnailLimit) ThumbnailService {
 	return &thumbnailService{
-		files:  files,
-		slots:  make(chan struct{}, maxConcurrentThumbnails),
-		cache:  newThumbnailCache(),
-		render: render,
+		open:              files.OpenFile,
+		slots:             limit.slots,
+		cache:             newThumbnailCache(),
+		render:            render,
+		maxOutput:         maxThumbnailOutput,
+		trustUncachedETag: true,
 	}
+}
+
+// ShareThumbnailService renders public link previews with a separate request slot and cache.
+type ShareThumbnailService struct {
+	*thumbnailService
+	video videoThumbnailer
+}
+
+func NewShareThumbnailService(shares ShareService) *ShareThumbnailService {
+	s := &ShareThumbnailService{video: newVideoThumbnailer()}
+	s.thumbnailService = &thumbnailService{
+		open:      shares.OpenForRecipient,
+		slots:     make(chan struct{}, maxConcurrentShareThumbnails),
+		cache:     newThumbnailCache(),
+		render:    s.renderFile,
+		maxOutput: maxShareThumbnailOutput,
+	}
+	return s
+}
+
+// Supports reports whether a file name can use the thumbnail URL in share metadata.
+func (s *ShareThumbnailService) Supports(name string) bool {
+	return rendersImageThumbnail(name) || (s.video.available() && videoDemuxer(name) != "")
+}
+
+func (s *ShareThumbnailService) renderFile(ctx context.Context, file File, info *model.FileInfo, width, height int) ([]byte, error) {
+	if demuxer := videoDemuxer(info.Name); demuxer != "" {
+		return s.video.render(ctx, file, demuxer, width, height)
+	}
+	return renderImageThumbnail(ctx, file, info, width, height)
 }
 
 func (s *thumbnailService) Render(
@@ -76,14 +123,14 @@ func (s *thumbnailService) Render(
 		return nil, ctx.Err()
 	}
 
-	file, info, err := s.files.OpenFile(ctx, path)
+	file, info, err := s.open(ctx, path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	width = min(maxThumbnailOutput, max(16, width))
-	height = min(maxThumbnailOutput, max(16, height))
+	width = min(s.maxOutput, max(16, width))
+	height = min(s.maxOutput, max(16, height))
 	key := thumbnailCacheKey{
 		path:    path,
 		modTime: info.ModTime.UnixNano(),
@@ -98,7 +145,7 @@ func (s *thumbnailService) Render(
 		}
 		return cached, nil
 	}
-	if ifNoneMatch == etag {
+	if s.trustUncachedETag && ifNoneMatch == etag {
 		return nil, ErrThumbnailNotModified
 	}
 	content, err := s.render(ctx, file, info, width, height)
@@ -110,6 +157,10 @@ func (s *thumbnailService) Render(
 	}
 	thumbnail := &Thumbnail{Content: content, ETag: etag}
 	s.cache.add(key, thumbnail)
+	// Public previews can fall back to a different image when a decoder is unavailable.
+	if ifNoneMatch == etag {
+		return nil, ErrThumbnailNotModified
+	}
 	return thumbnail, nil
 }
 

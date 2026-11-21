@@ -26,6 +26,9 @@ const earlyFetchScript = "early-fetch.js"
 type Handler struct {
 	fsys      fs.FS
 	indexHTML []byte
+	// indexHead and indexTail split indexHTML at </head>; nil when the page cannot take meta tags.
+	indexHead []byte
+	indexTail []byte
 }
 
 // NewHandler creates a static file handler from embedded files
@@ -37,7 +40,8 @@ func NewHandler(devMode ...bool) (*Handler, error) {
 	}
 	// Pre-load index.html for SPA fallback
 	indexHTML, err := fs.ReadFile(fsys, "index.html")
-	if err != nil {
+	embedded := err == nil
+	if !embedded {
 		// If index.html doesn't exist, create a placeholder
 		// This allows the binary to run even without embedded frontend (dev mode)
 		indexHTML = []byte(`<!DOCTYPE html><html><head><title>BoxBox</title></head><body><h1>Frontend not embedded</h1><p>Build with frontend assets to enable the web UI.</p></body></html>`)
@@ -54,10 +58,24 @@ func NewHandler(devMode ...bool) (*Handler, error) {
 		indexHTML = bytes.Replace(indexHTML, []byte("<head>"), []byte(`<head><meta name="boxbox-desktop" content="true">`), 1)
 	}
 
-	return &Handler{
-		fsys:      fsys,
-		indexHTML: indexHTML,
-	}, nil
+	return newHandler(fsys, indexHTML, embedded), nil
+}
+
+func newHandler(fsys fs.FS, indexHTML []byte, embedded bool) *Handler {
+	h := &Handler{fsys: fsys, indexHTML: indexHTML}
+	if embedded {
+		if at := bytes.Index(indexHTML, []byte("</head>")); at >= 0 {
+			h.indexHead = indexHTML[:at]
+			h.indexTail = indexHTML[at:]
+		}
+	}
+	return h
+}
+
+// Asset returns an embedded static file, or false when it is missing.
+func (h *Handler) Asset(name string) ([]byte, bool) {
+	content, err := fs.ReadFile(h.fsys, name)
+	return content, err == nil
 }
 
 // ServeHTTP implements http.Handler with SPA fallback and compression

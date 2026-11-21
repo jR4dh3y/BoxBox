@@ -34,7 +34,7 @@ func TestAuthRefreshTokenUsesHttpOnlyCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create auth service: %v", err)
 	}
-	handler := NewAuthHandler(auth)
+	handler := NewAuthHandler(auth, "")
 
 	loginRequest := httptest.NewRequest(
 		http.MethodPost,
@@ -359,7 +359,7 @@ func TestAuthPersistenceFailuresPreserveOrClearCookieByOutcome(t *testing.T) {
 }
 
 func TestAuthCookieSecurityAndOriginBoundaries(t *testing.T) {
-	handler := NewAuthHandler(nil)
+	handler := NewAuthHandler(nil, "")
 	for _, testCase := range []struct {
 		name       string
 		request    *http.Request
@@ -379,7 +379,7 @@ func TestAuthCookieSecurityAndOriginBoundaries(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			handler.setRefreshCookie(recorder, testCase.request, "opaque-test-value", time.Now().Add(time.Hour))
+			setRefreshCookie(recorder, "opaque-test-value", time.Now().Add(time.Hour), requestIsHTTPS(testCase.request))
 			cookie := onlyCookie(t, recorder)
 			if cookie.Secure != testCase.wantSecure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode {
 				t.Fatalf("cookie attributes = %#v", cookie)
@@ -486,7 +486,7 @@ func newAuthHandler(t *testing.T, fsys filesystem.FS, dataDir string) (service.A
 	if err != nil {
 		t.Fatalf("create auth service: %v", err)
 	}
-	return auth, NewAuthHandler(auth)
+	return auth, NewAuthHandler(auth, "")
 }
 
 func authConfig(t *testing.T, dataDir string) service.AuthServiceConfig {

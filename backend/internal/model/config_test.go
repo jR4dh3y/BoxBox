@@ -156,3 +156,145 @@ func TestValidateRejectsUnknownMountKind(t *testing.T) {
 		t.Fatalf("Validate() = %v, want a kind error", err)
 	}
 }
+
+func TestValidateOIDC(t *testing.T) {
+	enabled := OIDCConfig{
+		IssuerURL:     "https://auth.example.com",
+		ClientID:      "boxbox",
+		RedirectURL:   "https://files.example.com/api/v1/auth/oidc/callback",
+		ProviderName:  "SSO",
+		UsernameClaim: "preferred_username",
+		Scopes:        []string{"openid", "profile"},
+	}
+	tests := []struct {
+		name    string
+		users   map[string]string
+		edit    func(*OIDCConfig)
+		wantErr string
+	}{
+		{name: "off"},
+		{name: "on", edit: func(c *OIDCConfig) { *c = enabled }},
+		{name: "unusable password account with password login disabled", users: map[string]string{strings.Repeat("a", 65): validTestBcryptHash}, edit: func(c *OIDCConfig) {
+			*c = enabled
+			c.DisablePasswordLogin = true
+		}, wantErr: "at least one usable OIDC account"},
+		{name: "long password account remains usable with password login", users: map[string]string{strings.Repeat("a", 65): validTestBcryptHash}, edit: func(c *OIDCConfig) { *c = enabled }},
+		{name: "valid sso account alongside unusable password account", users: map[string]string{strings.Repeat("a", 65): validTestBcryptHash}, edit: func(c *OIDCConfig) {
+			*c = enabled
+			c.DisablePasswordLogin = true
+			c.Users = []string{"carol"}
+		}},
+		{name: "sso-only accounts without password users", users: map[string]string{}, edit: func(c *OIDCConfig) {
+			*c = enabled
+			c.Users = []string{"carol"}
+		}},
+		{name: "no accounts at all", users: map[string]string{}, edit: func(c *OIDCConfig) { *c = enabled }, wantErr: "at least one user"},
+		{name: "settings without issuer", edit: func(c *OIDCConfig) { c.ClientID = "boxbox" }, wantErr: "issuer_url is required"},
+		{name: "relative issuer", edit: func(c *OIDCConfig) { *c = enabled; c.IssuerURL = "auth.example.com" }, wantErr: "issuer_url must be"},
+		{name: "missing client", edit: func(c *OIDCConfig) { *c = enabled; c.ClientID = "" }, wantErr: "client_id is required"},
+		{name: "missing redirect", edit: func(c *OIDCConfig) { *c = enabled; c.RedirectURL = "" }, wantErr: "redirect_url is required"},
+		{name: "prefixed redirect", edit: func(c *OIDCConfig) {
+			*c = enabled
+			c.RedirectURL = "https://files.example.com/boxbox/api/v1/auth/oidc/callback"
+		}, wantErr: "redirect_url must be"},
+		{name: "no openid scope", edit: func(c *OIDCConfig) { *c = enabled; c.Scopes = []string{"profile"} }, wantErr: "openid"},
+		{name: "blank claim", edit: func(c *OIDCConfig) { *c = enabled; c.UsernameClaim = " " }, wantErr: "username_claim"},
+		{name: "bad sso user", edit: func(c *OIDCConfig) { *c = enabled; c.Users = []string{" carol"} }, wantErr: "oidc.users[0]"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := ServerConfig{
+				JWTSecret:   "0123456789abcdef0123456789abcdef",
+				Users:       map[string]string{"admin": validTestBcryptHash},
+				MountPoints: []MountPoint{{Name: "data", Path: "/data"}},
+				Port:        80,
+				MaxUploadMB: 1,
+				ChunkSizeMB: 1,
+			}
+			if test.users != nil {
+				cfg.Users = test.users
+			}
+			if test.edit != nil {
+				test.edit(&cfg.OIDC)
+			}
+			err := cfg.Validate()
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("Validate() = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+// NAS identities name accounts, not password entries: an account that signs
+// in some other way (such as single sign-on) must be mappable too.
+func TestNASIdentitiesMatchEveryAccountThatCanSignIn(t *testing.T) {
+	nas := NASConfig{
+		ServiceUID: 10001,
+		ServiceGID: 10001,
+		Identities: map[string]NASIdentity{"carol": {UID: 3002, GID: 3002}},
+	}
+	passwordOnly := (&ServerConfig{Users: map[string]string{"alice": "hash"}}).Accounts()
+	if err := nas.validate(passwordOnly); err == nil || !strings.Contains(err.Error(), "does not match a configured user") {
+		t.Fatalf("identity for an unknown account = %v", err)
+	}
+	withCarol := map[string]struct{}{"alice": {}, "carol": {}}
+	if err := nas.validate(withCarol); err != nil {
+		t.Fatalf("identity for an account without a password = %v", err)
+	}
+}
+
+func TestAccountsListsPasswordAndSSOUsers(t *testing.T) {
+	cfg := &ServerConfig{
+		Users: map[string]string{"alice": "a", "bob": "b"},
+		OIDC:  OIDCConfig{IssuerURL: "https://auth.example.com", Users: []string{"carol"}},
+	}
+	accounts := cfg.Accounts()
+	if len(accounts) != 3 {
+		t.Fatalf("Accounts = %v", accounts)
+	}
+	for _, name := range []string{"alice", "bob", "carol"} {
+		if _, ok := accounts[name]; !ok {
+			t.Fatalf("Accounts = %v, missing %s", accounts, name)
+		}
+	}
+}
+
+func TestValidatePublicURL(t *testing.T) {
+	base := ServerConfig{
+		JWTSecret:   "0123456789abcdef0123456789abcdef",
+		Users:       map[string]string{"admin": validTestBcryptHash},
+		MountPoints: []MountPoint{{Name: "data", Path: "/data"}},
+		Port:        80,
+		MaxUploadMB: 1,
+		ChunkSizeMB: 1,
+	}
+	for value, ok := range map[string]bool{
+		"":                                true,
+		"https://files.example.com":       true,
+		"https://files.example.com/":      true,
+		"http://192.168.1.5:8080":         true,
+		"https://files.example.com:65535": true,
+		"https://files.example.com:65536": false,
+		"https://files.example.com:0":     false,
+		"ftp://files.example.com":         false,
+		"files.example.com":               false,
+		"https://files.example.com/box":   false,
+		"https://files.example.com/?a=1":  false,
+		"https://files.example.com/#x":    false,
+		"https://files.example.com?":      false,
+		"https://files.example.com#":      false,
+		"https://user@files.example.com":  false,
+	} {
+		cfg := base
+		cfg.PublicURL = value
+		if err := cfg.Validate(); (err == nil) != ok {
+			t.Errorf("Validate(public_url=%q) = %v, want ok=%v", value, err, ok)
+		}
+	}
+}

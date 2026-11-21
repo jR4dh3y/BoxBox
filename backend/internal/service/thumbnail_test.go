@@ -44,7 +44,7 @@ func TestThumbnailServiceDecodesSupportedFormats(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	renderer := NewThumbnailService(files)
+	renderer := NewThumbnailService(files, NewThumbnailLimit())
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
 			thumbnail, err := renderer.Render(context.Background(), "media/"+fixture.name, 224, 144, "")
@@ -72,7 +72,7 @@ func TestThumbnailServiceRendersCameraPhotoAboveLegacyPixelLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	thumbnail, err := NewThumbnailService(files).Render(context.Background(), "media/camera.jpg", 224, 144, "")
+	thumbnail, err := NewThumbnailService(files, NewThumbnailLimit()).Render(context.Background(), "media/camera.jpg", 224, 144, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,13 +85,37 @@ func TestThumbnailServiceRendersCameraPhotoAboveLegacyPixelLimit(t *testing.T) {
 	}
 }
 
+func TestThumbnailServiceFitsGIFFirstFrameRatherThanCanvas(t *testing.T) {
+	fsys, files := newThumbnailTestFiles(t)
+	palette := color.Palette{color.Black, color.White}
+	frame := image.NewPaletted(image.Rect(50, 50, 350, 150), palette)
+	var encoded bytes.Buffer
+	if err := gif.EncodeAll(&encoded, &gif.GIF{
+		Image: []*image.Paletted{frame}, Delay: []int{0},
+		Config: image.Config{ColorModel: palette, Width: 400, Height: 400},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.WriteFile("/data/media/frame.gif", encoded.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	thumbnail, err := NewThumbnailService(files, NewThumbnailLimit()).Render(context.Background(), "media/frame.gif", 224, 144, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := jpeg.DecodeConfig(bytes.NewReader(thumbnail.Content))
+	if err != nil || decoded.Width != 224 || decoded.Height != 74 {
+		t.Fatalf("first-frame thumbnail = %+v, %v; want 224x74", decoded, err)
+	}
+}
+
 func TestThumbnailServiceRejectsSourcesOutsideResourceLimits(t *testing.T) {
 	t.Run("pixel count", func(t *testing.T) {
 		fsys, files := newThumbnailTestFiles(t)
-		if err := fsys.WriteFile("/data/media/oversized.png", pngHeader(6000, 6000), 0o644); err != nil {
+		if err := fsys.WriteFile("/data/media/oversized.png", pngHeader(6000, 6000, 8), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		_, err := NewThumbnailService(files).Render(context.Background(), "media/oversized.png", 224, 144, "")
+		_, err := NewThumbnailService(files, NewThumbnailLimit()).Render(context.Background(), "media/oversized.png", 224, 144, "")
 		if !errors.Is(err, ErrThumbnailTooLarge) {
 			t.Fatalf("expected thumbnail limit error, got %v", err)
 		}
@@ -108,7 +132,7 @@ func TestThumbnailServiceRejectsSourcesOutsideResourceLimits(t *testing.T) {
 			FileStreamer: files,
 			size:         &oversized,
 		}
-		_, err := NewThumbnailService(fileInfo).Render(context.Background(), "media/large-file.png", 224, 144, "")
+		_, err := NewThumbnailService(fileInfo, NewThumbnailLimit()).Render(context.Background(), "media/large-file.png", 224, 144, "")
 		if !errors.Is(err, ErrThumbnailTooLarge) {
 			t.Fatalf("expected source byte limit error, got %v", err)
 		}
@@ -127,7 +151,7 @@ func TestThumbnailServiceCachesBySourceMetadataAndDimensions(t *testing.T) {
 		modTime:      time.Unix(100, 0),
 		size:         &stableSize,
 	}
-	renderer := NewThumbnailService(metadata).(*thumbnailService)
+	renderer := NewThumbnailService(metadata, NewThumbnailLimit()).(*thumbnailService)
 
 	first, err := renderer.Render(context.Background(), "media/photo.png", 64, 48, "")
 	if err != nil {
@@ -204,7 +228,7 @@ func TestThumbnailServiceHandlesConcurrentCacheAccess(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	renderer := NewThumbnailService(files).(*thumbnailService)
+	renderer := NewThumbnailService(files, NewThumbnailLimit()).(*thumbnailService)
 	const requests = 8
 	results := make(chan error, requests)
 	var workers sync.WaitGroup
@@ -291,16 +315,62 @@ func (f *thumbnailMetadataOverride) OpenFile(ctx context.Context, path string) (
 	return file, info, nil
 }
 
-func pngHeader(width, height uint32) []byte {
+func pngHeader(width, height uint32, depth byte) []byte {
 	var output bytes.Buffer
 	output.Write([]byte("\x89PNG\r\n\x1a\n"))
 	data := make([]byte, 13)
 	binary.BigEndian.PutUint32(data[0:4], width)
 	binary.BigEndian.PutUint32(data[4:8], height)
-	data[8] = 8
-	data[9] = 2
+	data[8] = depth
+	data[9] = 6
 	writePNGChunk(&output, "IHDR", data)
 	return output.Bytes()
+}
+
+func TestThumbnailRendererBoundsMemoryBeforeDecode(t *testing.T) {
+	fsys, files := newThumbnailTestFiles(t)
+	if err := fsys.WriteFile("/data/media/large.png", pngHeader(5600, 5600, 16), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The header is within the pixel limit but decoding and scaling exceed the memory budget.
+	_, err := NewThumbnailService(files, NewThumbnailLimit()).Render(context.Background(), "media/large.png", 512, 512, "")
+	if !errors.Is(err, ErrThumbnailTooLarge) {
+		t.Fatalf("expected rejection before decoding the truncated source, got %v", err)
+	}
+}
+
+func TestThumbnailMemoryWaitHonorsCancellation(t *testing.T) {
+	fsys, files := newThumbnailTestFiles(t)
+	if err := fsys.WriteFile("/data/media/photo.png", generatedImage(t, "png", 8, 8, color.NRGBA{A: 255}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := thumbnailMemory.Acquire(context.Background(), maxThumbnailRenderBytes); err != nil {
+		t.Fatal(err)
+	}
+	defer thumbnailMemory.Release(maxThumbnailRenderBytes)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	_, err := NewThumbnailService(files, NewThumbnailLimit()).Render(ctx, "media/photo.png", 64, 64, "")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("memory wait ignored cancellation: %v", err)
+	}
+}
+
+func TestThumbnailRendererAccountsForProgressiveJPEGCoefficients(t *testing.T) {
+	fsys, files := newThumbnailTestFiles(t)
+	photo := generatedImage(t, "jpeg", 6000, 4000, color.NRGBA{A: 255})
+	marker := bytes.Index(photo, []byte{0xff, 0xc0})
+	if marker < 0 {
+		t.Fatal("generated JPEG has no baseline frame header")
+	}
+	photo[marker+1] = 0xc2
+	if err := fsys.WriteFile("/data/media/progressive.jpg", photo, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewThumbnailService(files, NewThumbnailLimit()).Render(context.Background(), "media/progressive.jpg", 224, 144, "")
+	if !errors.Is(err, ErrThumbnailTooLarge) {
+		t.Fatalf("progressive coefficients were not budgeted before scan decoding: %v", err)
+	}
 }
 
 func writePNGChunk(output *bytes.Buffer, chunkType string, data []byte) {
@@ -308,4 +378,19 @@ func writePNGChunk(output *bytes.Buffer, chunkType string, data []byte) {
 	payload := append([]byte(chunkType), data...)
 	output.Write(payload)
 	_ = binary.Write(output, binary.BigEndian, crc32.ChecksumIEEE(payload))
+}
+
+// Per-account services in NAS mode must not multiply peak decode memory.
+func TestThumbnailServicesShareOneRenderLimit(t *testing.T) {
+	_, files := newThumbnailTestFiles(t)
+	limit := NewThumbnailLimit()
+	for range maxConcurrentThumbnails {
+		limit.slots <- struct{}{}
+	}
+	other := NewThumbnailService(files, limit)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := other.Render(ctx, "media/missing.png", 224, 144, ""); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("render with the shared limit full = %v, want it to wait for a slot", err)
+	}
 }

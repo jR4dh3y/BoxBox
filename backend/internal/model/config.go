@@ -3,7 +3,10 @@ package model
 import (
 	"fmt"
 	"net/netip"
+	"net/url"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -73,6 +76,69 @@ type ServerConfig struct {
 	AllowedOrigins []string          `mapstructure:"allowed_origins"` // WebSocket/CORS allowed origins
 	TrustedProxies []string          `mapstructure:"trusted_proxies"` // CIDRs allowed to supply forwarding headers
 	RateLimitRPS   float64           `mapstructure:"rate_limit_rps"`  // Auth endpoint rate limit (requests per second)
+	PublicURL      string            `mapstructure:"public_url"`      // external origin for share link previews; "" derives it per request
+	OIDC           OIDCConfig        `mapstructure:"oidc"`
+
+	NAS NASConfig `mapstructure:"nas"`
+}
+
+// NASConfig maps BoxBox accounts to filesystem identities. With any identity
+// set, BoxBox runs each account's file access in a worker process running as
+// that identity, and accounts without one get no file access.
+type NASConfig struct {
+	// The API process runs as this unprivileged identity.
+	ServiceUID uint32                 `mapstructure:"service_uid"`
+	ServiceGID uint32                 `mapstructure:"service_gid"`
+	Identities map[string]NASIdentity `mapstructure:"identities"`
+}
+
+// NASIdentity is numeric because the container does not share the NAS's
+// account database.
+type NASIdentity struct {
+	UID    uint32   `mapstructure:"uid"`
+	GID    uint32   `mapstructure:"gid"`
+	Groups []uint32 `mapstructure:"groups"`
+}
+
+func (n NASConfig) Enabled() bool {
+	return len(n.Identities) > 0
+}
+
+func (n NASConfig) validate(accounts map[string]struct{}) error {
+	if !n.Enabled() {
+		return nil
+	}
+	if n.ServiceUID == 0 || n.ServiceGID == 0 {
+		return fmt.Errorf("nas.service_uid and nas.service_gid must not be 0")
+	}
+	for username, identity := range n.Identities {
+		if _, ok := accounts[username]; !ok {
+			return fmt.Errorf("nas.identities.%s does not match a configured user", username)
+		}
+		if identity.UID == 0 || identity.GID == 0 {
+			return fmt.Errorf("nas.identities.%s: uid and gid are required and must not be 0", username)
+		}
+		if slices.Contains(identity.Groups, 0) {
+			return fmt.Errorf("nas.identities.%s: groups must not include 0", username)
+		}
+	}
+	return nil
+}
+
+// Accounts is every name that can sign in: password users, and the accounts
+// that only use single sign-on. Settings keyed by account, such as
+// nas.identities, check against this set.
+func (c *ServerConfig) Accounts() map[string]struct{} {
+	accounts := make(map[string]struct{}, len(c.Users)+len(c.OIDC.Users))
+	for username := range c.Users {
+		accounts[username] = struct{}{}
+	}
+	if c.OIDC.Enabled() {
+		for _, username := range c.OIDC.Users {
+			accounts[username] = struct{}{}
+		}
+	}
+	return accounts
 }
 
 // Validate checks that the configuration is valid
@@ -87,8 +153,15 @@ func (c *ServerConfig) Validate() error {
 		return fmt.Errorf("jwt_secret must be changed from the placeholder value")
 	}
 
-	if len(c.Users) == 0 {
-		return fmt.Errorf("at least one user is required")
+	if err := validatePublicURL(c.PublicURL); err != nil {
+		return err
+	}
+
+	if err := c.OIDC.validate(); err != nil {
+		return err
+	}
+	if len(c.Users) == 0 && !(c.OIDC.Enabled() && len(c.OIDC.Users) > 0) {
+		return fmt.Errorf("at least one user is required: configure users or oidc.users")
 	}
 	for username, password := range c.Users {
 		if username == "" {
@@ -99,6 +172,18 @@ func (c *ServerConfig) Validate() error {
 		}
 		if !isBcryptHash(password) {
 			return fmt.Errorf("password for user %q must be a bcrypt hash ($2a$, $2b$, or $2y$)", username)
+		}
+	}
+	if c.OIDC.DisablePasswordLogin && len(c.OIDC.Users) == 0 {
+		usableAccount := false
+		for username := range c.Users {
+			if ValidUsername(username) {
+				usableAccount = true
+				break
+			}
+		}
+		if !usableAccount {
+			return fmt.Errorf("at least one usable OIDC account is required when password login is disabled")
 		}
 	}
 
@@ -131,6 +216,9 @@ func (c *ServerConfig) Validate() error {
 
 	if c.ChunkSizeMB < 1 {
 		return fmt.Errorf("chunk_size_mb must be at least 1")
+	}
+	if err := c.NAS.validate(c.Accounts()); err != nil {
+		return err
 	}
 	for _, trustedProxy := range c.TrustedProxies {
 		if _, err := netip.ParsePrefix(trustedProxy); err != nil {
@@ -165,4 +253,23 @@ func resolvesToFilesystemRoot(path string) bool {
 	}
 	volume := filepath.VolumeName(absolute)
 	return filepath.Clean(absolute) == filepath.Clean(volume+string(filepath.Separator))
+}
+
+// validatePublicURL accepts an origin only: BoxBox serves its app and API from the root path.
+func validatePublicURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+		u.User != nil || strings.ContainsAny(raw, "?#") || (u.Path != "" && u.Path != "/") {
+		return fmt.Errorf("public_url must be an http(s) origin such as https://files.example.com, without a path, query or fragment")
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("public_url port must be between 1 and 65535")
+		}
+	}
+	return nil
 }

@@ -58,6 +58,7 @@ BoxBox is a self-hosted file manager for homelab and NAS-style servers. It provi
 - Copy, move, and delete files through background jobs with live WebSocket progress.
 - Search directories by file or folder name.
 - Configure read-only mounts, users, rate limits, and allowed origins.
+- Sign in through any OpenID Connect provider, alongside or instead of passwords.
 
 ## Quick Start
 
