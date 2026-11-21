@@ -76,3 +76,36 @@ func TestShareRecipientsUseTheCreatorsFiles(t *testing.T) {
 		t.Fatalf("link outlived its creator's access: %v", err)
 	}
 }
+
+// Expiry cleanup cannot delete as a share's creator, so with per-account files
+// a delete-on-expiry link is refused and the cleanup never starts.
+func TestShareDeleteOnExpiryIsOffWithPerAccountFiles(t *testing.T) {
+	store := filesystem.NewMemMapFS()
+	_ = store.MkdirAll("/data", 0o755)
+	alice := filesystem.NewMemMapFS()
+	_ = alice.WriteFile("/data/media/note.txt", []byte("alice's note"), 0o644)
+	shares := NewShareService(store, ShareServiceConfig{
+		DataDir: "/data",
+		Mounts:  func() []model.MountPoint { return []model.MountPoint{{Name: "media", Path: "/data/media"}} },
+		Files:   func(string) (filesystem.FS, error) { return alice, nil },
+	}).(*shareService)
+	ctx := context.Background()
+	expiresAt := time.Now().Add(time.Hour)
+
+	if _, err := shares.Create(ctx, "alice", "media/note.txt", ShareSettings{DeleteOnExpiry: true}, expiresAt); !errors.Is(err, ErrInvalidOperation) {
+		t.Fatalf("Create with delete on expiry = %v, want ErrInvalidOperation", err)
+	}
+	if _, err := shares.Create(ctx, "alice", "media/note.txt", ShareSettings{}, expiresAt); err != nil {
+		t.Fatalf("Create without delete on expiry = %v", err)
+	}
+
+	cleanupCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	shares.StartExpiryCleanup(cleanupCtx)
+	// Nothing started, so stopping returns well before the deadline.
+	stopCtx, stop := context.WithTimeout(ctx, time.Second)
+	defer stop()
+	if err := shares.StopExpiryCleanup(stopCtx); err != nil {
+		t.Fatalf("StopExpiryCleanup = %v, want nil", err)
+	}
+}

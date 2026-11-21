@@ -22,7 +22,7 @@ Full-access folder links set `manage`, `upload`, and `delete` to `true`. `manage
 
 ### Delete a File When Its Link Expires
 
-Set `"deleteOnExpiry": true` to delete the shared file when the link expires. It is off by default. The request needs a file, not a folder or a symlink, on a writable mount, and an `expiresInSeconds` value. Otherwise it returns `400`, or `403` for a read-only mount. If the file is replaced while the link is created, the request returns `409`; retry it. `expiresInSeconds` cannot exceed 100 years.
+Set `"deleteOnExpiry": true` to delete the shared file when the link expires. It is off by default. The request needs a file, not a folder or a symlink, on a writable mount, and an `expiresInSeconds` value. Otherwise it returns `400`, or `403` for a read-only mount. If the file is replaced while the link is created, the request returns `409`; retry it. `expiresInSeconds` cannot exceed 100 years. In [NAS mode](nas.md) the option is off and the request returns `400`.
 
 A background job checks expired links every minute, and once when the server starts, so a link that expired while the server was down is handled at startup. Each link gets one attempt. The job deletes the file only if all of these are true at that moment:
 

@@ -121,6 +121,7 @@ It does not protect against a compromised API. An attacker who controls the API 
 - NAS mode needs Linux. It cannot be combined with `--dev` or `--desktop`.
 - Drive usage on This Server is read as the API's identity. If `10001` cannot reach a mount's root, its usage is missing.
 - `auto_discover` lists drives as the API's identity, once at startup.
+- Share links cannot delete their file on expiry. Creating one with `deleteOnExpiry` returns `400`, and no expired link deletes a file, because the cleanup cannot act as the link's creator.
 - New files are `0644` and folders `0755`, so a shared group can read but not modify them. See [Shared Folders](#shared-folders).
 - Tested on Linux with plain POSIX permissions and a setgid shared folder, not yet on TrueNAS or with NFSv4 ACLs. The kernel enforces ACLs for workers too, but that is untested.
 
