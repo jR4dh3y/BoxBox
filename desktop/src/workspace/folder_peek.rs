@@ -59,6 +59,11 @@ fn read(api: &Api, folder: &str, show_hidden: bool) -> Result<Vec<FileInfo>> {
 }
 
 impl Workspace {
+    /// Previews draw on BoxBox's folder; the desktop's icon theme keeps its own folders.
+    pub(crate) fn folder_previews_shown(&self) -> bool {
+        self.preferences.folder_previews && self.preferences.file_icons != super::IconStyle::System
+    }
+
     fn peek_key(&self, api: &Api, folder: &FileInfo) -> PeekKey {
         PeekKey {
             provider: FavoriteProvider::for_api(api),
@@ -76,7 +81,7 @@ impl Workspace {
     /// Reads what a local folder holds, unless it is known or being read, and asks
     /// for the thumbnails of what it shows.
     pub(crate) fn request_folder_peek(&mut self, target: PaneTarget, folder: &FileInfo, cx: &mut Context<Self>) {
-        if !self.preferences.folder_previews {
+        if !self.folder_previews_shown() {
             return;
         }
         let Some(api) = self.pane_by_id(target.0).map(|pane| pane.api.clone()).filter(|api| api.is_local() && folder.is_dir) else { return };

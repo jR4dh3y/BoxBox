@@ -2055,6 +2055,8 @@ fn a_folder_dropped_on_favorites_is_pinned_and_a_file_is_not(cx: &mut TestAppCon
 fn a_folder_tile_shows_what_it_holds_pictures_first(cx: &mut TestAppContext) {
     let (view, cx, _fixture) = open(cx, &["photos/a.txt", "photos/b.png", "photos/z.jpg", "photos/.hidden.png", "empty/"]);
     view.update(cx, |workspace, cx| {
+        // They draw on BoxBox's folder, not the icon theme's.
+        workspace.preferences.file_icons = crate::workspace::IconStyle::Tinted;
         workspace.pane_mut().set_view_mode(ViewMode::Grid);
         cx.notify();
     });
@@ -2077,19 +2079,23 @@ fn a_folder_tile_shows_what_it_holds_pictures_first(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn folder_previews_can_be_turned_off(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["photos/b.png"]);
-    view.update(cx, |workspace, cx| {
-        workspace.preferences.folder_previews = false;
-        workspace.pane_mut().set_view_mode(ViewMode::Grid);
-        cx.notify();
-    });
-    for _ in 0..20 {
-        settle(cx);
-        std::thread::sleep(std::time::Duration::from_millis(10));
+fn folder_previews_are_off_when_turned_off_or_with_theme_icons(cx: &mut TestAppContext) {
+    use crate::workspace::IconStyle;
+    for (previews, style) in [(false, IconStyle::Tinted), (true, IconStyle::System)] {
+        let (view, cx, _fixture) = open(cx, &["photos/b.png"]);
+        view.update(cx, |workspace, cx| {
+            workspace.preferences.folder_previews = previews;
+            workspace.preferences.file_icons = style;
+            workspace.pane_mut().set_view_mode(ViewMode::Grid);
+            cx.notify();
+        });
+        for _ in 0..20 {
+            settle(cx);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        view.read_with(cx, |workspace, _| {
+            let pane = workspace.pane();
+            assert!(workspace.folder_peek(&pane.api, &pane.items[0]).is_none(), "nothing is read for a preview with {style:?}");
+        });
     }
-    view.read_with(cx, |workspace, _| {
-        let pane = workspace.pane();
-        assert!(workspace.folder_peek(&pane.api, &pane.items[0]).is_none(), "nothing is read for a preview");
-    });
 }

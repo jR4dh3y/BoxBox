@@ -73,7 +73,7 @@ impl Workspace {
 
     /// The items drawn inside a folder's tile, front first. A folder with an emblem keeps it instead.
     fn peek_cards(&self, api: &std::sync::Arc<crate::api::Api>, item: &crate::api::FileInfo, emblem: Option<&'static str>) -> Vec<PeekCard> {
-        if !item.is_dir || emblem.is_some() || !self.preferences.folder_previews {
+        if !item.is_dir || emblem.is_some() || !self.folder_previews_shown() {
             return Vec::new();
         }
         let Some(items) = self.folder_peek(api, item) else { return Vec::new() };
@@ -81,10 +81,7 @@ impl Workspace {
             .iter()
             .map(|inside| match self.thumbnail(api, inside) {
                 Some(image) => PeekCard::Image(image),
-                None => {
-                    let style = self.glyph_style(api, inside);
-                    PeekCard::Glyph { icon: style.glyph, tint: style.tint }
-                }
+                None => PeekCard::Sheet,
             })
             .collect()
     }

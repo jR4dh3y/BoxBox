@@ -54,43 +54,35 @@ impl GridMetrics {
     }
 }
 
-/// An item drawn inside a folder's tile: its thumbnail, or its kind's glyph on a card.
+/// An item drawn inside a folder's tile: a picture's thumbnail, or a plain
+/// sheet for anything else, so a folder of documents reads as full but quiet.
 pub enum PeekCard {
     Image(Arc<RenderImage>),
-    Glyph { icon: &'static str, tint: Option<u32> },
+    Sheet,
 }
 
-/// The folder icon of edge `size` with `cards` cascaded inside it, front first:
-/// the front one lowest and leftmost, the others behind it up and to the right.
-fn peeking(folder: impl IntoElement, cards: Vec<PeekCard>, size: f32) -> Div {
-    let (width, height, step) = (size * 0.46, size * 0.34, size * 0.075);
+/// The folder icon of edge `size` in colour `tone`, with `cards` cascaded
+/// inside it, front first: the front one lowest and leftmost.
+fn peeking(folder: impl IntoElement, cards: Vec<PeekCard>, size: f32, tone: gpui::Rgba) -> Div {
+    let (width, height, step) = (size * 0.4, size * 0.3, size * 0.055);
     let count = cards.len();
     // The folder's body, below its tab, in the 24-unit icon: x 2-22, y 6-20.
-    let (center_x, center_y) = (size * 0.5, size * 0.55);
+    let (center_x, center_y) = (size * 0.5, size * 0.56);
     let cards = cards.into_iter().enumerate().rev().map(|(index, card)| {
         // 0 at the front; the middle card sits at the body's centre.
         let depth = index as f32 - (count as f32 - 1.) / 2.;
-        let left = center_x - width / 2. + depth * step;
-        let top = center_y - height / 2. - depth * step * 0.8;
-        div()
+        let frame = div()
             .absolute()
-            .left(px(left))
-            .top(px(top))
+            .left(px(center_x - width / 2. + depth * step))
+            .top(px(center_y - height / 2. - depth * step * 0.8))
             .w(px(width))
             .h(px(height))
-            .flex()
-            .items_center()
-            .justify_center()
             .overflow_hidden()
-            .rounded(px(3.))
-            .border_1()
-            .border_color(c(BORDER_PRIMARY))
-            .bg(c(SURFACE_SECONDARY))
-            .shadow_sm()
-            .map(|frame| match card {
-                PeekCard::Image(image) => frame.child(img(image).size_full().object_fit(ObjectFit::Cover)),
-                PeekCard::Glyph { icon, tint } => frame.child(thin_icon(icon, height * 0.62, c(tint.unwrap_or(TEXT_SECONDARY)))),
-            })
+            .rounded(px(2.));
+        match card {
+            PeekCard::Image(image) => frame.border_1().border_color(alpha_of(tone, 0.35)).child(img(image).size_full().object_fit(ObjectFit::Cover)),
+            PeekCard::Sheet => frame.border_1().border_color(alpha_of(tone, 0.45)).bg(alpha_of(tone, 0.08)),
+        }
     });
     div().relative().size(px(size)).flex_none().child(folder).children(cards)
 }
@@ -264,10 +256,10 @@ impl RenderOnce for FileTile {
                             slot.child(div().absolute().left(px(4.)).bottom(px(4.)).size(px(badge)).child(img(app).size_full()))
                         })
                 }
-                (None, EntryIcon::Theme(image)) if !self.peek.is_empty() => slot.child(peeking(img(image).size(px(metrics.theme_icon())), self.peek, metrics.theme_icon())),
+                (None, EntryIcon::Theme(image)) if !self.peek.is_empty() => slot.child(peeking(img(image).size(px(metrics.theme_icon())), self.peek, metrics.theme_icon(), tone)),
                 (None, EntryIcon::Theme(image)) => slot.child(img(image).size(px(metrics.theme_icon()))),
                 (None, EntryIcon::Waiting) => slot,
-                (None, EntryIcon::Glyph) if !self.peek.is_empty() => slot.child(peeking(thin_icon(self.icon, metrics.theme_icon(), tone), self.peek, metrics.theme_icon())),
+                (None, EntryIcon::Glyph) if !self.peek.is_empty() => slot.child(peeking(thin_icon(self.icon, metrics.theme_icon(), tone), self.peek, metrics.theme_icon(), tone)),
                 (None, EntryIcon::Glyph) => slot.child(super::file_list::emblemed(thin_icon(self.icon, metrics.theme_icon(), tone), self.emblem, metrics.theme_icon(), tone)),
             });
         let label = div()
