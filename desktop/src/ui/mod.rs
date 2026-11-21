@@ -21,6 +21,7 @@ mod place_menu;
 mod properties;
 mod pointer;
 mod select_menu;
+mod selectable;
 mod settings;
 mod shortcuts;
 pub(crate) use settings::SettingsField;

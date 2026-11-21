@@ -29,7 +29,8 @@ fn row(label: impl IntoElement, value: impl IntoElement) -> gpui::Div {
         .child(div().min_w_0().flex().justify_end().text_color(c(TEXT_PRIMARY)).child(value))
 }
 
-fn text(value: String) -> gpui::Div {
+/// A value the mouse can select and copy, cut short to fit its row.
+fn text(value: impl IntoElement) -> gpui::Div {
     div().min_w_0().truncate().child(value)
 }
 
@@ -55,16 +56,16 @@ impl Workspace {
         let (title, glyph, groups) = match properties.items.as_slice() {
             [item] => {
                 let kind = if item.is_dir { "Folder".to_string() } else { type_description(&item.name).to_string() };
-                let mut about = vec![row("Type", text(kind)), row("Size", text(size))];
+                let mut about = vec![row("Type", text(self.selectable("properties-type", kind, cx))), row("Size", text(self.selectable("properties-size", size.clone(), cx)))];
                 if let (true, Load::Loaded(Totals { files, folders, .. })) = (item.is_dir, &properties.totals) {
                     // The walk counts the folder itself.
-                    about.push(row("Contents", text(counted(*files, "file", folders.saturating_sub(1), "folder"))));
+                    about.push(row("Contents", text(self.selectable("properties-contents", counted(*files, "file", folders.saturating_sub(1), "folder"), cx))));
                 }
                 let location = match ownership.and_then(|ownership| ownership.path.parent()) {
                     Some(folder) => home_relative(folder),
                     None => parent(&item.path),
                 };
-                about.push(row("Location", text(location)));
+                about.push(row("Location", text(self.selectable("properties-location", location, cx))));
                 #[cfg(windows)]
                 if let Some(data) = ownership {
                     let path = data.path.clone();
@@ -74,15 +75,15 @@ impl Workspace {
                     about.push(row("Security and attributes", button));
                 }
                 if let Some(target) = ownership.and_then(|ownership| ownership.link_target.clone()) {
-                    about.push(row("Link to", text(target)));
+                    about.push(row("Link to", text(self.selectable("properties-link", target, cx))));
                 }
                 if remote {
-                    about.push(row("Server", text(properties.provider_label.clone())));
+                    about.push(row("Server", text(self.selectable("properties-server", properties.provider_label.clone(), cx))));
                 }
-                let mut dates = vec![row("Modified", text(full_date(item.mod_time)))];
+                let mut dates = vec![row("Modified", text(self.selectable("properties-modified", full_date(item.mod_time), cx)))];
                 if let Some(ownership) = ownership {
-                    dates.push(row("Accessed", text(full_date(ownership.accessed))));
-                    dates.push(row("Created", text(full_date(ownership.created))));
+                    dates.push(row("Accessed", text(self.selectable("properties-accessed", full_date(ownership.accessed), cx))));
+                    dates.push(row("Created", text(self.selectable("properties-created", full_date(ownership.created), cx))));
                 }
                 let groups = vec![about, dates];
                 #[cfg(target_os = "linux")]
@@ -90,7 +91,7 @@ impl Workspace {
                     let mut groups = groups;
                     match (&properties.ownership, ownership) {
                         (_, Some(ownership)) if ownership.link_target.is_none() => groups.push(self.permission_rows(ownership, cx)),
-                        (Some(Load::Failed(error)), _) => groups.push(vec![row("Permissions", text(error.clone()))]),
+                        (Some(Load::Failed(error)), _) => groups.push(vec![row("Permissions", text(self.selectable("properties-permissions", error.clone(), cx)))]),
                         _ => {}
                     }
                     groups
@@ -99,16 +100,16 @@ impl Workspace {
             }
             items => {
                 let folders = items.iter().filter(|item| item.is_dir).count();
-                let mut about = vec![row("Folders", text(folders.to_string())), row("Files", text((items.len() - folders).to_string())), row("Size", text(size))];
+                let mut about = vec![row("Folders", text(folders.to_string())), row("Files", text((items.len() - folders).to_string())), row("Size", text(self.selectable("properties-size", size.clone(), cx)))];
                 if let Load::Loaded(totals) = &properties.totals {
-                    about.push(row("Contents", text(counted(totals.files, "file", totals.folders, "folder"))));
+                    about.push(row("Contents", text(self.selectable("properties-contents", counted(totals.files, "file", totals.folders, "folder"), cx))));
                 }
                 let location = parent(&items[0].path);
                 if items.iter().all(|item| parent(&item.path) == location) {
-                    about.push(row("Location", text(location)));
+                    about.push(row("Location", text(self.selectable("properties-location", location, cx))));
                 }
                 if remote {
-                    about.push(row("Server", text(properties.provider_label.clone())));
+                    about.push(row("Server", text(self.selectable("properties-server", properties.provider_label.clone(), cx))));
                 }
                 (format!("{} items", items.len()), "copy", vec![about])
             }
@@ -122,7 +123,7 @@ impl Workspace {
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
                 Modal::new()
-                    .title(title)
+                    .title(self.selectable("properties-title", title, cx))
                     .leading(thin_icon(glyph, 18., c(TEXT_SECONDARY)))
                     .padded(false)
                     .on_close(cx.listener(|this, _, _, cx| {
@@ -156,7 +157,7 @@ impl Workspace {
                     .flex()
                     .gap(px(6.))
                     .child(match *class { "owner" => "Owner", "group" => "Group", _ => "Others" })
-                    .when_some(who, |label, who| label.child(div().text_color(c(TEXT_PRIMARY)).child(who)));
+                    .when_some(who, |label, who| label.child(div().text_color(c(TEXT_PRIMARY)).child(self.selectable(format!("properties-{class}"), who, cx))));
                 let segments = bits.iter().zip(names).take(parts).map(|(bit, name)| {
                     let (bit, on) = (*bit, ownership.mode & *bit != 0);
                     div()
@@ -211,7 +212,7 @@ impl Workspace {
                 .font_family(self.fonts.mono.clone())
                 .text_size(px(12.))
                 .text_color(c(TEXT_SECONDARY))
-                .child(SharedString::from(format!("{}  {:03o}", permission_string(ownership.mode), ownership.mode & 0o7777))),
+                .child(self.selectable("properties-mode", format!("{}  {:03o}", permission_string(ownership.mode), ownership.mode & 0o7777), cx)),
         ));
         rows
     }

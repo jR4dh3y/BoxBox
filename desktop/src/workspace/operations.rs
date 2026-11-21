@@ -128,6 +128,19 @@ impl ContextMenuState {
 #[derive(Clone)]
 pub(crate) struct LocationEditor {
     pub target_id: usize,
+    /// The folder it was opened on. It belongs to that folder, so it closes
+    /// when the pane goes elsewhere, by Back, the sidebar or anything else.
+    place: (Arc<Api>, String),
+}
+
+impl LocationEditor {
+    pub(crate) fn on(pane: &crate::pane::Pane) -> Self {
+        Self { target_id: pane.id, place: (pane.api.clone(), pane.path.clone()) }
+    }
+
+    pub(crate) fn still_on(&self, pane: &crate::pane::Pane) -> bool {
+        Arc::ptr_eq(&self.place.0, &pane.api) && self.place.1 == pane.path
+    }
 }
 
 impl Workspace {
@@ -290,6 +303,7 @@ impl Workspace {
     pub(crate) fn on_location_field(&mut self, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event {
             InputEvent::Submit => {
+                self.location_completion = None;
                 self.submit_location(window, cx);
                 if self.operation_status.is_busy() {
                     self.focus_handle.focus(window);
@@ -297,10 +311,12 @@ impl Workspace {
             }
             InputEvent::Cancel => {
                 self.location_editor = None;
+                self.location_completion = None;
                 self.focus_handle.focus(window);
                 cx.notify();
             }
-            InputEvent::Changed => {}
+            // The folders that fit, once typing pauses.
+            InputEvent::Changed => self.refresh_location_completion(std::time::Duration::from_millis(80), window, cx, None),
         }
     }
     /// Ctrl+S: asks for a pattern, then selects the entries it matches.
@@ -406,11 +422,20 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let pane = self.pane();
-        let target_id = pane.id;
-        let path = pane.path.clone();
+        self.edit_location(self.active_pane, window, cx);
+    }
+
+    /// Turns a pane's path bar into a field holding its location, all selected
+    /// so it copies at once: the real path on this computer, else BoxBox's path.
+    pub(crate) fn edit_location(&mut self, target: PaneTarget, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(pane) = self.pane_by_id(target.0) else { return };
+        let path = match (&pane.real_path, pane.api.is_local()) {
+            (Some(real), true) => real.display().to_string(),
+            _ => pane.path.clone(),
+        };
         let length = path.len();
-        self.location_editor = Some(LocationEditor { target_id });
+        self.location_editor = Some(LocationEditor::on(pane));
+        self.location_completion = None;
         self.location_field.update(cx, |field, cx| field.set_text(path, 0..length, cx));
         self.location_field.read(cx).focus(window);
         cx.notify();
@@ -422,6 +447,8 @@ impl Workspace {
         };
         let path = self.location_field.read(cx).text().trim().to_string();
         let target = PaneTarget(editor.target_id);
+        let local = self.pane_by_id(target.0).is_some_and(|pane| pane.api.is_local());
+        let path = if local { super::location_completion::expand_home(&path) } else { path };
         // A network location, such as smb://nas/media, is mounted and then opened.
         if crate::devices::gvfs::spec::is_uri(&path) {
             self.connect_location(target, path, cx);
@@ -448,7 +475,7 @@ impl Workspace {
                     if path.is_empty() {
                         return Ok((path, None));
                     }
-                    #[cfg(windows)]
+                    // A real path, as the field shows on this computer, or a file:// link.
                     let path = if validation_api.is_local() && (Path::new(&path).is_absolute() || path.starts_with("file://")) {
                         let real = if path.starts_with("file://") {
                             crate::os_clipboard::path_from_uri(&path).context("Invalid file URI")?
@@ -490,6 +517,10 @@ impl Workspace {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Text selected in the Details panel is what the user means to copy.
+        if self.copy_text_selection(cx) {
+            return;
+        }
         let target = self.active_pane;
         let items = self.pane().selected_items();
         self.copy_items(target, items, ClipboardMode::Copy, cx);

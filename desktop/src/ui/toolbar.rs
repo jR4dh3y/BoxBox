@@ -22,6 +22,9 @@ pub(crate) struct Crumb {
 
 /// How many leading crumbs to hide behind "…" so the rest fit in `available`.
 /// The current folder always shows.
+/// Empty space kept after the crumbs, which a click turns into the location field.
+const PATH_BAR_SPACE: f32 = 12.;
+
 fn hidden_crumbs(widths: &[f32], available: f32) -> usize {
     const SEPARATOR: f32 = 4. + 7. + 4. + 4.;
     const OVERFLOW: f32 = 15. + SEPARATOR;
@@ -129,6 +132,8 @@ impl Workspace {
         if self.location_editor.as_ref().is_some_and(|editor| editor.target_id == target.0) {
             // The same box as the breadcrumbs, holding the text field.
             return div()
+                .key_context("LocationField")
+                .relative()
                 .flex()
                 .flex_1()
                 .min_w_0()
@@ -142,6 +147,7 @@ impl Workspace {
                 .text_13()
                 .text_color(c(TEXT_PRIMARY))
                 .child(self.location_field.clone())
+                .children(self.render_location_completion(cx))
                 .into_any_element();
         }
         let crumbs = self.breadcrumbs(target);
@@ -149,8 +155,12 @@ impl Workspace {
             div().text_13().whitespace_nowrap().child("Trash").into_any_element()
         } else if crumbs.is_empty() {
             div()
+                .id("path-bar-space")
+                .flex_1()
                 .text_13()
                 .whitespace_nowrap()
+                .cursor_text()
+                .on_click(cx.listener(move |this, _, window, cx| this.edit_location(target, window, cx)))
                 .child("Overview")
                 .into_any_element()
         } else {
@@ -183,6 +193,62 @@ impl Workspace {
             .child(content).into_any_element()
     }
 
+    /// The folders Tab can complete, under the location field while typing.
+    fn render_location_completion(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let completion = self.location_completion.as_ref()?;
+        let text = self.location_field.read(cx).text();
+        // Only while it fits what is typed, and not just the folder already entered.
+        if !completion.is_for(text) || completion.names.is_empty() || (completion.names.len() == 1 && completion.stepped_to(text)) {
+            return None;
+        }
+        const ROW: f32 = 28.;
+        let rows = completion.names.iter().enumerate().map(|(index, name)| {
+            let chosen = completion.index == Some(index);
+            let filled = format!("{}{name}/", completion.base);
+            div()
+                .id(("completion", index))
+                .debug_selector(move || format!("completion-{index}"))
+                .h(px(ROW))
+                .flex()
+                .items_center()
+                .px(px(8.))
+                .rounded(px(4.))
+                .truncate()
+                .cursor_pointer()
+                .when(chosen, |row| row.bg(alpha(self.accent_hex(), 0.25)))
+                .hover(|style| style.bg(c(SURFACE_ELEVATED)))
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.fill_location(filled.clone(), true, window, cx);
+                    this.location_field.read(cx).focus(window);
+                }))
+                .child(gpui::SharedString::from(name.clone()))
+        });
+        let shown = crate::workspace::location_completion::SHOWN as f32;
+        let list = div()
+            .id("location-completion")
+            .debug_selector(|| "location-completion".into())
+            .occlude()
+            .min_w(px(220.))
+            .max_w(px(420.))
+            .max_h(px(ROW * shown + 10.))
+            .overflow_y_scroll()
+            .track_scroll(&self.location_scroll)
+            .p(px(4.))
+            .rounded(px(6.))
+            .border_1()
+            .border_color(c(BORDER_PRIMARY))
+            .bg(c(SURFACE_SECONDARY))
+            .shadow_lg()
+            .text_13()
+            .text_color(c(TEXT_PRIMARY))
+            .children(rows);
+        // From the field's top-left, below it, drawn over the panes.
+        Some(div().absolute().top_0().left_0().child(
+            gpui::deferred(gpui::anchored().position_mode(gpui::AnchoredPositionMode::Local).position(gpui::point(px(0.), px(32.))).snap_to_window().child(list)).with_priority(2),
+        ))
+    }
+
     /// The crumbs that fit, after a "…" that lists the ones that do not. Each opens
     /// on click, opens a tab on middle-click, has a menu, takes drops, opens when a
     /// drag rests on it, and shows its full path on hover.
@@ -197,7 +263,7 @@ impl Workspace {
                 f32::from(window.text_system().shape_line(crumb.label.clone().into(), px(13.), &[run], None).width)
             })
             .collect();
-        let hidden = self.path_bar_widths.borrow().get(&target.0).map_or(0, |&available| hidden_crumbs(&widths, available));
+        let hidden = self.path_bar_widths.borrow().get(&target.0).map_or(0, |&available| hidden_crumbs(&widths, available - PATH_BAR_SPACE));
         let full_path = |index: usize| -> String {
             match &pane.real_path {
                 Some(real) => real.ancestors().nth(last - index).unwrap_or(real).display().to_string(),
@@ -247,7 +313,8 @@ impl Workspace {
                 .truncate()
                 .when(dropping, |crumb| crumb.bg(alpha(ACCENT, 0.25)))
                 .map(|crumb| match index == last {
-                    true => crumb.flex_shrink(),
+                    // Clicking the current folder, like the space after it, edits the path.
+                    true => crumb.flex_shrink().cursor_text().on_click(cx.listener(move |this, _, window, cx| this.edit_location(target, window, cx))),
                     false => crumb
                         .flex_none()
                         .text_color(c(TEXT_SECONDARY))
@@ -266,6 +333,17 @@ impl Workspace {
                 .child(crumb.label.clone());
             row = row.child(drop_zone(element, zone, cx.entity().downgrade()));
         }
+        // Empty space after the crumbs edits the path, as in Nautilus and Explorer.
+        row = row.child(
+            div()
+                .id("path-bar-space")
+                .debug_selector(move || format!("path-bar-space-{}", target.0))
+                .flex_1()
+                .min_w(px(PATH_BAR_SPACE))
+                .h(px(18.))
+                .cursor_text()
+                .on_click(cx.listener(move |this, _, window, cx| this.edit_location(target, window, cx))),
+        );
         // The row's width, for the next frame's choice of crumbs.
         let widths_store = self.path_bar_widths.clone();
         row.child(

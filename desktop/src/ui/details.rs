@@ -19,14 +19,14 @@ const ICON_SIZE: f32 = 64.;
 const LABEL_WIDTH: f32 = 72.;
 
 /// The label in its column, the value beside it, wrapping under itself.
-fn row(label: &'static str, value: impl Into<SharedString>) -> gpui::Div {
+fn row(label: &'static str, value: impl IntoElement) -> gpui::Div {
     div()
         .flex()
         .items_start()
         .gap(px(8.))
         .py(px(4.))
         .child(div().w(px(LABEL_WIDTH)).flex_none().text_color(c(TEXT_SECONDARY)).child(label))
-        .child(div().flex_1().min_w_0().text_color(c(TEXT_PRIMARY)).child(value.into()))
+        .child(div().flex_1().min_w_0().text_color(c(TEXT_PRIMARY)).child(value))
 }
 
 /// "Details" over its rows.
@@ -40,12 +40,12 @@ fn rows(children: Vec<gpui::Div>) -> gpui::Div {
 }
 
 /// The name, and a line under it when there is one.
-fn title(name: impl Into<SharedString>, under: impl Into<SharedString>) -> gpui::Div {
+fn title(name: impl IntoElement, under: impl Into<SharedString>) -> gpui::Div {
     let under = under.into();
     div()
         .flex()
         .flex_col()
-        .child(div().w_full().text_sm_tw().font_weight(gpui::FontWeight::SEMIBOLD).text_color(c(TEXT_PRIMARY)).child(name.into()))
+        .child(div().w_full().text_sm_tw().font_weight(gpui::FontWeight::SEMIBOLD).text_color(c(TEXT_PRIMARY)).child(name))
         .when(!under.is_empty(), |title| title.child(div().mt(px(2.)).text_color(c(TEXT_SECONDARY)).child(under)))
 }
 
@@ -79,9 +79,9 @@ impl Workspace {
         let pane = self.pane();
         let selected = if self.trash_open { Vec::new() } else { pane.selected_items() };
         let body = match selected.as_slice() {
-            [item] => self.single_details(item),
-            [] => self.folder_details(),
-            items => many_details(items),
+            [item] => self.single_details(item, cx),
+            [] => self.folder_details(cx),
+            items => self.many_details(items, cx),
         };
         let panel = div()
             .id("details-panel")
@@ -130,18 +130,19 @@ impl Workspace {
         }
     }
 
-    fn single_details(&self, item: &FileInfo) -> gpui::Div {
+    fn single_details(&self, item: &FileInfo, cx: &mut Context<Self>) -> gpui::Div {
         let kind = if item.is_dir { "Folder".to_string() } else { type_description(&item.name) };
-        let mut details = vec![row("Type", kind)];
+        let mut details = vec![row("Type", self.selectable("details-type", kind, cx))];
         if !item.is_dir {
-            details.push(row("Size", file_size(item.size)));
+            details.push(row("Size", self.selectable("details-size", file_size(item.size), cx)));
         }
-        details.push(row("Location", self.location_label(&parent(&item.path))));
-        details.push(row("Modified", full_date(item.mod_time)));
-        div().flex().flex_col().child(self.preview(item)).child(div().mt(px(12.)).child(title(item.name.clone(), ""))).child(rows(details))
+        details.push(row("Location", self.selectable("details-location", self.location_label(&parent(&item.path)), cx)));
+        details.push(row("Modified", self.selectable("details-modified", full_date(item.mod_time), cx)));
+        let name = self.selectable("details-name", item.name.clone(), cx);
+        div().flex().flex_col().child(self.preview(item)).child(div().mt(px(12.)).child(title(name, ""))).child(rows(details))
     }
 
-    fn folder_details(&self) -> gpui::Div {
+    fn folder_details(&self, cx: &mut Context<Self>) -> gpui::Div {
         let pane = self.pane();
         let (name, under) = if self.trash_open {
             ("Trash".to_string(), String::new())
@@ -153,8 +154,34 @@ impl Workspace {
         div()
             .flex()
             .flex_col()
-            .child(title(name, under))
+            .child(title(self.selectable("details-name", name, cx), under))
             .child(div().mt(px(14.)).text_color(c(TEXT_MUTED)).child("Select an item to see its details."))
+    }
+
+    fn many_details(&self, items: &[FileInfo], cx: &mut Context<Self>) -> gpui::Div {
+        const LISTED: usize = 50;
+        let folders = items.iter().filter(|item| item.is_dir).count();
+        let files = items.len() - folders;
+        let bytes: u64 = items.iter().filter(|item| !item.is_dir).map(|item| item.size).sum();
+        let mut details = vec![row("Files", files.to_string()), row("Folders", folders.to_string())];
+        // Folders are not walked here; Properties counts what is inside them.
+        details.push(row("Size", if folders > 0 { format!("{}, files only", file_size(bytes)) } else { file_size(bytes) }));
+        div()
+            .flex()
+            .flex_col()
+            .child(title(format!("{} items selected", items.len()), ""))
+            .child(rows(details))
+            .child(
+                div()
+                    .mt(px(18.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .text_color(c(TEXT_SECONDARY))
+                    .child(div().mb(px(2.)).text_13().font_weight(gpui::FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child("Selected"))
+                    .children(items.iter().take(LISTED).enumerate().map(|(index, item)| div().truncate().child(self.selectable(format!("details-selected-{index}"), item.name.clone(), cx))))
+                    .when(items.len() > LISTED, |list| list.child(div().text_color(c(TEXT_MUTED)).child(format!("and {} more", items.len() - LISTED)))),
+            )
     }
 
     /// A virtual path as the path bar names it: the drive or place, then the folders under it.
@@ -167,32 +194,7 @@ impl Workspace {
     }
 }
 
-fn many_details(items: &[FileInfo]) -> gpui::Div {
-    const LISTED: usize = 50;
-    let folders = items.iter().filter(|item| item.is_dir).count();
-    let files = items.len() - folders;
-    let bytes: u64 = items.iter().filter(|item| !item.is_dir).map(|item| item.size).sum();
-    let mut details = vec![row("Files", files.to_string()), row("Folders", folders.to_string())];
-    // Folders are not walked here; Properties counts what is inside them.
-    details.push(row("Size", if folders > 0 { format!("{}, files only", file_size(bytes)) } else { file_size(bytes) }));
-    div()
-        .flex()
-        .flex_col()
-        .child(title(format!("{} items selected", items.len()), ""))
-        .child(rows(details))
-        .child(
-            div()
-                .mt(px(18.))
-                .flex()
-                .flex_col()
-                .gap(px(4.))
-                .text_color(c(TEXT_SECONDARY))
-                .child(div().mb(px(2.)).text_13().font_weight(gpui::FontWeight::MEDIUM).text_color(c(TEXT_PRIMARY)).child("Selected"))
-                .children(items.iter().take(LISTED).map(|item| div().truncate().child(item.name.clone())))
-                .when(items.len() > LISTED, |list| list.child(div().text_color(c(TEXT_MUTED)).child(format!("and {} more", items.len() - LISTED)))),
-        )
-}
-
 fn counted(count: usize, noun: &str) -> String {
     format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
 }
+

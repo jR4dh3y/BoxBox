@@ -1835,3 +1835,144 @@ fn an_open_dialog_keeps_the_folders_keys_from_acting_behind_it(cx: &mut TestAppC
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert!(workspace.confirm.is_some() || !fixture.root.join("a.txt").exists()));
 }
+
+#[gpui::test]
+fn clicking_the_path_bar_edits_the_real_path_and_a_typed_real_path_opens(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["docs/a.txt"]);
+    let pane = view.read_with(cx, |workspace, _| workspace.pane().id);
+    click(cx, Box::leak(format!("path-bar-space-{pane}").into_boxed_str()));
+    let real = fs::canonicalize(&fixture.root).unwrap().display().to_string();
+    view.read_with(cx, |workspace, cx| {
+        assert!(workspace.location_editor.is_some());
+        assert_eq!(workspace.location_field.read(cx).text(), real, "the field holds the real path");
+    });
+    // All of it is selected, so typing replaces it.
+    cx.simulate_input(&format!("{real}/docs"));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        assert!(workspace.location_editor.is_none());
+        assert_eq!(workspace.pane().path, "home/docs");
+    });
+}
+
+#[gpui::test]
+fn details_text_selects_and_copies(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["report.txt"]);
+    view.update(cx, |workspace, cx| {
+        workspace.preferences.details_panel = true;
+        cx.notify();
+    });
+    click(cx, "row-0-0");
+    cx.run_until_parked();
+    let name = cx.debug_bounds("details-name").unwrap();
+    let press = |cx: &mut VisualTestContext, position, click_count| {
+        cx.simulate_event(gpui::MouseDownEvent { button: MouseButton::Left, position, modifiers: Modifiers::default(), click_count, first_mouse: false });
+    };
+    let release = |cx: &mut VisualTestContext, position| {
+        cx.simulate_event(gpui::MouseUpEvent { button: MouseButton::Left, position, modifiers: Modifiers::default(), click_count: 1 });
+    };
+    // A drag from the left edge selects the start of the name.
+    let (start, middle) = (gpui::point(name.left() + gpui::px(1.), name.center().y), name.center());
+    press(cx, start, 1);
+    cx.simulate_event(gpui::MouseMoveEvent { position: middle, pressed_button: Some(MouseButton::Left), modifiers: Modifiers::default() });
+    release(cx, middle);
+    let dragged = view.read_with(cx, |workspace, _| workspace.text_selection.as_ref().and_then(|selection| selection.selected()).map(str::to_owned));
+    assert!(dragged.as_deref().is_some_and(|text| !text.is_empty() && "report.txt".starts_with(text)), "{dragged:?}");
+    // A double-click takes it all, and Ctrl+C copies the text, not the file.
+    press(cx, middle, 2);
+    release(cx, middle);
+    cx.simulate_keystrokes("ctrl-c");
+    assert_eq!(cx.read_from_clipboard().and_then(|item| item.text()).as_deref(), Some("report.txt"));
+    // Any other key or press lets it go.
+    cx.simulate_keystrokes("down");
+    view.read_with(cx, |workspace, _| assert!(workspace.text_selection.is_none()));
+}
+
+#[gpui::test]
+fn tab_completes_a_typed_folder_like_a_terminal(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["docs/a.txt", "downloads/b.txt", "music/c.txt"]);
+    let real = fs::canonicalize(&fixture.root).unwrap().display().to_string();
+    cx.simulate_keystrokes("ctrl-l");
+    cx.simulate_input(&format!("{real}/m"));
+    cx.simulate_keystrokes("tab");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, cx| assert_eq!(workspace.location_field.read(cx).text(), format!("{real}/music/")));
+    // Two folders share "do": Tab fills that, then steps through them.
+    cx.simulate_input("x");
+    cx.simulate_keystrokes("backspace backspace backspace backspace backspace backspace backspace d");
+    // The list waits for a pause in typing.
+    cx.executor().advance_clock(std::time::Duration::from_millis(100));
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.location_completion.as_ref().map(|completion| completion.names.clone()), Some(vec!["docs".to_string(), "downloads".to_string()])));
+    cx.simulate_keystrokes("tab");
+    view.read_with(cx, |workspace, cx| assert_eq!(workspace.location_field.read(cx).text(), format!("{real}/do")));
+    cx.simulate_keystrokes("tab");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, cx| assert_eq!(workspace.location_field.read(cx).text(), format!("{real}/docs")));
+    cx.simulate_keystrokes("tab");
+    view.read_with(cx, |workspace, cx| assert_eq!(workspace.location_field.read(cx).text(), format!("{real}/downloads")));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home/downloads"));
+}
+
+#[gpui::test]
+fn properties_text_selects_and_ctrl_c_copies_it_not_the_file(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["report.txt"]);
+    click(cx, "row-0-0");
+    cx.simulate_keystrokes("alt-enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert!(workspace.properties.is_some()));
+    let kind = cx.debug_bounds("properties-type").unwrap().center();
+    cx.simulate_event(gpui::MouseDownEvent { button: MouseButton::Left, position: kind, modifiers: Modifiers::default(), click_count: 2, first_mouse: false });
+    cx.simulate_event(gpui::MouseUpEvent { button: MouseButton::Left, position: kind, modifiers: Modifiers::default(), click_count: 2 });
+    cx.simulate_keystrokes("ctrl-c");
+    let copied = cx.read_from_clipboard().and_then(|item| item.text());
+    assert!(copied.as_deref().is_some_and(|text| !text.is_empty() && !text.contains("report.txt")), "{copied:?}");
+    view.read_with(cx, |workspace, _| assert!(workspace.properties.is_some() && workspace.file_clipboard.is_none()));
+}
+
+#[gpui::test]
+fn up_and_down_pick_folders_in_the_scrolling_list(cx: &mut TestAppContext) {
+    let folders: Vec<String> = (0..12).map(|index| format!("f{index:02}/")).collect();
+    let files: Vec<&str> = folders.iter().map(String::as_str).collect();
+    let (view, cx, fixture) = open(cx, &files);
+    let real = fs::canonicalize(&fixture.root).unwrap().display().to_string();
+    cx.simulate_keystrokes("ctrl-l");
+    cx.simulate_input(&format!("{real}/"));
+    cx.executor().advance_clock(std::time::Duration::from_millis(100));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("up");
+    view.read_with(cx, |workspace, cx| assert_eq!(workspace.location_field.read(cx).text(), format!("{real}/f11")));
+    // The last folder is past the first eight rows, so the list scrolled to it.
+    view.read_with(cx, |workspace, _| assert!(workspace.location_scroll.offset().y < gpui::px(0.)));
+    cx.simulate_keystrokes("down down");
+    view.read_with(cx, |workspace, cx| assert_eq!(workspace.location_field.read(cx).text(), format!("{real}/f01")));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home/f01"));
+}
+
+#[gpui::test]
+fn the_location_field_closes_when_its_pane_goes_elsewhere(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["vids/a.mp4", "top.txt"]);
+    view.update(cx, |workspace, cx| workspace.navigate("home/vids".into(), cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("ctrl-l");
+    view.read_with(cx, |workspace, cx| {
+        assert!(workspace.location_editor.is_some());
+        assert!(workspace.location_field.read(cx).text().ends_with("/vids"));
+    });
+    // Back, as the toolbar button or Alt+Left: the bar shows where the pane went.
+    view.update_in(cx, |workspace, window, cx| workspace.back(&Back, window, cx));
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.pane().path, "home");
+        assert!(workspace.location_editor.is_none(), "the field for vids closed");
+        assert!(workspace.location_completion.is_none());
+    });
+    // Opened again, it holds the new folder.
+    cx.simulate_keystrokes("ctrl-l");
+    view.read_with(cx, |workspace, cx| assert!(!workspace.location_field.read(cx).text().ends_with("/vids")));
+}

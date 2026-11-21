@@ -30,6 +30,7 @@ pub(crate) mod open_with;
 mod watching;
 pub(crate) mod undo;
 pub(crate) mod operations;
+pub(crate) mod location_completion;
 pub(crate) mod names;
 pub(crate) mod keyboard;
 pub(crate) mod history;
@@ -238,6 +239,11 @@ actions!(
         Undo,
         ShowShortcuts,
         OperationEscape,
+        CopyText,
+        CompleteLocation,
+        CompleteLocationBack,
+        LocationDown,
+        LocationUp,
         ZoomIn,
         ZoomOut,
         ZoomReset,
@@ -280,6 +286,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-i", InvertSelection, Some("BrowseWorkspace && !TextField && !Dialog")),
         KeyBinding::new("ctrl-d", DownloadSelected, context),
         KeyBinding::new("ctrl-c", CopySelected, context),
+        // In a dialog, Ctrl+C copies its selected text and never the files behind it.
+        KeyBinding::new("ctrl-c", CopyText, Some("BrowseWorkspace && Dialog && !TextField")),
         KeyBinding::new("ctrl-x", CutSelected, context),
         KeyBinding::new("ctrl-v", PasteInto, context),
         KeyBinding::new("enter", OpenActive, context),
@@ -293,6 +301,11 @@ pub fn bind_keys(cx: &mut App) {
         // A text field keeps Ctrl+Z to itself, as the web shortcut skips inputs.
         KeyBinding::new("ctrl-z", Undo, Some("BrowseWorkspace && !TextField && !Dialog")),
         KeyBinding::new("escape", CloseSettings, Some("SettingsPanel")),
+        // As a terminal completes a path.
+        KeyBinding::new("tab", CompleteLocation, Some("LocationField")),
+        KeyBinding::new("shift-tab", CompleteLocationBack, Some("LocationField")),
+        KeyBinding::new("down", LocationDown, Some("LocationField")),
+        KeyBinding::new("up", LocationUp, Some("LocationField")),
     ]);
     keyboard::bind_keys(cx);
 }
@@ -395,6 +408,13 @@ pub struct Workspace {
     /// The last move to Trash or rename, for Ctrl+Z.
     pub(crate) last_undo: Option<undo::Undo>,
     pub(crate) shortcuts_open: bool,
+    /// Text selected in the Details panel, which Ctrl+C copies.
+    pub(crate) text_selection: Option<crate::components::TextSelection>,
+    /// The folders Tab can complete in the location field.
+    pub(crate) location_completion: Option<location_completion::Completion>,
+    completion_generation: u64,
+    /// Keeps the folder Up, Down or Tab picked in view in the list.
+    pub(crate) location_scroll: gpui::ScrollHandle,
     type_ahead: keyboard::TypeAhead,
     pub(crate) jobs: Vec<jobs::Job>,
     next_job_id: u64,
@@ -548,6 +568,13 @@ impl Workspace {
                 cx.on_blur(&rename_focus, window, |this, window, cx| this.on_rename_blur(window, cx)),
                 cx.subscribe_in(&location_field, window, |this, _, event, window, cx| this.on_location_field(event, window, cx)),
                 cx.subscribe_in(&accent_field, window, |this, _, event, _, cx| this.on_accent_field(event, cx)),
+                // Selected text lasts until the next key, except the Ctrl+C that copies it.
+                cx.observe_keystrokes(|this, event, _, cx| {
+                    let copies = |action: &Box<dyn gpui::Action>| action.as_any().is::<CopySelected>() || action.as_any().is::<CopyText>();
+                    if !event.action.as_ref().is_some_and(copies) {
+                        this.clear_text_selection(cx);
+                    }
+                }),
                 #[cfg(target_os = "linux")]
                 cx.subscribe_in(&open_with_search, window, |this, _, event, window, cx| this.on_open_with_search(event, window, cx)),
             ]
@@ -561,6 +588,10 @@ impl Workspace {
             confirm: None,
             last_undo: None,
             shortcuts_open: false,
+            text_selection: None,
+            location_completion: None,
+            completion_generation: 0,
+            location_scroll: gpui::ScrollHandle::new(),
             type_ahead: Default::default(),
             jobs: Vec::new(),
             next_job_id: 0,
@@ -1396,6 +1427,33 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Copies text selected in the Details panel or a dialog; false when there is none.
+    pub(crate) fn copy_text_selection(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(text) = self.text_selection.as_ref().and_then(|selection| selection.selected()) else { return false };
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_owned()));
+        true
+    }
+
+    /// The location field shows the folder it was opened on, so it closes once
+    /// its pane is somewhere else, with the focus back on the folder.
+    fn close_moved_location_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(editor) = self.location_editor.as_ref() else { return };
+        if self.pane_by_id(editor.target_id).is_some_and(|pane| editor.still_on(pane)) {
+            return;
+        }
+        self.location_editor = None;
+        self.location_completion = None;
+        if self.location_field.read(cx).is_focused(window) {
+            self.focus_handle.focus(window);
+        }
+    }
+
+    fn clear_text_selection(&mut self, cx: &mut Context<Self>) {
+        if self.text_selection.take().is_some() {
+            cx.notify();
+        }
+    }
+
     /// Whether a dialog is open. It blocks clicks behind it, and this blocks keys.
     pub(crate) fn dialog_open(&self) -> bool {
         #[cfg(target_os = "linux")]
@@ -1541,6 +1599,7 @@ impl Render for Workspace {
         if std::mem::take(&mut self.pending_credential_focus) {
             self.focus_credentials(window, cx);
         }
+        self.close_moved_location_editor(window, cx);
         if std::mem::take(&mut self.pending_location_focus) {
             self.location_field.read(cx).focus(window);
         }
@@ -1557,6 +1616,8 @@ impl Render for Workspace {
         div()
             .key_context(if self.dialog_open() { "BrowseWorkspace Dialog" } else { "BrowseWorkspace" })
             .track_focus(&self.focus_handle)
+            // Selected text lasts until the next press; a key clears it in `new`.
+            .capture_any_mouse_down(cx.listener(|this, _, _, cx| this.clear_text_selection(cx)))
             // First, so it runs before the drop zones inside report themselves.
             .on_drag_move(cx.listener(|this, _: &gpui::DragMoveEvent<crate::drag_out::DraggedItem>, _, cx| this.track_drag(cx)))
             .on_drag_move(cx.listener(|this, _: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| this.track_drag(cx)))
@@ -1604,6 +1665,13 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::zoom_reset))
             .on_action(cx.listener(Self::download_selected))
             .on_action(cx.listener(Self::copy_selected))
+            .on_action(cx.listener(|this, _: &CompleteLocation, window, cx| this.complete_location(false, window, cx)))
+            .on_action(cx.listener(|this, _: &CompleteLocationBack, window, cx| this.complete_location(true, window, cx)))
+            .on_action(cx.listener(|this, _: &LocationDown, window, cx| this.step_location(false, window, cx)))
+            .on_action(cx.listener(|this, _: &LocationUp, window, cx| this.step_location(true, window, cx)))
+            .on_action(cx.listener(|this, _: &CopyText, _, cx| {
+                this.copy_text_selection(cx);
+            }))
             .on_action(cx.listener(Self::cut_selected))
             .on_action(cx.listener(Self::paste_clipboard))
             .on_action(cx.listener(Self::move_cursor))

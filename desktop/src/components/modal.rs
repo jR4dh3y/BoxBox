@@ -1,6 +1,6 @@
 //! `lib/components/ui/Modal.svelte`: backdrop, panel, title bar, body and footer.
 
-use gpui::{div, prelude::*, px, rgba, Animation, AnimationExt as _, AnyElement, App, ClickEvent, FontWeight, SharedString, Window};
+use gpui::{div, prelude::*, px, rgba, Animation, AnimationExt as _, AnyElement, App, ClickEvent, FontWeight, Window};
 
 use super::{motion, Type, ROUNDED, ROUNDED_LG};
 use crate::theme::*;
@@ -20,7 +20,7 @@ pub enum ModalSize {
 
 #[derive(IntoElement)]
 pub struct Modal {
-    title: Option<SharedString>,
+    title: Option<AnyElement>,
     /// Drawn before the title, such as the icon of the item a dialog is about.
     leading: Option<AnyElement>,
     size: ModalSize,
@@ -36,8 +36,9 @@ impl Modal {
         Self { title: None, leading: None, size: ModalSize::Md, padded: true, body: Vec::new(), footer: Vec::new(), on_close: None, close_selector: None }
     }
 
-    pub fn title(mut self, title: impl Into<SharedString>) -> Self {
-        self.title = Some(title.into());
+    /// Text, or an element such as selectable text.
+    pub fn title(mut self, title: impl IntoElement) -> Self {
+        self.title = Some(title.into_any_element());
         self
     }
 

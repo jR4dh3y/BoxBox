@@ -121,7 +121,8 @@ impl Workspace {
         if let Some(server) = crate::devices::gvfs::spec::smb_server_only(&uri) {
             let text = format!("smb://{server}/");
             let length = text.len();
-            self.location_editor = Some(super::operations::LocationEditor { target_id: target.0 });
+            let Some(pane) = self.pane_by_id(target.0) else { return };
+            self.location_editor = Some(super::operations::LocationEditor::on(pane));
             self.location_field.update(cx, |field, cx| field.set_text(text, length..length, cx));
             self.pending_location_focus = true;
             self.notify(crate::components::ToastKind::Info, format!("Type the shared folder's name after smb://{server}/"), cx);
