@@ -1431,6 +1431,9 @@ impl Workspace {
     pub(crate) fn copy_text_selection(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(text) = self.text_selection.as_ref().and_then(|selection| selection.selected()) else { return false };
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_owned()));
+        // The text replaces any copied or cut files, so a later paste does not move them.
+        self.file_clipboard = None;
+        cx.notify();
         true
     }
 

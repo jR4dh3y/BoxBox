@@ -152,17 +152,24 @@ impl Workspace {
             if !delay.is_zero() {
                 cx.background_executor().timer(delay).await;
             }
+            // Newer typing replaced this request during the pause: skip the read.
+            let current = |this: &Self, cx: &gpui::App| this.completion_generation == generation && this.location_field.read(cx).text() == text;
+            if !this.read_with(cx, |this, cx| current(this, cx)).unwrap_or(false) {
+                return;
+            }
             let (base, _) = split(&text);
             let (api, base): (Arc<Api>, String) = (api, base.to_owned());
             let folders = cx.background_executor().spawn(async move { read_folders(&api, &base) }).await;
             this.update_in(cx, |this, window, cx| {
-                if this.completion_generation != generation || this.location_field.read(cx).text() != text {
+                if !current(this, cx) {
                     return;
                 }
+                let read = folders.is_ok();
                 this.location_completion = folders.ok().map(|folders| Completion::new(&text, folders, show_hidden));
                 // A new list starts at its top.
                 this.location_scroll.set_offset(gpui::Point::default());
-                if let Some(then) = then {
+                // Retrying after a failed read would list it again, forever.
+                if let Some(then) = then.filter(|_| read) {
                     then(this, window, cx);
                 }
                 cx.notify();

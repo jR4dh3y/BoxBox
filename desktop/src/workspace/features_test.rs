@@ -1918,9 +1918,27 @@ fn tab_completes_a_typed_folder_like_a_terminal(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn tab_in_a_folder_that_cannot_be_read_lists_it_once(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["docs/a.txt"]);
+    let real = fs::canonicalize(&fixture.root).unwrap().display().to_string();
+    cx.simulate_keystrokes("ctrl-l");
+    cx.simulate_input(&format!("{real}/missing/d"));
+    cx.simulate_keystrokes("tab");
+    // Retrying a failed read would never park.
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, cx| {
+        assert!(workspace.location_completion.is_none());
+        assert_eq!(workspace.location_field.read(cx).text(), format!("{real}/missing/d"));
+    });
+}
+
+#[gpui::test]
 fn properties_text_selects_and_ctrl_c_copies_it_not_the_file(cx: &mut TestAppContext) {
     let (view, cx, _fixture) = open(cx, &["report.txt"]);
     click(cx, "row-0-0");
+    // A cut the copied text replaces, so a later paste does not move the file.
+    cx.simulate_keystrokes("ctrl-x");
+    view.read_with(cx, |workspace, _| assert!(workspace.file_clipboard.is_some()));
     cx.simulate_keystrokes("alt-enter");
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert!(workspace.properties.is_some()));
