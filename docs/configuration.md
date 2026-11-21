@@ -163,6 +163,8 @@ Only one provider can be configured. OAuth2-only logins without OpenID Connect, 
 
 A sign-in stays valid for the normal 7-day rolling refresh, even after the user is removed at the provider. Remove the name from BoxBox and restart to end it. Single sign-on settings are ignored before validation in `--dev` and desktop mode, so incomplete provider settings do not block local startup.
 
+On a NAS where each person owns their files under their own UID, map accounts to NAS identities so BoxBox reads and writes as each person. See [NAS users](nas.md).
+
 ## Environment Variables
 
 Environment overrides use the `BOXBOX_` prefix:

@@ -96,6 +96,25 @@ bun scripts/check-auth-sessions.ts --binary ./dist/boxbox
 
 The `--dev` server mode still initializes `data_dir`; configure a writable directory even though authentication is disabled.
 
+## Check NAS mode
+
+On Linux, run the NAS-mode end-to-end check from the repository root:
+
+```bash
+scripts/nas-e2e/run.sh
+```
+
+It needs no root. A user namespace maps the subordinate UIDs in `/etc/subuid` and `/etc/subgid`, so the supervisor really switches identities and the kernel really enforces permissions. It needs util-linux `unshare` and `setpriv`, `newuidmap`, `curl`, Go, and Python with `bcrypt`.
+
+The script builds the server and starts it as the namespace's root with only `SETUID` and `SETGID` and `no_new_privs`, matching the Compose setup in [NAS users](nas.md). Through the HTTP API, it checks:
+
+- ownership of uploads, folders, job copies and share-link uploads
+- that the kernel refuses private folders with a 403
+- that upload sessions and jobs stay within their account
+- the identity and capabilities of each process
+- recovery after a worker is killed in the middle of a copy
+- that every process exits on `SIGTERM`
+
 ## CI change selection
 
 `.github/scripts/ci_scope.py` selects validation from the PR merge-base diff. Pushes use the before/after diff. Unknown inputs or an unavailable diff select every check. Renames include both the old and new paths.

@@ -230,3 +230,33 @@ func TestValidateOIDC(t *testing.T) {
 		})
 	}
 }
+
+// NAS identities name accounts, not password entries: an account that signs
+// in some other way (such as single sign-on) must be mappable too.
+func TestNASIdentitiesMatchEveryAccountThatCanSignIn(t *testing.T) {
+	nas := NASConfig{
+		ServiceUID: 10001,
+		ServiceGID: 10001,
+		Identities: map[string]NASIdentity{"carol": {UID: 3002, GID: 3002}},
+	}
+	passwordOnly := (&ServerConfig{Users: map[string]string{"alice": "hash"}}).Accounts()
+	if err := nas.validate(passwordOnly); err == nil || !strings.Contains(err.Error(), "does not match a configured user") {
+		t.Fatalf("identity for an unknown account = %v", err)
+	}
+	withCarol := map[string]struct{}{"alice": {}, "carol": {}}
+	if err := nas.validate(withCarol); err != nil {
+		t.Fatalf("identity for an account without a password = %v", err)
+	}
+}
+
+func TestAccountsListsPasswordUsers(t *testing.T) {
+	accounts := (&ServerConfig{Users: map[string]string{"alice": "a", "bob": "b"}}).Accounts()
+	if len(accounts) != 2 {
+		t.Fatalf("Accounts = %v", accounts)
+	}
+	for _, name := range []string{"alice", "bob"} {
+		if _, ok := accounts[name]; !ok {
+			t.Fatalf("Accounts = %v, missing %s", accounts, name)
+		}
+	}
+}

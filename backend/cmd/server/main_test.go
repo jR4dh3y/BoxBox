@@ -80,13 +80,13 @@ func TestInitializeServerExpandsAutoDiscoverMounts(t *testing.T) {
 		DataDir:     t.TempDir(),
 		MountPoints: []model.MountPoint{{Name: "drives", Path: parent, AutoDiscover: true}},
 	}
-	server, _, _, _, _, err := initializeServer(cfg, true, false)
+	app, err := initializeServer(cfg, true, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	rec := httptest.NewRecorder()
-	server.Handler.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/files/stats", nil))
+	app.server.Handler.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/files/stats", nil))
 	var body model.DriveStatsResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode stats: %v (status %d)", err, rec.Code)
@@ -108,7 +108,7 @@ func TestInitializeServerExpandsAutoDiscoverMounts(t *testing.T) {
 	}
 
 	rootsRec := httptest.NewRecorder()
-	server.Handler.ServeHTTP(rootsRec, httptest.NewRequest(http.MethodGet, "/api/v1/files/", nil))
+	app.server.Handler.ServeHTTP(rootsRec, httptest.NewRequest(http.MethodGet, "/api/v1/files/", nil))
 	var roots struct {
 		Roots []struct {
 			Name string `json:"name"`
@@ -131,7 +131,7 @@ func TestInitializeServerExpandsAutoDiscoverMounts(t *testing.T) {
 
 	driveRec := httptest.NewRecorder()
 	drivePath := "/api/v1/files/" + url.PathEscape(driveName)
-	server.Handler.ServeHTTP(driveRec, httptest.NewRequest(http.MethodGet, drivePath, nil))
+	app.server.Handler.ServeHTTP(driveRec, httptest.NewRequest(http.MethodGet, drivePath, nil))
 	if driveRec.Code != http.StatusOK {
 		t.Fatalf("open discovered drive %q: status %d, body: %s", driveName, driveRec.Code, driveRec.Body.String())
 	}

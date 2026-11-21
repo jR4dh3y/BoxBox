@@ -4,7 +4,9 @@ package service
 
 import (
 	"bufio"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -38,6 +40,44 @@ func getMountInfo() ([]mountInfo, error) {
 				FSType:     fields[2],
 			})
 		}
+	}
+	return mounts, scanner.Err()
+}
+
+// readHostMounts reads the mount table. It parses text only and never touches
+// a mount, so an offline network mount cannot block it.
+func readHostMounts() ([]hostMount, error) {
+	file, err := os.Open("/proc/self/mountinfo")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return parseHostMounts(file)
+}
+
+func parseHostMounts(r io.Reader) ([]hostMount, error) {
+	var mounts []hostMount
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	for scanner.Scan() {
+		before, _, ok := strings.Cut(scanner.Text(), " - ")
+		if !ok {
+			continue
+		}
+		// Fields: mount ID, parent ID, major:minor, root, mount point, ...
+		// They are separated by single ASCII spaces; other whitespace, such as
+		// a no-break space, belongs to a path.
+		fields := strings.Split(before, " ")
+		if len(fields) < 5 {
+			continue
+		}
+		mounts = append(mounts, hostMount{
+			id:     fields[0],
+			parent: fields[1],
+			path:   filepath.Clean(decodeMountField(fields[4])),
+			device: fields[2],
+			root:   filepath.Clean(decodeMountField(fields[3])),
+		})
 	}
 	return mounts, scanner.Err()
 }

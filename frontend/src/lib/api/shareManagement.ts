@@ -56,7 +56,10 @@ function parseCreatedShare(
 		permissions: parsePermissions(share.permissions),
 		maxUploadBytes: number(share.maxUploadBytes, 'upload limit'),
 		createdAt: string(share.createdAt, 'created time'),
-		expiresAt: optionalString(share.expiresAt, 'expiry')
+		expiresAt: optionalString(share.expiresAt, 'expiry'),
+		// Remote servers from before delete-on-expiry omit the field.
+		deleteOnExpiry:
+			share.deleteOnExpiry === undefined ? false : boolean(share.deleteOnExpiry, 'delete on expiry')
 	};
 }
 
@@ -90,7 +93,9 @@ export async function createShare(
 			path: source.path,
 			...(options.permissions ? { permissions: options.permissions } : {}),
 			...(options.maxUploadBytes !== undefined ? { maxUploadBytes: options.maxUploadBytes } : {}),
-			expiresInSeconds: options.expiresInSeconds ?? null
+			expiresInSeconds: options.expiresInSeconds ?? null,
+			// Sent only when set: older servers reject the unknown field instead of keeping the file silently.
+			...(options.deleteOnExpiry ? { deleteOnExpiry: true } : {})
 		})
 	]);
 	return parseCreatedShare(value, source, server);
