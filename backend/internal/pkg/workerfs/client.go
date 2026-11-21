@@ -320,6 +320,12 @@ func (c *Client) MkdirAllWithin(root, path string, perm os.FileMode) error {
 	return c.do(request{Op: opMkdirAllWithin, Path: rawString(root), Path2: rawString(path), Perm: perm})
 }
 
+// RemoveFileWithin is unsupported: verify is a callback, which cannot cross to
+// the worker. Delete-on-expiry, its only caller, is off in NAS mode.
+func (c *Client) RemoveFileWithin(root, path string, verify func(fs.FileInfo) error) error {
+	return errors.ErrUnsupported
+}
+
 func (c *Client) MkdirAll(path string, perm os.FileMode) error {
 	return c.do(request{Op: opMkdirAll, Path: rawString(path), Perm: perm})
 }

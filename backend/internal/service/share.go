@@ -30,6 +30,8 @@ var (
 	// ErrShareNotFound is the uniform failure for unknown, expired, and revoked
 	// share tokens so recipients cannot distinguish between them.
 	ErrShareNotFound = errors.New("share not found")
+	// ErrShareTargetChanged means the file changed while its link was created.
+	ErrShareTargetChanged = errors.New("shared file changed while the link was created")
 	// ErrShareTooLarge is returned when a recipient upload exceeds the size limit.
 	ErrShareTooLarge = errors.New("share upload exceeds size limit")
 )
@@ -42,8 +44,15 @@ type ShareService interface {
 	List(username string) ([]model.Share, error)
 	// Update changes the permissions and upload limit on one of the user's folder shares.
 	Update(username string, id string, settings ShareUpdateSettings) (*model.Share, error)
-	// Revoke permanently disables one of the user's shares by ID.
+	// Revoke permanently disables one of the user's shares by ID. It never
+	// deletes the shared file, even when the share would delete it on expiry.
 	Revoke(username string, id string) error
+	// StartExpiryCleanup deletes the files of expired delete-on-expiry shares
+	// now and then periodically until ctx ends.
+	StartExpiryCleanup(ctx context.Context)
+	// StopExpiryCleanup waits, until ctx ends, for the cleanup to return after
+	// its own context ends, so shutdown does not interrupt a file being removed.
+	StopExpiryCleanup(ctx context.Context) error
 	// ResolveForRecipient returns the share for a token, or ErrShareNotFound for
 	// unknown, expired, or revoked tokens.
 	ResolveForRecipient(token string) (*model.Share, error)
@@ -70,9 +79,11 @@ type ShareService interface {
 }
 
 // ShareSettings contains the recipient capabilities and per-link upload limit.
+// DeleteOnExpiry deletes a shared file when the link expires.
 type ShareSettings struct {
 	Permissions    model.SharePermissions
 	MaxUploadBytes int64
+	DeleteOnExpiry bool
 }
 
 // ShareUpdateSettings distinguishes an omitted upload limit from an explicit one.
@@ -103,6 +114,19 @@ type shareService struct {
 	maxUploadBytes int64
 	storageErr     error
 	mu             sync.RWMutex
+	cleanup        sync.WaitGroup
+	// cleanupGate guards cleanupStopped, which keeps new cleanup changes from
+	// starting once shutdown stops waiting; cleanupChanges counts changes in
+	// progress, which shutdown always waits for.
+	cleanupGate    sync.Mutex
+	cleanupStopped bool
+	cleanupChanges sync.WaitGroup
+	// readMounts reads the host's mount table for expiry cleanup.
+	readMounts func() ([]hostMount, error)
+	// expiry is the file view that delete-on-expiry checks and deletes
+	// through. It is nil when each account has its own files (NAS mode), so
+	// the feature is off there: the cleanup cannot act as the share's creator.
+	expiry *shareFiles
 }
 
 // shareRecord is the persistence shape for a share. It is separate from
@@ -120,7 +144,11 @@ type shareRecord struct {
 	CreatedAt      time.Time              `json:"createdAt"`
 	ExpiresAt      time.Time              `json:"expiresAt,omitempty"`
 	Revoked        bool                   `json:"revoked"`
-	CreatedBy      string                 `json:"createdBy"`
+	// RevokedAt is zero for links revoked before it was recorded.
+	RevokedAt time.Time `json:"revokedAt,omitzero"`
+	CreatedBy string    `json:"createdBy"`
+	// Stores written before delete-on-expiry decode as nil, which keeps the file.
+	DeleteOnExpiry *model.ShareFileIdentity `json:"deleteOnExpiry,omitempty"`
 }
 
 type sharesData struct {
@@ -150,6 +178,10 @@ func NewShareService(fsys filesystem.FS, cfg ShareServiceConfig) ShareService {
 		mountList:      mountList,
 		filePath:       filepath.Join(dataDir, config.SharesFileName),
 		maxUploadBytes: maxUploadBytes,
+		readMounts:     readHostMounts,
+	}
+	if cfg.Files == nil {
+		shareSvc.expiry = &shareFiles{fs: fsys, mounts: newMounts(fsys, mountList)}
 	}
 	shareSvc.storageErr = shareSvc.secureExistingStore()
 	return shareSvc
@@ -210,6 +242,17 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 			return nil, err
 		}
 	}
+	var deleteOnExpiry *model.ShareFileIdentity
+	var deleteEntry string
+	if settings.DeleteOnExpiry {
+		if isFolder || !expiresAt.After(time.Now()) || s.expiry == nil {
+			return nil, ErrInvalidOperation
+		}
+		deleteOnExpiry, deleteEntry, err = s.identifyDeletableFile(path, mount, fsPath)
+		if err != nil {
+			return nil, err
+		}
+	}
 	mountRoot, err := creator.fs.EvalSymlinks(mount.Path)
 	if err != nil {
 		return nil, err
@@ -238,10 +281,25 @@ func (s *shareService) Create(ctx context.Context, username string, path string,
 		CreatedAt:      time.Now().UTC(),
 		ExpiresAt:      expiresAt,
 		CreatedBy:      username,
+		DeleteOnExpiry: deleteOnExpiry,
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// The expiry pass holds the lock while it deletes, so a target checked
+	// above may be gone now. Check again before handing out a link to it.
+	if _, err := creator.statTarget(fsPath); err != nil {
+		return nil, err
+	}
+	// A save may have replaced the file since its identity was recorded. That
+	// file was not the one the owner chose to delete, so ask for a retry. Only
+	// the file itself is checked here, so a slow mount elsewhere cannot hold
+	// the lock.
+	if deleteOnExpiry != nil {
+		if err := s.stillIdentifies(deleteEntry, *deleteOnExpiry); err != nil {
+			return nil, err
+		}
+	}
 	data := s.loadLocked()
 	data.Shares = append(data.Shares, toShareRecord(share))
 	if err := s.saveLocked(data); err != nil {
@@ -298,7 +356,11 @@ func (s *shareService) Revoke(username string, id string) error {
 	data := s.loadLocked()
 	for i := range data.Shares {
 		if data.Shares[i].ID == id && data.Shares[i].CreatedBy == username {
-			data.Shares[i].Revoked = true
+			if !data.Shares[i].Revoked {
+				data.Shares[i].Revoked = true
+				data.Shares[i].RevokedAt = time.Now().UTC()
+			}
+			data.Shares[i].DeleteOnExpiry = nil
 			return s.saveLocked(data)
 		}
 	}
@@ -980,25 +1042,38 @@ func (s *shareService) secureExistingStore() error {
 	return s.store.Chmod(s.filePath, 0o600)
 }
 
+// loadLocked reads the store, treating an unreadable or corrupt one as empty.
 func (s *shareService) loadLocked() *sharesData {
-	data := &sharesData{Shares: []shareRecord{}}
-	exists, err := s.store.Exists(s.filePath)
-	if err != nil || !exists {
-		return data
-	}
-	file, err := s.store.ReadFile(s.filePath)
+	data, err := s.readStoreLocked()
 	if err != nil {
-		log.Warn().Err(err).Str("path", s.filePath).Msg("Could not read shares file, starting empty")
-		return data
-	}
-	if len(file) == 0 {
-		return data
-	}
-	if err := json.Unmarshal(file, data); err != nil {
-		log.Warn().Err(err).Str("path", s.filePath).Msg("Corrupt shares file, starting empty")
+		log.Warn().Err(err).Str("path", s.filePath).Msg("Could not load shares file, starting empty")
 		return &sharesData{Shares: []shareRecord{}}
 	}
 	return data
+}
+
+// readStoreLocked reads the store and reports a read or decode error, for
+// callers that must not mistake a failed read for a store without links.
+func (s *shareService) readStoreLocked() (*sharesData, error) {
+	data := &sharesData{Shares: []shareRecord{}}
+	exists, err := s.store.Exists(s.filePath)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return data, nil
+	}
+	file, err := s.store.ReadFile(s.filePath)
+	if err != nil {
+		return nil, err
+	}
+	if len(file) == 0 {
+		return data, nil
+	}
+	if err := json.Unmarshal(file, data); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func (s *shareService) saveLocked(data *sharesData) error {
@@ -1058,6 +1133,7 @@ func toShareRecord(share model.Share) shareRecord {
 		ExpiresAt:      share.ExpiresAt,
 		Revoked:        share.Revoked,
 		CreatedBy:      share.CreatedBy,
+		DeleteOnExpiry: share.DeleteOnExpiry,
 	}
 }
 
@@ -1081,6 +1157,7 @@ func fromShareRecord(record shareRecord) model.Share {
 		ExpiresAt:      record.ExpiresAt,
 		Revoked:        record.Revoked,
 		CreatedBy:      record.CreatedBy,
+		DeleteOnExpiry: record.DeleteOnExpiry,
 	}
 	if !share.IsFolder {
 		share.Permissions = model.SharePermissions{View: true, Download: true}

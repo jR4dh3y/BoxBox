@@ -154,6 +154,10 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to listen")
 	}
+	// Deleting files starts only once this process owns the port, so a second
+	// launch against the same data directory cannot run a pass first.
+	app.shares.StartExpiryCleanup(ctx)
+	log.Info().Msg("Share expiry cleanup started")
 	if *desktopMode {
 		chooser, closeChooser := startDesktopChooser(ctx, cfg)
 		defer closeChooser()
@@ -182,6 +186,7 @@ type app struct {
 	server *http.Server
 	hub    *websocket.Hub
 	auth   service.AuthService
+	shares service.ShareService
 	stacks fileStacks
 }
 
@@ -313,7 +318,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool, worker
 		IdleTimeout:  config.HTTPIdleTimeout,
 	}
 
-	return &app{server: server, hub: hub, auth: authService, stacks: stacks}, nil
+	return &app{server: server, hub: hub, auth: authService, shares: shareService, stacks: stacks}, nil
 }
 
 // shareRateLimitRPS bounds the public share-link endpoints. It is higher than
@@ -474,4 +479,7 @@ func waitForShutdown(cancel context.CancelFunc, app *app, desktopMode, nasMode b
 
 	// Stop background cleanups
 	app.stopCleanups()
+	if err := app.shares.StopExpiryCleanup(shutdownCtx); err != nil {
+		log.Warn().Err(err).Msg("Stopped waiting for expired share cleanup")
+	}
 }
