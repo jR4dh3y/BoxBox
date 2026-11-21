@@ -268,7 +268,7 @@ pub struct FileRow {
     icon: &'static str,
     image: EntryIcon,
     tint: Option<u32>,
-    emblem: Option<&'static str>,
+    emblem: Option<Emblem>,
     /// The cells after Name, by column.
     values: Vec<(Column, SharedString)>,
     selected: bool,
@@ -340,7 +340,7 @@ impl FileRow {
     }
 
     /// BoxBox's own glyph: its kind's colour and a special folder's emblem.
-    pub fn tint(mut self, tint: Option<u32>, emblem: Option<&'static str>) -> Self {
+    pub fn tint(mut self, tint: Option<u32>, emblem: Option<Emblem>) -> Self {
         self.tint = tint;
         self.emblem = emblem;
         self
@@ -519,11 +519,34 @@ fn list_checkbox(slot: f32) -> f32 {
     (slot * 0.65).round().max(16.)
 }
 
-/// A folder glyph with a small one inside its body, as a special folder's mark.
-pub fn emblemed(glyph: gpui::Svg, emblem: Option<&'static str>, size: f32, color: Rgba) -> Div {
-    let frame = div().relative().size(px(size)).flex_none().child(glyph);
-    match emblem {
-        Some(emblem) => frame.child(div().absolute().left(px(size * 0.3)).top(px(size * 0.36)).child(icon(emblem, size * 0.4, color))),
-        None => frame,
+/// A folder's mark: a Lucide icon (`emblems`) and its own colour, or the folder's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Emblem {
+    pub name: &'static str,
+    pub tint: Option<u32>,
+}
+
+/// Folders drawn this large or larger carry their emblem at the bottom left, in a
+/// gap of the outline; smaller ones keep it inside the body, where it stays legible.
+const CORNER_EMBLEM: f32 = 40.;
+/// The corner emblem's edge, against the folder's.
+const EMBLEM_SCALE: f32 = 0.36;
+
+/// A folder glyph in `color` marked with an emblem, as a special or customised folder.
+pub fn emblemed(glyph: gpui::Svg, emblem: Option<Emblem>, size: f32, color: Rgba) -> Div {
+    use crate::emblems::{path, Stroke};
+    let frame = div().relative().size(px(size)).flex_none();
+    let Some(emblem) = emblem else { return frame.child(glyph) };
+    let mark_color = emblem.tint.map_or(color, c);
+    if size < CORNER_EMBLEM {
+        let mark = gpui::svg().path(path(emblem.name, Stroke::Regular)).size(px(size * 0.4)).text_color(mark_color);
+        return frame.child(glyph).child(div().absolute().left(px(size * 0.3)).top(px(size * 0.36)).child(mark));
     }
+    // In the folder's 24 units its outline's outer edge is at x 1.15 and y 20.85; the
+    // emblem's glyph fills 20 of its own 24, so its padding is a twelfth of its edge.
+    let (unit, edge) = (size / 24., size * EMBLEM_SCALE);
+    let pad = edge / 12.;
+    let outline = gpui::svg().path("icons/thin/folder-emblem.svg").size(px(size)).text_color(color);
+    let mark = gpui::svg().path(path(emblem.name, Stroke::Bold)).size(px(edge)).text_color(mark_color);
+    frame.child(outline).child(div().absolute().left(px(1.15 * unit - pad)).top(px(20.85 * unit - edge + pad)).child(mark))
 }

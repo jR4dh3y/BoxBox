@@ -29,7 +29,7 @@ const LABEL_WIDTH: f32 = 76.;
 
 enum Picture {
     Image { image: Arc<RenderImage>, thumbnail: bool, badge: Option<Arc<RenderImage>> },
-    Glyph { glyph: &'static str, emblem: Option<&'static str>, tone: u32 },
+    Glyph { glyph: &'static str, emblem: Option<crate::components::Emblem>, tone: u32 },
 }
 
 /// What only a disk read tells.

@@ -308,7 +308,7 @@ pub(crate) struct GlyphStyle {
     pub glyph: &'static str,
     /// Overrides the plain grey (or folder colour) when tinted.
     pub tint: Option<u32>,
-    pub emblem: Option<&'static str>,
+    pub emblem: Option<crate::components::Emblem>,
 }
 
 impl Workspace {
@@ -316,8 +316,17 @@ impl Workspace {
     /// and every other kind keeps its own colour.
     pub(crate) fn glyph_style(&self, api: &Api, item: &FileInfo) -> GlyphStyle {
         let kind = crate::format::Kind::of(&item.name, item.is_dir);
-        let special = if item.is_dir && api.is_local() { self.file_icons.special.get(&item.path).copied() } else { None };
-        GlyphStyle { glyph: kind.glyph(), tint: self.kind_tint(kind), emblem: special.and_then(emblem) }
+        if !item.is_dir {
+            return GlyphStyle { glyph: kind.glyph(), tint: self.kind_tint(kind), emblem: None };
+        }
+        let emblem = self.special_emblem(api, item).map(|name| crate::components::Emblem { name, tint: None });
+        GlyphStyle { glyph: kind.glyph(), tint: self.kind_tint(kind), emblem }
+    }
+
+    /// The emblem a special folder such as Downloads carries.
+    pub(crate) fn special_emblem(&self, api: &Api, folder: &FileInfo) -> Option<&'static str> {
+        let theme_icon = api.is_local().then(|| self.file_icons.special.get(&folder.path)).flatten()?;
+        Some(crate::emblems::find(emblem(theme_icon)?)?.name)
     }
 
     /// The glyph's colour under the chosen icon style; `None` keeps it grey.

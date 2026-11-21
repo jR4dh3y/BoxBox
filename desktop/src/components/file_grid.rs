@@ -104,7 +104,7 @@ pub struct FileTile {
     badge: Option<Arc<RenderImage>>,
     image: EntryIcon,
     tint: Option<u32>,
-    emblem: Option<&'static str>,
+    emblem: Option<super::Emblem>,
     selected: bool,
     active: bool,
     cut: bool,
@@ -176,7 +176,7 @@ impl FileTile {
     }
 
     /// BoxBox's own glyph: its kind's colour and a special folder's emblem.
-    pub fn tint(mut self, tint: Option<u32>, emblem: Option<&'static str>) -> Self {
+    pub fn tint(mut self, tint: Option<u32>, emblem: Option<super::Emblem>) -> Self {
         self.tint = tint;
         self.emblem = emblem;
         self

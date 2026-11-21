@@ -15,6 +15,9 @@ pub struct Assets;
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        if path.starts_with("emblems/") {
+            return Ok(crate::emblems::svg(path).map(Cow::Owned));
+        }
         Ok(ICONS
             .iter()
             .find(|(name, _)| *name == path)

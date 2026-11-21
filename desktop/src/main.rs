@@ -8,6 +8,7 @@ mod assets;
 mod chooser;
 mod cli;
 mod components;
+mod emblems;
 mod devices;
 #[cfg(target_os = "linux")]
 mod filemanager1;

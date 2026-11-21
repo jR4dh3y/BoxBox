@@ -1,7 +1,7 @@
 // Writes the Lucide icons the web UI imports as SVG files, from the frontend's
 // installed lucide-svelte, so both UIs draw identical glyphs.
 // Run: bun run scripts/extract-icons.ts (after `bun install --cwd frontend`).
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const ICONS = [
@@ -33,6 +33,19 @@ function resolveSvelte(file: string): string {
 	return resolveSvelte(join(dirname(file), next[1]));
 }
 
+/** An icon's `iconNode` as SVG elements. */
+function body(iconNode: string): string {
+	return (JSON.parse(iconNode) as [string, Record<string, string>][])
+		.map(([tag, attrs]) => {
+			const list = Object.entries(attrs)
+				.filter(([key]) => key !== 'key')
+				.map(([key, value]) => `${key}="${value}"`)
+				.join(' ');
+			return `<${tag} ${list}/>`;
+		})
+		.join('');
+}
+
 const kebab = (name: string) =>
 	name
 		.replace(/([a-z])([A-Z0-9])/g, '$1-$2')
@@ -49,15 +62,7 @@ for (const name of ICONS) {
 	const source = readFileSync(resolveSvelte(join(found.dir, found.match[1])), 'utf8');
 	const node = /const iconNode = (\[.*\]);/.exec(source);
 	if (!node) throw new Error(`no iconNode for ${name}`);
-	const children = (JSON.parse(node[1]) as [string, Record<string, string>][])
-		.map(([tag, attrs]) => {
-			const list = Object.entries(attrs)
-				.filter(([key]) => key !== 'key')
-				.map(([key, value]) => `${key}="${value}"`)
-				.join(' ');
-			return `<${tag} ${list}/>`;
-		})
-		.join('');
+	const children = body(node[1]);
 	// GPUI tints the SVG as a mask, so the stroke colour is irrelevant. The grid draws
 	// file icons with strokeWidth 1.7, which needs its own file.
 	for (const [dir, width] of [['', 2], ['thin', 1.7]] as const) {
@@ -66,4 +71,31 @@ for (const name of ICONS) {
 		writeFileSync(join(out, dir, `${kebab(name)}.svg`), svg);
 	}
 }
+// The folder outline with a gap at its bottom left, where an emblem stands (`components::emblemed`).
+const emblemFolder = '<path d="M10.8 20H20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v6.2"/>';
+for (const [dir, width] of [['', 2], ['thin', 1.7]] as const) {
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round">${emblemFolder}</svg>\n`;
+	writeFileSync(join(out, dir, 'folder-emblem.svg'), svg);
+}
 console.log(`wrote ${ICONS.length} icons to ${out}`);
+
+// Every Lucide icon as a folder emblem, one per line: name, the other names it has
+// (aliases, for search), and its SVG body. The app builds each SVG at the stroke it
+// needs (`emblems.rs`), so 1,600 icons cost one file instead of thousands.
+const iconDir = join(root, 'icons');
+const aliasWords = new Map<string, string[]>();
+for (const match of readFileSync(join(root, 'aliases/aliases.js'), 'utf8').matchAll(/default as (\w+) \} from ['"](.+?)['"]/g)) {
+	const target = /([^/]+)\.svelte$/.exec(resolveSvelte(join(root, 'aliases', match[2])))![1];
+	aliasWords.set(target, [...(aliasWords.get(target) ?? []), kebab(match[1])]);
+}
+const lines = readdirSync(iconDir)
+	.filter((file) => file.endsWith('.svelte'))
+	.sort()
+	.map((file) => {
+		const name = file.slice(0, -'.svelte'.length);
+		const node = /const iconNode = (\[.*\]);/.exec(readFileSync(join(iconDir, file), 'utf8'));
+		if (!node) throw new Error(`no iconNode for ${name}`);
+		return `${name}\t${(aliasWords.get(name) ?? []).join(' ')}\t${body(node[1])}`;
+	});
+writeFileSync(join(import.meta.dir, '../assets/emblems.tsv'), lines.join('\n') + '\n');
+console.log(`wrote ${lines.length} emblems`);
