@@ -1053,26 +1053,21 @@ impl Workspace {
             self.set_operation_error("The provider root cannot be added as a favorite.", cx);
             return;
         }
-        let provider = FavoriteProvider::for_api(&pane.api);
+        let (api, path) = (pane.api.clone(), pane.path.clone());
+        let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+        self.pin_folder(&api, name, path, cx);
+        self.save_favorites(true, cx);
+    }
+
+    /// Adds a folder of `api` to Favorites; the caller saves them.
+    pub(crate) fn pin_folder(&mut self, api: &Api, name: String, path: String, cx: &mut Context<Self>) {
         let connection_id = self
             .desktop_settings
             .connections
             .iter()
-            .find(|connection| {
-                pane.api
-                    .server_url()
-                    .is_some_and(|url| url == connection.url)
-            })
+            .find(|connection| api.server_url() == Some(connection.url.as_str()))
             .map(|connection| connection.id.clone());
-        let favorite = Favorite {
-            name: pane.path.rsplit('/').next().unwrap_or(&pane.path).to_string(),
-            path: pane.path.clone(),
-            provider,
-            connection_id,
-            uri: None,
-        };
-        self.favorites.add(favorite);
-        self.save_favorites(true, cx);
+        self.favorites.add(Favorite { name, path, provider: FavoriteProvider::for_api(api), connection_id, uri: None });
         cx.notify();
     }
 
@@ -1232,12 +1227,8 @@ impl Workspace {
         let Some((target, items)) = self.context_selection() else { return; };
         let [item] = items.as_slice() else { return; };
         if !item.is_dir { return; }
-        let Some(pane) = self.pane_by_id(target.0) else { return; };
-        let provider = FavoriteProvider::for_api(&pane.api);
-        let connection_id = self.desktop_settings.connections.iter()
-            .find(|connection| pane.api.server_url() == Some(connection.url.as_str()))
-            .map(|connection| connection.id.clone());
-        self.favorites.add(Favorite { name: item.name.clone(), path: item.path.clone(), provider, connection_id, uri: None });
+        let Some(api) = self.pane_by_id(target.0).map(|pane| pane.api.clone()) else { return; };
+        self.pin_folder(&api, item.name.clone(), item.path.clone(), cx);
         self.save_favorites(false, cx);
         self.context_menu = None;
         cx.notify();

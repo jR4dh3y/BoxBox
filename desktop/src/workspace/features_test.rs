@@ -2031,3 +2031,17 @@ fn a_drag_on_a_separator_drops_in_the_crumb_before_and_resting_on_back_goes_back
     wait_for_transfers(&view, cx);
     assert!(fixture.root.join("a/b/y.txt").is_file());
 }
+
+#[gpui::test]
+fn a_folder_dropped_on_favorites_is_pinned_and_a_file_is_not(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["proj/", "f.txt"]);
+    let index = |name: &str| view.read_with(cx, |workspace, _| workspace.pane().items.iter().position(|item| item.name == name).unwrap());
+    let (folder, file) = (index("proj"), index("f.txt"));
+    drag(cx, Box::leak(format!("row-0-{file}").into_boxed_str()), "sidebar-favorites");
+    view.read_with(cx, |workspace, _| assert!(workspace.favorites.entries.is_empty(), "a file is not pinned"));
+    drag(cx, Box::leak(format!("row-0-{folder}").into_boxed_str()), "sidebar-favorites");
+    view.read_with(cx, |workspace, _| {
+        assert_eq!(workspace.favorites.entries.iter().map(|favorite| favorite.path.as_str()).collect::<Vec<_>>(), ["home/proj"]);
+    });
+    assert!(fixture.root.join("proj").is_dir() && fixture.root.join("f.txt").is_file(), "pinning moves nothing");
+}

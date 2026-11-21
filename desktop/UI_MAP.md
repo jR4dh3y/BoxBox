@@ -96,7 +96,7 @@ Most valuable first.
 | `PathEditor.svelte` | location suggestions | keep | ✗ | ✗ |
 | `SearchBar.svelte` | search field | keep | ✓ `search.rs` | ✓ `TextField` per pane; matching, ranking and the walk are in `search.rs` and `local/search.rs` (see Search below) |
 | `AddMenu.svelte` | **+** menu: new file, folder, upload | keep (upload → copy in) | ◐ context menu only | ✓ `ui/toolbar.rs` on `ContextMenu`; local folders say “Copy files here…” |
-| `Sidebar.svelte` | drives, places, devices, Trash, favorites | keep | ✓ `ui/sidebar.rs`, `devices.rs` | ✓ `components/sidebar.rs` (`SidebarSection`, `NavItem`), one Drives section: Overview, the system drive, then disks, phones and shares from UDisks2 and GVfs (`ui/devices.rs`), then each paired server's drives with the server's name, the same in every tab; Home is a place; rows take drops |
+| `Sidebar.svelte` | drives, places, devices, Trash, favorites | keep | ✓ `ui/sidebar.rs`, `devices.rs` | ✓ `components/sidebar.rs` (`SidebarSection`, `NavItem`), one Drives section: Overview, the system drive, then disks, phones and shares from UDisks2 and GVfs (`ui/devices.rs`), then each paired server's drives with the server's name, the same in every tab; Home is a place; rows take drops; folders dropped on Favorites are pinned |
 | `StatusBar.svelte` | counts, selection size, view switch | keep | ✓ `ui/status_bar.rs` | ✓ `ui/status_bar.rs` |
 | `LoadError.svelte` | folder load failure | keep | ◐ inline text | ◐ inline text |
 

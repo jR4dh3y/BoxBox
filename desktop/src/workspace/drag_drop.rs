@@ -32,6 +32,8 @@ pub(crate) enum DropTarget {
     Crumb { pane: PaneTarget, path: String },
     /// A pane's Back button. Held there while dragging, the pane goes back; it takes no drop.
     Back(PaneTarget),
+    /// The sidebar's Favorites: dropped folders are pinned there.
+    Favorites,
 }
 
 /// How long a drag rests on a breadcrumb, folder or place before it opens, as
@@ -173,7 +175,7 @@ impl Workspace {
                         this.drag_drop.hover = None;
                         return;
                     }
-                    DropTarget::Pane(_) | DropTarget::Trash => return,
+                    DropTarget::Pane(_) | DropTarget::Trash | DropTarget::Favorites => return,
                 };
                 if this.pane_by_id(pane.0).is_some_and(|found| found.path != path) {
                     this.navigate_in(pane, path, cx);
@@ -228,6 +230,11 @@ impl Workspace {
             }
         })
         .detach();
+    }
+
+    /// Whether a drag from this window carries a folder, which Favorites would pin.
+    pub(crate) fn dragging_folders(&self, cx: &App) -> bool {
+        cx.has_active_drag() && self.drag_drop.source.as_ref().is_some_and(|source| source.items.iter().any(|item| item.is_dir))
     }
 
     /// The target to highlight, while a drag is in the window.
@@ -285,6 +292,9 @@ impl Workspace {
             (Origin::Window, DropTarget::Trash) => self.drag_drop.source.as_ref().is_some_and(|source| source.api.is_local()),
             (Origin::Outside, DropTarget::Trash) => true,
             (_, DropTarget::Back(pane)) => self.pane_by_id(pane.0).is_some_and(|pane| pane.can_go_back()),
+            (Origin::Window, DropTarget::Favorites) => self.drag_drop.source.as_ref().is_some_and(|source| source.items.iter().any(|item| item.is_dir)),
+            // Whether they are folders is known once they are read, at the drop.
+            (Origin::Outside, DropTarget::Favorites) => self.home.api.is_local(),
             (Origin::Window, _) => self.drop_allowed(&target, request(window.modifiers())),
             // The Overview holds drives, not files; any folder takes files from outside.
             (Origin::Outside, _) => self.drop_destination(&target).is_some_and(|(_, _, folder)| takes_files(&folder)),
@@ -305,7 +315,7 @@ impl Workspace {
                 self.pane_by_id(pane.0).map(|found| (*pane, found.api.clone(), path.clone()))
             }
             DropTarget::Place { path } => Some((self.active_pane, self.active_api(), path.clone())),
-            DropTarget::Trash | DropTarget::Back(_) => None,
+            DropTarget::Trash | DropTarget::Back(_) | DropTarget::Favorites => None,
         }
     }
 
@@ -329,6 +339,7 @@ impl Workspace {
         let (Some(source), Some(target)) = (source, target) else { return };
         match target {
             DropTarget::Trash => return self.trash_dropped(source.api, source.items, cx),
+            DropTarget::Favorites => return self.pin_dropped(&source.api, source.items, cx),
             _ => {}
         }
         let request = request(window.modifiers());
@@ -438,6 +449,7 @@ impl Workspace {
         let Some(target) = self.drag_drop.hover.take() else { return };
         match target {
             DropTarget::Trash => return self.trash_external(paths, cx),
+            DropTarget::Favorites => return self.pin_external(paths, cx),
             _ => {}
         }
         let Some((pane, destination, folder)) = self.drop_destination(&target).filter(|(_, _, folder)| takes_files(folder)) else { return };
@@ -458,6 +470,34 @@ impl Workspace {
             }
             let files = crate::os_clipboard::Files { op: crate::os_clipboard::FileOp::Copy, paths };
             this.update(cx, |this, cx| this.receive_files(pane, destination, folder, files, cx)).ok();
+        })
+        .detach();
+    }
+}
+
+impl Workspace {
+    /// Pins the dropped folders to Favorites; files are left out.
+    fn pin_dropped(&mut self, api: &Api, items: Vec<FileInfo>, cx: &mut Context<Self>) {
+        let folders: Vec<FileInfo> = items.into_iter().filter(|item| item.is_dir).collect();
+        if folders.is_empty() {
+            return;
+        }
+        for folder in folders {
+            self.pin_folder(api, folder.name, folder.path, cx);
+        }
+        self.save_favorites(true, cx);
+    }
+
+    /// Pins folders dragged in from another app, when this computer's files reach them.
+    fn pin_external(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let api = self.home.api.clone();
+        cx.spawn(async move |this, cx| {
+            let resolver = api.clone();
+            let folders = cx
+                .background_executor()
+                .spawn(async move { paths.iter().filter(|path| path.is_dir()).filter_map(|path| resolver.virtual_path(path)).map(|path| resolver.stat(&path)).filter_map(Result::ok).collect::<Vec<_>>() })
+                .await;
+            this.update(cx, |this, cx| this.pin_dropped(&api, folders, cx)).ok();
         })
         .detach();
     }

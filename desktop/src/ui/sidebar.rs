@@ -224,7 +224,6 @@ impl Workspace {
                     .into_any_element()
             })
             .collect::<Vec<_>>();
-        let no_favorites = favorites.is_empty();
 
         div()
             .id("sidebar")
@@ -257,10 +256,36 @@ impl Workspace {
                         .child(row),
                 )
             })
-            .child(self.section("Favorites", cx).children(favorites).when(no_favorites, |section| {
-                // px-5 py-2 text-xs text-text-muted
-                section.child(div().px(px(20.)).py(px(8.)).text_xs_tw().text_color(c(TEXT_MUTED)).child("No favorites yet"))
-            }))
+            .child(self.favorites_section(favorites, cx))
+    }
+}
+
+impl Workspace {
+    /// Favorites, which pin folders dropped anywhere on the section but on a favorite,
+    /// which takes them in. While folders are dragged, a row at its end says so.
+    fn favorites_section(&self, favorites: Vec<gpui::AnyElement>, cx: &mut Context<Self>) -> impl IntoElement {
+        let hovered = self.drop_hover(cx) == Some(&DropTarget::Favorites);
+        let pin_row = self.dragging_folders(cx).then(|| {
+            div()
+                .debug_selector(|| "favorites-pin".into())
+                .mx(px(8.))
+                .px(px(12.))
+                .py(px(6.))
+                .rounded(px(4.))
+                .border_1()
+                .border_dashed()
+                .border_color(if hovered { c(ACCENT) } else { c(BORDER_PRIMARY) })
+                .when(hovered, |row| row.bg(alpha(ACCENT, 0.25)))
+                .text_xs_tw()
+                .text_color(c(if hovered { TEXT_PRIMARY } else { TEXT_MUTED }))
+                .child("Drop here to pin")
+        });
+        let empty = favorites.is_empty() && pin_row.is_none();
+        let section = self.section("Favorites", cx).children(favorites).children(pin_row).when(empty, |section| {
+            // px-5 py-2 text-xs text-text-muted
+            section.child(div().px(px(20.)).py(px(8.)).text_xs_tw().text_color(c(TEXT_MUTED)).child("No favorites yet"))
+        });
+        drop_zone(div().debug_selector(|| "sidebar-favorites".into()).pb(px(8.)), DropTarget::Favorites, cx.entity().downgrade()).child(section)
     }
 }
 
