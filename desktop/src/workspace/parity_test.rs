@@ -212,7 +212,10 @@ fn desktop_workflow(cx: &mut TestAppContext) {
         cx.simulate_keystrokes("escape");
     }
     cx.simulate_keystrokes("down delete");
-    click(cx, "confirm-accept");
+    // Only a server, which has no Trash, asks: it deletes for good.
+    if !local {
+        click(cx, "confirm-accept");
+    }
     cx.run_until_parked();
     assert!(!fixture.join("dest/renamed.txt").exists());
     if local {

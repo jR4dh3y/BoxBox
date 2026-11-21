@@ -781,21 +781,19 @@ impl Workspace {
         let Some((_, api, _)) = self.operation_target(target) else {
             return;
         };
-        let to_trash = api.is_local() && !permanent;
-        // Only a move to Trash, which can be undone, may skip the question.
-        if to_trash && !self.preferences.confirm_delete && items.iter().all(|item| !item.is_dir) {
+        // A move to Trash can be undone from its notice, so only a deletion asks, as in Nautilus and Dolphin.
+        if api.is_local() && !permanent {
             self.run_delete(target, api, items, false, cx);
             return;
         }
         // `BrowseDialogs.svelte`: one name in the sentence, or a count and the names.
-        let fate = if to_trash { "will be moved to Trash." } else { "will be deleted permanently. This cannot be undone." };
+        let fate = "will be deleted permanently. This cannot be undone.";
         let (message, names) = match items.as_slice() {
             [item] => (format!("“{}” {fate}", item.name), Vec::new()),
             items => (format!("{} items {fate}", items.len()), items.iter().map(|item| item.name.clone().into()).collect()),
         };
-        let (title, action) = if to_trash { ("Move to Trash", "Move to Trash") } else { ("Delete Permanently", "Delete") };
-        let confirm = Confirm::new(title, message, action, move |this, cx| this.run_delete(target, api, items, permanent, cx))
-        .items(names);
+        let confirm = Confirm::new("Delete Permanently", message, "Delete", move |this, cx| this.run_delete(target, api, items, permanent, cx))
+            .items(names);
         self.ask(confirm, cx);
     }
 

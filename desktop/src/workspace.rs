@@ -83,7 +83,6 @@ pub(crate) enum SettingsSection {
 pub(crate) struct Preferences {
     pub show_hidden_files: bool,
     pub show_file_extensions: bool,
-    pub confirm_delete: bool,
     pub selection_checkboxes: bool,
     pub default_sort: SortField,
     pub default_sort_direction: SortDir,
@@ -151,7 +150,6 @@ impl Default for Preferences {
         Self {
             show_hidden_files: false,
             show_file_extensions: true,
-            confirm_delete: true,
             selection_checkboxes: true,
             // `DEFAULT_SORT_BY` and `DEFAULT_SORT_DIR` in sortFiles.ts.
             default_sort: SortField::Modified,

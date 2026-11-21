@@ -135,8 +135,6 @@ impl Workspace {
                 .control(self.preference_toggle("setting-hidden", p.show_hidden_files, |p| &mut p.show_hidden_files, cx)),
             SettingsRow::new("Show file extensions")
                 .control(self.preference_toggle("setting-extensions", p.show_file_extensions, |p| &mut p.show_file_extensions, cx)),
-            SettingsRow::new("Confirm before delete")
-                .control(self.preference_toggle("setting-confirm-delete", p.confirm_delete, |p| &mut p.confirm_delete, cx)),
             SettingsRow::new("Selection checkboxes")
                 .control(self.preference_toggle("setting-checkboxes", p.selection_checkboxes, |p| &mut p.selection_checkboxes, cx)),
             // Selects are w-40.

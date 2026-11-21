@@ -763,7 +763,6 @@ fn trash_takes_drops_shows_restored_items_and_empties(cx: &mut TestAppContext) {
 
     // Empty Trash asks, then deletes everything, from the page or the sidebar menu.
     cx.simulate_keystrokes("delete");
-    click(cx, "confirm-accept");
     cx.run_until_parked();
     let trash = cx.debug_bounds("sidebar-trash").unwrap().center();
     cx.simulate_mouse_down(trash, MouseButton::Right, Modifiers::default());
@@ -1112,21 +1111,27 @@ fn scripts_ask_before_running_and_launchers_need_trust(cx: &mut TestAppContext) 
 
 
 #[gpui::test]
-fn delete_names_one_item_or_counts_and_lists_several(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt"]);
+fn trash_goes_without_asking_and_a_deletion_names_one_item_or_lists_several(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a.txt", "b.txt", "c.txt"]);
     click(cx, "row-0-0");
     cx.simulate_keystrokes("delete");
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert!(workspace.confirm.is_none(), "a move to Trash can be undone, so it does not ask"));
+    assert!(!fixture.root.join("a.txt").exists());
+    assert_eq!(notices(&view, cx), ["Moved 1 item to Trash"]);
+    click(cx, "row-0-0");
+    cx.simulate_keystrokes("shift-delete");
     view.read_with(cx, |workspace, _| {
         let confirm = workspace.confirm.as_ref().unwrap();
-        assert_eq!(confirm.message.as_ref(), "“a.txt” will be moved to Trash.");
+        assert_eq!(confirm.message.as_ref(), "“b.txt” will be deleted permanently. This cannot be undone.");
         assert!(confirm.items.is_empty());
     });
-    cx.simulate_keystrokes("escape ctrl-a delete");
+    cx.simulate_keystrokes("escape ctrl-a shift-delete");
     view.read_with(cx, |workspace, _| {
         let confirm = workspace.confirm.as_ref().unwrap();
-        assert_eq!(confirm.message.as_ref(), "2 items will be moved to Trash.");
+        assert_eq!(confirm.message.as_ref(), "2 items will be deleted permanently. This cannot be undone.");
         let names: Vec<&str> = confirm.items.iter().map(|name| name.as_ref()).collect();
-        assert_eq!(names, ["a.txt", "b.txt"]);
+        assert_eq!(names, ["b.txt", "c.txt"]);
     });
 }
 
