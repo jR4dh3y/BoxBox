@@ -15,6 +15,7 @@ mod jobs;
 mod notifications;
 #[cfg(target_os = "linux")]
 mod open_with;
+mod customize_folder;
 mod operations;
 mod overlays;
 mod place_menu;

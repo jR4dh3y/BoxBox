@@ -134,6 +134,9 @@ impl Workspace {
                     |this, _, cx| this.context_toggle_favorite(cx),
                     cx,
                 ));
+                if self.folder_looks_shown() {
+                    entries.push(self.menu_item("context-customize", "Customize Folder…", "palette", |this, window, cx| this.context_customize_folder(window, cx), cx));
+                }
             }
             if local {
                 entries.push(MenuItem::Separator);

@@ -116,6 +116,7 @@ pub(crate) static FAVORITES: LazyLock<Store> = LazyLock::new(|| Store::new("favo
 pub(crate) static LAST_LOCATION: LazyLock<Store> = LazyLock::new(|| Store::at(state_dir().join("last-location")));
 pub(crate) static FOLDER_VIEWS: LazyLock<Store> = LazyLock::new(|| Store::at(state_dir().join("folder-views.json")));
 pub(crate) static DRIVE_NAMES: LazyLock<Store> = LazyLock::new(|| Store::new("drive-names.json"));
+pub(crate) static FOLDER_LOOKS: LazyLock<Store> = LazyLock::new(|| Store::new("folder-looks.json"));
 pub(crate) static SERVER_DRIVES: LazyLock<Store> = LazyLock::new(|| Store::at(cache_dir().join("server-drives.json")));
 
 #[cfg(test)]

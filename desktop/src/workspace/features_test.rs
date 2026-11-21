@@ -2079,6 +2079,52 @@ fn a_folder_tile_shows_what_it_holds_pictures_first(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_customised_folder_shows_its_icon_and_colours_by_every_path(cx: &mut TestAppContext) {
+    use crate::components::Emblem;
+    let (view, cx, _fixture) = open(cx, &["Desktop/sub/a.txt"]);
+    view.update(cx, |workspace, cx| {
+        workspace.preferences.file_icons = crate::workspace::IconStyle::Tinted;
+        workspace.navigate("home/Desktop".into(), cx);
+    });
+    cx.run_until_parked();
+    let style = |view: &Entity<Workspace>, cx: &mut VisualTestContext, path: &str| {
+        view.read_with(cx, |workspace, _| {
+            let api = workspace.pane().api.clone();
+            let style = workspace.glyph_style(&api, &api.stat(path).unwrap());
+            (style.tint, style.emblem)
+        })
+    };
+    let plain = style(&view, cx, "home/Desktop/sub");
+    menu_on(cx, "row-0-0");
+    click(cx, "context-customize");
+    cx.simulate_input("gamepad");
+    click(cx, "emblem-gamepad-2");
+    click(cx, "folder-color-22c55e");
+    click(cx, "emblem-color-f5f5f4");
+    // Nothing changes until Done.
+    assert_eq!(style(&view, cx, "home/Desktop/sub"), plain);
+    click(cx, "customize-done");
+    let customised = (Some(0x22c55e), Some(Emblem { name: "gamepad-2", tint: Some(0xf5f5f4) }));
+    assert_eq!(style(&view, cx, "home/Desktop/sub"), customised);
+    assert_eq!(style(&view, cx, "desktop/sub"), customised, "the Desktop place reaches the same folder");
+
+    // The desktop's icon theme keeps its own folders: no look and no menu entry.
+    view.update(cx, |workspace, cx| {
+        workspace.preferences.file_icons = crate::workspace::IconStyle::System;
+        cx.notify();
+    });
+    assert_eq!(style(&view, cx, "home/Desktop/sub").1, None);
+    view.read_with(cx, |workspace, _| assert!(!workspace.folder_looks_shown(), "the menu offers no Customize Folder"));
+    view.update(cx, |workspace, _| workspace.preferences.file_icons = crate::workspace::IconStyle::Tinted);
+
+    menu_on(cx, "row-0-0");
+    click(cx, "context-customize");
+    click(cx, "customize-reset");
+    click(cx, "customize-done");
+    assert_eq!(style(&view, cx, "home/Desktop/sub"), plain);
+}
+
+#[gpui::test]
 fn folder_previews_are_off_when_turned_off_or_with_theme_icons(cx: &mut TestAppContext) {
     use crate::workspace::IconStyle;
     for (previews, style) in [(false, IconStyle::Tinted), (true, IconStyle::System)] {

@@ -275,6 +275,14 @@ impl Api {
         }
     }
 
+    /// The real path a local virtual path names, worked out without touching the disk.
+    pub fn lexical_path(&self, path: &str) -> Option<PathBuf> {
+        match &self.provider {
+            Provider::Local(local) => local.lexical_path(path),
+            Provider::Remote(_) => None,
+        }
+    }
+
     /// Like `local_path`, but a final symbolic link names the link, not its target.
     pub fn entry_path(&self, path: &str) -> Result<Option<PathBuf>> {
         match &self.provider {

@@ -401,6 +401,11 @@ impl LocalFiles {
         Ok(resolved)
     }
 
+    /// The real path `path` names, without following links or touching the disk.
+    pub fn lexical_path(&self, path: &str) -> Option<PathBuf> {
+        self.candidate_path(path).ok().map(|(_, real)| real)
+    }
+
     /// Whether `real`, reached through `mount`, lies in a root this provider
     /// shows. On the host, System holds every path, so a link in Home to
     /// `/mnt/media` opens; on Windows any present drive does, including one

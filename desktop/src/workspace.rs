@@ -47,6 +47,7 @@ use properties::PropertiesState;
 pub(crate) mod rename;
 pub(crate) mod thumbnails;
 pub(crate) mod folder_peek;
+pub(crate) mod folder_looks;
 pub(crate) mod transfers;
 pub(crate) mod appearance;
 mod palette;
@@ -444,6 +445,10 @@ pub struct Workspace {
     pub(crate) about: Option<Load<about::AboutInfo>>,
     pub(crate) thumbnail_cache: ThumbnailCache,
     pub(crate) folder_peeks: folder_peek::FolderPeeks,
+    pub(crate) folder_looks: folder_looks::FolderLooks,
+    pub(crate) customize: Option<folder_looks::CustomizeFolder>,
+    pub(crate) customize_search: Entity<TextField>,
+    pub(crate) customize_scroll: gpui::UniformListScrollHandle,
     pub(crate) file_icons: file_icons::FileIcons,
     pub(crate) favorites: Favorites,
     pub(crate) favorites_error: Option<String>,
@@ -487,6 +492,7 @@ impl Workspace {
         let accent_field = cx.new(|cx| TextField::new("#4a9eff", cx));
         #[cfg(target_os = "linux")]
         let open_with_search = cx.new(|cx| TextField::new("Search applications", cx));
+        let customize_search = cx.new(|cx| TextField::new("Search icons", cx));
         let settings_fields = [
             cx.new(|cx| TextField::new("", cx)),
             cx.new(|cx| TextField::new("https://files.example.com", cx)),
@@ -580,6 +586,7 @@ impl Workspace {
                 }),
                 #[cfg(target_os = "linux")]
                 cx.subscribe_in(&open_with_search, window, |this, _, event, window, cx| this.on_open_with_search(event, window, cx)),
+                cx.subscribe_in(&customize_search, window, |this, _, event, window, cx| this.on_customize_search(event, window, cx)),
             ]
             .into_iter()
             .chain(settings_subscriptions)
@@ -614,6 +621,10 @@ impl Workspace {
             about: None,
             thumbnail_cache: ThumbnailCache::default(),
             folder_peeks: folder_peek::FolderPeeks::default(),
+            folder_looks: folder_looks::FolderLooks::load(),
+            customize: None,
+            customize_search: customize_search.clone(),
+            customize_scroll: gpui::UniformListScrollHandle::new(),
             file_icons: Default::default(),
             favorites: Favorites::load(),
             favorites_error: None,
@@ -1475,6 +1486,7 @@ impl Workspace {
             || self.settings_open
             || self.properties.is_some()
             || self.operation_dialog.is_some()
+            || self.customize.is_some()
     }
 
     fn clear_selection(&mut self, _: &ClearSelection, window: &mut Window, cx: &mut Context<Self>) {
@@ -1484,6 +1496,7 @@ impl Workspace {
         else if self.transfer_question.is_some() { self.answer_transfer(crate::transfer::Answer::Cancel, cx); }
         else if self.shortcuts_open { self.shortcuts_open = false; }
         else if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
+        else if self.customize.take().is_some() {}
         else if self.properties.take().is_some() || self.context_menu.take().is_some() || self.drop_menu.take().is_some() {}
         // With nothing selected, Escape leaves the search, as it does in the field.
         else if self.trash_open { self.trash_table.selected.clear(); }
@@ -1732,6 +1745,7 @@ impl Render for Workspace {
                 root
             })
             .when(self.transfer_question.is_some(), |root| root.child(self.render_transfer_question(cx)))
+            .when(self.customize.is_some(), |root| root.child(self.render_customize_folder(window, cx)))
             .when(self.confirm.is_some(), |root| root.child(self.render_confirm(cx)))
             .when(self.shortcuts_open, |root| root.child(self.render_shortcuts(cx)))
             .when(self.devices.prompt.is_some(), |root| root.child(self.render_credentials(window, cx)))

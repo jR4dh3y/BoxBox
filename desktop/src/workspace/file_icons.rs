@@ -319,8 +319,9 @@ impl Workspace {
         if !item.is_dir {
             return GlyphStyle { glyph: kind.glyph(), tint: self.kind_tint(kind), emblem: None };
         }
-        let emblem = self.special_emblem(api, item).map(|name| crate::components::Emblem { name, tint: None });
-        GlyphStyle { glyph: kind.glyph(), tint: self.kind_tint(kind), emblem }
+        let look = self.folder_look(api, &item.path);
+        let emblem = Self::look_emblem(look, self.special_emblem(api, item));
+        GlyphStyle { glyph: kind.glyph(), tint: look.and_then(|look| look.color).or(self.kind_tint(kind)), emblem }
     }
 
     /// The emblem a special folder such as Downloads carries.
