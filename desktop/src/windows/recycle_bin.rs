@@ -42,7 +42,7 @@ fn record(item: &IShellItem) -> Result<TrashItem> {
             item.GetAttributes(SFGAO_FOLDER)? == SFGAO_FOLDER,
         )
     };
-    let name = full_name(name, &id);
+    let name = original_name(Path::new(&id)).unwrap_or_else(|| full_name(name, &id));
     let original = Path::new(&folder).join(&name);
     ensure!(
         original.is_absolute() && original.parent() == Some(Path::new(&folder)),
@@ -67,7 +67,32 @@ fn record(item: &IShellItem) -> Result<TrashItem> {
     })
 }
 
-/// The item's name with its extension. The Shell's label drops a known
+/// The original name, from the bin's `$I` record beside the `$R` copy. The
+/// Shell's label can hide an extension, so `report.txt.txt` shows as `report.txt`.
+fn original_name(copy: &Path) -> Option<String> {
+    let name = copy.file_name()?.to_str()?.strip_prefix("$R")?;
+    let path = parse_index(&fs::read(copy.with_file_name(format!("$I{name}"))).ok()?)?;
+    Path::new(&path).file_name()?.to_str().map(str::to_owned)
+}
+
+/// A `$I` record: version, size and deletion time (8 bytes each), then the
+/// original path in UTF-16. Version 1 pads the path to 260 units; version 2
+/// gives its length, with the trailing NUL, in 4 bytes.
+fn parse_index(bytes: &[u8]) -> Option<String> {
+    let version = u64::from_le_bytes(bytes.get(..8)?.try_into().ok()?);
+    let path = match version {
+        1 => bytes.get(24..24 + 520)?,
+        2 => {
+            let units = u32::from_le_bytes(bytes.get(24..28)?.try_into().ok()?) as usize;
+            bytes.get(28..28 + units.checked_mul(2)?)?
+        }
+        _ => return None,
+    };
+    let units: Vec<u16> = path.chunks_exact(2).map(|unit| u16::from_le_bytes([unit[0], unit[1]])).take_while(|unit| *unit != 0).collect();
+    String::from_utf16(&units).ok().filter(|path| !path.is_empty())
+}
+
+/// The name when the `$I` record cannot be read. The Shell's label drops a known
 /// extension when Explorer hides them (`report` for `report.txt`), but the
 /// bin's own copy (`$R1A2B3C.txt`, the parsing path) keeps it.
 fn full_name(label: String, parsing: &str) -> String {
@@ -262,7 +287,33 @@ pub(crate) fn watch(changed: async_channel::Sender<()>) {
 
 #[cfg(test)]
 mod tests {
-    use super::full_name;
+    use super::{full_name, parse_index};
+
+    fn index(version: u64, path: &str) -> Vec<u8> {
+        let units: Vec<u16> = path.encode_utf16().chain([0]).collect();
+        let mut bytes = [version, 7, 9].iter().flat_map(|value| value.to_le_bytes()).collect::<Vec<u8>>();
+        match version {
+            1 => {
+                let mut padded = units.clone();
+                padded.resize(260, 0);
+                bytes.extend(padded.iter().flat_map(|unit| unit.to_le_bytes()));
+            }
+            _ => {
+                bytes.extend((units.len() as u32).to_le_bytes());
+                bytes.extend(units.iter().flat_map(|unit| unit.to_le_bytes()));
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn the_index_record_gives_the_whole_original_path() {
+        let path = r"C:\Users\me\report.txt.txt";
+        assert_eq!(parse_index(&index(2, path)).as_deref(), Some(path));
+        assert_eq!(parse_index(&index(1, path)).as_deref(), Some(path));
+        assert_eq!(parse_index(&index(3, path)), None);
+        assert_eq!(parse_index(&index(2, path)[..30]), None);
+    }
 
     #[test]
     fn hidden_extensions_come_back_from_the_bins_copy() {

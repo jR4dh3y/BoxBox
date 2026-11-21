@@ -354,33 +354,35 @@ fn unlisted_name(api: &Api, path: &str) -> Option<std::ffi::OsString> {
 }
 
 /// Whether `item` lies inside `folder`, by its path or through links on the
-/// way. A final link at `folder` is the entry Replace deletes, not its target.
+/// way. Folders match by identity, since Windows finds `Foo` when asked for
+/// `foo`. A final link at `folder` is the entry Replace deletes, not its target.
 fn contains(api: &Api, folder: &str, item: &str) -> bool {
     if item.starts_with(&format!("{folder}/")) {
         return true;
     }
-    let folder = api.entry_path(folder).ok().flatten();
-    let item = api.entry_path(item).ok().flatten();
-    matches!((folder, item), (Some(folder), Some(item)) if item != folder && item.starts_with(&folder))
+    let Some(folder) = api.entry_path(folder).ok().flatten().and_then(|path| entry_identity(&path)) else { return false };
+    let Some(item) = api.entry_path(item).ok().flatten() else { return false };
+    item.ancestors().skip(1).any(|ancestor| entry_identity(ancestor) == Some(folder))
 }
 
 /// Two virtual paths on one local provider that name the same file, such as
 /// `home/a.txt` and the same file through the System drive. A final link is
 /// its own entry, not the file it points to.
-#[cfg(target_os = "linux")]
 fn same_local_file(api: &Api, left: &str, right: &str) -> bool {
-    use std::os::unix::fs::MetadataExt as _;
-    let identity = |path: &str| {
-        let real = api.entry_path(path).ok().flatten()?;
-        fs::symlink_metadata(real).ok().map(|metadata| (metadata.dev(), metadata.ino()))
-    };
+    let identity = |path: &str| entry_identity(&api.entry_path(path).ok().flatten()?);
     identity(left).is_some_and(|left| identity(right) == Some(left))
 }
 
+/// The device and file number of an entry, not following a final link.
+#[cfg(target_os = "linux")]
+fn entry_identity(path: &std::path::Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt as _;
+    fs::symlink_metadata(path).ok().map(|metadata| (metadata.dev(), metadata.ino()))
+}
+
 #[cfg(windows)]
-fn same_local_file(api: &Api, left: &str, right: &str) -> bool {
-    let identity = |path| crate::windows::file_id(&api.entry_path(path).ok().flatten()?);
-    identity(left).is_some_and(|left| identity(right) == Some(left))
+fn entry_identity(path: &std::path::Path) -> Option<(u64, u64)> {
+    crate::windows::file_id(path).map(|(volume, index)| (u64::from(volume), index))
 }
 
 pub fn same_provider(left: &Api, right: &Api) -> bool {

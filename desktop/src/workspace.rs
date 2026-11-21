@@ -754,6 +754,31 @@ impl Workspace {
         .detach();
     }
 
+    /// A drive came or went. Panes on the Overview reload with the provider, but
+    /// the sidebar reads the window's own drives, which a folder pane never reloads.
+    #[cfg(windows)]
+    pub(crate) fn local_drives_changed(&mut self, cx: &mut Context<Self>) {
+        let api = self.home.api.clone();
+        self.refresh_provider(api.clone(), cx);
+        cx.spawn(async move |this, cx| {
+            let read = cx.background_executor().spawn({
+                let api = api.clone();
+                async move { startup::read_drives(&api) }
+            }).await;
+            this.update(cx, |this, cx| {
+                if let Ok(roots) = read.roots {
+                    this.home.roots = Load::Loaded(roots);
+                }
+                if let Ok(drives) = read.drives {
+                    this.home.drives = Load::Loaded(drives);
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     /// `api` is the provider the drives were read from: a reply for a server the
     /// pane has since left is dropped, or it would replace this computer's drives.
     fn apply_drives(&mut self, target: PaneTarget, api: Arc<Api>, read: startup::DrivesRead, journey: Option<crate::profile::Journey>, cx: &mut Context<Self>) {
@@ -1119,9 +1144,10 @@ impl Workspace {
         self.active_tab = self.tabs.len() - 1;
         self.active_pane = target;
         self.trash_open = false;
-        match at_root {
-            true => self.load_drives(target, cx),
-            false => self.load_pane(target, cx),
+        // The copy may hold drive details still loading for the original pane.
+        self.load_drives(target, cx);
+        if !at_root {
+            self.load_pane(target, cx);
         }
         cx.notify();
     }

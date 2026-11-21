@@ -71,7 +71,7 @@ impl Workspace {
                     .update(cx, |this, cx| {
                         match update {
                             #[cfg(windows)]
-                            Update::DrivesChanged => this.refresh_provider(this.home.api.clone(), cx),
+                            Update::DrivesChanged => this.local_drives_changed(cx),
                             Update::Disks(Ok(volumes)) => this.devices.disks = volumes,
                             Update::Gvfs(Ok(volumes)) => this.devices.gvfs = volumes,
                             Update::Disks(Err(error)) => log::warn!("Disks are unavailable: {error}"),
@@ -294,7 +294,7 @@ impl Workspace {
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move { devices::gvfs::release_drive(&drive, owner) }).await;
             this.update(cx, |this, cx| {
-                this.refresh_provider(this.home.api.clone(), cx);
+                this.local_drives_changed(cx);
                 if let Err(error) = result {
                     this.report(Err(format!("Could not remove the drive: {error:#}")), cx);
                 }

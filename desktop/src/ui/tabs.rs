@@ -123,8 +123,8 @@ impl Workspace {
                 .rounded(4.),
             );
         #[cfg(windows)]
-        let bar = bar.when(self.integrated_window_controls && !_window.is_fullscreen(), |bar| {
-            let maximized = _window.is_maximized();
+        let bar = bar.when(self.integrated_window_controls && !window.is_fullscreen(), |bar| {
+            let maximized = window.is_maximized();
             bar.pr_0()
                 // Leave the top resize edge available on a restored window.
                 .when(!maximized, |bar| bar.h(px(37.)).pt(px(5.)))
