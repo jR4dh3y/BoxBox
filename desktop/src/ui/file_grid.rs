@@ -4,7 +4,7 @@
 use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, Window};
 
 use super::{icon, TextScale};
-use crate::components::FileTile;
+use crate::components::{FileTile, PeekCard};
 use crate::format::{display_name, file_size};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
@@ -55,6 +55,7 @@ impl Workspace {
                                     .gap(px(metrics.gap))
                                     .children((start..end).filter_map(|index| {
                                         let item = this.pane_by_id(target.0)?.items.get(index)?.clone();
+                                        this.request_folder_peek(target, &item, cx);
                                         this.request_thumbnail(target, item, cx);
                                         this.request_entry_icon(target, index, metrics.theme_icon(), cx);
                                         this.render_tile(target, index, cx)
@@ -68,6 +69,24 @@ impl Workspace {
             )
             .child(self.pointer_layer(target, window, cx))
             .into_any_element()
+    }
+
+    /// The items drawn inside a folder's tile, front first. A folder with an emblem keeps it instead.
+    fn peek_cards(&self, api: &std::sync::Arc<crate::api::Api>, item: &crate::api::FileInfo, emblem: Option<&'static str>) -> Vec<PeekCard> {
+        if !item.is_dir || emblem.is_some() || !self.preferences.folder_previews {
+            return Vec::new();
+        }
+        let Some(items) = self.folder_peek(api, item) else { return Vec::new() };
+        items
+            .iter()
+            .map(|inside| match self.thumbnail(api, inside) {
+                Some(image) => PeekCard::Image(image),
+                None => {
+                    let style = self.glyph_style(api, inside);
+                    PeekCard::Glyph { icon: style.glyph, tint: style.tint }
+                }
+            })
+            .collect()
     }
 
     fn render_tile(&self, target: PaneTarget, index: usize, cx: &mut Context<Self>) -> Option<FileTile> {
@@ -93,6 +112,7 @@ impl Workspace {
             (false, false) => file_size(item.size).into(),
         })
         .badge(thumbnail.as_ref().and_then(|_| self.app_badge(&pane.api, &item, crate::components::GridMetrics::new(self.preferences.grid_zoom).theme_icon())))
+        .peek(self.peek_cards(&pane.api, &item, style.emblem))
         .thumbnail(thumbnail)
         .selected(pane.is_selected(&item.path))
         .active(pane.active == Some(index))

@@ -2045,3 +2045,46 @@ fn a_folder_dropped_on_favorites_is_pinned_and_a_file_is_not(cx: &mut TestAppCon
     });
     assert!(fixture.root.join("proj").is_dir() && fixture.root.join("f.txt").is_file(), "pinning moves nothing");
 }
+
+#[gpui::test]
+fn a_folder_tile_shows_what_it_holds_pictures_first(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["photos/a.txt", "photos/b.png", "photos/z.jpg", "photos/.hidden.png", "empty/"]);
+    view.update(cx, |workspace, cx| {
+        workspace.pane_mut().set_view_mode(ViewMode::Grid);
+        cx.notify();
+    });
+    let peek = |view: &Entity<Workspace>, cx: &mut VisualTestContext, name: &str| {
+        view.read_with(cx, |workspace, _| {
+            let pane = workspace.pane();
+            let folder = pane.items.iter().find(|item| item.name == name).unwrap();
+            workspace.folder_peek(&pane.api, folder).map(|items| items.iter().map(|item| item.name.clone()).collect::<Vec<_>>())
+        })
+    };
+    for _ in 0..500 {
+        settle(cx);
+        if peek(&view, cx, "photos").is_some() && peek(&view, cx, "empty").is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(peek(&view, cx, "photos").unwrap(), ["b.png", "z.jpg", "a.txt"]);
+    assert_eq!(peek(&view, cx, "empty").unwrap(), Vec::<String>::new());
+}
+
+#[gpui::test]
+fn folder_previews_can_be_turned_off(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["photos/b.png"]);
+    view.update(cx, |workspace, cx| {
+        workspace.preferences.folder_previews = false;
+        workspace.pane_mut().set_view_mode(ViewMode::Grid);
+        cx.notify();
+    });
+    for _ in 0..20 {
+        settle(cx);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    view.read_with(cx, |workspace, _| {
+        let pane = workspace.pane();
+        assert!(workspace.folder_peek(&pane.api, &pane.items[0]).is_none(), "nothing is read for a preview");
+    });
+}

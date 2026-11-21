@@ -46,6 +46,7 @@ pub(crate) mod properties;
 use properties::PropertiesState;
 pub(crate) mod rename;
 pub(crate) mod thumbnails;
+pub(crate) mod folder_peek;
 pub(crate) mod transfers;
 pub(crate) mod appearance;
 mod palette;
@@ -103,6 +104,8 @@ pub(crate) struct Preferences {
     pub hover_details: bool,
     /// Files take the icon of the app that opens them, as on Windows.
     pub app_icons: bool,
+    /// Grid folders show a few of the items they hold, as on Windows.
+    pub folder_previews: bool,
     #[cfg(windows)]
     pub window_controls_in_tab_bar: bool,
     /// The Details panel at the right (F11).
@@ -164,6 +167,7 @@ impl Default for Preferences {
             animations: true,
             hover_details: true,
             app_icons: true,
+            folder_previews: true,
             #[cfg(windows)]
             window_controls_in_tab_bar: true,
             details_panel: false,
@@ -441,6 +445,7 @@ pub struct Workspace {
     /// Settings → About's facts, once asked for.
     pub(crate) about: Option<Load<about::AboutInfo>>,
     pub(crate) thumbnail_cache: ThumbnailCache,
+    pub(crate) folder_peeks: folder_peek::FolderPeeks,
     pub(crate) file_icons: file_icons::FileIcons,
     pub(crate) favorites: Favorites,
     pub(crate) favorites_error: Option<String>,
@@ -610,6 +615,7 @@ impl Workspace {
             properties: None,
             about: None,
             thumbnail_cache: ThumbnailCache::default(),
+            folder_peeks: folder_peek::FolderPeeks::default(),
             file_icons: Default::default(),
             favorites: Favorites::load(),
             favorites_error: None,

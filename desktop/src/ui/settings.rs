@@ -315,6 +315,7 @@ impl Workspace {
         #[cfg(target_os = "linux")]
         icons.push(SettingsRow::new("Files show their app's icon").control(self.preference_toggle("setting-app-icons", preferences.app_icons, |p| &mut p.app_icons, cx)));
         icons.extend([
+            SettingsRow::new("Folders show what they hold").control(self.preference_toggle("setting-folder-previews", preferences.folder_previews, |p| &mut p.folder_previews, cx)),
             SettingsRow::new("Details on hover").control(self.preference_toggle("setting-hover-details", preferences.hover_details, |p| &mut p.hover_details, cx)),
             // The desktop's own setting also turns them off (`motion`).
             SettingsRow::new("Animations").control(self.preference_toggle("setting-animations", preferences.animations, |p| &mut p.animations, cx)),

@@ -54,6 +54,47 @@ impl GridMetrics {
     }
 }
 
+/// An item drawn inside a folder's tile: its thumbnail, or its kind's glyph on a card.
+pub enum PeekCard {
+    Image(Arc<RenderImage>),
+    Glyph { icon: &'static str, tint: Option<u32> },
+}
+
+/// The folder icon of edge `size` with `cards` cascaded inside it, front first:
+/// the front one lowest and leftmost, the others behind it up and to the right.
+fn peeking(folder: impl IntoElement, cards: Vec<PeekCard>, size: f32) -> Div {
+    let (width, height, step) = (size * 0.46, size * 0.34, size * 0.075);
+    let count = cards.len();
+    // The folder's body, below its tab, in the 24-unit icon: x 2-22, y 6-20.
+    let (center_x, center_y) = (size * 0.5, size * 0.55);
+    let cards = cards.into_iter().enumerate().rev().map(|(index, card)| {
+        // 0 at the front; the middle card sits at the body's centre.
+        let depth = index as f32 - (count as f32 - 1.) / 2.;
+        let left = center_x - width / 2. + depth * step;
+        let top = center_y - height / 2. - depth * step * 0.8;
+        div()
+            .absolute()
+            .left(px(left))
+            .top(px(top))
+            .w(px(width))
+            .h(px(height))
+            .flex()
+            .items_center()
+            .justify_center()
+            .overflow_hidden()
+            .rounded(px(3.))
+            .border_1()
+            .border_color(c(BORDER_PRIMARY))
+            .bg(c(SURFACE_SECONDARY))
+            .shadow_sm()
+            .map(|frame| match card {
+                PeekCard::Image(image) => frame.child(img(image).size_full().object_fit(ObjectFit::Cover)),
+                PeekCard::Glyph { icon, tint } => frame.child(thin_icon(icon, height * 0.62, c(tint.unwrap_or(TEXT_SECONDARY)))),
+            })
+    });
+    div().relative().size(px(size)).flex_none().child(folder).children(cards)
+}
+
 type Decorate = Box<dyn FnOnce(Stateful<Div>) -> Stateful<Div>>;
 type CheckHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -65,6 +106,8 @@ pub struct FileTile {
     icon: &'static str,
     detail: SharedString,
     thumbnail: Option<Arc<RenderImage>>,
+    /// What a folder holds, drawn inside it; empty for a file or an empty folder.
+    peek: Vec<PeekCard>,
     /// The app that opens the file, shown small on its thumbnail.
     badge: Option<Arc<RenderImage>>,
     image: EntryIcon,
@@ -90,6 +133,7 @@ impl FileTile {
             icon: "file",
             detail: SharedString::default(),
             thumbnail: None,
+            peek: Vec::new(),
             badge: None,
             image: EntryIcon::Glyph,
             tint: None,
@@ -126,6 +170,11 @@ impl FileTile {
     /// A small app icon at the thumbnail's bottom left, as Windows marks a preview with its app.
     pub fn badge(mut self, badge: Option<Arc<RenderImage>>) -> Self {
         self.badge = badge;
+        self
+    }
+
+    pub fn peek(mut self, peek: Vec<PeekCard>) -> Self {
+        self.peek = peek;
         self
     }
 
@@ -215,8 +264,10 @@ impl RenderOnce for FileTile {
                             slot.child(div().absolute().left(px(4.)).bottom(px(4.)).size(px(badge)).child(img(app).size_full()))
                         })
                 }
+                (None, EntryIcon::Theme(image)) if !self.peek.is_empty() => slot.child(peeking(img(image).size(px(metrics.theme_icon())), self.peek, metrics.theme_icon())),
                 (None, EntryIcon::Theme(image)) => slot.child(img(image).size(px(metrics.theme_icon()))),
                 (None, EntryIcon::Waiting) => slot,
+                (None, EntryIcon::Glyph) if !self.peek.is_empty() => slot.child(peeking(thin_icon(self.icon, metrics.theme_icon(), tone), self.peek, metrics.theme_icon())),
                 (None, EntryIcon::Glyph) => slot.child(super::file_list::emblemed(thin_icon(self.icon, metrics.theme_icon(), tone), self.emblem, metrics.theme_icon(), tone)),
             });
         let label = div()

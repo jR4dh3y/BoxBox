@@ -32,7 +32,7 @@ pub use columns::{Column, ColumnLayout, ColumnSpec, Table};
 pub use ellipsis::Ellipsis;
 pub use drive_card::{card_usage_bar, usage_bar, usage_text, DriveCard, DriveInfo, DriveState, Usage};
 pub use context_menu::{ContextMenu, MenuItem, MENU_MARGIN};
-pub use file_grid::{FileTile, GridMetrics};
+pub use file_grid::{FileTile, GridMetrics, PeekCard};
 pub use file_list::{emblemed, rename_box, sideways, table_frame, EntryIcon, FileListHeader, FileRow, ListMetrics, Selection};
 pub use input::Input;
 pub use modal::{Modal, ModalSize};

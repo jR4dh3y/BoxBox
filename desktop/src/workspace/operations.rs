@@ -1409,6 +1409,7 @@ impl Workspace {
         for image in self.thumbnail_cache.invalidate() {
             cx.drop_image(image, None);
         }
+        self.folder_peeks.clear();
     }
 
     pub(crate) fn request_thumbnail(
