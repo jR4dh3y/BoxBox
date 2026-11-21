@@ -91,6 +91,31 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrTokenExpired, "Token has expired", model.ErrCodeTokenInvalid, http.StatusUnauthorized},
 	{service.ErrTokenRevoked, "Token has been revoked", model.ErrCodeTokenInvalid, http.StatusUnauthorized},
 	{service.ErrSessionRecoveryRequired, "Your session could not be safely recovered. Please sign in again.", model.ErrCodeSessionRecoveryRequired, http.StatusUnauthorized},
+	{service.ErrPasswordLoginDisabled, "Password sign-in is disabled", model.ErrCodePasswordLoginDisabled, http.StatusForbidden},
+	{service.ErrSSOAccountNotAllowed, "Account is not allowed to sign in", model.ErrCodeAccessDenied, http.StatusForbidden},
+}
+
+// ssoErrorCodes maps a failed single sign-on to the code the login page shows; the browser
+// arrives by navigation, so failures are redirects, not JSON.
+var ssoErrorCodes = []struct {
+	err  error
+	code string
+}{
+	{service.ErrOIDCUnavailable, "provider_unavailable"},
+	{service.ErrOIDCFlow, "flow_expired"},
+	{service.ErrOIDCDenied, "denied"},
+	{service.ErrOIDCProvider, "provider_error"},
+	{service.ErrOIDCIdentity, "identity_invalid"},
+	{service.ErrSSOAccountNotAllowed, "not_allowed"},
+}
+
+func ssoErrorCode(err error) string {
+	for _, mapping := range ssoErrorCodes {
+		if errors.Is(err, mapping.err) {
+			return mapping.code
+		}
+	}
+	return "server_error"
 }
 
 // HandleServiceError converts service errors to HTTP responses

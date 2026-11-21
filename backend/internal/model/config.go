@@ -74,6 +74,7 @@ type ServerConfig struct {
 	AllowedOrigins []string          `mapstructure:"allowed_origins"` // WebSocket/CORS allowed origins
 	TrustedProxies []string          `mapstructure:"trusted_proxies"` // CIDRs allowed to supply forwarding headers
 	RateLimitRPS   float64           `mapstructure:"rate_limit_rps"`  // Auth endpoint rate limit (requests per second)
+	OIDC           OIDCConfig        `mapstructure:"oidc"`
 
 	NAS NASConfig `mapstructure:"nas"`
 }
@@ -121,13 +122,18 @@ func (n NASConfig) validate(accounts map[string]struct{}) error {
 	return nil
 }
 
-// Accounts is every name that can sign in. Settings keyed by account, such
-// as nas.identities, check against this set, so a new sign-in source (for
-// example accounts that only use single sign-on) belongs here.
+// Accounts is every name that can sign in: password users, and the accounts
+// that only use single sign-on. Settings keyed by account, such as
+// nas.identities, check against this set.
 func (c *ServerConfig) Accounts() map[string]struct{} {
-	accounts := make(map[string]struct{}, len(c.Users))
+	accounts := make(map[string]struct{}, len(c.Users)+len(c.OIDC.Users))
 	for username := range c.Users {
 		accounts[username] = struct{}{}
+	}
+	if c.OIDC.Enabled() {
+		for _, username := range c.OIDC.Users {
+			accounts[username] = struct{}{}
+		}
 	}
 	return accounts
 }
@@ -144,8 +150,11 @@ func (c *ServerConfig) Validate() error {
 		return fmt.Errorf("jwt_secret must be changed from the placeholder value")
 	}
 
-	if len(c.Users) == 0 {
-		return fmt.Errorf("at least one user is required")
+	if err := c.OIDC.validate(); err != nil {
+		return err
+	}
+	if len(c.Users) == 0 && !(c.OIDC.Enabled() && len(c.OIDC.Users) > 0) {
+		return fmt.Errorf("at least one user is required: configure users or oidc.users")
 	}
 	for username, password := range c.Users {
 		if username == "" {
@@ -156,6 +165,18 @@ func (c *ServerConfig) Validate() error {
 		}
 		if !isBcryptHash(password) {
 			return fmt.Errorf("password for user %q must be a bcrypt hash ($2a$, $2b$, or $2y$)", username)
+		}
+	}
+	if c.OIDC.DisablePasswordLogin && len(c.OIDC.Users) == 0 {
+		usableAccount := false
+		for username := range c.Users {
+			if ValidUsername(username) {
+				usableAccount = true
+				break
+			}
+		}
+		if !usableAccount {
+			return fmt.Errorf("at least one usable OIDC account is required when password login is disabled")
 		}
 	}
 

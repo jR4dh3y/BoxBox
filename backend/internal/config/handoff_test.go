@@ -34,7 +34,7 @@ nas:
 	t.Setenv("BOXBOX_USERS_alice", testHashA)
 	t.Setenv("FM_PORT", "9090")
 
-	loaded, err := LoadWithReport(configPath)
+	loaded, err := LoadWithReport(configPath, false)
 	if err != nil {
 		t.Fatal(err)
 	}

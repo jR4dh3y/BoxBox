@@ -77,7 +77,7 @@ func main() {
 		loadResult, err = config.Decode(handoff)
 		_ = handoff.Close()
 	} else {
-		loadResult, err = config.LoadWithReport(*configPath)
+		loadResult, err = config.LoadWithReport(*configPath, localIdentity)
 	}
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
@@ -92,6 +92,10 @@ func main() {
 		cfg.Port = 0
 		cfg.AllowedOrigins = nil
 		cfg.TrustedProxies = nil
+	}
+
+	if localIdentity {
+		log.Info().Msg("OIDC sign-in is disabled in development and desktop mode")
 	}
 
 	var workers *nas.Workers
@@ -240,12 +244,32 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool, worker
 
 	// Create services
 	authService, err := service.NewAuthService(fs, service.AuthServiceConfig{
-		DataDir:   cfg.DataDir,
-		JWTSecret: cfg.JWTSecret,
-		Users:     cfg.Users,
+		DataDir:               cfg.DataDir,
+		JWTSecret:             cfg.JWTSecret,
+		Users:                 cfg.Users,
+		SSOUsers:              cfg.OIDC.Users,
+		PasswordLoginDisabled: cfg.OIDC.DisablePasswordLogin,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize auth service: %w", err)
+	}
+	authConfig := handler.AuthConfigResponse{PasswordLogin: !cfg.OIDC.DisablePasswordLogin}
+	var oidcHandler *handler.OIDCHandler
+	if cfg.OIDC.Enabled() {
+		oidcService := service.NewOIDCService(service.OIDCServiceConfig{
+			IssuerURL:     cfg.OIDC.IssuerURL,
+			ClientID:      cfg.OIDC.ClientID,
+			ClientSecret:  cfg.OIDC.ClientSecret,
+			RedirectURL:   cfg.OIDC.RedirectURL,
+			UsernameClaim: cfg.OIDC.UsernameClaim,
+			Scopes:        cfg.OIDC.Scopes,
+			JWTSecret:     cfg.JWTSecret,
+		})
+		go oidcService.Warm()
+		oidcHandler = handler.NewOIDCHandler(oidcService, authService, cfg.OIDC.RedirectURL)
+		authConfig.OIDC = &handler.AuthConfigOIDC{Name: cfg.OIDC.ProviderName}
+		log.Info().Str("issuer", cfg.OIDC.IssuerURL).Int("sso_only_users", len(cfg.OIDC.Users)).
+			Bool("password_login", authConfig.PasswordLogin).Msg("OIDC sign-in enabled")
 	}
 	var connectService *service.ConnectService
 	if !devMode {
@@ -299,7 +323,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool, worker
 	})
 
 	// Create handlers
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthHandler(authService, cfg.OIDC.RedirectURL)
 	wsHandler := handler.NewWebSocketHandler(hub, authService, cfg.AllowedOrigins)
 	wsHandler.SetDevMode(devMode)
 	systemHandler := handler.NewSystemHandler(systemService, cfg.ChunkSizeMB)
@@ -307,7 +331,7 @@ func initializeServer(cfg *model.ServerConfig, devMode, desktopMode bool, worker
 	shareHandler := handler.NewShareHandler(shareService, settingsService, cfg.MaxUploadMB)
 
 	// Create router
-	router := createRouter(cfg, devMode, authService, authHandler, stacks, wsHandler, systemHandler, settingsHandler, shareHandler, desktopMode, connectService)
+	router := createRouter(cfg, devMode, authService, authHandler, stacks, wsHandler, systemHandler, settingsHandler, shareHandler, desktopMode, connectService, oidcHandler, authConfig)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -340,6 +364,8 @@ func createRouter(
 	shareHandler *handler.ShareHandler,
 	desktopMode bool,
 	connectService *service.ConnectService,
+	oidcHandler *handler.OIDCHandler,
+	authConfig handler.AuthConfigResponse,
 ) chi.Router {
 	r := chi.NewRouter()
 
@@ -368,8 +394,15 @@ func createRouter(
 		// Auth routes are rate-limited to prevent brute force attacks
 		r.Route("/auth", func(r chi.Router) {
 			r.Use(middleware.RejectClientCredentials)
-			r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
-			authHandler.RegisterRoutes(r)
+			// Constant and public: loading the login page must not spend the sign-in budget.
+			r.Get("/config", handler.AuthConfig(authConfig))
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RateLimit(cfg.RateLimitRPS, cfg.TrustedProxies...))
+				authHandler.RegisterRoutes(r)
+				if oidcHandler != nil {
+					oidcHandler.RegisterRoutes(r)
+				}
+			})
 		})
 		if connectService != nil {
 			connectHandler := handler.NewConnectHandler(connectService)
