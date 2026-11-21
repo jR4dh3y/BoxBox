@@ -75,6 +75,11 @@ const docNav = [
       "Choose the folders BoxBox shows: drives, places, read-only mounts, and Docker paths.",
   },
   {
+    slug: "nas",
+    title: "NAS Users",
+    description: "Read and write as each person's NAS user so files get the right owner.",
+  },
+  {
     slug: "api",
     title: "API Reference",
     description:
@@ -132,7 +137,7 @@ const docSections: { title: string; slugs: DocSlug[] }[] = [
   { title: "Get started", slugs: ["index", "quickstart", "docker", "docker-options", "desktop"] },
   {
     title: "Run it",
-    slugs: ["configuration", "mounts", "security", "troubleshooting", "troubleshooting-files", "release-notes"],
+    slugs: ["configuration", "mounts", "nas", "security", "troubleshooting", "troubleshooting-files", "release-notes"],
   },
   {
     title: "Reference",

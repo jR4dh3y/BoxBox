@@ -35,11 +35,11 @@ func newCompressionTestServer(t *testing.T) http.Handler {
 		DataDir:     t.TempDir(),
 		MountPoints: []model.MountPoint{{Name: "files", Path: root}},
 	}
-	server, _, _, _, _, _, err := initializeServer(cfg, true, false)
+	app, err := initializeServer(cfg, true, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return server.Handler
+	return app.server.Handler
 }
 
 func get(handler http.Handler, target, acceptEncoding string) *httptest.ResponseRecorder {

@@ -62,3 +62,4 @@ vendor/
 # Electrobun generated files
 /.hutch/
 /build/
+__pycache__/

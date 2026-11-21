@@ -35,14 +35,14 @@ func (s *shareService) identifyDeletableFile(virtualPath string, mount *model.Mo
 	if mount.ReadOnly {
 		return nil, "", ErrPermissionDenied
 	}
-	if err := s.mounts.requireWritablePath(fsPath, false); err != nil {
+	if err := s.expiry.mounts.requireWritablePath(fsPath, false); err != nil {
 		return nil, "", err
 	}
-	_, entry, err := s.mounts.resolve(virtualPath, readEntry)
+	_, entry, err := s.expiry.mounts.resolve(virtualPath, readEntry)
 	if err != nil {
 		return nil, "", err
 	}
-	info, err := s.fs.Lstat(entry)
+	info, err := s.expiry.fs.Lstat(entry)
 	if err != nil {
 		return nil, "", err
 	}
@@ -55,7 +55,7 @@ func (s *shareService) identifyDeletableFile(virtualPath string, mount *model.Mo
 
 // stillIdentifies reports whether entry is still the file identity names.
 func (s *shareService) stillIdentifies(entry string, identity model.ShareFileIdentity) error {
-	info, err := s.fs.Lstat(entry)
+	info, err := s.expiry.fs.Lstat(entry)
 	if err != nil {
 		return err
 	}
@@ -89,6 +89,9 @@ func sameIdentity(a, b model.ShareFileIdentity) bool {
 }
 
 func (s *shareService) StartExpiryCleanup(ctx context.Context) {
+	if s.expiry == nil {
+		return
+	}
 	s.cleanup.Go(func() {
 		ticker := time.NewTicker(config.ShareExpiryCleanupInterval)
 		defer ticker.Stop()
@@ -265,12 +268,12 @@ func (s *shareService) planExpiredFile(record shareRecord, reaches []shareReach,
 	plan.identity = *record.DeleteOnExpiry
 	// writeEntry rejects read-only and missing mounts and does not follow a
 	// final symlink, so a file swapped for a link is kept.
-	mount, entry, err := s.mounts.resolve(shareVirtualPath(record), writeEntry)
+	mount, entry, err := s.expiry.mounts.resolve(shareVirtualPath(record), writeEntry)
 	if err != nil {
 		plan.kept = err
 		return plan
 	}
-	root, err := s.fs.EvalSymlinks(mount.Path)
+	root, err := s.expiry.fs.EvalSymlinks(mount.Path)
 	if err != nil {
 		plan.kept = err
 		return plan
@@ -308,7 +311,7 @@ func (s *shareService) removePlanned(plan expiryPlan) error {
 	if plan.kept != nil {
 		return plan.kept
 	}
-	return s.fs.RemoveFileWithin(plan.root, plan.relPath, func(info fs.FileInfo) error {
+	return s.expiry.fs.RemoveFileWithin(plan.root, plan.relPath, func(info fs.FileInfo) error {
 		if !sameFile(plan.identity, info) {
 			return errExpiryFileChanged
 		}
@@ -337,7 +340,7 @@ func (k fileKey) known() bool { return k.inode != 0 }
 func (s *shareService) folderKeysAbove(realPath string) ([]fileKey, error) {
 	var keys []fileKey
 	for folder := filepath.Dir(realPath); ; folder = filepath.Dir(folder) {
-		info, err := s.fs.Stat(folder)
+		info, err := s.expiry.fs.Stat(folder)
 		if err != nil {
 			return nil, err
 		}
@@ -510,11 +513,11 @@ func (l *shareLinks) protecting(deadline, now time.Time) []shareReach {
 
 func (s *shareService) resolveReach(record shareRecord, mounts []hostMount) shareReach {
 	reach := shareReach{virtualPath: shareVirtualPath(record), folder: record.IsFolder}
-	_, realPath, err := s.mounts.resolve(reach.virtualPath, readExisting)
+	_, realPath, err := s.expiry.mounts.resolve(reach.virtualPath, readExisting)
 	switch {
 	case err == nil:
 		reach.realPath = realPath
-		info, statErr := s.fs.Stat(realPath)
+		info, statErr := s.expiry.fs.Stat(realPath)
 		if statErr != nil {
 			// Without its identity the link might reach the file another way.
 			reach.unknown = true

@@ -20,16 +20,16 @@ import (
 
 const desktopCookie = "boxbox_desktop"
 
-func desktopThumbnails(files service.FileStreamer) (service.ThumbnailService, error) {
+func desktopThumbnails(files service.FileStreamer, limit *service.ThumbnailLimit) (service.ThumbnailService, error) {
 	value := os.Getenv("BOXBOX_DESKTOP_THUMBNAIL_COMMAND")
 	if value == "" {
-		return service.NewThumbnailService(files), nil
+		return service.NewThumbnailService(files, limit), nil
 	}
 	var command []string
 	if err := json.Unmarshal([]byte(value), &command); err != nil || len(command) != 2 || !filepath.IsAbs(command[0]) || !filepath.IsAbs(command[1]) {
 		return nil, fmt.Errorf("invalid desktop thumbnail command")
 	}
-	return service.NewThumbnailServiceWithRenderer(files, service.NewDesktopThumbnailRenderer(command)), nil
+	return service.NewThumbnailServiceWithRenderer(files, service.NewDesktopThumbnailRenderer(command), limit), nil
 }
 
 func desktopRoutes(next http.Handler, cfg *model.ServerConfig) http.Handler {

@@ -99,17 +99,23 @@ type AferoFS struct {
 	fs afero.Fs
 }
 
-var errInvalidFilesystemPath = errors.New("invalid filesystem path")
+// ErrWorkerUnavailable means a NAS file worker could not be started, or
+// stopped while a call was in flight. That call may or may not have taken
+// effect, so callers must not replay it.
+var ErrWorkerUnavailable = errors.New("file worker unavailable")
+
+// ErrInvalidPath reports a path with a NUL byte or a ".." component.
+var ErrInvalidPath = errors.New("invalid filesystem path")
 
 func validateFilesystemPath(path string) error {
 	if strings.ContainsRune(path, '\x00') {
-		return errInvalidFilesystemPath
+		return ErrInvalidPath
 	}
 
 	normalizedPath := strings.ReplaceAll(path, `\`, "/")
 	for _, component := range strings.Split(normalizedPath, "/") {
 		if component == ".." {
-			return errInvalidFilesystemPath
+			return ErrInvalidPath
 		}
 	}
 	return nil
@@ -375,7 +381,7 @@ func (a *AferoFS) MkdirAllWithin(root, path string, perm os.FileMode) error {
 		return err
 	}
 	if !fs.ValidPath(filepath.ToSlash(path)) {
-		return errInvalidFilesystemPath
+		return ErrInvalidPath
 	}
 	root = filepath.Clean("/" + root)
 	if _, ok := a.fs.(*afero.OsFs); ok {
@@ -398,7 +404,7 @@ func (a *AferoFS) RemoveFileWithin(root, path string, verify func(fs.FileInfo) e
 		return err
 	}
 	if !fs.ValidPath(filepath.ToSlash(path)) {
-		return errInvalidFilesystemPath
+		return ErrInvalidPath
 	}
 	root = filepath.Clean("/" + root)
 	if _, ok := a.fs.(*afero.OsFs); ok {

@@ -205,7 +205,7 @@ func (s *DesktopTransfers) copyFile(ctx context.Context, source, dest transferPa
 	}
 	id := uuid.New().String()
 	if dest.server == "" {
-		defer s.uploads.Discard(id)
+		defer s.uploads.Discard("", id)
 	}
 	hash := sha256.New()
 	buffer := make([]byte, transferChunkSize)
@@ -230,7 +230,7 @@ func (s *DesktopTransfers) copyFile(ctx context.Context, source, dest transferPa
 		}
 		metadata := UploadChunk{UploadID: id, ChunkIndex: int(index), TotalChunks: int(total), ChunkSize: transferChunkSize, TotalSize: size, Checksum: checksum, CreateOnly: true}
 		if dest.server == "" {
-			if _, err := s.uploads.AcceptChunk(ctx, dest.path, metadata, bytes.NewReader(chunk)); err != nil {
+			if _, err := s.uploads.AcceptChunk(ctx, "", dest.path, metadata, bytes.NewReader(chunk)); err != nil {
 				return err
 			}
 		} else {

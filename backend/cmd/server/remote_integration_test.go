@@ -29,17 +29,16 @@ func TestRemoteProductionTLSJourney(t *testing.T) {
 	upstreamRoot := t.TempDir()
 	os.WriteFile(filepath.Join(upstreamRoot, "hello.txt"), []byte("Hello remote"), 0600)
 	cfg := &model.ServerConfig{Host: "127.0.0.1", DataDir: t.TempDir(), JWTSecret: "integration-test-secret", Users: map[string]string{"alice": string(hash)}, MountPoints: []model.MountPoint{{Name: "files", Path: upstreamRoot}}, MaxUploadMB: 10, ChunkSizeMB: 1}
-	upstream, _, jobs, auth, stream, _, err := initializeServer(cfg, false, false)
+	upstream, err := initializeServer(cfg, false, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer jobs.Stop()
-	defer auth.StopCleanup()
-	defer stream.StopCleanup()
-	tls := httptest.NewTLSServer(upstream.Handler)
+	defer upstream.stopJobs()
+	defer upstream.stopCleanups()
+	tls := httptest.NewTLSServer(upstream.server.Handler)
 	defer tls.Close()
-	account := connectLogin(t, upstream.Handler, "alice")
-	code := connectEnable(t, upstream.Handler, account)
+	account := connectLogin(t, upstream.server.Handler, "alice")
+	code := connectEnable(t, upstream.server.Handler, account)
 	servers, err := service.NewDesktopServers(filesystem.NewOsFS(), t.TempDir(), tls.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -126,14 +125,14 @@ func TestRemoteProductionTLSJourney(t *testing.T) {
 		t.Fatal("cross-source copied bytes differ")
 	}
 	// Revocation at the real server must not expire the local desktop session.
-	clients := connectRequest(t, upstream.Handler, "GET", "/connect/clients", account, "", 200)
+	clients := connectRequest(t, upstream.server.Handler, "GET", "/connect/clients", account, "", 200)
 	var clientList struct {
 		Clients []service.ConnectClient `json:"clients"`
 	}
 	if err := json.Unmarshal(clients.Body.Bytes(), &clientList); err != nil || len(clientList.Clients) != 1 {
 		t.Fatal("client missing")
 	}
-	connectRequest(t, upstream.Handler, "DELETE", "/connect/clients/"+clientList.Clients[0].ClientID, account, "", 204)
+	connectRequest(t, upstream.server.Handler, "DELETE", "/connect/clients/"+clientList.Clients[0].ClientID, account, "", 204)
 	failed := request("GET", base+"/files", nil, nil, 502)
 	if !strings.Contains(failed.Body.String(), "REMOTE_AUTH_REQUIRED") {
 		t.Fatal("revocation masked as local auth")

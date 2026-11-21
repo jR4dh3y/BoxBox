@@ -2,9 +2,11 @@ package handler
 
 import (
 	"errors"
+	"io/fs"
 	"net/http"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
@@ -25,6 +27,10 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrNotDirectory, "Path is not a directory", model.ErrCodeValidationError, http.StatusBadRequest},
 	{service.ErrNotFile, "Path is not a file", model.ErrCodeValidationError, http.StatusBadRequest},
 	{service.ErrPermissionDenied, "Permission denied", model.ErrCodePermissionDenied, http.StatusForbidden},
+	{service.ErrNoFileAccess, "This account has no NAS identity. Ask an administrator to map it.", model.ErrCodePermissionDenied, http.StatusForbidden},
+	// The kernel refused the account's own identity, as NAS mode intends.
+	{fs.ErrPermission, "Permission denied", model.ErrCodePermissionDenied, http.StatusForbidden},
+	{filesystem.ErrWorkerUnavailable, "File access is temporarily unavailable. Try again.", model.ErrCodeInternalError, http.StatusServiceUnavailable},
 	{service.ErrMountPointNotFound, "Mount point not found", model.ErrCodeAccessDenied, http.StatusForbidden},
 	{service.ErrInvalidOperation, "Invalid operation", model.ErrCodeValidationError, http.StatusBadRequest},
 	{service.ErrDirectoryTooLarge, "Directory exceeds server entry limit", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},

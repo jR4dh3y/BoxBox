@@ -11,6 +11,7 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 | [Docker options](docker-options.md) | Reverse proxy, single-container and source-build setups, volumes, and mount propagation. |
 | [Configuration](configuration.md) | Configure users, upload limits, origins, and ports. |
 | [Mount points](mounts.md) | Choose which folders BoxBox shows, and how they map into Docker. |
+| [NAS users](nas.md) | Read and write as each person's own NAS user, so files get the right owner. |
 | [Security](security.md) | Harden credentials, mounted paths, reverse proxy, and network exposure. |
 | [Troubleshooting](troubleshooting.md) | Diagnose startup and sign-in problems. |
 | [Files and sharing problems](troubleshooting-files.md) | Diagnose mount, upload, preview, share link, and WebSocket problems. |

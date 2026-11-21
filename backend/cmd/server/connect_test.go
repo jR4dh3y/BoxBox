@@ -40,11 +40,11 @@ func connectRouterWithMounts(t *testing.T, dev bool, mountPoints []model.MountPo
 		MountPoints: mountPoints,
 		MaxUploadMB: 10, ChunkSizeMB: 5,
 	}
-	server, _, _, _, _, _, err := initializeServer(cfg, dev, false)
+	app, err := initializeServer(cfg, dev, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return server.Handler
+	return app.server.Handler
 }
 
 func TestPairedClientOperationsOnReservedMountNames(t *testing.T) {

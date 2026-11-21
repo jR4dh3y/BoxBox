@@ -100,6 +100,8 @@ BOXBOX_USERS_radhey='$2b$12$...'
 
 Generate a hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`. If no users are configured, or a configured value is plaintext, BoxBox fails to start.
 
+On a NAS where each person owns their files under their own UID, map accounts to NAS identities so BoxBox reads and writes as each person. See [NAS users](nas.md).
+
 ## Environment Variables
 
 Environment overrides use the `BOXBOX_` prefix:

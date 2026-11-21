@@ -17,11 +17,13 @@ import (
 
 // File service errors
 var (
-	ErrPathNotFound       = errors.New("path not found")
-	ErrPathExists         = errors.New("path already exists")
-	ErrNotDirectory       = errors.New("path is not a directory")
-	ErrNotFile            = errors.New("path is not a file")
-	ErrPermissionDenied   = errors.New("permission denied")
+	ErrPathNotFound     = errors.New("path not found")
+	ErrPathExists       = errors.New("path already exists")
+	ErrNotDirectory     = errors.New("path is not a directory")
+	ErrNotFile          = errors.New("path is not a file")
+	ErrPermissionDenied = errors.New("permission denied")
+	// ErrNoFileAccess is returned in NAS mode for an account with no NAS identity.
+	ErrNoFileAccess       = errors.New("account has no NAS identity")
 	ErrInvalidOperation   = errors.New("invalid operation")
 	ErrMountPointNotFound = errors.New("mount point not found")
 	ErrDirectoryTooLarge  = errors.New("directory exceeds entry limit")

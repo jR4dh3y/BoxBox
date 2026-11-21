@@ -1005,7 +1005,7 @@ func TestShareExpiryStopDoesNotWaitForAStalledStoreRead(t *testing.T) {
 	shares := newExpiryTestService(backing, fixedMounts(shareTestMounts()))
 	expiring := createExpiringShare(t, shares, "media/file.txt", true)
 	fsys := &stallingRereadFS{FS: backing, stalled: make(chan struct{}), release: make(chan struct{})}
-	shares.fs = fsys
+	shares.store = fsys
 
 	ctx, cancel := context.WithCancel(context.Background())
 	shares.cleanup.Add(1) // stands in for the running cleanup goroutine
