@@ -1,0 +1,1741 @@
+//! Root view: tabs of panes plus the drive data shared by the sidebar and the Overview.
+//! Mirrors `lib/components/desktop/BrowseWorkspace.svelte`.
+
+use std::{collections::HashMap, fs, sync::Arc, time::Duration};
+
+use gpui::{
+    actions, div, prelude::*, px, relative, App, Context, Entity, FocusHandle, KeyBinding,
+    SharedString, Subscription, Window,
+};
+
+use crate::api::{Api, TrashItem};
+use crate::pane::{Pane, ViewMode};
+pub use crate::pane::Load;
+use crate::components::{InputEvent, TextField};
+use crate::search;
+use crate::sort::{Sort, SortDir, SortField};
+use crate::theme::{c, TEXT_PRIMARY};
+use crate::settings_state::{DesktopSettings, SettingsPanelState};
+
+pub(crate) mod favorites;
+pub(crate) mod confirm;
+pub(crate) mod devices;
+pub(crate) mod servers;
+pub(crate) mod overview;
+pub(crate) mod drag_drop;
+pub(crate) mod jobs;
+mod notifications;
+#[cfg_attr(windows, path = "windows/open_with.rs")]
+pub(crate) mod open_with;
+mod watching;
+pub(crate) mod undo;
+pub(crate) mod operations;
+pub(crate) mod location_completion;
+pub(crate) mod names;
+pub(crate) mod keyboard;
+pub(crate) mod history;
+pub(crate) mod trash;
+pub(crate) mod trash_table;
+pub(crate) mod place_menu;
+pub(crate) mod bookmarks;
+pub(crate) mod templates;
+pub(crate) mod item_actions;
+pub(crate) mod run;
+pub(crate) mod startup;
+pub(crate) mod properties;
+use properties::PropertiesState;
+pub(crate) mod rename;
+pub(crate) mod thumbnails;
+pub(crate) mod transfers;
+pub(crate) mod appearance;
+mod palette;
+pub(crate) mod zoom;
+pub(crate) mod refreshing;
+pub(crate) mod band;
+pub(crate) mod file_icons;
+pub(crate) mod folder_views;
+pub(crate) mod drive_names;
+pub(crate) mod about;
+#[cfg(target_os = "linux")]
+pub(crate) mod menu_extras;
+#[cfg(windows)]
+mod windows_menu;
+use appearance::WallpaperState;
+
+use favorites::{Favorite, FavoriteProvider, Favorites};
+use operations::{
+    ContextMenuState, FileClipboard, LocationEditor, OperationDialog, OperationStatus, PaneTarget,
+};
+use thumbnails::{has_inline_thumbnail, ThumbnailCache};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SettingsSection {
+    General,
+    Appearance,
+    Links,
+    Connections,
+    About,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct Preferences {
+    pub show_hidden_files: bool,
+    pub show_file_extensions: bool,
+    pub confirm_delete: bool,
+    pub selection_checkboxes: bool,
+    pub default_sort: SortField,
+    pub default_sort_direction: SortDir,
+    pub default_view: ViewMode,
+    /// Each folder keeps the List or Grid picked in it, as in Nautilus and
+    /// Dolphin; off, the pick is the view of every folder.
+    pub view_per_folder: bool,
+    pub start_location: StartLocation,
+    pub file_icons: IconStyle,
+    /// Zoom steps of the list and the grid (`ListMetrics`, `GridMetrics`).
+    pub list_zoom: u8,
+    pub grid_zoom: u8,
+    pub wallpaper_tint: bool,
+    pub frosted_glass: bool,
+    /// Eased transitions; off also when the desktop turns animations off.
+    pub animations: bool,
+    /// The card with an item's details when the pointer rests on it.
+    pub hover_details: bool,
+    /// Files take the icon of the app that opens them, as on Windows.
+    pub app_icons: bool,
+    #[cfg(windows)]
+    pub window_controls_in_tab_bar: bool,
+    /// The Details panel at the right (F11).
+    pub details_panel: bool,
+    /// The folder lists' columns, as last shown and sized; `None` until changed.
+    #[serde(deserialize_with = "crate::components::columns::lenient")]
+    pub file_columns: Option<crate::components::ColumnLayout>,
+    #[serde(deserialize_with = "crate::components::columns::lenient")]
+    pub trash_columns: Option<crate::components::ColumnLayout>,
+}
+
+/// What a window opens on when it is launched without a folder.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum StartLocation {
+    #[default]
+    Overview,
+    Home,
+    /// The folder the last window was on, or the Overview if it is gone.
+    Last,
+}
+
+impl StartLocation {
+    pub const OPTIONS: [(Self, &'static str); 3] = [(Self::Overview, "Overview"), (Self::Home, "Home folder"), (Self::Last, "Last location")];
+}
+
+/// Where file and folder icons come from: the desktop's icon theme, as other
+/// Linux file managers draw them, or BoxBox's own line icons, tinted by kind
+/// (following the accent) or all grey.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum IconStyle {
+    #[default]
+    System,
+    Tinted,
+    Grey,
+}
+
+impl IconStyle {
+    pub const OPTIONS: [(Self, &'static str); 3] = [(Self::System, "System theme"), (Self::Tinted, "BoxBox, tinted"), (Self::Grey, "BoxBox, grey")];
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            show_hidden_files: false,
+            show_file_extensions: true,
+            confirm_delete: true,
+            selection_checkboxes: true,
+            // `DEFAULT_SORT_BY` and `DEFAULT_SORT_DIR` in sortFiles.ts.
+            default_sort: SortField::Modified,
+            default_sort_direction: SortDir::Desc,
+            default_view: ViewMode::List,
+            view_per_folder: true,
+            start_location: StartLocation::Overview,
+            file_icons: IconStyle::System,
+            list_zoom: 1,
+            grid_zoom: 1,
+            wallpaper_tint: false,
+            frosted_glass: false,
+            animations: true,
+            hover_details: true,
+            app_icons: true,
+            #[cfg(windows)]
+            window_controls_in_tab_bar: true,
+            details_panel: false,
+            file_columns: None,
+            trash_columns: None,
+        }
+    }
+}
+
+impl Preferences {
+    /// A table's columns as last shown and sized, or its defaults.
+    pub(crate) fn columns(&self, table: crate::components::Table) -> crate::components::ColumnLayout {
+        let stored = match table {
+            crate::components::Table::Files => &self.file_columns,
+            crate::components::Table::Trash => &self.trash_columns,
+        };
+        stored.clone().unwrap_or_else(|| crate::components::ColumnLayout::new(table))
+    }
+
+    pub(crate) fn set_columns(&mut self, table: crate::components::Table, layout: crate::components::ColumnLayout) {
+        match table {
+            crate::components::Table::Files => self.file_columns = Some(layout),
+            crate::components::Table::Trash => self.trash_columns = Some(layout),
+        }
+    }
+
+    pub(crate) fn load() -> Self {
+        fs::read(crate::persist::PREFERENCES.path())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    fn encode(&self) -> Result<Vec<u8>, String> {
+        serde_json::to_vec_pretty(self).map_err(|error| format!("cannot serialize settings: {error}"))
+    }
+}
+
+actions!(
+    boxbox,
+    [
+        Back,
+        Forward,
+        Refresh,
+        NewTab,
+        CloseTab,
+        NextTab,
+        PreviousTab,
+        ParentFolder,
+        ToggleHidden,
+        OpenConnections,
+        PropertiesSelected,
+        SelectAll,
+        ClearSelection,
+        OpenSettings,
+        CloseSettings,
+        FocusSearch,
+        CreateFolder,
+        CreateFile,
+        RenameSelected,
+        DeleteSelected,
+        DeletePermanently,
+        SelectPattern,
+        InvertSelection,
+        DownloadSelected,
+        CopySelected,
+        CutSelected,
+        PasteInto,
+        OpenActive,
+        FocusLocation,
+        ToggleSplit,
+        AddFavorite,
+        Undo,
+        ShowShortcuts,
+        OperationEscape,
+        CopyText,
+        CompleteLocation,
+        CompleteLocationBack,
+        LocationDown,
+        LocationUp,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
+        ToggleDetails,
+    ]
+);
+
+pub fn bind_keys(cx: &mut App) {
+    // An open dialog keeps the folder's keys from acting behind it.
+    let context = Some("BrowseWorkspace && !Dialog");
+    cx.bind_keys([
+        KeyBinding::new("alt-left", Back, context),
+        KeyBinding::new("alt-up", ParentFolder, context),
+        KeyBinding::new("ctrl-tab", NextTab, context),
+        KeyBinding::new("ctrl-shift-tab", PreviousTab, context),
+        KeyBinding::new("ctrl-h", ToggleHidden, context),
+        KeyBinding::new("ctrl-shift-o", OpenConnections, context),
+        KeyBinding::new("alt-enter", PropertiesSelected, context),
+        KeyBinding::new("f3", ToggleSplit, context),
+        KeyBinding::new("f11", ToggleDetails, context),
+        KeyBinding::new("backspace", Back, context),
+        KeyBinding::new("alt-right", Forward, context),
+        KeyBinding::new("f5", Refresh, context),
+        KeyBinding::new("ctrl-r", Refresh, context),
+        KeyBinding::new("ctrl-t", NewTab, context),
+        KeyBinding::new("ctrl-w", CloseTab, context),
+        KeyBinding::new("ctrl-a", SelectAll, context),
+        // Escape closes the dialog itself.
+        KeyBinding::new("escape", ClearSelection, Some("BrowseWorkspace")),
+        KeyBinding::new("ctrl-,", OpenSettings, context),
+        KeyBinding::new("ctrl-f", FocusSearch, context),
+        KeyBinding::new("ctrl-l", FocusLocation, context),
+        KeyBinding::new("ctrl-shift-n", CreateFolder, context),
+        KeyBinding::new("ctrl-shift-e", CreateFile, context),
+        KeyBinding::new("f2", RenameSelected, context),
+        KeyBinding::new("delete", DeleteSelected, context),
+        KeyBinding::new("shift-delete", DeletePermanently, context),
+        // Typing in a field does not reach these.
+        KeyBinding::new("ctrl-s", SelectPattern, Some("BrowseWorkspace && !TextField && !Dialog")),
+        KeyBinding::new("ctrl-i", InvertSelection, Some("BrowseWorkspace && !TextField && !Dialog")),
+        KeyBinding::new("ctrl-d", DownloadSelected, context),
+        KeyBinding::new("ctrl-c", CopySelected, context),
+        // In a dialog, Ctrl+C copies its selected text and never the files behind it.
+        KeyBinding::new("ctrl-c", CopyText, Some("BrowseWorkspace && Dialog && !TextField")),
+        KeyBinding::new("ctrl-x", CutSelected, context),
+        KeyBinding::new("ctrl-v", PasteInto, context),
+        KeyBinding::new("enter", OpenActive, context),
+        KeyBinding::new("ctrl-shift-5", ToggleSplit, context),
+        KeyBinding::new("ctrl-b", AddFavorite, context),
+        KeyBinding::new("f1", ShowShortcuts, context),
+        KeyBinding::new("ctrl-=", ZoomIn, context),
+        KeyBinding::new("ctrl-+", ZoomIn, context),
+        KeyBinding::new("ctrl--", ZoomOut, context),
+        KeyBinding::new("ctrl-0", ZoomReset, context),
+        // A text field keeps Ctrl+Z to itself, as the web shortcut skips inputs.
+        KeyBinding::new("ctrl-z", Undo, Some("BrowseWorkspace && !TextField && !Dialog")),
+        KeyBinding::new("escape", CloseSettings, Some("SettingsPanel")),
+        // As a terminal completes a path.
+        KeyBinding::new("tab", CompleteLocation, Some("LocationField")),
+        KeyBinding::new("shift-tab", CompleteLocationBack, Some("LocationField")),
+        KeyBinding::new("down", LocationDown, Some("LocationField")),
+        KeyBinding::new("up", LocationUp, Some("LocationField")),
+    ]);
+    keyboard::bind_keys(cx);
+}
+
+
+pub struct Fonts {
+    pub sans: SharedString,
+    pub mono: SharedString,
+}
+
+pub struct Workspace {
+    directory_watches: watching::DirectoryWatches,
+    pub(crate) tabs: Vec<Pane>,
+    pub(crate) active_tab: usize,
+    pub(crate) split_panes: HashMap<usize, Pane>,
+    pub(crate) active_pane: PaneTarget,
+    next_pane_id: usize,
+    pub(crate) trash: Load<Vec<TrashItem>>,
+    pub(crate) trash_open: bool,
+    pub(crate) trash_table: trash_table::TrashTable,
+    /// Sidebar sections the user folded, by title.
+    pub(crate) collapsed_sections: std::collections::HashSet<&'static str>,
+    /// When each sidebar section last folded, for its animation.
+    pub(crate) section_toggles: HashMap<&'static str, std::time::Instant>,
+    /// When the Details panel was last opened or closed, so it can open or close by its width.
+    pub(crate) details_toggled: Option<std::time::Instant>,
+    /// Tabs just closed, drawn folding away where they stood: index, title, when.
+    pub(crate) closing_tabs: Vec<(usize, String, std::time::Instant)>,
+    pub(crate) trash_error: Option<String>,
+    pub(crate) trash_provider: Option<Arc<Api>>,
+    /// Whether Trash holds anything, for its icon.
+    pub(crate) trash_full: bool,
+    pub(crate) fonts: Fonts,
+    pub(crate) focus_handle: FocusHandle,
+    /// One search field per pane, as each pane's toolbar has one.
+    pub(crate) search_fields: HashMap<usize, (Entity<TextField>, Subscription)>,
+    pub(crate) settings_open: bool,
+    pub(crate) settings_section: SettingsSection,
+    pub(crate) preferences: Preferences,
+    /// The desktop's own animation setting; `None` until read or when it has none.
+    pub(crate) desktop_motion: Option<bool>,
+    /// Tabs opened from here on slide open; those restored at launch just appear.
+    pub(crate) first_new_pane: usize,
+    #[cfg(windows)]
+    pub(crate) integrated_window_controls: bool,
+    pub(crate) desktop_settings: DesktopSettings,
+    pub(crate) settings_panel: SettingsPanelState,
+    pub(crate) operation_status: OperationStatus,
+    pub(crate) operation_dialog: Option<OperationDialog>,
+    /// Why the name in the dialog was refused.
+    pub(crate) dialog_error: Option<String>,
+    pub(crate) notices: notifications::Notices,
+    pub(crate) devices: devices::Devices,
+    /// The window's own provider and its drives, which the Overview and sidebar
+    /// show whatever provider a pane is on.
+    pub(crate) home: overview::Home,
+    pub(crate) servers: servers::Servers,
+    /// The toolbar Refresh that was pressed last, while its icon turns.
+    pub(crate) refreshing: Option<refreshing::Refreshing>,
+    /// The active pane's place as last written for "Start location: Last location".
+    last_location: Option<String>,
+    /// What Select by Pattern last selected with, offered again.
+    pub(crate) last_pattern: String,
+    /// Touchpad pixels of Ctrl+scroll not yet turned into a zoom step.
+    pub(crate) zoom_scroll: f32,
+    /// A rubber-band press or drag in a pane.
+    pub(crate) band: Option<band::Band>,
+    pub(crate) folder_views: folder_views::FolderViews,
+    pub(crate) drive_names: drive_names::DriveNames,
+    pub(crate) drag_drop: drag_drop::DragDrop,
+    /// The sign-in dialog's fields: user, domain and the masked password.
+    pub(crate) device_fields: [Entity<TextField>; 3],
+    /// Focus the sign-in dialog on the next render; a mount asked from the background.
+    pub(crate) pending_credential_focus: bool,
+    /// Focus the address field on the next render, to finish a location such as `smb://nas/`.
+    pub(crate) pending_location_focus: bool,
+    #[cfg(target_os = "linux")]
+    pub(crate) open_with: Option<open_with::OpenWith>,
+    #[cfg(target_os = "linux")]
+    pub(crate) open_with_search: Entity<TextField>,
+    pub(crate) settings_focus: FocusHandle,
+    pub(crate) dialog_field: Entity<TextField>,
+    /// The name being edited in place, and its field.
+    pub(crate) inline_rename: Option<rename::InlineRename>,
+    /// An item just created that opens for renaming once its folder lists it.
+    pub(crate) pending_rename: Option<(PaneTarget, String)>,
+    /// The templates folder's entries, read when a menu that offers them opens.
+    pub(crate) templates: Vec<crate::api::FileInfo>,
+    /// The submenu open in whichever menu is showing.
+    pub(crate) open_submenu: Option<SharedString>,
+    pub(crate) rename_field: Entity<TextField>,
+    pub(crate) location_editor: Option<LocationEditor>,
+    pub(crate) location_field: Entity<TextField>,
+    _subscriptions: Vec<Subscription>,
+    pub(crate) file_clipboard: Option<FileClipboard>,
+    /// What this app last put on the system clipboard, to tell it from other apps' copies.
+    pub(crate) published_files: Option<crate::os_clipboard::Files>,
+    pub(crate) transfer_question: Option<transfers::PendingQuestion>,
+    pub(crate) confirm: Option<confirm::Confirm>,
+    /// The last move to Trash or rename, for Ctrl+Z.
+    pub(crate) last_undo: Option<undo::Undo>,
+    pub(crate) shortcuts_open: bool,
+    /// Text selected in the Details panel, which Ctrl+C copies.
+    pub(crate) text_selection: Option<crate::components::TextSelection>,
+    /// The folders Tab can complete in the location field.
+    pub(crate) location_completion: Option<location_completion::Completion>,
+    completion_generation: u64,
+    /// Keeps the folder Up, Down or Tab picked in view in the list.
+    pub(crate) location_scroll: gpui::ScrollHandle,
+    type_ahead: keyboard::TypeAhead,
+    pub(crate) jobs: Vec<jobs::Job>,
+    next_job_id: u64,
+    pub(crate) context_menu: Option<ContextMenuState>,
+    pub(crate) history_menu: Option<history::HistoryMenu>,
+    pub(crate) place_menu: Option<place_menu::PlaceMenu>,
+    pub(crate) drop_menu: Option<drag_drop::DropMenu>,
+    /// Each pane's breadcrumb row width in the last frame, to fit its crumbs.
+    pub(crate) path_bar_widths: std::rc::Rc<std::cell::RefCell<HashMap<usize, f32>>>,
+    /// The pane whose toolbar "+" menu is open.
+    pub(crate) add_menu: Option<PaneTarget>,
+    /// The select whose option list is open.
+    pub(crate) open_select: Option<&'static str>,
+    /// The select whose list the current press closed, so it does not reopen it.
+    pub(crate) select_dismissed: Option<&'static str>,
+    pub(crate) accent_field: Entity<TextField>,
+    /// The settings dialogs' fields: first, second and the masked token.
+    pub(crate) settings_fields: [Entity<TextField>; 3],
+    /// A settings field to focus on the next render, once a dialog opens.
+    pub(crate) pending_field_focus: Option<crate::ui::SettingsField>,
+    /// The accent field holds text that is not a colour.
+    pub(crate) accent_invalid: bool,
+    pub(crate) properties: Option<PropertiesState>,
+    /// Settings → About's facts, once asked for.
+    pub(crate) about: Option<Load<about::AboutInfo>>,
+    pub(crate) thumbnail_cache: ThumbnailCache,
+    pub(crate) file_icons: file_icons::FileIcons,
+    pub(crate) favorites: Favorites,
+    pub(crate) favorites_error: Option<String>,
+    /// Whether the GTK bookmarks were read, so writing them keeps what they hold.
+    pub(crate) bookmarks_read: bool,
+    /// Counts local favorite edits, so a read that started before one does not undo it.
+    pub(crate) bookmark_edits: u64,
+    pub(crate) wallpaper: WallpaperState,
+    pub(crate) wallpaper_generation: u64,
+    /// Bumped by each background choice; a wallpaper install from before it is dropped.
+    pub(crate) wallpaper_choice: u64,
+    /// The background the window was last told to draw, see-through or opaque.
+    window_transparent: Option<bool>,
+    mutation_generation: u64,
+}
+
+impl Workspace {
+    pub fn new(start: startup::Startup, fonts: Fonts, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let focus_handle = cx.focus_handle();
+        window.focus(&focus_handle);
+        let startup::Startup { api, preferences, folder_views, drive_names, path: initial_path, fallback, prefetch } = start;
+        let last_location = Some(initial_path.clone());
+        let mut initial_pane = Pane::with_api(
+            0,
+            initial_path,
+            api.clone(),
+            preferences.show_hidden_files,
+            preference_sort(&preferences),
+            preference_view(&preferences),
+        );
+        if !initial_pane.is_at_root() {
+            if preferences.view_per_folder {
+                initial_pane.view_mode = folder_views.mode(&api, &initial_pane.path, preference_view(&preferences));
+            }
+            initial_pane.sort = folder_views.sort(&api, &initial_pane.path, preference_sort(&preferences));
+        }
+        let dialog_field = cx.new(|cx| TextField::new("", cx));
+        let rename_field = cx.new(|cx| TextField::new("", cx));
+        let rename_focus = gpui::Focusable::focus_handle(rename_field.read(cx), cx);
+        let location_field = cx.new(|cx| TextField::new("Type a location", cx));
+        let accent_field = cx.new(|cx| TextField::new("#4a9eff", cx));
+        #[cfg(target_os = "linux")]
+        let open_with_search = cx.new(|cx| TextField::new("Search applications", cx));
+        let settings_fields = [
+            cx.new(|cx| TextField::new("", cx)),
+            cx.new(|cx| TextField::new("https://files.example.com", cx)),
+            cx.new(|cx| TextField::new("Paste token; it will not be saved", cx).masked()),
+        ];
+        let device_fields = [
+            cx.new(|cx| TextField::new("User name", cx)),
+            cx.new(|cx| TextField::new("Domain", cx)),
+            cx.new(|cx| TextField::new("Password", cx).masked()),
+        ];
+        let device_subscriptions = device_fields
+            .iter()
+            .map(|field| cx.subscribe_in(field, window, |this, _, event, window, cx| this.on_credential_field(event, window, cx)))
+            .collect::<Vec<_>>();
+        let settings_subscriptions = settings_fields
+            .iter()
+            .map(|field| cx.subscribe_in(field, window, |this, _, event, window, cx| this.on_settings_field(event, window, cx)))
+            .collect::<Vec<_>>();
+        let mut workspace = Self {
+            directory_watches: watching::DirectoryWatches::default(),
+            tabs: vec![initial_pane],
+            active_tab: 0,
+            split_panes: HashMap::new(),
+            active_pane: PaneTarget(0),
+            next_pane_id: 1,
+            trash: Load::Loading,
+            trash_open: false,
+            trash_table: Default::default(),
+            collapsed_sections: Default::default(),
+            section_toggles: Default::default(),
+            details_toggled: None,
+            closing_tabs: Vec::new(),
+            trash_error: None,
+            trash_provider: None,
+            trash_full: false,
+            fonts,
+            focus_handle,
+            search_fields: HashMap::new(),
+            settings_open: false,
+            settings_section: SettingsSection::General,
+            #[cfg(windows)]
+            integrated_window_controls: preferences.window_controls_in_tab_bar,
+            preferences,
+            desktop_motion: None,
+            first_new_pane: usize::MAX,
+            desktop_settings: DesktopSettings::load(),
+            settings_panel: SettingsPanelState::default(),
+            operation_status: OperationStatus::Idle,
+            operation_dialog: None,
+            dialog_error: None,
+            notices: Default::default(),
+            devices: Default::default(),
+            home: overview::Home::new(api.clone()),
+            servers: Default::default(),
+            refreshing: None,
+            last_location,
+            last_pattern: "*".into(),
+            zoom_scroll: 0.,
+            band: None,
+            folder_views,
+            drive_names,
+            drag_drop: Default::default(),
+            device_fields,
+            pending_credential_focus: false,
+            pending_location_focus: false,
+            #[cfg(target_os = "linux")]
+            open_with: None,
+            #[cfg(target_os = "linux")]
+            open_with_search: open_with_search.clone(),
+            settings_focus: cx.focus_handle(),
+            dialog_field: dialog_field.clone(),
+            inline_rename: None,
+            pending_rename: None,
+            templates: Vec::new(),
+            open_submenu: None,
+            rename_field: rename_field.clone(),
+            location_editor: None,
+            location_field: location_field.clone(),
+            _subscriptions: vec![
+                cx.subscribe_in(&dialog_field, window, |this, _, event, window, cx| this.on_dialog_field(event, window, cx)),
+                cx.subscribe_in(&rename_field, window, |this, _, event, window, cx| this.on_rename_field(event, window, cx)),
+                cx.on_blur(&rename_focus, window, |this, window, cx| this.on_rename_blur(window, cx)),
+                cx.subscribe_in(&location_field, window, |this, _, event, window, cx| this.on_location_field(event, window, cx)),
+                cx.subscribe_in(&accent_field, window, |this, _, event, _, cx| this.on_accent_field(event, cx)),
+                // Selected text lasts until the next key, except the Ctrl+C that copies it.
+                cx.observe_keystrokes(|this, event, _, cx| {
+                    let copies = |action: &Box<dyn gpui::Action>| action.as_any().is::<CopySelected>() || action.as_any().is::<CopyText>();
+                    if !event.action.as_ref().is_some_and(copies) {
+                        this.clear_text_selection(cx);
+                    }
+                }),
+                #[cfg(target_os = "linux")]
+                cx.subscribe_in(&open_with_search, window, |this, _, event, window, cx| this.on_open_with_search(event, window, cx)),
+            ]
+            .into_iter()
+            .chain(settings_subscriptions)
+            .chain(device_subscriptions)
+            .collect(),
+            file_clipboard: None,
+            published_files: None,
+            transfer_question: None,
+            confirm: None,
+            last_undo: None,
+            shortcuts_open: false,
+            text_selection: None,
+            location_completion: None,
+            completion_generation: 0,
+            location_scroll: gpui::ScrollHandle::new(),
+            type_ahead: Default::default(),
+            jobs: Vec::new(),
+            next_job_id: 0,
+            context_menu: None,
+            history_menu: None,
+            place_menu: None,
+            drop_menu: None,
+            path_bar_widths: Default::default(),
+            add_menu: None,
+            open_select: None,
+            select_dismissed: None,
+            accent_field: accent_field.clone(),
+            settings_fields: settings_fields.clone(),
+            pending_field_focus: None,
+            accent_invalid: false,
+            properties: None,
+            about: None,
+            thumbnail_cache: ThumbnailCache::default(),
+            file_icons: Default::default(),
+            favorites: Favorites::load(),
+            favorites_error: None,
+            bookmarks_read: false,
+            bookmark_edits: 0,
+            wallpaper: WallpaperState::Empty,
+            wallpaper_generation: 0,
+            wallpaper_choice: 0,
+            window_transparent: None,
+            mutation_generation: 0,
+        };
+        workspace.reload_wallpaper(cx);
+        workspace.warm_wallpaper(window, cx);
+        match prefetch {
+            Some(prefetch) => workspace.receive_prefetch(prefetch, fallback, cx),
+            None => {
+                workspace.load_drives(PaneTarget(0), cx);
+                workspace.load_pane(PaneTarget(0), cx);
+            }
+        }
+        workspace.start_directory_watches(cx);
+        workspace.start_device_watch(cx);
+        workspace.load_special_folders(cx);
+        workspace.connect_servers(cx);
+        workspace.watch_trash(cx);
+        workspace.load_bookmarks(cx);
+        #[cfg(target_os = "linux")]
+        workspace.warm_menu_apps(cx);
+        workspace.watch_associations(cx);
+        workspace.apply_motion(cx);
+        workspace.follow_desktop_motion(cx);
+        workspace.first_new_pane = workspace.next_pane_id;
+        workspace
+    }
+
+    /// Later launches each open a tab and raise the window.
+    pub(crate) fn receive_launches(&mut self, launches: async_channel::Receiver<String>, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            while let Ok(argument) = launches.recv().await {
+                let opened = this.update_in(cx, |this, window, cx| {
+                    // A launch without a folder, as the file-manager key sends, opens
+                    // the start location, as a new window would.
+                    // A launch names a place on this computer, even while a pane is on a server.
+                    let home = this.home.api.clone();
+                    let path = match (argument.is_empty(), this.preferences.start_location) {
+                        (false, _) => launch_path(&home, &argument),
+                        (true, StartLocation::Last) => this.last_location.clone().unwrap_or_default(),
+                        (true, start) => startup::start_path(&home, start),
+                    };
+                    this.open_tab_with(home, path, cx);
+                    window.activate_window();
+                });
+                if opened.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    pub(crate) fn browser_width(&self, window: &Window) -> f32 {
+        let width = f32::from(window.viewport_size().width) - crate::ui::SIDEBAR_WIDTH;
+        if self.split_panes.contains_key(&self.tabs[self.active_tab].id) { (width - 1.) / 2. } else { width }
+    }
+
+    /// The width a pane's list or grid gets: its share of the window, less the Details panel beside it.
+    pub(crate) fn pane_width(&self, target: PaneTarget, window: &Window) -> f32 {
+        let details = if self.is_rightmost_pane(target) { self.details_share() } else { 0. };
+        self.browser_width(window) - (crate::ui::DETAILS_WIDTH + 1.) * details
+    }
+
+    /// How much of its width the Details panel has, 0 to 1, as it opens or closes.
+    pub(crate) fn details_share(&self) -> f32 {
+        let motion = crate::components::motion::PANEL.as_secs_f32();
+        let t = self.details_toggled.map_or(1., |at| (at.elapsed().as_secs_f32() / motion).min(1.));
+        let t = crate::components::motion::ease_in_out(t);
+        if self.preferences.details_panel { t } else { 1. - t }
+    }
+
+    /// Scrolls the item at `index` into view in its pane's list or grid.
+    pub(crate) fn reveal(&self, target: PaneTarget, index: usize, window: &Window) {
+        let Some(pane) = self.pane_by_id(target.0) else { return };
+        match pane.current_view_mode() {
+            ViewMode::List => pane.list_scroll.scroll_to_item(index, gpui::ScrollStrategy::Top),
+            ViewMode::Grid => {
+                let columns = self.grid_metrics().columns(self.pane_width(target, window));
+                pane.grid_scroll.scroll_to_item(index / columns.max(1), gpui::ScrollStrategy::Top);
+            }
+        }
+    }
+
+    pub(crate) fn toggle_details(&mut self, _: &ToggleDetails, _: &mut Window, cx: &mut Context<Self>) {
+        self.preferences.details_panel = !self.preferences.details_panel;
+        self.details_toggled = crate::components::motion::enabled(cx).then(std::time::Instant::now);
+        self.commit_preferences(cx);
+    }
+
+    /// The pane at the window's right edge: the split's second pane, or the only one.
+    pub(crate) fn is_rightmost_pane(&self, target: PaneTarget) -> bool {
+        let primary = self.tabs[self.active_tab].id;
+        target.0 == self.split_panes.get(&primary).map_or(primary, |pane| pane.id)
+    }
+
+    pub(crate) fn pane(&self) -> &Pane {
+        self.pane_by_id(self.active_pane.0)
+            .unwrap_or(&self.tabs[self.active_tab])
+    }
+
+    pub(crate) fn pane_mut(&mut self) -> &mut Pane {
+        let target = self.active_pane.0;
+        if let Some(index) = self.tabs.iter().position(|pane| pane.id == target) {
+            return &mut self.tabs[index];
+        }
+        if let Some(pane) = self.split_panes.values_mut().find(|pane| pane.id == target) {
+            return pane;
+        }
+        &mut self.tabs[self.active_tab]
+    }
+
+    pub(crate) fn pane_by_id(&self, id: usize) -> Option<&Pane> {
+        self.tabs
+            .iter()
+            .chain(self.split_panes.values())
+            .find(|pane| pane.id == id)
+    }
+
+    pub(crate) fn pane_mut_by_id(&mut self, id: usize) -> Option<&mut Pane> {
+        self.tabs
+            .iter_mut()
+            .chain(self.split_panes.values_mut())
+            .find(|pane| pane.id == id)
+    }
+
+    pub(crate) fn active_api(&self) -> Arc<Api> {
+        self.pane().api.clone()
+    }
+
+    /// Activates a provider in a new tab, preserving every existing local and remote pane.
+    pub(crate) fn open_provider(&mut self, api: Api, cx: &mut Context<Self>) {
+        let api = Arc::new(api);
+        let id = self.next_pane_id;
+        self.next_pane_id += 1;
+        self.tabs.push(Pane::with_api(
+            id,
+            String::new(),
+            api,
+            self.preferences.show_hidden_files,
+            preference_sort(&self.preferences),
+            preference_view(&self.preferences),
+        ));
+        self.active_tab = self.tabs.len() - 1;
+        self.active_pane = PaneTarget(id);
+        self.trash_open = false;
+        self.trash_error = None;
+        self.clear_thumbnails(cx);
+        self.load_drives(PaneTarget(id), cx);
+        self.load_pane(PaneTarget(id), cx);
+        cx.notify();
+    }
+
+    fn load_drives(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
+        let Some(pane) = self.pane_mut_by_id(target.0) else {
+            return;
+        };
+        pane.drives_busy = true;
+        let api = pane.api.clone();
+        let journey = crate::profile::journey("load drives", String::new);
+        cx.spawn(async move |this, cx| {
+            let read = cx.background_executor().spawn({
+                let api = api.clone();
+                async move { startup::read_drives(&api) }
+            }).await;
+            this.update(cx, |this, cx| this.apply_drives(target, api, read, journey, cx)).ok();
+        })
+        .detach();
+    }
+
+    /// A drive came or went. Panes on the Overview reload with the provider, but
+    /// the sidebar reads the window's own drives, which a folder pane never reloads.
+    #[cfg(windows)]
+    pub(crate) fn local_drives_changed(&mut self, cx: &mut Context<Self>) {
+        let api = self.home.api.clone();
+        self.refresh_provider(api.clone(), cx);
+        cx.spawn(async move |this, cx| {
+            let read = cx.background_executor().spawn({
+                let api = api.clone();
+                async move { startup::read_drives(&api) }
+            }).await;
+            this.update(cx, |this, cx| {
+                if let Ok(roots) = read.roots {
+                    this.home.roots = Load::Loaded(roots);
+                }
+                if let Ok(drives) = read.drives {
+                    this.home.drives = Load::Loaded(drives);
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// `api` is the provider the drives were read from: a reply for a server the
+    /// pane has since left is dropped, or it would replace this computer's drives.
+    fn apply_drives(&mut self, target: PaneTarget, api: Arc<Api>, read: startup::DrivesRead, journey: Option<crate::profile::Journey>, cx: &mut Context<Self>) {
+        if !self.pane_by_id(target.0).is_some_and(|pane| Arc::ptr_eq(&pane.api, &api)) {
+            return;
+        }
+        let roots = match read.roots {
+            Ok(roots) => Load::Loaded(roots),
+            Err(error) => Load::Failed(format!("{error:#}")),
+        };
+        let drives = match read.drives {
+            Ok(drives) => Load::Loaded(drives),
+            Err(error) => Load::Failed(format!("{error:#}")),
+        };
+        let Some(pane) = self.pane_by_id(target.0) else { return };
+        // The window's own drives, for the Overview and the sidebar.
+        if Arc::ptr_eq(&pane.api, &self.home.api) {
+            self.home.roots = roots.clone();
+            self.home.drives = drives.clone();
+        }
+        let Some(pane) = self.pane_mut_by_id(target.0) else { return };
+        pane.drives_busy = false;
+        pane.roots = roots;
+        pane.drives = drives;
+        crate::profile::ready(journey);
+        cx.notify();
+    }
+
+    /// Keeps the active pane's place on this computer for the next launch, when it
+    /// changed. A server's folders are not kept: they need the server first.
+    fn remember_location(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
+        let Some(pane) = self.pane_by_id(target.0).filter(|_| target == self.active_pane) else { return };
+        if !Arc::ptr_eq(&pane.api, &self.home.api) || self.last_location.as_deref() == Some(pane.path.as_str()) {
+            return;
+        }
+        let path = pane.path.clone();
+        self.last_location = Some(path.clone());
+        self.persist(&crate::persist::LAST_LOCATION, path.into_bytes(), cx, |_, result, _| {
+            if let Err(error) = result {
+                log::debug!("{error}");
+            }
+        });
+    }
+
+    #[track_caller]
+    fn load_pane(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
+        let caller = std::panic::Location::caller();
+        self.remember_location(target, cx);
+        self.apply_folder_view(target);
+        let Some(pane) = self.pane_mut_by_id(target.0) else {
+            return;
+        };
+        let generation = pane.begin_load();
+        if pane.is_at_root() {
+            return;
+        }
+        let path = pane.path.clone();
+        let api = pane.api.clone();
+        let view = pane.view();
+        // The caller tells a navigation from a refresh or a watcher reload.
+        let journey = crate::profile::journey("open folder", || format!("{path}  ({}:{})", caller.file(), caller.line()));
+        let queued = crate::profile::span("listing queued");
+        cx.spawn(async move |this, cx| {
+            let read = cx
+                .background_executor()
+                .spawn(async move {
+                    drop(queued);
+                    startup::read_listing(&api, &path, view)
+                })
+                .await;
+            this.update(cx, |this, cx| this.apply_listing(target, generation, view, read, journey, cx)).ok();
+        })
+        .detach();
+    }
+
+    /// Shows a listing unless the pane moved on since it was requested.
+    fn apply_listing(
+        &mut self,
+        target: PaneTarget,
+        generation: u64,
+        view: crate::pane::View,
+        read: startup::ListingRead,
+        journey: Option<crate::profile::Journey>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pane) = self.pane_mut_by_id(target.0) else { return };
+        if pane.generation != generation {
+            return;
+        }
+        pane.writable = read.writable;
+        pane.real_path = read.real.clone();
+        let _span = crate::profile::span("apply listing");
+        let journey = if read.items.is_err() { journey.map(|journey| journey.renamed("open folder: failed")) } else { journey };
+        let stale = pane.finish_load(read.items, view);
+        if let Some(path) = read.real { self.watch_pane_folder(target, path, cx); }
+        if stale { self.resort(target, cx); }
+        crate::profile::ready(journey);
+        cx.notify();
+        // The folder it replaced was freed above.
+        cx.background_executor().spawn(async { crate::heap::release_freed() }).detach();
+    }
+
+    /// Writes a settings file on a background thread. `done` runs on the UI thread
+    /// unless a newer write to the same file replaced this one.
+    pub(crate) fn persist(
+        &self,
+        store: &'static crate::persist::Store,
+        bytes: Vec<u8>,
+        cx: &mut Context<Self>,
+        done: impl FnOnce(&mut Self, Result<(), String>, &mut Context<Self>) + 'static,
+    ) {
+        let write = store.write(bytes);
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { write() }).await;
+            let result = match result {
+                Ok(crate::persist::Written::Superseded) => return,
+                Ok(crate::persist::Written::Saved) => Ok(()),
+                Err(error) => Err(format!("cannot write {}: {error}", store.path().display())),
+            };
+            this.update(cx, |this, cx| {
+                done(this, result, cx);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Saves favorites: local ones to the GTK bookmarks, the rest to BoxBox's file.
+    /// A pin the user just made reports a failure; its success shows in the sidebar.
+    pub(crate) fn save_favorites(&mut self, pinned: bool, cx: &mut Context<Self>) {
+        self.save_bookmarks(cx);
+        let bytes = match self.favorites.encode() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.favorites_error = Some(error.to_string());
+                return;
+            }
+        };
+        self.persist(&crate::persist::FAVORITES, bytes, cx, move |this, result, cx| match result {
+            Ok(()) => this.favorites_error = None,
+            Err(error) => {
+                if pinned {
+                    this.report(Err(error.clone()), cx);
+                }
+                this.favorites_error = Some(error);
+            }
+        });
+    }
+
+    /// Sorts a pane's entries in the background after its sort changed.
+    pub(crate) fn resort(&mut self, target: PaneTarget, cx: &mut Context<Self>) {
+        let Some(job) = self.pane_by_id(target.0).map(Pane::sort_job) else {
+            return;
+        };
+        let journey = crate::profile::journey("sort", String::new);
+        cx.spawn(async move |this, cx| {
+            let (job, (items, folder_items)) = cx
+                .background_executor()
+                .spawn(async move {
+                    let _span = crate::profile::span("sort");
+                    let sorted = job.run();
+                    (job, sorted)
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                if this.pane_mut_by_id(target.0).is_some_and(|pane| pane.apply_sort(&job, items, folder_items)) {
+                    crate::profile::ready(journey);
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn all_pane_ids(&self) -> Vec<usize> {
+        self.tabs
+            .iter()
+            .chain(self.split_panes.values())
+            .map(|pane| pane.id)
+            .collect()
+    }
+
+    fn refresh_provider(&mut self, api: Arc<Api>, cx: &mut Context<Self>) {
+        self.clear_thumbnails(cx);
+        let targets: Vec<_> = self
+            .all_pane_ids()
+            .into_iter()
+            .filter(|id| {
+                self.pane_by_id(*id)
+                    .is_some_and(|pane| Arc::ptr_eq(&pane.api, &api))
+            })
+            .map(PaneTarget)
+            .collect();
+        for target in targets {
+            if self.pane_by_id(target.0).is_some_and(Pane::is_at_root) {
+                self.load_drives(target, cx);
+            } else {
+                self.load_pane(target, cx);
+                self.schedule_search_for(target.0, Duration::ZERO, cx);
+            }
+        }
+    }
+
+    fn apply_preferences(&mut self, cx: &mut Context<Self>) {
+        self.apply_motion(cx);
+        let sort = preference_sort(&self.preferences);
+        let view = preference_view(&self.preferences);
+        let show_hidden_files = self.preferences.show_hidden_files;
+        let ids = self.all_pane_ids();
+        let mut hidden_changed = false;
+        let mut resorted = Vec::new();
+        for id in &ids {
+            let Some(pane) = self.pane_by_id(*id) else { continue };
+            // A folder's own sort and view win over the new defaults.
+            let sort = if pane.is_at_root() { sort } else { self.folder_views.sort(&pane.api, &pane.path, sort) };
+            let Some(pane) = self.pane_mut_by_id(*id) else { continue };
+            if pane.sort != sort {
+                resorted.push(PaneTarget(*id));
+            }
+            hidden_changed |= pane.apply_preferences(show_hidden_files, sort, view);
+            self.apply_folder_view(PaneTarget(*id));
+        }
+        self.save_preferences(cx);
+        for target in resorted {
+            self.resort(target, cx);
+        }
+        if hidden_changed {
+            for id in ids {
+                self.load_pane(PaneTarget(id), cx);
+                self.schedule_search_for(id, Duration::ZERO, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Writes the preferences without applying them to the panes again, for a
+    /// change such as zoom that the panes do not hold.
+    pub(crate) fn save_preferences(&mut self, cx: &mut Context<Self>) {
+        match self.preferences.encode() {
+            Ok(bytes) => self.persist(&crate::persist::PREFERENCES, bytes, cx, |this, result, cx| {
+                if let Err(error) = result {
+                    this.report(Err(format!("Could not save preferences: {error}")), cx);
+                }
+            }),
+            Err(error) => self.report(Err(format!("Could not save preferences: {error}")), cx),
+        }
+    }
+
+    pub(crate) fn navigate(&mut self, path: String, cx: &mut Context<Self>) {
+        self.navigate_in(self.active_pane, path, cx);
+    }
+
+    pub(crate) fn navigate_in(
+        &mut self,
+        target: PaneTarget,
+        path: String,
+        cx: &mut Context<Self>,
+    ) {
+        // A server on the Network page, or a typed address: mount it, then open it.
+        if crate::devices::gvfs::spec::is_uri(&path) {
+            self.connect_location(target, path, cx);
+            return;
+        }
+        // The Overview belongs to the window's own provider; a folder, to the pane's.
+        let api = match path.is_empty() {
+            true => Some(self.home.api.clone()),
+            false => self.pane_by_id(target.0).map(|pane| pane.api.clone()),
+        };
+        if let Some(api) = api {
+            self.navigate_to(target, api, path, cx);
+        }
+    }
+
+    /// Opens `path` on `api` in a pane, moving it to that provider if it is another.
+    pub(crate) fn navigate_to(&mut self, target: PaneTarget, api: Arc<Api>, path: String, cx: &mut Context<Self>) {
+        // Going somewhere drops a server drive still waiting to open.
+        self.servers.forget_wanted();
+        self.trash_open = false;
+        self.trash_error = None;
+        if let Some(pane) = self.pane_mut_by_id(target.0) {
+            let moved = pane.navigate_to(api, path);
+            self.after_move(target, moved, cx);
+        }
+        cx.notify();
+    }
+
+    /// `navigate_in` with the folder already read.
+    fn navigate_with(
+        &mut self,
+        target: PaneTarget,
+        path: String,
+        view: crate::pane::View,
+        read: startup::ListingRead,
+        journey: Option<crate::profile::Journey>,
+        cx: &mut Context<Self>,
+    ) {
+        self.trash_open = false;
+        self.trash_error = None;
+        let Some(pane) = self.pane_mut_by_id(target.0) else { return };
+        let moved = pane.navigate_to(pane.api.clone(), path);
+        if moved == crate::pane::Moved::Across {
+            self.load_drives(target, cx);
+        }
+        if moved != crate::pane::Moved::No {
+            if let Some(pane) = self.pane_mut_by_id(target.0) {
+                let generation = pane.begin_load();
+                self.apply_listing(target, generation, view, read, journey, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn back(&mut self, _: &Back, _: &mut Window, cx: &mut Context<Self>) {
+        if self.trash_open {
+            self.trash_open = false;
+            self.trash_error = None;
+            cx.notify();
+            return;
+        }
+        self.travel(self.active_pane, true, 1, cx);
+    }
+
+    pub(crate) fn forward(&mut self, _: &Forward, _: &mut Window, cx: &mut Context<Self>) {
+        self.travel(self.active_pane, false, 1, cx);
+    }
+
+    pub(crate) fn refresh(&mut self, _: &Refresh, _: &mut Window, cx: &mut Context<Self>) {
+        if self.trash_open {
+            if let Some(api) = self.trash_provider.clone() {
+                self.load_trash(api, cx);
+            }
+        } else {
+            let target = self.active_pane;
+            self.refreshing = Some(refreshing::Refreshing::new(target));
+            self.clear_thumbnails(cx);
+            if self.pane().is_at_root() {
+                self.load_drives(target, cx);
+                // The Overview lists every server's drives too.
+                self.refresh_servers(cx);
+            } else {
+                self.load_pane(target, cx);
+                // Now rather than on the next tick, so Refresh's icon sees it start.
+                if self.pane_by_id(target.0).is_some_and(|pane| search::active_query(&pane.search_input).is_some()) {
+                    self.run_search(target.0, cx);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// A new tab at the active pane's place, as Nautilus and Dolphin open one. It
+    /// shows what that pane shows at once, then reads the folder (or the drives)
+    /// again in the background, so the screen does not flash a reload.
+    pub(crate) fn new_tab(&mut self, _: &NewTab, _: &mut Window, cx: &mut Context<Self>) {
+        let id = self.next_pane_id;
+        self.next_pane_id += 1;
+        let pane = self.pane().duplicate(id);
+        let at_root = pane.is_at_root();
+        self.tabs.push(pane);
+        let target = PaneTarget(id);
+        self.active_tab = self.tabs.len() - 1;
+        self.active_pane = target;
+        self.trash_open = false;
+        // The copy may hold drive details still loading for the original pane.
+        self.load_drives(target, cx);
+        if !at_root {
+            self.load_pane(target, cx);
+        }
+        cx.notify();
+    }
+
+    /// Opens a new tab at a virtual path, on the active provider; the Overview is
+    /// always the window's own.
+    pub(crate) fn open_tab(&mut self, path: String, cx: &mut Context<Self>) {
+        let api = if path.is_empty() { self.home.api.clone() } else { self.active_api() };
+        self.open_tab_with(api, path, cx);
+    }
+
+    pub(crate) fn open_tab_with(&mut self, api: Arc<Api>, path: String, cx: &mut Context<Self>) {
+        let target = self.push_tab(api, path);
+        self.active_tab = self.tabs.len() - 1;
+        self.active_pane = target;
+        self.trash_open = false;
+        self.load_drives(target, cx);
+        self.load_pane(target, cx);
+        cx.notify();
+    }
+
+    /// A new tab behind the current one, as Ctrl with a middle-click opens.
+    pub(crate) fn open_tab_in_background(&mut self, api: Arc<Api>, path: String, cx: &mut Context<Self>) {
+        let target = self.push_tab(api, path);
+        self.load_drives(target, cx);
+        self.load_pane(target, cx);
+        cx.notify();
+    }
+
+    fn push_tab(&mut self, api: Arc<Api>, path: String) -> PaneTarget {
+        let id = self.next_pane_id;
+        self.next_pane_id += 1;
+        self.tabs.push(Pane::with_api(
+            id,
+            path,
+            api,
+            self.preferences.show_hidden_files,
+            preference_sort(&self.preferences),
+            preference_view(&self.preferences),
+        ));
+        PaneTarget(id)
+    }
+
+    pub(crate) fn close_tab_at(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        if crate::components::motion::enabled(cx) {
+            let title = self.breadcrumbs(PaneTarget(self.tabs[index].id)).pop().map_or_else(|| "Overview".to_string(), |crumb| crumb.label);
+            let at = std::time::Instant::now();
+            self.closing_tabs.push((index, title, at));
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(crate::components::motion::TAB).await;
+                this.update(cx, |this, cx| {
+                    this.closing_tabs.retain(|(_, _, closed)| *closed != at);
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
+        }
+        let removed = self.tabs.remove(index);
+        self.split_panes.remove(&removed.id);
+        if self.active_tab > index || self.active_tab >= self.tabs.len() {
+            self.active_tab = self.active_tab.saturating_sub(1);
+        }
+        self.active_pane = PaneTarget(self.tabs[self.active_tab].id);
+        self.trash_open = false;
+        cx.notify();
+    }
+
+    fn close_tab(&mut self, _: &CloseTab, _: &mut Window, cx: &mut Context<Self>) {
+        self.close_tab_at(self.active_tab, cx);
+    }
+
+    pub(crate) fn activate_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(pane) = self.tabs.get(index) else {
+            return;
+        };
+        self.active_tab = index;
+        self.active_pane = PaneTarget(pane.id);
+        self.trash_open = false;
+        cx.notify();
+    }
+
+    /// Sends one pane's search after `delay`, unless the input or folder changes first.
+    fn schedule_search_for(
+        &mut self,
+        pane_id: usize,
+        delay: Duration,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pane) = self.pane_by_id(pane_id) else {
+            return;
+        };
+        if search::active_query(&pane.search_input).is_none() {
+            return;
+        }
+        let revision = pane.search_generation;
+        cx.spawn(async move |this, cx| {
+            if !delay.is_zero() {
+                cx.background_executor().timer(delay).await;
+            }
+            this.update(cx, |this, cx| {
+                if this
+                    .pane_by_id(pane_id)
+                    .is_some_and(|pane| pane.search_generation == revision)
+                {
+                    this.run_search(pane_id, cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn run_search(&mut self, pane_id: usize, cx: &mut Context<Self>) {
+        let Some(pane) = self.pane_mut_by_id(pane_id) else {
+            return;
+        };
+        let Some((generation, query, cancel)) = pane.begin_search() else {
+            return;
+        };
+        let path = pane.path.clone();
+        let api = pane.api.clone();
+        let view = pane.search_view();
+        // Matches found so far, arranged on the search's thread and shown as they come.
+        let (partial, shown) = async_channel::unbounded::<Vec<crate::api::FileInfo>>();
+        let mut first_results = crate::profile::journey("search: first results", || query.clone());
+        let journey = crate::profile::journey("search: complete", || query.clone());
+        cx.spawn(async move |this, cx| {
+            while let Ok(items) = shown.recv().await {
+                let current = this.update(cx, |this, cx| {
+                    let Some(pane) = this.pane_mut_by_id(pane_id).filter(|pane| pane.search_generation == generation) else {
+                        return false;
+                    };
+                    if pane.show_partial_search(items, view) {
+                        this.resort(PaneTarget(pane_id), cx);
+                    }
+                    crate::profile::ready(first_results.take());
+                    cx.notify();
+                    true
+                });
+                if !current.unwrap_or(false) {
+                    break;
+                }
+            }
+        })
+        .detach();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let query = search::Query::parse(&query);
+                    let request = search::Request { path: &path, query: &query, hidden: view.show_hidden_files, cancel: &cancel };
+                    let mut progress = |items| {
+                        let _ = partial.send_blocking(crate::pane::arrange(items, view));
+                    };
+                    api.search(&request, &mut progress).map(|items| crate::pane::arrange(items, view))
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                if let Some(pane) = this.pane_mut_by_id(pane_id) {
+                    if pane.search_generation == generation {
+                        if pane.finish_search(result, view) {
+                            this.resort(PaneTarget(pane_id), cx);
+                        }
+                        crate::profile::ready(journey);
+                        cx.notify();
+                    }
+                }
+                // What the walk read and did not keep.
+                cx.background_executor().spawn(async { crate::heap::release_freed() }).detach();
+            })
+                .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Creates a search field for each new pane and drops those of closed panes.
+    pub(crate) fn sync_search_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let ids = self.all_pane_ids();
+        self.search_fields.retain(|id, _| ids.contains(id));
+        for id in ids {
+            if self.search_fields.contains_key(&id) {
+                continue;
+            }
+            let field = cx.new(|cx| TextField::new("Search files and folders...", cx));
+            let subscription =
+                cx.subscribe_in(&field, window, move |this, _, event, window, cx| this.on_search_field(id, event, window, cx));
+            self.search_fields.insert(id, (field, subscription));
+        }
+        // Navigation clears a pane's search, so the field follows the pane.
+        for (id, (field, _)) in &self.search_fields {
+            let Some(pane) = self.pane_by_id(*id) else { continue };
+            if field.read(cx).text() != pane.search_input {
+                let text = pane.search_input.clone();
+                let end = text.len();
+                field.update(cx, |field, cx| field.set_text(text, end..end, cx));
+            }
+        }
+    }
+
+    fn on_search_field(&mut self, pane_id: usize, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((field, _)) = self.search_fields.get(&pane_id) else { return };
+        match event {
+            InputEvent::Changed => {
+                let text = field.read(cx).text().to_string();
+                if self.pane_mut_by_id(pane_id).is_some_and(|pane| pane.set_search_input(text)) {
+                    self.schedule_search_for(pane_id, search::DEBOUNCE, cx);
+                }
+            }
+            // Enter searches now instead of waiting for the debounce.
+            InputEvent::Submit => self.schedule_search_for(pane_id, Duration::ZERO, cx),
+            InputEvent::Cancel => {
+                if let Some(pane) = self.pane_mut_by_id(pane_id) {
+                    pane.clear_search();
+                }
+                window.focus(&self.focus_handle);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn search_field(&self, pane_id: usize) -> Option<&Entity<TextField>> {
+        self.search_fields.get(&pane_id).map(|(field, _)| field)
+    }
+
+    fn focus_search(&mut self, _: &FocusSearch, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.pane().is_at_root() {
+            if let Some(field) = self.search_field(self.active_pane.0) {
+                field.read(cx).focus(window);
+            }
+            cx.notify();
+        }
+    }
+
+    fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
+        if self.trash_open {
+            return self.select_all_trash(cx);
+        }
+        self.pane_mut().select_all();
+        cx.notify();
+    }
+
+    /// Copies text selected in the Details panel or a dialog; false when there is none.
+    pub(crate) fn copy_text_selection(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(text) = self.text_selection.as_ref().and_then(|selection| selection.selected()) else { return false };
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_owned()));
+        true
+    }
+
+    /// The location field shows the folder it was opened on, so it closes once
+    /// its pane is somewhere else, with the focus back on the folder.
+    fn close_moved_location_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(editor) = self.location_editor.as_ref() else { return };
+        if self.pane_by_id(editor.target_id).is_some_and(|pane| editor.still_on(pane)) {
+            return;
+        }
+        self.location_editor = None;
+        self.location_completion = None;
+        if self.location_field.read(cx).is_focused(window) {
+            self.focus_handle.focus(window);
+        }
+    }
+
+    fn clear_text_selection(&mut self, cx: &mut Context<Self>) {
+        if self.text_selection.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// Whether a dialog is open. It blocks clicks behind it, and this blocks keys.
+    pub(crate) fn dialog_open(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        let open_with = self.open_with.is_some();
+        #[cfg(not(target_os = "linux"))]
+        let open_with = false;
+        open_with
+            || self.confirm.is_some()
+            || self.devices.prompt.is_some()
+            || self.transfer_question.is_some()
+            || self.shortcuts_open
+            || self.settings_open
+            || self.properties.is_some()
+            || self.operation_dialog.is_some()
+    }
+
+    fn clear_selection(&mut self, _: &ClearSelection, window: &mut Window, cx: &mut Context<Self>) {
+        // Escape closes the topmost dialog first, as the web Modal does.
+        if self.confirm.is_some() { self.answer(false, cx); }
+        else if self.devices.prompt.is_some() { self.cancel_credentials(window, cx); }
+        else if self.transfer_question.is_some() { self.answer_transfer(crate::transfer::Answer::Cancel, cx); }
+        else if self.shortcuts_open { self.shortcuts_open = false; }
+        else if self.settings_open { self.settings_open = false; self.settings_panel.dialog = None; }
+        else if self.properties.take().is_some() || self.context_menu.take().is_some() || self.drop_menu.take().is_some() {}
+        // With nothing selected, Escape leaves the search, as it does in the field.
+        else if self.trash_open { self.trash_table.selected.clear(); }
+        else if self.pane().selected.is_empty() && self.pane().is_searching() { self.pane_mut().clear_search(); }
+        else { self.pane_mut().clear_selection(); }
+        self.focus_handle.focus(window);
+        cx.notify();
+    }
+    pub(crate) fn toggle_split(
+        &mut self,
+        _: &ToggleSplit,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let primary_id = self.tabs[self.active_tab].id;
+        if self.split_panes.remove(&primary_id).is_some() {
+            self.active_pane = PaneTarget(primary_id);
+        } else {
+            let (path, api, show_hidden_files, sort, view_mode) = {
+                let source = self
+                    .pane_by_id(self.active_pane.0)
+                    .unwrap_or(&self.tabs[self.active_tab]);
+                (
+                    source.path.clone(),
+                    source.api.clone(),
+                    source.show_hidden_files,
+                    source.sort,
+                    source.view_mode,
+                )
+            };
+            let id = self.next_pane_id;
+            self.next_pane_id += 1;
+            let secondary = Pane::with_api(id, path, api, show_hidden_files, sort, view_mode);
+            self.split_panes.insert(primary_id, secondary);
+            self.active_pane = PaneTarget(id);
+            self.load_drives(PaneTarget(id), cx);
+            self.load_pane(PaneTarget(id), cx);
+        }
+        self.trash_open = false;
+        cx.notify();
+    }
+
+
+    pub(crate) fn open_settings(
+        &mut self,
+        _: &OpenSettings,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings_open = true;
+        self.settings_section = SettingsSection::General;
+        #[cfg(target_os = "linux")]
+        {
+            self.settings_panel.picker = crate::chooser::routing::enabled();
+        }
+        self.settings_focus.focus(window);
+        cx.notify();
+    }
+
+    pub(crate) fn close_settings(
+        &mut self,
+        _: &CloseSettings,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings_open = false;
+        self.settings_panel.dialog = None;
+        self.focus_handle.focus(window);
+        cx.notify();
+    }
+
+    pub(crate) fn commit_preferences(&mut self, cx: &mut Context<Self>) {
+        self.apply_preferences(cx);
+    }
+
+    pub(crate) fn select_settings_section(
+        &mut self,
+        section: SettingsSection,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings_section = section;
+        if section == SettingsSection::About {
+            self.load_about(cx);
+        }
+        cx.notify();
+    }
+}
+
+/// A launch argument as a virtual path: virtual paths pass through; real paths and
+/// `file://` URIs map onto a local mount, and a file opens its folder.
+pub(crate) fn launch_path(api: &Api, argument: &str) -> String {
+    let real = match argument.strip_prefix("file://") {
+        Some(_) => crate::os_clipboard::path_from_uri(argument),
+        None if std::path::Path::new(argument).is_absolute() => Some(std::path::PathBuf::from(argument)),
+        None => return argument.trim_matches('/').to_string(),
+    };
+    let Some(real) = real else { return String::new() };
+    let folder = if real.is_dir() { real } else { real.parent().map(std::path::Path::to_path_buf).unwrap_or(real) };
+    api.virtual_path(&folder).unwrap_or_default()
+}
+
+pub(super) fn preference_sort(preferences: &Preferences) -> Sort {
+    Sort { field: preferences.default_sort, dir: preferences.default_sort_direction }
+}
+
+fn preference_view(preferences: &Preferences) -> ViewMode {
+    preferences.default_view
+}
+
+impl Render for Workspace {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::profile::frame_started();
+        self.file_icons.scale = window.scale_factor();
+        self.file_icons.frame += 1;
+        let _span = crate::profile::span("render");
+        self.sync_search_fields(window, cx);
+        if let Some(field) = self.pending_field_focus.take() {
+            self.settings_field(field).read(cx).focus(window);
+        }
+        if std::mem::take(&mut self.pending_credential_focus) {
+            self.focus_credentials(window, cx);
+        }
+        self.close_moved_location_editor(window, cx);
+        if std::mem::take(&mut self.pending_location_focus) {
+            self.location_field.read(cx).focus(window);
+        }
+        self.start_pending_rename(window, cx);
+        self.apply_window_background(window);
+        self.request_details_preview(cx);
+        let primary = PaneTarget(self.tabs[self.active_tab].id);
+        let mut browsers = div().flex().flex_1().min_h_0().min_w_0()
+            .child(self.render_browser(primary, window, cx));
+        if let Some(secondary) = self.split_panes.get(&primary.0) {
+            browsers = browsers.child(div().w(px(1.)).h_full().bg(c(crate::theme::BORDER_PRIMARY)))
+                .child(self.render_browser(PaneTarget(secondary.id), window, cx));
+        }
+        div()
+            .key_context(if self.dialog_open() { "BrowseWorkspace Dialog" } else { "BrowseWorkspace" })
+            .track_focus(&self.focus_handle)
+            // Selected text lasts until the next press; a key clears it in `new`.
+            .capture_any_mouse_down(cx.listener(|this, _, _, cx| this.clear_text_selection(cx)))
+            // First, so it runs before the drop zones inside report themselves.
+            .on_drag_move(cx.listener(|this, _: &gpui::DragMoveEvent<crate::drag_out::DraggedItem>, _, cx| this.track_drag(cx)))
+            .on_drag_move(cx.listener(|this, _: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| this.track_drag(cx)))
+            .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, _, cx| this.drop_external(paths.paths().to_vec(), cx)))
+            .on_drag_move(crate::drag_out::moved)
+            .on_drop(cx.listener(|this, _: &crate::drag_out::DraggedItem, window, cx| this.drop_items(window, cx)))
+            .on_action(cx.listener(Self::back))
+            .on_action(cx.listener(Self::forward))
+            .on_action(cx.listener(Self::refresh))
+            .on_action(cx.listener(Self::new_tab))
+            .on_action(cx.listener(Self::close_tab))
+            .on_action(cx.listener(|this, _: &NextTab, _, cx| this.activate_tab((this.active_tab + 1) % this.tabs.len(), cx)))
+            .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.activate_tab((this.active_tab + this.tabs.len() - 1) % this.tabs.len(), cx)))
+            .on_action(cx.listener(|this, _: &ParentFolder, _, cx| {
+                let parent = this.pane().path.rsplit_once('/').map(|(parent, _)| parent).unwrap_or("").to_string();
+                this.navigate(parent, cx);
+            }))
+            .on_action(cx.listener(Self::toggle_details))
+            .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| {
+                this.preferences.show_hidden_files = !this.preferences.show_hidden_files;
+                this.commit_preferences(cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenConnections, window, cx| {
+                this.open_settings(&OpenSettings, window, cx);
+                this.settings_section = SettingsSection::Connections;
+            }))
+            .on_action(cx.listener(|this, _: &PropertiesSelected, _, cx| {
+                let items = this.pane().selected_items();
+                this.show_properties(this.active_pane, items, cx);
+            }))
+            .on_action(cx.listener(Self::select_all))
+            .on_action(cx.listener(Self::clear_selection))
+            .on_action(cx.listener(Self::open_settings))
+            .on_action(cx.listener(Self::close_settings))
+            .on_action(cx.listener(Self::focus_search))
+            .on_action(cx.listener(Self::create_folder))
+            .on_action(cx.listener(Self::create_file))
+            .on_action(cx.listener(Self::rename_selected))
+            .on_action(cx.listener(Self::delete_selected))
+            .on_action(cx.listener(Self::delete_permanently))
+            .on_action(cx.listener(Self::open_select_pattern))
+            .on_action(cx.listener(Self::invert_selection))
+            .on_action(cx.listener(Self::zoom_in))
+            .on_action(cx.listener(Self::zoom_out))
+            .on_action(cx.listener(Self::zoom_reset))
+            .on_action(cx.listener(Self::download_selected))
+            .on_action(cx.listener(Self::copy_selected))
+            .on_action(cx.listener(|this, _: &CompleteLocation, window, cx| this.complete_location(false, window, cx)))
+            .on_action(cx.listener(|this, _: &CompleteLocationBack, window, cx| this.complete_location(true, window, cx)))
+            .on_action(cx.listener(|this, _: &LocationDown, window, cx| this.step_location(false, window, cx)))
+            .on_action(cx.listener(|this, _: &LocationUp, window, cx| this.step_location(true, window, cx)))
+            .on_action(cx.listener(|this, _: &CopyText, _, cx| {
+                this.copy_text_selection(cx);
+            }))
+            .on_action(cx.listener(Self::cut_selected))
+            .on_action(cx.listener(Self::paste_clipboard))
+            .on_action(cx.listener(Self::move_cursor))
+            .on_action(cx.listener(Self::toggle_active))
+            .on_action(cx.listener(Self::open_menu_key))
+            .on_key_down(cx.listener(Self::type_ahead))
+            .on_action(cx.listener(Self::open_active))
+            .on_action(cx.listener(Self::focus_location))
+            .on_action(cx.listener(Self::toggle_split))
+            .on_action(cx.listener(Self::add_favorite))
+            .on_action(cx.listener(Self::undo))
+            .on_action(cx.listener(|this, _: &ShowShortcuts, _, cx| {
+                this.shortcuts_open = true;
+                cx.notify();
+            }))
+            .on_action(cx.listener(Self::operation_escape))
+            .relative()
+            .size_full()
+            .flex()
+            .bg(self.window_background())
+            .child(self.render_wallpaper(window))
+            .text_color(c(TEXT_PRIMARY))
+            .font_family(self.fonts.sans.clone())
+            // The page's body line-height; Tailwind sizes like text-xs override it.
+            .line_height(relative(1.5))
+            .text_size(px(16.))
+            .child(div().relative().h_full().child(self.render_sidebar(cx)))
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .child(self.render_tabs(window, cx))
+                    .child(browsers),
+            )
+            .when(self.settings_open, |root| {
+                root.child(self.render_settings(window, cx))
+            })
+            .when(self.context_menu.is_some(), |root| root.child(self.render_context_menu(cx)))
+            .when(self.history_menu.is_some(), |root| root.child(self.render_history_menu(cx)))
+            .when(self.place_menu.is_some(), |root| root.child(self.render_place_menu(cx)))
+            .when(self.drop_menu.is_some(), |root| root.child(self.render_drop_menu(cx)))
+            .when(self.properties.is_some(), |root| root.child(self.render_properties(cx)))
+            .child(self.render_notices(window, cx))
+            .when(cfg!(target_os = "linux"), |root| {
+                #[cfg(target_os = "linux")]
+                let root = root.when(self.open_with.is_some(), |root| root.child(self.render_open_with(window, cx)));
+                root
+            })
+            .when(self.transfer_question.is_some(), |root| root.child(self.render_transfer_question(cx)))
+            .when(self.confirm.is_some(), |root| root.child(self.render_confirm(cx)))
+            .when(self.shortcuts_open, |root| root.child(self.render_shortcuts(cx)))
+            .when(self.devices.prompt.is_some(), |root| root.child(self.render_credentials(window, cx)))
+            .when(self.operation_dialog.is_some(), |root| {
+                root.child(self.render_operation_dialog(window, cx))
+            })
+            .children(crate::profile::frame_marker())
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod parity_test;
+#[cfg(all(test, target_os = "linux"))]
+mod features_test;

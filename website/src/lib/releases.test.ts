@@ -42,3 +42,13 @@ test("malformed releases and off-origin asset URLs are rejected", () => {
     null,
   );
 });
+
+test("Windows downloads require an exact asset from the current release", () => {
+  const name = "boxbox-desktop-v0.3.2-windows-amd64.zip";
+  const asset = { name, browser_download_url: prefix + name, size: 42 };
+  const parse = (assets: unknown[]) =>
+    parseRelease({ tag_name: "v0.3.2", assets })?.windowsDesktop;
+  assert.deepEqual(parse([asset]), { fileName: name, url: prefix + name, size: 42 });
+  assert.equal(parse([]), null);
+  assert.equal(parse([{ ...asset, browser_download_url: asset.browser_download_url.replace("/v0.3.2/", "/v0.3.1/") }]), null);
+});

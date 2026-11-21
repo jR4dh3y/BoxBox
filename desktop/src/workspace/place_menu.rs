@@ -1,0 +1,71 @@
+//! The right-click menu of a place: a breadcrumb, a sidebar entry or Trash, and
+//! the crumbs a long path hides behind "…".
+
+use gpui::{Context, Pixels, Point};
+
+use super::operations::PaneTarget;
+use super::Workspace;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Place {
+    /// A folder on a pane's provider.
+    Folder { pane: PaneTarget, path: String },
+    Trash,
+    /// An entry of the sidebar's Favorites, by index.
+    Favorite(usize),
+    /// A disk, phone or share in the sidebar's Devices.
+    Device(crate::devices::Volume),
+    /// A drive of this computer or a server, which can be renamed. `folder`
+    /// is its top folder on the window's own provider, for the folder items.
+    Drive { key: super::drive_names::DriveKey, own: String, folder: Option<String> },
+    /// The leading crumbs a long path does not have room for: label and path.
+    Hidden { pane: PaneTarget, crumbs: Vec<(String, String)> },
+    /// A table's header: the columns it can show.
+    Columns(crate::components::Table),
+    /// The selected items of the Trash page.
+    TrashItems,
+}
+
+pub(crate) struct PlaceMenu {
+    pub place: Place,
+    pub position: Point<Pixels>,
+}
+
+impl Workspace {
+    pub(crate) fn open_place_menu(&mut self, place: Place, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.place_menu = Some(PlaceMenu { place, position });
+        cx.notify();
+    }
+
+    /// Opens a folder of `pane`'s provider in a new tab.
+    pub(crate) fn open_in_new_tab(&mut self, pane: PaneTarget, path: String, cx: &mut Context<Self>) {
+        if let Some(pane) = self.pane_by_id(pane.0) {
+            let api = pane.api.clone();
+            self.open_tab_with(api, path, cx);
+        }
+    }
+
+    /// A middle-click on a folder: a new tab, behind the current one with Ctrl.
+    pub(crate) fn middle_click_folder(&mut self, pane: PaneTarget, path: String, event: &gpui::MouseDownEvent, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        let Some(api) = self.pane_by_id(pane.0).map(|pane| pane.api.clone()) else { return };
+        match event.modifiers.control {
+            true => self.open_tab_in_background(api, path, cx),
+            false => self.open_tab_with(api, path, cx),
+        }
+    }
+
+    /// Properties of a folder known only by its path.
+    pub(crate) fn folder_properties(&mut self, pane: PaneTarget, path: String, cx: &mut Context<Self>) {
+        let Some(api) = self.pane_by_id(pane.0).map(|pane| pane.api.clone()) else { return };
+        cx.spawn(async move |this, cx| {
+            let item = cx.background_executor().spawn(async move { api.stat(&path) }).await;
+            this.update(cx, |this, cx| match item {
+                Ok(item) => this.show_properties(pane, vec![item], cx),
+                Err(error) => this.report(Err(format!("{error:#}")), cx),
+            })
+            .ok();
+        })
+        .detach();
+    }
+}

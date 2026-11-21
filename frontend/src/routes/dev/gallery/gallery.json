@@ -1,0 +1,235 @@
+{
+	"width": 1280,
+	"height": 800,
+	"cells": [
+		{
+			"id": "button-primary",
+			"x": 16,
+			"y": 16,
+			"w": 120,
+			"h": 40,
+			"kind": "button",
+			"props": { "variant": "primary", "size": "md", "label": "Rename" }
+		},
+		{
+			"id": "button-secondary",
+			"x": 152,
+			"y": 16,
+			"w": 120,
+			"h": 40,
+			"kind": "button",
+			"props": { "variant": "secondary", "size": "md", "label": "Cancel" }
+		},
+		{
+			"id": "button-ghost",
+			"x": 288,
+			"y": 16,
+			"w": 120,
+			"h": 40,
+			"kind": "button",
+			"props": { "variant": "ghost", "size": "md", "label": "Clear" }
+		},
+		{
+			"id": "button-danger",
+			"x": 424,
+			"y": 16,
+			"w": 120,
+			"h": 40,
+			"kind": "button",
+			"props": { "variant": "danger", "size": "md", "label": "Delete" }
+		},
+		{
+			"id": "button-sm",
+			"x": 560,
+			"y": 16,
+			"w": 120,
+			"h": 40,
+			"kind": "button",
+			"props": { "variant": "secondary", "size": "sm", "label": "Open" }
+		},
+		{
+			"id": "button-lg",
+			"x": 696,
+			"y": 16,
+			"w": 140,
+			"h": 40,
+			"kind": "button",
+			"props": { "variant": "primary", "size": "lg", "label": "Connect" }
+		},
+		{
+			"id": "button-disabled",
+			"x": 852,
+			"y": 16,
+			"w": 120,
+			"h": 40,
+			"kind": "button",
+			"props": { "variant": "primary", "size": "md", "label": "Save", "disabled": true }
+		},
+		{
+			"id": "button-icon",
+			"x": 988,
+			"y": 16,
+			"w": 40,
+			"h": 40,
+			"kind": "button",
+			"props": { "variant": "ghost", "size": "icon", "icon": "refresh-cw" }
+		},
+
+		{
+			"id": "input-placeholder",
+			"x": 16,
+			"y": 72,
+			"w": 260,
+			"h": 40,
+			"kind": "input",
+			"props": { "placeholder": "Folder name" }
+		},
+		{
+			"id": "input-value",
+			"x": 292,
+			"y": 72,
+			"w": 260,
+			"h": 40,
+			"kind": "input",
+			"props": { "value": "Quarterly report.pdf" }
+		},
+		{
+			"id": "input-disabled",
+			"x": 568,
+			"y": 72,
+			"w": 260,
+			"h": 40,
+			"kind": "input",
+			"props": { "value": "Read only", "disabled": true }
+		},
+
+		{
+			"id": "toggle-on",
+			"x": 16,
+			"y": 128,
+			"w": 64,
+			"h": 32,
+			"kind": "toggle",
+			"props": { "checked": true }
+		},
+		{
+			"id": "toggle-off",
+			"x": 96,
+			"y": 128,
+			"w": 64,
+			"h": 32,
+			"kind": "toggle",
+			"props": { "checked": false }
+		},
+		{
+			"id": "toggle-disabled",
+			"x": 176,
+			"y": 128,
+			"w": 64,
+			"h": 32,
+			"kind": "toggle",
+			"props": { "checked": true, "disabled": true }
+		},
+		{
+			"id": "select",
+			"x": 256,
+			"y": 128,
+			"w": 220,
+			"h": 40,
+			"kind": "select",
+			"props": { "value": "Date modified" }
+		},
+		{
+			"id": "select-swatch",
+			"x": 492,
+			"y": 128,
+			"w": 220,
+			"h": 40,
+			"kind": "select",
+			"props": { "value": "From wallpaper", "swatch": "#e8c36a" }
+		},
+
+		{
+			"id": "progress-default",
+			"x": 16,
+			"y": 184,
+			"w": 240,
+			"h": 24,
+			"kind": "progress",
+			"props": { "value": 40, "size": "md", "variant": "default" }
+		},
+		{
+			"id": "progress-success",
+			"x": 272,
+			"y": 184,
+			"w": 240,
+			"h": 24,
+			"kind": "progress",
+			"props": { "value": 75, "size": "sm", "variant": "success" }
+		},
+		{
+			"id": "progress-danger",
+			"x": 528,
+			"y": 184,
+			"w": 240,
+			"h": 24,
+			"kind": "progress",
+			"props": { "value": 20, "size": "md", "variant": "danger" }
+		},
+
+		{
+			"id": "context-menu",
+			"x": 16,
+			"y": 232,
+			"w": 240,
+			"h": 260,
+			"kind": "context-menu",
+			"props": {
+				"items": [
+					{ "id": "open", "label": "Open", "icon": "external-link" },
+					{ "id": "open-with", "label": "Open with…", "icon": "app-window" },
+					{ "id": "sep1", "separator": true },
+					{ "id": "copy", "label": "Copy", "icon": "copy", "shortcut": "Ctrl+C" },
+					{ "id": "cut", "label": "Cut", "icon": "scissors", "shortcut": "Ctrl+X" },
+					{
+						"id": "paste",
+						"label": "Paste",
+						"icon": "clipboard-paste",
+						"shortcut": "Ctrl+V",
+						"disabled": true
+					},
+					{ "id": "sep2", "separator": true },
+					{ "id": "rename", "label": "Rename", "icon": "pencil", "shortcut": "F2" }
+				]
+			}
+		},
+		{
+			"id": "modal",
+			"x": 272,
+			"y": 232,
+			"w": 520,
+			"h": 260,
+			"kind": "modal",
+			"props": {
+				"title": "Rename",
+				"value": "Quarterly report.pdf",
+				"cancel": "Cancel",
+				"confirm": "Rename"
+			}
+		},
+		{
+			"id": "toasts",
+			"x": 808,
+			"y": 232,
+			"w": 380,
+			"h": 150,
+			"kind": "toasts",
+			"props": {
+				"toasts": [
+					{ "type": "success", "message": "Copied 3 items" },
+					{ "type": "error", "message": "Could not move report.pdf" }
+				]
+			}
+		}
+	]
+}

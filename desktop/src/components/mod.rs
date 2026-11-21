@@ -1,0 +1,84 @@
+//! Shared components, one per Svelte component in `frontend/src/lib/components`,
+//! with the same names, props and states. Views compose these and do not
+//! style controls themselves, so the two UIs cannot drift apart. The gallery
+//! (`--gallery`) renders each one from `frontend/src/routes/dev/gallery/gallery.json`
+//! for comparison against the web app.
+
+mod button;
+pub mod check;
+pub mod columns;
+mod context_menu;
+mod drive_card;
+mod ellipsis;
+mod file_grid;
+mod file_list;
+mod input;
+mod modal;
+pub mod motion;
+mod progress_bar;
+mod select;
+mod selectable_text;
+mod settings;
+mod sidebar;
+pub mod skeleton;
+mod text_field;
+mod tile_label;
+mod toast;
+mod toggle;
+mod tooltip;
+
+pub use button::{Button, ButtonSize, ButtonVariant};
+pub use columns::{Column, ColumnLayout, ColumnSpec, Table};
+pub use ellipsis::Ellipsis;
+pub use drive_card::{card_usage_bar, usage_bar, usage_text, DriveCard, DriveInfo, DriveState, Usage};
+pub use context_menu::{ContextMenu, MenuItem, MENU_MARGIN};
+pub use file_grid::{FileTile, GridMetrics};
+pub use file_list::{emblemed, rename_box, sideways, table_frame, EntryIcon, FileListHeader, FileRow, ListMetrics, Selection};
+pub use input::Input;
+pub use modal::{Modal, ModalSize};
+pub use progress_bar::{ProgressBar, ProgressSize, ProgressVariant};
+pub use select::Select;
+pub use selectable_text::{index_at, selectable_text, TextSelection};
+pub use settings::{settings_rows, SettingsRow, SettingsTab};
+pub use text_field::{bind_keys as text_field_bind_keys, InputEvent, TextField};
+pub use sidebar::{NavItem, SidebarSection};
+pub use toast::{Toast, ToastKind};
+
+/// How a control looks while the pointer holds it down: dimmed, as a press
+/// shows in GTK and Qt. Pair it with `.active` wherever a control has `.hover`.
+pub fn pressed(style: gpui::StyleRefinement) -> gpui::StyleRefinement {
+    use gpui::Styled as _;
+    style.opacity(0.7)
+}
+pub use toggle::Toggle;
+pub use tooltip::{Tooltip, UiFont};
+
+use gpui::{px, Styled};
+
+/// Tailwind's `rounded`: 0.25rem.
+pub const ROUNDED: f32 = 4.;
+/// `rounded-lg`: 0.5rem.
+pub const ROUNDED_LG: f32 = 8.;
+
+/// Tailwind's type scale, with the line height each class sets. `text-[13px]`
+/// and `text-[11px]` set no line height, so they inherit the body's 1.5.
+pub trait Type: Styled + Sized {
+    /// `text-xs`
+    fn type_xs(self) -> Self {
+        self.text_size(px(12.)).line_height(px(16.))
+    }
+    /// `text-[13px]`
+    fn type_13(self) -> Self {
+        self.text_size(px(13.)).line_height(px(19.5))
+    }
+    /// `text-sm`
+    fn type_sm(self) -> Self {
+        self.text_size(px(14.)).line_height(px(20.))
+    }
+    /// `text-[11px]`
+    fn type_11(self) -> Self {
+        self.text_size(px(11.)).line_height(px(16.5))
+    }
+}
+
+impl<T: Styled> Type for T {}
