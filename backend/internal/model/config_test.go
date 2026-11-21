@@ -249,12 +249,16 @@ func TestNASIdentitiesMatchEveryAccountThatCanSignIn(t *testing.T) {
 	}
 }
 
-func TestAccountsListsPasswordUsers(t *testing.T) {
-	accounts := (&ServerConfig{Users: map[string]string{"alice": "a", "bob": "b"}}).Accounts()
-	if len(accounts) != 2 {
+func TestAccountsListsPasswordAndSSOUsers(t *testing.T) {
+	cfg := &ServerConfig{
+		Users: map[string]string{"alice": "a", "bob": "b"},
+		OIDC:  OIDCConfig{IssuerURL: "https://auth.example.com", Users: []string{"carol"}},
+	}
+	accounts := cfg.Accounts()
+	if len(accounts) != 3 {
 		t.Fatalf("Accounts = %v", accounts)
 	}
-	for _, name := range []string{"alice", "bob"} {
+	for _, name := range []string{"alice", "bob", "carol"} {
 		if _, ok := accounts[name]; !ok {
 			t.Fatalf("Accounts = %v, missing %s", accounts, name)
 		}

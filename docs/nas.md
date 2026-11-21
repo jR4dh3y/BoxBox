@@ -32,7 +32,7 @@ BOXBOX_NAS_IDENTITY_alice=3000:3000:3001
 BOXBOX_NAS_IDENTITY_bob=3001:3001:3000
 ```
 
-Each identity must name a configured user. BoxBox refuses UID or GID `0`, and group `0`.
+Each identity must name an account that can sign in: a password user, or a single sign-on user in `oidc.users` (see [Single Sign-On](configuration.md#single-sign-on-oidc)). Write single sign-on names in lowercase, because identity names are read in lowercase. BoxBox refuses UID or GID `0`, and group `0`.
 
 Restart BoxBox after changing an identity. Jobs and uploads in progress stop, so an upload started as one identity never finishes as another.
 

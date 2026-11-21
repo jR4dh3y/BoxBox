@@ -122,13 +122,18 @@ func (n NASConfig) validate(accounts map[string]struct{}) error {
 	return nil
 }
 
-// Accounts is every name that can sign in. Settings keyed by account, such
-// as nas.identities, check against this set, so a new sign-in source (for
-// example accounts that only use single sign-on) belongs here.
+// Accounts is every name that can sign in: password users, and the accounts
+// that only use single sign-on. Settings keyed by account, such as
+// nas.identities, check against this set.
 func (c *ServerConfig) Accounts() map[string]struct{} {
-	accounts := make(map[string]struct{}, len(c.Users))
+	accounts := make(map[string]struct{}, len(c.Users)+len(c.OIDC.Users))
 	for username := range c.Users {
 		accounts[username] = struct{}{}
+	}
+	if c.OIDC.Enabled() {
+		for _, username := range c.OIDC.Users {
+			accounts[username] = struct{}{}
+		}
 	}
 	return accounts
 }
