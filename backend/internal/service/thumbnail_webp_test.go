@@ -35,7 +35,7 @@ func testWebPHuffmanTablesWaitForMemory(t *testing.T, fixture string, wantWidth 
 	if err := fsys.WriteFile("/data/media/tables.png", content, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	renderer := NewThumbnailService(files)
+	renderer := NewThumbnailService(files, NewThumbnailLimit())
 	func() {
 		// Leave 192 MiB available: enough for pixels, but not the decoder's construction buffers.
 		occupied := int64(maxThumbnailRenderBytes - (192 << 20))
@@ -102,7 +102,7 @@ func TestDuplicateWebPAlphaRejectedBeforePartialDecode(t *testing.T) {
 	}
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	_, err := NewThumbnailService(files).Render(context.Background(), "media/duplicate.webp", 224, 144, "")
+	_, err := NewThumbnailService(files, NewThumbnailLimit()).Render(context.Background(), "media/duplicate.webp", 224, 144, "")
 	runtime.ReadMemStats(&after)
 	if !errors.Is(err, ErrThumbnailUnsupported) {
 		t.Fatalf("duplicate alpha = %v", err)
@@ -163,7 +163,7 @@ func TestOpaqueWebPDoesNotWaitForLosslessTables(t *testing.T) {
 	defer thumbnailMemory.Release(occupied)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, err := NewThumbnailService(files).Render(ctx, "media/ordinary.webp", 224, 144, ""); err != nil {
+	if _, err := NewThumbnailService(files, NewThumbnailLimit()).Render(ctx, "media/ordinary.webp", 224, 144, ""); err != nil {
 		t.Fatal(err)
 	}
 }

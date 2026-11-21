@@ -1,14 +1,31 @@
 <script lang="ts">
 	import { authStore } from '#lib/stores/auth.svelte.js';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { tick } from 'svelte';
+	import { page } from '$app/state';
+	import { onMount, tick } from 'svelte';
 	import { ArrowRight } from 'lucide-svelte';
 	import { Spinner } from '#lib/components/ui/index.js';
+	import { SSO_LOGIN_PATH } from '#lib/api/authConfig.js';
+	import { LoginMethodsStore } from '#lib/auth/loginMethods.svelte.js';
+	import { ssoErrorMessage } from '#lib/auth/ssoError.js';
 
 	let username = $state('');
 	let password = $state('');
 	let passwordInput = $state<HTMLInputElement>();
+	const loginMethods = new LoginMethodsStore();
+	const methods = $derived(loginMethods.state.kind === 'ready' ? loginMethods.state.methods : null);
+	const providerName = $derived(
+		methods && methods.kind !== 'password' ? methods.providerName : null
+	);
+	// Read once: a failed single sign-on lands here with a code, which a reload should not replay.
+	let ssoError = $state(ssoErrorMessage(page.url.searchParams.get('sso_error')));
+	const error = $derived(authStore.error ?? ssoError);
+
+	onMount(() => {
+		void loginMethods.load();
+		if (page.url.searchParams.has('sso_error')) replaceState(resolve('login'), {});
+	});
 	const authBusy = $derived(authStore.isLoading || authStore.isRestoringSession);
 	const canSubmit = $derived(!authBusy && username.trim() !== '' && password !== '');
 	const fieldClass =
@@ -43,6 +60,7 @@
 	// An old error says nothing about the next attempt.
 	function clearError() {
 		if (authStore.error) authStore.clearError();
+		ssoError = null;
 	}
 </script>
 
@@ -61,60 +79,102 @@
 			{/await}
 		</div>
 
-		<!-- One box for both fields, like a desktop sign-in; the arrow submits. -->
-		<div
-			class="w-full overflow-hidden rounded border bg-surface-secondary {authStore.error
-				? 'border-danger'
-				: 'border-border-primary focus-within:border-border-focus'}"
-		>
-			<label for="username" class="sr-only">Username</label>
-			<input
-				id="username"
-				type="text"
-				placeholder="Username"
-				bind:value={username}
-				oninput={clearError}
-				autocomplete="username"
-				autocapitalize="none"
-				spellcheck="false"
-				required
-				disabled={authBusy}
-				class={fieldClass}
-				{@attach autofocus}
-			/>
-			<div class="flex border-t border-border-secondary">
-				<label for="password" class="sr-only">Password</label>
+		{#if loginMethods.state.kind === 'error'}
+			<div class="flex h-[74px] w-full flex-col items-center justify-center gap-2">
+				<p class="text-center text-[13px] text-danger" role="alert">
+					Couldn't load sign-in options.
+				</p>
+				<button
+					type="button"
+					class="cursor-pointer text-[13px] text-accent hover:underline disabled:opacity-60"
+					disabled={authBusy}
+					onclick={() => loginMethods.load()}>Retry</button
+				>
+			</div>
+		{:else if methods === null}
+			<!-- Holds the form's place, so a hidden password form never flashes or shifts the page. -->
+			<div class="h-[74px] w-full"></div>
+		{:else if methods.kind !== 'sso'}
+			<!-- One box for both fields, like a desktop sign-in; the arrow submits. -->
+			<div
+				class="w-full overflow-hidden rounded border bg-surface-secondary {error
+					? 'border-danger'
+					: 'border-border-primary focus-within:border-border-focus'}"
+			>
+				<label for="username" class="sr-only">Username</label>
 				<input
-					id="password"
-					bind:this={passwordInput}
-					type="password"
-					placeholder="Password"
-					bind:value={password}
+					id="username"
+					type="text"
+					placeholder="Username"
+					bind:value={username}
 					oninput={clearError}
-					autocomplete="current-password"
+					autocomplete="username"
+					autocapitalize="none"
+					spellcheck="false"
 					required
 					disabled={authBusy}
 					class={fieldClass}
+					{@attach autofocus}
 				/>
-				<button
-					type="submit"
-					class="flex w-9 shrink-0 cursor-pointer items-center justify-center text-accent transition-colors hover:bg-surface-elevated disabled:cursor-default disabled:bg-transparent disabled:text-text-muted"
-					disabled={!canSubmit}
-					aria-label="Sign in"
-					title="Sign in"
-				>
-					{#if authStore.isLoading}
-						<Spinner size="sm" />
-					{:else}
-						<ArrowRight size={16} />
-					{/if}
-				</button>
+				<div class="flex border-t border-border-secondary">
+					<label for="password" class="sr-only">Password</label>
+					<input
+						id="password"
+						bind:this={passwordInput}
+						type="password"
+						placeholder="Password"
+						bind:value={password}
+						oninput={clearError}
+						autocomplete="current-password"
+						required
+						disabled={authBusy}
+						class={fieldClass}
+					/>
+					<button
+						type="submit"
+						class="flex w-9 shrink-0 cursor-pointer items-center justify-center text-accent transition-colors hover:bg-surface-elevated disabled:cursor-default disabled:bg-transparent disabled:text-text-muted"
+						disabled={!canSubmit}
+						aria-label="Sign in"
+						title="Sign in"
+					>
+						{#if authStore.isLoading}
+							<Spinner size="sm" />
+						{:else}
+							<ArrowRight size={16} />
+						{/if}
+					</button>
+				</div>
 			</div>
-		</div>
+		{/if}
 
-		<!-- The line keeps its height, so an error does not push the form around. -->
-		<p class="m-0 mt-3 h-5 text-center text-[13px] text-danger" role="alert">
-			{authStore.error ?? ''}
+		{#if providerName !== null}
+			{#if methods?.kind === 'password-and-sso'}
+				<div class="my-3 flex w-full items-center gap-2 text-[12px] text-text-muted">
+					<span class="h-px flex-1 bg-border-secondary"></span>or<span
+						class="h-px flex-1 bg-border-secondary"
+					></span>
+				</div>
+			{/if}
+			<!-- A link, not a form: a form's redirect to the provider would break the form-action CSP. -->
+			<a
+				href={SSO_LOGIN_PATH}
+				rel="external"
+				onclick={(event) => {
+					if (authBusy) event.preventDefault();
+					else clearError();
+				}}
+				aria-disabled={authBusy}
+				class="flex h-9 w-full items-center justify-center rounded border border-border-primary bg-surface-secondary text-[13px] text-text-primary transition-colors hover:bg-surface-elevated focus:border-border-focus focus:outline-none {authBusy
+					? 'pointer-events-none opacity-60'
+					: ''}"
+			>
+				Sign in with {providerName}
+			</a>
+		{/if}
+
+		<!-- The line keeps its height, so an error does not push the form around; long ones wrap. -->
+		<p class="m-0 mt-3 min-h-5 text-center text-[13px] text-danger" role="alert">
+			{error ?? ''}
 		</p>
 	</form>
 </div>

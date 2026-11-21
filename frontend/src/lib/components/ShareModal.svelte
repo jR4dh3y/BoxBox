@@ -1,19 +1,23 @@
 <script lang="ts">
 	/**
-	 * ShareModal - list an item's share links and create new ones. Folders also choose recipient access.
+	 * ShareModal - list an item's share links and create new ones. Folders also choose recipient access;
+	 * expiring file links on writable mounts can delete the file when they expire.
 	 */
 	import { Button, Modal, Select, Spinner } from '#lib/components/ui/index.js';
 	import ShareLinkList from '#lib/components/ShareLinkList.svelte';
 	import { type FileInfo, type SharePermissionInput, type ShareRecord } from '#lib/api/index.js';
 	import { createShare, listShares } from '#lib/api/shareManagement.js';
+	import { offersDeleteOnExpiry } from '#lib/utils/shareAccess.js';
 
 	interface Props {
 		open?: boolean;
 		item?: FileInfo | null;
+		/** The item's mount is read-only, so its file cannot be deleted on expiry. */
+		readOnly: boolean;
 		onclose?: () => void;
 	}
 
-	let { open = false, item = null, onclose }: Props = $props();
+	let { open = false, item = null, readOnly, onclose }: Props = $props();
 
 	type FolderAccess = 'view' | 'upload' | 'upload-delete' | 'full';
 
@@ -39,16 +43,22 @@
 	let access = $state<FolderAccess>('view');
 	let expiry = $state('0');
 	let maxUploadMB = $state<number | undefined>(undefined);
+	let deleteOnExpiry = $state(false);
 	let createdId = $state<string | null>(null);
 
 	const itemShares = $derived(item ? shares.filter((share) => share.path === item.path) : []);
 	const allowsUpload = $derived(item?.isDir === true && access !== 'view');
+	const expiresInSeconds = $derived(expiry === '0' ? undefined : Number(expiry));
+	const canDeleteOnExpiry = $derived(
+		item !== null && offersDeleteOnExpiry({ isDir: item.isDir, readOnly, expiresInSeconds })
+	);
 
 	$effect(() => {
 		if (open && item) {
 			access = 'view';
 			expiry = '0';
 			maxUploadMB = undefined;
+			deleteOnExpiry = false;
 			createdId = null;
 			error = null;
 			void loadShares();
@@ -91,7 +101,8 @@
 				...(allowsUpload && maxUploadMB !== undefined
 					? { maxUploadBytes: maxUploadMB * 1024 * 1024 }
 					: {}),
-				...(expiry !== '0' ? { expiresInSeconds: Number(expiry) } : {})
+				...(expiresInSeconds !== undefined ? { expiresInSeconds } : {}),
+				...(canDeleteOnExpiry && deleteOnExpiry ? { deleteOnExpiry: true } : {})
 			});
 			createdId = created.id;
 			// Show the new link even if refreshing the list fails.
@@ -137,9 +148,29 @@
 			{/if}
 			<div>
 				<label for="share-expiry" class={labelClass}>Expires</label>
-				<Select id="share-expiry" options={EXPIRY_OPTIONS} bind:value={expiry} />
+				<!-- Switching to Never clears the choice, so a new expiry needs fresh intent. -->
+				<Select
+					id="share-expiry"
+					options={EXPIRY_OPTIONS}
+					bind:value={expiry}
+					onchange={(value) => {
+						if (value === '0') deleteOnExpiry = false;
+					}}
+				/>
 			</div>
 		</div>
+
+		{#if canDeleteOnExpiry}
+			<label class="mt-3 flex items-start gap-2 text-[13px] text-text-primary">
+				<input type="checkbox" class="mt-0.5 accent-accent" bind:checked={deleteOnExpiry} />
+				<span>
+					Delete file when share expires
+					<span class="block text-text-muted">
+						The file is permanently deleted unless it changed or another active link shares it.
+					</span>
+				</span>
+			</label>
+		{/if}
 
 		{#if allowsUpload}
 			<div class="mt-3">

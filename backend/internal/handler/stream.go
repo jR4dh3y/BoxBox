@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/config"
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/authcontext"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 	"github.com/rs/zerolog/log"
@@ -33,7 +34,7 @@ type StreamHandler struct {
 
 // NewStreamHandler creates a new stream handler
 func NewStreamHandler(fileService service.FileService, maxUploadMB int) *StreamHandler {
-	return NewStreamHandlerWithThumbnails(fileService, maxUploadMB, service.NewThumbnailService(fileService))
+	return NewStreamHandlerWithThumbnails(fileService, maxUploadMB, service.NewThumbnailService(fileService, service.NewThumbnailLimit()))
 }
 
 func NewStreamHandlerWithThumbnails(fileService service.FileService, maxUploadMB int, thumbnails service.ThumbnailService) *StreamHandler {
@@ -259,7 +260,7 @@ func (h *StreamHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.uploadService.AcceptChunk(r.Context(), path, service.UploadChunk{
+	result, err := h.uploadService.AcceptChunk(r.Context(), authcontext.Username(r.Context()), path, service.UploadChunk{
 		UploadID:    uploadReq.UploadID,
 		ChunkIndex:  uploadReq.ChunkIndex,
 		TotalChunks: uploadReq.TotalChunks,
@@ -460,7 +461,7 @@ func (h *StreamHandler) UploadStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, err := h.uploadService.Status(uploadID)
+	status, err := h.uploadService.Status(authcontext.Username(r.Context()), uploadID)
 	if errors.Is(err, service.ErrUploadNotFound) {
 		writeError(w, "Upload session not found", model.ErrCodeNotFound, http.StatusNotFound)
 		return

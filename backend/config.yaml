@@ -12,6 +12,20 @@ jwt_secret: "change-me-in-production-use-a-long-random-string"
 # users:
 #   admin: "$2b$12$..."
 
+# Optional single sign-on through an OpenID Connect provider.
+# See docs/configuration.md. Off while issuer_url is empty.
+# oidc:
+#   issuer_url: "https://auth.example.com"
+#   client_id: "boxbox"
+#   client_secret: ""
+#   # Full browser-visible URL; register the same one at the provider.
+#   redirect_url: "https://files.example.com/api/v1/auth/oidc/callback"
+#   provider_name: "SSO"
+#   # Trusted as the account name; pick a claim users cannot change.
+#   username_claim: "preferred_username"
+#   # Names that sign in only through the provider. No password hash.
+#   users: []
+
 # Auth endpoint rate limit per client IP.
 rate_limit_rps: 2
 

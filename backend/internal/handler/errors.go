@@ -2,9 +2,11 @@ package handler
 
 import (
 	"errors"
+	"io/fs"
 	"net/http"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
 	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/validator"
 	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
@@ -25,6 +27,10 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrNotDirectory, "Path is not a directory", model.ErrCodeValidationError, http.StatusBadRequest},
 	{service.ErrNotFile, "Path is not a file", model.ErrCodeValidationError, http.StatusBadRequest},
 	{service.ErrPermissionDenied, "Permission denied", model.ErrCodePermissionDenied, http.StatusForbidden},
+	{service.ErrNoFileAccess, "This account has no NAS identity. Ask an administrator to map it.", model.ErrCodePermissionDenied, http.StatusForbidden},
+	// The kernel refused the account's own identity, as NAS mode intends.
+	{fs.ErrPermission, "Permission denied", model.ErrCodePermissionDenied, http.StatusForbidden},
+	{filesystem.ErrWorkerUnavailable, "File access is temporarily unavailable. Try again.", model.ErrCodeInternalError, http.StatusServiceUnavailable},
 	{service.ErrMountPointNotFound, "Mount point not found", model.ErrCodeAccessDenied, http.StatusForbidden},
 	{service.ErrInvalidOperation, "Invalid operation", model.ErrCodeValidationError, http.StatusBadRequest},
 	{service.ErrDirectoryTooLarge, "Directory exceeds server entry limit", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
@@ -53,6 +59,7 @@ var serviceErrorMappings = []ErrorMapping{
 
 	// Share service errors
 	{service.ErrShareNotFound, "Share not found", model.ErrCodeNotFound, http.StatusNotFound},
+	{service.ErrShareTargetChanged, "The file changed while the link was created. Try again.", model.ErrCodeConflict, http.StatusConflict},
 	{service.ErrShareTooLarge, "Upload exceeds the size limit", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
 
 	// Wallpaper errors
@@ -84,6 +91,31 @@ var serviceErrorMappings = []ErrorMapping{
 	{service.ErrTokenExpired, "Token has expired", model.ErrCodeTokenInvalid, http.StatusUnauthorized},
 	{service.ErrTokenRevoked, "Token has been revoked", model.ErrCodeTokenInvalid, http.StatusUnauthorized},
 	{service.ErrSessionRecoveryRequired, "Your session could not be safely recovered. Please sign in again.", model.ErrCodeSessionRecoveryRequired, http.StatusUnauthorized},
+	{service.ErrPasswordLoginDisabled, "Password sign-in is disabled", model.ErrCodePasswordLoginDisabled, http.StatusForbidden},
+	{service.ErrSSOAccountNotAllowed, "Account is not allowed to sign in", model.ErrCodeAccessDenied, http.StatusForbidden},
+}
+
+// ssoErrorCodes maps a failed single sign-on to the code the login page shows; the browser
+// arrives by navigation, so failures are redirects, not JSON.
+var ssoErrorCodes = []struct {
+	err  error
+	code string
+}{
+	{service.ErrOIDCUnavailable, "provider_unavailable"},
+	{service.ErrOIDCFlow, "flow_expired"},
+	{service.ErrOIDCDenied, "denied"},
+	{service.ErrOIDCProvider, "provider_error"},
+	{service.ErrOIDCIdentity, "identity_invalid"},
+	{service.ErrSSOAccountNotAllowed, "not_allowed"},
+}
+
+func ssoErrorCode(err error) string {
+	for _, mapping := range ssoErrorCodes {
+		if errors.Is(err, mapping.err) {
+			return mapping.code
+		}
+	}
+	return "server_error"
 }
 
 // HandleServiceError converts service errors to HTTP responses
