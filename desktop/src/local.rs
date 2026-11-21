@@ -330,6 +330,25 @@ impl LocalFiles {
         Some(path)
     }
 
+    /// The folder that holds place `name`, such as `home` for Downloads, by the
+    /// path Home or a drive gives it. `None` for Home, a drive or a listing.
+    pub fn place_parent(&self, name: &str) -> Option<String> {
+        let place = self.mounts.iter().find(|mount| mount.point.name == name && mount.point.kind == RootKind::Place && name != "home")?;
+        let parent = place.path.parent()?;
+        let holder = self
+            .mounts
+            .iter()
+            .filter(|mount| mount.point.name == "home" || mount.point.kind == RootKind::Drive)
+            .filter(|mount| parent.starts_with(&mount.path))
+            .max_by_key(|mount| mount.path.components().count())?;
+        let mut path = holder.point.name.clone();
+        for part in parent.strip_prefix(&holder.path).ok()?.components() {
+            path.push('/');
+            path.push_str(&part.as_os_str().to_string_lossy());
+        }
+        Some(path)
+    }
+
     /// Like `virtual_path`, but a final link or junction names itself, not its
     /// target, so moving the entry moves the link. Only Windows resolves links there.
     pub fn virtual_entry_path(&self, real: &Path) -> Option<String> {

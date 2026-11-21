@@ -169,7 +169,8 @@ fn desktop_workflow(cx: &mut TestAppContext) {
     let row = cx.debug_bounds("row-0-0").expect("created file must render a row");
     cx.simulate_mouse_down(row.center(), MouseButton::Right, Modifiers::default());
     assert!(cx.debug_bounds("file-context-menu").is_some(), "right click must render the menu");
-    cx.simulate_click(row.center(), Modifiers::default());
+    // The menu opens with its corner at the pointer, so a click there may land on it.
+    cx.simulate_click(row.origin + gpui::point(gpui::px(24.), gpui::px(16.)), Modifiers::default());
     view.read_with(cx, |workspace, _| assert!(workspace.context_menu.is_none(), "a click outside must close the menu"));
     cx.simulate_keystrokes("f3");
     view.read_with(cx, |workspace, _| assert_eq!(workspace.split_panes.len(), 1));

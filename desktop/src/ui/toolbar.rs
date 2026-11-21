@@ -25,11 +25,28 @@ pub(crate) struct Crumb {
 /// Empty space kept after the crumbs, which a click turns into the location field.
 const PATH_BAR_SPACE: f32 = 12.;
 
+/// The "/" between crumbs, which takes a drag for the crumb before it.
+fn separator(zone: Option<(DropTarget, gpui::WeakEntity<Workspace>)>) -> gpui::Div {
+    let zone_name = match &zone {
+        Some((DropTarget::Crumb { path, .. }, _)) => Some(path.clone()),
+        _ => None,
+    };
+    let glyph = div()
+        .debug_selector(move || match &zone_name {
+            Some(path) => format!("crumb-separator-{path}"),
+            None => "crumb-separator".into(),
+        }).flex_none().h_full().flex().items_center().px(px(2.)).text_xs_tw().text_color(c(TEXT_MUTED)).child("/");
+    match zone {
+        Some((zone, workspace)) => drop_zone(glyph, zone, workspace),
+        None => glyph,
+    }
+}
+
 fn hidden_crumbs(widths: &[f32], available: f32) -> usize {
-    const SEPARATOR: f32 = 4. + 7. + 4. + 4.;
+    const SEPARATOR: f32 = 7. + 4.;
     const OVERFLOW: f32 = 15. + SEPARATOR;
     let need = |from: usize| -> f32 {
-        let shown: f32 = widths[from..].iter().map(|width| width + 4.).sum::<f32>() + SEPARATOR * (widths.len() - from - 1) as f32;
+        let shown: f32 = widths[from..].iter().map(|width| width + 8.).sum::<f32>() + SEPARATOR * (widths.len() - from - 1) as f32;
         shown + if from > 0 { OVERFLOW } else { 0. }
     };
     (0..widths.len().saturating_sub(1)).find(|&from| need(from) <= available).unwrap_or(widths.len().saturating_sub(1))
@@ -41,6 +58,24 @@ fn pressable(id: &'static str, enabled: bool, button: gpui::Stateful<gpui::Div>)
         .fill(c(SURFACE_ELEVATED))
         .rounded(4.)
         .disabled(!enabled)
+}
+
+fn under(path: &str, root: &str) -> bool {
+    path == root || path.strip_prefix(root).is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// `root`, then a crumb for each folder of `rest` below it.
+fn trail(root: Crumb, rest: &str) -> Vec<Crumb> {
+    let prefix = root.path.clone();
+    trail_segments(vec![root], prefix, rest)
+}
+
+fn trail_segments(mut crumbs: Vec<Crumb>, mut prefix: String, rest: &str) -> Vec<Crumb> {
+    for segment in rest.split('/').filter(|segment| !segment.is_empty()) {
+        prefix = if prefix.is_empty() { segment.to_string() } else { format!("{prefix}/{segment}") };
+        crumbs.push(Crumb { label: segment.to_string(), path: prefix.clone() });
+    }
+    crumbs
 }
 
 #[cfg(test)]
@@ -57,39 +92,38 @@ mod tests {
 
 impl Workspace {
     /// Root label, then the path below it, like `EditablePathBar`'s breadcrumbs.
+    /// A place such as Downloads starts with the folders that hold it, from Home
+    /// or the drive, so the trail is the folder's whole path.
     pub(crate) fn breadcrumbs(&self, target: PaneTarget) -> Vec<Crumb> {
         let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
         let path = &pane.path;
-        let under = |root: &str| path == root || path.starts_with(&format!("{root}/"));
         // A mounted device or share starts the trail with its name, not its mount folder.
         let volume = self
             .devices
             .volumes()
             .filter_map(|volume| Some((self.volume_name(volume).to_string(), pane.api.virtual_path(volume.mount_point()?)?)))
-            .filter(|(_, root)| under(root))
+            .filter(|(_, root)| under(path, root))
             .max_by_key(|(_, root)| root.len());
-        let root = volume.or_else(|| match &pane.roots {
-            crate::pane::Load::Loaded(roots) => {
-                roots.iter().find(|root| under(&root.name)).map(|root| (self.root_name(&pane.api, root).to_string(), root.name.clone()))
-            }
-            _ => None,
-        });
-        let (mut crumbs, rest, mut prefix) = match root {
-            Some((label, root)) => (vec![Crumb { label, path: root.clone() }], &path[root.len()..], root),
-            None => (Vec::new(), path.as_str(), String::new()),
-        };
-        for segment in rest.split('/').filter(|segment| !segment.is_empty()) {
-            prefix = if prefix.is_empty() {
-                segment.to_string()
-            } else {
-                format!("{prefix}/{segment}")
-            };
-            crumbs.push(Crumb {
-                label: segment.to_string(),
-                path: prefix.clone(),
-            });
+        if let Some((label, root)) = volume {
+            return trail(Crumb { label, path: root.clone() }, &path[root.len()..]);
         }
+        let Some((label, root)) = self.provider_root(target, path) else {
+            return trail_segments(Vec::new(), String::new(), path);
+        };
+        let above = pane.api.place_parent(&root).and_then(|parent| {
+            let (label, holder) = self.provider_root(target, &parent)?;
+            Some(trail(Crumb { label, path: holder.clone() }, &parent[holder.len()..]))
+        });
+        let mut crumbs = above.unwrap_or_default();
+        crumbs.extend(trail(Crumb { label, path: root.clone() }, &path[root.len()..]));
         crumbs
+    }
+
+    /// The drive or place of the pane's provider that holds `path`, and its name.
+    fn provider_root(&self, target: PaneTarget, path: &str) -> Option<(String, String)> {
+        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
+        let crate::pane::Load::Loaded(roots) = &pane.roots else { return None };
+        roots.iter().find(|root| under(path, &root.name)).map(|root| (self.root_name(&pane.api, root).to_string(), root.name.clone()))
     }
 
     fn nav_button(
@@ -142,8 +176,8 @@ impl Workspace {
                 .border_1()
                 .border_color(c(BORDER_FOCUS))
                 .bg(self.chrome_background())
+                .h(px(28.))
                 .px(px(8.))
-                .py(px(4.))
                 .text_13()
                 .text_color(c(TEXT_PRIMARY))
                 .child(self.location_field.clone())
@@ -176,8 +210,9 @@ impl Workspace {
             .border_1()
             .border_color(c(BORDER_PRIMARY))
             .bg(self.chrome_background())
-            .px(px(8.))
-            .py(px(4.))
+            .h(px(28.))
+            .pl(px(8.))
+            .pr(px(4.))
             .child(
                 div()
                     .id("overview")
@@ -271,7 +306,8 @@ impl Workspace {
             }
         };
         let hover = self.drop_hover(cx).cloned();
-        let mut row = div().relative().flex().flex_1().min_w_0().items_center().gap(px(4.)).overflow_hidden().whitespace_nowrap();
+        // No gaps: the crumbs and their separators fill the row, so a drag held anywhere on it is over one.
+        let mut row = div().relative().flex().flex_1().min_w_0().h_full().overflow_hidden().whitespace_nowrap();
         if hidden > 0 {
             let listed: Vec<(String, String)> = crumbs[..hidden].iter().map(|crumb| (crumb.label.clone(), crumb.path.clone())).collect();
             row = row
@@ -292,25 +328,30 @@ impl Workspace {
                             this.open_place_menu(crate::workspace::place_menu::Place::Hidden { pane: target, crumbs: listed.clone() }, event.position, cx);
                         })),
                 )
-                .child(div().text_xs_tw().text_color(c(TEXT_MUTED)).child("/"));
+                .child(separator(None));
         }
         for (index, crumb) in crumbs.iter().enumerate().skip(hidden) {
-            if index > hidden {
-                row = row.child(div().flex_none().text_xs_tw().text_color(c(TEXT_MUTED)).child("/"));
-            }
             let path = crumb.path.clone();
             let zone = DropTarget::Crumb { pane: target, path: path.clone() };
+            if index > hidden {
+                // A drag on the separator is over the crumb before it.
+                let before = DropTarget::Crumb { pane: target, path: crumbs[index - 1].path.clone() };
+                row = row.child(separator(Some((before, cx.entity().downgrade()))));
+            }
             let dropping = hover.as_ref() == Some(&zone);
             let (open, tab, menu) = (path.clone(), path.clone(), path.clone());
             let element = div()
                 .id(("crumb", index))
                 .debug_selector(move || format!("crumb-{}-{index}", target.0))
                 .min_w_0()
-                .px(px(2.))
+                .h_full()
+                .flex()
+                .items_center()
+                .px(px(4.))
                 .rounded(px(4.))
                 .text_13()
                 .whitespace_nowrap()
-                .truncate()
+                .overflow_hidden()
                 .when(dropping, |crumb| crumb.bg(alpha(ACCENT, 0.25)))
                 .map(|crumb| match index == last {
                     // Clicking the current folder, like the space after it, edits the path.
@@ -330,7 +371,7 @@ impl Workspace {
                     this.open_place_menu(crate::workspace::place_menu::Place::Folder { pane: target, path: menu.clone() }, event.position, cx);
                 }))
                 .tooltip(Tooltip::text(full_path(index)))
-                .child(crumb.label.clone());
+                .child(div().min_w_0().truncate().child(crumb.label.clone()));
             row = row.child(drop_zone(element, zone, cx.entity().downgrade()));
         }
         // Empty space after the crumbs edits the path, as in Nautilus and Explorer.
@@ -538,7 +579,8 @@ impl Workspace {
                     .child(pressable(
                         "back",
                         trash || pane.can_go_back(),
-                        self.nav_button("back", "chevron-left", 18., trash || pane.can_go_back())
+                        drop_zone(self.nav_button("back", "chevron-left", 18., trash || pane.can_go_back()), DropTarget::Back(target), cx.entity().downgrade())
+                            .when(self.drop_hover(cx) == Some(&DropTarget::Back(target)), |button| button.bg(alpha(ACCENT, 0.25)))
                             .debug_selector(|| "nav-back".into())
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.back(&Back, window, cx)),

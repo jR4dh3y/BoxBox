@@ -92,7 +92,7 @@ Most valuable first.
 | `desktop/BrowseWorkspace.svelte` | tabs, split panes | keep | ✓ `ui/tabs.rs`, `workspace.rs` | ✓ same |
 | `BrowseBrowser.svelte` | one pane: toolbar, view, drops, keys | keep | ✓ `ui/browser.rs` | ✓ `ui/browser.rs` |
 | `Toolbar.svelte` | back/forward, location, search, actions | keep | ✓ `ui/toolbar.rs` | ✓ `ui/toolbar.rs`; disabled buttons are translucent white, so they show on a wallpaper too |
-| `EditablePathBar.svelte` | breadcrumbs ↔ text location | keep | ✓ `location.rs`, `ui/text_input.rs` | ✓ `render_path_bar` with `TextField` |
+| `EditablePathBar.svelte` | breadcrumbs ↔ text location | keep | ✓ `location.rs`, `ui/text_input.rs` | ✓ `render_path_bar` with `TextField`; a place such as Downloads starts with the folders above it (Home / Downloads / …); crumbs and their separators take drops across the bar's height, and a drag held on Back goes back |
 | `PathEditor.svelte` | location suggestions | keep | ✗ | ✗ |
 | `SearchBar.svelte` | search field | keep | ✓ `search.rs` | ✓ `TextField` per pane; matching, ranking and the walk are in `search.rs` and `local/search.rs` (see Search below) |
 | `AddMenu.svelte` | **+** menu: new file, folder, upload | keep (upload → copy in) | ◐ context menu only | ✓ `ui/toolbar.rs` on `ContextMenu`; local folders say “Copy files here…” |

@@ -30,6 +30,8 @@ pub(crate) enum DropTarget {
     Trash,
     /// A breadcrumb of a pane's location. Held there while dragging, it opens.
     Crumb { pane: PaneTarget, path: String },
+    /// A pane's Back button. Held there while dragging, the pane goes back; it takes no drop.
+    Back(PaneTarget),
 }
 
 /// How long a drag rests on a breadcrumb, folder or place before it opens, as
@@ -165,6 +167,12 @@ impl Workspace {
                 let (pane, path) = match target {
                     DropTarget::Crumb { pane, path } | DropTarget::Folder { pane, path } => (pane, path),
                     DropTarget::Place { path } => (this.active_pane, path),
+                    DropTarget::Back(pane) => {
+                        this.travel(pane, true, 1, cx);
+                        // Still resting there, it goes back again.
+                        this.drag_drop.hover = None;
+                        return;
+                    }
                     DropTarget::Pane(_) | DropTarget::Trash => return,
                 };
                 if this.pane_by_id(pane.0).is_some_and(|found| found.path != path) {
@@ -243,7 +251,7 @@ impl Workspace {
                     this.drag_drop.settling = false;
                     let candidate = this.drag_drop.candidate.take();
                     if this.drag_drop.hover != candidate {
-                        if let Some(target @ (DropTarget::Crumb { .. } | DropTarget::Folder { .. } | DropTarget::Place { .. })) = &candidate {
+                        if let Some(target @ (DropTarget::Crumb { .. } | DropTarget::Folder { .. } | DropTarget::Place { .. } | DropTarget::Back(_))) = &candidate {
                             this.open_on_hover(target.clone(), cx);
                         }
                         this.drag_drop.hover = candidate;
@@ -276,6 +284,7 @@ impl Workspace {
         let allowed = match (origin, &target) {
             (Origin::Window, DropTarget::Trash) => self.drag_drop.source.as_ref().is_some_and(|source| source.api.is_local()),
             (Origin::Outside, DropTarget::Trash) => true,
+            (_, DropTarget::Back(pane)) => self.pane_by_id(pane.0).is_some_and(|pane| pane.can_go_back()),
             (Origin::Window, _) => self.drop_allowed(&target, request(window.modifiers())),
             // The Overview holds drives, not files; any folder takes files from outside.
             (Origin::Outside, _) => self.drop_destination(&target).is_some_and(|(_, _, folder)| takes_files(&folder)),
@@ -296,7 +305,7 @@ impl Workspace {
                 self.pane_by_id(pane.0).map(|found| (*pane, found.api.clone(), path.clone()))
             }
             DropTarget::Place { path } => Some((self.active_pane, self.active_api(), path.clone())),
-            DropTarget::Trash => None,
+            DropTarget::Trash | DropTarget::Back(_) => None,
         }
     }
 
@@ -318,9 +327,9 @@ impl Workspace {
     pub(crate) fn drop_items(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (source, target) = (self.drag_drop.source.take(), self.drag_drop.hover.take());
         let (Some(source), Some(target)) = (source, target) else { return };
-        if target == DropTarget::Trash {
-            self.trash_dropped(source.api, source.items, cx);
-            return;
+        match target {
+            DropTarget::Trash => return self.trash_dropped(source.api, source.items, cx),
+            _ => {}
         }
         let request = request(window.modifiers());
         let Some((pane, destination, folder)) = self.drop_destination(&target) else { return };
@@ -427,9 +436,9 @@ impl Workspace {
     /// GPUI does not say which action the other app offered.
     pub(crate) fn drop_external(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         let Some(target) = self.drag_drop.hover.take() else { return };
-        if target == DropTarget::Trash {
-            self.trash_external(paths, cx);
-            return;
+        match target {
+            DropTarget::Trash => return self.trash_external(paths, cx),
+            _ => {}
         }
         let Some((pane, destination, folder)) = self.drop_destination(&target).filter(|(_, _, folder)| takes_files(folder)) else { return };
         cx.spawn(async move |this, cx| {

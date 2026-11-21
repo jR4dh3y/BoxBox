@@ -243,6 +243,14 @@ impl Api {
         }
     }
 
+    /// The folder that holds a place such as Downloads, as Home or a drive reaches it.
+    pub fn place_parent(&self, name: &str) -> Option<String> {
+        match &self.provider {
+            Provider::Local(local) => local.place_parent(name),
+            Provider::Remote(_) => None,
+        }
+    }
+
     /// Like `virtual_path`, but a final link or junction names itself, not its target.
     pub fn virtual_entry_path(&self, real: &std::path::Path) -> Option<String> {
         match &self.provider {

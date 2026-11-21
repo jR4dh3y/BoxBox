@@ -1994,3 +1994,40 @@ fn the_location_field_closes_when_its_pane_goes_elsewhere(cx: &mut TestAppContex
     cx.simulate_keystrokes("ctrl-l");
     view.read_with(cx, |workspace, cx| assert!(!workspace.location_field.read(cx).text().ends_with("/vids")));
 }
+
+#[gpui::test]
+fn a_place_shows_the_folders_that_hold_it_in_the_path_bar(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["Desktop/sub/a.txt"]);
+    view.update(cx, |workspace, cx| workspace.navigate("desktop/sub".into(), cx));
+    cx.run_until_parked();
+    let crumbs = view.read_with(cx, |workspace, _| workspace.breadcrumbs(PaneTarget(0)).into_iter().map(|crumb| (crumb.label, crumb.path)).collect::<Vec<_>>());
+    let expected = [("Home", "home"), ("Desktop", "desktop"), ("sub", "desktop/sub")].map(|(label, path)| (label.to_string(), path.to_string()));
+    assert_eq!(crumbs, expected);
+}
+
+#[gpui::test]
+fn a_drag_on_a_separator_drops_in_the_crumb_before_and_resting_on_back_goes_back(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a/b/x.txt", "a/b/y.txt"]);
+    for path in ["home/a", "home/a/b"] {
+        view.update(cx, |workspace, cx| workspace.navigate(path.into(), cx));
+        cx.run_until_parked();
+    }
+    drag(cx, "row-0-0", "crumb-separator-home/a");
+    wait_for_transfers(&view, cx);
+    assert!(fixture.root.join("a/x.txt").is_file(), "the separator after a takes drops for a");
+
+    let back = cx.debug_bounds("nav-back").unwrap().center();
+    let row = cx.debug_bounds("row-0-0").unwrap().center();
+    cx.simulate_mouse_down(row, MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(row + gpui::point(gpui::px(10.), gpui::px(10.)), Some(MouseButton::Left), Modifiers::default());
+    cx.simulate_mouse_move(back, Some(MouseButton::Left), Modifiers::default());
+    cx.simulate_mouse_move(back + gpui::point(gpui::px(1.), gpui::px(0.)), Some(MouseButton::Left), Modifiers::default());
+    cx.update(|_, _| {});
+    cx.executor().advance_clock(std::time::Duration::from_millis(800));
+    cx.run_until_parked();
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().path, "home/a", "resting on Back goes back"));
+    // Back takes no drop itself.
+    cx.simulate_mouse_up(back, MouseButton::Left, Modifiers::default());
+    wait_for_transfers(&view, cx);
+    assert!(fixture.root.join("a/b/y.txt").is_file());
+}
