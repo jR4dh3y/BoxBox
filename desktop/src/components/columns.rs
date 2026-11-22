@@ -1,8 +1,8 @@
-//! The columns of a details table and their widths, as Thunar's details view
-//! keeps them: each column has a width in pixels, dragging a border sizes the
-//! column to its left and moves the ones after it, and the table scrolls
-//! sideways when the columns are wider than the pane. Name fills the room left
-//! until it is sized by hand; then the last column does.
+//! The columns of a details table and their widths. Name takes the room the
+//! others leave, so the last column always ends at the table's right edge, as
+//! in Nautilus. Every other column has a width in pixels; dragging a border
+//! sizes the column to its right, Name giving or taking the difference, and
+//! the table scrolls sideways when the columns are wider than the pane.
 
 use std::collections::HashMap;
 
@@ -84,33 +84,13 @@ impl Table {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ColumnLayout {
     pub shown: Vec<Column>,
-    /// Columns sized by hand; others keep their default width, and Name fills.
+    /// Columns sized by hand; others keep their default width. Name fills.
     pub widths: HashMap<Column, f32>,
-    /// How wide the pane was when a column was last sized. In a narrower pane
-    /// Name gives up the difference, so the Details panel or a split moves the
-    /// columns over instead of hiding them; widening a column in the same pane
-    /// still scrolls the table, so the border follows the pointer.
-    #[serde(default)]
-    pub fitted: Option<f32>,
 }
 
 impl ColumnLayout {
     pub fn new(table: Table) -> Self {
-        Self { shown: table.shown_by_default(), widths: HashMap::new(), fitted: None }
-    }
-
-    /// The layout as drawn in a pane `pane` pixels wide: a sized Name narrower
-    /// by the width the pane lost since it was sized, down to its minimum. A
-    /// layout saved without its pane width is taken to have fit it exactly.
-    pub fn fit(&self, table: Table, pane: f32) -> Self {
-        let mut layout = self.clone();
-        if let Some(name) = self.widths.get(&Column::Name) {
-            let fitted = self.fitted.unwrap_or_else(|| self.columns(table).into_iter().map(|column| self.width(column)).sum());
-            let lost = (fitted - pane).max(0.);
-            layout.widths.insert(Column::Name, (name - lost).max(MIN_NAME).round());
-        }
-        layout.fitted = Some(pane);
-        layout
+        Self { shown: table.shown_by_default(), widths: HashMap::new() }
     }
 
     /// Name, then the shown columns this table has, each once.
@@ -126,23 +106,9 @@ impl ColumnLayout {
 
     /// How wide each column is drawn, Name first.
     pub fn specs(&self, table: Table) -> Vec<ColumnSpec> {
-        let columns = self.columns(table);
-        let last = columns.len() - 1;
-        let name_sized = self.widths.contains_key(&Column::Name);
-        columns
-            .iter()
-            .enumerate()
-            .map(|(index, &column)| {
-                let width = self.width(column);
-                let width = match (column, index == last) {
-                    (Column::Name, _) if !name_sized => Width::Fill(MIN_NAME),
-                    // Only Name: it is the whole row.
-                    (Column::Name, true) => Width::Fill(width),
-                    (_, true) if name_sized => Width::Fill(width),
-                    _ => Width::Fixed(width),
-                };
-                ColumnSpec { column, width }
-            })
+        self.columns(table)
+            .into_iter()
+            .map(|column| ColumnSpec { column, width: if column == Column::Name { Width::Fill(MIN_NAME) } else { Width::Fixed(self.width(column)) } })
             .collect()
     }
 
@@ -150,31 +116,26 @@ impl ColumnLayout {
         self.widths.get(&column).copied().filter(|width| width.is_finite()).unwrap_or(column.default_width()).max(column.min_width())
     }
 
-    /// The layout with `column`'s right border dragged to `x` pixels from the
-    /// table's left edge, in a table drawn `table_width` pixels wide.
+    /// The layout with the border right of `column` dragged to `x` pixels from
+    /// the table's left edge, in a table drawn `table_width` pixels wide. The
+    /// columns right of the border keep their place against the right edge, so
+    /// the one just right of it takes the move, down to its minimum; Name keeps
+    /// its own.
     pub fn resized(&self, table: Table, column: Column, x: f32, table_width: f32) -> Self {
         let mut layout = self.clone();
-        layout.fitted = Some(self.fitted.unwrap_or(table_width));
-        // Sizing another column pins Name where it is drawn, as GTK pins every
-        // column once one is sized: otherwise a wider column would narrow Name
-        // and slide away from the pointer. The last column fills from then on.
-        if column != Column::Name && !layout.widths.contains_key(&Column::Name) {
-            let fixed: f32 = self.specs(table).iter().filter_map(|spec| spec.fixed()).sum();
-            layout.widths.insert(Column::Name, (table_width - fixed).max(MIN_NAME).round());
-        }
-        let left: f32 = layout
-            .specs(table)
-            .iter()
-            .take_while(|spec| spec.column != column)
-            .map(|spec| match spec.width {
-                Width::Fixed(width) | Width::Fill(width) => width,
-            })
-            .sum();
-        layout.widths.insert(column, (x - left).max(column.min_width()).round());
+        layout.widths.remove(&Column::Name);
+        let columns = self.columns(table);
+        let Some(border) = columns.iter().position(|&shown| shown == column) else { return layout };
+        let Some(&sized) = columns.get(border + 1) else { return layout };
+        let after: f32 = columns[border + 2..].iter().map(|&column| self.width(column)).sum();
+        let before: f32 = columns[1..=border].iter().map(|&column| self.width(column)).sum();
+        let right = table_width.max(self.min_width(table));
+        let x = x.max(MIN_NAME + before);
+        layout.widths.insert(sized, (right - after - x).max(sized.min_width()).round());
         layout
     }
 
-    /// The layout with `column` back at its default width; Name fills again.
+    /// The layout with `column` back at its default width.
     pub fn reset_width(&self, column: Column) -> Self {
         let mut layout = self.clone();
         layout.widths.remove(&column);
@@ -196,10 +157,7 @@ impl ColumnLayout {
 
     /// The narrowest the table is drawn before it scrolls sideways.
     pub fn min_width(&self, table: Table) -> f32 {
-        self.specs(table).iter().map(|spec| spec.fixed().unwrap_or(match spec.width {
-            Width::Fill(min) => min,
-            Width::Fixed(width) => width,
-        })).sum()
+        MIN_NAME + self.columns(table).into_iter().skip(1).map(|column| self.width(column)).sum::<f32>()
     }
 }
 
@@ -217,15 +175,6 @@ pub struct ColumnSpec {
     pub width: Width,
 }
 
-impl ColumnSpec {
-    fn fixed(&self) -> Option<f32> {
-        match self.width {
-            Width::Fixed(width) => Some(width),
-            Width::Fill(_) => None,
-        }
-    }
-}
-
 /// A layout from the settings file, or a table's default when it cannot be
 /// read, so a bad entry does not lose the other settings.
 pub fn lenient<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<ColumnLayout>, D::Error> {
@@ -238,68 +187,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn name_fills_until_it_is_sized() {
-        let layout = ColumnLayout::new(Table::Files);
-        let specs = layout.specs(Table::Files);
+    fn name_fills_and_the_last_column_ends_at_the_edge() {
+        let specs = ColumnLayout::new(Table::Files).specs(Table::Files);
         assert_eq!(specs.iter().map(|spec| spec.column).collect::<Vec<_>>(), [Column::Name, Column::Size, Column::Type, Column::Modified]);
         assert_eq!(specs[0].width, Width::Fill(MIN_NAME));
         assert_eq!(specs[3].width, Width::Fixed(176.));
     }
 
     #[test]
-    fn dragging_a_border_sizes_only_the_column_to_its_left() {
-        let layout = ColumnLayout::new(Table::Files).fit(Table::Files, 1000.);
-        // 1000px: Name fills 1000 - (96 + 160 + 176) = 568; Size spans 568..664.
-        let wider = layout.resized(Table::Files, Column::Size, 700., 1000.);
-        assert_eq!(wider.widths.get(&Column::Size), Some(&132.));
-        assert_eq!(wider.specs(Table::Files)[0].width, Width::Fixed(568.), "Name stays where it was drawn");
+    fn a_border_sizes_the_column_to_its_right() {
+        // 1000px: Modified spans 824..1000, Type 664..824, Size 568..664.
+        let layout = ColumnLayout::new(Table::Files);
+        let wider = layout.resized(Table::Files, Column::Type, 800., 1000.);
+        assert_eq!(wider.widths.get(&Column::Modified), Some(&200.));
         assert_eq!(wider.specs(Table::Files)[2].width, Width::Fixed(160.), "Type keeps its width and moves");
-        // Dragging on, the border keeps following the pointer.
-        let further = wider.resized(Table::Files, Column::Size, 900., 1000.);
-        assert_eq!(further.widths.get(&Column::Size), Some(&332.));
+        // Name's border sizes Size.
+        let name = layout.resized(Table::Files, Column::Name, 500., 1000.);
+        assert_eq!(name.widths.get(&Column::Size), Some(&164.));
+        // A width saved for Name from before is dropped.
+        let mut saved = layout.clone();
+        saved.widths.insert(Column::Name, 1214.);
+        assert!(!saved.resized(Table::Files, Column::Type, 800., 1000.).widths.contains_key(&Column::Name));
     }
 
     #[test]
-    fn sizing_name_hands_the_spare_room_to_the_last_column() {
-        let layout = ColumnLayout::new(Table::Files).resized(Table::Files, Column::Name, 300., 1000.);
-        let specs = layout.specs(Table::Files);
-        assert_eq!(specs[0].width, Width::Fixed(300.));
-        assert_eq!(specs[3].width, Width::Fill(176.));
-        assert_eq!(layout.reset_width(Column::Name).specs(Table::Files)[0].width, Width::Fill(MIN_NAME));
-    }
-
-    #[test]
-    fn columns_keep_a_minimum_and_the_table_its_width() {
-        let layout = ColumnLayout::new(Table::Files).resized(Table::Files, Column::Type, 0., 1000.);
-        assert_eq!(layout.widths.get(&Column::Type), Some(&MIN_COLUMN));
-        // Name was pinned at the 568px it was drawn.
-        assert_eq!(layout.min_width(Table::Files), 568. + 96. + MIN_COLUMN + 176.);
-    }
-
-    #[test]
-    fn a_narrower_pane_takes_its_room_from_name() {
-        let sized = ColumnLayout::new(Table::Files).fit(Table::Files, 1000.).resized(Table::Files, Column::Size, 700., 1000.);
-        assert_eq!(sized.fitted, Some(1000.));
-        // A Details panel takes 300px: Name gives them up, the others keep theirs.
-        let narrow = sized.fit(Table::Files, 700.);
-        assert_eq!(narrow.specs(Table::Files)[0].width, Width::Fixed(268.));
-        assert_eq!(narrow.specs(Table::Files)[1].width, Width::Fixed(132.));
-        assert_eq!(narrow.fit(Table::Files, 100.).widths.get(&Column::Name), Some(&MIN_NAME));
-        // Closed again, Name is back; a wider window leaves it be.
-        assert_eq!(sized.fit(Table::Files, 1000.), sized);
-        assert_eq!(sized.fit(Table::Files, 1400.).specs(Table::Files)[0].width, Width::Fixed(568.));
-        // A drag in the narrow pane follows the pointer from where Name is drawn.
-        let typed = narrow.resized(Table::Files, Column::Type, 600., 700.);
-        assert_eq!(typed.widths.get(&Column::Type), Some(&200.));
-        assert_eq!(typed.fitted, Some(700.));
-    }
-
-    #[test]
-    fn a_layout_saved_without_its_pane_width_fits_the_pane() {
-        let saved: ColumnLayout = serde_json::from_str(r#"{"shown": ["Size", "Type", "Modified"], "widths": {"Name": 955.0, "Size": 94.0, "Type": 286.0}}"#).unwrap();
-        // Its columns add up to 1511px; in 1200 Name gives up the 311 it lacks.
-        assert_eq!(saved.fit(Table::Files, 1200.).widths.get(&Column::Name), Some(&644.));
-        assert_eq!(saved.fit(Table::Files, 1600.).widths.get(&Column::Name), Some(&955.));
+    fn columns_keep_a_minimum_and_name_its_own() {
+        let layout = ColumnLayout::new(Table::Files);
+        assert_eq!(layout.resized(Table::Files, Column::Type, 2000., 1000.).widths.get(&Column::Modified), Some(&MIN_COLUMN));
+        // Name stops at its minimum; Size takes no more than that leaves.
+        assert_eq!(layout.resized(Table::Files, Column::Name, 0., 1000.).widths.get(&Column::Size), Some(&(1000. - 176. - 160. - MIN_NAME)));
+        assert_eq!(layout.min_width(Table::Files), MIN_NAME + 96. + 160. + 176.);
+        assert_eq!(layout.resized(Table::Files, Column::Modified, 900., 1000.), layout, "the last border is the table's edge");
     }
 
     #[test]
@@ -312,7 +230,7 @@ mod tests {
 
     #[test]
     fn a_column_another_table_owns_is_not_drawn() {
-        let layout = ColumnLayout { shown: vec![Column::Deleted, Column::Size], widths: HashMap::new(), fitted: None };
+        let layout = ColumnLayout { shown: vec![Column::Deleted, Column::Size], widths: HashMap::new() };
         assert_eq!(layout.columns(Table::Files), [Column::Name, Column::Size]);
     }
 

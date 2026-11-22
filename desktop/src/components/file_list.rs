@@ -144,8 +144,9 @@ impl RenderOnce for FileListHeader {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let Self { table, layout, sorted, pane, on_sort, on_resize, on_menu, background } = self;
         let specs = layout.specs(table);
-        let last = specs.len() - 1;
-        let grip = |column: Column, on_resize: ResizeHandler, layout: ColumnLayout| {
+        let next: Vec<Option<Column>> = specs.iter().skip(1).map(|spec| Some(spec.column)).chain([None]).collect();
+        // A border sizes the column to its right; the table's right edge stays put.
+        let grip = |column: Column, sized: Column, on_resize: ResizeHandler, layout: ColumnLayout| {
             div()
                 .id(("column-border", column as usize))
                 .group("column-border")
@@ -159,11 +160,11 @@ impl RenderOnce for FileListHeader {
                 .cursor(gpui::CursorStyle::ResizeColumn)
                 .child(div().w(px(1.)).h(px(16.)).my_auto().bg(c(BORDER_PRIMARY)).group_hover("column-border", |style| style.h_full().bg(c(BORDER_FOCUS))))
                 .on_drag(ColumnDrag { pane, column }, |_, _, _, cx| cx.new(|_| NoPreview))
-                // A double click puts the column back at its own width.
+                // A double click puts the column it sizes back at its own width.
                 .on_click(move |event, window, cx| {
                     cx.stop_propagation();
                     if event.click_count() == 2 {
-                        on_resize(layout.reset_width(column), window, cx);
+                        on_resize(layout.reset_width(sized), window, cx);
                     }
                 })
         };
@@ -234,7 +235,7 @@ impl RenderOnce for FileListHeader {
                     )
                     .when_some(on_sort.clone(), |cell, handler| cell.on_click(move |_, window, cx| handler(column, window, cx)))
                     // The last column's right border is the table's edge.
-                    .when_some(on_resize.clone().filter(|_| index < last), |cell, on_resize| cell.child(grip(column, on_resize, layout.clone())))
+                    .when_some(on_resize.clone().zip(next[index]), |cell, (on_resize, sized)| cell.child(grip(column, sized, on_resize, layout.clone())))
             }))
     }
 }

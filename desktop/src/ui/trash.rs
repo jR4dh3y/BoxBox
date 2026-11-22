@@ -40,7 +40,7 @@ impl Workspace {
             .on_click(cx.listener(|this, _, _, cx| this.restore_trash(this.selected_trash(), cx)))
     }
 
-    pub(crate) fn render_trash(&self, window: &gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_trash(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let message = |text: SharedString, glyph: Option<&str>| {
             div()
                 .flex()
@@ -60,7 +60,7 @@ impl Workspace {
             Load::Failed(error) => message(error.clone().into(), Some("alert-triangle")),
             Load::Loaded(items) if items.is_empty() => message("Trash is empty".into(), Some("trash-2")),
             Load::Loaded(items) => {
-                let layout = self.table_columns(Table::Trash, self.active_pane, window);
+                let layout = self.preferences.columns(Table::Trash);
                 let specs = layout.specs(Table::Trash);
                 let header = self
                     .table_header(Table::Trash, layout.clone(), self.active_pane, cx)
