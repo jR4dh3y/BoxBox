@@ -133,7 +133,7 @@
 		actions.createDialog.open ||
 			actions.renameDialog.open ||
 			actions.deleteDialog.open ||
-			actions.propertiesDialog.open
+			actions.propertiesItems !== null
 	);
 	const onFolderHover = createHoverIntent(
 		data.prefetchDirectory,
@@ -223,6 +223,10 @@
 				break;
 			case 'details':
 				toggleDetails();
+				break;
+			case 'properties':
+				if (selectedItems.length === 0) return;
+				void actions.handleContextMenuAction('properties', selectedItems);
 				break;
 			case 'paste':
 				if (!data.canCreate) return;
@@ -516,7 +520,6 @@
 			createDialog={actions.createDialog}
 			renameDialog={actions.renameDialog}
 			deleteDialog={actions.deleteDialog}
-			propertiesDialog={actions.propertiesDialog}
 			onCreateNameChange={actions.setCreateName}
 			onRenameNameChange={actions.setRenameName}
 			onCreateConfirm={() => void actions.confirmCreate()}
@@ -525,7 +528,6 @@
 			onCloseCreate={actions.closeCreate}
 			onCloseRename={actions.closeRename}
 			onCloseDelete={actions.closeDelete}
-			onCloseProperties={actions.closeProperties}
 		/>
 	{:catch}
 		<LoadError label="dialog" onClose={closeDialogs} />
@@ -549,6 +551,15 @@
 			path={actions.openWithFile.path}
 			onclose={actions.closeOpenWith}
 		/>{/await}
+{/if}
+
+{#if actions.propertiesItems}
+	{@const items = actions.propertiesItems}
+	{#await import('#lib/components/PropertiesDialog.svelte') then { default: PropertiesDialog }}
+		<PropertiesDialog {items} {locationLabel} onclose={actions.closeProperties} />
+	{:catch}
+		<LoadError label="Properties" onClose={actions.closeProperties} />
+	{/await}
 {/if}
 
 {#if historyMenu}

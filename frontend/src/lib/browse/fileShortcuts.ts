@@ -12,7 +12,8 @@ export type FileShortcut =
 	| 'zoom-out'
 	| 'zoom-reset'
 	| 'shortcuts'
-	| 'details';
+	| 'details'
+	| 'properties';
 
 /** Text fields keep their own keys; selection checkboxes do not. */
 export function isTextEntryTarget(target: EventTarget | null): boolean {
@@ -29,7 +30,8 @@ export function getFileShortcut(
 ): FileShortcut | null {
 	const key = event.key.toLowerCase();
 	const command = event.ctrlKey || event.metaKey;
-	if (event.altKey) return null;
+	if (event.altKey)
+		return !command && !event.shiftKey && event.key === 'Enter' ? 'properties' : null;
 	if (command) {
 		// Plus is Shift+= on most layouts, so zoom ignores Shift.
 		if (key === '+' || key === '=') return 'zoom-in';

@@ -1,20 +1,16 @@
 <script lang="ts">
 	import type { FileInfo } from '#lib/api/files.js';
-	import { formatFileDate, formatFileSize } from '#lib/utils/format.js';
-	import { getFileTypeDescription } from '#lib/utils/fileTypes.js';
 	import { Button, Input, Modal } from '#lib/components/ui/index.js';
 
 	type CreateDialog = { open: boolean; type: 'file' | 'directory'; name: string };
 	import { isNativePath } from '#lib/api/desktop.js';
 	import type { RenameDialog } from '#lib/browse/actions.svelte.js';
 	type DeleteDialog = { open: boolean; items: FileInfo[] };
-	type PropertiesDialog = { open: boolean; file: FileInfo | null };
 
 	let {
 		createDialog,
 		renameDialog,
 		deleteDialog,
-		propertiesDialog,
 		onCreateNameChange,
 		onRenameNameChange,
 		onCreateConfirm,
@@ -22,13 +18,11 @@
 		onDeleteConfirm,
 		onCloseCreate,
 		onCloseRename,
-		onCloseDelete,
-		onCloseProperties
+		onCloseDelete
 	}: {
 		createDialog: CreateDialog;
 		renameDialog: RenameDialog;
 		deleteDialog: DeleteDialog;
-		propertiesDialog: PropertiesDialog;
 		onCreateNameChange: (name: string) => void;
 		onRenameNameChange: (name: string) => void;
 		onCreateConfirm: () => void;
@@ -37,7 +31,6 @@
 		onCloseCreate: () => void;
 		onCloseRename: () => void;
 		onCloseDelete: () => void;
-		onCloseProperties: () => void;
 	} = $props();
 
 	function inputValue(event: Event): string {
@@ -109,30 +102,4 @@
 			>{deleteToTrash ? 'Move to Trash' : 'Delete'}</Button
 		>
 	{/snippet}
-</Modal>
-
-<Modal open={propertiesDialog.open} title="Properties" onclose={onCloseProperties}>
-	{#if propertiesDialog.file}
-		{@const file = propertiesDialog.file}
-		<dl class="m-0 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-[13px]">
-			<dt class="text-text-secondary">Name</dt>
-			<dd class="m-0 break-all text-text-primary">{file.name}</dd>
-			<dt class="text-text-secondary">Type</dt>
-			<dd class="m-0 text-text-primary">
-				{file.isDir ? 'Folder' : getFileTypeDescription(file.name)}
-			</dd>
-			<dt class="text-text-secondary">Location</dt>
-			<dd class="m-0 break-all text-text-primary">
-				{file.path.slice(0, Math.max(0, file.path.lastIndexOf('/'))) || '/'}
-			</dd>
-			{#if !file.isDir}
-				<dt class="text-text-secondary">Size</dt>
-				<dd class="m-0 text-text-primary">{formatFileSize(file.size)}</dd>
-			{/if}
-			<dt class="text-text-secondary">Modified</dt>
-			<dd class="m-0 text-text-primary">{formatFileDate(file.modTime)}</dd>
-			<dt class="text-text-secondary">Permissions</dt>
-			<dd class="m-0 font-mono text-text-primary">{file.permissions}</dd>
-		</dl>
-	{/if}
 </Modal>

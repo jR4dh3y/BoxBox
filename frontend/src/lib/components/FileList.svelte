@@ -224,7 +224,7 @@
 		}
 
 		const item = items[activeItemIndex];
-		if (event.key === 'Enter' && item) {
+		if (event.key === 'Enter' && !event.altKey && item) {
 			event.preventDefault();
 			onItemClick?.(item);
 			return;

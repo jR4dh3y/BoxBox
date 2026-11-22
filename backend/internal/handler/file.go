@@ -29,6 +29,7 @@ func (h *FileHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/stats", h.GetDriveStats)
 	r.With(middleware.JSONCompression).Get("/list/*", h.ListPath)
 	r.Get("/peek/*", h.PeekPath)
+	r.Post("/properties", h.Properties)
 	r.Get("/*", h.GetPath)
 	r.Post("/*", h.CreateItem)
 	r.Put("/*", h.Rename)
@@ -70,6 +71,31 @@ func (h *FileHandler) PeekPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, PeekResponse{Items: items}, http.StatusOK)
+}
+
+// PropertiesRequest names the items Properties describes.
+type PropertiesRequest struct {
+	Paths []string `json:"paths"`
+}
+
+// Properties returns owners, dates and totals for a selection.
+// POST /api/v1/files/properties
+func (h *FileHandler) Properties(w http.ResponseWriter, r *http.Request) {
+	var request PropertiesRequest
+	if err := decodeJSONBody(w, r, &request); err != nil {
+		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	if len(request.Paths) == 0 || len(request.Paths) > service.MaxPropertiesPaths {
+		writeError(w, "Choose between 1 and 1000 items", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	properties, err := h.fileService.Properties(r.Context(), request.Paths)
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	writeJSON(w, properties, http.StatusOK)
 }
 
 // MountPointResponse represents a mount point in API responses

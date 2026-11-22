@@ -96,6 +96,38 @@ Response:
 }
 ```
 
+## Properties of a Selection
+
+```http
+POST /api/v1/files/properties
+```
+
+```json
+{ "paths": ["home/photos", "home/notes.txt"] }
+```
+
+Between 1 and 1000 paths. Each item's owner, group and access and change times come from the server's own file system, so they are left out where it does not keep them, as on Windows or through a NAS worker. The totals walk every folder, hidden entries included and links not followed; a walk past 200,000 entries stops and sets `complete` to `false`, so the totals are a lower bound.
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "path": "home/photos",
+      "owner": "alice",
+      "group": "users",
+      "accessed": "2026-05-13T09:00:00Z",
+      "changed": "2026-05-13T09:00:00Z"
+    }
+  ],
+  "files": 214,
+  "folders": 9,
+  "bytes": 801233920,
+  "complete": true
+}
+```
+
 ## Get File Info
 
 ```http

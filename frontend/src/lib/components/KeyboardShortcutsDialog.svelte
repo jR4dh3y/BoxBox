@@ -21,6 +21,7 @@
 				['Ctrl/Cmd + A', 'Select all'],
 				['Escape', 'Clear selection or close a dialog'],
 				['Enter', 'Open selected item'],
+				['Alt + Enter', 'Properties of the selection'],
 				['Ctrl/Cmd + C · X · V', 'Copy · Cut · Paste'],
 				['Ctrl/Cmd + Shift + N', 'New folder'],
 				['F2', 'Rename selected item'],

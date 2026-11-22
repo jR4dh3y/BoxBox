@@ -163,6 +163,6 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 					}
 				]
 			: []),
-		{ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple }
+		{ id: 'properties', label: 'Properties', icon: Info, shortcut: 'Alt+Enter' }
 	];
 }

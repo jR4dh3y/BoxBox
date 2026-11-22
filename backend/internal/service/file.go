@@ -52,6 +52,8 @@ type DirectoryReader interface {
 	List(ctx context.Context, path string) (*model.FileList, error)
 	// Peek returns a few entries of a directory for its grid tile, pictures first
 	Peek(ctx context.Context, path string, includeHidden bool) ([]model.FileInfo, error)
+	// Properties returns owners and dates of items and totals with their folders walked
+	Properties(ctx context.Context, paths []string) (*model.PropertiesResponse, error)
 	// GetInfo returns metadata for a file or directory
 	GetInfo(ctx context.Context, path string) (*model.FileInfo, error)
 	// EntryInfo is GetInfo without following a final symlink
@@ -303,6 +305,72 @@ func (s *fileService) Peek(ctx context.Context, path string, includeHidden bool)
 		))
 	}
 	return items, nil
+}
+
+const (
+	// MaxPropertiesPaths bounds one Properties request.
+	MaxPropertiesPaths = 1000
+	// propertiesWalkEntries bounds the walk; past it the totals are a lower bound.
+	propertiesWalkEntries = 200_000
+)
+
+// Properties returns each item's owner, group and dates, where the platform tells them, and
+// the files, folders and bytes the items hold, every folder walked, links not followed.
+func (s *fileService) Properties(ctx context.Context, paths []string) (*model.PropertiesResponse, error) {
+	if len(paths) == 0 || len(paths) > MaxPropertiesPaths {
+		return nil, ErrInvalidOperation
+	}
+	response := &model.PropertiesResponse{Items: make([]model.ItemProperties, 0, len(paths)), Complete: true}
+	walker := NewWalker(s.fs)
+	budget := propertiesWalkEntries
+	for _, path := range paths {
+		_, fsPath, err := s.mounts.resolve(path, readExisting)
+		if err != nil {
+			return nil, err
+		}
+		info, err := s.fs.Lstat(fsPath)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil, ErrPathNotFound
+			}
+			return nil, err
+		}
+		props := model.ItemProperties{Path: path}
+		ownership(info, &props)
+		response.Items = append(response.Items, props)
+		if !info.IsDir() {
+			response.Files++
+			response.Bytes += info.Size()
+			continue
+		}
+		response.Folders++
+		if !response.Complete || budget <= 0 {
+			response.Complete = false
+			continue
+		}
+		visited := 0
+		err = walker.Walk(ctx, fsPath, WalkOptions{
+			IncludeHidden: true, SkipUnreadable: true, LoadMetadata: true, MaxEntries: budget, IncludeSymlinks: true,
+		}, func(entry WalkEntry) error {
+			visited++
+			if entry.DirEntry.IsDir() {
+				response.Folders++
+			} else {
+				response.Files++
+				if entry.Metadata != nil && entry.Metadata.Mode().IsRegular() {
+					response.Bytes += entry.Metadata.Size()
+				}
+			}
+			return nil
+		})
+		budget -= visited
+		if errors.Is(err, ErrDirectoryTooLarge) {
+			response.Complete = false
+		} else if err != nil {
+			return nil, err
+		}
+	}
+	return response, nil
 }
 
 // GetInfo returns metadata for a file or directory

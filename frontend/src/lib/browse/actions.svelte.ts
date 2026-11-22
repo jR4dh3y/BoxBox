@@ -77,10 +77,8 @@ export function useBrowseActions(
 		newName: ''
 	});
 	let deleteDialog = $state<{ open: boolean; items: FileInfo[] }>({ open: false, items: [] });
-	let propertiesDialog = $state<{ open: boolean; file: FileInfo | null }>({
-		open: false,
-		file: null
-	});
+	// The items Properties describes; null when it is closed.
+	let propertiesItems = $state.raw<FileInfo[] | null>(null);
 	// The folder whose look is being chosen; null when Customize Folder is closed.
 	let customizeFolder = $state<FileInfo | null>(null);
 	// The file or folder being shared; null when the share dialog is closed.
@@ -222,8 +220,8 @@ export function useBrowseActions(
 		get deleteDialog() {
 			return deleteDialog;
 		},
-		get propertiesDialog() {
-			return propertiesDialog;
+		get propertiesItems() {
+			return propertiesItems;
 		},
 		get shareItem() {
 			return shareItem;
@@ -258,7 +256,7 @@ export function useBrowseActions(
 			deleteDialog = { open: false, items: [] };
 		},
 		closeProperties() {
-			propertiesDialog = { open: false, file: null };
+			propertiesItems = null;
 		},
 		closeShare() {
 			shareItem = null;
@@ -365,7 +363,7 @@ export function useBrowseActions(
 					if (only && supportsServerTransfer(items)) shareItem = only;
 					break;
 				case 'properties':
-					if (only) propertiesDialog = { open: true, file: only };
+					if (items.length > 0) propertiesItems = items;
 					break;
 				case 'customize':
 					if (only?.isDir) customizeFolder = only;
