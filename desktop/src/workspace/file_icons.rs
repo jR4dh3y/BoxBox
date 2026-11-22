@@ -197,16 +197,14 @@ impl Workspace {
     /// Starts making the icon of a pane's entry, drawn at `size`, if no one has.
     pub(crate) fn request_entry_icon(&mut self, target: PaneTarget, index: usize, size: f32, cx: &mut Context<Self>) {
         let Some(pane) = self.pane_by_id(target.0) else { return };
-        let Some(item) = pane.items.get(index) else { return };
-        let keys = self.file_icons.keys(&pane.api, item, size, &self.preferences);
+        let Some(item) = pane.items.get(index).cloned() else { return };
         let api = pane.api.clone();
-        for key in keys.into_iter().flatten() {
-            self.request_icon(key, &api, cx);
-        }
+        self.request_item_icon(&api, &item, size, cx);
     }
 
     /// Starts making the icons of `item` drawn at `size`, if no one has.
     pub(crate) fn request_item_icon(&mut self, api: &Arc<Api>, item: &FileInfo, size: f32, cx: &mut Context<Self>) {
+        self.resolve_folder_look(api, item, cx);
         let keys = self.file_icons.keys(api, item, size, &self.preferences);
         for key in keys.into_iter().flatten() {
             self.request_icon(key, api, cx);

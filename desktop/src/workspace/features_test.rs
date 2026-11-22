@@ -2108,7 +2108,7 @@ fn a_folder_tile_shows_what_it_holds_pictures_first(cx: &mut TestAppContext) {
 #[gpui::test]
 fn a_customised_folder_shows_its_icon_and_colours_by_every_path(cx: &mut TestAppContext) {
     use crate::components::Emblem;
-    let (view, cx, _fixture) = open(cx, &["Desktop/sub/a.txt"]);
+    let (view, cx, fixture) = open(cx, &["Desktop/sub/a.txt"]);
     view.update(cx, |workspace, cx| {
         workspace.preferences.file_icons = crate::workspace::IconStyle::Tinted;
         workspace.navigate("home/Desktop".into(), cx);
@@ -2134,6 +2134,22 @@ fn a_customised_folder_shows_its_icon_and_colours_by_every_path(cx: &mut TestApp
     let customised = (Some(0x22c55e), Some(Emblem { name: "gamepad-2", tint: Some(0xf5f5f4) }));
     assert_eq!(style(&view, cx, "home/Desktop/sub"), customised);
     assert_eq!(style(&view, cx, "desktop/sub"), customised, "the Desktop place reaches the same folder");
+    // And so does a link to Desktop, once the folder is drawn through it.
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(fixture.root.join("Desktop"), fixture.root.join("shortcut")).unwrap();
+        view.update(cx, |workspace, cx| workspace.navigate("home/shortcut".into(), cx));
+        for _ in 0..500 {
+            settle(cx);
+            if style(&view, cx, "home/shortcut/sub") == customised {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(style(&view, cx, "home/shortcut/sub"), customised, "a link reaches the same folder");
+        view.update(cx, |workspace, cx| workspace.navigate("home/Desktop".into(), cx));
+        cx.run_until_parked();
+    }
 
     // The desktop's icon theme keeps its own folders: no look and no menu entry.
     view.update(cx, |workspace, cx| {

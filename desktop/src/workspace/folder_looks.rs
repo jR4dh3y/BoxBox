@@ -3,12 +3,14 @@
 //! colour. Drawn on BoxBox's folder; the desktop's icon theme keeps its own
 //! folders, so with it selected these are not shown. Kept in the config dir by
 //! the folder's real path on this computer, so every path that reaches it shows
-//! the same look, and by server and path on a server.
+//! the same look, and by server and path on a server. The real path follows
+//! links, so it is resolved off the UI thread when a folder is drawn; until
+//! then the path as written stands in, which is the same one without a link.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use gpui::{Context, Window};
+use gpui::{Context, Task, Window};
 
 use super::{IconStyle, Workspace};
 use crate::api::{Api, FileInfo};
@@ -52,42 +54,71 @@ pub(crate) struct FolderLook {
     pub emblem_color: Option<u32>,
 }
 
-#[derive(Default, serde::Serialize, serde::Deserialize)]
-#[serde(transparent)]
-pub(crate) struct FolderLooks(HashMap<String, FolderLook>);
+/// Past this many resolved folders the record starts again.
+const RESOLVED: usize = 4096;
+
+#[derive(Default)]
+pub(crate) struct FolderLooks {
+    looks: HashMap<String, FolderLook>,
+    /// Each local folder's path as written, and its real path once resolved.
+    real: HashMap<String, String>,
+    resolving: HashSet<String>,
+}
 
 impl FolderLooks {
     pub fn load() -> Self {
-        std::fs::read(crate::persist::FOLDER_LOOKS.path()).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+        let looks = std::fs::read(crate::persist::FOLDER_LOOKS.path()).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default();
+        Self { looks, ..Self::default() }
     }
 
     fn encode(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap_or_default()
+        serde_json::to_vec(&self.looks).unwrap_or_default()
     }
 
     fn get(&self, api: &Api, path: &str) -> Option<&FolderLook> {
-        if self.0.is_empty() {
+        if self.looks.is_empty() {
             return None;
         }
-        self.0.get(&key(api, path)?)
+        self.looks.get(&self.key(api, path)?)
     }
 
     /// A default look is stored as nothing, so the file holds only what differs.
-    fn set(&mut self, api: &Api, path: &str, look: FolderLook) {
-        let Some(key) = key(api, path) else { return };
+    fn set(&mut self, key: String, look: FolderLook) {
         if look == FolderLook::default() {
-            self.0.remove(&key);
+            self.looks.remove(&key);
         } else {
-            self.0.insert(key, look);
+            self.looks.insert(key, look);
+        }
+    }
+
+    /// The folder's real path when it is known, else its path as written.
+    fn key(&self, api: &Api, path: &str) -> Option<String> {
+        match Written::of(api, path)? {
+            Written::Server(key) => Some(key),
+            Written::Local(written) => Some(self.real.get(&written).cloned().unwrap_or(written)),
         }
     }
 }
 
-fn key(api: &Api, path: &str) -> Option<String> {
-    match api.server_url() {
-        Some(url) => Some(format!("{url} {path}")),
-        None => api.lexical_path(path).map(|real| real.display().to_string()),
+/// A folder as its path names it.
+enum Written {
+    /// On a server, which has no links to follow.
+    Server(String),
+    Local(String),
+}
+
+impl Written {
+    fn of(api: &Api, path: &str) -> Option<Self> {
+        match api.server_url() {
+            Some(url) => Some(Self::Server(format!("{url} {path}"))),
+            None => api.lexical_path(path).map(|written| Self::Local(written.display().to_string())),
+        }
     }
+}
+
+/// Runs off the UI thread.
+fn resolve(api: &Api, path: &str) -> Option<String> {
+    api.local_path(path).ok().flatten().map(|real| real.display().to_string())
 }
 
 /// The Customize Folder dialog: the look being chosen, saved on Done.
@@ -151,17 +182,66 @@ impl Workspace {
         }
     }
 
-    /// Done: keeps the chosen look.
+    /// Resolves the real path of a local folder being drawn, once, while any
+    /// folder has a look, so a look saved through one path shows through another.
+    pub(crate) fn resolve_folder_look(&mut self, api: &Arc<Api>, folder: &FileInfo, cx: &mut Context<Self>) {
+        if !self.folder_looks_shown() || !folder.is_dir || self.folder_looks.looks.is_empty() {
+            return;
+        }
+        let looks = &mut self.folder_looks;
+        let Some(Written::Local(written)) = Written::of(api, &folder.path) else { return };
+        if looks.real.contains_key(&written) || !looks.resolving.insert(written.clone()) {
+            return;
+        }
+        let (api, path) = (Arc::clone(api), folder.path.clone());
+        let real = cx.background_executor().spawn(async move { resolve(&api, &path) });
+        cx.spawn(async move |this, cx| {
+            let real = real.await;
+            this.update(cx, |this, cx| {
+                let looks = &mut this.folder_looks;
+                looks.resolving.remove(&written);
+                let real = real.unwrap_or_else(|| written.clone());
+                if looks.real.len() >= RESOLVED {
+                    looks.real.clear();
+                }
+                if real != written && looks.looks.contains_key(&real) {
+                    cx.notify();
+                }
+                looks.real.insert(written, real);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Done: keeps the chosen look, by the folder's real path.
     pub(crate) fn save_customize_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(dialog) = self.customize.take() else { return };
-        self.folder_looks.set(&dialog.api, &dialog.folder.path, dialog.look);
-        self.persist(&crate::persist::FOLDER_LOOKS, self.folder_looks.encode(), cx, |this, result, cx| {
-            if let Err(error) = result {
-                this.report(Err(format!("Could not save the folder's look: {error:#}")), cx);
-            }
-        });
         self.focus_handle.focus(window);
         cx.notify();
+        let Some(written) = Written::of(&dialog.api, &dialog.folder.path) else { return };
+        let real = match written {
+            Written::Server(key) => Task::ready(key),
+            Written::Local(written) => {
+                let (api, path) = (dialog.api.clone(), dialog.folder.path.clone());
+                cx.background_executor().spawn(async move { resolve(&api, &path).unwrap_or(written) })
+            }
+        };
+        let look = dialog.look;
+        cx.spawn(async move |this, cx| {
+            let key = real.await;
+            this.update(cx, |this, cx| {
+                this.folder_looks.set(key, look);
+                this.persist(&crate::persist::FOLDER_LOOKS, this.folder_looks.encode(), cx, |this, result, cx| {
+                    if let Err(error) = result {
+                        this.report(Err(format!("Could not save the folder's look: {error:#}")), cx);
+                    }
+                });
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     pub(crate) fn on_customize_search(&mut self, event: &crate::components::InputEvent, window: &mut Window, cx: &mut Context<Self>) {
