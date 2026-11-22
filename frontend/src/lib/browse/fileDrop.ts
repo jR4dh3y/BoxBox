@@ -43,8 +43,11 @@ export function useFileDrop(
 		over(event, destination) {
 			const kind = fileDragKind(event.dataTransfer);
 			if (!kind || !allowed(destination)) return false;
-			const operation = dropOperation(kind, event, destination);
-			if (!canDropInto(draggedSources(), destination, operation)) return false;
+			const sources = draggedSources();
+			let operation = dropOperation(kind, event, destination);
+			// Alt asks on drop, and into the items' own folder it can still offer Copy Here.
+			if (event.altKey && !canDropInto(sources, destination, operation)) operation = 'copy';
+			if (!canDropInto(sources, destination, operation)) return false;
 			event.preventDefault();
 			if (event.dataTransfer) event.dataTransfer.dropEffect = operation;
 			return true;
@@ -62,12 +65,15 @@ export function useFileDrop(
 						? readDroppedLocalFiles(transfer.getData('text/uri-list'))
 						: [];
 			const operation = dropOperation(kind, event, destination, items);
-			if (!canDropInto(items, destination, operation)) return;
 			if (items.length && event.altKey) {
-				const canMove = dropOperation(kind, { ctrlKey: false }, destination, items) === 'move';
+				if (!canDropInto(items, destination, 'copy')) return;
+				const canMove =
+					dropOperation(kind, { ctrlKey: false }, destination, items) === 'move' &&
+					canDropInto(items, destination, 'move');
 				ask({ x: event.clientX, y: event.clientY, items, destination, canMove });
 				return;
 			}
+			if (!canDropInto(items, destination, operation)) return;
 			if (items.length) {
 				void actions.paste.transfer(operation, items, destination);
 				return;
