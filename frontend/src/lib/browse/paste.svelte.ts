@@ -20,8 +20,9 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 		/** Pastes into the open folder, or into `into`, such as a path crumb or a sidebar place. */
 		async paste(into?: string) {
 			const here = into === undefined || into === location.path;
-			if (loading || !location.path || (here && !data.canCreate)) return;
 			const destination = into ?? location.path;
+			// From Drives the open path is empty, but a drive or place chosen to paste into is not.
+			if (loading || !destination || (here && !data.canCreate)) return;
 			const opened = location.path;
 			const revision = getBrowseClipboardPublication().revision;
 			loading = true;
