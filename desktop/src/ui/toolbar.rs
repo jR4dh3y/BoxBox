@@ -11,7 +11,7 @@ use super::{icon, TextScale};
 use crate::pane::Search;
 use crate::theme::*;
 use crate::workspace::operations::PaneTarget;
-use crate::components::{ContextMenu, MenuItem, Tooltip};
+use crate::components::{ContextMenu, MenuItem};
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
 use crate::workspace::{Back, CreateFile, CreateFolder, Forward, OpenSettings, Refresh, ToggleDetails, Workspace};
 
@@ -288,7 +288,6 @@ impl Workspace {
     /// on click, opens a tab on middle-click, has a menu, takes drops, opens when a
     /// drag rests on it, and shows its full path on hover.
     fn render_crumbs(&self, target: PaneTarget, crumbs: Vec<Crumb>, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let pane = self.pane_by_id(target.0).unwrap_or_else(|| self.pane());
         let last = crumbs.len() - 1;
         let font = gpui::font(self.fonts.sans.clone());
         let widths: Vec<f32> = crumbs
@@ -299,13 +298,8 @@ impl Workspace {
             })
             .collect();
         let hidden = self.path_bar_widths.borrow().get(&target.0).map_or(0, |&available| hidden_crumbs(&widths, available - PATH_BAR_SPACE));
-        let full_path = |index: usize| -> String {
-            match &pane.real_path {
-                Some(real) => real.ancestors().nth(last - index).unwrap_or(real).display().to_string(),
-                None => format!("{}/{}", pane.api.server_url().unwrap_or(""), crumbs[index].path),
-            }
-        };
         let hover = self.drop_hover(cx).cloned();
+        let accent = self.accent_hex();
         // No gaps: the crumbs and their separators fill the row, so a drag held anywhere on it is over one.
         let mut row = div().relative().flex().flex_1().min_w_0().h_full().overflow_hidden().whitespace_nowrap();
         if hidden > 0 {
@@ -360,7 +354,9 @@ impl Workspace {
                         .flex_none()
                         .text_color(c(TEXT_SECONDARY))
                         .cursor_pointer()
-                        .hover(|style| style.text_color(c(WHITE)).underline()).active(crate::components::pressed)
+                        // A soft accent glow says which crumb a click opens.
+                        .when(!dropping, |crumb| crumb.hover(move |style| style.text_color(c(WHITE)).bg(alpha(accent, 0.16))))
+                        .active(crate::components::pressed)
                         .on_click(cx.listener(move |this, _, _, cx| this.navigate_in(target, open.clone(), cx))),
                 })
                 .on_mouse_down(gpui::MouseButton::Middle, cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
@@ -370,7 +366,6 @@ impl Workspace {
                     cx.stop_propagation();
                     this.open_place_menu(crate::workspace::place_menu::Place::Folder { pane: target, path: menu.clone() }, event.position, cx);
                 }))
-                .tooltip(Tooltip::text(full_path(index)))
                 .child(div().min_w_0().truncate().child(crumb.label.clone()));
             row = row.child(drop_zone(element, zone, cx.entity().downgrade()));
         }
