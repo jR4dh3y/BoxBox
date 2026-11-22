@@ -25,6 +25,7 @@
 	import type { MountPoint } from '#lib/api/files.js';
 	import { draggedSources, type FileDropTarget } from '#lib/browse/fileDrag.js';
 	import type { Place } from '#lib/browse/placeMenu.js';
+	import { hoverPoint, type HoverPoint } from '#lib/browse/hoverPoint.js';
 
 	interface Props {
 		currentPath?: string;
@@ -36,6 +37,8 @@
 		onNavigate?: (path: string) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
+		/** The pointer is on a drive's row, or null once it leaves or presses; its card waits for it to rest. */
+		onDriveHover?: (drive: { path: string; name: string; at: HoverPoint } | null) => void;
 		/** On narrow windows the sidebar is a drawer, shown only while this is true. */
 		open?: boolean;
 		onClose?: () => void;
@@ -57,6 +60,7 @@
 		roots = [],
 		onNavigate,
 		onFolderHover,
+		onDriveHover,
 		open = false,
 		onClose,
 		dropTarget,
@@ -117,6 +121,11 @@
 				icon: PLACE_ICONS[root.name.toLowerCase()] ?? Folder
 			}))
 	);
+
+	/** Overview's row is the drives page, which shows every card already. */
+	function restOnDrive(drive: { path: string; name: string }, event: PointerEvent) {
+		if (drive.path) onDriveHover?.({ path: drive.path, name: drive.name, at: hoverPoint(event) });
+	}
 
 	function isActive(path: string): boolean {
 		if (path === '') return currentPath === '';
@@ -203,8 +212,16 @@
 							ondrop={(event) => {
 								if (drive.path) dropTarget?.drop(event, drive.path);
 							}}
-							onpointerenter={() => drive.path && onFolderHover?.(drive.path)}
-							onpointerleave={() => onFolderHover?.(null)}
+							onpointerenter={(event) => {
+								if (drive.path) onFolderHover?.(drive.path);
+								restOnDrive(drive, event);
+							}}
+							onpointermove={(event) => restOnDrive(drive, event)}
+							onpointerleave={() => {
+								onFolderHover?.(null);
+								onDriveHover?.(null);
+							}}
+							onpointerdown={() => onDriveHover?.(null)}
 						>
 							{#if drive.serverIcon}<DeploymentIcon icon={drive.serverIcon} />{:else}<drive.icon
 									size={16}

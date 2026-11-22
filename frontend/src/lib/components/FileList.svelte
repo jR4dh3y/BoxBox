@@ -30,7 +30,7 @@
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
 	import type { RenameEditor } from '#lib/browse/renameEditor.js';
-	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverCard.svelte.js';
+	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverPoint.js';
 	import { ColumnTable } from '#lib/browse/columnTable.svelte.js';
 	import type { Column } from '#lib/browse/columns.js';
 	import ColumnHeader from './ColumnHeader.svelte';

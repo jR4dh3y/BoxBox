@@ -33,7 +33,7 @@
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
 	import type { AddAction } from '#lib/utils/addMenu.js';
 	import { folderAppearance, specialEmblem } from '#lib/browse/folderLooks.js';
-	import { HoverCard } from '#lib/browse/hoverCard.svelte.js';
+	import { HoverCards } from '#lib/browse/hoverCards.svelte.js';
 	import { parentFolder } from '#lib/browse/details.js';
 	import { getFileShortcut, isTextEntryTarget } from '#lib/browse/fileShortcuts.js';
 	import { WheelZoom } from '#lib/browse/zoom.js';
@@ -94,7 +94,7 @@
 	);
 	const appearance = (path: string) =>
 		folderAppearance(path, places, settingsStore.current.folderLooks);
-	const hoverCard = new HoverCard({
+	const hover = new HoverCards({
 		enabled: () => settingsStore.current.hoverDetails,
 		location: (item) => (location.isSearchActive ? parentFolder(item.path) : null),
 		async listFolder(path) {
@@ -102,15 +102,21 @@
 			const listing = browseRequests.folder(path).value;
 			if (!listing) throw new Error('The folder could not be read');
 			return listing.items;
+		},
+		async stats() {
+			const { stats } = browseRequests.catalog();
+			await stats.load();
+			if (stats.error) throw stats.error;
+			return stats.value?.drives ?? [];
 		}
 	});
 	// A press, scroll, key, drag or new folder covers or moves what the card describes.
 	$effect(() => {
 		void location.path;
-		if (hasOpenDialog) hoverCard.hide();
-		return () => hoverCard.hide();
+		if (hasOpenDialog) hideHoverCard();
+		return hideHoverCard;
 	});
-	const hideHoverCard = () => hoverCard.hide();
+	const hideHoverCard = () => hover.hide();
 	/** The item being renamed in place, and what its field reports back. */
 	const renameEditor = $derived(
 		actions.renaming.kind === 'renaming'
@@ -410,6 +416,8 @@
 			roots={data.roots}
 			onNavigate={location.navigate}
 			{onFolderHover}
+			onDriveHover={(drive) =>
+				drive ? hover.drive(drive.path, drive.name, drive.at) : hover.hide()}
 			dropTarget={drop}
 			onPlaceMenu={openPlaceMenu}
 			{renamingDrive}
@@ -510,7 +518,7 @@
 							previewOnSingleClick={settings.previewOnSingleClick}
 							selectionCheckboxes={settings.selectionCheckboxes}
 							folderAppearance={appearance}
-							hover={settings.hoverDetails ? hoverCard : undefined}
+							hover={settings.hoverDetails ? hover.files : undefined}
 							folderPreviews={settings.folderPreviews}
 							{renameEditor}
 							onItemClick={actions.openFile}
@@ -541,7 +549,7 @@
 						previewOnSingleClick={settings.previewOnSingleClick}
 						selectionCheckboxes={settings.selectionCheckboxes}
 						folderAppearance={appearance}
-						hover={settings.hoverDetails ? hoverCard : undefined}
+						hover={settings.hoverDetails ? hover.files : undefined}
 						{renameEditor}
 						onItemClick={actions.openFile}
 						{onFolderHover}
@@ -717,8 +725,15 @@
 	{/await}
 {/if}
 
-{#if hoverCard.state.kind === 'shown'}
-	{@const card = hoverCard.state}
+{#if hover.cards?.drive.state.kind === 'shown'}
+	{@const card = hover.cards.drive.state}
+	{#await import('#lib/components/DriveHoverCard.svelte') then { default: DriveHoverCard }}
+		<DriveHoverCard {card} />
+	{/await}
+{/if}
+
+{#if hover.cards?.file.state.kind === 'shown'}
+	{@const card = hover.cards.file.state}
 	{#await import('#lib/components/FileHoverCard.svelte') then { default: FileHoverCard }}
 		<FileHoverCard {card} {appearance} />
 	{/await}

@@ -3,7 +3,11 @@
 	import { getThumbnailUrl } from '#lib/api/files.js';
 	import { fullFileDate } from '#lib/browse/details.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
-	import { describeTotals, type HoverCardState } from '#lib/browse/hoverCard.svelte.js';
+	import {
+		cardPlacement,
+		describeTotals,
+		type HoverCardState
+	} from '#lib/browse/hoverCard.svelte.js';
 	import { formatFileSize } from '#lib/utils/format.js';
 	import { getFileIcon, getFileTypeDescription, getPreviewType } from '#lib/utils/fileTypes.js';
 	import FolderGlyph from './FolderGlyph.svelte';
@@ -23,10 +27,8 @@
 	const thumbnail = $derived(!item.isDir && getPreviewType(item.name) === 'image');
 	let thumbnailFailed = $state(false);
 	let height = $state(0);
-	// Below and right of the pointer, kept inside the window.
-	const left = $derived(Math.max(8, Math.min(card.x + 12, window.innerWidth - WIDTH - 8)));
-	const top = $derived(
-		card.y + 20 + height > window.innerHeight - 8 ? Math.max(8, card.y - height - 8) : card.y + 20
+	const place = $derived(
+		cardPlacement(card, WIDTH, height, { width: window.innerWidth, height: window.innerHeight })
 	);
 	const rows = $derived.by(() => {
 		const list: [string, string][] = [];
@@ -47,8 +49,8 @@
 <div
 	class="hover-card pointer-events-none fixed z-[60] flex flex-col gap-2.5 rounded-lg border border-border-primary bg-surface-elevated p-3 text-xs shadow-lg"
 	style:width="{WIDTH}px"
-	style:left="{left}px"
-	style:top="{top}px"
+	style:left="{place.left}px"
+	style:top="{place.top}px"
 	bind:clientHeight={height}
 	role="tooltip"
 >

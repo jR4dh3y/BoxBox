@@ -35,7 +35,7 @@
 	import FolderPeekCards from './FolderPeekCards.svelte';
 	import { folderPeeks } from '#lib/browse/folderPeek.svelte.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
-	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverCard.svelte.js';
+	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverPoint.js';
 
 	const PLAIN_FOLDER: FolderAppearance = { color: null, emblem: null, emblemColor: null };
 
