@@ -14,6 +14,7 @@
 				['Home · End', 'First · last item'],
 				['Page Up · Page Down', 'Move a screen'],
 				['Ctrl/Cmd + click', 'Select or deselect'],
+				['Drag on empty space', 'Select a rectangle; Ctrl or Shift adds'],
 				['Shift · Ctrl/Cmd + Shift + click', 'Select · add a range'],
 				['Type a name', 'Jump to it'],
 				['Menu · Shift + F10', 'Context menu'],

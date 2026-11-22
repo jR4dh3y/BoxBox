@@ -23,6 +23,7 @@
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
 	import { ViewCursor } from '#lib/browse/viewCursor.svelte.js';
+	import { RubberBand } from '#lib/browse/rubberBand.svelte.js';
 	import { DEFAULT_ZOOM, listMetrics } from '#lib/browse/zoom.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
@@ -106,6 +107,15 @@
 	const metrics = $derived(listMetrics(zoom));
 	const cursor = new ViewCursor(() => ({ items, selectedPaths, onSelectionChange }));
 	const activeItemIndex = $derived(cursor.activeIndex);
+	const band = new RubberBand(() => ({
+		itemsTop: LIST_HEADER_HEIGHT,
+		layout: () => ({ kind: 'list', rowHeight: metrics.rowHeight }),
+		items: () => items,
+		selected: () => selectedPaths,
+		select: (paths) => onSelectionChange?.(paths),
+		focus: focusTable
+	}));
+	const attachBand = band.attach;
 	const rowWindow = createFixedRowWindow({
 		items: () => items,
 		itemKey: (item) => item.path,
@@ -304,9 +314,21 @@
 	class="file-surface relative h-full w-full overflow-auto bg-surface-primary [overflow-anchor:none]"
 	use:attachRowWindow
 	use:observeColumns
+	use:attachBand
 	onscroll={handleViewportScroll}
 	oncontextmenu={handleBackgroundContextMenu}
 >
+	{#if band.rect}
+		<div
+			class="pointer-events-none absolute z-[6] rounded-[2px] border border-accent bg-accent/15"
+			style:left="{band.rect.left}px"
+			style:top="{band.rect.top}px"
+			style:width="{band.rect.width}px"
+			style:height="{band.rect.height}px"
+			aria-hidden="true"
+		></div>
+	{/if}
+
 	{#if showSpinner.value}
 		<div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-primary/80">
 			<Spinner />
