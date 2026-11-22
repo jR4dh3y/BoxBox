@@ -13,13 +13,13 @@
 		Image,
 		Monitor,
 		Music,
-		Server,
+		LayoutDashboard,
 		Star,
 		Video,
 		X
 	} from 'lucide-svelte';
 	import DeploymentIcon from './desktop/DeploymentIcon.svelte';
-	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { rootLabel } from '#lib/browse/rootLabel.js';
 	import type { DesktopVolume, DesktopVolumeAction } from '#lib/api/desktopVolumes.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import type { MountPoint } from '#lib/api/files.js';
@@ -97,10 +97,10 @@
 
 	const drives = $derived([
 		{
-			name: isLocalDesktop() ? 'This PC' : 'This Server',
+			name: rootLabel(),
 			path: '',
 			serverIcon: undefined,
-			icon: Server
+			icon: LayoutDashboard
 		},
 		...roots
 			.filter((root) => root.kind !== 'place')

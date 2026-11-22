@@ -17,7 +17,7 @@
 	let { drives, isLoading, viewMode, compact = false, onOpen, onFolderHover }: Props = $props();
 </script>
 
-<!-- This Server: the drive cards, or a drive list when the list view is chosen. -->
+<!-- Overview: the drive cards, or a drive list when the list view is chosen. -->
 {#if isLoading}
 	<div class="flex items-center gap-2 p-6 text-sm text-text-secondary">
 		<Spinner size="sm" />

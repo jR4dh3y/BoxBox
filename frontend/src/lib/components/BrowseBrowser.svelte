@@ -34,6 +34,7 @@
 	import type { AddAction } from '#lib/utils/addMenu.js';
 	import { folderAppearance, specialEmblem } from '#lib/browse/folderLooks.js';
 	import { HoverCards } from '#lib/browse/hoverCards.svelte.js';
+	import { rootLabel } from '#lib/browse/rootLabel.js';
 	import { parentFolder } from '#lib/browse/details.js';
 	import { getFileShortcut, isTextEntryTarget } from '#lib/browse/fileShortcuts.js';
 	import { WheelZoom } from '#lib/browse/zoom.js';
@@ -181,7 +182,7 @@
 	}
 	/** A path as the path bar names it: the drive's label, then the folders under it. */
 	function locationLabel(path: string): string {
-		if (!path) return data.serverName ?? 'This Server';
+		if (!path) return data.serverName ?? rootLabel();
 		const [drive = '', ...rest] = path.split('/');
 		const root = data.roots.find((candidate) => candidate.name === drive);
 		return [root?.label ?? drive, ...rest].join('/');
@@ -237,7 +238,7 @@
 	}
 	/** A place's name in the history menu: the drive's label, or the folder's name. */
 	function placeLabel(path: string): string {
-		if (!path) return data.serverName ?? 'This Server';
+		if (!path) return data.serverName ?? rootLabel();
 		const root = data.roots.find((candidate) => candidate.name === path);
 		return root?.label ?? path.split('/').at(-1) ?? path;
 	}
