@@ -88,6 +88,9 @@ impl RenderOnce for Modal {
             ModalSize::Lg => 768.,
         };
         let width = max_width.min(f32::from(window.viewport_size().width) - 32.).max(0.);
+        // max-h-[90vh] with the mx-4 margin: a short window scrolls the body, so the
+        // title bar and the footer's buttons stay in it.
+        let max_height = (f32::from(window.viewport_size().height) - 32.).max(0.);
         let close = div()
             .id("modal-close")
             .flex()
@@ -130,6 +133,7 @@ impl RenderOnce for Modal {
                     .debug_selector(|| "modal-panel".into())
                     .mx(px(16.))
                     .w(px(width))
+                    .max_h(px(max_height))
                     .flex()
                     .flex_col()
                     .overflow_hidden()
@@ -172,12 +176,22 @@ impl RenderOnce for Modal {
                                 .child(close),
                         )
                     })
-                    .child(div().flex().flex_col().when(self.padded, |el| el.p(px(16.))).children(self.body))
+                    .child(
+                        div()
+                            .id("modal-body")
+                            .flex()
+                            .flex_col()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .when(self.padded, |el| el.p(px(16.)))
+                            .children(self.body),
+                    )
                     .when(!self.footer.is_empty(), |el| {
                         // flex justify-end gap-2 border-t border-border-secondary px-4 py-3
                         el.child(
                             div()
                                 .flex()
+                                .flex_none()
                                 .justify_end()
                                 .items_center()
                                 .gap(px(8.))
