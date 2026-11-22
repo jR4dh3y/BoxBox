@@ -427,6 +427,8 @@ pub struct Workspace {
     pub(crate) drop_menu: Option<drag_drop::DropMenu>,
     /// Each pane's breadcrumb row width in the last frame, to fit its crumbs.
     pub(crate) path_bar_widths: std::rc::Rc<std::cell::RefCell<HashMap<usize, f32>>>,
+    /// The crumb under the pointer, by pane and path: its label is drawn lit.
+    pub(crate) hovered_crumb: Option<(usize, String)>,
     /// The pane whose toolbar "+" menu is open.
     pub(crate) add_menu: Option<PaneTarget>,
     /// The select whose option list is open.
@@ -610,6 +612,7 @@ impl Workspace {
             place_menu: None,
             drop_menu: None,
             path_bar_widths: Default::default(),
+            hovered_crumb: None,
             add_menu: None,
             open_select: None,
             select_dismissed: None,

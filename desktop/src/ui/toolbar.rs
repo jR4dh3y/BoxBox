@@ -299,7 +299,6 @@ impl Workspace {
             .collect();
         let hidden = self.path_bar_widths.borrow().get(&target.0).map_or(0, |&available| hidden_crumbs(&widths, available - PATH_BAR_SPACE));
         let hover = self.drop_hover(cx).cloned();
-        let accent = self.accent_hex();
         // No gaps: the crumbs and their separators fill the row, so a drag held anywhere on it is over one.
         let mut row = div().relative().flex().flex_1().min_w_0().h_full().overflow_hidden().whitespace_nowrap();
         if hidden > 0 {
@@ -333,7 +332,7 @@ impl Workspace {
                 row = row.child(separator(Some((before, cx.entity().downgrade()))));
             }
             let dropping = hover.as_ref() == Some(&zone);
-            let (open, tab, menu) = (path.clone(), path.clone(), path.clone());
+            let (open, tab, menu, lit) = (path.clone(), path.clone(), path.clone(), path.clone());
             let element = div()
                 .id(("crumb", index))
                 .debug_selector(move || format!("crumb-{}-{index}", target.0))
@@ -354,8 +353,6 @@ impl Workspace {
                         .flex_none()
                         .text_color(c(TEXT_SECONDARY))
                         .cursor_pointer()
-                        // A soft accent glow says which crumb a click opens.
-                        .when(!dropping, |crumb| crumb.hover(move |style| style.text_color(c(WHITE)).bg(alpha(accent, 0.16))))
                         .active(crate::components::pressed)
                         .on_click(cx.listener(move |this, _, _, cx| this.navigate_in(target, open.clone(), cx))),
                 })
@@ -366,7 +363,25 @@ impl Workspace {
                     cx.stop_propagation();
                     this.open_place_menu(crate::workspace::place_menu::Place::Folder { pane: target, path: menu.clone() }, event.position, cx);
                 }))
-                .child(div().min_w_0().truncate().child(crumb.label.clone()));
+                // Text is laid out before hover is known, so the lit label is drawn from state.
+                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                    let crumb = (target.0, lit.clone());
+                    let now = if *hovered { Some(crumb) } else { this.hovered_crumb.take().filter(|held| *held != crumb) };
+                    if this.hovered_crumb != now {
+                        this.hovered_crumb = now;
+                        cx.notify();
+                    }
+                }))
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        // A click opens it: its name lights up and is underlined.
+                        .when(index != last && self.hovered_crumb.as_ref().is_some_and(|(pane, held)| *pane == target.0 && *held == path), |label| {
+                            label.text_color(c(WHITE)).underline()
+                        })
+                        .child(crumb.label.clone()),
+                );
             row = row.child(drop_zone(element, zone, cx.entity().downgrade()));
         }
         // Empty space after the crumbs edits the path, as in Nautilus and Explorer.
