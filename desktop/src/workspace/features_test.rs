@@ -2053,7 +2053,7 @@ fn a_folder_dropped_on_favorites_is_pinned_and_a_file_is_not(cx: &mut TestAppCon
 
 #[gpui::test]
 fn a_folder_tile_shows_what_it_holds_pictures_first(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["photos/a.txt", "photos/b.png", "photos/z.jpg", "photos/.hidden.png", "empty/"]);
+    let (view, cx, fixture) = open(cx, &["photos/a.txt", "photos/b.png", "photos/z.jpg", "photos/.hidden.png", "empty/"]);
     view.update(cx, |workspace, cx| {
         // They draw on BoxBox's folder, not the icon theme's.
         workspace.preferences.file_icons = crate::workspace::IconStyle::Tinted;
@@ -2076,6 +2076,33 @@ fn a_folder_tile_shows_what_it_holds_pictures_first(cx: &mut TestAppContext) {
     }
     assert_eq!(peek(&view, cx, "photos").unwrap(), ["b.png", "z.jpg", "a.txt"]);
     assert_eq!(peek(&view, cx, "empty").unwrap(), Vec::<String>::new());
+
+    // A picture edited in place leaves its folder's time alone; listed again, the
+    // folder reads its preview again.
+    std::fs::write(fixture.root.join("photos/b.png"), b"edited in place").unwrap();
+    let size = |view: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |workspace, _| {
+            let pane = workspace.pane();
+            let folder = pane.items.iter().find(|item| item.name == "photos").unwrap();
+            workspace.folder_peek(&pane.api, folder).and_then(|items| items.first().map(|item| item.size))
+        })
+    };
+    let before = size(&view, cx);
+    view.update(cx, |workspace, cx| workspace.load_pane(workspace.active_pane, cx));
+    for _ in 0..500 {
+        // The reload put back the default view; tiles ask for their previews.
+        view.update(cx, |workspace, cx| {
+            workspace.pane_mut().set_view_mode(ViewMode::Grid);
+            cx.notify();
+        });
+        settle(cx);
+        if size(&view, cx) == Some(15) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_ne!(before, Some(15));
+    assert_eq!(size(&view, cx), Some(15));
 }
 
 #[gpui::test]

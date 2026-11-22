@@ -2,7 +2,9 @@
 //! contents: a few of its items, pictures first. An empty folder stays plain.
 //!
 //! Read on the thumbnail threads and cached by the folder's modified time, which
-//! changes when an entry is added to it or removed from it.
+//! changes when an entry is added to it or removed from it. Editing a picture in
+//! place does not change it, so a folder listed again reads its preview again,
+//! showing the one it has until then.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -35,16 +37,30 @@ pub(crate) struct PeekKey {
 pub(crate) struct FolderPeeks {
     peeks: HashMap<PeekKey, Vec<FileInfo>>,
     pending: HashSet<PeekKey>,
+    /// Read since a listing last loaded.
+    fresh: HashSet<PeekKey>,
 }
 
 impl FolderPeeks {
     pub fn clear(&mut self) {
         self.peeks.clear();
         self.pending.clear();
+        self.fresh.clear();
+    }
+
+    /// A listing loaded: the previews it shows are read again when drawn.
+    pub fn revalidate(&mut self) {
+        self.fresh.clear();
     }
 }
 
-/// Up to `SHOWN` items of `folder`, pictures and videos first, then by name.
+/// The same items, unchanged since read.
+fn same(a: &[FileInfo], b: &[FileInfo]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(a, b)| a.path == b.path && a.mod_time == b.mod_time && a.size == b.size)
+}
+
+/// Up to `SHOWN` items of `folder`, pictures and videos first, then by name,
+/// leaving out hidden ones as the folder's listing does.
 fn read(api: &Api, folder: &str, show_hidden: bool) -> Result<Vec<FileInfo>> {
     let real = api.local_path(folder)?.context("not a local folder")?;
     let mut names: Vec<(bool, String)> = std::fs::read_dir(real)?
@@ -55,7 +71,12 @@ fn read(api: &Api, folder: &str, show_hidden: bool) -> Result<Vec<FileInfo>> {
         .map(|name| (!has_inline_thumbnail(&name), name))
         .collect();
     names.sort_by(|(a_plain, a), (b_plain, b)| a_plain.cmp(b_plain).then_with(|| a.to_lowercase().cmp(&b.to_lowercase())));
-    Ok(names.into_iter().take(SHOWN).filter_map(|(_, name)| api.stat(&format!("{folder}/{name}")).ok()).collect())
+    Ok(names
+        .into_iter()
+        .filter_map(|(_, name)| api.stat(&format!("{folder}/{name}")).ok())
+        .filter(|item| show_hidden || !item.is_hidden())
+        .take(SHOWN)
+        .collect())
 }
 
 impl Workspace {
@@ -90,7 +111,9 @@ impl Workspace {
             for item in items.clone() {
                 self.request_thumbnail(target, item, cx);
             }
-            return;
+            if self.folder_peeks.fresh.contains(&key) {
+                return;
+            }
         }
         if !self.folder_peeks.pending.insert(key.clone()) {
             return;
@@ -104,18 +127,26 @@ impl Workspace {
                 if !this.folder_peeks.pending.remove(&key) {
                     return;
                 }
+                let peeks = &mut this.folder_peeks;
                 match result {
                     Some(Ok(items)) => {
-                        if this.folder_peeks.peeks.len() >= CAPACITY {
-                            this.folder_peeks.peeks.clear();
+                        peeks.fresh.insert(key.clone());
+                        if peeks.peeks.get(&key).is_some_and(|known| same(known, &items)) {
+                            return;
                         }
-                        this.folder_peeks.peeks.insert(key, items);
+                        if peeks.peeks.len() >= CAPACITY {
+                            peeks.peeks.clear();
+                            peeks.fresh.clear();
+                        }
+                        peeks.peeks.insert(key, items);
                         cx.notify();
                     }
-                    // Unreadable: drawn as a plain folder. Dropped from the queue: asked again when drawn.
+                    // Unreadable: drawn as a plain folder, or as it last was.
                     Some(Err(_)) => {
-                        this.folder_peeks.peeks.insert(key, Vec::new());
+                        peeks.fresh.insert(key.clone());
+                        peeks.peeks.entry(key).or_default();
                     }
+                    // Dropped from the queue: asked again when drawn.
                     None => {}
                 }
             })

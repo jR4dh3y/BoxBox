@@ -924,6 +924,7 @@ impl Workspace {
         let _span = crate::profile::span("apply listing");
         let journey = if read.items.is_err() { journey.map(|journey| journey.renamed("open folder: failed")) } else { journey };
         let stale = pane.finish_load(read.items, view);
+        self.folder_peeks.revalidate();
         if let Some(path) = read.real { self.watch_pane_folder(target, path, cx); }
         if stale { self.resort(target, cx); }
         crate::profile::ready(journey);
