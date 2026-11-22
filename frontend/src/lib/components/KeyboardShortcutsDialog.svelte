@@ -39,6 +39,7 @@
 				['Middle-click a folder', 'Open it in a new tab'],
 				['Ctrl/Cmd + plus · minus · 0', 'Zoom in · out · reset'],
 				['Ctrl/Cmd + wheel', 'Zoom'],
+				['F11', 'Show or hide Details'],
 				['F1', 'Show keyboard shortcuts']
 			]
 		},

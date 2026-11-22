@@ -78,6 +78,8 @@ export interface UserSettings {
 	/** Zoom steps of the list and the grid; see `browse/zoom.ts`. */
 	listZoom: number;
 	gridZoom: number;
+	/** The Details panel shows at the right of the listing. */
+	detailsPanel: boolean;
 	/** Grid tiles draw a few of what a folder holds inside it. */
 	folderPreviews: boolean;
 	/** A card with an item's details shows when the pointer rests on it. */
@@ -118,6 +120,7 @@ const defaultSettings: UserSettings = {
 	gridZoom: DEFAULT_ZOOM,
 	hoverDetails: true,
 	folderPreviews: true,
+	detailsPanel: false,
 	selectionCheckboxes: true,
 	driveNameOverrides: {},
 	favoriteFolders: []

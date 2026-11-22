@@ -3,7 +3,15 @@
 	 * Toolbar component - navigation buttons, path bar, search, and actions
 	 */
 	import type { Snippet } from 'svelte';
-	import { ChevronLeft, ChevronRight, PanelLeft, Plus, RefreshCw, Settings } from 'lucide-svelte';
+	import {
+		ChevronLeft,
+		ChevronRight,
+		PanelLeft,
+		PanelRight,
+		Plus,
+		RefreshCw,
+		Settings
+	} from 'lucide-svelte';
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
 	import SearchBar from '#lib/components/SearchBar.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
@@ -26,6 +34,9 @@
 		onNavigate?: (path: string) => void;
 		onRefresh?: () => void;
 		onSettings?: () => void;
+		/** Shows or hides the Details panel; absent where there is none. */
+		onToggleDetails?: () => void;
+		detailsOpen?: boolean;
 		/** Shows the sidebar on windows too narrow to keep it open. */
 		onToggleSidebar?: () => void;
 		onAdd?: (action: AddAction) => void;
@@ -54,6 +65,8 @@
 		onNavigate,
 		onRefresh,
 		onSettings,
+		onToggleDetails,
+		detailsOpen = false,
 		onToggleSidebar,
 		onAdd,
 		canCreate = false,
@@ -177,6 +190,17 @@
 		>
 			<RefreshCw size={16} />
 		</button>
+		{#if onToggleDetails}
+			<button
+				type="button"
+				class="{navBtnClass} {detailsOpen ? 'bg-surface-elevated text-text-primary' : ''}"
+				onclick={onToggleDetails}
+				title="Details (F11)"
+				aria-pressed={detailsOpen}
+			>
+				<PanelRight size={16} />
+			</button>
+		{/if}
 		<button type="button" class={navBtnClass} onclick={onSettings} title="Settings">
 			<Settings size={16} />
 		</button>

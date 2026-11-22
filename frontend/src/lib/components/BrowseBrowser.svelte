@@ -36,6 +36,7 @@
 	import { parentFolder } from '#lib/browse/details.js';
 	import { getFileShortcut, isTextEntryTarget } from '#lib/browse/fileShortcuts.js';
 	import { invertedPaths, pathsMatching } from '#lib/browse/selectPattern.js';
+	import { detailsContent } from '#lib/browse/details.js';
 	import { WheelZoom } from '#lib/browse/zoom.js';
 
 	let {
@@ -145,6 +146,22 @@
 	});
 
 	let shortcutsOpen = $state(false);
+	function toggleDetails() {
+		settingsStore.set({
+			...settingsStore.current,
+			detailsPanel: !settingsStore.current.detailsPanel
+		});
+	}
+	/** A path as the path bar names it: the drive's label, then the folders under it. */
+	function locationLabel(path: string): string {
+		if (!path) return data.serverName ?? 'This Server';
+		const [drive = '', ...rest] = path.split('/');
+		const root = data.roots.find((candidate) => candidate.name === drive);
+		return [root?.label ?? drive, ...rest].join('/');
+	}
+	const selectedItems = $derived(
+		selection.count === 0 ? [] : data.displayItems.filter((item) => selection.paths.has(item.path))
+	);
 	let historyMenu = $state<{ x: number; y: number; places: HistoryPlace[] } | null>(null);
 	async function openHistoryMenu(back: boolean, x: number, y: number) {
 		const places = await location.historyPlaces(back);
@@ -203,6 +220,9 @@
 				break;
 			case 'shortcuts':
 				shortcutsOpen = true;
+				break;
+			case 'details':
+				toggleDetails();
 				break;
 			case 'paste':
 				if (!data.canCreate) return;
@@ -265,6 +285,8 @@
 		onRefresh={refresh}
 		{refreshDisabled}
 		actions={extraActions}
+		onToggleDetails={paneState ? undefined : toggleDetails}
+		detailsOpen={settings.detailsPanel}
 		onSettings={() => {
 			settingsSection = 'general';
 			settingsOpen = true;
@@ -322,80 +344,112 @@
 			{@render browserToolbar()}
 		{/if}
 
-		<!-- File list or Drive cards -->
-		<div
-			class="relative min-h-0 flex-1 overflow-hidden"
-			ondragover={(event) => drop.over(event, location.path)}
-			ondragleave={drop.leave}
-			ondrop={(event) => drop.drop(event, location.path)}
-			role="region"
-			aria-label="File browser content"
-			use:zoomWheel
-		>
-			<!-- Drag-drop overlay -->
-			{#if drop.overPath === location.path && !data.isAtRoot}
-				<div
-					class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-accent bg-accent/10"
-				>
-					<div class="rounded-lg bg-surface-primary/90 px-6 py-4 shadow-lg backdrop-blur-sm">
-						<span class="text-lg font-medium text-accent">Drop files to upload here</span>
+		<!-- The listing, and the Details panel beside it. -->
+		<div class="flex min-h-0 flex-1">
+			<!-- File list or Drive cards -->
+			<div
+				class="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+				ondragover={(event) => drop.over(event, location.path)}
+				ondragleave={drop.leave}
+				ondrop={(event) => drop.drop(event, location.path)}
+				role="region"
+				aria-label="File browser content"
+				use:zoomWheel
+			>
+				<!-- Drag-drop overlay -->
+				{#if drop.overPath === location.path && !data.isAtRoot}
+					<div
+						class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-accent bg-accent/10"
+					>
+						<div class="rounded-lg bg-surface-primary/90 px-6 py-4 shadow-lg backdrop-blur-sm">
+							<span class="text-lg font-medium text-accent">Drop files to upload here</span>
+						</div>
 					</div>
-				</div>
-			{/if}
+				{/if}
 
-			{#if paneState?.location.page === 'trash'}
-				{#await import('./desktop/TrashPage.svelte') then { default: TrashPage }}<TrashPage
-						onChanged={() => void browseRequests.changed()}
-						toolbar={browserToolbar}
-						selectionCheckboxes={settings.selectionCheckboxes}
-					/>{/await}
-			{:else if data.isDeploymentRoot && data.deploymentError}
-				<div class="space-y-3 p-6 text-sm text-text-secondary">
-					<p>
-						{data.deploymentError}
-					</p>
-					<Button
-						onclick={() => {
-							settingsSection = 'connections';
-							settingsOpen = true;
-						}}>Open Connections</Button
-					>
-				</div>
-			{:else if data.isAtRoot}
-				<!-- The drives page loads alongside the drive list, so folder pages never download it. -->
-				{#await import('#lib/components/DrivesView.svelte') then { default: DrivesView }}
-					<DrivesView
-						drives={data.drives}
-						isLoading={data.isLoadingDrives}
-						viewMode={location.driveViewMode}
-						compact={settings.listZoom === 0}
-						onOpen={(drive) => location.navigate(drive.name)}
-						{onFolderHover}
-					/>
-				{:catch}
-					<LoadError label="drives" inline />
-				{/await}
-			{:else if data.fileListError && data.displayItems.length === 0}
-				<div role="alert" class="flex h-full items-center justify-center gap-3 p-6 text-sm">
-					<span>{data.fileListError}</span>
-					<button
-						type="button"
-						class="rounded border border-border-primary px-3 py-1 hover:bg-surface-secondary"
-						onclick={data.reload}
-					>
-						Retry
-					</button>
-				</div>
-			{:else if location.viewMode === 'grid'}
-				{#await import('#lib/components/FileGrid.svelte') then { default: FileGrid }}
-					<FileGrid
+				{#if paneState?.location.page === 'trash'}
+					{#await import('./desktop/TrashPage.svelte') then { default: TrashPage }}<TrashPage
+							onChanged={() => void browseRequests.changed()}
+							toolbar={browserToolbar}
+							selectionCheckboxes={settings.selectionCheckboxes}
+						/>{/await}
+				{:else if data.isDeploymentRoot && data.deploymentError}
+					<div class="space-y-3 p-6 text-sm text-text-secondary">
+						<p>
+							{data.deploymentError}
+						</p>
+						<Button
+							onclick={() => {
+								settingsSection = 'connections';
+								settingsOpen = true;
+							}}>Open Connections</Button
+						>
+					</div>
+				{:else if data.isAtRoot}
+					<!-- The drives page loads alongside the drive list, so folder pages never download it. -->
+					{#await import('#lib/components/DrivesView.svelte') then { default: DrivesView }}
+						<DrivesView
+							drives={data.drives}
+							isLoading={data.isLoadingDrives}
+							viewMode={location.driveViewMode}
+							compact={settings.listZoom === 0}
+							onOpen={(drive) => location.navigate(drive.name)}
+							{onFolderHover}
+						/>
+					{:catch}
+						<LoadError label="drives" inline />
+					{/await}
+				{:else if data.fileListError && data.displayItems.length === 0}
+					<div role="alert" class="flex h-full items-center justify-center gap-3 p-6 text-sm">
+						<span>{data.fileListError}</span>
+						<button
+							type="button"
+							class="rounded border border-border-primary px-3 py-1 hover:bg-surface-secondary"
+							onclick={data.reload}
+						>
+							Retry
+						</button>
+					</div>
+				{:else if location.viewMode === 'grid'}
+					{#await import('#lib/components/FileGrid.svelte') then { default: FileGrid }}
+						<FileGrid
+							viewKey={location.viewKey}
+							dropTarget={drop}
+							items={data.displayItems}
+							emptyMessage={data.emptyListMessage}
+							selectedPaths={selection.paths}
+							isLoading={data.isFileListLoading}
+							zoom={settings.gridZoom}
+							cutPaths={actions.cutPaths}
+							favoritePaths={actions.favoritePaths}
+							canPaste={actions.canPaste}
+							canCreate={data.canCreate}
+							readOnly={data.isReadOnly}
+							showFileExtensions={settings.showFileExtensions}
+							previewOnSingleClick={settings.previewOnSingleClick}
+							selectionCheckboxes={settings.selectionCheckboxes}
+							folderAppearance={appearance}
+							hover={settings.hoverDetails ? hoverCard : undefined}
+							peeks={settings.folderPreviews ? peeks : undefined}
+							onItemClick={actions.openFile}
+							{onFolderHover}
+							onSelectionChange={selection.set}
+							onContextMenuAction={actions.handleContextMenuAction}
+						/>
+					{:catch}
+						<LoadError label="grid view" inline />
+					{/await}
+				{:else}
+					<FileList
 						viewKey={location.viewKey}
 						dropTarget={drop}
 						items={data.displayItems}
+						sortBy={location.sortBy}
+						sortDir={location.sortDir}
 						emptyMessage={data.emptyListMessage}
 						selectedPaths={selection.paths}
 						isLoading={data.isFileListLoading}
-						zoom={settings.gridZoom}
+						zoom={settings.listZoom}
 						cutPaths={actions.cutPaths}
 						favoritePaths={actions.favoritePaths}
 						canPaste={actions.canPaste}
@@ -406,42 +460,28 @@
 						selectionCheckboxes={settings.selectionCheckboxes}
 						folderAppearance={appearance}
 						hover={settings.hoverDetails ? hoverCard : undefined}
-						peeks={settings.folderPreviews ? peeks : undefined}
 						onItemClick={actions.openFile}
 						{onFolderHover}
+						onSortChange={location.setSort}
 						onSelectionChange={selection.set}
 						onContextMenuAction={actions.handleContextMenuAction}
 					/>
-				{:catch}
-					<LoadError label="grid view" inline />
-				{/await}
-			{:else}
-				<FileList
-					viewKey={location.viewKey}
-					dropTarget={drop}
-					items={data.displayItems}
-					sortBy={location.sortBy}
-					sortDir={location.sortDir}
-					emptyMessage={data.emptyListMessage}
-					selectedPaths={selection.paths}
-					isLoading={data.isFileListLoading}
-					zoom={settings.listZoom}
-					cutPaths={actions.cutPaths}
-					favoritePaths={actions.favoritePaths}
-					canPaste={actions.canPaste}
-					canCreate={data.canCreate}
-					readOnly={data.isReadOnly}
-					showFileExtensions={settings.showFileExtensions}
-					previewOnSingleClick={settings.previewOnSingleClick}
-					selectionCheckboxes={settings.selectionCheckboxes}
-					folderAppearance={appearance}
-					hover={settings.hoverDetails ? hoverCard : undefined}
-					onItemClick={actions.openFile}
-					{onFolderHover}
-					onSortChange={location.setSort}
-					onSelectionChange={selection.set}
-					onContextMenuAction={actions.handleContextMenuAction}
-				/>
+				{/if}
+			</div>
+			{#if settings.detailsPanel && !paneState}
+				<!-- It opens by its width, so the columns make room as it comes. -->
+				<div class="details-slot h-full shrink-0 overflow-hidden">
+					{#await import('#lib/components/DetailsPanel.svelte') then { default: DetailsPanel }}
+						<DetailsPanel
+							content={detailsContent(selectedItems, data.itemCount)}
+							folderName={locationLabel(location.path).split('/').at(-1) ?? ''}
+							{appearance}
+							{locationLabel}
+						/>
+					{:catch}
+						<LoadError label="Details" inline />
+					{/await}
+				</div>
 			{/if}
 		</div>
 
@@ -635,3 +675,23 @@
 			{/await}
 		{/if}
 	</Notifications>{/if}
+
+<style>
+	.details-slot {
+		animation: details-open 200ms cubic-bezier(0.2, 0, 0, 1);
+	}
+	@keyframes details-open {
+		from {
+			width: 0;
+			opacity: 0;
+		}
+		to {
+			width: 260px;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.details-slot {
+			animation: none;
+		}
+	}
+</style>

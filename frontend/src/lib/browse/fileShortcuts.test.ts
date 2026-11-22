@@ -17,6 +17,7 @@ test('page shortcuts map Ctrl and Cmd alike and leave Alt and plain keys alone',
 	assert.equal(getFileShortcut(key('v', { ctrlKey: true })), 'paste');
 	assert.equal(getFileShortcut(key('c', { ctrlKey: true, altKey: true })), null);
 	assert.equal(getFileShortcut(key('F1')), 'shortcuts');
+	assert.equal(getFileShortcut(key('F11')), 'details');
 	assert.equal(getFileShortcut(key('Escape')), 'clear-selection');
 	assert.equal(getFileShortcut(key('a')), null);
 });
