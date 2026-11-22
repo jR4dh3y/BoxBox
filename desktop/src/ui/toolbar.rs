@@ -366,7 +366,7 @@ impl Workspace {
                 // Text is laid out before hover is known, so the lit label is drawn from state.
                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                     let crumb = (target.0, lit.clone());
-                    let now = if *hovered { Some(crumb) } else { this.hovered_crumb.take().filter(|held| *held != crumb) };
+                    let now = if *hovered { Some(crumb) } else { this.hovered_crumb.clone().filter(|held| *held != crumb) };
                     if this.hovered_crumb != now {
                         this.hovered_crumb = now;
                         cx.notify();
