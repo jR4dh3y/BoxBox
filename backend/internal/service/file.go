@@ -310,7 +310,8 @@ func (s *fileService) Peek(ctx context.Context, path string, includeHidden bool)
 const (
 	// MaxPropertiesPaths bounds one Properties request.
 	MaxPropertiesPaths = 1000
-	// propertiesWalkEntries bounds the walk; past it the totals are a lower bound.
+	// propertiesWalkEntries bounds the walk; past it, or past anything unreadable, the totals
+	// are a lower bound.
 	propertiesWalkEntries = 200_000
 )
 
@@ -323,8 +324,10 @@ func (s *fileService) Properties(ctx context.Context, paths []string) (*model.Pr
 	response := &model.PropertiesResponse{Items: make([]model.ItemProperties, 0, len(paths)), Complete: true}
 	walker := NewWalker(s.fs)
 	budget := propertiesWalkEntries
+	exhausted := false
 	for _, path := range paths {
-		_, fsPath, err := s.mounts.resolve(path, readExisting)
+		// The item itself, so a selected link is described, not its target.
+		_, fsPath, err := s.mounts.resolve(path, readEntry)
 		if err != nil {
 			return nil, err
 		}
@@ -344,13 +347,14 @@ func (s *fileService) Properties(ctx context.Context, paths []string) (*model.Pr
 			continue
 		}
 		response.Folders++
-		if !response.Complete || budget <= 0 {
+		if exhausted || budget <= 0 {
 			response.Complete = false
 			continue
 		}
 		visited := 0
 		err = walker.Walk(ctx, fsPath, WalkOptions{
 			IncludeHidden: true, SkipUnreadable: true, LoadMetadata: true, MaxEntries: budget, IncludeSymlinks: true,
+			Skipped: func() { response.Complete = false },
 		}, func(entry WalkEntry) error {
 			visited++
 			if entry.DirEntry.IsDir() {
@@ -365,6 +369,7 @@ func (s *fileService) Properties(ctx context.Context, paths []string) (*model.Pr
 		})
 		budget -= visited
 		if errors.Is(err, ErrDirectoryTooLarge) {
+			exhausted = true
 			response.Complete = false
 		} else if err != nil {
 			return nil, err

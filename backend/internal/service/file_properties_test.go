@@ -69,3 +69,42 @@ func TestPropertiesNamesTheOwnerOnLinux(t *testing.T) {
 		t.Fatalf("owner and dates missing: %+v", item)
 	}
 }
+
+func TestPropertiesDescribesASelectedLinkNotItsTarget(t *testing.T) {
+	_, _, mountList := symlinkFixture(t)
+	svc := NewFileService(filesystem.NewOsFS(), FileServiceConfig{MountPoints: mountList})
+	props, err := svc.Properties(context.Background(), []string{"home/shortcut"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The link is one file; the folder it points at is not walked.
+	if props.Files != 1 || props.Folders != 0 || !props.Complete {
+		t.Fatalf("totals = %+v", props)
+	}
+}
+
+func TestPropertiesAreIncompleteWhenAFolderCannotBeRead(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a folder this user cannot read")
+	}
+	root := t.TempDir()
+	locked := filepath.Join(root, "album", "locked")
+	if err := os.MkdirAll(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "a.jpg"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	svc := NewFileService(filesystem.NewOsFS(), FileServiceConfig{MountPoints: []model.MountPoint{{Name: "media", Path: root}}})
+	props, err := svc.Properties(context.Background(), []string{"media/album"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if props.Folders != 2 || props.Files != 0 || props.Complete {
+		t.Fatalf("totals = %+v", props)
+	}
+}
