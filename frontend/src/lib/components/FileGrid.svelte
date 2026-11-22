@@ -325,6 +325,7 @@
 	const idleClass = 'border-transparent hover:bg-surface-secondary';
 	const thumbnailClass =
 		'flex shrink-0 items-center justify-center overflow-hidden rounded border border-border-primary bg-surface-primary';
+	const iconSlotClass = 'flex shrink-0 items-center justify-center';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -495,7 +496,11 @@
 									onchange={() => handleCheck(item)}
 								/>
 							{/if}
-							<div class={thumbnailClass} style:height="{metrics.previewHeight}px">
+							<!-- A thumbnail sits in a frame; an icon stands on its own, as in Thunar and the desktop app. -->
+							<div
+								class={showThumbnail ? thumbnailClass : iconSlotClass}
+								style:height="{metrics.previewHeight}px"
+							>
 								{#if showThumbnail}
 									<img
 										src={getThumbnailUrl(

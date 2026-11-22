@@ -17,6 +17,7 @@ export interface GridMetrics {
 	gap: number;
 	padding: number;
 	previewHeight: number;
+	/** The desktop app's `theme_icon`: the preview box less a margin, never wider than the tile. */
 	icon: number;
 	/** The thumbnail asked for; steps 0 and 1 keep the sizes servers already cached. */
 	thumbnail: { width: number; height: number };
@@ -36,7 +37,7 @@ const GRID_DEFAULT: GridMetrics = {
 	gap: 12,
 	padding: 12,
 	previewHeight: 80,
-	icon: 30,
+	icon: 72,
 	thumbnail: { width: 224, height: 144 }
 };
 export const GRID_STEPS: readonly GridMetrics[] = [
@@ -46,7 +47,7 @@ export const GRID_STEPS: readonly GridMetrics[] = [
 		gap: 8,
 		padding: 8,
 		previewHeight: 56,
-		icon: 24,
+		icon: 48,
 		thumbnail: { width: 192, height: 96 }
 	},
 	GRID_DEFAULT,
@@ -56,7 +57,7 @@ export const GRID_STEPS: readonly GridMetrics[] = [
 		gap: 12,
 		padding: 12,
 		previewHeight: 112,
-		icon: 44,
+		icon: 104,
 		thumbnail: { width: 288, height: 200 }
 	},
 	{
@@ -65,7 +66,7 @@ export const GRID_STEPS: readonly GridMetrics[] = [
 		gap: 12,
 		padding: 12,
 		previewHeight: 160,
-		icon: 64,
+		icon: 152,
 		thumbnail: { width: 384, height: 288 }
 	},
 	{
@@ -74,7 +75,7 @@ export const GRID_STEPS: readonly GridMetrics[] = [
 		gap: 12,
 		padding: 12,
 		previewHeight: 224,
-		icon: 88,
+		icon: 216,
 		thumbnail: { width: 512, height: 400 }
 	}
 ];
