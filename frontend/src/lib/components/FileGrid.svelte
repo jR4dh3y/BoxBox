@@ -26,6 +26,7 @@
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
 	import { ViewCursor } from '#lib/browse/viewCursor.svelte.js';
 	import { RubberBand } from '#lib/browse/rubberBand.svelte.js';
+	import { isMiddleButton, openInNewTab } from '#lib/browse/newTab.js';
 	import { DEFAULT_ZOOM, gridMetrics } from '#lib/browse/zoom.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
@@ -451,6 +452,12 @@
 							}}
 							oncontextmenu={(e) => handleContextMenu(item, e)}
 							data-file-item="true"
+							onmousedown={(event) => {
+								if (isMiddleButton(event) && item.isDir) event.preventDefault();
+							}}
+							onauxclick={(event) => {
+								if (isMiddleButton(event) && item.isDir) openInNewTab(item.path);
+							}}
 							data-file-path={item.path}
 						>
 							{#if selectionCheckboxes}

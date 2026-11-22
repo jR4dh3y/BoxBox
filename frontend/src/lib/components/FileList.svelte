@@ -24,6 +24,7 @@
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
 	import { ViewCursor } from '#lib/browse/viewCursor.svelte.js';
 	import { RubberBand } from '#lib/browse/rubberBand.svelte.js';
+	import { isMiddleButton, openInNewTab } from '#lib/browse/newTab.js';
 	import { DEFAULT_ZOOM, listMetrics } from '#lib/browse/zoom.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
@@ -441,6 +442,12 @@
 						aria-rowindex={itemIndex + 2}
 						aria-selected={isSelected(item.path)}
 						data-file-row="true"
+						onmousedown={(event) => {
+							if (isMiddleButton(event) && item.isDir) event.preventDefault();
+						}}
+						onauxclick={(event) => {
+							if (isMiddleButton(event) && item.isDir) openInNewTab(item.path);
+						}}
 						data-file-path={item.path}
 					>
 						{#each columns.specs as spec (spec.column)}

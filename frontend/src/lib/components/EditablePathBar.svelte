@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isMiddleButton, openInNewTab } from '#lib/browse/newTab.js';
 	import type { MountPoint } from '#lib/api/files.js';
 	import { Home } from 'lucide-svelte';
 	import { tick } from 'svelte';
@@ -141,6 +142,14 @@
 							onclick={(event) => {
 								event.stopPropagation();
 								onNavigate?.(segment.path);
+							}}
+							onmousedown={(event) => {
+								if (isMiddleButton(event)) event.preventDefault();
+							}}
+							onauxclick={(event) => {
+								if (!isMiddleButton(event)) return;
+								event.stopPropagation();
+								openInNewTab(segment.path);
 							}}>{segment.label}</button
 						>
 					{/if}
