@@ -1141,8 +1141,15 @@ impl Chooser {
             .flex_col()
             .flex_none()
             .border_t_1()
-            .border_color(c(BORDER_SECONDARY))
+            .border_color(c(BORDER_PRIMARY))
             .bg(c(SURFACE_SECONDARY))
+            // The sidebar shares the footer's colour; a shadow up over it parts them.
+            .shadow(vec![gpui::BoxShadow {
+                color: gpui::hsla(0., 0., 0., 0.6),
+                offset: gpui::point(px(0.), px(-3.)),
+                blur_radius: px(12.),
+                spread_radius: px(0.),
+            }])
             .when_some(note, |footer, (text, color)| footer.child(div().id("chooser-note").debug_selector(|| "chooser-note".into()).px(px(EDGE)).pt(px(10.)).text_13().text_color(c(color)).child(text)))
             .child(
                 // Options wrap on the left; the buttons keep the right edge, as in GTK and KDE dialogs.
@@ -1151,7 +1158,7 @@ impl Chooser {
                     .items_center()
                     .gap(px(16.))
                     .px(px(EDGE))
-                    .py(px(12.))
+                    .py(px(8.))
                     .child(
                         div()
                             .flex()
