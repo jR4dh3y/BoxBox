@@ -1,9 +1,31 @@
-import { afterNavigate, goto } from '$app/navigation';
+import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
 import { resolve } from '$app/paths';
 import { page } from '$app/state';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import type { SortDir, SortField, ViewMode } from '#lib/types/files.js';
+import { peekDirectory } from '#lib/api/files.js';
 import { folderView, isRootPath } from './folderViews.js';
+import { HistoryTrail } from './historyTrail.js';
+
+/**
+ * Whether a folder in history can still be opened; the drives always can. A peek reads at most
+ * a few dozen names, and fails for a path that is gone or is no longer a folder.
+ */
+async function exists(path: string): Promise<boolean> {
+	if (isRootPath(path)) return true;
+	try {
+		await peekDirectory(path, false);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export interface HistoryPlace {
+	/** The history entry, for `travelTo`. */
+	index: number;
+	path: string;
+}
 
 function parseSortField(value: string | null): SortField | null {
 	if (value === 'name' || value === 'size' || value === 'modTime' || value === 'type') return value;
@@ -23,8 +45,15 @@ function parseViewMode(value: string | null): ViewMode | null {
  * A folder opened without `sort`, `dir` or `view` gets the ones remembered for it.
  * Call during component setup. `onLocationChange` runs when the folder changes, by link or by back/forward.
  */
-export function useBrowseLocation(options: { onLocationChange: () => void }) {
+export function useBrowseLocation(options: {
+	onLocationChange: () => void;
+	/** What is selected, remembered as the page leaves a history entry. */
+	selection?: () => ReadonlySet<string>;
+	/** Back and Forward put back what was selected in the entry they return to. */
+	onRestoreSelection?: (paths: readonly string[]) => void;
+}) {
 	let historyMaxIndex = $state(page.state.browseHistoryIndex ?? 0);
+	const trail = new HistoryTrail(typeof sessionStorage === 'undefined' ? null : sessionStorage);
 
 	const path = $derived(page.url.searchParams.get('path')?.replace(/^\/+|\/+$/g, '') ?? '');
 	const segments = $derived(path ? path.split('/') : []);
@@ -57,9 +86,50 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 	const canGoBack = $derived(historyIndex > 0);
 	const canGoForward = $derived(historyIndex < historyMaxIndex);
 
-	afterNavigate((navigation) => {
-		if (navigation.type === 'popstate') options.onLocationChange();
+	let arrivedAt = page.state.browseHistoryIndex ?? 0;
+	trail.arrive(arrivedAt, path, false);
+	beforeNavigate((navigation) => {
+		// Back, Forward and links leave the entry here; `navigate` already did for itself.
+		if (navigation.type !== 'goto' && options.selection)
+			trail.leave(historyIndex, options.selection());
 	});
+	afterNavigate((navigation) => {
+		const index = page.state.browseHistoryIndex ?? 0;
+		trail.arrive(index, path, navigation.type !== 'popstate' && index > arrivedAt);
+		arrivedAt = index;
+		if (navigation.type !== 'popstate') return;
+		options.onLocationChange();
+		const selected = trail.at(index)?.selected ?? [];
+		if (selected.length > 0) options.onRestoreSelection?.(selected);
+	});
+
+	/** Moves to the nearest place back or forward that still exists, as Thunar does. */
+	async function travel(back: boolean): Promise<void> {
+		const from = historyIndex;
+		const next = back ? from - 1 : from + 1;
+		if (next < 0 || next > historyMaxIndex) return;
+		const places = trail.around(from, back, historyMaxIndex);
+		// An entry from before the trail began is not known; the browser takes the step.
+		if (places[0]?.index !== next) {
+			history.go(back ? -1 : 1);
+			return;
+		}
+		for (const place of places) {
+			if (await exists(place.entry.path)) {
+				if (historyIndex === from) history.go(place.index - from);
+				return;
+			}
+		}
+	}
+
+	/** The places in a Back or Forward menu that still exist, nearest first. */
+	async function historyPlaces(back: boolean): Promise<HistoryPlace[]> {
+		const places = trail.around(historyIndex, back, historyMaxIndex);
+		const found = await Promise.all(places.map(({ entry }) => exists(entry.path)));
+		return places
+			.filter((_, at) => found[at])
+			.map(({ index, entry }) => ({ index, path: entry.path }));
+	}
 
 	/** Search, sort and view changes replace the history entry. A new folder adds one. */
 	function updateParams(
@@ -93,6 +163,8 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 
 	/** The new folder opens in its own view and sort, so the old folder's are dropped. */
 	function navigate(newPath: string) {
+		// Remembered before the folder change clears it; Back brings it back.
+		if (options.selection) trail.leave(historyIndex, options.selection());
 		options.onLocationChange();
 		updateParams({ path: newPath || null, q: null, sort: null, dir: null, view: null });
 	}
@@ -135,8 +207,17 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 			return canGoForward;
 		},
 		navigate,
-		back: () => history.back(),
-		forward: () => history.forward(),
+		back(): void {
+			void travel(true);
+		},
+		forward(): void {
+			void travel(false);
+		},
+		historyPlaces,
+		/** Goes to a place a Back or Forward menu listed. */
+		travelTo(index: number) {
+			if (index !== historyIndex) history.go(index - historyIndex);
+		},
 		search: (query: string) => updateParams({ q: query.trim() || null }, { replaceState: true }),
 		clearSearch: () => updateParams({ q: null }, { replaceState: true }),
 		/** A folder keeps the sort picked in it; search results and the drives are not a folder. */

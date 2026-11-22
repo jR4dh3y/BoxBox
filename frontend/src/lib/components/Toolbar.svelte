@@ -21,6 +21,8 @@
 		canGoForward?: boolean;
 		onBack?: () => void;
 		onForward?: () => void;
+		/** Right-click on Back or Forward: the places in that direction. */
+		onHistoryMenu?: (back: boolean, x: number, y: number) => void;
 		onNavigate?: (path: string) => void;
 		onRefresh?: () => void;
 		onSettings?: () => void;
@@ -48,6 +50,7 @@
 		canGoForward = false,
 		onBack,
 		onForward,
+		onHistoryMenu,
 		onNavigate,
 		onRefresh,
 		onSettings,
@@ -96,7 +99,17 @@
 		>
 			<PanelLeft size={16} />
 		</button>
-		<button type="button" class={navBtnClass} disabled={!canGoBack} onclick={onBack} title="Back">
+		<button
+			type="button"
+			class={navBtnClass}
+			disabled={!canGoBack}
+			onclick={onBack}
+			oncontextmenu={(event) => {
+				event.preventDefault();
+				onHistoryMenu?.(true, event.clientX, event.clientY);
+			}}
+			title="Back"
+		>
 			<ChevronLeft size={18} />
 		</button>
 		<button
@@ -104,6 +117,10 @@
 			class={navBtnClass}
 			disabled={!canGoForward}
 			onclick={onForward}
+			oncontextmenu={(event) => {
+				event.preventDefault();
+				onHistoryMenu?.(false, event.clientX, event.clientY);
+			}}
 			title="Forward"
 		>
 			<ChevronRight size={18} />

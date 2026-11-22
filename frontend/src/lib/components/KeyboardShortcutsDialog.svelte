@@ -35,6 +35,7 @@
 				['Ctrl/Cmd + L', 'Edit location'],
 				['Ctrl/Cmd + F', 'Search this folder'],
 				['Alt + Left · Right', 'Back · Forward'],
+				['Right-click Back · Forward', 'Places in history'],
 				['Middle-click a folder', 'Open it in a new tab'],
 				['Ctrl/Cmd + plus · minus · 0', 'Zoom in · out · reset'],
 				['Ctrl/Cmd + wheel', 'Zoom'],

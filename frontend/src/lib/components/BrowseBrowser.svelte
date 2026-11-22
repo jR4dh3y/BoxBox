@@ -23,7 +23,7 @@
 	import { jobsStore } from '#lib/stores/jobs.svelte.js';
 	import { useBrowseActions } from '#lib/browse/actions.svelte.js';
 	import { useBrowseData } from '#lib/browse/data.svelte.js';
-	import { useBrowseLocation } from '#lib/browse/location.svelte.js';
+	import { useBrowseLocation, type HistoryPlace } from '#lib/browse/location.svelte.js';
 	import { selectedFileBytes, useBrowseSelection } from '#lib/browse/selection.svelte.js';
 	import { useBrowseUploads } from '#lib/browse/uploads.svelte.js';
 	import { CONFIG } from '#lib/config.js';
@@ -56,7 +56,12 @@
 	const paneState = untrack(() => pane);
 	const selection = paneState?.selection ?? useBrowseSelection();
 	const location =
-		paneState?.location ?? useBrowseLocation({ onLocationChange: () => selection.clear() });
+		paneState?.location ??
+		useBrowseLocation({
+			onLocationChange: () => selection.clear(),
+			selection: () => selection.paths,
+			onRestoreSelection: (paths) => selection.set(new Set(paths))
+		});
 	const data = useBrowseData(location, selection, () => catalog);
 	onMount(() => {
 		onRuntime?.({ location, data });
@@ -140,6 +145,17 @@
 	});
 
 	let shortcutsOpen = $state(false);
+	let historyMenu = $state<{ x: number; y: number; places: HistoryPlace[] } | null>(null);
+	async function openHistoryMenu(back: boolean, x: number, y: number) {
+		const places = await location.historyPlaces(back);
+		historyMenu = places.length > 0 ? { x, y, places } : null;
+	}
+	/** A place's name in the history menu: the drive's label, or the folder's name. */
+	function placeLabel(path: string): string {
+		if (!path) return data.serverName ?? 'This Server';
+		const root = data.roots.find((candidate) => candidate.name === path);
+		return root?.label ?? path.split('/').at(-1) ?? path;
+	}
 	const wheelZoom = new WheelZoom();
 	/** Ctrl+wheel over the listing zooms it instead of the page. */
 	function zoomWheel(node: HTMLElement) {
@@ -244,6 +260,7 @@
 		canGoForward={location.canGoForward}
 		onBack={location.back}
 		onForward={location.forward}
+		onHistoryMenu={(back, x, y) => void openHistoryMenu(back, x, y)}
 		onNavigate={location.navigate}
 		onRefresh={refresh}
 		{refreshDisabled}
@@ -492,6 +509,22 @@
 			path={actions.openWithFile.path}
 			onclose={actions.closeOpenWith}
 		/>{/await}
+{/if}
+
+{#if historyMenu}
+	{@const menu = historyMenu}
+	{#await import('#lib/components/ui/ContextMenu.svelte') then { default: ContextMenu }}
+		<ContextMenu
+			items={menu.places.map((place) => ({
+				id: String(place.index),
+				label: placeLabel(place.path)
+			}))}
+			x={menu.x}
+			y={menu.y}
+			onSelect={(id) => location.travelTo(Number(id))}
+			onClose={() => (historyMenu = null)}
+		/>
+	{/await}
 {/if}
 
 {#if shortcutsOpen}
