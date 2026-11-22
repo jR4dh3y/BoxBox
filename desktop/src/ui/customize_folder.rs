@@ -5,7 +5,7 @@ use gpui::{div, prelude::*, px, uniform_list, AnyElement, Context, MouseButton, 
 
 use super::{icon, thin_icon, TextScale};
 use crate::components::{emblemed, Button, ButtonVariant, Input, Modal, ModalSize, Tooltip};
-use crate::emblems::{self, Stroke};
+use crate::emblems;
 use crate::theme::*;
 use crate::workspace::folder_looks::{EmblemChoice, FolderLook, COLORS};
 use crate::workspace::Workspace;
@@ -146,7 +146,7 @@ impl Workspace {
                             let glyph: AnyElement = match choice {
                                 Choice::Without => icon("x", 18., c(TEXT_MUTED)).into_any_element(),
                                 Choice::Own(name) | Choice::Icon(name) => gpui::svg()
-                                    .path(emblems::path(name, Stroke::Regular))
+                                    .path(emblems::path(name))
                                     .size(px(20.))
                                     .text_color(c(if selected { accent } else { TEXT_SECONDARY }))
                                     .into_any_element(),

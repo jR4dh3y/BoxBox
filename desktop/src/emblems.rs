@@ -1,6 +1,6 @@
 //! Every Lucide icon, for folder emblems: `assets/emblems.tsv`, written by
-//! `scripts/extract-icons.ts`. Each SVG is built at the stroke its use needs and
-//! served as `emblems/{stroke}/{name}.svg` (`assets.rs`).
+//! `scripts/extract-icons.ts`. Each SVG is built with Lucide's stroke when it is
+//! drawn and served as `emblems/{name}.svg` (`assets.rs`).
 
 use std::sync::OnceLock;
 
@@ -12,24 +12,6 @@ pub struct Icon {
     /// Its other names, for search.
     pub aliases: &'static str,
     body: &'static str,
-}
-
-/// The stroke an emblem is drawn with.
-#[derive(Clone, Copy)]
-pub enum Stroke {
-    /// Lucide's own, for a small emblem inside the folder and the picker.
-    Regular,
-    /// For the corner emblem, a third of the folder: as bold as the outline.
-    Bold,
-}
-
-impl Stroke {
-    fn width(self) -> &'static str {
-        match self {
-            Self::Regular => "2",
-            Self::Bold => "3.6",
-        }
-    }
 }
 
 pub fn all() -> &'static [Icon] {
@@ -67,20 +49,18 @@ pub fn search(query: &str) -> Vec<&'static Icon> {
         .collect()
 }
 
-/// The asset path that draws `name` with `stroke`.
-pub fn path(name: &str, stroke: Stroke) -> String {
-    format!("emblems/{}/{name}.svg", stroke.width())
+/// The asset path that draws `name`.
+pub fn path(name: &str) -> String {
+    format!("emblems/{name}.svg")
 }
 
 /// The SVG for an asset path from `path`.
 pub fn svg(path: &str) -> Option<Vec<u8>> {
-    let (width, file) = path.strip_prefix("emblems/")?.split_once('/')?;
-    let width = [Stroke::Regular, Stroke::Bold].into_iter().map(Stroke::width).find(|known| *known == width)?;
+    let name = path.strip_prefix("emblems/")?.strip_suffix(".svg")?;
     let icons = all();
-    let name = file.strip_suffix(".svg")?;
     let index = icons.binary_search_by(|icon| icon.name.cmp(name)).ok()?;
     let svg = format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="{width}" stroke-linecap="round" stroke-linejoin="round">{}</svg>"##,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{}</svg>"##,
         icons[index].body
     );
     Some(svg.into_bytes())
@@ -95,8 +75,8 @@ mod tests {
         assert_eq!(super::find("home").map(|icon| icon.name), Some("house"), "an alias finds its icon");
         let names: Vec<&str> = super::search("Game pad").iter().map(|icon| icon.name).collect();
         assert!(names.contains(&"gamepad-2"), "{names:?}");
-        let svg = String::from_utf8(super::svg(&super::path("house", super::Stroke::Bold)).unwrap()).unwrap();
-        assert!(svg.contains(r#"stroke-width="3.6""#) && svg.contains("<path"));
-        assert!(super::svg("emblems/9/house.svg").is_none());
+        let svg = String::from_utf8(super::svg(&super::path("house")).unwrap()).unwrap();
+        assert!(svg.contains(r#"stroke-width="2""#) && svg.contains("<path"));
+        assert!(super::svg("emblems/no-such-icon.svg").is_none());
     }
 }

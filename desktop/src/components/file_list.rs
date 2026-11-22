@@ -534,12 +534,12 @@ const EMBLEM_SCALE: f32 = 0.36;
 
 /// A folder glyph in `color` marked with an emblem, as a special or customised folder.
 pub fn emblemed(glyph: gpui::Svg, emblem: Option<Emblem>, size: f32, color: Rgba) -> Div {
-    use crate::emblems::{path, Stroke};
+    use crate::emblems::path;
     let frame = div().relative().size(px(size)).flex_none();
     let Some(emblem) = emblem else { return frame.child(glyph) };
     let mark_color = emblem.tint.map_or(color, c);
     if size < CORNER_EMBLEM {
-        let mark = gpui::svg().path(path(emblem.name, Stroke::Regular)).size(px(size * 0.4)).text_color(mark_color);
+        let mark = gpui::svg().path(path(emblem.name)).size(px(size * 0.4)).text_color(mark_color);
         return frame.child(glyph).child(div().absolute().left(px(size * 0.3)).top(px(size * 0.36)).child(mark));
     }
     // In the folder's 24 units its outline's outer edge is at x 1.15 and y 20.85; the
@@ -547,6 +547,6 @@ pub fn emblemed(glyph: gpui::Svg, emblem: Option<Emblem>, size: f32, color: Rgba
     let (unit, edge) = (size / 24., size * EMBLEM_SCALE);
     let pad = edge / 12.;
     let outline = gpui::svg().path("icons/thin/folder-emblem.svg").size(px(size)).text_color(color);
-    let mark = gpui::svg().path(path(emblem.name, Stroke::Bold)).size(px(edge)).text_color(mark_color);
+    let mark = gpui::svg().path(path(emblem.name)).size(px(edge)).text_color(mark_color);
     frame.child(outline).child(div().absolute().left(px(1.15 * unit - pad)).top(px(20.85 * unit - edge + pad)).child(mark))
 }
