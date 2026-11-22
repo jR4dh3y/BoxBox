@@ -12,6 +12,12 @@ describe('place menu', () => {
 		]);
 		assert.ok(ids(placeMenuItems({ kind: 'drive', path: 'home' }, true)).includes('rename-drive'));
 		assert.ok(ids(placeMenuItems({ kind: 'favorite', path: 'home/a' }, true)).includes('unpin'));
+		assert.ok(
+			!ids(placeMenuItems({ kind: 'place', path: 'home/Downloads' }, true)).includes(
+				'rename-drive'
+			),
+			'a place keeps its folder name'
+		);
 		const root = placeMenuItems({ kind: 'drive', path: '' }, true);
 		assert.equal(root.find((item) => item.id === 'paste')?.disabled, true);
 		assert.ok(!ids(root).includes('rename-drive'));

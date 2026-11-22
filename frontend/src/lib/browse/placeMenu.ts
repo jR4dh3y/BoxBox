@@ -6,6 +6,8 @@
 export type Place =
 	| { kind: 'folder'; path: string }
 	| { kind: 'drive'; path: string }
+	// A sidebar place such as Downloads, whose label is its folder's and cannot be renamed.
+	| { kind: 'place'; path: string }
 	| { kind: 'favorite'; path: string };
 
 export type PlaceAction = 'new-tab' | 'paste' | 'copy-path' | 'rename-drive' | 'unpin';

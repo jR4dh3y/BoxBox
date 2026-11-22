@@ -258,7 +258,7 @@
 							type="button"
 							class="{navItemClass} {isActive(place.path) ? navItemActiveClass : ''}"
 							onclick={() => handleNavigate(place.path)}
-							oncontextmenu={(event) => placeMenu(event, { kind: 'drive', path: place.path })}
+							oncontextmenu={(event) => placeMenu(event, { kind: 'place', path: place.path })}
 							class:ring-1={dropTarget?.overPath === place.path}
 							class:ring-inset={dropTarget?.overPath === place.path}
 							class:ring-accent={dropTarget?.overPath === place.path}
