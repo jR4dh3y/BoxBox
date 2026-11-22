@@ -123,8 +123,8 @@ export function useBrowseActions(
 					? await createFile(location.path, name)
 					: await createDirectory(location.path, name);
 			closeCreate();
+			// The new item shows selected in the folder, so success needs no notice.
 			selection.set(new SvelteSet([created.path]));
-			toastStore.success(`${created.name} created`);
 			data.refresh();
 		} catch (error) {
 			toastStore.error(errorMessage(error, 'Create failed'));
@@ -352,14 +352,13 @@ export function useBrowseActions(
 					break;
 				case 'pin':
 					if (only?.isDir) {
+						// The sidebar shows the pin; only failures notify, as in the desktop app.
 						settingsStore.pinFavoriteFolder({ name: only.name, path: only.path });
-						toastStore.success(`${only.name} pinned to favorites`);
 					}
 					break;
 				case 'unpin':
 					if (only?.isDir) {
 						settingsStore.unpinFavoriteFolder(only.path);
-						toastStore.success(`${only.name} unpinned from favorites`);
 					}
 					break;
 				case 'rename':
