@@ -1,9 +1,11 @@
 import { resolve } from '$app/paths';
 
-/** The browse page's address for a folder, as a link to it. */
+/**
+ * The browse page's address for a folder, as a link to it. The path is always given, even the
+ * empty one of Drives, so the page does not take it for a start and open the last location.
+ */
 export function browseHref(path: string): string {
-	const query = path ? `?${new URLSearchParams({ path })}` : '';
-	return `${resolve('browse')}${query}`;
+	return `${resolve('browse')}?${new URLSearchParams({ path })}`;
 }
 
 /** Middle-click on a folder opens it in a new browser tab, as a tab does in the desktop app. */
