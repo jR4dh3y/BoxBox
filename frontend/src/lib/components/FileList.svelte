@@ -18,11 +18,14 @@
 	import { untrack } from 'svelte';
 	import { Spinner } from '#lib/components/ui/index.js';
 	import LoadError from '#lib/components/LoadError.svelte';
-	import { ChevronDown, ChevronUp, FolderOpen } from 'lucide-svelte';
+	import { FolderOpen } from 'lucide-svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
 	import { withPathSelected } from '#lib/browse/selection.svelte.js';
+	import { ColumnTable } from '#lib/browse/columnTable.svelte.js';
+	import type { Column } from '#lib/browse/columns.js';
+	import ColumnHeader from './ColumnHeader.svelte';
 
 	let {
 		items = [],
@@ -75,12 +78,17 @@
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
 	const LIST_HEADER_HEIGHT = 32;
-	const columns: { field: SortField; label: string; align: 'left' | 'right' }[] = [
-		{ field: 'name', label: 'Name', align: 'left' },
-		{ field: 'type', label: 'Type', align: 'left' },
-		{ field: 'size', label: 'Size', align: 'right' },
-		{ field: 'modTime', label: 'Modified', align: 'left' }
-	];
+	const columns = new ColumnTable();
+	const observeColumns = columns.observe;
+	const SORT_FIELDS: Partial<Record<Column, SortField>> = {
+		name: 'name',
+		size: 'size',
+		type: 'type',
+		modified: 'modTime'
+	};
+	const sortedColumn = $derived(
+		(Object.keys(SORT_FIELDS) as Column[]).find((column) => SORT_FIELDS[column] === sortBy) ?? null
+	);
 	let tableElement = $state<HTMLTableElement | null>(null);
 	let activeItemPath = $state<string | null>(null);
 	const activeItemIndex = $derived.by(() =>
@@ -108,7 +116,9 @@
 	// Context menu state
 	let contextMenu = $state<{ x: number; y: number; items: FileInfo[] } | null>(null);
 
-	function handleSort(field: SortField) {
+	function handleSort(column: Column) {
+		const field = SORT_FIELDS[column];
+		if (!field) return;
 		if (sortBy === field) {
 			const newDir = sortDir === 'asc' ? 'desc' : 'asc';
 			onSortChange?.(field, newDir);
@@ -338,9 +348,6 @@
 		return dotIndex > 0 ? item.name.slice(0, dotIndex) : item.name;
 	}
 
-	const thClass =
-		'text-left px-3 py-0 bg-surface-secondary border-b border-border-primary font-medium text-text-secondary whitespace-nowrap select-none sticky top-0 z-[5] cursor-pointer transition-colors duration-100 hover:bg-surface-tertiary hover:text-text-primary focus:outline focus:outline-1 focus:outline-accent focus:-outline-offset-1';
-	const thSortedClass = 'text-accent';
 	const tdClass =
 		'h-[32px] px-3 py-1 align-middle border-b border-border-secondary text-text-primary';
 	const compactTdClass =
@@ -354,6 +361,7 @@
 		? 'compact'
 		: ''}"
 	use:attachRowWindow
+	use:observeColumns
 	onscroll={handleViewportScroll}
 	oncontextmenu={handleBackgroundContextMenu}
 >
@@ -366,11 +374,12 @@
 	<table
 		bind:this={tableElement}
 		class="w-full table-fixed border-collapse text-[13px] leading-5 outline-none"
+		style:min-width="{columns.minWidth}px"
 		role="grid"
 		tabindex="0"
 		aria-busy={isLoading}
 		aria-rowcount={items.length + (items.length === 0 && !isLoading ? 2 : 1)}
-		aria-colcount="4"
+		aria-colcount={columns.specs.length}
 		aria-multiselectable="true"
 		aria-activedescendant={activeItemIndex >= 0 &&
 		activeItemIndex >= rowWindow.itemStart &&
@@ -381,52 +390,18 @@
 		onfocusin={handleTableFocus}
 		onkeydown={handleGridKeyDown}
 	>
-		<colgroup>
-			<col />
-			<col class="w-[18%]" />
-			<col class="w-[15%]" />
-			<col class="w-[25%]" />
-		</colgroup>
-		<thead>
-			<tr aria-rowindex="1" style="height: {LIST_HEADER_HEIGHT}px">
-				{#each columns as column (column.field)}
-					<th
-						class="{thClass} {column.align === 'right' ? 'text-right' : ''} {sortBy === column.field
-							? thSortedClass
-							: ''}"
-						onclick={() => handleSort(column.field)}
-						onkeydown={(e) => e.key === 'Enter' && handleSort(column.field)}
-						tabindex="0"
-						role="columnheader"
-						data-file-header="true"
-						aria-sort={sortBy === column.field
-							? sortDir === 'asc'
-								? 'ascending'
-								: 'descending'
-							: 'none'}
-					>
-						<span
-							class="flex min-w-0 items-center gap-1 {column.align === 'right'
-								? 'justify-end'
-								: ''}"
-						>
-							<span class="truncate">{column.label}</span>
-							<span class="inline-flex w-3 shrink-0 justify-center">
-								{#if sortBy === column.field}
-									{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown
-											size={12}
-										/>{/if}
-								{/if}
-							</span>
-						</span>
-					</th>
-				{/each}
-			</tr>
-		</thead>
+		<ColumnHeader
+			{columns}
+			table={tableElement}
+			height={LIST_HEADER_HEIGHT}
+			sortedBy={sortedColumn}
+			{sortDir}
+			onSort={handleSort}
+		/>
 		<tbody>
 			{#if items.length === 0 && !isLoading}
 				<tr aria-rowindex="2">
-					<td colspan="4" class="px-3 py-12">
+					<td colspan={columns.specs.length} class="px-3 py-12">
 						<div class="flex flex-col items-center gap-2 text-text-muted">
 							<FolderOpen size={32} class="opacity-50" />
 							<span class="text-[13px]">{emptyMessage}</span>
@@ -436,7 +411,11 @@
 			{:else}
 				{#if rowWindow.beforeSize > 0}
 					<tr aria-hidden="true" style={`height: ${rowWindow.beforeSize}px`}>
-						<td colspan="4" class="border-0 p-0" style={`height: ${rowWindow.beforeSize}px`}></td>
+						<td
+							colspan={columns.specs.length}
+							class="border-0 p-0"
+							style={`height: ${rowWindow.beforeSize}px`}
+						></td>
 					</tr>
 				{/if}
 				{#each items.slice(rowWindow.itemStart, rowWindow.itemEnd) as item, visibleOffset (item.path)}
@@ -493,67 +472,79 @@
 						data-file-row="true"
 						data-file-path={item.path}
 					>
-						<td id={`file-list-cell-${itemIndex}`} class={compactMode ? compactTdClass : tdClass}>
-							<div class="flex min-w-0 items-center gap-2">
-								<span
-									class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
-										? 'text-folder'
-										: 'text-text-secondary'}"
+						{#each columns.specs as spec (spec.column)}
+							{#if spec.column === 'name'}
+								<td
+									id={`file-list-cell-${itemIndex}`}
+									class={compactMode ? compactTdClass : tdClass}
 								>
-									<span
-										class="flex items-center justify-center {selectionCheckboxes
-											? isSelected(item.path)
-												? 'invisible'
-												: 'group-hover/icon:invisible pointer-coarse:invisible'
-											: ''}"
+									<div class="flex min-w-0 items-center gap-2">
+										<span
+											class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
+												? 'text-folder'
+												: 'text-text-secondary'}"
+										>
+											<span
+												class="flex items-center justify-center {selectionCheckboxes
+													? isSelected(item.path)
+														? 'invisible'
+														: 'group-hover/icon:invisible pointer-coarse:invisible'
+													: ''}"
+											>
+												<IconComponent size={16} />
+											</span>
+											{#if selectionCheckboxes}
+												<!-- Selected items keep their checkbox after the pointer leaves. -->
+												<input
+													type="checkbox"
+													tabindex="-1"
+													checked={isSelected(item.path)}
+													aria-label={`Select ${item.name}`}
+													class="absolute inset-0.5 m-0 cursor-pointer accent-accent {isSelected(
+														item.path
+													)
+														? ''
+														: 'opacity-0 group-hover/icon:opacity-100 pointer-coarse:opacity-100'}"
+													onclick={(event) => event.stopPropagation()}
+													ondblclick={(event) => event.stopPropagation()}
+													onchange={(event) => handleCheck(item, event.currentTarget.checked)}
+												/>
+											{/if}
+										</span>
+										<span class="{clippedCellClass} min-w-0 flex-1 {item.isDir ? 'text-folder' : ''}" title={item.name}>
+											{displayName}
+										</span>
+									</div>
+								</td>
+							{:else if spec.column === 'size'}
+								<td
+									class="{compactMode
+										? compactTdClass
+										: tdClass} text-right {secondaryText} tabular-nums"
+								>
+									<span class={clippedCellClass} title={sizeDescription}>{sizeDescription}</span>
+								</td>
+							{:else if spec.column === 'type'}
+								<td class="{compactMode ? compactTdClass : tdClass} {secondaryText}">
+									<span class={clippedCellClass} title={typeDescription}>{typeDescription}</span>
+								</td>
+							{:else}
+								<td class="{compactMode ? compactTdClass : tdClass} {secondaryText}">
+									<span class={clippedCellClass} title={modifiedDescription}
+										>{modifiedDescription}</span
 									>
-										<IconComponent size={16} />
-									</span>
-									{#if selectionCheckboxes}
-										<!-- Selected items keep their checkbox after the pointer leaves. -->
-										<input
-											type="checkbox"
-											tabindex="-1"
-											checked={isSelected(item.path)}
-											aria-label={`Select ${item.name}`}
-											class="absolute inset-0.5 m-0 cursor-pointer accent-accent {isSelected(
-												item.path
-											)
-												? ''
-												: 'opacity-0 group-hover/icon:opacity-100 pointer-coarse:opacity-100'}"
-											onclick={(event) => event.stopPropagation()}
-											ondblclick={(event) => event.stopPropagation()}
-											onchange={(event) => handleCheck(item, event.currentTarget.checked)}
-										/>
-									{/if}
-								</span>
-								<span
-									class="{clippedCellClass} min-w-0 flex-1 {item.isDir ? 'text-folder' : ''}"
-									title={item.name}
-								>
-									{displayName}
-								</span>
-							</div>
-						</td>
-						<td class="{compactMode ? compactTdClass : tdClass} {secondaryText}">
-							<span class={clippedCellClass} title={typeDescription}>{typeDescription}</span>
-						</td>
-						<td
-							class="{compactMode
-								? compactTdClass
-								: tdClass} text-right {secondaryText} tabular-nums"
-						>
-							<span class={clippedCellClass} title={sizeDescription}>{sizeDescription}</span>
-						</td>
-						<td class="{compactMode ? compactTdClass : tdClass} {secondaryText}">
-							<span class={clippedCellClass} title={modifiedDescription}>{modifiedDescription}</span
-							>
-						</td>
+								</td>
+							{/if}
+						{/each}
 					</tr>
 				{/each}
 				{#if rowWindow.afterSize > 0}
 					<tr aria-hidden="true" style={`height: ${rowWindow.afterSize}px`}>
-						<td colspan="4" class="border-0 p-0" style={`height: ${rowWindow.afterSize}px`}></td>
+						<td
+							colspan={columns.specs.length}
+							class="border-0 p-0"
+							style={`height: ${rowWindow.afterSize}px`}
+						></td>
 					</tr>
 				{/if}
 			{/if}

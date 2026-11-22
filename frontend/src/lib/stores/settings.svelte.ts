@@ -13,6 +13,7 @@ import {
 	type FolderViews
 } from '#lib/browse/folderViews.js';
 import type { ViewMode } from '#lib/types/files.js';
+import { parseColumnLayout, type ColumnLayout } from '#lib/browse/columns.js';
 import type { DesktopPreferences } from '#lib/api/desktopPreferences.js';
 import { settingsStorage, storage } from '#lib/utils/storage.js';
 import {
@@ -43,6 +44,8 @@ export interface UserSettings {
 	viewPerFolder: boolean;
 	/** Each folder's view and sort, where they differ from the defaults above. */
 	folderViews: FolderViews;
+	/** The list's columns as shown and sized by hand; null keeps the defaults. */
+	fileColumns: ColumnLayout | null;
 	accentColor: string | null;
 	accentColorSource: AccentColorSource;
 	backgroundImage: string | null;
@@ -74,6 +77,7 @@ const defaultSettings: UserSettings = {
 	defaultViewMode: 'list',
 	viewPerFolder: true,
 	folderViews: {},
+	fileColumns: null,
 	accentColor: null,
 	accentColorSource: 'wallpaper',
 	backgroundImage: null,
@@ -106,6 +110,7 @@ function loadSettings(username: string): UserSettings {
 		...settings,
 		accentColorSource: normalizeAccentColorSource(stored?.accentColorSource, settings.accentColor),
 		folderViews: parseFolderViews(settings.folderViews),
+		fileColumns: parseColumnLayout(settings.fileColumns),
 		backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode)
 	};
 }

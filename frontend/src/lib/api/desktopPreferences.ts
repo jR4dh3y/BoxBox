@@ -2,6 +2,7 @@ import { toastStore } from '#lib/stores/toast.svelte.js';
 import { api, apiRequest } from './client';
 import { array, boolean, isRecord, record, string } from './parse';
 import type { UserSettings } from '#lib/stores/settings.svelte.js';
+import { parseColumnLayout } from '#lib/browse/columns.js';
 import { normalizeBackgroundImageMode } from '#lib/utils/wallpaper.js';
 import { parseFolderViews } from '#lib/browse/folderViews.js';
 
@@ -32,6 +33,7 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 		defaultViewMode: choice(saved.defaultViewMode, ['list', 'grid'], defaults.defaultViewMode),
 		viewPerFolder: flag('viewPerFolder'),
 		folderViews: parseFolderViews(saved.folderViews),
+		fileColumns: parseColumnLayout(saved.fileColumns),
 		accentColor: nullable('accentColor'),
 		accentColorSource: choice(
 			saved.accentColorSource,
