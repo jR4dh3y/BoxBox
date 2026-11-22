@@ -230,7 +230,7 @@
 		const columns = rowWindow.columnCount;
 		const moved = cursor.key(
 			event,
-			{ columns, page: columns * Math.max(1, rowWindow.visibleRowCount) },
+			{ grid: true, columns, page: columns * Math.max(1, rowWindow.visibleRowCount) },
 			performance.now()
 		);
 		if (moved.kind !== 'ignored') {

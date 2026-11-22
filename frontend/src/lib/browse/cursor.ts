@@ -14,27 +14,32 @@ export interface Selection {
 	anchor: number | null;
 }
 
-/** How far a key moves the cursor, or null for a key that does not move it. */
-export function cursorDelta(
-	key: string,
-	count: number,
-	columns: number,
-	page: number
-): number | null {
+/** How a view lays its items out for the keyboard. */
+export interface CursorLayout {
+	/** Left and Right move only in a grid, even one narrowed to a single column. */
+	grid: boolean;
+	columns: number;
+	page: number;
+}
+
+/**
+ * How far a key moves the cursor, or null for a key that does not move it. Home and End go
+ * an unbounded way, so they reach their end with or without a cursor.
+ */
+export function cursorDelta(key: string, { grid, columns, page }: CursorLayout): number | null {
 	switch (key) {
 		case 'ArrowUp':
 			return -columns;
 		case 'ArrowDown':
 			return columns;
-		// A list has one column; Left and Right are for the grid.
 		case 'ArrowLeft':
-			return columns === 1 ? null : -1;
+			return grid ? -1 : null;
 		case 'ArrowRight':
-			return columns === 1 ? null : 1;
+			return grid ? 1 : null;
 		case 'Home':
-			return -count;
+			return -Infinity;
 		case 'End':
-			return count;
+			return Infinity;
 		case 'PageUp':
 			return -page;
 		case 'PageDown':
@@ -44,10 +49,15 @@ export function cursorDelta(
 	}
 }
 
-/** Where the cursor lands; with none yet, Up starts at the end and Down at the top. */
+/**
+ * Where the cursor lands; with none yet, Up starts at the end and Down at the top, and Home and
+ * End go to theirs.
+ */
 export function cursorStep(active: number | null, count: number, delta: number): number | null {
 	if (count === 0) return null;
 	const last = count - 1;
+	if (delta === -Infinity) return 0;
+	if (delta === Infinity) return last;
 	if (active === null || active > last) return delta < 0 ? last : 0;
 	return Math.min(last, Math.max(0, active + delta));
 }

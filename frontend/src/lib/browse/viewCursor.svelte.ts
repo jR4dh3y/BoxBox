@@ -6,6 +6,7 @@ import {
 	cursorMoveFor,
 	cursorStep,
 	moveCursor,
+	type CursorLayout,
 	toggleAt,
 	typedCharacter,
 	type Selection
@@ -31,7 +32,8 @@ export type KeyResult = { kind: 'ignored' } | { kind: 'moved'; index: number } |
 export class ViewCursor {
 	/** The item under the keyboard cursor. */
 	activePath = $state<string | null>(null);
-	private anchor: number | null = null;
+	// By path, so a sort or filter keeps it on its item, and an item gone from view drops it.
+	private anchor: string | null = null;
 	private readonly typing = new TypeAhead();
 	private readonly props: () => ViewCursorProps;
 
@@ -45,12 +47,13 @@ export class ViewCursor {
 	}
 
 	private apply(next: Selection): void {
-		this.anchor = next.anchor;
+		this.anchor = next.anchor === null ? null : (this.paths()[next.anchor] ?? null);
 		this.props().onSelectionChange?.(new SvelteSet(next.paths));
 	}
 
 	private selection(): Selection {
-		return { paths: this.props().selectedPaths, anchor: this.anchor };
+		const index = this.anchor === null ? -1 : this.paths().indexOf(this.anchor);
+		return { paths: this.props().selectedPaths, anchor: index < 0 ? null : index };
 	}
 
 	private paths(): string[] {
@@ -113,7 +116,7 @@ export class ViewCursor {
 	/** Moves for a navigation, toggle or typed key. */
 	key(
 		event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
-		layout: { columns: number; page: number },
+		layout: CursorLayout,
 		now: number
 	): KeyResult {
 		const { items } = this.props();
@@ -125,7 +128,7 @@ export class ViewCursor {
 			this.apply(toggleAt(paths, this.selection(), active));
 			return { kind: 'moved', index: active };
 		}
-		const delta = cursorDelta(event.key, items.length, layout.columns, layout.page);
+		const delta = cursorDelta(event.key, layout);
 		if (delta !== null) {
 			const index = cursorStep(active, items.length, delta);
 			if (index === null) return { kind: 'ignored' };

@@ -222,7 +222,7 @@
 
 		const moved = cursor.key(
 			event,
-			{ columns: 1, page: Math.max(1, rowWindow.visibleRowCount) },
+			{ grid: false, columns: 1, page: Math.max(1, rowWindow.visibleRowCount) },
 			performance.now()
 		);
 		if (moved.kind !== 'ignored') {
