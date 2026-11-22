@@ -520,7 +520,7 @@
 							selectionCheckboxes={settings.selectionCheckboxes}
 							fileIconTints={settings.fileIconTints}
 							folderAppearance={appearance}
-							hover={settings.hoverDetails ? hover.files : undefined}
+							hover={settings.hoverDetails && !hover.failed ? hover.files : undefined}
 							folderPreviews={settings.folderPreviews}
 							{renameEditor}
 							onItemClick={actions.openFile}
@@ -552,7 +552,7 @@
 						selectionCheckboxes={settings.selectionCheckboxes}
 						fileIconTints={settings.fileIconTints}
 						folderAppearance={appearance}
-						hover={settings.hoverDetails ? hover.files : undefined}
+						hover={settings.hoverDetails && !hover.failed ? hover.files : undefined}
 						{renameEditor}
 						onItemClick={actions.openFile}
 						{onFolderHover}

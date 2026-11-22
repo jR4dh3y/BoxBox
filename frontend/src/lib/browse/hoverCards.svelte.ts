@@ -20,6 +20,8 @@ export type HoverCardsOptions = HoverCardOptions & Pick<DriveHoverOptions, 'stat
 
 export class HoverCards {
 	cards = $state.raw<{ file: HoverCard; drive: DriveHover }>();
+	/** The cards' code would not download; views keep their native tooltips instead. */
+	failed = $state(false);
 	private resting: Resting | null = null;
 	private readonly options: HoverCardsOptions;
 
@@ -47,12 +49,16 @@ export class HoverCards {
 	private point(resting: Resting): void {
 		this.resting = resting;
 		if (this.cards) return show(this.cards, resting);
-		if (resting.at.touch || !this.options.enabled()) return;
-		void import('./hoverCard.svelte.js').then(({ HoverCard, DriveHover }) => {
-			this.cards ??= { file: new HoverCard(this.options), drive: new DriveHover(this.options) };
-			// The pointer may have left while the code loaded.
-			if (this.resting) show(this.cards, this.resting);
-		});
+		if (this.failed || resting.at.touch || !this.options.enabled()) return;
+		import('./hoverCard.svelte.js').then(
+			({ HoverCard, DriveHover }) => {
+				this.cards ??= { file: new HoverCard(this.options), drive: new DriveHover(this.options) };
+				// The pointer may have left while the code loaded.
+				if (this.resting) show(this.cards, this.resting);
+			},
+			// A browser keeps a failed import, so trying again before a reload would not help.
+			() => (this.failed = true)
+		);
 	}
 }
 
