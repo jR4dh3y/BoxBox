@@ -23,6 +23,7 @@
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
 	import { ViewCursor } from '#lib/browse/viewCursor.svelte.js';
+	import { DEFAULT_ZOOM, listMetrics } from '#lib/browse/zoom.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
 	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverCard.svelte.js';
@@ -40,7 +41,7 @@
 		emptyMessage = 'This folder is empty',
 		selectedPaths = new SvelteSet<string>(),
 		isLoading = false,
-		compactMode = false,
+		zoom = DEFAULT_ZOOM,
 		cutPaths = new SvelteSet<string>(),
 		favoritePaths = new SvelteSet<string>(),
 		canPaste = false,
@@ -65,7 +66,8 @@
 		emptyMessage?: string;
 		selectedPaths?: Set<string>;
 		isLoading?: boolean;
-		compactMode?: boolean;
+		/** The list's zoom step. */
+		zoom?: number;
 		cutPaths?: Set<string>;
 		favoritePaths?: Set<string>;
 		canPaste?: boolean;
@@ -101,6 +103,7 @@
 		(Object.keys(SORT_FIELDS) as Column[]).find((column) => SORT_FIELDS[column] === sortBy) ?? null
 	);
 	let tableElement = $state<HTMLTableElement | null>(null);
+	const metrics = $derived(listMetrics(zoom));
 	const cursor = new ViewCursor(() => ({ items, selectedPaths, onSelectionChange }));
 	const activeItemIndex = $derived(cursor.activeIndex);
 	const rowWindow = createFixedRowWindow({
@@ -108,7 +111,7 @@
 		itemKey: (item) => item.path,
 		viewKey: () => viewKey,
 		isReady: () => !isLoading,
-		rowHeight: () => (compactMode ? 28 : 32),
+		rowHeight: () => metrics.rowHeight,
 		itemOffset: () => LIST_HEADER_HEIGHT,
 		viewportOffset: () => LIST_HEADER_HEIGHT
 	});
@@ -292,18 +295,13 @@
 		return dotIndex > 0 ? item.name.slice(0, dotIndex) : item.name;
 	}
 
-	const tdClass =
-		'h-[32px] px-3 py-1 align-middle border-b border-border-secondary text-text-primary';
-	const compactTdClass =
-		'h-[28px] px-3 py-0.5 align-middle border-b border-border-secondary text-text-primary';
+	const tdClass = 'px-3 py-0 align-middle border-b border-border-secondary text-text-primary';
 	const clippedCellClass = 'block overflow-hidden text-ellipsis whitespace-nowrap';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="file-surface relative h-full w-full overflow-auto bg-surface-primary [overflow-anchor:none] {compactMode
-		? 'compact'
-		: ''}"
+	class="file-surface relative h-full w-full overflow-auto bg-surface-primary [overflow-anchor:none]"
 	use:attachRowWindow
 	use:observeColumns
 	onscroll={handleViewportScroll}
@@ -373,7 +371,7 @@
 						: 'text-text-secondary'}
 					{@const modifiedDescription = formatFileDate(item.modTime)}
 					<tr
-						style={`height: ${compactMode ? 28 : 32}px`}
+						style={`height: ${metrics.rowHeight}px`}
 						class="cursor-default transition-colors duration-50 {isSelected(item.path)
 							? 'bg-selection hover:bg-selection-hover'
 							: activeItemIndex === itemIndex
@@ -425,13 +423,12 @@
 					>
 						{#each columns.specs as spec (spec.column)}
 							{#if spec.column === 'name'}
-								<td
-									id={`file-list-cell-${itemIndex}`}
-									class={compactMode ? compactTdClass : tdClass}
-								>
+								<td id={`file-list-cell-${itemIndex}`} class={tdClass}>
 									<div class="flex min-w-0 items-center gap-2">
 										<span
-											class="group/icon relative flex h-5 w-5 shrink-0 items-center justify-center {item.isDir
+											style:width="{metrics.icon + 4}px"
+											style:height="{metrics.icon + 4}px"
+											class="group/icon relative flex shrink-0 items-center justify-center {item.isDir
 												? 'text-folder'
 												: 'text-text-secondary'}"
 										>
@@ -443,9 +440,9 @@
 													: ''}"
 											>
 												{#if item.isDir}
-													<FolderGlyph size={16} {...folderAppearance(item.path)} />
+													<FolderGlyph size={metrics.icon} {...folderAppearance(item.path)} />
 												{:else}
-													<IconComponent size={16} />
+													<IconComponent size={metrics.icon} />
 												{/if}
 											</span>
 											{#if selectionCheckboxes}
@@ -475,19 +472,15 @@
 									</div>
 								</td>
 							{:else if spec.column === 'size'}
-								<td
-									class="{compactMode
-										? compactTdClass
-										: tdClass} text-right {secondaryText} tabular-nums"
-								>
+								<td class="{tdClass} text-right {secondaryText} tabular-nums">
 									<span class={clippedCellClass} title={sizeDescription}>{sizeDescription}</span>
 								</td>
 							{:else if spec.column === 'type'}
-								<td class="{compactMode ? compactTdClass : tdClass} {secondaryText}">
+								<td class="{tdClass} {secondaryText}">
 									<span class={clippedCellClass} title={typeDescription}>{typeDescription}</span>
 								</td>
 							{:else}
-								<td class="{compactMode ? compactTdClass : tdClass} {secondaryText}">
+								<td class="{tdClass} {secondaryText}">
 									<span class={clippedCellClass} title={modifiedDescription}
 										>{modifiedDescription}</span
 									>

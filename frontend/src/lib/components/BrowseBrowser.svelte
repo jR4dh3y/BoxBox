@@ -36,6 +36,7 @@
 	import { parentFolder } from '#lib/browse/details.js';
 	import { getFileShortcut, isTextEntryTarget } from '#lib/browse/fileShortcuts.js';
 	import { invertedPaths, pathsMatching } from '#lib/browse/selectPattern.js';
+	import { WheelZoom } from '#lib/browse/zoom.js';
 
 	let {
 		pane,
@@ -139,6 +140,20 @@
 	});
 
 	let shortcutsOpen = $state(false);
+	const wheelZoom = new WheelZoom();
+	/** Ctrl+wheel over the listing zooms it instead of the page. */
+	function zoomWheel(node: HTMLElement) {
+		const wheel = (event: WheelEvent) => {
+			if (!(event.ctrlKey || event.metaKey) || data.isAtRoot) return;
+			event.preventDefault();
+			const steps = wheelZoom.steps(event.deltaY, event.deltaMode);
+			for (let step = 0; step < Math.abs(steps); step++)
+				settingsStore.zoom(location.viewMode, steps > 0 ? 'in' : 'out');
+		};
+		// Not passive, so the browser's own page zoom can be held back.
+		node.addEventListener('wheel', wheel, { passive: false });
+		return { destroy: () => node.removeEventListener('wheel', wheel) };
+	}
 	let patternOpen = $state(false);
 	// The last pattern comes back, as the desktop app keeps it for the session.
 	let lastPattern = $state('');
@@ -192,6 +207,15 @@
 			case 'select-pattern':
 				if (!inFolder) return;
 				patternOpen = true;
+				break;
+			case 'zoom-in':
+			case 'zoom-out':
+			case 'zoom-reset':
+				if (!inFolder) return;
+				settingsStore.zoom(
+					location.viewMode,
+					shortcut === 'zoom-in' ? 'in' : shortcut === 'zoom-out' ? 'out' : 'reset'
+				);
 				break;
 			case 'invert-selection':
 				if (!inFolder) return;
@@ -289,6 +313,7 @@
 			ondrop={(event) => drop.drop(event, location.path)}
 			role="region"
 			aria-label="File browser content"
+			use:zoomWheel
 		>
 			<!-- Drag-drop overlay -->
 			{#if drop.overPath === location.path && !data.isAtRoot}
@@ -326,7 +351,7 @@
 						drives={data.drives}
 						isLoading={data.isLoadingDrives}
 						viewMode={location.driveViewMode}
-						compactMode={settings.compactMode}
+						compact={settings.listZoom === 0}
 						onOpen={(drive) => location.navigate(drive.name)}
 						{onFolderHover}
 					/>
@@ -353,7 +378,7 @@
 						emptyMessage={data.emptyListMessage}
 						selectedPaths={selection.paths}
 						isLoading={data.isFileListLoading}
-						compactMode={settings.compactMode}
+						zoom={settings.gridZoom}
 						cutPaths={actions.cutPaths}
 						favoritePaths={actions.favoritePaths}
 						canPaste={actions.canPaste}
@@ -383,7 +408,7 @@
 					emptyMessage={data.emptyListMessage}
 					selectedPaths={selection.paths}
 					isLoading={data.isFileListLoading}
-					compactMode={settings.compactMode}
+					zoom={settings.listZoom}
 					cutPaths={actions.cutPaths}
 					favoritePaths={actions.favoritePaths}
 					canPaste={actions.canPaste}

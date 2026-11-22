@@ -240,20 +240,20 @@ test('logout, account switching and session expiry isolate all browser preferenc
 		setWallpaper('alice');
 		await login('alice');
 		await syncShareWallpaperOnLogin();
-		settingsStore.set({ ...settingsStore.current, accentColor: '#123456', compactMode: true });
+		settingsStore.set({ ...settingsStore.current, accentColor: '#123456', listZoom: 0 });
 		await authStore.logout();
 		assert.equal(settingsStore.current.accentColor, null);
 		await login('bob');
 		assert.equal(settingsStore.current.backgroundImage, null);
 		assert.equal(settingsStore.current.accentColor, null);
-		assert.equal(settingsStore.current.compactMode, false);
+		assert.equal(settingsStore.current.listZoom, 1);
 		await syncShareWallpaperOnLogin();
 		settingsStore.set({ ...settingsStore.current, accentColor: '#abcdef' });
 		authStore.handleRefreshFailure(new ApiRequestError('Expired', 401, 'UNAUTHORIZED'), 'refresh');
 		assert.equal(settingsStore.current.accentColor, null);
 		await login('alice');
 		assert.equal(settingsStore.current.accentColor, '#123456');
-		assert.equal(settingsStore.current.compactMode, true);
+		assert.equal(settingsStore.current.listZoom, 0);
 		await syncShareWallpaperOnLogin();
 	});
 });
@@ -373,17 +373,14 @@ test('late preference initialization cannot apply drive names after an account s
 
 test('legacy preferences are adopted only by their recorded owner', async () => {
 	await withSession(async ({ login, values }) => {
-		values.set(
-			STORAGE_KEYS.SETTINGS,
-			JSON.stringify({ accentColor: '#123456', compactMode: true })
-		);
+		values.set(STORAGE_KEYS.SETTINGS, JSON.stringify({ accentColor: '#123456', listZoom: 0 }));
 		values.set('boxbox_wallpaper_owner', 'alice');
 		await login('bob');
 		assert.equal(settingsStore.current.accentColor, null);
 		await authStore.logout();
 		await login('alice');
 		assert.equal(settingsStore.current.accentColor, '#123456');
-		assert.equal(settingsStore.current.compactMode, true);
+		assert.equal(settingsStore.current.listZoom, 0);
 	});
 });
 
@@ -442,11 +439,11 @@ test('failed persistence still applies preferences and a restored wallpaper in m
 			throw new Error('Storage full');
 		};
 		try {
-			settingsStore.set({ ...settingsStore.current, compactMode: true });
-			assert.equal(settingsStore.current.compactMode, true);
+			settingsStore.set({ ...settingsStore.current, listZoom: 0 });
+			assert.equal(settingsStore.current.listZoom, 0);
 			await syncShareWallpaperOnLogin();
 			assert.equal(settingsStore.current.backgroundImage, reference);
-			assert.equal(settingsStore.current.compactMode, true);
+			assert.equal(settingsStore.current.listZoom, 0);
 		} finally {
 			localStorage.setItem = original;
 		}
@@ -459,7 +456,7 @@ test('an unrelated save after failed image restoration preserves the remote wall
 		await login('alice');
 		state.imageStatus = 500;
 		await syncShareWallpaperOnLogin();
-		settingsStore.set({ ...settingsStore.current, compactMode: true });
+		settingsStore.set({ ...settingsStore.current, listZoom: 0 });
 		await publishShareWallpaper();
 		assert.equal(stored.has('alice'), true);
 		assert.equal(
@@ -483,7 +480,7 @@ test('an unrelated save cannot upload stale cached bytes after newer remote imag
 		const cached = settingsStore.current.backgroundImage;
 		assert.ok(cached);
 		assert.equal(await (await getLocalWallpaperBlob(cached))?.text(), 'cached-X');
-		settingsStore.set({ ...settingsStore.current, compactMode: true });
+		settingsStore.set({ ...settingsStore.current, listZoom: 0 });
 		await publishShareWallpaper();
 		assert.deepEqual(stored.get('alice'), newer);
 		assert.equal(
@@ -765,7 +762,7 @@ test('display saves capture and retry the matching failed image or removal at ap
 				...settingsStore.current,
 				backgroundImageMode: change === 'fit' ? 'tile' : settingsStore.current.backgroundImageMode,
 				frostedGlass: change === 'blur' ? false : settingsStore.current.frostedGlass,
-				compactMode: true
+				listZoom: 0
 			});
 			assert.equal(captured, retryIntent, 'Save must capture the existing matching intent');
 			await publishShareWallpaper(captured, true);

@@ -189,14 +189,6 @@
 		onchange={(folderPreviews) => preferences.update({ folderPreviews })}
 	/>
 </SettingsRow>
-<SettingsRow label="Compact rows">
-	<Toggle
-		checked={settings.compactMode}
-		label="Compact rows"
-		showLabel={false}
-		onchange={(compactMode) => preferences.update({ compactMode })}
-	/>
-</SettingsRow>
 <SettingsRow label="Wallpaper">
 	<div class="flex min-w-0 items-center gap-2">
 		{#if wallpaperLabel}

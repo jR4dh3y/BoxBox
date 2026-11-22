@@ -6,6 +6,7 @@ import { parseColumnLayout } from '#lib/browse/columns.js';
 import { parseFolderLooks } from '#lib/browse/folderLooks.js';
 import { normalizeBackgroundImageMode } from '#lib/utils/wallpaper.js';
 import { parseFolderViews } from '#lib/browse/folderViews.js';
+import { savedZoom } from '#lib/browse/zoom.js';
 
 function choice<T extends string>(value: unknown, choices: T[], fallback: T): T {
 	if (value === undefined) return fallback;
@@ -52,7 +53,8 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 		selectionCheckboxes: flag('selectionCheckboxes'),
 		hoverDetails: flag('hoverDetails'),
 		folderPreviews: flag('folderPreviews'),
-		compactMode: flag('compactMode'),
+		listZoom: savedZoom(saved, 'listZoom'),
+		gridZoom: savedZoom(saved, 'gridZoom'),
 		driveNameOverrides: isRecord(saved.driveNameOverrides)
 			? Object.fromEntries(
 					Object.entries(saved.driveNameOverrides).map(([key, value]) => [

@@ -25,6 +25,7 @@
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
 	import { ViewCursor } from '#lib/browse/viewCursor.svelte.js';
+	import { DEFAULT_ZOOM, gridMetrics } from '#lib/browse/zoom.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
 	import FolderPeekCards from './FolderPeekCards.svelte';
@@ -38,7 +39,7 @@
 		emptyMessage = 'This folder is empty',
 		selectedPaths = new SvelteSet<string>(),
 		isLoading = false,
-		compactMode = false,
+		zoom = DEFAULT_ZOOM,
 		cutPaths = new SvelteSet<string>(),
 		favoritePaths = new SvelteSet<string>(),
 		canPaste = false,
@@ -61,7 +62,8 @@
 		emptyMessage?: string;
 		selectedPaths?: Set<string>;
 		isLoading?: boolean;
-		compactMode?: boolean;
+		/** The grid's zoom step. */
+		zoom?: number;
 		cutPaths?: Set<string>;
 		favoritePaths?: Set<string>;
 		canPaste?: boolean;
@@ -89,6 +91,7 @@
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
 	let gridElement = $state<HTMLDivElement | null>(null);
+	const metrics = $derived(gridMetrics(zoom));
 	const cursor = new ViewCursor(() => ({ items, selectedPaths, onSelectionChange }));
 	const activeItemIndex = $derived(cursor.activeIndex);
 	const rowWindow = createFixedRowWindow({
@@ -96,15 +99,14 @@
 		itemKey: (item) => item.path,
 		viewKey: () => viewKey,
 		isReady: () => !isLoading,
-		rowHeight: () => (compactMode ? 136 : 164),
-		itemOffset: () => (compactMode ? 8 : 12),
-		contentEndPadding: () => (compactMode ? 8 : 12),
-		columnsForWidth: (width) => {
-			const tileWidth = compactMode ? 96 : 112;
-			const gap = compactMode ? 8 : 12;
-			const padding = compactMode ? 16 : 24;
-			return Math.max(1, Math.floor((width - padding + gap) / (tileWidth + gap)));
-		}
+		rowHeight: () => metrics.rowHeight,
+		itemOffset: () => metrics.padding,
+		contentEndPadding: () => metrics.padding,
+		columnsForWidth: (width) =>
+			Math.max(
+				1,
+				Math.floor((width - metrics.padding * 2 + metrics.gap) / (metrics.tileWidth + metrics.gap))
+			)
 	});
 	const attachRowWindow = rowWindow.attach;
 	// Labels are laid out in the page's own font, once it has loaded.
@@ -322,7 +324,8 @@
 	{:else}
 		<div
 			bind:this={gridElement}
-			class="flex flex-col outline-none {compactMode ? 'p-2' : 'p-3'}"
+			class="flex flex-col outline-none"
+			style:padding="{metrics.padding}px"
 			role="grid"
 			tabindex="0"
 			aria-busy={isLoading}
@@ -353,10 +356,10 @@
 					Math.min(items.length, firstItemIndex + rowWindow.columnCount)
 				)}
 				<div
-					class={compactMode
-						? 'grid h-[136px] grid-flow-row gap-x-2'
-						: 'grid h-[164px] grid-flow-row gap-x-3'}
-					style={`grid-template-columns: repeat(${rowWindow.columnCount}, ${compactMode ? 96 : 112}px)`}
+					class="grid grid-flow-row"
+					style:height="{metrics.rowHeight}px"
+					style:column-gap="{metrics.gap}px"
+					style:grid-template-columns="repeat({rowWindow.columnCount}, {metrics.tileWidth}px)"
 					role="row"
 					aria-rowindex={rowIndex + 1}
 				>
@@ -381,7 +384,7 @@
 								: activeItemIndex === itemIndex
 									? activeClass
 									: idleClass} {isCut(item.path) ? 'opacity-50' : ''}"
-							style={`height: ${compactMode ? 128 : 152}px`}
+							style={`height: ${metrics.rowHeight - metrics.padding}px`}
 							role="gridcell"
 							tabindex="-1"
 							aria-colindex={columnOffset + 1}
@@ -444,13 +447,13 @@
 									onchange={() => handleCheck(item)}
 								/>
 							{/if}
-							<div class="{thumbnailClass} {compactMode ? 'h-14' : 'h-20'}">
+							<div class={thumbnailClass} style:height="{metrics.previewHeight}px">
 								{#if showThumbnail}
 									<img
 										src={getThumbnailUrl(
 											item.path,
-											compactMode ? 192 : 224,
-											compactMode ? 96 : 144
+											metrics.thumbnail.width,
+											metrics.thumbnail.height
 										)}
 										alt=""
 										loading="lazy"
@@ -473,13 +476,13 @@
 													if (look.emblem === null) untrack(() => peeks?.request(item));
 												}}
 											>
-												<FolderGlyph size={compactMode ? 24 : 30} strokeWidth={1.7} {...look} />
+												<FolderGlyph size={metrics.icon} strokeWidth={1.7} {...look} />
 												{#if peek?.length}
-													<FolderPeekCards items={peek} size={compactMode ? 24 : 30} />
+													<FolderPeekCards items={peek} size={metrics.icon} />
 												{/if}
 											</span>
 										{:else}
-											<IconComponent size={compactMode ? 24 : 30} strokeWidth={1.7} />
+											<IconComponent size={metrics.icon} strokeWidth={1.7} />
 										{/if}
 									</span>
 								{/if}
@@ -489,7 +492,7 @@
 								<div class="text-center text-[13px] leading-4 text-text-primary">
 									<TileLabel
 										name={displayName}
-										width={compactMode ? 78 : 94}
+										width={metrics.tileWidth - 18}
 										measure={measureLabel}
 									/>
 								</div>

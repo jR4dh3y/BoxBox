@@ -34,6 +34,8 @@
 				['Ctrl/Cmd + L', 'Edit location'],
 				['Ctrl/Cmd + F', 'Search this folder'],
 				['Alt + Left · Right', 'Back · Forward'],
+				['Ctrl/Cmd + plus · minus · 0', 'Zoom in · out · reset'],
+				['Ctrl/Cmd + wheel', 'Zoom'],
 				['F1', 'Show keyboard shortcuts']
 			]
 		},

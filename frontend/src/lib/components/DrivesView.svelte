@@ -9,12 +9,12 @@
 		drives: DriveStats[];
 		isLoading: boolean;
 		viewMode: ViewMode;
-		compactMode?: boolean;
+		compact?: boolean;
 		onOpen: (drive: DriveStats) => void;
 		onFolderHover?: (path: string | null) => void;
 	}
 
-	let { drives, isLoading, viewMode, compactMode = false, onOpen, onFolderHover }: Props = $props();
+	let { drives, isLoading, viewMode, compact = false, onOpen, onFolderHover }: Props = $props();
 </script>
 
 <!-- This Server: the drive cards, or a drive list when the list view is chosen. -->
@@ -26,7 +26,7 @@
 {:else if drives.length === 0}
 	<div class="p-6 text-sm text-text-secondary">No configured storage found</div>
 {:else if viewMode === 'list'}
-	<DriveList {drives} {compactMode} {onOpen} {onFolderHover} />
+	<DriveList {drives} {compact} {onOpen} {onFolderHover} />
 {:else}
 	<div class="@container h-full overflow-auto p-4 sm:p-6">
 		<!-- Cap at three columns; narrower panes keep each card readable. -->
