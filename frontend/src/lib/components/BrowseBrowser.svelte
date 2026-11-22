@@ -24,6 +24,14 @@
 	import { useBrowseActions } from '#lib/browse/actions.svelte.js';
 	import { useBrowseData } from '#lib/browse/data.svelte.js';
 	import { useBrowseLocation, type HistoryPlace } from '#lib/browse/location.svelte.js';
+	import {
+		isPlaceAction,
+		placeMenuItems,
+		type Place,
+		type PlaceAction
+	} from '#lib/browse/placeMenu.js';
+	import { openInNewTab } from '#lib/browse/newTab.js';
+	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import { selectedFileBytes, useBrowseSelection } from '#lib/browse/selection.svelte.js';
 	import { useBrowseUploads } from '#lib/browse/uploads.svelte.js';
 	import { CONFIG } from '#lib/config.js';
@@ -179,6 +187,47 @@
 	const selectedItems = $derived(
 		selection.count === 0 ? [] : data.displayItems.filter((item) => selection.paths.has(item.path))
 	);
+	let placeMenu = $state<{ x: number; y: number; place: Place } | null>(null);
+	let renamingDrive = $state<string | null>(null);
+	function openPlaceMenu(place: Place, x: number, y: number) {
+		placeMenu = { x, y, place };
+	}
+	async function runPlaceAction(place: Place, action: PlaceAction) {
+		switch (action) {
+			case 'new-tab':
+				openInNewTab(place.path);
+				break;
+			case 'paste':
+				await actions.paste.paste(place.path);
+				break;
+			case 'copy-path':
+				try {
+					await navigator.clipboard.writeText(place.path);
+				} catch {
+					toastStore.error('The path could not be copied');
+				}
+				break;
+			case 'rename-drive':
+				renamingDrive = place.path;
+				break;
+			case 'unpin':
+				settingsStore.unpinFavoriteFolder(place.path);
+				break;
+		}
+	}
+	function renameDrive(path: string, name: string | null) {
+		renamingDrive = null;
+		const current = settingsStore.current.driveNameOverrides[path];
+		if (name === null) {
+			if (current) void settingsStore.removeDriveName(path);
+		} else if (
+			name !== (current ?? '') &&
+			name !== data.roots.find((root) => root.name === path)?.label &&
+			name !== path
+		) {
+			void settingsStore.setDriveName(path, name);
+		}
+	}
 	let historyMenu = $state<{ x: number; y: number; places: HistoryPlace[] } | null>(null);
 	async function openHistoryMenu(back: boolean, x: number, y: number) {
 		const places = await location.historyPlaces(back);
@@ -307,6 +356,7 @@
 		onForward={location.forward}
 		onHistoryMenu={(back, x, y) => void openHistoryMenu(back, x, y)}
 		dropTarget={drop}
+		onPlaceMenu={openPlaceMenu}
 		onNavigate={location.navigate}
 		onRefresh={refresh}
 		{refreshDisabled}
@@ -362,6 +412,9 @@
 			onNavigate={location.navigate}
 			{onFolderHover}
 			dropTarget={drop}
+			onPlaceMenu={openPlaceMenu}
+			{renamingDrive}
+			onRenameDrive={renameDrive}
 			open={sidebarOpen}
 			onClose={() => (sidebarOpen = false)}
 		/>{/if}
@@ -602,6 +655,21 @@
 					void actions.paste.transfer(id, question.items, question.destination);
 			}}
 			onClose={() => (dropQuestion = null)}
+		/>
+	{/await}
+{/if}
+
+{#if placeMenu}
+	{@const menu = placeMenu}
+	{#await import('#lib/components/ui/ContextMenu.svelte') then { default: ContextMenu }}
+		<ContextMenu
+			items={placeMenuItems(menu.place, actions.canPaste)}
+			x={menu.x}
+			y={menu.y}
+			onSelect={(id) => {
+				if (isPlaceAction(id)) void runPlaceAction(menu.place, id);
+			}}
+			onClose={() => (placeMenu = null)}
 		/>
 	{/await}
 {/if}

@@ -24,6 +24,8 @@
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import type { MountPoint } from '#lib/api/files.js';
 	import { draggedSources, type FileDropTarget } from '#lib/browse/fileDrag.js';
+	import type { Place } from '#lib/browse/placeMenu.js';
+	import InlineRename from './ui/InlineRename.svelte';
 
 	interface Props {
 		currentPath?: string;
@@ -40,6 +42,11 @@
 		onClose?: () => void;
 		/** Drives, places and favorites take dropped files and open when a drag rests on them. */
 		dropTarget?: FileDropTarget;
+		/** Right-click on an entry: its place menu. */
+		onPlaceMenu?: (place: Place, x: number, y: number) => void;
+		/** A drive being renamed from its menu. */
+		renamingDrive?: string | null;
+		onRenameDrive?: (path: string, name: string | null) => void;
 	}
 
 	let {
@@ -53,8 +60,22 @@
 		onFolderHover,
 		open = false,
 		onClose,
-		dropTarget
+		dropTarget,
+		onPlaceMenu,
+		renamingDrive = null,
+		onRenameDrive
 	}: Props = $props();
+
+	function placeMenu(event: MouseEvent, place: Place) {
+		event.preventDefault();
+		onPlaceMenu?.(place, event.clientX, event.clientY);
+	}
+	// A favorite that is a drive or a place is listed there already.
+	const favorites = $derived(
+		settingsStore.current.favoriteFolders.filter(
+			(folder) => !roots.some((root) => root.name === folder.path)
+		)
+	);
 
 	/** Folders dragged from a BoxBox view, which Favorites can pin. */
 	function draggedFolders(): { name: string; path: string }[] {
@@ -81,7 +102,8 @@
 		...roots
 			.filter((root) => root.kind !== 'place')
 			.map((root) => ({
-				name: root.label ?? root.name,
+				// A name given on the drives page or here.
+				name: settingsStore.current.driveNameOverrides[root.name] || (root.label ?? root.name),
 				path: root.name,
 				serverIcon: root.serverIcon,
 				icon: HardDrive
@@ -155,29 +177,42 @@
 		{#if !drivesCollapsed}
 			<div class="pb-2">
 				{#each drives as drive (drive.path)}
-					<button
-						type="button"
-						class="{navItemClass} {isActive(drive.path) ? navItemActiveClass : ''}"
-						onclick={() => handleNavigate(drive.path)}
-						class:ring-1={dropTarget?.overPath === drive.path}
-						class:ring-inset={dropTarget?.overPath === drive.path}
-						class:ring-accent={dropTarget?.overPath === drive.path}
-						ondragover={(event) => {
-							if (drive.path && dropTarget?.over(event, drive.path)) event.stopPropagation();
-						}}
-						ondragleave={(event) => dropTarget?.leave(event)}
-						ondrop={(event) => {
-							if (drive.path) dropTarget?.drop(event, drive.path);
-						}}
-						onpointerenter={() => drive.path && onFolderHover?.(drive.path)}
-						onpointerleave={() => onFolderHover?.(null)}
-					>
-						{#if drive.serverIcon}<DeploymentIcon icon={drive.serverIcon} />{:else}<drive.icon
-								size={16}
-								class="shrink-0 opacity-80"
-							/>{/if}
-						<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{drive.name}</span>
-					</button>
+					{#if renamingDrive !== null && renamingDrive === drive.path}
+						<div class="px-3 py-1">
+							<InlineRename
+								value={drive.name}
+								onSave={(name) => onRenameDrive?.(drive.path, name || null)}
+								onCancel={() => onRenameDrive?.(drive.path, drive.name)}
+							/>
+						</div>
+					{:else}
+						<button
+							type="button"
+							class="{navItemClass} {isActive(drive.path) ? navItemActiveClass : ''}"
+							onclick={() => handleNavigate(drive.path)}
+							oncontextmenu={(event) => placeMenu(event, { kind: 'drive', path: drive.path })}
+							class:ring-1={dropTarget?.overPath === drive.path}
+							class:ring-inset={dropTarget?.overPath === drive.path}
+							class:ring-accent={dropTarget?.overPath === drive.path}
+							ondragover={(event) => {
+								if (drive.path && dropTarget?.over(event, drive.path)) event.stopPropagation();
+							}}
+							ondragleave={(event) => dropTarget?.leave(event)}
+							ondrop={(event) => {
+								if (drive.path) dropTarget?.drop(event, drive.path);
+							}}
+							onpointerenter={() => drive.path && onFolderHover?.(drive.path)}
+							onpointerleave={() => onFolderHover?.(null)}
+						>
+							{#if drive.serverIcon}<DeploymentIcon icon={drive.serverIcon} />{:else}<drive.icon
+									size={16}
+									class="shrink-0 opacity-80"
+								/>{/if}
+							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+								>{drive.name}</span
+							>
+						</button>
+					{/if}
 				{/each}
 			</div>
 		{/if}
@@ -204,6 +239,7 @@
 							type="button"
 							class="{navItemClass} {isActive(place.path) ? navItemActiveClass : ''}"
 							onclick={() => handleNavigate(place.path)}
+							oncontextmenu={(event) => placeMenu(event, { kind: 'drive', path: place.path })}
 							class:ring-1={dropTarget?.overPath === place.path}
 							class:ring-inset={dropTarget?.overPath === place.path}
 							class:ring-accent={dropTarget?.overPath === place.path}
@@ -283,7 +319,9 @@
 			const folders = draggedFolders();
 			if (folders.length === 0) return;
 			event.preventDefault();
-			for (const folder of folders) settingsStore.pinFavoriteFolder(folder);
+			for (const folder of folders)
+				if (!roots.some((root) => root.name === folder.path))
+					settingsStore.pinFavoriteFolder(folder);
 		}}
 	>
 		<button
@@ -299,15 +337,16 @@
 		</button>
 		{#if !favoritesCollapsed}
 			<div class="pb-2">
-				{#if settingsStore.current.favoriteFolders.length === 0}
+				{#if favorites.length === 0}
 					<div class="px-5 py-2 text-xs text-text-muted">No favorites yet</div>
 				{:else}
-					{#each settingsStore.current.favoriteFolders as fav (fav.path)}
+					{#each favorites as fav (fav.path)}
 						<div class="group relative">
 							<button
 								type="button"
 								class="{navItemClass} pr-9 {isActive(fav.path) ? navItemActiveClass : ''}"
 								onclick={() => handleNavigate(fav.path)}
+								oncontextmenu={(event) => placeMenu(event, { kind: 'favorite', path: fav.path })}
 								class:ring-1={dropTarget?.overPath === fav.path}
 								class:ring-inset={dropTarget?.overPath === fav.path}
 								class:ring-accent={dropTarget?.overPath === fav.path}

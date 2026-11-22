@@ -14,6 +14,7 @@
 	} from 'lucide-svelte';
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
 	import type { DropZone } from '#lib/browse/dropZone.svelte.js';
+	import type { Place } from '#lib/browse/placeMenu.js';
 	import SearchBar from '#lib/components/SearchBar.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import type { MountPoint } from '#lib/api/files.js';
@@ -34,6 +35,7 @@
 		onHistoryMenu?: (back: boolean, x: number, y: number) => void;
 		/** Path crumbs and Back take part in drags: crumbs take drops, Back goes back when held. */
 		dropTarget?: DropZone;
+		onPlaceMenu?: (place: Place, x: number, y: number) => void;
 		onNavigate?: (path: string) => void;
 		onRefresh?: () => void;
 		onSettings?: () => void;
@@ -66,6 +68,7 @@
 		onForward,
 		onHistoryMenu,
 		dropTarget,
+		onPlaceMenu,
 		onNavigate,
 		onRefresh,
 		onSettings,
@@ -154,6 +157,7 @@
 		{pathSegments}
 		{onNavigate}
 		{dropTarget}
+		{onPlaceMenu}
 		{includeHiddenSuggestions}
 	/>
 
