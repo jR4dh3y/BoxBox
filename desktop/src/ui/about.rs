@@ -108,8 +108,9 @@ impl Workspace {
                     .child(link("about-sponsor", "Sponsor", "heart", ButtonVariant::Primary, SPONSOR))
                     .child(link("about-issues", "Report an issue", "external-link", ButtonVariant::Secondary, ISSUES)),
             );
+        // The project's links sit at the foot of the page.
         div().size_full().flex().justify_center().py(px(24.)).child(
-            div().w(px(COLUMN)).max_w_full().flex().flex_col().items_center().gap(px(20.)).child(header).child(facts).child(project),
+            div().w(px(COLUMN)).max_w_full().h_full().flex().flex_col().items_center().gap(px(20.)).child(header).child(facts).child(project.mt_auto()),
         )
     }
 }
