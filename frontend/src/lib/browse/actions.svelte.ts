@@ -81,6 +81,8 @@ export function useBrowseActions(
 		open: false,
 		file: null
 	});
+	// The folder whose look is being chosen; null when Customize Folder is closed.
+	let customizeFolder = $state<FileInfo | null>(null);
 	// The file or folder being shared; null when the share dialog is closed.
 	let shareItem = $state<FileInfo | null>(null);
 
@@ -226,6 +228,12 @@ export function useBrowseActions(
 		get shareItem() {
 			return shareItem;
 		},
+		get customizeFolder() {
+			return customizeFolder;
+		},
+		closeCustomize() {
+			customizeFolder = null;
+		},
 		get favoritePaths() {
 			return favoritePaths;
 		},
@@ -358,6 +366,9 @@ export function useBrowseActions(
 					break;
 				case 'properties':
 					if (only) propertiesDialog = { open: true, file: only };
+					break;
+				case 'customize':
+					if (only?.isDir) customizeFolder = only;
 					break;
 			}
 		}

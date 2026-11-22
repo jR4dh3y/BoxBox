@@ -29,6 +29,7 @@
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
 	import type { AddAction } from '#lib/utils/addMenu.js';
+	import { folderAppearance, specialEmblem } from '#lib/browse/folderLooks.js';
 
 	let {
 		pane,
@@ -68,6 +69,12 @@
 		else if (action === 'upload-folder') uploads.openFolderPicker();
 		else void actions.handleContextMenuAction(action, []);
 	}
+	// Places are the special folders, such as Downloads, whose folders carry an emblem.
+	const places = $derived(
+		new Set(data.roots.filter((root) => root.kind === 'place').map((root) => root.name))
+	);
+	const appearance = (path: string) =>
+		folderAppearance(path, places, settingsStore.current.folderLooks);
 	const selectedBytes = $derived(selectedFileBytes(data.displayItems, selection.paths));
 	$effect(() => {
 		const path = location.path;
@@ -279,6 +286,7 @@
 						showFileExtensions={settings.showFileExtensions}
 						previewOnSingleClick={settings.previewOnSingleClick}
 						selectionCheckboxes={settings.selectionCheckboxes}
+						folderAppearance={appearance}
 						onItemClick={actions.openFile}
 						{onFolderHover}
 						onSelectionChange={selection.set}
@@ -306,6 +314,7 @@
 					showFileExtensions={settings.showFileExtensions}
 					previewOnSingleClick={settings.previewOnSingleClick}
 					selectionCheckboxes={settings.selectionCheckboxes}
+					folderAppearance={appearance}
 					onItemClick={actions.openFile}
 					{onFolderHover}
 					onSortChange={location.setSort}
@@ -379,6 +388,19 @@
 			path={actions.openWithFile.path}
 			onclose={actions.closeOpenWith}
 		/>{/await}
+{/if}
+
+{#if actions.customizeFolder}
+	{@const folder = actions.customizeFolder}
+	{#await import('#lib/components/FolderCustomizeDialog.svelte') then { default: FolderCustomizeDialog }}
+		<FolderCustomizeDialog
+			{folder}
+			own={specialEmblem(folder.path, places)}
+			onclose={actions.closeCustomize}
+		/>
+	{:catch}
+		<LoadError label="Customize Folder" onClose={actions.closeCustomize} />
+	{/await}
 {/if}
 
 {#if settingsOpen}

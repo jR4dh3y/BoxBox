@@ -23,9 +23,13 @@
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
 	import { withPathSelected } from '#lib/browse/selection.svelte.js';
+	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
+	import FolderGlyph from './FolderGlyph.svelte';
 	import { ColumnTable } from '#lib/browse/columnTable.svelte.js';
 	import type { Column } from '#lib/browse/columns.js';
 	import ColumnHeader from './ColumnHeader.svelte';
+
+	const PLAIN_FOLDER: FolderAppearance = { color: null, emblem: null, emblemColor: null };
 
 	let {
 		items = [],
@@ -45,6 +49,7 @@
 		previewOnSingleClick = false,
 		selectionCheckboxes = true,
 		dropTarget,
+		folderAppearance = () => PLAIN_FOLDER,
 		onItemClick,
 		onFolderHover,
 		onSortChange,
@@ -68,6 +73,8 @@
 		previewOnSingleClick?: boolean;
 		selectionCheckboxes?: boolean;
 		dropTarget?: FileDropTarget;
+		/** How a folder is drawn: its colour and emblem. */
+		folderAppearance?: (path: string) => FolderAppearance;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -491,7 +498,11 @@
 														: 'group-hover/icon:invisible pointer-coarse:invisible'
 													: ''}"
 											>
-												<IconComponent size={16} />
+												{#if item.isDir}
+													<FolderGlyph size={16} {...folderAppearance(item.path)} />
+												{:else}
+													<IconComponent size={16} />
+												{/if}
 											</span>
 											{#if selectionCheckboxes}
 												<!-- Selected items keep their checkbox after the pointer leaves. -->

@@ -25,6 +25,10 @@
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
 	import { withPathSelected } from '#lib/browse/selection.svelte.js';
+	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
+	import FolderGlyph from './FolderGlyph.svelte';
+
+	const PLAIN_FOLDER: FolderAppearance = { color: null, emblem: null, emblemColor: null };
 
 	let {
 		items = [],
@@ -42,6 +46,7 @@
 		previewOnSingleClick = false,
 		selectionCheckboxes = true,
 		dropTarget,
+		folderAppearance = () => PLAIN_FOLDER,
 		onItemClick,
 		onFolderHover,
 		onSelectionChange,
@@ -62,6 +67,8 @@
 		previewOnSingleClick?: boolean;
 		selectionCheckboxes?: boolean;
 		dropTarget?: FileDropTarget;
+		/** How a folder is drawn: its colour and emblem. */
+		folderAppearance?: (path: string) => FolderAppearance;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -510,7 +517,15 @@
 											? 'text-folder'
 											: 'text-text-secondary'}"
 									>
-										<IconComponent size={compactMode ? 24 : 30} strokeWidth={1.7} />
+										{#if item.isDir}
+											<FolderGlyph
+												size={compactMode ? 24 : 30}
+												strokeWidth={1.7}
+												{...folderAppearance(item.path)}
+											/>
+										{:else}
+											<IconComponent size={compactMode ? 24 : 30} strokeWidth={1.7} />
+										{/if}
 									</span>
 								{/if}
 							</div>

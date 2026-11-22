@@ -17,6 +17,7 @@ const defaults: UserSettings = {
 	viewPerFolder: true,
 	folderViews: {},
 	fileColumns: null,
+	folderLooks: {},
 	accentColor: null,
 	accentColorSource: 'wallpaper',
 	backgroundImage: null,
