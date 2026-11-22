@@ -23,6 +23,8 @@
 	interface Props {
 		actions?: Snippet;
 		refreshDisabled?: boolean;
+		/** The Refresh icon turns until everything the refresh started has loaded. */
+		refreshing?: boolean;
 		pathSegments?: string[];
 		pageTitle?: string | null;
 		roots?: MountPoint[];
@@ -58,6 +60,7 @@
 	let {
 		actions,
 		refreshDisabled = false,
+		refreshing = false,
 		pathSegments = [],
 		pageTitle = null,
 		roots = [],
@@ -102,7 +105,7 @@
 	}
 
 	const navBtnClass =
-		'w-7 h-7 shrink-0 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed';
+		'w-7 h-7 shrink-0 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary active:enabled:opacity-60 disabled:text-text-disabled disabled:cursor-not-allowed';
 </script>
 
 <div
@@ -198,8 +201,9 @@
 			onclick={onRefresh}
 			disabled={refreshDisabled}
 			title="Refresh"
+			aria-busy={refreshing}
 		>
-			<RefreshCw size={16} />
+			<RefreshCw size={16} class={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} />
 		</button>
 		{#if onToggleDetails}
 			<button

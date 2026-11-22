@@ -205,8 +205,9 @@ export function useBrowseData(
 		refreshAll() {
 			void browseRequests.changed();
 		},
-		reload() {
-			void (isAtRoot ? browseRequests.changed() : browseRequests.changed(location.path));
+		/** Settles when every load it started has finished, so Refresh can turn until then. */
+		reload(): Promise<void> {
+			return isAtRoot ? browseRequests.changed() : browseRequests.changed(location.path);
 		},
 		refetchDirectory() {
 			void browseRequests.changed(location.path);

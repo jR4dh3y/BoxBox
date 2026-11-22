@@ -79,7 +79,7 @@
 >
 	<div
 		bind:this={menuRef}
-		class="fixed max-w-70 min-w-45 rounded-lg border border-border-primary bg-surface-context-menu py-1 shadow-xl"
+		class="fixed max-w-70 min-w-45 origin-top-left rounded-lg border border-border-primary bg-surface-context-menu py-1 shadow-xl motion-safe:animate-pop-in"
 		style="left: {adjustedPosition.x}px; top: {adjustedPosition.y}px;"
 		role="menu"
 	>

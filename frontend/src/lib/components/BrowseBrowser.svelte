@@ -171,6 +171,16 @@
 	});
 
 	let shortcutsOpen = $state(false);
+	// Presses of Refresh still loading; the icon turns while any is.
+	let refreshes = $state(0);
+	async function refreshAll() {
+		refreshes++;
+		try {
+			await data.reload();
+		} finally {
+			refreshes--;
+		}
+	}
 	function toggleDetails() {
 		settingsStore.set({
 			...settingsStore.current,
@@ -340,7 +350,7 @@
 
 {#snippet browserToolbar(
 	extraActions?: Snippet,
-	refresh: () => void = data.reload,
+	refresh: () => void = () => void refreshAll(),
 	refreshDisabled = false,
 	pageTitle: string | null = null
 )}
@@ -360,6 +370,7 @@
 		onNavigate={location.navigate}
 		onRefresh={refresh}
 		{refreshDisabled}
+		refreshing={refreshes > 0}
 		actions={extraActions}
 		onToggleDetails={paneState ? undefined : toggleDetails}
 		detailsOpen={settings.detailsPanel}
