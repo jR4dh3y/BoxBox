@@ -5,19 +5,22 @@
 	 * then the details as label and value columns. Values can be selected and copied.
 	 */
 	import { getThumbnailUrl, type FileInfo } from '#lib/api/files.js';
-	import { fullFileDate, parentFolder, type DetailsContent } from '#lib/browse/details.js';
+	import { detailsContent, fullFileDate, parentFolder } from '#lib/browse/details.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import { formatFileSize } from '#lib/utils/format.js';
 	import { getFileIcon, getFileTypeDescription, getPreviewType } from '#lib/utils/fileTypes.js';
 	import FolderGlyph from './FolderGlyph.svelte';
 
 	let {
-		content,
+		selected,
+		folderCount,
 		folderName,
 		appearance,
 		locationLabel
 	}: {
-		content: DetailsContent;
+		selected: readonly FileInfo[];
+		/** How many items the open folder lists. */
+		folderCount: number;
 		/** The open folder's name, or the drives' title at the root. */
 		folderName: string;
 		appearance: (path: string) => FolderAppearance;
@@ -25,6 +28,7 @@
 		locationLabel: (path: string) => string;
 	} = $props();
 
+	const content = $derived(detailsContent(selected, folderCount));
 	let failedThumbnail = $state<string | null>(null);
 	const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 

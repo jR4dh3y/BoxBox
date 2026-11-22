@@ -31,9 +31,10 @@
 	import { DEFAULT_ZOOM, gridMetrics } from '#lib/browse/zoom.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
-	import InlineNameEditor from './InlineNameEditor.svelte';
 	import type { RenameEditor } from '#lib/browse/renameEditor.js';
 	import FolderPeekCards from './FolderPeekCards.svelte';
+	import { folderPeeks } from '#lib/browse/folderPeek.svelte.js';
+	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverCard.svelte.js';
 
 	const PLAIN_FOLDER: FolderAppearance = { color: null, emblem: null, emblemColor: null };
@@ -57,7 +58,7 @@
 		folderAppearance = () => PLAIN_FOLDER,
 		hover,
 		renameEditor = null,
-		peeks,
+		folderPreviews = false,
 		onItemClick,
 		onFolderHover,
 		onSelectionChange,
@@ -85,11 +86,8 @@
 		hover?: HoverTarget;
 		/** The item being renamed in place, if any. */
 		renameEditor?: RenameEditor | null;
-		/** What folders hold, drawn inside their tiles; none when Settings turn previews off. */
-		peeks?: {
-			get(folder: FileInfo): readonly FileInfo[] | undefined;
-			request(folder: FileInfo): void;
-		};
+		/** Folders draw what they hold inside their tiles. */
+		folderPreviews?: boolean;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -100,6 +98,15 @@
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
 	let gridElement = $state<HTMLDivElement | null>(null);
 	const metrics = $derived(gridMetrics(zoom));
+	const showHidden = $derived(settingsStore.current.showHiddenFiles);
+	const peeks = $derived(
+		folderPreviews
+			? {
+					get: (folder: FileInfo) => folderPeeks.get(folder, showHidden),
+					request: (folder: FileInfo) => folderPeeks.request(folder, showHidden)
+				}
+			: undefined
+	);
 	const cursor = new ViewCursor(() => ({ items, selectedPaths, onSelectionChange }));
 	const activeItemIndex = $derived(cursor.activeIndex);
 	const band = new RubberBand(() => ({
@@ -532,21 +539,23 @@
 							<div class="mt-1.5 min-w-0 overflow-hidden">
 								<div class="text-center text-[13px] leading-4 text-text-primary">
 									{#if renameEditor?.path === item.path}
-										<InlineNameEditor
-											value={renameEditor.name}
-											isDir={renameEditor.isDir}
-											problem={renameEditor.problem}
-											align="center"
-											oninput={renameEditor.oninput}
-											oncommit={() => {
-												renameEditor.oncommit();
-												gridElement?.focus({ preventScroll: true });
-											}}
-											oncancel={() => {
-												renameEditor.oncancel();
-												gridElement?.focus({ preventScroll: true });
-											}}
-										/>
+										{#await import('./InlineNameEditor.svelte') then { default: InlineNameEditor }}
+											<InlineNameEditor
+												value={renameEditor.name}
+												isDir={renameEditor.isDir}
+												problem={renameEditor.problem}
+												align="center"
+												oninput={renameEditor.oninput}
+												oncommit={() => {
+													renameEditor.oncommit();
+													gridElement?.focus({ preventScroll: true });
+												}}
+												oncancel={() => {
+													renameEditor.oncancel();
+													gridElement?.focus({ preventScroll: true });
+												}}
+											/>
+										{/await}
 									{:else}
 										<TileLabel
 											name={displayName}

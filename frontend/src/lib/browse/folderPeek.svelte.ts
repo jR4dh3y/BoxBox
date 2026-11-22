@@ -4,7 +4,7 @@
  * modified time, which changes when an entry is added or removed.
  */
 import { SvelteMap } from 'svelte/reactivity';
-import type { FileInfo } from '#lib/api/files.js';
+import { peekDirectory, type FileInfo } from '#lib/api/files.js';
 
 /** More folders than a screen of tiles shows; past it the cache starts again. */
 const CAPACITY = 1024;
@@ -53,3 +53,6 @@ export class FolderPeeks {
 		this.pending.clear();
 	}
 }
+
+/** One cache for every grid, so a folder's peek survives switching views. */
+export const folderPeeks = new FolderPeeks((path, hidden) => peekDirectory(path, hidden));

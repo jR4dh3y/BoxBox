@@ -29,7 +29,6 @@
 	import { DEFAULT_ZOOM, listMetrics } from '#lib/browse/zoom.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
-	import InlineNameEditor from './InlineNameEditor.svelte';
 	import type { RenameEditor } from '#lib/browse/renameEditor.js';
 	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverCard.svelte.js';
 	import { ColumnTable } from '#lib/browse/columnTable.svelte.js';
@@ -505,20 +504,22 @@
 											{/if}
 										</span>
 										{#if renameEditor?.path === item.path}
-											<InlineNameEditor
-												value={renameEditor.name}
-												isDir={renameEditor.isDir}
-												problem={renameEditor.problem}
-												oninput={renameEditor.oninput}
-												oncommit={() => {
-													renameEditor.oncommit();
-													focusTable();
-												}}
-												oncancel={() => {
-													renameEditor.oncancel();
-													focusTable();
-												}}
-											/>
+											{#await import('./InlineNameEditor.svelte') then { default: InlineNameEditor }}
+												<InlineNameEditor
+													value={renameEditor.name}
+													isDir={renameEditor.isDir}
+													problem={renameEditor.problem}
+													oninput={renameEditor.oninput}
+													oncommit={() => {
+														renameEditor.oncommit();
+														focusTable();
+													}}
+													oncancel={() => {
+														renameEditor.oncancel();
+														focusTable();
+													}}
+												/>
+											{/await}
 										{:else}
 											<span
 												class="{clippedCellClass} min-w-0 flex-1"

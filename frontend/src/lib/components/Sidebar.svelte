@@ -25,7 +25,6 @@
 	import type { MountPoint } from '#lib/api/files.js';
 	import { draggedSources, type FileDropTarget } from '#lib/browse/fileDrag.js';
 	import type { Place } from '#lib/browse/placeMenu.js';
-	import InlineRename from './ui/InlineRename.svelte';
 
 	interface Props {
 		currentPath?: string;
@@ -179,11 +178,14 @@
 				{#each drives as drive (drive.path)}
 					{#if renamingDrive !== null && renamingDrive === drive.path}
 						<div class="px-3 py-1">
-							<InlineRename
-								value={drive.name}
-								onSave={(name) => onRenameDrive?.(drive.path, name || null)}
-								onCancel={() => onRenameDrive?.(drive.path, drive.name)}
-							/>
+							<!-- Renaming is rare, so its field loads on first use. -->
+							{#await import('./ui/InlineRename.svelte') then { default: InlineRename }}
+								<InlineRename
+									value={drive.name}
+									onSave={(name) => onRenameDrive?.(drive.path, name || null)}
+									onCancel={() => onRenameDrive?.(drive.path, drive.name)}
+								/>
+							{/await}
 						</div>
 					{:else}
 						<button

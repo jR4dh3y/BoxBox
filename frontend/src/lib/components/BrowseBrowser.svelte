@@ -24,12 +24,7 @@
 	import { useBrowseActions } from '#lib/browse/actions.svelte.js';
 	import { useBrowseData } from '#lib/browse/data.svelte.js';
 	import { useBrowseLocation, type HistoryPlace } from '#lib/browse/location.svelte.js';
-	import {
-		isPlaceAction,
-		placeMenuItems,
-		type Place,
-		type PlaceAction
-	} from '#lib/browse/placeMenu.js';
+	import { type Place, type PlaceAction } from '#lib/browse/placeMenu.js';
 	import { openInNewTab } from '#lib/browse/newTab.js';
 	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import { selectedFileBytes, useBrowseSelection } from '#lib/browse/selection.svelte.js';
@@ -39,12 +34,8 @@
 	import type { AddAction } from '#lib/utils/addMenu.js';
 	import { folderAppearance, specialEmblem } from '#lib/browse/folderLooks.js';
 	import { HoverCard } from '#lib/browse/hoverCard.svelte.js';
-	import { FolderPeeks } from '#lib/browse/folderPeek.svelte.js';
-	import { peekDirectory, type FileInfo } from '#lib/api/files.js';
 	import { parentFolder } from '#lib/browse/details.js';
 	import { getFileShortcut, isTextEntryTarget } from '#lib/browse/fileShortcuts.js';
-	import { invertedPaths, pathsMatching } from '#lib/browse/selectPattern.js';
-	import { detailsContent } from '#lib/browse/details.js';
 	import { WheelZoom } from '#lib/browse/zoom.js';
 
 	let {
@@ -134,12 +125,7 @@
 				}
 			: null
 	);
-	const folderPeeks = new FolderPeeks((path, hidden) => peekDirectory(path, hidden));
-	const peeks = {
-		get: (folder: FileInfo) => folderPeeks.get(folder, settingsStore.current.showHiddenFiles),
-		request: (folder: FileInfo) =>
-			folderPeeks.request(folder, settingsStore.current.showHiddenFiles)
-	};
+
 	const selectedBytes = $derived(selectedFileBytes(data.displayItems, selection.paths));
 	$effect(() => {
 		const path = location.path;
@@ -339,7 +325,9 @@
 				break;
 			case 'invert-selection':
 				if (!inFolder) return;
-				selection.set(invertedPaths(data.displayItems, selection.paths));
+				void import('#lib/browse/selectPattern.js').then(({ invertedPaths }) =>
+					selection.set(invertedPaths(data.displayItems, selection.paths))
+				);
 				break;
 			default:
 				return;
@@ -523,7 +511,7 @@
 							selectionCheckboxes={settings.selectionCheckboxes}
 							folderAppearance={appearance}
 							hover={settings.hoverDetails ? hoverCard : undefined}
-							peeks={settings.folderPreviews ? peeks : undefined}
+							folderPreviews={settings.folderPreviews}
 							{renameEditor}
 							onItemClick={actions.openFile}
 							{onFolderHover}
@@ -568,7 +556,8 @@
 				<div class="details-slot h-full shrink-0 overflow-hidden">
 					{#await import('#lib/components/DetailsPanel.svelte') then { default: DetailsPanel }}
 						<DetailsPanel
-							content={detailsContent(selectedItems, data.itemCount)}
+							selected={selectedItems}
+							folderCount={data.itemCount}
 							folderName={locationLabel(location.path).split('/').at(-1) ?? ''}
 							{appearance}
 							{locationLabel}
@@ -672,7 +661,7 @@
 
 {#if placeMenu}
 	{@const menu = placeMenu}
-	{#await import('#lib/components/ui/ContextMenu.svelte') then { default: ContextMenu }}
+	{#await Promise.all( [import('#lib/components/ui/ContextMenu.svelte'), import('#lib/browse/placeMenu.js')] ) then [{ default: ContextMenu }, { placeMenuItems, isPlaceAction }]}
 		<ContextMenu
 			items={placeMenuItems(menu.place, actions.canPaste)}
 			x={menu.x}
@@ -710,7 +699,7 @@
 {/if}
 
 {#if patternOpen}
-	{#await import('#lib/components/SelectPatternDialog.svelte') then { default: SelectPatternDialog }}
+	{#await Promise.all( [import('#lib/components/SelectPatternDialog.svelte'), import('#lib/browse/selectPattern.js')] ) then [{ default: SelectPatternDialog }, { pathsMatching }]}
 		<SelectPatternDialog
 			initial={lastPattern}
 			onselect={(pattern) => {
