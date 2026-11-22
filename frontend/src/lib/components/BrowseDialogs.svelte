@@ -2,34 +2,25 @@
 	import type { FileInfo } from '#lib/api/files.js';
 	import { Button, Input, Modal } from '#lib/components/ui/index.js';
 
-	type CreateDialog = { open: boolean; type: 'file' | 'directory'; name: string };
 	import { isNativePath } from '#lib/api/desktop.js';
-	import type { RenameDialog } from '#lib/browse/actions.svelte.js';
+	import type { CreateDialog } from '#lib/browse/actions.svelte.js';
 	type DeleteDialog = { open: boolean; items: FileInfo[] };
 
 	let {
 		createDialog,
-		renameDialog,
 		deleteDialog,
 		onCreateNameChange,
-		onRenameNameChange,
 		onCreateConfirm,
-		onRenameConfirm,
 		onDeleteConfirm,
 		onCloseCreate,
-		onCloseRename,
 		onCloseDelete
 	}: {
 		createDialog: CreateDialog;
-		renameDialog: RenameDialog;
 		deleteDialog: DeleteDialog;
 		onCreateNameChange: (name: string) => void;
-		onRenameNameChange: (name: string) => void;
 		onCreateConfirm: () => void;
-		onRenameConfirm: () => void;
 		onDeleteConfirm: () => void;
 		onCloseCreate: () => void;
-		onCloseRename: () => void;
 		onCloseDelete: () => void;
 	} = $props();
 
@@ -56,20 +47,13 @@
 		placeholder={createDialog.type === 'file' ? 'untitled.txt' : 'New folder'}
 		onkeydown={(event) => event.key === 'Enter' && onCreateConfirm()}
 	/>
+	{#if createDialog.problem}
+		<p class="m-0 mt-2 text-[13px] text-danger" role="alert">{createDialog.problem}</p>
+	{/if}
 	{#snippet footer()}
-		<Button variant="primary" onclick={onCreateConfirm}>Create</Button>
-	{/snippet}
-</Modal>
-
-<Modal open={renameDialog.open} title="Rename" onclose={onCloseRename}>
-	<Input
-		value={renameDialog.newName}
-		selectOnFocus={renameDialog.file?.isDir ? 'all' : 'basename'}
-		oninput={(event) => onRenameNameChange(inputValue(event))}
-		onkeydown={(event) => event.key === 'Enter' && onRenameConfirm()}
-	/>
-	{#snippet footer()}
-		<Button variant="primary" onclick={onRenameConfirm}>Rename</Button>
+		<Button variant="primary" disabled={createDialog.problem !== null} onclick={onCreateConfirm}
+			>Create</Button
+		>
 	{/snippet}
 </Modal>
 

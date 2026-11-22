@@ -24,7 +24,7 @@
 				['Alt + Enter', 'Properties of the selection'],
 				['Ctrl/Cmd + C · X · V', 'Copy · Cut · Paste'],
 				['Ctrl/Cmd + Shift + N', 'New folder'],
-				['F2', 'Rename selected item'],
+				['F2', 'Rename in place'],
 				['Delete', 'Trash locally; delete on a web server'],
 				['Ctrl/Cmd + S', 'Select by pattern, such as *.jpg'],
 				['Ctrl/Cmd + I', 'Invert selection']

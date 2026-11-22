@@ -13,7 +13,8 @@ export type FileShortcut =
 	| 'zoom-reset'
 	| 'shortcuts'
 	| 'details'
-	| 'properties';
+	| 'properties'
+	| 'rename';
 
 /** Text fields keep their own keys; selection checkboxes do not. */
 export function isTextEntryTarget(target: EventTarget | null): boolean {
@@ -58,6 +59,7 @@ export function getFileShortcut(
 	if (event.shiftKey) return null;
 	if (event.key === 'F1') return 'shortcuts';
 	if (event.key === 'F11') return 'details';
+	if (event.key === 'F2') return 'rename';
 	if (key === 'escape') return 'clear-selection';
 	return null;
 }

@@ -28,6 +28,8 @@
 	import { DEFAULT_ZOOM, listMetrics } from '#lib/browse/zoom.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
+	import InlineNameEditor from './InlineNameEditor.svelte';
+	import type { RenameEditor } from '#lib/browse/renameEditor.js';
 	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverCard.svelte.js';
 	import { ColumnTable } from '#lib/browse/columnTable.svelte.js';
 	import type { Column } from '#lib/browse/columns.js';
@@ -55,6 +57,7 @@
 		dropTarget,
 		folderAppearance = () => PLAIN_FOLDER,
 		hover,
+		renameEditor = null,
 		onItemClick,
 		onFolderHover,
 		onSortChange,
@@ -83,6 +86,8 @@
 		folderAppearance?: (path: string) => FolderAppearance;
 		/** The hover card; without it, a row's native tooltip names the item. */
 		hover?: HoverTarget;
+		/** The item being renamed in place, if any. */
+		renameEditor?: RenameEditor | null;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -492,12 +497,29 @@
 												/>
 											{/if}
 										</span>
-										<span
-											class="{clippedCellClass} min-w-0 flex-1"
-											title={hover ? undefined : item.name}
-										>
-											{displayName}
-										</span>
+										{#if renameEditor?.path === item.path}
+											<InlineNameEditor
+												value={renameEditor.name}
+												isDir={renameEditor.isDir}
+												problem={renameEditor.problem}
+												oninput={renameEditor.oninput}
+												oncommit={() => {
+													renameEditor.oncommit();
+													focusTable();
+												}}
+												oncancel={() => {
+													renameEditor.oncancel();
+													focusTable();
+												}}
+											/>
+										{:else}
+											<span
+												class="{clippedCellClass} min-w-0 flex-1"
+												title={hover ? undefined : item.name}
+											>
+												{displayName}
+											</span>
+										{/if}
 									</div>
 								</td>
 							{:else if spec.column === 'size'}

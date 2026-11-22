@@ -30,6 +30,8 @@
 	import { DEFAULT_ZOOM, gridMetrics } from '#lib/browse/zoom.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
+	import InlineNameEditor from './InlineNameEditor.svelte';
+	import type { RenameEditor } from '#lib/browse/renameEditor.js';
 	import FolderPeekCards from './FolderPeekCards.svelte';
 	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverCard.svelte.js';
 
@@ -53,6 +55,7 @@
 		dropTarget,
 		folderAppearance = () => PLAIN_FOLDER,
 		hover,
+		renameEditor = null,
 		peeks,
 		onItemClick,
 		onFolderHover,
@@ -79,6 +82,8 @@
 		folderAppearance?: (path: string) => FolderAppearance;
 		/** The hover card; without it, a row's native tooltip names the item. */
 		hover?: HoverTarget;
+		/** The item being renamed in place, if any. */
+		renameEditor?: RenameEditor | null;
 		/** What folders hold, drawn inside their tiles; none when Settings turn previews off. */
 		peeks?: {
 			get(folder: FileInfo): readonly FileInfo[] | undefined;
@@ -519,11 +524,29 @@
 
 							<div class="mt-1.5 min-w-0 overflow-hidden">
 								<div class="text-center text-[13px] leading-4 text-text-primary">
-									<TileLabel
-										name={displayName}
-										width={metrics.tileWidth - 18}
-										measure={measureLabel}
-									/>
+									{#if renameEditor?.path === item.path}
+										<InlineNameEditor
+											value={renameEditor.name}
+											isDir={renameEditor.isDir}
+											problem={renameEditor.problem}
+											align="center"
+											oninput={renameEditor.oninput}
+											oncommit={() => {
+												renameEditor.oncommit();
+												gridElement?.focus({ preventScroll: true });
+											}}
+											oncancel={() => {
+												renameEditor.oncancel();
+												gridElement?.focus({ preventScroll: true });
+											}}
+										/>
+									{:else}
+										<TileLabel
+											name={displayName}
+											width={metrics.tileWidth - 18}
+											measure={measureLabel}
+										/>
+									{/if}
 								</div>
 								<div
 									class="mt-0.5 truncate text-center text-[11px] leading-3.5 {isSelected(item.path)

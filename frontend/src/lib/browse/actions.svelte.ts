@@ -29,20 +29,10 @@ import { canPreview, getFileTypeDescription } from '#lib/utils/fileTypes.js';
 import type { BrowseData } from './data.svelte';
 import type { BrowseLocation } from './location.svelte';
 import type { BrowseSelection } from './selection.svelte';
+import { nameProblem, unusedName } from './names.js';
 
 function errorMessage(error: unknown, fallback: string): string {
 	return error instanceof Error ? error.message : fallback;
-}
-
-/** Returns the trimmed name, or null (with a toast when the name is unusable). */
-function validateItemName(value: string): string | null {
-	const name = value.trim();
-	if (!name) return null;
-	if (name.includes('/') || name.includes('\\')) {
-		toastStore.error('Name cannot contain path separators');
-		return null;
-	}
-	return name;
 }
 
 function download(items: FileInfo[]) {
@@ -54,8 +44,17 @@ function download(items: FileInfo[]) {
 	}
 }
 
-export type RenameDialog =
-	{ open: true; file: FileInfo; newName: string } | { open: false; file: null; newName: string };
+/** An item being renamed where its name is drawn, with why the typed name cannot be used. */
+export type Renaming =
+	{ kind: 'idle' } | { kind: 'renaming'; file: FileInfo; name: string; problem: string | null };
+
+export interface CreateDialog {
+	open: boolean;
+	type: 'file' | 'directory';
+	name: string;
+	/** Why the typed name cannot be used, or null. */
+	problem: string | null;
+}
 
 /** What the user does to files and folders: dialogs, file operations, clipboard and preview. */
 export function useBrowseActions(
@@ -66,16 +65,13 @@ export function useBrowseActions(
 	const pasteController = useBrowsePaste(location, data);
 	let openWithFile = $state<FileInfo | null>(null);
 	let previewFile = $state<FileInfo | null>(null);
-	let createDialog = $state<{ open: boolean; type: 'file' | 'directory'; name: string }>({
-		open: false,
-		type: 'file',
-		name: ''
-	});
-	let renameDialog = $state<RenameDialog>({
-		open: false,
-		file: null,
-		newName: ''
-	});
+	let createDialog = $state<CreateDialog>({ open: false, type: 'file', name: '', problem: null });
+	let renaming = $state.raw<Renaming>({ kind: 'idle' });
+
+	/** The names already in the open folder, other than `except`. */
+	function siblingNames(except?: string): string[] {
+		return data.displayItems.filter((item) => item.path !== except).map((item) => item.name);
+	}
 	let deleteDialog = $state<{ open: boolean; items: FileInfo[] }>({ open: false, items: [] });
 	// The items Properties describes; null when it is closed.
 	let propertiesItems = $state.raw<FileInfo[] | null>(null);
@@ -94,7 +90,7 @@ export function useBrowseActions(
 	);
 
 	function closeCreate() {
-		createDialog = { open: false, type: 'file', name: '' };
+		createDialog = { open: false, type: 'file', name: '', problem: null };
 	}
 
 	function openCreate(type: 'file' | 'directory') {
@@ -102,13 +98,24 @@ export function useBrowseActions(
 			toastStore.error('Cannot create items in this location');
 			return;
 		}
-		createDialog = { open: true, type, name: type === 'file' ? 'untitled.txt' : 'New Folder' };
+		// A name not taken yet, as the desktop app suggests one.
+		const taken = siblingNames();
+		const name = unusedName(
+			type === 'file' ? 'untitled.txt' : 'New Folder',
+			type === 'directory',
+			(candidate) => taken.includes(candidate)
+		);
+		createDialog = { open: true, type, name, problem: null };
 	}
 
 	async function confirmCreate() {
 		if (!location.path) return;
-		const name = validateItemName(createDialog.name);
-		if (!name) return;
+		const name = createDialog.name.trim();
+		const problem = nameProblem(name, siblingNames());
+		if (problem) {
+			createDialog.problem = problem;
+			return;
+		}
 
 		try {
 			const created =
@@ -147,11 +154,15 @@ export function useBrowseActions(
 	}
 
 	async function confirmRename() {
-		if (!renameDialog.file) return;
-		const newName = validateItemName(renameDialog.newName);
-		if (!newName) return;
+		const current = renaming;
+		if (current.kind !== 'renaming') return;
+		renaming = { kind: 'idle' };
+		const newName = current.name.trim();
+		// An unchanged name is not a rename.
+		if (newName === current.file.name || nameProblem(newName, siblingNames(current.file.path)))
+			return;
 
-		const oldPath = renameDialog.file.path;
+		const oldPath = current.file.path;
 		const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
 		const newPath = parentPath ? `${parentPath}/${newName}` : newName;
 
@@ -161,7 +172,6 @@ export function useBrowseActions(
 				const { desktopUndo } = await import('./undo.svelte');
 				desktopUndo.rememberRename(oldPath, newPath);
 			}
-			renameDialog = { open: false, file: null, newName: '' };
 			data.refetchDirectory();
 		} catch (error) {
 			console.error('Rename failed:', error);
@@ -214,8 +224,8 @@ export function useBrowseActions(
 		get createDialog() {
 			return createDialog;
 		},
-		get renameDialog() {
-			return renameDialog;
+		get renaming() {
+			return renaming;
 		},
 		get deleteDialog() {
 			return deleteDialog;
@@ -244,13 +254,19 @@ export function useBrowseActions(
 
 		setCreateName(name: string) {
 			createDialog.name = name;
+			createDialog.problem = nameProblem(name.trim(), siblingNames());
 		},
 		setRenameName(name: string) {
-			renameDialog.newName = name;
+			if (renaming.kind !== 'renaming') return;
+			renaming = {
+				...renaming,
+				name,
+				problem: nameProblem(name.trim(), siblingNames(renaming.file.path))
+			};
 		},
 		closeCreate,
-		closeRename() {
-			renameDialog = { open: false, file: null, newName: '' };
+		cancelRename() {
+			renaming = { kind: 'idle' };
 		},
 		closeDelete() {
 			deleteDialog = { open: false, items: [] };
@@ -347,7 +363,7 @@ export function useBrowseActions(
 					}
 					break;
 				case 'rename':
-					if (only) renameDialog = { open: true, file: only, newName: only.name };
+					if (only) renaming = { kind: 'renaming', file: only, name: only.name, problem: null };
 					break;
 				case 'delete':
 					if (settingsStore.current.confirmDelete) {

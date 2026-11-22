@@ -105,6 +105,20 @@
 		return () => hoverCard.hide();
 	});
 	const hideHoverCard = () => hoverCard.hide();
+	/** The item being renamed in place, and what its field reports back. */
+	const renameEditor = $derived(
+		actions.renaming.kind === 'renaming'
+			? {
+					path: actions.renaming.file.path,
+					isDir: actions.renaming.file.isDir,
+					name: actions.renaming.name,
+					problem: actions.renaming.problem,
+					oninput: actions.setRenameName,
+					oncommit: () => void actions.confirmRename(),
+					oncancel: actions.cancelRename
+				}
+			: null
+	);
 	const folderPeeks = new FolderPeeks((path, hidden) => peekDirectory(path, hidden));
 	const peeks = {
 		get: (folder: FileInfo) => folderPeeks.get(folder, settingsStore.current.showHiddenFiles),
@@ -124,16 +138,12 @@
 
 	function closeDialogs() {
 		actions.closeCreate();
-		actions.closeRename();
 		actions.closeDelete();
 		actions.closeProperties();
 	}
 	// Overlays load on first use, so they stay out of the browse page's first download.
 	const hasOpenDialog = $derived(
-		actions.createDialog.open ||
-			actions.renameDialog.open ||
-			actions.deleteDialog.open ||
-			actions.propertiesItems !== null
+		actions.createDialog.open || actions.deleteDialog.open || actions.propertiesItems !== null
 	);
 	const onFolderHover = createHoverIntent(
 		data.prefetchDirectory,
@@ -223,6 +233,10 @@
 				break;
 			case 'details':
 				toggleDetails();
+				break;
+			case 'rename':
+				if (selectedItems.length !== 1 || data.isReadOnly) return;
+				void actions.handleContextMenuAction('rename', selectedItems);
 				break;
 			case 'properties':
 				if (selectedItems.length === 0) return;
@@ -435,6 +449,7 @@
 							folderAppearance={appearance}
 							hover={settings.hoverDetails ? hoverCard : undefined}
 							peeks={settings.folderPreviews ? peeks : undefined}
+							{renameEditor}
 							onItemClick={actions.openFile}
 							{onFolderHover}
 							onSelectionChange={selection.set}
@@ -464,6 +479,7 @@
 						selectionCheckboxes={settings.selectionCheckboxes}
 						folderAppearance={appearance}
 						hover={settings.hoverDetails ? hoverCard : undefined}
+						{renameEditor}
 						onItemClick={actions.openFile}
 						{onFolderHover}
 						onSortChange={location.setSort}
@@ -518,15 +534,11 @@
 	{#await import('#lib/components/BrowseDialogs.svelte') then { default: BrowseDialogs }}
 		<BrowseDialogs
 			createDialog={actions.createDialog}
-			renameDialog={actions.renameDialog}
 			deleteDialog={actions.deleteDialog}
 			onCreateNameChange={actions.setCreateName}
-			onRenameNameChange={actions.setRenameName}
 			onCreateConfirm={() => void actions.confirmCreate()}
-			onRenameConfirm={() => void actions.confirmRename()}
 			onDeleteConfirm={() => void actions.confirmDelete()}
 			onCloseCreate={actions.closeCreate}
-			onCloseRename={actions.closeRename}
 			onCloseDelete={actions.closeDelete}
 		/>
 	{:catch}
