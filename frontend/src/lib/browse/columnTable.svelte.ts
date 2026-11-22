@@ -1,4 +1,5 @@
 import { settingsStore } from '#lib/stores/settings.svelte.js';
+import { toastStore } from '#lib/stores/toast.svelte.js';
 import {
 	columnSpecs,
 	fitLayout,
@@ -17,6 +18,13 @@ function loadEdit(): Promise<ColumnEdit> {
 		edit = null;
 	});
 	return edit;
+}
+
+/** Runs `use` with the column editing code, or says why it could not download. */
+function withEdit(use: (edit: ColumnEdit) => void): void {
+	loadEdit().then(use, () =>
+		toastStore.error('Could not load column editing. Check your connection, then reload.')
+	);
 }
 
 /**
@@ -91,7 +99,7 @@ export class ColumnTable {
 		window.addEventListener('pointermove', move);
 		window.addEventListener('pointerup', end);
 		window.addEventListener('pointercancel', end);
-		void loadEdit().then((loaded) => {
+		withEdit((loaded) => {
 			edit = loaded;
 			apply();
 			if (ended) finish();
@@ -99,11 +107,11 @@ export class ColumnTable {
 	}
 
 	resetWidth(column: Column): void {
-		void loadEdit().then((edit) => this.save(edit.resetColumnWidth(this.layout, column)));
+		withEdit((edit) => this.save(edit.resetColumnWidth(this.layout, column)));
 	}
 
 	toggle(column: Column): void {
-		void loadEdit().then((edit) => this.save(edit.toggleColumn(this.layout, column)));
+		withEdit((edit) => this.save(edit.toggleColumn(this.layout, column)));
 	}
 
 	shows(column: Column): boolean {

@@ -2,6 +2,7 @@
 	/** The column widths and header row of a details table: sort, resize, show or hide. */
 	import { Check, ChevronDown, ChevronUp } from 'lucide-svelte';
 	import type { ColumnTable } from '#lib/browse/columnTable.svelte.js';
+	import LoadError from './LoadError.svelte';
 	import {
 		AVAILABLE_COLUMNS,
 		columnLabel,
@@ -115,5 +116,7 @@
 			onSelect={chooseColumn}
 			onClose={() => (menu = null)}
 		/>
+	{:catch}
+		<LoadError label="column menu" onClose={() => (menu = null)} />
 	{/await}
 {/if}
