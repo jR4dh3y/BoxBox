@@ -15,21 +15,19 @@
 		emblemColor: string | null;
 		strokeWidth?: number;
 	} = $props();
+
+	const tint = $derived(color ? `color: ${color}` : undefined);
 </script>
 
-<span
-	class="relative inline-flex shrink-0"
-	style:width="{size}px"
-	style:height="{size}px"
-	style:color={color ?? undefined}
->
+<!-- The colour goes on the drawing itself: over a wallpaper, `.text-folder svg` sets its own. -->
+<span class="relative inline-flex shrink-0" style:width="{size}px" style:height="{size}px">
 	{#if emblem}
 		{#await import('./EmblemedFolder.svelte')}
-			<Folder {size} {strokeWidth} />
+			<Folder {size} {strokeWidth} style={tint} />
 		{:then { default: EmblemedFolder }}
-			<EmblemedFolder {size} {strokeWidth} {emblem} color={emblemColor ?? color} />
+			<EmblemedFolder {size} {strokeWidth} {emblem} {tint} color={emblemColor ?? color} />
 		{/await}
 	{:else}
-		<Folder {size} {strokeWidth} />
+		<Folder {size} {strokeWidth} style={tint} />
 	{/if}
 </span>

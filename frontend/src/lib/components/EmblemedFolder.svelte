@@ -16,8 +16,17 @@
 		size,
 		strokeWidth,
 		emblem,
+		tint,
 		color
-	}: { size: number; strokeWidth: number; emblem: string; color: string | null } = $props();
+	}: {
+		size: number;
+		strokeWidth: number;
+		emblem: string;
+		/** The folder's own colour, as a style. */
+		tint: string | undefined;
+		/** The emblem's. */
+		color: string | null;
+	} = $props();
 
 	const corner = $derived(size >= CORNER_EMBLEM);
 	// In the folder's 24 units its outline's outer edge is at x 1.15 and y 20.85; the emblem's
@@ -43,13 +52,14 @@
 		stroke-linecap="round"
 		stroke-linejoin="round"
 		aria-hidden="true"
+		style={tint}
 	>
 		<path
 			d="M10.8 20H20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v6.2"
 		/>
 	</svg>
 {:else}
-	<Folder {size} {strokeWidth} />
+	<Folder {size} {strokeWidth} style={tint} />
 {/if}
 <span class="absolute flex" style:left="{mark.left}px" style:top="{mark.top}px">
 	<EmblemIcon name={emblem} size={mark.edge} {color} />
