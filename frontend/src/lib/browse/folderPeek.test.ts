@@ -48,4 +48,30 @@ describe('folder peeks', () => {
 		assert.equal(reads, 1);
 		assert.deepEqual(peeks.get(folder(), false), []);
 	});
+
+	test('a failed read is tried again once a while has passed', async () => {
+		let now = 0;
+		let fail = true;
+		const peeks = new FolderPeeks(
+			async () => {
+				if (fail) throw new Error('offline');
+				return [cover];
+			},
+			() => now
+		);
+		peeks.request(folder(), false);
+		await Promise.resolve();
+		await Promise.resolve();
+		assert.deepEqual(peeks.get(folder(), false), []);
+		fail = false;
+		peeks.request(folder(), false);
+		await Promise.resolve();
+		await Promise.resolve();
+		assert.deepEqual(peeks.get(folder(), false), [], 'not straight away');
+		now = 60_000;
+		peeks.request(folder(), false);
+		await Promise.resolve();
+		await Promise.resolve();
+		assert.deepEqual(peeks.get(folder(), false), [cover]);
+	});
 });
