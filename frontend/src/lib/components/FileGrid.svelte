@@ -27,6 +27,7 @@
 	import { withPathSelected } from '#lib/browse/selection.svelte.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
+	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverCard.svelte.js';
 
 	const PLAIN_FOLDER: FolderAppearance = { color: null, emblem: null, emblemColor: null };
 
@@ -47,6 +48,7 @@
 		selectionCheckboxes = true,
 		dropTarget,
 		folderAppearance = () => PLAIN_FOLDER,
+		hover,
 		onItemClick,
 		onFolderHover,
 		onSelectionChange,
@@ -69,6 +71,8 @@
 		dropTarget?: FileDropTarget;
 		/** How a folder is drawn: its colour and emblem. */
 		folderAppearance?: (path: string) => FolderAppearance;
+		/** The hover card; without it, a row's native tooltip names the item. */
+		hover?: HoverTarget;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -449,11 +453,20 @@
 							tabindex="-1"
 							aria-colindex={columnOffset + 1}
 							aria-selected={isSelected(item.path)}
-							title={`${item.name}\n${typeDescription}${sizeDescription ? ` - ${sizeDescription}` : ''}\nModified ${modifiedDescription}`}
+							title={hover
+								? undefined
+								: `${item.name}\n${typeDescription}${sizeDescription ? ` - ${sizeDescription}` : ''}\nModified ${modifiedDescription}`}
 							onpointerdown={() => (activeItemPath = item.path)}
 							onclick={(e) => handleItemClick(item, e)}
-							onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
-							onpointerleave={() => onFolderHover?.(null)}
+							onpointerenter={(event) => {
+								if (item.isDir) onFolderHover?.(item.path);
+								hover?.rest(item, hoverPoint(event));
+							}}
+							onpointermove={(event) => hover?.rest(item, hoverPoint(event))}
+							onpointerleave={() => {
+								onFolderHover?.(null);
+								hover?.hide();
+							}}
 							ondblclick={() => handleOpen(item)}
 							class:ring-1={dropTarget?.overPath === item.path}
 							class:ring-accent={dropTarget?.overPath === item.path}

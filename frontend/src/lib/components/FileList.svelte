@@ -25,6 +25,7 @@
 	import { withPathSelected } from '#lib/browse/selection.svelte.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
+	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverCard.svelte.js';
 	import { ColumnTable } from '#lib/browse/columnTable.svelte.js';
 	import type { Column } from '#lib/browse/columns.js';
 	import ColumnHeader from './ColumnHeader.svelte';
@@ -50,6 +51,7 @@
 		selectionCheckboxes = true,
 		dropTarget,
 		folderAppearance = () => PLAIN_FOLDER,
+		hover,
 		onItemClick,
 		onFolderHover,
 		onSortChange,
@@ -75,6 +77,8 @@
 		dropTarget?: FileDropTarget;
 		/** How a folder is drawn: its colour and emblem. */
 		folderAppearance?: (path: string) => FolderAppearance;
+		/** The hover card; without it, a row's native tooltip names the item. */
+		hover?: HoverTarget;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -446,8 +450,15 @@
 							: ''} {isCut(item.path) ? 'opacity-50' : ''}"
 						onpointerdown={() => (activeItemPath = item.path)}
 						onclick={(e) => handleRowClick(item, e)}
-						onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
-						onpointerleave={() => onFolderHover?.(null)}
+						onpointerenter={(event) => {
+							if (item.isDir) onFolderHover?.(item.path);
+							hover?.rest(item, hoverPoint(event));
+						}}
+						onpointermove={(event) => hover?.rest(item, hoverPoint(event))}
+						onpointerleave={() => {
+							onFolderHover?.(null);
+							hover?.hide();
+						}}
 						ondblclick={() => handleDoubleClick(item)}
 						class:ring-1={dropTarget?.overPath === item.path}
 						class:ring-accent={dropTarget?.overPath === item.path}
@@ -522,7 +533,10 @@
 												/>
 											{/if}
 										</span>
-										<span class="{clippedCellClass} min-w-0 flex-1" title={item.name}>
+										<span
+											class="{clippedCellClass} min-w-0 flex-1"
+											title={hover ? undefined : item.name}
+										>
 											{displayName}
 										</span>
 									</div>

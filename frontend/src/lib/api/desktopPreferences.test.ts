@@ -28,6 +28,7 @@ const defaults: UserSettings = {
 	hardwareAcceleration: true,
 	previewOnSingleClick: false,
 	compactMode: false,
+	hoverDetails: true,
 	selectionCheckboxes: true,
 	driveNameOverrides: {},
 	favoriteFolders: []

@@ -65,6 +65,8 @@ export interface UserSettings {
 	hardwareAcceleration: boolean;
 	previewOnSingleClick: boolean;
 	compactMode: boolean;
+	/** A card with an item's details shows when the pointer rests on it. */
+	hoverDetails: boolean;
 	/** Rows show a checkbox on hover, so several items can be picked without modifier keys. */
 	selectionCheckboxes: boolean;
 	driveNameOverrides: Record<string, string>;
@@ -97,6 +99,7 @@ const defaultSettings: UserSettings = {
 	hardwareAcceleration: true,
 	previewOnSingleClick: false,
 	compactMode: false,
+	hoverDetails: true,
 	selectionCheckboxes: true,
 	driveNameOverrides: {},
 	favoriteFolders: []

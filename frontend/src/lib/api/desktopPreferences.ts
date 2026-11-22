@@ -50,6 +50,7 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 		hardwareAcceleration: flag('hardwareAcceleration'),
 		previewOnSingleClick: flag('previewOnSingleClick'),
 		selectionCheckboxes: flag('selectionCheckboxes'),
+		hoverDetails: flag('hoverDetails'),
 		compactMode: flag('compactMode'),
 		driveNameOverrides: isRecord(saved.driveNameOverrides)
 			? Object.fromEntries(

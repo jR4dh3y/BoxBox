@@ -55,6 +55,14 @@
 		onchange={(selectionCheckboxes) => preferences.update({ selectionCheckboxes })}
 	/>
 </SettingsRow>
+<SettingsRow label="Show details on hover">
+	<Toggle
+		checked={settings.hoverDetails}
+		label="Show details on hover"
+		showLabel={false}
+		onchange={(hoverDetails) => preferences.update({ hoverDetails })}
+	/>
+</SettingsRow>
 <SettingsRow label="Default sort">
 	<div class="w-40">
 		<Select

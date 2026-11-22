@@ -30,6 +30,8 @@
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
 	import type { AddAction } from '#lib/utils/addMenu.js';
 	import { folderAppearance, specialEmblem } from '#lib/browse/folderLooks.js';
+	import { HoverCard } from '#lib/browse/hoverCard.svelte.js';
+	import { parentFolder } from '#lib/browse/details.js';
 
 	let {
 		pane,
@@ -75,6 +77,23 @@
 	);
 	const appearance = (path: string) =>
 		folderAppearance(path, places, settingsStore.current.folderLooks);
+	const hoverCard = new HoverCard({
+		enabled: () => settingsStore.current.hoverDetails,
+		location: (item) => (location.isSearchActive ? parentFolder(item.path) : null),
+		async listFolder(path) {
+			await browseRequests.prefetch(path);
+			const listing = browseRequests.folder(path).value;
+			if (!listing) throw new Error('The folder could not be read');
+			return listing.items;
+		}
+	});
+	// A press, scroll, key, drag or new folder covers or moves what the card describes.
+	$effect(() => {
+		void location.path;
+		if (hasOpenDialog) hoverCard.hide();
+		return () => hoverCard.hide();
+	});
+	const hideHoverCard = () => hoverCard.hide();
 	const selectedBytes = $derived(selectedFileBytes(data.displayItems, selection.paths));
 	$effect(() => {
 		const path = location.path;
@@ -175,7 +194,17 @@
 	/>
 {/snippet}
 
-<svelte:window onkeydown={keydown} />
+<svelte:window
+	onkeydown={(event) => {
+		hideHoverCard();
+		keydown(event);
+	}}
+	onpointerdowncapture={hideHoverCard}
+	onwheelcapture={hideHoverCard}
+	ondragstartcapture={hideHoverCard}
+	oncontextmenucapture={hideHoverCard}
+	onblur={hideHoverCard}
+/>
 
 <svelte:head>
 	<title>BoxBox</title>
@@ -287,6 +316,7 @@
 						previewOnSingleClick={settings.previewOnSingleClick}
 						selectionCheckboxes={settings.selectionCheckboxes}
 						folderAppearance={appearance}
+						hover={settings.hoverDetails ? hoverCard : undefined}
 						onItemClick={actions.openFile}
 						{onFolderHover}
 						onSelectionChange={selection.set}
@@ -315,6 +345,7 @@
 					previewOnSingleClick={settings.previewOnSingleClick}
 					selectionCheckboxes={settings.selectionCheckboxes}
 					folderAppearance={appearance}
+					hover={settings.hoverDetails ? hoverCard : undefined}
 					onItemClick={actions.openFile}
 					{onFolderHover}
 					onSortChange={location.setSort}
@@ -388,6 +419,13 @@
 			path={actions.openWithFile.path}
 			onclose={actions.closeOpenWith}
 		/>{/await}
+{/if}
+
+{#if hoverCard.state.kind === 'shown'}
+	{@const card = hoverCard.state}
+	{#await import('#lib/components/FileHoverCard.svelte') then { default: FileHoverCard }}
+		<FileHoverCard {card} {appearance} />
+	{/await}
 {/if}
 
 {#if actions.customizeFolder}
