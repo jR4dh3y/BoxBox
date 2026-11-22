@@ -54,6 +54,7 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 		selectionCheckboxes: flag('selectionCheckboxes'),
 		hoverDetails: flag('hoverDetails'),
 		folderPreviews: flag('folderPreviews'),
+		fileIconTints: flag('fileIconTints'),
 		detailsPanel: flag('detailsPanel'),
 		listZoom: savedZoom(saved, 'listZoom'),
 		gridZoom: savedZoom(saved, 'gridZoom'),

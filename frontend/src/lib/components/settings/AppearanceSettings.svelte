@@ -181,6 +181,14 @@
 		</div>
 	</SettingsRow>
 {/if}
+<SettingsRow label="Colour file icons by kind">
+	<Toggle
+		checked={settings.fileIconTints}
+		label="Colour file icons by kind"
+		showLabel={false}
+		onchange={(fileIconTints) => preferences.update({ fileIconTints })}
+	/>
+</SettingsRow>
 <SettingsRow label="Folders show what they hold">
 	<Toggle
 		checked={settings.folderPreviews}

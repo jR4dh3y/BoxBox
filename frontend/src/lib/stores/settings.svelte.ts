@@ -82,6 +82,8 @@ export interface UserSettings {
 	detailsPanel: boolean;
 	/** Grid tiles draw a few of what a folder holds inside it. */
 	folderPreviews: boolean;
+	/** File icons take their kind's colour, as the desktop app's tinted set; off keeps them grey. */
+	fileIconTints: boolean;
 	/** A card with an item's details shows when the pointer rests on it. */
 	hoverDetails: boolean;
 	/** Rows show a checkbox on hover, so several items can be picked without modifier keys. */
@@ -120,6 +122,7 @@ const defaultSettings: UserSettings = {
 	gridZoom: DEFAULT_ZOOM,
 	hoverDetails: true,
 	folderPreviews: true,
+	fileIconTints: true,
 	detailsPanel: false,
 	selectionCheckboxes: true,
 	driveNameOverrides: {},

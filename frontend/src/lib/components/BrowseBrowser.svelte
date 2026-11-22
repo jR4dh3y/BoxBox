@@ -517,6 +517,7 @@
 							showFileExtensions={settings.showFileExtensions}
 							previewOnSingleClick={settings.previewOnSingleClick}
 							selectionCheckboxes={settings.selectionCheckboxes}
+							fileIconTints={settings.fileIconTints}
 							folderAppearance={appearance}
 							hover={settings.hoverDetails ? hover.files : undefined}
 							folderPreviews={settings.folderPreviews}
@@ -548,6 +549,7 @@
 						showFileExtensions={settings.showFileExtensions}
 						previewOnSingleClick={settings.previewOnSingleClick}
 						selectionCheckboxes={settings.selectionCheckboxes}
+						fileIconTints={settings.fileIconTints}
 						folderAppearance={appearance}
 						hover={settings.hoverDetails ? hover.files : undefined}
 						{renameEditor}

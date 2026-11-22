@@ -9,7 +9,13 @@
 		type HoverCardState
 	} from '#lib/browse/hoverCard.svelte.js';
 	import { formatFileSize } from '#lib/utils/format.js';
-	import { getFileIcon, getFileTypeDescription, getPreviewType } from '#lib/utils/fileTypes.js';
+	import {
+		getFileIcon,
+		getFileTint,
+		getFileTypeDescription,
+		getPreviewType
+	} from '#lib/utils/fileTypes.js';
+	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import FolderGlyph from './FolderGlyph.svelte';
 
 	let {
@@ -70,7 +76,14 @@
 					><FolderGlyph size={36} strokeWidth={1.5} {...appearance(item.path)} /></span
 				>
 			{:else}
-				<Icon size={36} strokeWidth={1.5} class="text-text-secondary" />
+				<Icon
+					size={36}
+					strokeWidth={1.5}
+					class="text-text-secondary"
+					style={settingsStore.current.fileIconTints
+						? `color: ${getFileTint(item.name, false) ?? 'currentColor'}`
+						: undefined}
+				/>
 			{/if}
 		</div>
 		<div class="flex min-w-0 flex-col">

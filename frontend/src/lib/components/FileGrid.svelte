@@ -12,7 +12,12 @@
 	import type { FileInfo } from '#lib/api/files.js';
 	import { getThumbnailUrl } from '#lib/api/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
-	import { getFileTypeDescription, getFileIcon, getPreviewType } from '#lib/utils/fileTypes.js';
+	import {
+		getFileTypeDescription,
+		getFileIcon,
+		getFileTint,
+		getPreviewType
+	} from '#lib/utils/fileTypes.js';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount, untrack } from 'svelte';
 	import { canvasMeasure } from '#lib/utils/textMeasure.js';
@@ -54,6 +59,7 @@
 		showFileExtensions = true,
 		previewOnSingleClick = false,
 		selectionCheckboxes = true,
+		fileIconTints = false,
 		dropTarget,
 		folderAppearance = () => PLAIN_FOLDER,
 		hover,
@@ -79,6 +85,8 @@
 		showFileExtensions?: boolean;
 		previewOnSingleClick?: boolean;
 		selectionCheckboxes?: boolean;
+		/** Files take their kind's colour; see `getFileTint`. */
+		fileIconTints?: boolean;
 		dropTarget?: FileDropTarget;
 		/** How a folder is drawn: its colour and emblem. */
 		folderAppearance?: (path: string) => FolderAppearance;
@@ -515,6 +523,7 @@
 									/>
 								{:else}
 									<span
+										style:color={fileIconTints ? getFileTint(item.name, item.isDir) : null}
 										class="flex h-full w-full items-center justify-center {item.isDir
 											? 'text-folder'
 											: 'text-text-secondary'}"

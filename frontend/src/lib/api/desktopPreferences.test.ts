@@ -32,6 +32,7 @@ const defaults: UserSettings = {
 	gridZoom: 1,
 	hoverDetails: true,
 	folderPreviews: true,
+	fileIconTints: true,
 	detailsPanel: false,
 	selectionCheckboxes: true,
 	driveNameOverrides: {},

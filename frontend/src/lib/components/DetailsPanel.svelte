@@ -8,7 +8,13 @@
 	import { detailsContent, fullFileDate, parentFolder } from '#lib/browse/details.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import { formatFileSize } from '#lib/utils/format.js';
-	import { getFileIcon, getFileTypeDescription, getPreviewType } from '#lib/utils/fileTypes.js';
+	import {
+		getFileIcon,
+		getFileTint,
+		getFileTypeDescription,
+		getPreviewType
+	} from '#lib/utils/fileTypes.js';
+	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import FolderGlyph from './FolderGlyph.svelte';
 
 	let {
@@ -76,7 +82,14 @@
 					><FolderGlyph size={64} strokeWidth={1.2} {...appearance(item.path)} /></span
 				>
 			{:else}
-				<Icon size={64} strokeWidth={1.2} class="text-text-secondary" />
+				<Icon
+					size={64}
+					strokeWidth={1.2}
+					class="text-text-secondary"
+					style={settingsStore.current.fileIconTints
+						? `color: ${getFileTint(item.name, false) ?? 'currentColor'}`
+						: undefined}
+				/>
 			{/if}
 		</div>
 		<p class="m-0 mt-3 text-sm font-semibold break-words text-text-primary select-text">

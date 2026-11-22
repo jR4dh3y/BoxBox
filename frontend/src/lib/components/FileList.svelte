@@ -13,7 +13,7 @@
 	import { DEFAULT_SORT_BY, DEFAULT_SORT_DIR } from '#lib/browse/sortFiles.js';
 	import type { SortField, SortDir } from '#lib/types/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
-	import { getFileTypeDescription, getFileIcon } from '#lib/utils/fileTypes.js';
+	import { getFileTypeDescription, getFileIcon, getFileTint } from '#lib/utils/fileTypes.js';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { untrack } from 'svelte';
 	import { Spinner } from '#lib/components/ui/index.js';
@@ -54,6 +54,7 @@
 		showFileExtensions = true,
 		previewOnSingleClick = false,
 		selectionCheckboxes = true,
+		fileIconTints = false,
 		dropTarget,
 		folderAppearance = () => PLAIN_FOLDER,
 		hover,
@@ -81,6 +82,8 @@
 		showFileExtensions?: boolean;
 		previewOnSingleClick?: boolean;
 		selectionCheckboxes?: boolean;
+		/** Files take their kind's colour; see `getFileTint`. */
+		fileIconTints?: boolean;
 		dropTarget?: FileDropTarget;
 		/** How a folder is drawn: its colour and emblem. */
 		folderAppearance?: (path: string) => FolderAppearance;
@@ -468,6 +471,7 @@
 										<span
 											style:width="{metrics.icon + 4}px"
 											style:height="{metrics.icon + 4}px"
+											style:color={fileIconTints ? getFileTint(item.name, item.isDir) : null}
 											class="group/icon relative flex shrink-0 items-center justify-center {item.isDir
 												? 'text-folder'
 												: 'text-text-secondary'}"
