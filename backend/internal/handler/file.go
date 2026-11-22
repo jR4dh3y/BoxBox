@@ -28,8 +28,9 @@ func (h *FileHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/", h.ListRoots)
 	r.Get("/stats", h.GetDriveStats)
 	r.With(middleware.JSONCompression).Get("/list/*", h.ListPath)
-	r.Get("/peek/*", h.PeekPath)
-	r.Post("/properties", h.Properties)
+	// A mount may take any name, so operations on a path are chosen by query rather than by a
+	// fixed first segment, and Properties takes the root, which no item can be created in.
+	r.Post("/", h.Properties)
 	r.Get("/*", h.GetPath)
 	r.Post("/*", h.CreateItem)
 	r.Put("/*", h.Rename)
@@ -58,7 +59,7 @@ type PeekResponse struct {
 }
 
 // PeekPath returns up to three entries of a directory, pictures first.
-// GET /api/v1/files/peek/*path?hidden=1
+// GET /api/v1/files/*path?peek&hidden=1
 func (h *FileHandler) PeekPath(w http.ResponseWriter, r *http.Request) {
 	path := chi.URLParam(r, "*")
 	if path == "" {
@@ -79,7 +80,7 @@ type PropertiesRequest struct {
 }
 
 // Properties returns owners, dates and totals for a selection.
-// POST /api/v1/files/properties
+// POST /api/v1/files
 func (h *FileHandler) Properties(w http.ResponseWriter, r *http.Request) {
 	var request PropertiesRequest
 	if err := decodeJSONBody(w, r, &request); err != nil {
@@ -164,6 +165,10 @@ func (h *FileHandler) GetPath(w http.ResponseWriter, r *http.Request) {
 	path := chi.URLParam(r, "*")
 	if path == "" {
 		h.ListRoots(w, r)
+		return
+	}
+	if r.URL.Query().Has("peek") {
+		h.PeekPath(w, r)
 		return
 	}
 

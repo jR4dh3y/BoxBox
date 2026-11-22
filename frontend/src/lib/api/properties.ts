@@ -39,7 +39,7 @@ export async function getProperties(
 	const sources = paths.map(parseRemotePath);
 	const source = sources[0];
 	if (!source) throw new Error('Choose an item first');
-	const value = await apiRequest<unknown>(sourceEndpoint(source, '/files/properties'), {
+	const value = await apiRequest<unknown>(sourceEndpoint(source, '/files'), {
 		method: 'POST',
 		body: { paths: sources.map((item) => item.path) },
 		signal

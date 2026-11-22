@@ -22,7 +22,7 @@ func TestPeekPathReturnsAFewEntriesPicturesFirst(t *testing.T) {
 	}
 	router := createFileTestRouter(handler)
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/files/peek/media/album", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/files/media/album?peek", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
@@ -35,7 +35,7 @@ func TestPeekPathReturnsAFewEntriesPicturesFirst(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/files/peek/media/album/notes.txt", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/files/media/album/notes.txt?peek", nil))
 	if rec.Code == http.StatusOK {
 		t.Fatal("a file was peeked into")
 	}
@@ -52,7 +52,7 @@ func TestPropertiesTotalsASelection(t *testing.T) {
 	router := createFileTestRouter(handler)
 	rec := httptest.NewRecorder()
 	body := strings.NewReader(`{"paths":["media/album"]}`)
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/files/properties", body))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/files", body))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
@@ -65,7 +65,7 @@ func TestPropertiesTotalsASelection(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/files/properties", strings.NewReader(`{"paths":[]}`)))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/files", strings.NewReader(`{"paths":[]}`)))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("an empty selection: status %d", rec.Code)
 	}

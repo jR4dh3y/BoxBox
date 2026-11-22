@@ -236,7 +236,7 @@ export async function peekDirectory(
 	includeHidden: boolean,
 	signal?: AbortSignal
 ): Promise<FileInfo[]> {
-	const endpoint = pathEndpoint(path, '/files/peek') + (includeHidden ? '?hidden=1' : '');
+	const endpoint = pathEndpoint(path, '/files') + (includeHidden ? '?peek&hidden=1' : '?peek');
 	const body = record(await api.get<unknown>(endpoint, undefined, signal), 'folder peek');
 	const source = parseRemotePath(path);
 	return array(body.items, 'folder peek items').map((item) => parseFile(item, source));
