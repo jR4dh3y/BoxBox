@@ -3,6 +3,7 @@ import { api, apiRequest } from './client';
 import { array, boolean, isRecord, record, string } from './parse';
 import type { UserSettings } from '#lib/stores/settings.svelte.js';
 import { normalizeBackgroundImageMode } from '#lib/utils/wallpaper.js';
+import { parseFolderViews } from '#lib/browse/folderViews.js';
 
 function choice<T extends string>(value: unknown, choices: T[], fallback: T): T {
 	if (value === undefined) return fallback;
@@ -29,6 +30,8 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 		),
 		defaultSortDir: choice(saved.defaultSortDir, ['asc', 'desc'], defaults.defaultSortDir),
 		defaultViewMode: choice(saved.defaultViewMode, ['list', 'grid'], defaults.defaultViewMode),
+		viewPerFolder: flag('viewPerFolder'),
+		folderViews: parseFolderViews(saved.folderViews),
 		accentColor: nullable('accentColor'),
 		accentColorSource: choice(
 			saved.accentColorSource,

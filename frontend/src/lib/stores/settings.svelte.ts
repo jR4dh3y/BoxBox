@@ -4,6 +4,15 @@
 
 import { isLocalDesktop } from '#lib/api/desktop.js';
 import { DEFAULT_SORT_BY, DEFAULT_SORT_DIR } from '#lib/browse/sortFiles.js';
+import {
+	isRootPath,
+	parseFolderViews,
+	rememberFolderMode,
+	rememberFolderSort,
+	type FolderSort,
+	type FolderViews
+} from '#lib/browse/folderViews.js';
+import type { ViewMode } from '#lib/types/files.js';
 import type { DesktopPreferences } from '#lib/api/desktopPreferences.js';
 import { settingsStorage, storage } from '#lib/utils/storage.js';
 import {
@@ -30,6 +39,10 @@ export interface UserSettings {
 	defaultSortBy: 'name' | 'size' | 'modTime' | 'type';
 	defaultSortDir: 'asc' | 'desc';
 	defaultViewMode: 'list' | 'grid';
+	/** Off: List or Grid picked in any folder is the view of every folder. */
+	viewPerFolder: boolean;
+	/** Each folder's view and sort, where they differ from the defaults above. */
+	folderViews: FolderViews;
 	accentColor: string | null;
 	accentColorSource: AccentColorSource;
 	backgroundImage: string | null;
@@ -59,6 +72,8 @@ const defaultSettings: UserSettings = {
 	defaultSortBy: DEFAULT_SORT_BY,
 	defaultSortDir: DEFAULT_SORT_DIR,
 	defaultViewMode: 'list',
+	viewPerFolder: true,
+	folderViews: {},
 	accentColor: null,
 	accentColorSource: 'wallpaper',
 	backgroundImage: null,
@@ -90,6 +105,7 @@ function loadSettings(username: string): UserSettings {
 	return {
 		...settings,
 		accentColorSource: normalizeAccentColorSource(stored?.accentColorSource, settings.accentColor),
+		folderViews: parseFolderViews(settings.folderViews),
 		backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode)
 	};
 }
@@ -200,6 +216,35 @@ class SettingsStore {
 		const rest = { ...this.current.driveNameOverrides };
 		delete rest[originalName];
 		this.set({ ...this.current, driveNameOverrides: rest });
+	}
+
+	/**
+	 * The view picked in a folder, or in every folder when views are not kept per folder.
+	 * The drives keep theirs either way; their default is the cards.
+	 */
+	chooseFolderMode(path: string, mode: ViewMode): void {
+		const settings = this.current;
+		const root = isRootPath(path);
+		if (!root && !settings.viewPerFolder) {
+			this.set({ ...settings, defaultViewMode: mode });
+			return;
+		}
+		const folderViews = rememberFolderMode(
+			settings.folderViews,
+			path,
+			mode,
+			root ? 'grid' : settings.defaultViewMode
+		);
+		this.set({ ...settings, folderViews });
+	}
+
+	chooseFolderSort(path: string, sort: FolderSort): void {
+		const settings = this.current;
+		const folderViews = rememberFolderSort(settings.folderViews, path, sort, {
+			by: settings.defaultSortBy,
+			dir: settings.defaultSortDir
+		});
+		this.set({ ...settings, folderViews });
 	}
 
 	pinFavoriteFolder(folder: FavoriteFolder): void {

@@ -14,6 +14,8 @@ const defaults: UserSettings = {
 	defaultSortBy: 'modTime',
 	defaultSortDir: 'desc',
 	defaultViewMode: 'list',
+	viewPerFolder: true,
+	folderViews: {},
 	accentColor: null,
 	accentColorSource: 'wallpaper',
 	backgroundImage: null,

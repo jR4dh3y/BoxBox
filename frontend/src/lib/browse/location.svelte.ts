@@ -3,14 +3,24 @@ import { resolve } from '$app/paths';
 import { page } from '$app/state';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import type { SortDir, SortField, ViewMode } from '#lib/types/files.js';
+import { folderView, isRootPath } from './folderViews.js';
 
-function parseSortField(value: string | null): SortField {
+function parseSortField(value: string | null): SortField | null {
 	if (value === 'name' || value === 'size' || value === 'modTime' || value === 'type') return value;
-	return settingsStore.current.defaultSortBy;
+	return null;
+}
+
+function parseSortDir(value: string | null): SortDir | null {
+	return value === 'asc' || value === 'desc' ? value : null;
+}
+
+function parseViewMode(value: string | null): ViewMode | null {
+	return value === 'list' || value === 'grid' ? value : null;
 }
 
 /**
  * Where the user is in the file browser. The URL holds it: `path`, `q`, `sort`, `dir` and `view`.
+ * A folder opened without `sort`, `dir` or `view` gets the ones remembered for it.
  * Call during component setup. `onLocationChange` runs when the folder changes, by link or by back/forward.
  */
 export function useBrowseLocation(options: { onLocationChange: () => void }) {
@@ -21,25 +31,18 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 	const searchQuery = $derived(page.url.searchParams.get('q') ?? '');
 	const trimmedSearchQuery = $derived(searchQuery.trim());
 	const isSearchActive = $derived(trimmedSearchQuery.length >= 2);
-	const sortBy = $derived<SortField>(parseSortField(page.url.searchParams.get('sort')));
-	const sortDir = $derived<SortDir>(
-		page.url.searchParams.get('dir') === 'desc'
-			? 'desc'
-			: page.url.searchParams.get('dir') === 'asc'
-				? 'asc'
-				: settingsStore.current.defaultSortDir
-	);
-	const viewMode = $derived<ViewMode>(
-		page.url.searchParams.get('view') === 'grid'
-			? 'grid'
-			: page.url.searchParams.get('view') === 'list'
-				? 'list'
-				: settingsStore.current.defaultViewMode
-	);
-	// The drive cards are the drives page's own look, so only an explicit choice shows the list.
-	const driveViewMode = $derived<ViewMode>(
-		page.url.searchParams.get('view') === 'list' ? 'list' : 'grid'
-	);
+	const opening = $derived.by(() => {
+		const settings = settingsStore.current;
+		return folderView(settings.folderViews, path, {
+			// The drive cards are the drives page's own look until a view is picked there.
+			mode: isRootPath(path) ? 'grid' : settings.defaultViewMode,
+			sort: { by: settings.defaultSortBy, dir: settings.defaultSortDir },
+			perFolder: settings.viewPerFolder || isRootPath(path)
+		});
+	});
+	const sortBy = $derived(parseSortField(page.url.searchParams.get('sort')) ?? opening.sort.by);
+	const sortDir = $derived(parseSortDir(page.url.searchParams.get('dir')) ?? opening.sort.dir);
+	const viewMode = $derived(parseViewMode(page.url.searchParams.get('view')) ?? opening.mode);
 	const viewKey = $derived(
 		JSON.stringify([
 			path,
@@ -88,9 +91,10 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 		});
 	}
 
+	/** The new folder opens in its own view and sort, so the old folder's are dropped. */
 	function navigate(newPath: string) {
 		options.onLocationChange();
-		updateParams({ path: newPath || null, q: null });
+		updateParams({ path: newPath || null, q: null, sort: null, dir: null, view: null });
 	}
 
 	return {
@@ -119,7 +123,7 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 			return viewMode;
 		},
 		get driveViewMode() {
-			return driveViewMode;
+			return viewMode;
 		},
 		get viewKey() {
 			return viewKey;
@@ -135,9 +139,16 @@ export function useBrowseLocation(options: { onLocationChange: () => void }) {
 		forward: () => history.forward(),
 		search: (query: string) => updateParams({ q: query.trim() || null }, { replaceState: true }),
 		clearSearch: () => updateParams({ q: null }, { replaceState: true }),
-		setSort: (field: SortField, dir: SortDir) =>
-			updateParams({ sort: field, dir }, { replaceState: true }),
-		setViewMode: (mode: ViewMode) => updateParams({ view: mode }, { replaceState: true })
+		/** A folder keeps the sort picked in it; search results and the drives are not a folder. */
+		setSort: (field: SortField, dir: SortDir) => {
+			updateParams({ sort: field, dir }, { replaceState: true });
+			if (!isRootPath(path) && !isSearchActive)
+				settingsStore.chooseFolderSort(path, { by: field, dir });
+		},
+		setViewMode: (mode: ViewMode) => {
+			updateParams({ view: mode }, { replaceState: true });
+			settingsStore.chooseFolderMode(path, mode);
+		}
 	};
 }
 

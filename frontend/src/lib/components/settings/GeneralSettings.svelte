@@ -94,3 +94,11 @@
 		/>
 	</div>
 </SettingsRow>
+<SettingsRow label="Remember view per folder">
+	<Toggle
+		checked={settings.viewPerFolder}
+		label="Remember view per folder"
+		showLabel={false}
+		onchange={(viewPerFolder) => preferences.update({ viewPerFolder })}
+	/>
+</SettingsRow>
