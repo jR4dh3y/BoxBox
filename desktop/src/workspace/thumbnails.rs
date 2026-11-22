@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet, VecDeque}, sync::Arc};
+use std::{collections::{HashMap, HashSet}, sync::Arc, time::{Duration, Instant}};
 
 use gpui::RenderImage;
 
@@ -6,9 +6,13 @@ use crate::{api::{Api, FileInfo}, format::extension};
 
 use super::favorites::FavoriteProvider;
 
-/// More than a large screen of tiles, so the visible ones are never evicted.
-/// Each 256 px thumbnail takes about 200 KB of decoded pixels.
+/// More than a large screen of tiles. Each 256 px thumbnail takes about 200 KB
+/// of decoded pixels.
 const THUMBNAIL_CACHE_CAPACITY: usize = 512;
+/// An image drawn this recently is on screen, so it is kept even past the
+/// capacity: a screen of small tiles with folder previews can show more, and
+/// evicting one would only draw it again and evict another.
+const ON_SCREEN: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct ThumbnailKey {
@@ -34,8 +38,8 @@ impl ThumbnailKey {
 
 #[derive(Default)]
 pub(crate) struct ThumbnailCache {
-    images: HashMap<ThumbnailKey, Arc<RenderImage>>,
-    insertion_order: VecDeque<ThumbnailKey>,
+    /// Each image and when a tile last asked for it.
+    images: HashMap<ThumbnailKey, (Arc<RenderImage>, Instant)>,
     pending: HashMap<ThumbnailKey, u64>,
     next_generation: u64,
     failed: HashSet<ThumbnailKey>,
@@ -43,11 +47,16 @@ pub(crate) struct ThumbnailCache {
 
 impl ThumbnailCache {
     pub fn get(&self, key: &ThumbnailKey) -> Option<Arc<RenderImage>> {
-        self.images.get(key).cloned()
+        self.images.get(key).map(|(image, _)| image.clone())
     }
 
+    /// Tiles ask every time they are drawn, which marks a cached image as on screen.
     pub fn request(&mut self, key: ThumbnailKey) -> Option<u64> {
-        if self.images.contains_key(&key) || self.pending.contains_key(&key) || self.failed.contains(&key) {
+        if let Some((_, used)) = self.images.get_mut(&key) {
+            *used = Instant::now();
+            return None;
+        }
+        if self.pending.contains_key(&key) || self.failed.contains(&key) {
             return None;
         }
         self.next_generation = self.next_generation.wrapping_add(1);
@@ -75,14 +84,15 @@ impl ThumbnailCache {
             self.failed.insert(key);
             return evicted;
         };
+        let now = Instant::now();
         while self.images.len() >= THUMBNAIL_CACHE_CAPACITY {
-            let Some(oldest) = self.insertion_order.pop_front() else {
+            let Some((oldest, _)) = self.images.iter().min_by_key(|(_, (_, used))| *used).filter(|(_, (_, used))| now - *used >= ON_SCREEN) else {
                 break;
             };
-            evicted.extend(self.images.remove(&oldest));
+            let oldest = oldest.clone();
+            evicted.extend(self.images.remove(&oldest).map(|(image, _)| image));
         }
-        self.images.insert(key.clone(), image);
-        self.insertion_order.push_back(key);
+        self.images.insert(key, (image, now));
         evicted
     }
 
@@ -96,10 +106,9 @@ impl ThumbnailCache {
     /// Forgets everything. Returns the images to release from the GPU.
     #[must_use]
     pub fn invalidate(&mut self) -> Vec<Arc<RenderImage>> {
-        self.insertion_order.clear();
         self.pending.clear();
         self.failed.clear();
-        self.images.drain().map(|(_, image)| image).collect()
+        self.images.drain().map(|(_, (image, _))| image).collect()
     }
 }
 
@@ -120,4 +129,41 @@ pub(crate) fn has_inline_thumbnail(name: &str) -> bool {
             | "pdf" | "mp4" | "webm" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "m4v"
             | "ogv" | "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "wma" | "opus"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(index: usize) -> ThumbnailKey {
+        ThumbnailKey { provider: FavoriteProvider::Local, path: format!("home/{index}.png"), mod_time: None, size: 0, edge: 128 }
+    }
+
+    fn image() -> anyhow::Result<Arc<RenderImage>> {
+        Ok(Arc::new(RenderImage::new(vec![image::Frame::new(image::RgbaImage::new(1, 1))])))
+    }
+
+    fn add(cache: &mut ThumbnailCache, index: usize) -> usize {
+        let generation = cache.request(key(index)).unwrap();
+        cache.finish(key(index), generation, image()).len()
+    }
+
+    #[test]
+    fn images_on_screen_are_kept_and_the_least_recently_drawn_go_first() {
+        let mut cache = ThumbnailCache::default();
+        for index in 0..THUMBNAIL_CACHE_CAPACITY {
+            assert_eq!(add(&mut cache, index), 0);
+        }
+        // All of them were just drawn: one more grows the cache instead of evicting.
+        assert_eq!(add(&mut cache, THUMBNAIL_CACHE_CAPACITY), 0);
+        assert_eq!(cache.images.len(), THUMBNAIL_CACHE_CAPACITY + 1);
+        // Off screen for a while, except 0, which a tile drew again.
+        let past = Instant::now() - ON_SCREEN * 2;
+        for (_, used) in cache.images.values_mut() {
+            *used = past;
+        }
+        assert_eq!(cache.request(key(0)), None);
+        assert_eq!(add(&mut cache, THUMBNAIL_CACHE_CAPACITY + 1), 2, "back under the capacity");
+        assert!(cache.get(&key(0)).is_some());
+    }
 }
