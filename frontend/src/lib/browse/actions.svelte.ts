@@ -29,7 +29,7 @@ import { canPreview, getFileTypeDescription } from '#lib/utils/fileTypes.js';
 import type { BrowseData } from './data.svelte';
 import type { BrowseLocation } from './location.svelte';
 import type { BrowseSelection } from './selection.svelte';
-import { nameProblem, unusedName } from './names.js';
+import { createNameProblem, nameProblem, unusedName } from './names.js';
 
 function errorMessage(error: unknown, fallback: string): string {
 	return error instanceof Error ? error.message : fallback;
@@ -56,6 +56,10 @@ export interface CreateDialog {
 	problem: string | null;
 }
 
+function parentOf(path: string): string {
+	return path.substring(0, path.lastIndexOf('/'));
+}
+
 /** What the user does to files and folders: dialogs, file operations, clipboard and preview. */
 export function useBrowseActions(
 	location: BrowseLocation,
@@ -68,9 +72,13 @@ export function useBrowseActions(
 	let createDialog = $state<CreateDialog>({ open: false, type: 'file', name: '', problem: null });
 	let renaming = $state.raw<Renaming>({ kind: 'idle' });
 
-	/** The names already in the open folder, other than `except`. */
-	function siblingNames(except?: string): string[] {
-		return data.displayItems.filter((item) => item.path !== except).map((item) => item.name);
+	/**
+	 * The names already in `folder`, other than `except`'s. Empty when its listing is not held,
+	 * as for a search result elsewhere; the server then refuses a name that is taken.
+	 */
+	function siblingNames(folder: string, except?: FileInfo): string[] {
+		const names = data.namesIn(folder) ?? [];
+		return except ? names.filter((name) => name !== except.name) : names;
 	}
 	let deleteDialog = $state<{ open: boolean; items: FileInfo[] }>({ open: false, items: [] });
 	// The items Properties describes; null when it is closed.
@@ -99,7 +107,7 @@ export function useBrowseActions(
 			return;
 		}
 		// A name not taken yet, as the desktop app suggests one.
-		const taken = siblingNames();
+		const taken = siblingNames(location.path);
 		const name = unusedName(
 			type === 'file' ? 'untitled.txt' : 'New Folder',
 			type === 'directory',
@@ -111,7 +119,7 @@ export function useBrowseActions(
 	async function confirmCreate() {
 		if (!location.path) return;
 		const name = createDialog.name.trim();
-		const problem = nameProblem(name, siblingNames());
+		const problem = createNameProblem(name, siblingNames(location.path));
 		if (problem) {
 			createDialog.problem = problem;
 			return;
@@ -159,11 +167,14 @@ export function useBrowseActions(
 		renaming = { kind: 'idle' };
 		const newName = current.name.trim();
 		// An unchanged name is not a rename.
-		if (newName === current.file.name || nameProblem(newName, siblingNames(current.file.path)))
+		const oldPath = current.file.path;
+		const parentPath = parentOf(oldPath);
+		if (
+			newName === current.file.name ||
+			nameProblem(newName, siblingNames(parentPath, current.file))
+		)
 			return;
 
-		const oldPath = current.file.path;
-		const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
 		const newPath = parentPath ? `${parentPath}/${newName}` : newName;
 
 		try {
@@ -254,14 +265,14 @@ export function useBrowseActions(
 
 		setCreateName(name: string) {
 			createDialog.name = name;
-			createDialog.problem = nameProblem(name.trim(), siblingNames());
+			createDialog.problem = createNameProblem(name.trim(), siblingNames(location.path));
 		},
 		setRenameName(name: string) {
 			if (renaming.kind !== 'renaming') return;
 			renaming = {
 				...renaming,
 				name,
-				problem: nameProblem(name.trim(), siblingNames(renaming.file.path))
+				problem: nameProblem(name.trim(), siblingNames(parentOf(renaming.file.path), renaming.file))
 			};
 		},
 		closeCreate,

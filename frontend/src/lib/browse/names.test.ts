@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { basenameEnd, nameProblem, unusedName } from './names.js';
+import { basenameEnd, createNameProblem, nameProblem, unusedName } from './names.js';
 
 describe('names', () => {
 	test('names are refused with a reason', () => {
@@ -10,6 +10,8 @@ describe('names', () => {
 		assert.equal(nameProblem('a.txt', ['a.txt']), '“a.txt” already exists here.');
 		// A backslash is an ordinary character on Linux.
 		assert.equal(nameProblem('a\\b', []), null);
+		// The server's create refuses one, though.
+		assert.equal(createNameProblem('a\\b', []), 'A name cannot contain “\\”.');
 	});
 
 	test('suggestions skip taken names before the extension', () => {

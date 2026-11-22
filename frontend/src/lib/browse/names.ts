@@ -10,6 +10,13 @@ export function nameProblem(name: string, siblings: Iterable<string>): string | 
 	return null;
 }
 
+/** As `nameProblem`, for a new item, which the server also refuses to give a backslash. */
+export function createNameProblem(name: string, siblings: Iterable<string>): string | null {
+	return (
+		nameProblem(name, siblings) ?? (name.includes('\\') ? 'A name cannot contain “\\”.' : null)
+	);
+}
+
 /** Where the part of a name before its extension ends: the whole name for a folder or a dotfile. */
 export function basenameEnd(name: string, isDir: boolean): number {
 	const dot = name.lastIndexOf('.');
