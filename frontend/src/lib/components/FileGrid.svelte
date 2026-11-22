@@ -24,7 +24,7 @@
 	import { CONFIG } from '#lib/config.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
-	import { withPathSelected } from '#lib/browse/selection.svelte.js';
+	import { ViewCursor } from '#lib/browse/viewCursor.svelte.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
 	import FolderPeekCards from './FolderPeekCards.svelte';
@@ -89,11 +89,8 @@
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
 	let gridElement = $state<HTMLDivElement | null>(null);
-	let activeItemPath = $state<string | null>(null);
-	const activeItemIndex = $derived.by(() =>
-		activeItemPath === null ? -1 : items.findIndex((item) => item.path === activeItemPath)
-	);
-	const activeItem = $derived(activeItemIndex < 0 ? null : (items[activeItemIndex] ?? null));
+	const cursor = new ViewCursor(() => ({ items, selectedPaths, onSelectionChange }));
+	const activeItemIndex = $derived(cursor.activeIndex);
 	const rowWindow = createFixedRowWindow({
 		items: () => items,
 		itemKey: (item) => item.path,
@@ -123,10 +120,10 @@
 		};
 	});
 	$effect(() => {
-		const path = activeItemPath;
+		const path = cursor.activePath;
 		if (path === null || items.some((item) => item.path === path)) return;
 		untrack(() => {
-			activeItemPath = null;
+			cursor.activePath = null;
 		});
 	});
 
@@ -134,38 +131,14 @@
 	let thumbnailErrors = new SvelteSet<string>();
 
 	function handleItemClick(item: FileInfo, event: MouseEvent) {
-		activeItemPath = item.path;
 		gridElement?.focus({ preventScroll: true });
-		if (event.ctrlKey || event.metaKey) {
-			onSelectionChange?.(
-				withPathSelected(selectedPaths, item.path, !selectedPaths.has(item.path))
-			);
-		} else if (event.shiftKey && selectedPaths.size > 0) {
-			handleCheck(item, true);
-		} else {
-			const newSelection = new SvelteSet<string>([item.path]);
-			onSelectionChange?.(newSelection);
-		}
-
-		if (item.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-			onItemClick?.(item);
-			return;
-		}
-
-		if (
-			previewOnSingleClick &&
-			!item.isDir &&
-			!event.ctrlKey &&
-			!event.metaKey &&
-			!event.shiftKey
-		) {
-			onItemClick?.(item);
-		}
+		if (cursor.click(item, event) !== 'replaced') return;
+		// A plain click opens a folder, or a file when Settings preview on one click.
+		if (item.isDir || previewOnSingleClick) onItemClick?.(item);
 	}
 
-	function handleCheck(item: FileInfo, checked: boolean) {
-		activeItemPath = item.path;
-		onSelectionChange?.(withPathSelected(selectedPaths, item.path, checked));
+	function handleCheck(item: FileInfo) {
+		cursor.toggle(item);
 		// Keyboard navigation stays on the grid instead of the checkbox.
 		gridElement?.focus({ preventScroll: true });
 	}
@@ -176,32 +149,25 @@
 	}
 
 	function handleGridFocus() {
-		if (items.length === 0 || activeItemPath !== null) return;
+		if (items.length === 0 || cursor.activePath !== null) return;
 		const firstVisible = Math.min(
 			items.length - 1,
 			rowWindow.firstVisibleRow * rowWindow.columnCount
 		);
-		activeItemPath = items[firstVisible]?.path ?? null;
+		cursor.activePath = items[firstVisible]?.path ?? null;
 	}
 
 	function handleViewportScroll() {
 		rowWindow.onScroll();
 	}
 
-	function getKeyboardTargetItems(): FileInfo[] {
-		if (selectedPaths.size > 0) {
-			return items.filter((item) => selectedPaths.has(item.path));
-		}
-		return activeItem ? [activeItem] : [];
-	}
-
+	/** The Menu key: the selection's menu by its item, or the folder's when nothing is picked. */
 	function handleKeyboardContextMenu() {
 		if (!gridElement) return;
-		const targetItems = getKeyboardTargetItems();
-		if (targetItems.length === 0) return;
-
+		const targetItems = cursor.targets();
 		const activeRow = Math.floor(activeItemIndex / rowWindow.columnCount);
 		const activeIsVisible =
+			targetItems.length > 0 &&
 			activeItemIndex >= 0 &&
 			activeRow >= rowWindow.firstVisibleRow &&
 			activeRow < rowWindow.lastVisibleRow;
@@ -213,8 +179,8 @@
 			gridElement.parentElement?.getBoundingClientRect() ??
 			gridElement.getBoundingClientRect();
 		contextMenu = {
-			x: Math.min(Math.max(0, bounds.left), Math.max(0, window.innerWidth - 1)),
-			y: Math.min(Math.max(0, bounds.top), Math.max(0, window.innerHeight - 1)),
+			x: Math.min(Math.max(0, bounds.left + 40), Math.max(0, window.innerWidth - 1)),
+			y: Math.min(Math.max(0, bounds.top + 8), Math.max(0, window.innerHeight - 1)),
 			items: targetItems
 		};
 	}
@@ -228,87 +194,47 @@
 		if (items.length === 0) return;
 
 		const columns = rowWindow.columnCount;
-		const currentIndex = Math.min(
-			items.length - 1,
-			Math.max(0, activeItemIndex >= 0 ? activeItemIndex : rowWindow.firstVisibleRow * columns)
+		const moved = cursor.key(
+			event,
+			{ columns, page: columns * Math.max(1, rowWindow.visibleRowCount) },
+			performance.now()
 		);
-		const rowStart = Math.floor(currentIndex / columns) * columns;
-		const rowEnd = Math.min(items.length - 1, rowStart + columns - 1);
-		let nextIndex: number;
-
-		switch (event.key) {
-			case 'ArrowLeft':
-				nextIndex = Math.max(0, currentIndex - 1);
-				break;
-			case 'ArrowRight':
-				nextIndex = Math.min(items.length - 1, currentIndex + 1);
-				break;
-			case 'ArrowUp':
-				nextIndex = Math.max(0, currentIndex - columns);
-				break;
-			case 'ArrowDown':
-				nextIndex = Math.min(items.length - 1, currentIndex + columns);
-				break;
-			case 'PageUp':
-				nextIndex = Math.max(0, currentIndex - rowWindow.visibleRowCount * columns);
-				break;
-			case 'PageDown':
-				nextIndex = Math.min(items.length - 1, currentIndex + rowWindow.visibleRowCount * columns);
-				break;
-			case 'Home':
-				nextIndex = event.ctrlKey || event.metaKey ? 0 : rowStart;
-				break;
-			case 'End':
-				nextIndex = event.ctrlKey || event.metaKey ? items.length - 1 : rowEnd;
-				break;
-			default: {
-				const item = items[currentIndex];
-				if (!item) return;
-				if (event.key === ' ') {
-					event.preventDefault();
-					handleCheck(item, !selectedPaths.has(item.path));
-					return;
-				}
-				if (event.key === 'Enter') {
-					event.preventDefault();
-					onItemClick?.(item);
-					return;
-				}
-
-				let action: 'delete' | 'rename' | 'copy' | 'cut' | 'paste' | null = null;
-				if (event.key === 'Delete') action = 'delete';
-				else if (event.key === 'F2') action = 'rename';
-				else if ((event.key === 'c' || event.key === 'C') && (event.ctrlKey || event.metaKey)) {
-					action = 'copy';
-				} else if ((event.key === 'x' || event.key === 'X') && (event.ctrlKey || event.metaKey)) {
-					action = 'cut';
-				} else if ((event.key === 'v' || event.key === 'V') && (event.ctrlKey || event.metaKey)) {
-					action = 'paste';
-				}
-				if (!action) return;
-
-				const targetItems = getKeyboardTargetItems();
-				if (targetItems.length === 0) return;
-				event.preventDefault();
-				onContextMenuAction?.(action, targetItems);
-				return;
-			}
+		if (moved.kind !== 'ignored') {
+			event.preventDefault();
+			if (moved.kind === 'moved') rowWindow.scrollToItem(moved.index);
+			return;
 		}
 
+		const item = items[activeItemIndex];
+		if (event.key === 'Enter' && item) {
+			event.preventDefault();
+			onItemClick?.(item);
+			return;
+		}
+
+		let action: 'delete' | 'rename' | 'copy' | 'cut' | 'paste' | null = null;
+		if (event.key === 'Delete') action = 'delete';
+		else if (event.key === 'F2') action = 'rename';
+		else if ((event.key === 'c' || event.key === 'C') && (event.ctrlKey || event.metaKey)) {
+			action = 'copy';
+		} else if ((event.key === 'x' || event.key === 'X') && (event.ctrlKey || event.metaKey)) {
+			action = 'cut';
+		} else if ((event.key === 'v' || event.key === 'V') && (event.ctrlKey || event.metaKey)) {
+			action = 'paste';
+		}
+		if (!action) return;
+
+		const targetItems = cursor.targets();
+		if (targetItems.length === 0) return;
 		event.preventDefault();
-		activeItemPath = items[nextIndex]?.path ?? null;
-		rowWindow.scrollToItem(nextIndex);
+		onContextMenuAction?.(action, targetItems);
 	}
 
 	function handleContextMenu(item: FileInfo, event: MouseEvent) {
-		activeItemPath = item.path;
 		gridElement?.focus({ preventScroll: true });
 		event.preventDefault();
-
-		if (!selectedPaths.has(item.path)) {
-			const newSelection = new SvelteSet<string>([item.path]);
-			onSelectionChange?.(newSelection);
-		}
+		// A right-click on an item that is not picked picks only it.
+		cursor.point(item);
 
 		const selectedItems = items.filter((i) => selectedPaths.has(i.path) || i.path === item.path);
 
@@ -463,7 +389,7 @@
 							title={hover
 								? undefined
 								: `${item.name}\n${typeDescription}${sizeDescription ? ` - ${sizeDescription}` : ''}\nModified ${modifiedDescription}`}
-							onpointerdown={() => (activeItemPath = item.path)}
+							onpointerdown={() => (cursor.activePath = item.path)}
 							onclick={(e) => handleItemClick(item, e)}
 							onpointerenter={(event) => {
 								if (item.isDir) onFolderHover?.(item.path);
@@ -515,7 +441,7 @@
 										: 'opacity-0 group-hover/tile:opacity-100 pointer-coarse:opacity-100'}"
 									onclick={(event) => event.stopPropagation()}
 									ondblclick={(event) => event.stopPropagation()}
-									onchange={(event) => handleCheck(item, event.currentTarget.checked)}
+									onchange={() => handleCheck(item)}
 								/>
 							{/if}
 							<div class="{thumbnailClass} {compactMode ? 'h-14' : 'h-20'}">

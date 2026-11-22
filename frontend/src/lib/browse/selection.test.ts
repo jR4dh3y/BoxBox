@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { selectedFileBytes, useBrowseSelection, withPathSelected } from './selection.svelte';
+import { selectedFileBytes, useBrowseSelection } from './selection.svelte';
 
 const entries = (...paths: string[]) => paths.map((path) => ({ path }));
 
@@ -40,11 +40,4 @@ test('selected size counts files only', () => {
 	];
 	assert.equal(selectedFileBytes(items, new Set(['a', 'c'])), 10);
 	assert.equal(selectedFileBytes(items, new Set()), 0);
-});
-
-test('a checkbox changes only its own path', () => {
-	const start = new Set(['a', 'c']);
-	assert.deepEqual([...withPathSelected(start, 'b', true)], ['a', 'c', 'b']);
-	assert.deepEqual([...withPathSelected(start, 'c', false)], ['a']);
-	assert.deepEqual([...start], ['a', 'c']);
 });
