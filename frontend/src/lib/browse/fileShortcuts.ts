@@ -1,16 +1,17 @@
+/** Keys the browse page binds while no text field, dialog or menu has them. */
 export type FileShortcut =
 	| 'select-all'
 	| 'clear-selection'
+	| 'select-pattern'
+	| 'invert-selection'
 	| 'search'
-	| 'details'
-	| 'open'
 	| 'new-folder'
-	| 'copy'
-	| 'cut'
 	| 'paste'
-	| 'rename'
-	| 'delete'
-	| 'delete-permanently';
+	| 'focus-location'
+	| 'zoom-in'
+	| 'zoom-out'
+	| 'zoom-reset'
+	| 'shortcuts';
 
 /** Text fields keep their own keys; selection checkboxes do not. */
 export function isTextEntryTarget(target: EventTarget | null): boolean {
@@ -22,71 +23,37 @@ export function isTextEntryTarget(target: EventTarget | null): boolean {
 	);
 }
 
-/** Controls that Enter already activates; file rows handle their own Enter. */
-export function isActivatableTarget(target: EventTarget | null): boolean {
-	return (
-		target instanceof Element &&
-		target.closest('button, a[href], summary, [role="button"], [role="tab"], [role="link"]') !==
-			null
-	);
-}
-
 export function getFileShortcut(
 	event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>
 ): FileShortcut | null {
 	const key = event.key.toLowerCase();
 	const command = event.ctrlKey || event.metaKey;
-	if (command && !event.altKey) {
+	if (event.altKey) return null;
+	if (command) {
+		// Plus is Shift+= on most layouts, so zoom ignores Shift.
+		if (key === '+' || key === '=') return 'zoom-in';
+		if (key === '-' || key === '_') return 'zoom-out';
 		if (event.shiftKey) return key === 'n' ? 'new-folder' : null;
 		switch (key) {
 			case 'a':
 				return 'select-all';
-			case 'c':
-				return 'copy';
-			case 'x':
-				return 'cut';
+			case 's':
+				return 'select-pattern';
+			case 'i':
+				return 'invert-selection';
 			case 'v':
 				return 'paste';
 			case 'f':
 				return 'search';
+			case 'l':
+				return 'focus-location';
+			case '0':
+				return 'zoom-reset';
 		}
+		return null;
 	}
-	if (command) return null;
-	if (event.altKey) return !event.shiftKey && key === 'enter' ? 'details' : null;
-	if (key === 'delete') return event.shiftKey ? 'delete-permanently' : 'delete';
 	if (event.shiftKey) return null;
-	if (key === 'f2') return 'rename';
+	if (event.key === 'F1') return 'shortcuts';
 	if (key === 'escape') return 'clear-selection';
-	if (key === 'enter') return 'open';
 	return null;
-}
-
-export function fileNavigationIndex(
-	key: string,
-	index: number,
-	count: number,
-	columns = 1,
-	pageSize = 10
-): number | null {
-	if (count === 0 || index < 0) return null;
-	switch (key) {
-		case 'ArrowDown':
-			return Math.min(count - 1, index + columns);
-		case 'ArrowUp':
-			return Math.max(0, index - columns);
-		case 'ArrowRight':
-			return Math.min(count - 1, index + 1);
-		case 'ArrowLeft':
-			return Math.max(0, index - 1);
-		case 'PageDown':
-			return Math.min(count - 1, index + pageSize);
-		case 'PageUp':
-			return Math.max(0, index - pageSize);
-		case 'Home':
-			return 0;
-		case 'End':
-			return count - 1;
-		default:
-			return null;
-	}
 }

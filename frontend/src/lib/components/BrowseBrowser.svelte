@@ -34,6 +34,8 @@
 	import { FolderPeeks } from '#lib/browse/folderPeek.svelte.js';
 	import { peekDirectory, type FileInfo } from '#lib/api/files.js';
 	import { parentFolder } from '#lib/browse/details.js';
+	import { getFileShortcut, isTextEntryTarget } from '#lib/browse/fileShortcuts.js';
+	import { invertedPaths, pathsMatching } from '#lib/browse/selectPattern.js';
 
 	let {
 		pane,
@@ -136,32 +138,69 @@
 		return () => onFolderHover(null);
 	});
 
+	let shortcutsOpen = $state(false);
+	let patternOpen = $state(false);
+	// The last pattern comes back, as the desktop app keeps it for the session.
+	let lastPattern = $state('');
+
 	function keydown(event: KeyboardEvent) {
 		if (
 			!focused ||
 			event.defaultPrevented ||
-			!(event.ctrlKey || event.metaKey) ||
-			event.altKey ||
-			event.shiftKey ||
 			document.querySelector('[role="dialog"], dialog[open], [role="menu"]')
 		)
 			return;
-		if (event.key.toLowerCase() === 'l') {
-			event.preventDefault();
-			toolbar?.focusLocation();
-			return;
-		}
+		const shortcut = getFileShortcut(event);
+		if (shortcut === null) return;
+		const editable = isTextEntryTarget(event.target);
+		// Fields keep their own Ctrl+A, Ctrl+V and Escape; the location and search keys work anywhere.
 		if (
-			event.key.toLowerCase() === 'v' &&
-			data.canCreate &&
-			!(
-				event.target instanceof Element &&
-				event.target.closest('input, textarea, [contenteditable="true"]')
-			)
-		) {
-			event.preventDefault();
-			void actions.paste.paste();
+			editable &&
+			shortcut !== 'focus-location' &&
+			shortcut !== 'search' &&
+			shortcut !== 'shortcuts'
+		)
+			return;
+		const inFolder = !data.isAtRoot;
+		switch (shortcut) {
+			case 'focus-location':
+				toolbar?.focusLocation();
+				break;
+			case 'search':
+				if (!inFolder) return;
+				toolbar?.focusSearch();
+				break;
+			case 'shortcuts':
+				shortcutsOpen = true;
+				break;
+			case 'paste':
+				if (!data.canCreate) return;
+				void actions.paste.paste();
+				break;
+			case 'new-folder':
+				if (!data.canCreate) return;
+				void actions.handleContextMenuAction('new-folder', []);
+				break;
+			case 'select-all':
+				if (!inFolder) return;
+				selection.set(new Set(data.displayItems.map((item) => item.path)));
+				break;
+			case 'clear-selection':
+				if (selection.count === 0) return;
+				selection.clear();
+				break;
+			case 'select-pattern':
+				if (!inFolder) return;
+				patternOpen = true;
+				break;
+			case 'invert-selection':
+				if (!inFolder) return;
+				selection.set(invertedPaths(data.displayItems, selection.paths));
+				break;
+			default:
+				return;
 		}
+		event.preventDefault();
 	}
 </script>
 
@@ -428,6 +467,33 @@
 			path={actions.openWithFile.path}
 			onclose={actions.closeOpenWith}
 		/>{/await}
+{/if}
+
+{#if shortcutsOpen}
+	{#await import('#lib/components/KeyboardShortcutsDialog.svelte') then { default: KeyboardShortcutsDialog }}
+		<KeyboardShortcutsDialog onclose={() => (shortcutsOpen = false)} />
+	{:catch}
+		<LoadError label="keyboard shortcuts" onClose={() => (shortcutsOpen = false)} />
+	{/await}
+{/if}
+
+{#if patternOpen}
+	{#await import('#lib/components/SelectPatternDialog.svelte') then { default: SelectPatternDialog }}
+		<SelectPatternDialog
+			initial={lastPattern}
+			onselect={(pattern) => {
+				const matched = pathsMatching(data.displayItems, pattern);
+				if (matched.size > 0) {
+					lastPattern = pattern;
+					selection.set(matched);
+				}
+				return matched.size;
+			}}
+			onclose={() => (patternOpen = false)}
+		/>
+	{:catch}
+		<LoadError label="Select by Pattern" onClose={() => (patternOpen = false)} />
+	{/await}
 {/if}
 
 {#if hoverCard.state.kind === 'shown'}

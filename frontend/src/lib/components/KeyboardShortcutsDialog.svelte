@@ -2,23 +2,30 @@
 	import Modal from './ui/Modal.svelte';
 	import { isLocalDesktop } from '#lib/api/desktop.js';
 	let { onclose }: { onclose: () => void } = $props();
+	// The keys `fileShortcuts.ts`, `cursor.ts` and the views bind; keep them in step.
 	const groups = [
 		{
 			title: 'Files and selection',
 			shortcuts: [
-				['Arrow keys · Home · End', 'Move and select'],
-				['Shift + Arrow keys', 'Extend selection'],
-				['Ctrl/Cmd + Arrow keys', 'Move focus without selecting'],
-				['Space · Ctrl/Cmd + Space', 'Select · Toggle selection'],
-				['Ctrl/Cmd + A', 'Select all loaded items'],
+				['Arrow keys', 'Move and select'],
+				['Shift + arrows', 'Extend selection'],
+				['Ctrl/Cmd + arrows', 'Move without selecting'],
+				['Space · Ctrl/Cmd + Space', 'Select or deselect'],
+				['Home · End', 'First · last item'],
+				['Page Up · Page Down', 'Move a screen'],
+				['Ctrl/Cmd + click', 'Select or deselect'],
+				['Shift · Ctrl/Cmd + Shift + click', 'Select · add a range'],
+				['Type a name', 'Jump to it'],
+				['Menu · Shift + F10', 'Context menu'],
+				['Ctrl/Cmd + A', 'Select all'],
 				['Escape', 'Clear selection or close a dialog'],
 				['Enter', 'Open selected item'],
-				['Alt + Enter', 'Show selection details'],
 				['Ctrl/Cmd + C · X · V', 'Copy · Cut · Paste'],
 				['Ctrl/Cmd + Shift + N', 'New folder'],
 				['F2', 'Rename selected item'],
 				['Delete', 'Trash locally; delete on a web server'],
-				['Shift + Delete', 'Permanently delete with confirmation']
+				['Ctrl/Cmd + S', 'Select by pattern, such as *.jpg'],
+				['Ctrl/Cmd + I', 'Invert selection']
 			]
 		},
 		{
@@ -26,13 +33,7 @@
 			shortcuts: [
 				['Ctrl/Cmd + L', 'Edit location'],
 				['Ctrl/Cmd + F', 'Search this folder'],
-				['Alt + Left · Right · Up', 'Back · Forward · Parent folder'],
-				['F5', 'Refresh'],
-				['Ctrl/Cmd + H', 'Show or hide hidden files'],
-				['Ctrl/Cmd + T · W', 'New tab · Close tab'],
-				['Ctrl/Cmd + Tab', 'Next tab'],
-				['Ctrl/Cmd + Shift + Tab', 'Previous tab'],
-				['F3', 'Toggle split pane'],
+				['Alt + Left · Right', 'Back · Forward'],
 				['F1', 'Show keyboard shortcuts']
 			]
 		},

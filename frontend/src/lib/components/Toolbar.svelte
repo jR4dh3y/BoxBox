@@ -67,6 +67,10 @@
 	export function focusLocation() {
 		pathBar?.edit();
 	}
+	let searchBar: SearchBar | undefined = $state();
+	export function focusSearch() {
+		searchBar?.focus();
+	}
 	let addMenu = $state<{ x: number; y: number } | null>(null);
 	const addDisabled = $derived(!canCreate && uploadDisabled);
 	function openAddMenu(event: MouseEvent & { currentTarget: HTMLButtonElement }) {
@@ -119,6 +123,7 @@
 	{#if showSearch}
 		<div class="w-28 min-w-28 shrink @lg:w-48 @3xl:w-64 @5xl:w-96">
 			<SearchBar
+				bind:this={searchBar}
 				value={searchValue}
 				onInput={onSearchInput}
 				onClear={onSearchClear}
