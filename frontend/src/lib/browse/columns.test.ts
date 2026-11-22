@@ -8,11 +8,9 @@ import {
 	layoutColumns,
 	layoutMinWidth,
 	newLayout,
-	parseColumnLayout,
-	resetColumnWidth,
-	resizeColumn,
-	toggleColumn
+	parseColumnLayout
 } from './columns.js';
+import { resetColumnWidth, resizeColumn, toggleColumn } from './columnEdit.js';
 
 describe('column layout', () => {
 	test('Name fills until it is sized', () => {

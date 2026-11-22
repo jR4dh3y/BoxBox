@@ -9,7 +9,6 @@
 		type Column
 	} from '#lib/browse/columns.js';
 	import type { SortDir } from '#lib/types/files.js';
-	import ContextMenu from './ui/ContextMenu.svelte';
 
 	let {
 		columns,
@@ -55,6 +54,7 @@
 	<tr
 		aria-rowindex="1"
 		style="height: {height}px"
+		onpointerenter={() => columns.prepare()}
 		oncontextmenu={(event) => {
 			event.preventDefault();
 			event.stopPropagation();
@@ -107,11 +107,13 @@
 </thead>
 
 {#if menu}
-	<ContextMenu
-		items={menuItems}
-		x={menu.x}
-		y={menu.y}
-		onSelect={chooseColumn}
-		onClose={() => (menu = null)}
-	/>
+	{#await import('./ui/ContextMenu.svelte') then { default: ContextMenu }}
+		<ContextMenu
+			items={menuItems}
+			x={menu.x}
+			y={menu.y}
+			onSelect={chooseColumn}
+			onClose={() => (menu = null)}
+		/>
+	{/await}
 {/if}
