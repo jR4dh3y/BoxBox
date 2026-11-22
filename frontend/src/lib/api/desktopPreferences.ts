@@ -34,6 +34,7 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 		defaultSortDir: choice(saved.defaultSortDir, ['asc', 'desc'], defaults.defaultSortDir),
 		defaultViewMode: choice(saved.defaultViewMode, ['list', 'grid'], defaults.defaultViewMode),
 		viewPerFolder: flag('viewPerFolder'),
+		startLocation: choice(saved.startLocation, ['overview', 'last'], defaults.startLocation),
 		folderViews: parseFolderViews(saved.folderViews),
 		fileColumns: parseColumnLayout(saved.fileColumns),
 		folderLooks: parseFolderLooks(saved.folderLooks),

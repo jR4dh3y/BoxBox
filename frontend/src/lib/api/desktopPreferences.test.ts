@@ -15,6 +15,7 @@ const defaults: UserSettings = {
 	defaultSortDir: 'desc',
 	defaultViewMode: 'list',
 	viewPerFolder: true,
+	startLocation: 'overview',
 	folderViews: {},
 	fileColumns: null,
 	folderLooks: {},

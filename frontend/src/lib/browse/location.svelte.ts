@@ -3,23 +3,11 @@ import { resolve } from '$app/paths';
 import { page } from '$app/state';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import type { SortDir, SortField, ViewMode } from '#lib/types/files.js';
-import { peekDirectory } from '#lib/api/files.js';
+import { folderExists } from './folderExists.js';
+import { lastLocation, rememberLocation } from './startLocation.js';
+import { onMount } from 'svelte';
 import { folderView, isRootPath } from './folderViews.js';
 import { HistoryTrail } from './historyTrail.js';
-
-/**
- * Whether a folder in history can still be opened; the drives always can. A peek reads at most
- * a few dozen names, and fails for a path that is gone or is no longer a folder.
- */
-async function exists(path: string): Promise<boolean> {
-	if (isRootPath(path)) return true;
-	try {
-		await peekDirectory(path, false);
-		return true;
-	} catch {
-		return false;
-	}
-}
 
 export interface HistoryPlace {
 	/** The history entry, for `travelTo`. */
@@ -86,8 +74,19 @@ export function useBrowseLocation(options: {
 	const canGoBack = $derived(historyIndex > 0);
 	const canGoForward = $derived(historyIndex < historyMaxIndex);
 
+	// An app opened without a folder in its address starts where Settings say; a folder that
+	// is gone leaves it on the drives.
+	const startAt = page.url.searchParams.has('path') ? null : lastLocation();
+	onMount(() => {
+		if (!startAt || settingsStore.current.startLocation !== 'last' || historyIndex !== 0) return;
+		void folderExists(startAt).then((found) => {
+			if (found && !page.url.searchParams.has('path'))
+				updateParams({ path: startAt }, { replaceState: true });
+		});
+	});
 	let arrivedAt = page.state.browseHistoryIndex ?? 0;
 	trail.arrive(arrivedAt, path, false);
+	rememberLocation(path);
 	beforeNavigate((navigation) => {
 		// Back, Forward and links leave the entry here; `navigate` already did for itself.
 		if (navigation.type !== 'goto' && options.selection)
@@ -97,6 +96,7 @@ export function useBrowseLocation(options: {
 		const index = page.state.browseHistoryIndex ?? 0;
 		trail.arrive(index, path, navigation.type !== 'popstate' && index > arrivedAt);
 		arrivedAt = index;
+		rememberLocation(path);
 		if (navigation.type !== 'popstate') return;
 		options.onLocationChange();
 		const selected = trail.at(index)?.selected ?? [];
@@ -115,7 +115,7 @@ export function useBrowseLocation(options: {
 			return;
 		}
 		for (const place of places) {
-			if (await exists(place.entry.path)) {
+			if (await folderExists(place.entry.path)) {
 				if (historyIndex === from) history.go(place.index - from);
 				return;
 			}
@@ -125,7 +125,7 @@ export function useBrowseLocation(options: {
 	/** The places in a Back or Forward menu that still exist, nearest first. */
 	async function historyPlaces(back: boolean): Promise<HistoryPlace[]> {
 		const places = trail.around(historyIndex, back, historyMaxIndex);
-		const found = await Promise.all(places.map(({ entry }) => exists(entry.path)));
+		const found = await Promise.all(places.map(({ entry }) => folderExists(entry.path)));
 		return places
 			.filter((_, at) => found[at])
 			.map(({ index, entry }) => ({ index, path: entry.path }));

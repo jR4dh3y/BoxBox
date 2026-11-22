@@ -13,6 +13,7 @@ import {
 	type FolderViews
 } from '#lib/browse/folderViews.js';
 import type { ViewMode } from '#lib/types/files.js';
+import type { StartLocation } from '#lib/browse/startLocation.js';
 import {
 	DEFAULT_ZOOM,
 	GRID_STEPS,
@@ -54,6 +55,8 @@ export interface UserSettings {
 	defaultSortBy: 'name' | 'size' | 'modTime' | 'type';
 	defaultSortDir: 'asc' | 'desc';
 	defaultViewMode: 'list' | 'grid';
+	/** Where the app opens when its address names no folder. */
+	startLocation: StartLocation;
 	/** Off: List or Grid picked in any folder is the view of every folder. */
 	viewPerFolder: boolean;
 	/** Each folder's view and sort, where they differ from the defaults above. */
@@ -98,6 +101,7 @@ const defaultSettings: UserSettings = {
 	defaultSortDir: DEFAULT_SORT_DIR,
 	defaultViewMode: 'list',
 	viewPerFolder: true,
+	startLocation: 'overview',
 	folderViews: {},
 	fileColumns: null,
 	folderLooks: {},
@@ -136,6 +140,7 @@ function loadSettings(username: string): UserSettings {
 		...settings,
 		accentColorSource: normalizeAccentColorSource(stored?.accentColorSource, settings.accentColor),
 		folderViews: parseFolderViews(settings.folderViews),
+		startLocation: stored?.startLocation === 'last' ? 'last' : 'overview',
 		listZoom: savedZoom(stored, 'listZoom'),
 		gridZoom: savedZoom(stored, 'gridZoom'),
 		fileColumns: parseColumnLayout(settings.fileColumns),
