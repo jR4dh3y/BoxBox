@@ -511,7 +511,7 @@
 												/>
 											{/if}
 										</span>
-										<span class="{clippedCellClass} min-w-0 flex-1 {item.isDir ? 'text-folder' : ''}" title={item.name}>
+										<span class="{clippedCellClass} min-w-0 flex-1" title={item.name}>
 											{displayName}
 										</span>
 									</div>

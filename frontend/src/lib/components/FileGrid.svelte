@@ -14,7 +14,10 @@
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
 	import { getFileTypeDescription, getFileIcon, getPreviewType } from '#lib/utils/fileTypes.js';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import { canvasMeasure } from '#lib/utils/textMeasure.js';
+	import type { Measure } from '#lib/browse/tileLabel.js';
+	import TileLabel from './TileLabel.svelte';
 	import { Spinner } from '#lib/components/ui/index.js';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import { FolderOpen } from 'lucide-svelte';
@@ -89,6 +92,18 @@
 		}
 	});
 	const attachRowWindow = rowWindow.attach;
+	// Labels are laid out in the page's own font, once it has loaded.
+	let measureLabel = $state.raw<Measure | null>(null);
+	onMount(() => {
+		let live = true;
+		void document.fonts.ready.then(() => {
+			if (live && gridElement)
+				measureLabel = canvasMeasure(`13px ${getComputedStyle(gridElement).fontFamily}`);
+		});
+		return () => {
+			live = false;
+		};
+	});
 	$effect(() => {
 		const path = activeItemPath;
 		if (path === null || items.some((item) => item.path === path)) return;
@@ -501,8 +516,12 @@
 							</div>
 
 							<div class="mt-1.5 min-w-0 overflow-hidden">
-								<div class="file-grid-name text-center text-[13px] leading-4 text-text-primary">
-									<span class={item.isDir ? 'text-folder' : ''}>{displayName}</span>
+								<div class="text-center text-[13px] leading-4 text-text-primary">
+									<TileLabel
+										name={displayName}
+										width={compactMode ? 78 : 94}
+										measure={measureLabel}
+									/>
 								</div>
 								<div
 									class="mt-0.5 truncate text-center text-[11px] leading-3.5 {isSelected(item.path)
@@ -546,14 +565,3 @@
 		<LoadError label="file context menu" onClose={handleContextMenuClose} />
 	{/await}
 {/if}
-
-<style>
-	.file-grid-name {
-		display: -webkit-box;
-		overflow: hidden;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		word-break: break-word;
-	}
-</style>
