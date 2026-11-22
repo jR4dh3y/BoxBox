@@ -23,6 +23,7 @@
 	import type { DesktopVolume, DesktopVolumeAction } from '#lib/api/desktopVolumes.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import type { MountPoint } from '#lib/api/files.js';
+	import { draggedSources, type FileDropTarget } from '#lib/browse/fileDrag.js';
 
 	interface Props {
 		currentPath?: string;
@@ -37,6 +38,8 @@
 		/** On narrow windows the sidebar is a drawer, shown only while this is true. */
 		open?: boolean;
 		onClose?: () => void;
+		/** Drives, places and favorites take dropped files and open when a drag rests on them. */
+		dropTarget?: FileDropTarget;
 	}
 
 	let {
@@ -49,8 +52,15 @@
 		onNavigate,
 		onFolderHover,
 		open = false,
-		onClose
+		onClose,
+		dropTarget
 	}: Props = $props();
+
+	/** Folders dragged from a BoxBox view, which Favorites can pin. */
+	function draggedFolders(): { name: string; path: string }[] {
+		return (draggedSources() ?? []).filter((source) => source.isDir);
+	}
+	let pinning = $state(false);
 
 	const PLACE_ICONS: Record<string, typeof Folder> = {
 		desktop: Monitor,
@@ -149,6 +159,16 @@
 						type="button"
 						class="{navItemClass} {isActive(drive.path) ? navItemActiveClass : ''}"
 						onclick={() => handleNavigate(drive.path)}
+						class:ring-1={dropTarget?.overPath === drive.path}
+						class:ring-inset={dropTarget?.overPath === drive.path}
+						class:ring-accent={dropTarget?.overPath === drive.path}
+						ondragover={(event) => {
+							if (drive.path && dropTarget?.over(event, drive.path)) event.stopPropagation();
+						}}
+						ondragleave={(event) => dropTarget?.leave(event)}
+						ondrop={(event) => {
+							if (drive.path) dropTarget?.drop(event, drive.path);
+						}}
 						onpointerenter={() => drive.path && onFolderHover?.(drive.path)}
 						onpointerleave={() => onFolderHover?.(null)}
 					>
@@ -184,6 +204,16 @@
 							type="button"
 							class="{navItemClass} {isActive(place.path) ? navItemActiveClass : ''}"
 							onclick={() => handleNavigate(place.path)}
+							class:ring-1={dropTarget?.overPath === place.path}
+							class:ring-inset={dropTarget?.overPath === place.path}
+							class:ring-accent={dropTarget?.overPath === place.path}
+							ondragover={(event) => {
+								if (place.path && dropTarget?.over(event, place.path)) event.stopPropagation();
+							}}
+							ondragleave={(event) => dropTarget?.leave(event)}
+							ondrop={(event) => {
+								if (place.path) dropTarget?.drop(event, place.path);
+							}}
 							onpointerenter={() => onFolderHover?.(place.path)}
 							onpointerleave={() => onFolderHover?.(null)}
 						>
@@ -229,8 +259,33 @@
 			><Trash2 size={16} />Trash</button
 		>{/if}
 
-	<!-- Favorites Section -->
-	<div class="border-b border-border-secondary">
+	<!-- Favorites Section: a folder dropped here, not on a favorite, is pinned. -->
+	<div
+		class="border-b border-border-secondary {pinning
+			? 'bg-accent/10 ring-1 ring-accent ring-inset'
+			: ''}"
+		role="region"
+		aria-label="Favorites"
+		ondragover={(event) => {
+			if (draggedFolders().length === 0) return;
+			event.preventDefault();
+			// Drags allow copy or move; pinning copies nothing, but must use one of them.
+			if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+			pinning = true;
+		}}
+		ondragleave={(event) => {
+			const area = event.currentTarget;
+			if (event.relatedTarget instanceof Node && area.contains(event.relatedTarget)) return;
+			pinning = false;
+		}}
+		ondrop={(event) => {
+			pinning = false;
+			const folders = draggedFolders();
+			if (folders.length === 0) return;
+			event.preventDefault();
+			for (const folder of folders) settingsStore.pinFavoriteFolder(folder);
+		}}
+	>
 		<button
 			type="button"
 			class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-3 py-2.5 text-left text-[11px] font-medium tracking-wide text-text-secondary uppercase hover:text-text-primary"
@@ -253,6 +308,16 @@
 								type="button"
 								class="{navItemClass} pr-9 {isActive(fav.path) ? navItemActiveClass : ''}"
 								onclick={() => handleNavigate(fav.path)}
+								class:ring-1={dropTarget?.overPath === fav.path}
+								class:ring-inset={dropTarget?.overPath === fav.path}
+								class:ring-accent={dropTarget?.overPath === fav.path}
+								ondragover={(event) => {
+									if (fav.path && dropTarget?.over(event, fav.path)) event.stopPropagation();
+								}}
+								ondragleave={(event) => dropTarget?.leave(event)}
+								ondrop={(event) => {
+									if (fav.path) dropTarget?.drop(event, fav.path);
+								}}
 								onpointerenter={() => onFolderHover?.(fav.path)}
 								onpointerleave={() => onFolderHover?.(null)}
 							>

@@ -13,6 +13,7 @@
 		Settings
 	} from 'lucide-svelte';
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
+	import type { DropZone } from '#lib/browse/dropZone.svelte.js';
 	import SearchBar from '#lib/components/SearchBar.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import type { MountPoint } from '#lib/api/files.js';
@@ -31,6 +32,8 @@
 		onForward?: () => void;
 		/** Right-click on Back or Forward: the places in that direction. */
 		onHistoryMenu?: (back: boolean, x: number, y: number) => void;
+		/** Path crumbs and Back take part in drags: crumbs take drops, Back goes back when held. */
+		dropTarget?: DropZone;
 		onNavigate?: (path: string) => void;
 		onRefresh?: () => void;
 		onSettings?: () => void;
@@ -62,6 +65,7 @@
 		onBack,
 		onForward,
 		onHistoryMenu,
+		dropTarget,
 		onNavigate,
 		onRefresh,
 		onSettings,
@@ -121,6 +125,8 @@
 				event.preventDefault();
 				onHistoryMenu?.(true, event.clientX, event.clientY);
 			}}
+			ondragover={() => canGoBack && dropTarget?.hold('back', () => onBack?.())}
+			ondragleave={() => dropTarget?.release()}
 			title="Back"
 		>
 			<ChevronLeft size={18} />
@@ -147,6 +153,7 @@
 		{serverName}
 		{pathSegments}
 		{onNavigate}
+		{dropTarget}
 		{includeHiddenSuggestions}
 	/>
 

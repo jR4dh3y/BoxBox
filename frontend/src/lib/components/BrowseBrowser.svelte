@@ -4,7 +4,7 @@
 	 */
 	import { onMount, untrack, type Snippet } from 'svelte';
 	import { createDropZone } from '#lib/browse/dropZone.svelte.js';
-	import { useFileDrop } from '#lib/browse/fileDrop.js';
+	import { useFileDrop, type DropQuestion } from '#lib/browse/fileDrop.js';
 	import { browseRequests } from '#lib/browse/requests.svelte.js';
 	import { watchDesktopDirectory } from '#lib/browse/desktopWatch.js';
 	import { isNativePath } from '#lib/api/desktop.js';
@@ -70,8 +70,15 @@
 	});
 	const actions = useBrowseActions(location, data, selection);
 	const uploads = useBrowseUploads(location, data);
-	const dropHandler = useFileDrop(data, actions);
-	const drop = createDropZone(() => dropHandler);
+	let dropQuestion = $state<DropQuestion | null>(null);
+	const dropHandler = useFileDrop(data, actions, (question) => (dropQuestion = question));
+	// A drag held on a folder, a crumb or a place opens it, so a drop can go deeper.
+	const drop = createDropZone(
+		() => dropHandler,
+		(destination) => {
+			if (destination !== location.path) location.navigate(destination);
+		}
+	);
 	const settings = $derived(settingsStore.current);
 	let settingsOpen = $state(false);
 	let settingsSection = $state<'general' | 'connections'>('general');
@@ -299,6 +306,7 @@
 		onBack={location.back}
 		onForward={location.forward}
 		onHistoryMenu={(back, x, y) => void openHistoryMenu(back, x, y)}
+		dropTarget={drop}
 		onNavigate={location.navigate}
 		onRefresh={refresh}
 		{refreshDisabled}
@@ -330,6 +338,8 @@
 	onpointerdowncapture={hideHoverCard}
 	onwheelcapture={hideHoverCard}
 	ondragstartcapture={hideHoverCard}
+	ondragend={drop.release}
+	ondrop={drop.release}
 	oncontextmenucapture={hideHoverCard}
 	onblur={hideHoverCard}
 />
@@ -351,6 +361,7 @@
 			roots={data.roots}
 			onNavigate={location.navigate}
 			{onFolderHover}
+			dropTarget={drop}
 			open={sidebarOpen}
 			onClose={() => (sidebarOpen = false)}
 		/>{/if}
@@ -571,6 +582,27 @@
 		<PropertiesDialog {items} {locationLabel} onclose={actions.closeProperties} />
 	{:catch}
 		<LoadError label="Properties" onClose={actions.closeProperties} />
+	{/await}
+{/if}
+
+{#if dropQuestion}
+	{@const question = dropQuestion}
+	{#await import('#lib/components/ui/ContextMenu.svelte') then { default: ContextMenu }}
+		<ContextMenu
+			items={[
+				...(question.canMove ? [{ id: 'move', label: 'Move Here' }] : []),
+				{ id: 'copy', label: 'Copy Here' },
+				{ id: 'separator', label: '', separator: true },
+				{ id: 'cancel', label: 'Cancel' }
+			]}
+			x={question.x}
+			y={question.y}
+			onSelect={(id) => {
+				if (id === 'move' || id === 'copy')
+					void actions.paste.transfer(id, question.items, question.destination);
+			}}
+			onClose={() => (dropQuestion = null)}
+		/>
 	{/await}
 {/if}
 

@@ -11,11 +11,26 @@ import {
 	readDroppedLocalFiles,
 	type FileDropHandler
 } from './fileDrag';
+import type { TransferSource } from './transfers';
 import type { BrowseActions } from './actions.svelte';
 import type { BrowseData } from './data.svelte';
 import { parseRemotePath } from '#lib/api/remotePaths.js';
 
-export function useFileDrop(data: BrowseData, actions: BrowseActions): FileDropHandler {
+/** A drop with Alt held asks what to do with the items, at the drop point. */
+export interface DropQuestion {
+	x: number;
+	y: number;
+	items: TransferSource[];
+	destination: string;
+	/** Moving is offered only within one server. */
+	canMove: boolean;
+}
+
+export function useFileDrop(
+	data: BrowseData,
+	actions: BrowseActions,
+	ask: (question: DropQuestion) => void = () => {}
+): FileDropHandler {
 	function allowed(destination: string) {
 		const source = parseRemotePath(destination);
 		if (!destination || (source.kind === 'remote' && !source.path)) return false;
@@ -48,6 +63,11 @@ export function useFileDrop(data: BrowseData, actions: BrowseActions): FileDropH
 						: [];
 			const operation = dropOperation(kind, event, destination, items);
 			if (!canDropInto(items, destination, operation)) return;
+			if (items.length && event.altKey) {
+				const canMove = dropOperation(kind, { ctrlKey: false }, destination, items) === 'move';
+				ask({ x: event.clientX, y: event.clientY, items, destination, canMove });
+				return;
+			}
 			if (items.length) {
 				void actions.paste.transfer(operation, items, destination);
 				return;

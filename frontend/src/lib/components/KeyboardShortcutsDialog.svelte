@@ -27,6 +27,10 @@
 				['F2', 'Rename in place'],
 				['Delete', 'Trash locally; delete on a web server'],
 				['Ctrl/Cmd + S', 'Select by pattern, such as *.jpg'],
+				['Drag', 'Move to a folder; copy to another server'],
+				['Ctrl · Shift + Drag', 'Copy · Move'],
+				['Alt + Drag', 'Ask whether to move or copy'],
+				['Rest a drag on a folder', 'Open it'],
 				['Ctrl/Cmd + I', 'Invert selection']
 			]
 		},

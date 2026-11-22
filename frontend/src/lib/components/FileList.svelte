@@ -25,6 +25,7 @@
 	import { ViewCursor } from '#lib/browse/viewCursor.svelte.js';
 	import { RubberBand } from '#lib/browse/rubberBand.svelte.js';
 	import { isMiddleButton, openInNewTab } from '#lib/browse/newTab.js';
+	import { dragScrollStep } from '#lib/browse/springLoad.js';
 	import { DEFAULT_ZOOM, listMetrics } from '#lib/browse/zoom.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
@@ -322,6 +323,12 @@
 	use:observeColumns
 	use:attachBand
 	onscroll={handleViewportScroll}
+	ondragover={(event) => {
+		// Near the top or bottom, a drag scrolls the view; the drop is the pane's to take.
+		const view = event.currentTarget;
+		const bounds = view.getBoundingClientRect();
+		view.scrollTop += dragScrollStep(event.clientY, bounds.top + LIST_HEADER_HEIGHT, bounds.bottom);
+	}}
 	oncontextmenu={handleBackgroundContextMenu}
 >
 	{#if band.rect}
