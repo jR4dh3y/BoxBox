@@ -181,6 +181,14 @@
 		</div>
 	</SettingsRow>
 {/if}
+<SettingsRow label="Folders show what they hold">
+	<Toggle
+		checked={settings.folderPreviews}
+		label="Folders show what they hold"
+		showLabel={false}
+		onchange={(folderPreviews) => preferences.update({ folderPreviews })}
+	/>
+</SettingsRow>
 <SettingsRow label="Compact rows">
 	<Toggle
 		checked={settings.compactMode}

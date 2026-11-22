@@ -65,6 +65,8 @@ export interface UserSettings {
 	hardwareAcceleration: boolean;
 	previewOnSingleClick: boolean;
 	compactMode: boolean;
+	/** Grid tiles draw a few of what a folder holds inside it. */
+	folderPreviews: boolean;
 	/** A card with an item's details shows when the pointer rests on it. */
 	hoverDetails: boolean;
 	/** Rows show a checkbox on hover, so several items can be picked without modifier keys. */
@@ -100,6 +102,7 @@ const defaultSettings: UserSettings = {
 	previewOnSingleClick: false,
 	compactMode: false,
 	hoverDetails: true,
+	folderPreviews: true,
 	selectionCheckboxes: true,
 	driveNameOverrides: {},
 	favoriteFolders: []

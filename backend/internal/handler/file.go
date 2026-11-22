@@ -28,6 +28,7 @@ func (h *FileHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/", h.ListRoots)
 	r.Get("/stats", h.GetDriveStats)
 	r.With(middleware.JSONCompression).Get("/list/*", h.ListPath)
+	r.Get("/peek/*", h.PeekPath)
 	r.Get("/*", h.GetPath)
 	r.Post("/*", h.CreateItem)
 	r.Put("/*", h.Rename)
@@ -48,6 +49,27 @@ func (h *FileHandler) ListPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, directoryListing(list), http.StatusOK)
+}
+
+// PeekResponse is a few entries of a directory, for its grid tile.
+type PeekResponse struct {
+	Items []model.FileInfo `json:"items"`
+}
+
+// PeekPath returns up to three entries of a directory, pictures first.
+// GET /api/v1/files/peek/*path?hidden=1
+func (h *FileHandler) PeekPath(w http.ResponseWriter, r *http.Request) {
+	path := chi.URLParam(r, "*")
+	if path == "" {
+		writeError(w, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	items, err := h.fileService.Peek(r.Context(), path, r.URL.Query().Get("hidden") == "1")
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	writeJSON(w, PeekResponse{Items: items}, http.StatusOK)
 }
 
 // MountPointResponse represents a mount point in API responses

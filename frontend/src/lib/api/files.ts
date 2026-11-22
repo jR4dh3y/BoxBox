@@ -230,6 +230,18 @@ export async function listDirectory(path: string, signal?: AbortSignal): Promise
 	};
 }
 
+/** Up to three entries of a folder for its grid tile, pictures first. */
+export async function peekDirectory(
+	path: string,
+	includeHidden: boolean,
+	signal?: AbortSignal
+): Promise<FileInfo[]> {
+	const endpoint = pathEndpoint(path, '/files/peek') + (includeHidden ? '?hidden=1' : '');
+	const body = record(await api.get<unknown>(endpoint, undefined, signal), 'folder peek');
+	const source = parseRemotePath(path);
+	return array(body.items, 'folder peek items').map((item) => parseFile(item, source));
+}
+
 /** The URL `listDirectory` requests. static/early-fetch.js must start the same one. */
 export function directoryUrl(path: string): string {
 	return buildUrl(listEndpoint(path));

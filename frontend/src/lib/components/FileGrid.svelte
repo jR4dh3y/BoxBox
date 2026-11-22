@@ -27,6 +27,7 @@
 	import { withPathSelected } from '#lib/browse/selection.svelte.js';
 	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
 	import FolderGlyph from './FolderGlyph.svelte';
+	import FolderPeekCards from './FolderPeekCards.svelte';
 	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverCard.svelte.js';
 
 	const PLAIN_FOLDER: FolderAppearance = { color: null, emblem: null, emblemColor: null };
@@ -49,6 +50,7 @@
 		dropTarget,
 		folderAppearance = () => PLAIN_FOLDER,
 		hover,
+		peeks,
 		onItemClick,
 		onFolderHover,
 		onSelectionChange,
@@ -73,6 +75,11 @@
 		folderAppearance?: (path: string) => FolderAppearance;
 		/** The hover card; without it, a row's native tooltip names the item. */
 		hover?: HoverTarget;
+		/** What folders hold, drawn inside their tiles; none when Settings turn previews off. */
+		peeks?: {
+			get(folder: FileInfo): readonly FileInfo[] | undefined;
+			request(folder: FileInfo): void;
+		};
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -531,11 +538,20 @@
 											: 'text-text-secondary'}"
 									>
 										{#if item.isDir}
-											<FolderGlyph
-												size={compactMode ? 24 : 30}
-												strokeWidth={1.7}
-												{...folderAppearance(item.path)}
-											/>
+											{@const look = folderAppearance(item.path)}
+											{@const peek = look.emblem === null ? peeks?.get(item) : undefined}
+											<!-- A folder with an emblem keeps it instead of its contents. -->
+											<span
+												class="relative inline-flex"
+												{@attach () => {
+													if (look.emblem === null) untrack(() => peeks?.request(item));
+												}}
+											>
+												<FolderGlyph size={compactMode ? 24 : 30} strokeWidth={1.7} {...look} />
+												{#if peek?.length}
+													<FolderPeekCards items={peek} size={compactMode ? 24 : 30} />
+												{/if}
+											</span>
 										{:else}
 											<IconComponent size={compactMode ? 24 : 30} strokeWidth={1.7} />
 										{/if}

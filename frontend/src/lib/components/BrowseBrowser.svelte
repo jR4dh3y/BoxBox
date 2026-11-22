@@ -31,6 +31,8 @@
 	import type { AddAction } from '#lib/utils/addMenu.js';
 	import { folderAppearance, specialEmblem } from '#lib/browse/folderLooks.js';
 	import { HoverCard } from '#lib/browse/hoverCard.svelte.js';
+	import { FolderPeeks } from '#lib/browse/folderPeek.svelte.js';
+	import { peekDirectory, type FileInfo } from '#lib/api/files.js';
 	import { parentFolder } from '#lib/browse/details.js';
 
 	let {
@@ -94,6 +96,12 @@
 		return () => hoverCard.hide();
 	});
 	const hideHoverCard = () => hoverCard.hide();
+	const folderPeeks = new FolderPeeks((path, hidden) => peekDirectory(path, hidden));
+	const peeks = {
+		get: (folder: FileInfo) => folderPeeks.get(folder, settingsStore.current.showHiddenFiles),
+		request: (folder: FileInfo) =>
+			folderPeeks.request(folder, settingsStore.current.showHiddenFiles)
+	};
 	const selectedBytes = $derived(selectedFileBytes(data.displayItems, selection.paths));
 	$effect(() => {
 		const path = location.path;
@@ -317,6 +325,7 @@
 						selectionCheckboxes={settings.selectionCheckboxes}
 						folderAppearance={appearance}
 						hover={settings.hoverDetails ? hoverCard : undefined}
+						peeks={settings.folderPreviews ? peeks : undefined}
 						onItemClick={actions.openFile}
 						{onFolderHover}
 						onSelectionChange={selection.set}

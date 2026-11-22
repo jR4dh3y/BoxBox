@@ -71,6 +71,31 @@ Response:
 }
 ```
 
+## Peek Into a Directory
+
+```http
+GET /api/v1/files/peek/{path}?hidden=1
+```
+
+Up to three entries of a directory, for its grid tile: pictures the server can thumbnail first, then by name. Only the first 64 entries are read, so a huge folder costs no more than a small one. Hidden entries are left out unless `hidden=1`. Each entry carries its full `path`.
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "name": "cover.jpg",
+      "path": "home/photos/cover.jpg",
+      "size": 18213,
+      "isDir": false,
+      "modTime": "2026-05-13T09:00:00Z",
+      "permissions": "-rw-r--r--"
+    }
+  ]
+}
+```
+
 ## Get File Info
 
 ```http

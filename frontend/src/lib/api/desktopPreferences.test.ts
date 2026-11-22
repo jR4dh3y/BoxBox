@@ -29,6 +29,7 @@ const defaults: UserSettings = {
 	previewOnSingleClick: false,
 	compactMode: false,
 	hoverDetails: true,
+	folderPreviews: true,
 	selectionCheckboxes: true,
 	driveNameOverrides: {},
 	favoriteFolders: []
