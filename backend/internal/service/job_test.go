@@ -165,6 +165,13 @@ func (s *synchronizedFS) OpenFile(name string, flag int, perm os.FileMode) (afer
 	return file, nil
 }
 
+func (s *synchronizedFS) ChmodFile(file afero.File, mode os.FileMode) error {
+	if hooked, ok := file.(*hookedFile); ok {
+		file = hooked.File
+	}
+	return s.FS.ChmodFile(file, mode)
+}
+
 func (s *synchronizedFS) RenameNoReplace(oldpath, newpath string) error {
 	if s.failRename {
 		return syscall.EXDEV

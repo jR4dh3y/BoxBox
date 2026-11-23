@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
+	"github.com/spf13/afero/mem"
 )
 
 // FS provides an abstraction over filesystem operations.
@@ -290,9 +291,10 @@ func (a *AferoFS) ChmodFile(file afero.File, mode os.FileMode) error {
 	if osFile, ok := file.(*os.File); ok {
 		return osFile.Chmod(mode)
 	}
-	// MemMapFs has no symlinks, so its path names the open file.
-	if _, ok := a.fs.(*afero.MemMapFs); ok {
-		return a.fs.Chmod(file.Name(), mode)
+	if memFile, ok := file.(*mem.File); ok {
+		info := memFile.Info()
+		mem.SetMode(info.FileData, info.Mode()&^os.ModePerm|mode.Perm())
+		return nil
 	}
 	return errors.ErrUnsupported
 }
