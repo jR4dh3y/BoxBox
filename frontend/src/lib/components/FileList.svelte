@@ -325,7 +325,7 @@
 	use:observeColumns
 	use:attachBand
 	onscroll={handleViewportScroll}
-	ondragover={(event) => {
+	ondragovercapture={(event) => {
 		// Near the top or bottom, a drag scrolls the view; the drop is the pane's to take.
 		const view = event.currentTarget;
 		const bounds = view.getBoundingClientRect();

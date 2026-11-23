@@ -675,6 +675,7 @@
 	{#await Promise.all( [import('#lib/components/ui/ContextMenu.svelte'), import('#lib/browse/placeMenu.js')] ) then [{ default: ContextMenu }, { placeMenuItems, isPlaceAction }]}
 		<ContextMenu
 			items={placeMenuItems(menu.place, actions.canPaste)}
+			aboveSidebar={sidebarOpen}
 			x={menu.x}
 			y={menu.y}
 			onSelect={(id) => {

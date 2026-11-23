@@ -14,37 +14,21 @@
 
 	interface Props {
 		items: ContextMenuItem[];
+		aboveSidebar?: boolean;
 		x: number;
 		y: number;
 		onSelect: (id: string) => void;
 		onClose: () => void;
 	}
 
-	let { items, x, y, onSelect, onClose }: Props = $props();
+	let { items, x, y, onSelect, onClose, aboveSidebar = false }: Props = $props();
 
-	let menuRef: HTMLDivElement | undefined = $state();
-
-	// Adjust position to keep menu within viewport
-	let adjustedPosition = $derived.by(() => {
-		if (!menuRef) return { x, y };
-
-		const menuWidth = 200; // approximate width
-		const menuHeight = items.length * 36; // approximate height
-		const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1920;
-		const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 1080;
-
-		let adjustedX = x;
-		let adjustedY = y;
-
-		if (x + menuWidth > viewportWidth) {
-			adjustedX = viewportWidth - menuWidth - 8;
-		}
-		if (y + menuHeight > viewportHeight) {
-			adjustedY = viewportHeight - menuHeight - 8;
-		}
-
-		return { x: adjustedX, y: adjustedY };
-	});
+	let menuWidth = $state(0);
+	let menuHeight = $state(0);
+	let viewportWidth = $state(0);
+	let viewportHeight = $state(0);
+	let adjustedX = $derived(Math.max(8, Math.min(x, viewportWidth - menuWidth - 8)));
+	let adjustedY = $derived(Math.max(8, Math.min(y, viewportHeight - menuHeight - 8)));
 
 	function handleItemClick(item: ContextMenuItem) {
 		if (item.disabled || item.separator) return;
@@ -65,12 +49,16 @@
 	}
 </script>
 
-<svelte:window onkeydown={handleKeyDown} />
+<svelte:window
+	bind:innerWidth={viewportWidth}
+	bind:innerHeight={viewportHeight}
+	onkeydown={handleKeyDown}
+/>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
-	class="fixed inset-0 z-50"
+	class={['fixed inset-0', aboveSidebar ? 'z-[65]' : 'z-50']}
 	onclick={handleBackdropClick}
 	oncontextmenu={(e) => {
 		e.preventDefault();
@@ -78,9 +66,11 @@
 	}}
 >
 	<div
-		bind:this={menuRef}
-		class="fixed max-w-70 min-w-45 origin-top-left rounded-lg border border-border-primary bg-surface-context-menu py-1 shadow-xl motion-safe:animate-pop-in"
-		style="left: {adjustedPosition.x}px; top: {adjustedPosition.y}px;"
+		bind:offsetWidth={menuWidth}
+		bind:offsetHeight={menuHeight}
+		class="fixed max-h-[calc(100dvh-16px)] w-max max-w-[min(17.5rem,calc(100dvw-16px))] origin-top-left overflow-y-auto overscroll-contain rounded-lg border border-border-primary bg-surface-context-menu py-1 shadow-xl motion-safe:animate-pop-in sm:min-w-45"
+		style:left={`${adjustedX}px`}
+		style:top={`${adjustedY}px`}
 		role="menu"
 	>
 		{#each items as item (item.id)}

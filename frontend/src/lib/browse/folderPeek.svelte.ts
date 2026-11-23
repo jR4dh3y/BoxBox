@@ -5,6 +5,7 @@
  */
 import { SvelteMap } from 'svelte/reactivity';
 import { peekDirectory, type FileInfo } from '#lib/api/files.js';
+import { browseRequests } from './requests.svelte.js';
 
 /** More folders than a screen of tiles shows. */
 const CAPACITY = 1024;
@@ -22,6 +23,7 @@ export class FolderPeeks {
 	private readonly failed = new Map<string, number>();
 	private readonly load: PeekLoader;
 	private readonly now: () => number;
+	private generation = 0;
 
 	constructor(load: PeekLoader, now: () => number = Date.now) {
 		this.load = load;
@@ -44,16 +46,22 @@ export class FolderPeeks {
 		const failedAt = this.failed.get(key);
 		const known = this.peeks.has(key);
 		if (known && (failedAt === undefined || this.now() - failedAt < RETRY_MS)) return;
+		const generation = this.generation;
 		this.pending.add(key);
 		void this.load(folder.path, includeHidden).then(
-			(items) => this.settle(key, items, false),
+			(items) => this.settle(generation, key, items, false),
 			// Unreadable, or a server without peeks: drawn as a plain folder for now.
-			() => this.settle(key, [], true)
+			() => this.settle(generation, key, [], true)
 		);
 	}
 
-	private settle(key: string, items: readonly FileInfo[], failed: boolean): void {
-		if (!this.pending.delete(key)) return;
+	private settle(
+		generation: number,
+		key: string,
+		items: readonly FileInfo[],
+		failed: boolean
+	): void {
+		if (generation !== this.generation || !this.pending.delete(key)) return;
 		if (!this.peeks.has(key) && this.peeks.size >= CAPACITY) {
 			const oldest = this.peeks.keys().next();
 			if (!oldest.done) {
@@ -67,11 +75,15 @@ export class FolderPeeks {
 	}
 
 	clear(): void {
+		this.generation++;
 		this.peeks.clear();
 		this.pending.clear();
 		this.failed.clear();
 	}
 }
 
-/** One cache for every grid, so a folder's peek survives switching views. */
-export const folderPeeks = new FolderPeeks((path, hidden) => peekDirectory(path, hidden));
+/** Shared by grids within the active browse session. */
+export const folderPeeks = new FolderPeeks(peekDirectory);
+browseRequests.onChange((event) => {
+	if (event === 'reset') folderPeeks.clear();
+});

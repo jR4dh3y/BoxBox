@@ -35,6 +35,26 @@ describe('folder peeks', () => {
 		assert.equal(reads.length, 2);
 	});
 
+	test('a session reset drops cached entries and rejects an earlier reply for the same folder', async () => {
+		const previous = Promise.withResolvers<FileInfo[]>();
+		const next = Promise.withResolvers<FileInfo[]>();
+		const replies = [Promise.resolve([cover]), previous.promise, next.promise];
+		const peeks = new FolderPeeks(() => replies.shift() ?? Promise.resolve([]));
+		const changed = folder('2026-02-01T00:00:00Z');
+		peeks.request(folder(), false);
+		await Promise.resolve();
+		peeks.request(changed, false);
+		peeks.clear();
+		assert.equal(peeks.get(folder(), false), undefined);
+		peeks.request(changed, false);
+		previous.resolve([cover]);
+		await previous.promise;
+		assert.equal(peeks.get(changed, false), undefined);
+		next.resolve([]);
+		await next.promise;
+		assert.deepEqual(peeks.get(changed, false), []);
+	});
+
 	test('evicts a completed preview without losing other replies', async () => {
 		const peeks = new FolderPeeks(async () => [cover]);
 		const numberedFolder = (index: number): FileInfo => ({
