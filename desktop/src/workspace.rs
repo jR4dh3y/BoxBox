@@ -1168,6 +1168,7 @@ impl Workspace {
             let target = self.active_pane;
             self.refreshing = Some(refreshing::Refreshing::new(target));
             self.clear_thumbnails(cx);
+            self.folder_looks.invalidate_paths();
             if self.pane().is_at_root() {
                 self.load_drives(target, cx);
                 // The Overview lists every server's drives too.

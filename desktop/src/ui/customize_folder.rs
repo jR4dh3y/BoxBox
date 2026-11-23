@@ -236,20 +236,7 @@ impl Workspace {
             .child(div().relative().flex().justify_center().map(|frame| match count {
                 0 => frame.child(div().h(px(CELL * GRID_ROWS)).flex().items_center().text_13().text_color(c(TEXT_SECONDARY)).child("No icon matches.")),
                 _ => frame.child(grid).child(fade),
-            }))
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .child(
-                        Button::new("customize-reset")
-                            .label("Reset")
-                            .variant(ButtonVariant::Secondary)
-                            .disabled(look == FolderLook::default())
-                            .on_click(cx.listener(|this, _, _, cx| this.change_look(|look| *look = FolderLook::default(), cx))),
-                    )
-                    .child(Button::new("customize-done").label("Done").on_click(cx.listener(|this, _, window, cx| this.save_customize_folder(window, cx)))),
-            );
+            }));
         div()
             .id("customize-overlay")
             .absolute()
@@ -257,7 +244,21 @@ impl Workspace {
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
                 // No title bar: the folder's name is beside its preview, and Escape closes.
-                Modal::new().size(ModalSize::Xl).body(body),
+                // The buttons stay in the footer, so a short window scrolls the grid, not them.
+                Modal::new()
+                    .size(ModalSize::Xl)
+                    .seamless()
+                    .body(body)
+                    .footer(
+                        div().mr_auto().child(
+                            Button::new("customize-reset")
+                                .label("Reset")
+                                .variant(ButtonVariant::Secondary)
+                                .disabled(look == FolderLook::default())
+                                .on_click(cx.listener(|this, _, _, cx| this.change_look(|look| *look = FolderLook::default(), cx))),
+                        ),
+                    )
+                    .footer(Button::new("customize-done").label("Done").on_click(cx.listener(|this, _, window, cx| this.save_customize_folder(window, cx)))),
             )
             .into_any_element()
     }

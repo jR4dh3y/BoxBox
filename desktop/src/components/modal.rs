@@ -27,6 +27,8 @@ pub struct Modal {
     leading: Option<AnyElement>,
     size: ModalSize,
     padded: bool,
+    /// The footer sits on the body without a dividing line.
+    seamless: bool,
     body: Vec<AnyElement>,
     footer: Vec<AnyElement>,
     on_close: Option<CloseHandler>,
@@ -35,7 +37,7 @@ pub struct Modal {
 
 impl Modal {
     pub fn new() -> Self {
-        Self { title: None, leading: None, size: ModalSize::Md, padded: true, body: Vec::new(), footer: Vec::new(), on_close: None, close_selector: None }
+        Self { title: None, leading: None, size: ModalSize::Md, padded: true, seamless: false, body: Vec::new(), footer: Vec::new(), on_close: None, close_selector: None }
     }
 
     /// Text, or an element such as selectable text.
@@ -57,6 +59,11 @@ impl Modal {
     /// Content that manages its own spacing, like a two-pane layout, sets this false.
     pub fn padded(mut self, padded: bool) -> Self {
         self.padded = padded;
+        self
+    }
+
+    pub fn seamless(mut self) -> Self {
+        self.seamless = true;
         self
     }
 
@@ -198,10 +205,10 @@ impl RenderOnce for Modal {
                                 .justify_end()
                                 .items_center()
                                 .gap(px(8.))
-                                .border_t_1()
-                                .border_color(c(BORDER_SECONDARY))
+                                .when(!self.seamless, |footer| footer.border_t_1().border_color(c(BORDER_SECONDARY)))
                                 .px(px(16.))
-                                .py(px(12.))
+                                .pt(px(if self.seamless { 0. } else { 12. }))
+                                .pb(px(12.))
                                 .children(self.footer),
                         )
                     });

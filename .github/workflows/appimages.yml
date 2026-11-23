@@ -85,7 +85,7 @@ jobs:
           sha256sum --check ./*.sha256
           image="$PWD/boxbox-desktop-${RELEASE_TAG}-${ARCH}.AppImage"
           "$image" --appimage-extract
-          desktop-file-validate squashfs-root/io.boxbox.files.desktop
+          desktop-file-validate squashfs-root/io.boxbox.desktop
           # FUSE-free startup on X11 with software Vulkan, until a folder is painted.
           APPIMAGE_EXTRACT_AND_RUN=1 WAYLAND_DISPLAY= xvfb-run -a bun "$GITHUB_WORKSPACE/tooling/scripts/desktop-smoke.ts" "$image"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

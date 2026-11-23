@@ -13,7 +13,11 @@ desktop="$data/applications/io.boxbox.desktop"
 icons="$data/icons/hicolor"
 sizes="16 24 32 48 64 128 256 512"
 # What earlier installs left: the BoxBox Files entry, and SVG icons that Qt shells draw black.
-stale="$data/applications/io.boxbox.files.desktop $icons/scalable/apps/io.boxbox.files.svg $icons/scalable/apps/io.boxbox.desktop.svg"
+remove_stale_entries() {
+	rm -f "$data/applications/io.boxbox.files.desktop" \
+		"$icons/scalable/apps/io.boxbox.files.svg" \
+		"$icons/scalable/apps/io.boxbox.desktop.svg"
+}
 
 # A release archive holds every file beside this script; a checkout builds them.
 first() { for file; do [ -f "$file" ] && { echo "$file"; return; }; done; echo "missing: $1" >&2; exit 1; }
@@ -21,7 +25,8 @@ first() { for file; do [ -f "$file" ] && { echo "$file"; return; }; done; echo "
 case "${1:-}" in
 --uninstall)
 	[ -x "$bin/boxbox-files" ] && "$bin/boxbox-files" --disable-picker || true
-	rm -f "$bin/boxbox-files" "$desktop" $stale
+	rm -f "$bin/boxbox-files" "$desktop"
+	remove_stale_entries
 	for size in $sizes; do rm -f "$icons/${size}x$size/apps/io.boxbox.desktop.png"; done
 	echo "Removed BoxBox. Settings stay in ${XDG_CONFIG_HOME:-$HOME/.config}/boxbox-gpui."
 	exit 0
@@ -44,7 +49,7 @@ while IFS= read -r line; do
 	*) printf '%s\n' "$line" ;;
 	esac
 done <"$base/io.boxbox.desktop" >"$desktop"
-rm -f $stale
+remove_stale_entries
 for size in $sizes; do
 	install -Dm644 "$base/icons/$size.png" "$icons/${size}x$size/apps/io.boxbox.desktop.png"
 done

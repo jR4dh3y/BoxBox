@@ -63,9 +63,16 @@ pub(crate) struct FolderLooks {
     /// Each local folder's path as written, and its real path once resolved.
     real: HashMap<String, String>,
     resolving: HashSet<String>,
+    resolution_generation: u64,
 }
 
 impl FolderLooks {
+    pub(super) fn invalidate_paths(&mut self) {
+        self.real.clear();
+        self.resolving.clear();
+        self.resolution_generation += 1;
+    }
+
     pub fn load() -> Self {
         let looks = std::fs::read(crate::persist::FOLDER_LOOKS.path()).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default();
         Self { looks, ..Self::default() }
@@ -201,18 +208,22 @@ impl Workspace {
         if looks.real.contains_key(&written) || !looks.resolving.insert(written.clone()) {
             return;
         }
+        let generation = looks.resolution_generation;
         let (api, path) = (Arc::clone(api), folder.path.clone());
         let real = cx.background_executor().spawn(async move { resolve(&api, &path) });
         cx.spawn(async move |this, cx| {
             let real = real.await;
             this.update(cx, |this, cx| {
                 let looks = &mut this.folder_looks;
+                if looks.resolution_generation != generation {
+                    return;
+                }
                 looks.resolving.remove(&written);
                 let real = real.unwrap_or_else(|| written.clone());
                 if looks.real.len() >= RESOLVED {
                     looks.real.clear();
                 }
-                if real != written && looks.looks.contains_key(&real) {
+                if looks.looks.get(&real) != looks.looks.get(&written) {
                     cx.notify();
                 }
                 looks.real.insert(written, real);

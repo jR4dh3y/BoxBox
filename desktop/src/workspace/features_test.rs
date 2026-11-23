@@ -2108,7 +2108,7 @@ fn a_folder_tile_shows_what_it_holds_pictures_first(cx: &mut TestAppContext) {
 #[gpui::test]
 fn a_customised_folder_shows_its_icon_and_colours_by_every_path(cx: &mut TestAppContext) {
     use crate::components::Emblem;
-    let (view, cx, fixture) = open(cx, &["Desktop/sub/a.txt"]);
+    let (view, cx, fixture) = open(cx, &["Desktop/sub/a.txt", "other/sub/b.txt"]);
     view.update(cx, |workspace, cx| {
         workspace.preferences.file_icons = crate::workspace::IconStyle::Tinted;
         workspace.navigate("home/Desktop".into(), cx);
@@ -2149,6 +2149,17 @@ fn a_customised_folder_shows_its_icon_and_colours_by_every_path(cx: &mut TestApp
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         assert_eq!(style(&view, cx, "home/shortcut/sub"), customised, "a link reaches the same folder");
+        std::fs::remove_file(fixture.root.join("shortcut")).unwrap();
+        std::os::unix::fs::symlink(fixture.root.join("other"), fixture.root.join("shortcut")).unwrap();
+        cx.simulate_keystrokes("f5");
+        cx.run_until_parked();
+        assert_eq!(style(&view, cx, "home/shortcut/sub"), plain, "Refresh drops the old target's look");
+        menu_on(cx, "row-0-0");
+        click(cx, "context-customize");
+        view.read_with(cx, |workspace, _| {
+            assert_eq!(workspace.customize.as_ref().unwrap().look, crate::workspace::folder_looks::FolderLook::default());
+        });
+        cx.simulate_keystrokes("escape");
         view.update(cx, |workspace, cx| workspace.navigate("home/Desktop".into(), cx));
         cx.run_until_parked();
     }
@@ -2189,4 +2200,22 @@ fn folder_previews_are_off_when_turned_off_or_with_theme_icons(cx: &mut TestAppC
             assert!(workspace.folder_peek(&pane.api, &pane.items[0]).is_none(), "nothing is read for a preview with {style:?}");
         });
     }
+}
+
+#[gpui::test]
+fn customize_folder_keeps_done_in_a_short_window(cx: &mut TestAppContext) {
+    let (view, cx, _fixture) = open(cx, &["sub/a.txt"]);
+    cx.simulate_resize(gpui::size(gpui::px(800.), gpui::px(400.)));
+    cx.run_until_parked();
+    cx.update(|window, app| {
+        view.update(app, |workspace, cx| {
+            let (api, folder) = (workspace.pane().api.clone(), workspace.pane().items[0].clone());
+            workspace.open_customize_folder(api, folder, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    let window = cx.update(|window, _| window.viewport_size());
+    let done = cx.debug_bounds("customize-done").expect("Done is drawn");
+    assert!(done.bottom() <= window.height && done.top() >= gpui::px(0.), "Done stays inside a 400px window: {done:?}");
+    click(cx, "customize-done");
 }
