@@ -128,6 +128,14 @@ pub(crate) struct CustomizeFolder {
     pub look: FolderLook,
     /// The special folder's own emblem, which `EmblemChoice::Own` shows.
     pub own: Option<&'static str>,
+    /// Which colour the swatches set.
+    pub paint: Paint,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Paint {
+    Folder,
+    Icon,
 }
 
 impl Workspace {
@@ -155,7 +163,7 @@ impl Workspace {
     pub(crate) fn open_customize_folder(&mut self, api: Arc<Api>, folder: FileInfo, window: &mut Window, cx: &mut Context<Self>) {
         let look = self.folder_looks.get(&api, &folder.path).cloned().unwrap_or_default();
         let own = self.special_emblem(&api, &folder);
-        self.customize = Some(CustomizeFolder { api, folder, look, own });
+        self.customize = Some(CustomizeFolder { api, folder, look, own, paint: Paint::Folder });
         self.customize_search.update(cx, |field, cx| field.set_text(String::new(), 0..0, cx));
         self.customize_search.read(cx).focus(window);
         cx.notify();

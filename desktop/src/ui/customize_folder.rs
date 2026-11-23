@@ -1,19 +1,20 @@
-//! Customize Folder: a preview, the folder's colour, the emblem's colour, and a
+//! Customize Folder: a preview, the folder's or the emblem's colour, and a
 //! searchable grid of every Lucide icon to put on the folder.
 
 use gpui::{div, prelude::*, px, uniform_list, AnyElement, Context, MouseButton, SharedString, Window};
 
 use super::{icon, thin_icon, TextScale};
-use crate::components::{emblemed, Button, ButtonVariant, Input, Modal, ModalSize, Tooltip};
+use crate::components::{emblemed, motion, Button, ButtonVariant, Input, Modal, ModalSize, Tooltip};
 use crate::emblems;
 use crate::theme::*;
-use crate::workspace::folder_looks::{EmblemChoice, FolderLook, COLORS};
+use crate::workspace::folder_looks::{EmblemChoice, FolderLook, Paint, COLORS};
 use crate::workspace::Workspace;
 
-const COLUMNS: usize = 13;
+const COLUMNS: usize = 15;
 const CELL: f32 = 40.;
 const GRID_ROWS: f32 = 6.;
-const PREVIEW: f32 = 88.;
+/// As tall as the two rows beside it: the Folder/Icon switch and the swatches.
+const PREVIEW: f32 = 60.;
 
 /// What folders are usually for, first in the grid before every other icon.
 const COMMON: [&str; 39] = [
@@ -91,13 +92,43 @@ impl Workspace {
             .on_click(cx.listener(move |this, _, _, cx| this.change_look(&pick, cx)))
     }
 
-    fn swatch_row(&self, title: &'static str, swatches: Vec<AnyElement>) -> impl IntoElement {
+    /// The Folder and Icon tabs, each with a dot of its current colour.
+    fn paint_switch(&self, paint: Paint, folder: u32, icon: u32, cx: &mut Context<Self>) -> impl IntoElement {
+        let tab = |id: &'static str, label: &'static str, target: Paint, color: u32, cx: &mut Context<Self>| {
+            let active = paint == target;
+            let tab = div()
+                .id(id)
+                .debug_selector(move || id.to_string())
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .h(px(24.))
+                .px(px(10.))
+                .rounded(px(4.))
+                .cursor_pointer()
+                .text_xs_tw()
+                .text_color(c(if active { TEXT_PRIMARY } else { TEXT_SECONDARY }))
+                .when(active, |tab| tab.bg(c(SURFACE_ELEVATED)))
+                .child(div().size(px(10.)).rounded_full().bg(c(color)))
+                .child(label)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if let Some(dialog) = &mut this.customize {
+                        dialog.paint = target;
+                        cx.notify();
+                    }
+                }));
+            motion::interact(gpui::ElementId::Name(format!("{id}-feedback").into()), tab).fill(c(SURFACE_ELEVATED)).rounded(4.)
+        };
         div()
             .flex()
-            .flex_col()
-            .gap(px(6.))
-            .child(div().text_xs_tw().text_color(c(TEXT_MUTED)).child(title))
-            .child(div().flex().flex_wrap().gap(px(4.)).children(swatches))
+            .gap(px(2.))
+            .p(px(2.))
+            .rounded(px(6.))
+            .bg(c(SURFACE_PRIMARY))
+            .border_1()
+            .border_color(c(BORDER_SECONDARY))
+            .child(tab("customize-paint-folder", "Folder", Paint::Folder, folder, cx))
+            .child(tab("customize-paint-icon", "Icon", Paint::Icon, icon, cx))
     }
 
     pub(crate) fn render_customize_folder(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
@@ -106,30 +137,27 @@ impl Workspace {
         let default_tone = self.kind_tint(crate::format::Kind::Folder).unwrap_or(FOLDER);
         let tone = look.color.unwrap_or(default_tone);
         let emblem = Self::look_emblem(Some(&look), dialog.own);
-        let preview = div()
-            .size(px(PREVIEW + 24.))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(8.))
-            .bg(c(SURFACE_SECONDARY))
-            .child(emblemed(thin_icon("folder", PREVIEW, c(tone)), emblem, PREVIEW, c(tone)));
+        let preview = div().flex_none().child(emblemed(thin_icon("folder", PREVIEW, c(tone)), emblem, PREVIEW, c(tone)));
 
-        let mut folder_colors = vec![self
-            .swatch("folder-color-default".into(), default_tone, look.color.is_none(), "Default", |look| look.color = None, cx)
-            .into_any_element()];
-        folder_colors.extend(COLORS.iter().map(|&(color, label)| {
-            self.swatch(format!("folder-color-{color:06x}").into(), color, look.color == Some(color), label, move |look| look.color = Some(color), cx)
-                .into_any_element()
-        }));
-        let mut emblem_colors = vec![self
-            .swatch("emblem-color-same".into(), tone, look.emblem_color.is_none(), "Same as folder", |look| look.emblem_color = None, cx)
-            .into_any_element()];
-        emblem_colors.extend(COLORS.iter().map(|&(color, label)| {
-            self.swatch(format!("emblem-color-{color:06x}").into(), color, look.emblem_color == Some(color), label, move |look| look.emblem_color = Some(color), cx)
-                .into_any_element()
-        }));
+        let swatches: Vec<AnyElement> = match dialog.paint {
+            Paint::Folder => std::iter::once(
+                self.swatch("folder-color-default".into(), default_tone, look.color.is_none(), "Default", |look| look.color = None, cx).into_any_element(),
+            )
+            .chain(COLORS.iter().map(|&(color, label)| {
+                self.swatch(format!("folder-color-{color:06x}").into(), color, look.color == Some(color), label, move |look| look.color = Some(color), cx)
+                    .into_any_element()
+            }))
+            .collect(),
+            Paint::Icon => std::iter::once(
+                self.swatch("emblem-color-same".into(), tone, look.emblem_color.is_none(), "Same as folder", |look| look.emblem_color = None, cx).into_any_element(),
+            )
+            .chain(COLORS.iter().map(|&(color, label)| {
+                self.swatch(format!("emblem-color-{color:06x}").into(), color, look.emblem_color == Some(color), label, move |look| look.emblem_color = Some(color), cx)
+                    .into_any_element()
+            }))
+            .collect(),
+        };
+        let paint = self.paint_switch(dialog.paint, tone, look.emblem_color.unwrap_or(tone), cx);
 
         let chosen = Choice::of(&look, dialog.own);
         let count = self.customize_choices(cx).len();
@@ -185,6 +213,12 @@ impl Workspace {
 
         let search = self.customize_search.clone();
         let focused = search.read(cx).is_focused(window);
+        // The grid fades out at the bottom, where more icons scroll in.
+        let fade = div().absolute().left_0().right_0().bottom_0().h(px(28.)).bg(gpui::linear_gradient(
+            180.,
+            gpui::linear_color_stop(alpha(SURFACE_SECONDARY, 0.), 0.),
+            gpui::linear_color_stop(c(SURFACE_SECONDARY), 1.),
+        ));
         let body = div()
             .flex()
             .flex_col()
@@ -192,23 +226,29 @@ impl Workspace {
             .child(
                 div()
                     .flex()
-                    .gap(px(16.))
+                    .items_center()
+                    .gap(px(14.))
                     .child(preview)
-                    .child(div().flex_1().min_w_0().flex().flex_col().gap(px(12.)).child(self.swatch_row("Folder colour", folder_colors)).child(self.swatch_row("Icon colour", emblem_colors))),
+                    .child(div().flex_1().min_w_0().truncate().text_sm_tw().font_weight(gpui::FontWeight::SEMIBOLD).child(dialog.folder.name.clone()))
+                    .child(div().flex_none().flex().flex_col().items_end().gap(px(8.)).child(paint).child(div().flex().gap(px(4.)).children(swatches))),
             )
             .child(Input::new("").focused(focused).editor(search))
+            .child(div().relative().flex().justify_center().map(|frame| match count {
+                0 => frame.child(div().h(px(CELL * GRID_ROWS)).flex().items_center().text_13().text_color(c(TEXT_SECONDARY)).child("No icon matches.")),
+                _ => frame.child(grid).child(fade),
+            }))
             .child(
                 div()
                     .flex()
-                    .justify_center()
-                    .rounded(px(4.))
-                    .border_1()
-                    .border_color(c(BORDER_SECONDARY))
-                    .py(px(4.))
-                    .map(|frame| match count {
-                        0 => frame.child(div().h(px(CELL * GRID_ROWS)).flex().items_center().text_13().text_color(c(TEXT_SECONDARY)).child("No icon matches.")),
-                        _ => frame.child(grid),
-                    }),
+                    .justify_between()
+                    .child(
+                        Button::new("customize-reset")
+                            .label("Reset")
+                            .variant(ButtonVariant::Secondary)
+                            .disabled(look == FolderLook::default())
+                            .on_click(cx.listener(|this, _, _, cx| this.change_look(|look| *look = FolderLook::default(), cx))),
+                    )
+                    .child(Button::new("customize-done").label("Done").on_click(cx.listener(|this, _, window, cx| this.save_customize_folder(window, cx)))),
             );
         div()
             .id("customize-overlay")
@@ -216,21 +256,8 @@ impl Workspace {
             .inset_0()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
-                Modal::new()
-                    .size(ModalSize::Xl)
-                    .title(format!("Customize “{}”", dialog.folder.name))
-                    .on_close(cx.listener(|this, _, window, cx| this.close_customize_folder(window, cx)))
-                    .body(body)
-                    .footer(
-                        div().mr_auto().child(
-                            Button::new("customize-reset")
-                                .label("Reset")
-                                .variant(ButtonVariant::Secondary)
-                                .disabled(look == FolderLook::default())
-                                .on_click(cx.listener(|this, _, _, cx| this.change_look(|look| *look = FolderLook::default(), cx))),
-                        ),
-                    )
-                    .footer(Button::new("customize-done").label("Done").on_click(cx.listener(|this, _, window, cx| this.save_customize_folder(window, cx)))),
+                // No title bar: the folder's name is beside its preview, and Escape closes.
+                Modal::new().size(ModalSize::Xl).body(body),
             )
             .into_any_element()
     }

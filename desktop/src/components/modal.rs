@@ -10,6 +10,8 @@ type CloseHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 #[derive(Clone, Copy)]
 pub enum ModalSize {
+    /// A short question and its answers.
+    Sm,
     /// `max-w-md`
     Md,
     /// `max-w-3xl`
@@ -83,6 +85,7 @@ impl Modal {
 impl RenderOnce for Modal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let max_width: f32 = match self.size {
+            ModalSize::Sm => 340.,
             ModalSize::Md => 448.,
             ModalSize::Xl => 672.,
             ModalSize::Lg => 768.,

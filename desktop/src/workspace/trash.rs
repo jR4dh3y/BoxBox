@@ -163,12 +163,11 @@ impl Workspace {
     /// Asks, then deletes items from Trash for good.
     pub(crate) fn delete_trash_items(&mut self, items: Vec<TrashItem>, cx: &mut Context<Self>) {
         let Some(api) = self.trash_provider.clone().filter(|api| api.is_local()) else { return };
-        let message = match items.as_slice() {
-            [] => return,
-            [item] => format!("“{}” will be deleted permanently. This cannot be undone.", item.name),
-            _ => format!("{} items will be deleted permanently. This cannot be undone.", items.len()),
-        };
-        let confirm = Confirm::new("Delete permanently", message, "Delete", move |this, cx| {
+        if items.is_empty() {
+            return;
+        }
+        let question = super::operations::delete_question(items.iter().map(|item| item.name.as_str()));
+        let confirm = Confirm::question(question, move |this, cx| {
             if this.operation_status.is_busy() {
                 return;
             }
@@ -198,12 +197,12 @@ impl Workspace {
             Load::Loaded(items) if self.trash_open => Some(items.len()),
             _ => None,
         };
-        let message = match count {
-            Some(1) => "The item in Trash will be deleted permanently. This cannot be undone.".to_string(),
-            Some(count) => format!("All {count} items in Trash will be deleted permanently. This cannot be undone."),
-            None => "Everything in Trash will be deleted permanently. This cannot be undone.".to_string(),
+        let question = match count {
+            Some(1) => "Delete the item in Trash?".to_string(),
+            Some(count) => format!("Delete all {count} items in Trash?"),
+            None => "Empty Trash?".to_string(),
         };
-        let confirm = Confirm::new("Empty Trash", message, "Empty Trash", move |this, cx| {
+        let confirm = Confirm::question(question, move |this, cx| {
             if this.operation_status.is_busy() {
                 return;
             }

@@ -7,12 +7,27 @@ use super::Workspace;
 
 type Action = Box<dyn FnOnce(&mut Workspace, &mut Context<Workspace>)>;
 
+/// How the dialog asks.
+pub(crate) enum Ask {
+    /// A titled dialog that explains, with a named action.
+    Explained { title: SharedString, message: SharedString, confirm_label: SharedString },
+    /// One short question answered No or Yes, such as "Delete 5 items?".
+    Question(SharedString),
+}
+
+#[cfg(test)]
+impl Ask {
+    /// What the dialog asks first: the title, or the question.
+    pub fn heading(&self) -> &str {
+        match self {
+            Self::Explained { title, .. } => title,
+            Self::Question(question) => question,
+        }
+    }
+}
+
 pub(crate) struct Confirm {
-    pub title: SharedString,
-    pub message: SharedString,
-    /// Names shown under the message when several items are affected.
-    pub items: Vec<SharedString>,
-    pub confirm_label: SharedString,
+    pub ask: Ask,
     pub danger: bool,
     action: Action,
     /// A second answer beside the main one, such as Open beside Run.
@@ -27,14 +42,16 @@ impl Confirm {
         action: impl FnOnce(&mut Workspace, &mut Context<Workspace>) + 'static,
     ) -> Self {
         Self {
-            title: title.into(),
-            message: message.into(),
-            items: Vec::new(),
-            confirm_label: confirm_label.into(),
+            ask: Ask::Explained { title: title.into(), message: message.into(), confirm_label: confirm_label.into() },
             danger: true,
             action: Box::new(action),
             secondary: None,
         }
+    }
+
+    /// A destructive question answered No or Yes.
+    pub fn question(question: impl Into<SharedString>, action: impl FnOnce(&mut Workspace, &mut Context<Workspace>) + 'static) -> Self {
+        Self { ask: Ask::Question(question.into()), danger: true, action: Box::new(action), secondary: None }
     }
 
     /// The main action is not destructive.
@@ -45,11 +62,6 @@ impl Confirm {
 
     pub fn secondary(mut self, label: impl Into<SharedString>, action: impl FnOnce(&mut Workspace, &mut Context<Workspace>) + 'static) -> Self {
         self.secondary = Some((label.into(), Box::new(action)));
-        self
-    }
-
-    pub fn items(mut self, items: Vec<SharedString>) -> Self {
-        self.items = items;
         self
     }
 }

@@ -786,14 +786,7 @@ impl Workspace {
             self.run_delete(target, api, items, false, cx);
             return;
         }
-        // `BrowseDialogs.svelte`: one name in the sentence, or a count and the names.
-        let fate = "will be deleted permanently. This cannot be undone.";
-        let (message, names) = match items.as_slice() {
-            [item] => (format!("“{}” {fate}", item.name), Vec::new()),
-            items => (format!("{} items {fate}", items.len()), items.iter().map(|item| item.name.clone().into()).collect()),
-        };
-        let confirm = Confirm::new("Delete Permanently", message, "Delete", move |this, cx| this.run_delete(target, api, items, permanent, cx))
-            .items(names);
+        let confirm = Confirm::question(delete_question(items.iter().map(|item| item.name.as_str())), move |this, cx| this.run_delete(target, api, items, permanent, cx));
         self.ask(confirm, cx);
     }
 
@@ -1465,6 +1458,15 @@ impl Workspace {
         if let Some(item) = self.pane().active_item() {
             self.activate_item(self.active_pane, item, cx);
         }
+    }
+}
+
+/// "Delete “a.txt”?" for one item, "Delete 3 items?" for several.
+pub(crate) fn delete_question<'a>(names: impl ExactSizeIterator<Item = &'a str>) -> String {
+    let count = names.len();
+    match names.last() {
+        Some(name) if count == 1 => format!("Delete “{name}”?"),
+        _ => format!("Delete {count} items?"),
     }
 }
 

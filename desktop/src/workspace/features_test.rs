@@ -767,7 +767,7 @@ fn trash_takes_drops_shows_restored_items_and_empties(cx: &mut TestAppContext) {
     let trash = cx.debug_bounds("sidebar-trash").unwrap().center();
     cx.simulate_mouse_down(trash, MouseButton::Right, Modifiers::default());
     click(cx, "place-empty-trash");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.confirm.as_ref().unwrap().title.as_ref(), "Empty Trash"));
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.confirm.as_ref().unwrap().ask.heading(), "Empty Trash?"));
     click(cx, "confirm-accept");
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| assert!(!workspace.trash_full));
@@ -788,7 +788,7 @@ fn trash_selects_like_a_folder_and_deletes_the_selection(cx: &mut TestAppContext
     view.read_with(cx, |workspace, _| assert_eq!(workspace.selected_trash().len(), 2, "Ctrl+A selects every row"));
     // In Trash, Delete can only mean for good, so it asks first.
     cx.simulate_keystrokes("delete");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.confirm.as_ref().unwrap().title.as_ref(), "Delete permanently"));
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.confirm.as_ref().unwrap().ask.heading(), "Delete 2 items?"));
     click(cx, "confirm-accept");
     cx.run_until_parked();
     assert_eq!(fs::read_dir(fixture.root.join(".local/share/Trash/files")).unwrap().count(), 0);
@@ -1081,7 +1081,7 @@ fn scripts_ask_before_running_and_launchers_need_trust(cx: &mut TestAppContext) 
     cx.run_until_parked();
     view.read_with(cx, |workspace, _| {
         let confirm = workspace.confirm.as_ref().expect("running asks first");
-        assert_eq!(confirm.title.as_ref(), "Run “go.sh”?");
+        assert_eq!(confirm.ask.heading(), "Run “go.sh”?");
         assert!(confirm.secondary.is_some());
     });
     assert!(!ran.exists(), "nothing runs before the answer");
@@ -1092,7 +1092,7 @@ fn scripts_ask_before_running_and_launchers_need_trust(cx: &mut TestAppContext) 
     // An untrusted launcher asks; trusting it marks it executable and starts it.
     cx.simulate_keystrokes("down enter");
     cx.run_until_parked();
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.confirm.as_ref().unwrap().title.as_ref(), "Untrusted launcher"));
+    view.read_with(cx, |workspace, _| assert_eq!(workspace.confirm.as_ref().unwrap().ask.heading(), "Untrusted launcher"));
     // The message wraps; the panel grows to hold it, so its buttons stay inside.
     let (panel, accept) = (cx.debug_bounds("modal-panel").unwrap(), cx.debug_bounds("confirm-accept").unwrap());
     assert!(accept.bottom() <= panel.bottom(), "the footer is inside the dialog: {accept:?} in {panel:?}");
@@ -1123,16 +1123,17 @@ fn trash_goes_without_asking_and_a_deletion_names_one_item_or_lists_several(cx: 
     cx.simulate_keystrokes("shift-delete");
     view.read_with(cx, |workspace, _| {
         let confirm = workspace.confirm.as_ref().unwrap();
-        assert_eq!(confirm.message.as_ref(), "“b.txt” will be deleted permanently. This cannot be undone.");
-        assert!(confirm.items.is_empty());
+        assert_eq!(confirm.ask.heading(), "Delete “b.txt”?");
     });
     cx.simulate_keystrokes("escape ctrl-a shift-delete");
     view.read_with(cx, |workspace, _| {
         let confirm = workspace.confirm.as_ref().unwrap();
-        assert_eq!(confirm.message.as_ref(), "2 items will be deleted permanently. This cannot be undone.");
-        let names: Vec<&str> = confirm.items.iter().map(|name| name.as_ref()).collect();
-        assert_eq!(names, ["b.txt", "c.txt"]);
+        assert_eq!(confirm.ask.heading(), "Delete 2 items?");
     });
+    // No title bar: No answers, as Escape does.
+    click(cx, "confirm-cancel");
+    view.read_with(cx, |workspace, _| assert!(workspace.confirm.is_none()));
+    assert!(fixture.root.join("b.txt").exists());
 }
 
 #[gpui::test]
@@ -1176,8 +1177,7 @@ fn shift_delete_deletes_for_good_after_asking(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("shift-delete");
     view.read_with(cx, |workspace, _| {
         let confirm = workspace.confirm.as_ref().expect("always asks, even with confirmation off");
-        assert_eq!(confirm.title.as_ref(), "Delete Permanently");
-        assert_eq!(confirm.message.as_ref(), "“a.txt” will be deleted permanently. This cannot be undone.");
+        assert_eq!(confirm.ask.heading(), "Delete “a.txt”?");
     });
     click(cx, "confirm-accept");
     cx.run_until_parked();
@@ -2127,6 +2127,8 @@ fn a_customised_folder_shows_its_icon_and_colours_by_every_path(cx: &mut TestApp
     cx.simulate_input("gamepad");
     click(cx, "emblem-gamepad-2");
     click(cx, "folder-color-22c55e");
+    assert!(cx.debug_bounds("emblem-color-f5f5f4").is_none(), "the swatches paint one part at a time");
+    click(cx, "customize-paint-icon");
     click(cx, "emblem-color-f5f5f4");
     // Nothing changes until Done.
     assert_eq!(style(&view, cx, "home/Desktop/sub"), plain);
