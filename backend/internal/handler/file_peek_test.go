@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/filesystem"
+	"github.com/jR4dh3y/BoxBox/backend/internal/service"
 )
 
 func TestPeekPathReturnsAFewEntriesPicturesFirst(t *testing.T) {
@@ -38,6 +40,24 @@ func TestPeekPathReturnsAFewEntriesPicturesFirst(t *testing.T) {
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/files/media/album/notes.txt?peek", nil))
 	if rec.Code == http.StatusOK {
 		t.Fatal("a file was peeked into")
+	}
+}
+
+func TestPeekPathAtStatsMount(t *testing.T) {
+	fs := filesystem.NewMemMapFS()
+	if err := fs.MkdirAll("/data/stats", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile("/data/stats/cover.jpg", []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	files := service.NewFileService(fs, service.FileServiceConfig{MountPoints: []model.MountPoint{{Name: "stats", Path: "/data/stats"}}})
+	router := createFileTestRouter(NewFileHandler(files))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/files/stats?peek", nil))
+	var body PeekResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); rec.Code != http.StatusOK || err != nil || len(body.Items) != 1 || body.Items[0].Path != "stats/cover.jpg" {
+		t.Fatalf("unexpected peek: %d %s", rec.Code, rec.Body.String())
 	}
 }
 

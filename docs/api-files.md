@@ -74,7 +74,7 @@ Response:
 ## Peek Into a Directory
 
 ```http
-GET /api/v1/files/peek/{path}?hidden=1
+GET /api/v1/files/{path}?peek&hidden=1
 ```
 
 Up to three entries of a directory, for its grid tile: pictures the server can thumbnail first, then by name. Only the first 64 entries are read, so a huge folder costs no more than a small one. Hidden entries are left out unless `hidden=1`. Each entry carries its full `path`.
@@ -99,7 +99,7 @@ Response:
 ## Properties of a Selection
 
 ```http
-POST /api/v1/files/properties
+POST /api/v1/files
 ```
 
 ```json

@@ -3,6 +3,7 @@ package handler
 import (
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/middleware"
@@ -25,6 +26,7 @@ func NewFileHandler(fileService service.FileManager) *FileHandler {
 
 // RegisterRoutes registers file routes on the given router
 func (h *FileHandler) RegisterRoutes(r chi.Router) {
+	r.Use(h.routePeek)
 	r.Get("/", h.ListRoots)
 	r.Get("/stats", h.GetDriveStats)
 	r.With(middleware.JSONCompression).Get("/list/*", h.ListPath)
@@ -58,10 +60,19 @@ type PeekResponse struct {
 	Items []model.FileInfo `json:"items"`
 }
 
-// PeekPath returns up to three entries of a directory, pictures first.
-// GET /api/v1/files/*path?peek&hidden=1
-func (h *FileHandler) PeekPath(w http.ResponseWriter, r *http.Request) {
-	path := chi.URLParam(r, "*")
+// routePeek uses the whole path below /files before list and stats routes match.
+func (h *FileHandler) routePeek(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Query().Has("peek") {
+			path := strings.TrimPrefix(chi.RouteContext(r.Context()).RoutePath, "/")
+			h.peekPath(w, r, path)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (h *FileHandler) peekPath(w http.ResponseWriter, r *http.Request, path string) {
 	if path == "" {
 		writeError(w, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest)
 		return
@@ -165,10 +176,6 @@ func (h *FileHandler) GetPath(w http.ResponseWriter, r *http.Request) {
 	path := chi.URLParam(r, "*")
 	if path == "" {
 		h.ListRoots(w, r)
-		return
-	}
-	if r.URL.Query().Has("peek") {
-		h.PeekPath(w, r)
 		return
 	}
 

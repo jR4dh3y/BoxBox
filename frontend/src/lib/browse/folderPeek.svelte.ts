@@ -6,7 +6,7 @@
 import { SvelteMap } from 'svelte/reactivity';
 import { peekDirectory, type FileInfo } from '#lib/api/files.js';
 
-/** More folders than a screen of tiles shows; past it the cache starts again. */
+/** More folders than a screen of tiles shows. */
 const CAPACITY = 1024;
 /** A failed read is tried again when its tile is next drawn after this long. */
 const RETRY_MS = 10_000;
@@ -54,7 +54,13 @@ export class FolderPeeks {
 
 	private settle(key: string, items: readonly FileInfo[], failed: boolean): void {
 		if (!this.pending.delete(key)) return;
-		if (this.peeks.size >= CAPACITY) this.clear();
+		if (!this.peeks.has(key) && this.peeks.size >= CAPACITY) {
+			const oldest = this.peeks.keys().next();
+			if (!oldest.done) {
+				this.peeks.delete(oldest.value);
+				this.failed.delete(oldest.value);
+			}
+		}
 		this.peeks.set(key, items);
 		if (failed) this.failed.set(key, this.now());
 		else this.failed.delete(key);

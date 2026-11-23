@@ -35,6 +35,22 @@ describe('folder peeks', () => {
 		assert.equal(reads.length, 2);
 	});
 
+	test('evicts a completed preview without losing other replies', async () => {
+		const peeks = new FolderPeeks(async () => [cover]);
+		const numberedFolder = (index: number): FileInfo => ({
+			...folder(),
+			path: `media/album-${index}`
+		});
+		for (let index = 0; index < 1024; index++) peeks.request(numberedFolder(index), false);
+		await Promise.resolve();
+		peeks.request(numberedFolder(1024), false);
+		peeks.request(numberedFolder(1025), false);
+		await Promise.resolve();
+		assert.equal(peeks.get(numberedFolder(0), false), undefined);
+		assert.deepEqual(peeks.get(numberedFolder(1024), false), [cover]);
+		assert.deepEqual(peeks.get(numberedFolder(1025), false), [cover]);
+	});
+
 	test('an unreadable folder is drawn plain, and files are never read', async () => {
 		let reads = 0;
 		const peeks = new FolderPeeks(async () => {
