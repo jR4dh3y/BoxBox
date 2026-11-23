@@ -463,3 +463,27 @@ func TestRemoveFileWithinKeepsFileWhoseFolderMovesDuringTheFinalCheck(t *testing
 	}
 	assertOnlyEntries(t, filepath.Join(root, "shared", "a"), "file.txt")
 }
+
+func TestChmodFileActsOnTheOpenMemFile(t *testing.T) {
+	fsys := NewMemMapFS()
+	file, err := fsys.OpenFile("/a", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := fsys.Remove("/a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.WriteFile("/a", nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.ChmodFile(file, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := file.Stat(); err != nil || info.Mode().Perm() != 0o644 {
+		t.Fatalf("open file mode = %v, %v", info.Mode().Perm(), err)
+	}
+	if info, err := fsys.Stat("/a"); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("replacement mode = %v, %v", info.Mode().Perm(), err)
+	}
+}
