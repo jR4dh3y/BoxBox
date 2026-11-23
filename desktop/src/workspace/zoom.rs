@@ -21,6 +21,38 @@ pub(crate) enum Zoom {
     Reset,
 }
 
+impl Zoom {
+    /// The step after `current` in `mode`'s sizes.
+    pub(crate) fn step(self, mode: ViewMode, current: u8) -> u8 {
+        let steps = match mode {
+            ViewMode::List => ListMetrics::STEPS.len() as u8,
+            ViewMode::Grid => GridMetrics::STEPS.len() as u8,
+        };
+        match self {
+            Zoom::In => (current + 1).min(steps - 1),
+            Zoom::Out => current.saturating_sub(1),
+            Zoom::Reset => DEFAULT,
+        }
+    }
+}
+
+/// The zoom steps a wheel event makes: a notch is a step; a touchpad steps every
+/// few pixels, carried over in `scrolled`.
+pub(crate) fn wheel_steps(scrolled: &mut f32, delta: ScrollDelta) -> i32 {
+    match delta {
+        ScrollDelta::Lines(lines) => {
+            *scrolled = 0.;
+            lines.y.signum() as i32
+        }
+        ScrollDelta::Pixels(pixels) => {
+            *scrolled += f32::from(pixels.y);
+            let steps = (*scrolled / PIXELS_PER_STEP).trunc();
+            *scrolled -= steps * PIXELS_PER_STEP;
+            steps as i32
+        }
+    }
+}
+
 impl Workspace {
     pub(crate) fn list_metrics(&self) -> ListMetrics {
         ListMetrics::new(self.preferences.list_zoom)
@@ -42,20 +74,9 @@ impl Workspace {
         self.zoom(self.active_pane, Zoom::Reset, window, cx);
     }
 
-    /// Ctrl+wheel over a pane: a notch is a step; a touchpad steps every few pixels.
+    /// Ctrl+wheel over a pane.
     pub(crate) fn zoom_wheel(&mut self, target: PaneTarget, delta: ScrollDelta, window: &mut Window, cx: &mut Context<Self>) {
-        let steps = match delta {
-            ScrollDelta::Lines(lines) => {
-                self.zoom_scroll = 0.;
-                lines.y.signum() as i32
-            }
-            ScrollDelta::Pixels(pixels) => {
-                self.zoom_scroll += f32::from(pixels.y);
-                let steps = (self.zoom_scroll / PIXELS_PER_STEP).trunc();
-                self.zoom_scroll -= steps * PIXELS_PER_STEP;
-                steps as i32
-            }
-        };
+        let steps = wheel_steps(&mut self.zoom_scroll, delta);
         for _ in 0..steps.unsigned_abs() {
             self.zoom(target, if steps > 0 { Zoom::In } else { Zoom::Out }, window, cx);
         }
@@ -68,15 +89,11 @@ impl Workspace {
             return;
         }
         let mode = pane.current_view_mode();
-        let (current, steps) = match mode {
-            ViewMode::List => (self.preferences.list_zoom, ListMetrics::STEPS.len() as u8),
-            ViewMode::Grid => (self.preferences.grid_zoom, GridMetrics::STEPS.len() as u8),
+        let current = match mode {
+            ViewMode::List => self.preferences.list_zoom,
+            ViewMode::Grid => self.preferences.grid_zoom,
         };
-        let next = match zoom {
-            Zoom::In => (current + 1).min(steps - 1),
-            Zoom::Out => current.saturating_sub(1),
-            Zoom::Reset => DEFAULT,
-        };
+        let next = zoom.step(mode, current);
         if next == current {
             return;
         }

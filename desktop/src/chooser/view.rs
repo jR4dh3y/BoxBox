@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    anchored, deferred, div, point, prelude::*, px, uniform_list, AnchoredPositionMode, App, ClickEvent, Context, Entity, FocusHandle, Focusable, FontWeight,
-    KeyDownEvent, SharedString, UniformListScrollHandle, Window,
+    anchored, canvas, deferred, div, img, point, prelude::*, px, uniform_list, AnchoredPositionMode, App, ClickEvent, Context, DispatchPhase, Entity, FocusHandle,
+    Focusable, FontWeight, KeyDownEvent, ObjectFit, ScrollWheelEvent, SharedString, UniformListScrollHandle, Window,
 };
 
 use super::request::{self, Kind, Request, Response, Selection, Verdict};
@@ -24,6 +24,9 @@ use crate::settings_state::{DesktopSettings, SavedConnection};
 use crate::sort::{sort_files, Sort};
 use crate::theme::*;
 use crate::ui::{icon, TextScale};
+use crate::workspace::favorites::FavoriteProvider;
+use crate::workspace::thumbnails::{decode_thumbnail, has_inline_thumbnail, ThumbnailCache, ThumbnailKey};
+use crate::workspace::zoom::{wheel_steps, Zoom};
 use crate::workspace::{IconStyle, Preferences};
 
 /// Where the list is: a local folder, or a folder on a paired server
@@ -122,7 +125,14 @@ pub struct Chooser {
     show_hidden: bool,
     /// Starts as the main window's default view; kept for this dialog only.
     view: ViewMode,
+    /// Each view's size step, as the main window keeps them; for this dialog only.
+    list_zoom: u8,
     grid_zoom: u8,
+    /// Touchpad scrolling not yet a whole zoom step.
+    zoom_scroll: f32,
+    thumbnails: ThumbnailCache,
+    /// The app that asked, once its desktop entry is read.
+    caller: Option<crate::open_with::App>,
     filter: Option<usize>,
     choices: Vec<(String, String)>,
     open_menu: Option<Menu>,
@@ -281,7 +291,11 @@ impl Chooser {
             columns: preferences.columns(crate::components::Table::Files),
             show_hidden: preferences.show_hidden_files,
             view: preferences.default_view,
+            list_zoom: preferences.list_zoom,
             grid_zoom: preferences.grid_zoom,
+            zoom_scroll: 0.,
+            thumbnails: ThumbnailCache::default(),
+            caller: None,
             choices,
             open_menu: None,
             replace: None,
@@ -301,7 +315,24 @@ impl Chooser {
             _subscriptions: subscriptions,
         };
         chooser.open(Location::Local(start), cx);
+        chooser.find_caller(cx);
         chooser
+    }
+
+    /// Reads the asking app's name and icon off the UI thread.
+    fn find_caller(&mut self, cx: &mut Context<Self>) {
+        if self.request.app_id.is_empty() {
+            return;
+        }
+        let app_id = self.request.app_id.clone();
+        cx.spawn(async move |this, cx| {
+            let app = cx.background_executor().spawn(async move { crate::open_with::app_by_id(&app_id, 32) }).await;
+            let _ = this.update(cx, |this, cx| {
+                this.caller = app;
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub fn title(request: &Request) -> String {
@@ -708,6 +739,69 @@ impl Chooser {
         }
     }
 
+    fn zoom(&mut self, zoom: Zoom, window: &Window, cx: &mut Context<Self>) {
+        let view = self.view;
+        let current = match view {
+            ViewMode::List => &mut self.list_zoom,
+            ViewMode::Grid => &mut self.grid_zoom,
+        };
+        let next = zoom.step(view, *current);
+        if next == *current {
+            return;
+        }
+        *current = next;
+        if let Some(row) = self.active {
+            self.reveal(row, window);
+        }
+        cx.notify();
+    }
+
+    fn zoom_wheel(&mut self, delta: gpui::ScrollDelta, window: &Window, cx: &mut Context<Self>) {
+        let steps = wheel_steps(&mut self.zoom_scroll, delta);
+        for _ in 0..steps.unsigned_abs() {
+            self.zoom(if steps > 0 { Zoom::In } else { Zoom::Out }, window, cx);
+        }
+    }
+
+    fn thumbnail_key(&self, item: &FileInfo) -> ThumbnailKey {
+        let provider = match &self.location {
+            Location::Local(_) => FavoriteProvider::Local,
+            Location::Server { api, .. } => FavoriteProvider::for_api(api),
+        };
+        ThumbnailKey { provider, path: item.path.clone(), mod_time: item.mod_time, size: item.size, edge: GridMetrics::new(self.grid_zoom).thumbnail }
+    }
+
+    /// Starts rendering the thumbnail of the item at `row`, unless it is cached or under way.
+    fn request_thumbnail(&mut self, row: usize, cx: &mut Context<Self>) {
+        let Some(item) = self.visible.get(row).map(|&index| self.items[index].clone()) else { return };
+        if item.is_dir || !has_inline_thumbnail(&item.name) {
+            return;
+        }
+        let key = self.thumbnail_key(&item);
+        let Some(generation) = self.thumbnails.request(key.clone()) else { return };
+        let (location, edge) = (self.location.clone(), key.edge);
+        let rendered = crate::thumbnail_queue::render(move || {
+            let png = match &location {
+                Location::Local(_) => crate::local::thumbnails::thumbnail(Path::new(&item.path), edge, edge * 3 / 4),
+                Location::Server { api, .. } => crate::media::thumbnail(api, &item, edge, edge * 3 / 4),
+            };
+            png.and_then(|png| decode_thumbnail(&png))
+        });
+        cx.spawn(async move |this, cx| {
+            let result = rendered.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Some(result) => {
+                    for image in this.thumbnails.finish(key, generation, result) {
+                        cx.drop_image(image, None);
+                    }
+                    cx.notify();
+                }
+                None => this.thumbnails.forget(&key, generation),
+            });
+        })
+        .detach();
+    }
+
     fn set_view(&mut self, view: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
         self.view = view;
         if let Some(row) = self.active {
@@ -737,6 +831,9 @@ impl Chooser {
                 self.show_hidden = !self.show_hidden;
                 self.refilter(cx);
             }
+            "=" | "+" if control => self.zoom(Zoom::In, window, cx),
+            "-" if control => self.zoom(Zoom::Out, window, cx),
+            "0" if control => self.zoom(Zoom::Reset, window, cx),
             _ if !self.focus.is_focused(window) => return,
             "up" if modifiers.alt => self.go_up(cx),
             "up" | "down" => {
@@ -994,6 +1091,7 @@ impl Chooser {
                 .selected(self.selected.contains(&index))
                 .active(self.active == Some(row))
                 .cut(self.dimmed(item))
+                .zoom(self.list_zoom)
                 .decorate(Self::clickable("chooser-row", row, cx)),
         )
     }
@@ -1006,6 +1104,7 @@ impl Chooser {
                 .tint(tint, None)
                 .image(EntryIcon::Glyph)
                 .detail(if item.is_dir { SharedString::default() } else { file_size(item.size).into() })
+                .thumbnail(self.thumbnails.get(&self.thumbnail_key(item)))
                 .selected(self.selected.contains(&index))
                 .active(self.active == Some(row))
                 .cut(self.dimmed(item))
@@ -1024,11 +1123,25 @@ impl Chooser {
         }
     }
 
-    fn render_items(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
-        match self.view {
+    fn render_items(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let items = match self.view {
             ViewMode::List => self.render_list(cx).into_any_element(),
             ViewMode::Grid => self.render_grid(window, cx).into_any_element(),
-        }
+        };
+        let view = cx.entity().downgrade();
+        // Ctrl+wheel zooms; caught before the list scrolls.
+        let wheel = canvas(
+            |_, _, _| (),
+            move |bounds, _, window, _| {
+                window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+                    if phase == DispatchPhase::Capture && event.modifiers.control && bounds.contains(&event.position) {
+                        cx.stop_propagation();
+                        let _ = view.update(cx, |this, cx| this.zoom_wheel(event.delta, window, cx));
+                    }
+                });
+            },
+        );
+        div().relative().flex().flex_col().flex_1().min_h_0().child(items).child(wheel.absolute().inset_0())
     }
 
     fn render_grid(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1054,7 +1167,10 @@ impl Chooser {
                                     .flex()
                                     .items_start()
                                     .gap(px(metrics.gap))
-                                    .children((start..(start + columns).min(count)).filter_map(|index| this.render_tile(index, cx)))
+                                    .children((start..(start + columns).min(count)).filter_map(|index| {
+                                        this.request_thumbnail(index, cx);
+                                        this.render_tile(index, cx)
+                                    }))
                             })
                             .collect::<Vec<_>>()
                     }),
@@ -1360,7 +1476,16 @@ impl Render for Chooser {
                         .text_xs_tw()
                         .text_color(c(TEXT_SECONDARY))
                         .font_weight(FontWeight::MEDIUM)
-                        .child(format!("For {}", self.request.app_id)),
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .debug_selector(|| "chooser-caller".into())
+                        .map(|header| match &self.caller {
+                            Some(app) => header
+                                .children(app.icon.clone().map(|icon| img(icon).size(px(16.)).flex_none().object_fit(ObjectFit::Contain)))
+                                .child(format!("For {}", app.name)),
+                            None => header.child(format!("For {}", self.request.app_id)),
+                        }),
                 )
             })
             .child(

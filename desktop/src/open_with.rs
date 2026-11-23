@@ -399,12 +399,25 @@ pub fn recommended(path: &Path) -> Result<Vec<App>> {
 pub fn default_app_icon(mime_type: &str, size: u32) -> Option<PathBuf> {
     let entries = installed();
     let apps = list_for(mime_type, &entries);
-    let icon = &entries.get(&initial_choice(&apps)?)?.icon;
+    icon_file(&entries.get(&initial_choice(&apps)?)?.icon, size)
+}
+
+/// An entry's `Icon` key as a file, nearest `size`.
+fn icon_file(icon: &str, size: u32) -> Option<PathBuf> {
     let theme = IconTheme::shared();
     match Path::new(icon).is_absolute() {
         true => theme.find(icon),
         false => theme.find_sized(icon, size).or_else(|| theme.find(icon)),
     }
+}
+
+/// The installed app a portal caller names by its app ID, the desktop file ID
+/// without `.desktop`, with its icon nearest `size`.
+pub fn app_by_id(app_id: &str, size: u32) -> Option<App> {
+    let entries = installed();
+    let id = format!("{app_id}.desktop");
+    let entry = entries.get(&id).or_else(|| entries.values().find(|entry| entry.app.id.eq_ignore_ascii_case(&id)))?;
+    Some(App { icon: icon_file(&entry.icon, size), ..entry.app.clone() })
 }
 
 /// Opens `path` in the app, which must be one `list` offers for it.

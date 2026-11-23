@@ -169,3 +169,40 @@ fn the_grid_switch_shows_tiles_that_arrows_move_through(cx: &mut TestAppContext)
     click(cx, "chooser-view-list");
     view.read_with(cx, |chooser, _| assert!(chooser.view == crate::pane::ViewMode::List, "the switch goes back to List"));
 }
+
+#[gpui::test]
+fn ctrl_plus_and_minus_size_the_view_shown(cx: &mut TestAppContext) {
+    let (view, cx, _answer, _fixture) = open(cx, Kind::Open, &["a.txt"], vec![]);
+    view.update(cx, |chooser, _| {
+        chooser.view = crate::pane::ViewMode::Grid;
+        chooser.grid_zoom = 1;
+        chooser.list_zoom = 1;
+    });
+    cx.simulate_keystrokes("ctrl-= ctrl-=");
+    view.read_with(cx, |chooser, _| assert_eq!((chooser.grid_zoom, chooser.list_zoom), (3, 1), "only the grid grows"));
+    cx.simulate_keystrokes("ctrl-0");
+    view.read_with(cx, |chooser, _| assert_eq!(chooser.grid_zoom, 1, "Ctrl+0 resets"));
+    click(cx, "chooser-view-list");
+    cx.simulate_keystrokes("ctrl-- ctrl--");
+    view.read_with(cx, |chooser, _| assert_eq!(chooser.list_zoom, 0, "the list shrinks to its smallest step and stops"));
+}
+
+#[gpui::test]
+fn a_picture_shows_its_thumbnail_in_the_grid(cx: &mut TestAppContext) {
+    let (view, cx, _answer, fixture) = open(cx, Kind::Open, &[], vec![]);
+    image::RgbaImage::from_pixel(64, 48, image::Rgba([200, 40, 40, 255])).save(fixture.root.join("red.png")).unwrap();
+    view.update(cx, |chooser, cx| {
+        chooser.view = crate::pane::ViewMode::Grid;
+        let location = chooser.location.clone();
+        chooser.open(location, cx);
+    });
+    let drawn = |cx: &mut VisualTestContext| view.read_with(cx, |chooser, _| chooser.visible.first().and_then(|&index| chooser.thumbnails.get(&chooser.thumbnail_key(&chooser.items[index]))).is_some());
+    for _ in 0..100 {
+        cx.run_until_parked();
+        if drawn(cx) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(drawn(cx), "the tile's thumbnail was rendered");
+}
