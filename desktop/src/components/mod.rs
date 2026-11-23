@@ -26,6 +26,7 @@ mod tile_label;
 mod toast;
 mod toggle;
 mod tooltip;
+mod view_switch;
 
 pub use button::{Button, ButtonSize, ButtonVariant};
 pub use columns::{Column, ColumnLayout, ColumnSpec, Table};
@@ -52,6 +53,7 @@ pub fn pressed(style: gpui::StyleRefinement) -> gpui::StyleRefinement {
 }
 pub use toggle::Toggle;
 pub use tooltip::{Tooltip, UiFont};
+pub use view_switch::ViewSwitch;
 
 use gpui::{px, Styled};
 

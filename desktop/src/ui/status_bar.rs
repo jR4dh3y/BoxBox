@@ -2,9 +2,9 @@
 
 use gpui::{div, prelude::*, px, Context};
 
-use super::{icon, TextScale};
+use super::TextScale;
+use crate::components::ViewSwitch;
 use crate::format::file_size;
-use crate::pane::ViewMode;
 use crate::theme::*;
 use crate::workspace::operations::PaneTarget;
 use crate::workspace::Workspace;
@@ -35,31 +35,6 @@ impl Workspace {
         // A running operation's label takes the place of the counts, as file managers do.
         let text = self.operation_status.message().map(str::to_owned).unwrap_or(text);
         let mode = pane.current_view_mode();
-        let toggle =
-            |id: &'static str, glyph: &'static str, target: ViewMode, cx: &mut Context<Self>| {
-                let active = mode == target;
-                let button = div()
-                    .id(id)
-                    .debug_selector(move || id.to_string())
-                    .size(px(22.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(2.))
-                    .cursor_pointer()
-                    .when(active, |button| button.bg(c(SURFACE_ELEVATED)))
-                    .child(icon(
-                        glyph,
-                        14.,
-                        c(if active { TEXT_PRIMARY } else { TEXT_MUTED }),
-                    ))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.choose_view_mode(this.active_pane, target, cx);
-                        cx.notify();
-                    }));
-                crate::components::motion::interact(gpui::ElementId::Name(format!("{id}-feedback").into()), button).fill(c(SURFACE_SECONDARY)).rounded(2.)
-            };
-
         div()
             .flex_none()
             .flex()
@@ -73,15 +48,14 @@ impl Workspace {
             .text_xs_tw()
             .text_color(c(TEXT_SECONDARY))
             .child(text)
-            .child(
-                div()
-                    .flex()
-                    .gap(px(2.))
-                    .rounded(px(4.))
-                    .bg(c(SURFACE_SECONDARY))
-                    .p(px(2.))
-                    .child(toggle("view-list", "list", ViewMode::List, cx))
-                    .child(toggle("view-grid", "layout-grid", ViewMode::Grid, cx)),
-            )
+            .child(ViewSwitch::new("view", mode, {
+                let view = cx.entity().downgrade();
+                move |target, _, cx| {
+                    let _ = view.update(cx, |this, cx| {
+                        this.choose_view_mode(this.active_pane, target, cx);
+                        cx.notify();
+                    });
+                }
+            }))
     }
 }

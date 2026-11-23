@@ -149,3 +149,23 @@ fn bookmarks_of_places_are_not_repeated(cx: &mut TestAppContext) {
         }
     });
 }
+
+#[gpui::test]
+fn the_grid_switch_shows_tiles_that_arrows_move_through(cx: &mut TestAppContext) {
+    let files: Vec<String> = (0..40).map(|n| format!("f{n:02}.txt")).collect();
+    let files: Vec<&str> = files.iter().map(String::as_str).collect();
+    let (view, cx, _answer, _fixture) = open(cx, Kind::Open, &files, vec![]);
+    view.update(cx, |chooser, _| chooser.view = crate::pane::ViewMode::List);
+    cx.run_until_parked();
+    click(cx, "chooser-view-grid");
+    view.read_with(cx, |chooser, _| assert!(chooser.view == crate::pane::ViewMode::Grid, "the switch picks Grid"));
+    click(cx, "chooser-tile-0");
+    let columns = cx.update(|window, app| view.read(app).grid_columns(window));
+    assert!(columns > 1, "a dialog-wide grid has several columns");
+    cx.simulate_keystrokes("down");
+    view.read_with(cx, |chooser, _| assert_eq!(chooser.active, Some(columns), "down goes a row of tiles"));
+    cx.simulate_keystrokes("left");
+    view.read_with(cx, |chooser, _| assert_eq!(chooser.active, Some(columns - 1), "left goes one tile"));
+    click(cx, "chooser-view-list");
+    view.read_with(cx, |chooser, _| assert!(chooser.view == crate::pane::ViewMode::List, "the switch goes back to List"));
+}

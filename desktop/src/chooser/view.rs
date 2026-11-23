@@ -15,9 +15,11 @@ use gpui::{
 use super::request::{self, Kind, Request, Response, Selection, Verdict};
 use crate::api::{Api, FileInfo};
 use crate::components::{
-    Button, ButtonSize, ButtonVariant, ContextMenu, EntryIcon, FileListHeader, FileRow, Input, InputEvent, MenuItem, NavItem, Select, SidebarSection, TextField, Toggle,
+    Button, ButtonSize, ButtonVariant, ContextMenu, EntryIcon, FileListHeader, FileRow, FileTile, GridMetrics, Input, InputEvent, MenuItem, NavItem, Select, SidebarSection,
+    TextField, Toggle, ViewSwitch,
 };
 use crate::format::{display_name, file_date, file_size, type_description, Kind as FileKind};
+use crate::pane::ViewMode;
 use crate::settings_state::{DesktopSettings, SavedConnection};
 use crate::sort::{sort_files, Sort};
 use crate::theme::*;
@@ -85,6 +87,9 @@ struct Place {
 /// The inset of the toolbar and footer, so their right edges line up.
 const EDGE: f32 = 12.;
 
+/// The sidebar's width and its right border, which the grid's columns leave out.
+const SIDEBAR: f32 = 201.;
+
 /// What picking an option of a dropdown does.
 type Pick = Rc<dyn Fn(&mut Chooser, usize, &mut Context<Chooser>)>;
 
@@ -115,6 +120,9 @@ pub struct Chooser {
     /// The window's folder columns; sized here for this dialog only.
     columns: crate::components::ColumnLayout,
     show_hidden: bool,
+    /// Starts as the main window's default view; kept for this dialog only.
+    view: ViewMode,
+    grid_zoom: u8,
     filter: Option<usize>,
     choices: Vec<(String, String)>,
     open_menu: Option<Menu>,
@@ -131,6 +139,7 @@ pub struct Chooser {
     search_field: Entity<TextField>,
     focus: FocusHandle,
     scroll: UniformListScrollHandle,
+    grid_scroll: UniformListScrollHandle,
     pending_focus: Option<Entity<TextField>>,
     /// The size asked for once the window is shown.
     sized: bool,
@@ -271,6 +280,8 @@ impl Chooser {
             sort: Sort { field: preferences.default_sort, dir: preferences.default_sort_direction },
             columns: preferences.columns(crate::components::Table::Files),
             show_hidden: preferences.show_hidden_files,
+            view: preferences.default_view,
+            grid_zoom: preferences.grid_zoom,
             choices,
             open_menu: None,
             replace: None,
@@ -284,6 +295,7 @@ impl Chooser {
             search_field,
             focus: cx.focus_handle(),
             scroll: UniformListScrollHandle::new(),
+            grid_scroll: UniformListScrollHandle::new(),
             pending_focus,
             sized: false,
             _subscriptions: subscriptions,
@@ -659,7 +671,7 @@ impl Chooser {
         self.replace = None;
     }
 
-    fn move_active(&mut self, step: isize, extend: bool, cx: &mut Context<Self>) {
+    fn move_active(&mut self, step: isize, extend: bool, window: &Window, cx: &mut Context<Self>) {
         if self.visible.is_empty() {
             return;
         }
@@ -681,7 +693,27 @@ impl Chooser {
                 self.set_name(&name, cx);
             }
         }
-        self.scroll.scroll_to_item(row, gpui::ScrollStrategy::Top);
+        self.reveal(row, window);
+        cx.notify();
+    }
+
+    fn grid_columns(&self, window: &Window) -> usize {
+        GridMetrics::new(self.grid_zoom).columns(f32::from(window.viewport_size().width) - SIDEBAR)
+    }
+
+    fn reveal(&self, row: usize, window: &Window) {
+        match self.view {
+            ViewMode::List => self.scroll.scroll_to_item(row, gpui::ScrollStrategy::Top),
+            ViewMode::Grid => self.grid_scroll.scroll_to_item(row / self.grid_columns(window), gpui::ScrollStrategy::Top),
+        }
+    }
+
+    fn set_view(&mut self, view: ViewMode, window: &mut Window, cx: &mut Context<Self>) {
+        self.view = view;
+        if let Some(row) = self.active {
+            self.reveal(row, window);
+        }
+        self.focus.focus(window);
         cx.notify();
     }
 
@@ -707,10 +739,17 @@ impl Chooser {
             }
             _ if !self.focus.is_focused(window) => return,
             "up" if modifiers.alt => self.go_up(cx),
-            "up" => self.move_active(-1, modifiers.shift, cx),
-            "down" => self.move_active(1, modifiers.shift, cx),
-            "home" => self.move_active(-(self.visible.len() as isize), modifiers.shift, cx),
-            "end" => self.move_active(self.visible.len() as isize, modifiers.shift, cx),
+            "up" | "down" => {
+                let rows = match self.view {
+                    ViewMode::List => 1,
+                    ViewMode::Grid => self.grid_columns(window) as isize,
+                };
+                self.move_active(if keystroke.key == "up" { -rows } else { rows }, modifiers.shift, window, cx);
+            }
+            "left" if self.view == ViewMode::Grid => self.move_active(-1, modifiers.shift, window, cx),
+            "right" if self.view == ViewMode::Grid => self.move_active(1, modifiers.shift, window, cx),
+            "home" => self.move_active(-(self.visible.len() as isize), modifiers.shift, window, cx),
+            "end" => self.move_active(self.visible.len() as isize, modifiers.shift, window, cx),
             "a" if control && self.request.multiple => {
                 self.selected = self.visible.iter().copied().collect();
             }
@@ -737,6 +776,18 @@ impl Chooser {
             None => self.choices.push((id.to_string(), value.to_string())),
         }
     }
+}
+
+fn placeholder(glyph: &'static str, text: String) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(px(8.))
+        .py(px(48.))
+        .px(px(24.))
+        .child(icon(glyph, 32., alpha(TEXT_MUTED, 0.5)))
+        .child(div().text_13().text_color(c(TEXT_MUTED)).child(text))
 }
 
 /// Home, the user folders, then the drives, from the same mounts the main window lists.
@@ -889,9 +940,16 @@ impl Chooser {
                     .child(Input::new("").focused(location_focused).editor(self.location_field.clone())),
             )
             .child(div().id("chooser-search").w(px(200.)).flex_none().child(Input::new("").focused(search_focused).editor(self.search_field.clone())))
+            .child(ViewSwitch::new("chooser-view", self.view, {
+                let view = cx.entity().downgrade();
+                move |mode, window, cx| {
+                    let _ = view.update(cx, |this, cx| this.set_view(mode, window, cx));
+                }
+            }))
     }
 
-    fn render_row(&self, row: usize, cx: &mut Context<Self>) -> Option<FileRow> {
+    /// What a row and a tile share: the item at `row`, its kind and icon tint.
+    fn entry(&self, row: usize) -> Option<(usize, &FileInfo, FileKind, Option<u32>)> {
         let &index = self.visible.get(row)?;
         let item = &self.items[index];
         let kind = FileKind::of(&item.name, item.is_dir);
@@ -900,15 +958,32 @@ impl Chooser {
             (IconStyle::Tinted, kind) => kind.tint(),
             _ => None,
         };
-        let selection = crate::components::Selection {
-            background: c(crate::workspace::appearance::mix(self.accent, 0x15171c, 0.30)),
-            accent: c(self.accent),
-        };
-        let name = display_name(&item.name, item.is_dir, true);
-        // In a save dialog files are only for taking a name from.
-        let dimmed = self.request.kind == Kind::Save && !item.is_dir;
+        Some((index, item, kind, tint))
+    }
+
+    fn selection(&self) -> crate::components::Selection {
+        crate::components::Selection { background: c(crate::workspace::appearance::mix(self.accent, 0x15171c, 0.30)), accent: c(self.accent) }
+    }
+
+    /// In a save dialog files are only for taking a name from.
+    fn dimmed(&self, item: &FileInfo) -> bool {
+        self.request.kind == Kind::Save && !item.is_dir
+    }
+
+    /// Names a row or tile `{prefix}-{row}` for tests and routes its clicks to `click`.
+    fn clickable(prefix: &'static str, row: usize, cx: &mut Context<Self>) -> impl FnOnce(gpui::Stateful<gpui::Div>) -> gpui::Stateful<gpui::Div> + 'static {
+        let view = cx.entity().downgrade();
+        move |element| {
+            element.debug_selector(move || format!("{prefix}-{row}")).on_click(move |event, window, cx| {
+                let _ = view.update(cx, |this, cx| this.click(row, event, window, cx));
+            })
+        }
+    }
+
+    fn render_row(&self, row: usize, cx: &mut Context<Self>) -> Option<FileRow> {
+        let (index, item, kind, tint) = self.entry(row)?;
         Some(
-            FileRow::new(("chooser-row", row), name, item.is_dir, selection)
+            FileRow::new(("chooser-row", row), display_name(&item.name, item.is_dir, true), item.is_dir, self.selection())
                 .icon(kind.glyph())
                 .tint(tint, None)
                 .image(EntryIcon::Glyph)
@@ -918,25 +993,80 @@ impl Chooser {
                 .value(crate::components::Column::Modified, file_date(item.mod_time))
                 .selected(self.selected.contains(&index))
                 .active(self.active == Some(row))
-                .cut(dimmed)
-                .decorate({
-                    let view = cx.entity().downgrade();
-                    move |element| {
-                        element.debug_selector(move || format!("chooser-row-{row}")).on_click(move |event, window, cx| {
-                            let _ = view.update(cx, |this, cx| this.click(row, event, window, cx));
-                        })
-                    }
-                }),
+                .cut(self.dimmed(item))
+                .decorate(Self::clickable("chooser-row", row, cx)),
         )
     }
 
-    fn render_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let message = match &self.listing {
+    fn render_tile(&self, row: usize, cx: &mut Context<Self>) -> Option<FileTile> {
+        let (index, item, kind, tint) = self.entry(row)?;
+        Some(
+            FileTile::new(("chooser-tile", row), display_name(&item.name, item.is_dir, true), item.is_dir, self.selection())
+                .icon(kind.glyph())
+                .tint(tint, None)
+                .image(EntryIcon::Glyph)
+                .detail(if item.is_dir { SharedString::default() } else { file_size(item.size).into() })
+                .selected(self.selected.contains(&index))
+                .active(self.active == Some(row))
+                .cut(self.dimmed(item))
+                .zoom(self.grid_zoom)
+                .decorate(Self::clickable("chooser-tile", row, cx)),
+        )
+    }
+
+    /// Why nothing is listed, if nothing is.
+    fn message(&self) -> Option<(&'static str, String)> {
+        match &self.listing {
             Listing::Loading => Some(("folder", "Loading…".to_string())),
             Listing::Failed(error) => Some(("alert-triangle", error.clone())),
             Listing::Ready if self.visible.is_empty() => Some(("folder-open", if self.items.is_empty() { "This folder is empty".into() } else { "Nothing here matches".into() })),
             Listing::Ready => None,
-        };
+        }
+    }
+
+    fn render_items(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+        match self.view {
+            ViewMode::List => self.render_list(cx).into_any_element(),
+            ViewMode::Grid => self.render_grid(window, cx).into_any_element(),
+        }
+    }
+
+    fn render_grid(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let metrics = GridMetrics::new(self.grid_zoom);
+        let columns = self.grid_columns(window);
+        let rows = self.visible.len().div_ceil(columns);
+        div().flex_1().min_h_0().map(|grid| match self.message() {
+            Some((glyph, text)) => grid.child(placeholder(glyph, text)),
+            None => grid.child(
+                uniform_list(
+                    "chooser-grid",
+                    rows,
+                    cx.processor(move |this, range: Range<usize>, _window, cx| {
+                        let count = this.visible.len();
+                        range
+                            .map(|row| {
+                                let start = row * columns;
+                                // uniform_list needs equal rows, so the top padding is in every row.
+                                div()
+                                    .h(px(metrics.row_height))
+                                    .px(px(metrics.padding))
+                                    .pt(px(metrics.padding))
+                                    .flex()
+                                    .items_start()
+                                    .gap(px(metrics.gap))
+                                    .children((start..(start + columns).min(count)).filter_map(|index| this.render_tile(index, cx)))
+                            })
+                            .collect::<Vec<_>>()
+                    }),
+                )
+                .track_scroll(self.grid_scroll.clone())
+                .size_full(),
+            ),
+        })
+    }
+
+    fn render_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let message = self.message();
         let count = self.visible.len();
         let table = crate::components::Table::Files;
         let header = FileListHeader::new(table, self.columns.clone(), 0)
@@ -962,19 +1092,7 @@ impl Chooser {
             });
         let list = crate::components::table_frame(&self.columns, table)
             .child(header)
-            .when_some(message, |list, (glyph, text)| {
-                list.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .gap(px(8.))
-                        .py(px(48.))
-                        .px(px(24.))
-                        .child(icon(glyph, 32., alpha(TEXT_MUTED, 0.5)))
-                        .child(div().text_13().text_color(c(TEXT_MUTED)).child(text)),
-                )
-            })
+            .when_some(message, |list, (glyph, text)| list.child(placeholder(glyph, text)))
             .when(count > 0, |list| {
                 list.child(
                     uniform_list("chooser-list", count, cx.processor(|this, range: Range<usize>, _window, cx| range.filter_map(|row| this.render_row(row, cx)).collect::<Vec<_>>()))
@@ -1145,8 +1263,8 @@ impl Chooser {
             .bg(c(SURFACE_SECONDARY))
             // The sidebar shares the footer's colour; a shadow up over it parts them.
             .shadow(vec![gpui::BoxShadow {
-                color: gpui::hsla(0., 0., 0., 0.6),
-                offset: gpui::point(px(0.), px(-3.)),
+                color: gpui::hsla(0., 0., 0., 0.45),
+                offset: gpui::point(px(0.), px(-2.)),
                 blur_radius: px(12.),
                 spread_radius: px(0.),
             }])
@@ -1251,7 +1369,7 @@ impl Render for Chooser {
                     .flex_1()
                     .min_h_0()
                     .child(self.render_sidebar(cx))
-                    .child(div().flex().flex_col().flex_1().min_w_0().child(self.render_toolbar(window, cx)).child(self.render_list(cx))),
+                    .child(div().flex().flex_col().flex_1().min_w_0().child(self.render_toolbar(window, cx)).child(self.render_items(window, cx))),
             )
             .child(self.render_footer(window, cx))
     }
