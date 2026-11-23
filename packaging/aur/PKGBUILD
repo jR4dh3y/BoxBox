@@ -27,7 +27,9 @@ package() {
   cd "boxbox-desktop-v$pkgver-linux-amd64"
   install -Dm755 boxbox-files "$pkgdir/usr/bin/boxbox-files"
   install -dm755 "$pkgdir/usr/share/applications"
-  sed 's|@EXEC@|/usr/bin/boxbox-files|' io.boxbox.files.desktop > "$pkgdir/usr/share/applications/io.boxbox.files.desktop"
-  install -Dm644 io.boxbox.files.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/io.boxbox.files.svg"
+  sed 's|@EXEC@|/usr/bin/boxbox-files|' io.boxbox.desktop > "$pkgdir/usr/share/applications/io.boxbox.desktop"
+  for size in 16 24 32 48 64 128 256 512; do
+    install -Dm644 "icons/$size.png" "$pkgdir/usr/share/icons/hicolor/${size}x$size/apps/io.boxbox.desktop.png"
+  done
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

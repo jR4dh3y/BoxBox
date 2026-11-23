@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
 Version=1.5
-Name=BoxBox Files
+Name=BoxBox
 GenericName=File Manager
 Comment=Browse folders and manage files
 Exec=@EXEC@ %U
-Icon=io.boxbox.files
+Icon=io.boxbox.desktop
 Terminal=false
 Categories=Utility;FileManager;
 Keywords=files;folders;browser;manager;

@@ -78,7 +78,7 @@ impl Workspace {
                             .flex_wrap()
                             .items_center()
                             .gap(px(8.))
-                            .child(div().text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(c(TEXT_PRIMARY)).child("BoxBox Files"))
+                            .child(div().text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(c(TEXT_PRIMARY)).child("BoxBox"))
                             .child(badge),
                     )
                     .child(div().text_13().text_color(c(TEXT_SECONDARY)).child("A native file manager for Linux")),

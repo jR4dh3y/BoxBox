@@ -39,28 +39,17 @@ try {
   await cp(binary, join(appdir, "usr/bin/boxbox-files"));
   await symlink("usr/bin/boxbox-files", join(appdir, "AppRun"));
   const entry = await readFile(
-    join(root, "desktop/packaging/io.boxbox.files.desktop"),
+    join(root, "desktop/packaging/io.boxbox.desktop"),
     "utf8",
   );
   await writeFile(
-    join(appdir, "io.boxbox.files.desktop"),
+    join(appdir, "io.boxbox.desktop"),
     entry.replace("@EXEC@", "boxbox-files"),
   );
-  const icon = Bun.spawn(
-    [
-      "rsvg-convert",
-      "--width",
-      "256",
-      "--height",
-      "256",
-      "--output",
-      join(appdir, "io.boxbox.files.png"),
-      join(root, "frontend/static/logo-boxbox-3d.svg"),
-    ],
-    { stdout: "inherit", stderr: "inherit" },
+  await cp(
+    join(root, "desktop/packaging/icons/256.png"),
+    join(appdir, "io.boxbox.desktop.png"),
   );
-  if ((await icon.exited) !== 0)
-    throw new Error("Could not render the AppImage icon");
   const file = `boxbox-desktop-v${version}-${arch}.AppImage`;
   const child = Bun.spawn(
     [

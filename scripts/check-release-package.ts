@@ -163,7 +163,7 @@ try {
   await run(["sh", install], env);
   const binary = join(home, "bin/boxbox-files");
   assert.ok(((await stat(binary)).mode & 0o111) !== 0, "binary is executable");
-  const entry = join(home, "data/applications/io.boxbox.files.desktop");
+  const entry = join(home, "data/applications/io.boxbox.desktop");
   const exec = (await readFile(entry, "utf8")).match(/^Exec=(.*)$/m)?.[1];
   assert.ok(exec, "the entry has an Exec line");
   const argv = execArgv(exec);
@@ -174,7 +174,7 @@ try {
   await run([binary, "--profile-summary", trace], env);
   assert.ok(
     await Bun.file(
-      join(home, "data/icons/hicolor/scalable/apps/io.boxbox.files.svg"),
+      join(home, "data/icons/hicolor/256x256/apps/io.boxbox.desktop.png"),
     ).exists(),
   );
   assert.equal(

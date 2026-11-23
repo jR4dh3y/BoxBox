@@ -69,16 +69,14 @@ try {
     join(root, "desktop/target/release/boxbox-gpui"),
     join(desktopRoot, "boxbox-files"),
   );
-  for (const file of ["install.sh", "io.boxbox.files.desktop"])
-    await cp(join(root, "desktop/packaging", file), join(desktopRoot, file));
-  await cp(
-    join(root, "frontend/static/logo-boxbox-3d.svg"),
-    join(desktopRoot, "io.boxbox.files.svg"),
-  );
+  for (const file of ["install.sh", "io.boxbox.desktop", "icons"])
+    await cp(join(root, "desktop/packaging", file), join(desktopRoot, file), {
+      recursive: true,
+    });
   await cp(join(root, "LICENSE"), join(desktopRoot, "LICENSE"));
   await writeFile(
     join(desktopRoot, "README.txt"),
-    `BoxBox Files v${version} — Linux x86_64\nSource: ${sha}\n\nExtract it anywhere, then run ./install.sh (no sudo). It installs to ~/.local.\nThe host needs Vulkan, xkbcommon, Wayland or X11, fontconfig and freetype.\nSee https://boxbox.radhey.dev/docs/desktop/ for dependencies, servers, updates and removal.\nThe installer leaves your default file manager unchanged unless you pass --set-default.\n`,
+    `BoxBox v${version} — Linux x86_64\nSource: ${sha}\n\nExtract it anywhere, then run ./install.sh (no sudo). It installs to ~/.local.\nThe host needs Vulkan, xkbcommon, Wayland or X11, fontconfig and freetype.\nSee https://boxbox.radhey.dev/docs/desktop/ for dependencies, servers, updates and removal.\nThe installer leaves your default file manager unchanged unless you pass --set-default.\n`,
   );
   await archive(desktopName);
   // Stages the current frontend into the server's go:embed directory.
