@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { foldCrumbs, placeMenuItems } from './placeMenu.js';
+import { foldCrumbs } from './foldCrumbs.js';
+import { placeMenuItems } from './placeMenu.js';
 
 describe('place menu', () => {
 	test('offers a tab, paste and the path, and what the place kind adds', () => {

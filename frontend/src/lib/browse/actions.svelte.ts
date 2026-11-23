@@ -11,18 +11,8 @@ import {
 	publishBrowseClipboardInOrder
 } from './clipboardPublication';
 import { SvelteSet } from 'svelte/reactivity';
-import {
-	createDirectory,
-	createFile,
-	deleteFile,
-	getDirectoryArchiveUrl,
-	getDownloadUrl,
-	rename,
-	type FileInfo
-} from '#lib/api/files.js';
-import { createDeleteJob } from '#lib/api/jobs.js';
+import { getDirectoryArchiveUrl, getDownloadUrl, type FileInfo } from '#lib/api/files.js';
 import { clipboardStore } from '#lib/stores/clipboard.svelte.js';
-import { jobsStore } from '#lib/stores/jobs.svelte.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { toastStore } from '#lib/stores/toast.svelte.js';
 import { canPreview, getFileTypeDescription } from '#lib/utils/fileTypes.js';
@@ -125,11 +115,11 @@ export function useBrowseActions(
 			return;
 		}
 
+		const { type } = createDialog;
+		const folder = location.path;
 		try {
-			const created =
-				createDialog.type === 'file'
-					? await createFile(location.path, name)
-					: await createDirectory(location.path, name);
+			const { createItem } = await import('./mutations.js');
+			const created = await createItem(type, folder, name);
 			closeCreate();
 			// The new item shows selected in the folder, so success needs no notice.
 			selection.set(new SvelteSet([created.path]));
@@ -178,11 +168,8 @@ export function useBrowseActions(
 		const newPath = parentPath ? `${parentPath}/${newName}` : newName;
 
 		try {
-			await rename(oldPath, newPath);
-			if (isNativePath(oldPath)) {
-				const { desktopUndo } = await import('./undo.svelte');
-				desktopUndo.rememberRename(oldPath, newPath);
-			}
+			const { renameItem } = await import('./mutations.js');
+			await renameItem(oldPath, newPath);
 			data.refetchDirectory();
 		} catch (error) {
 			console.error('Rename failed:', error);
@@ -195,19 +182,8 @@ export function useBrowseActions(
 		if (items.length === 0) return;
 
 		try {
-			const trashed: string[] = [];
-			for (const item of items) {
-				if (isNativePath(item.path)) {
-					const { trashDesktopFile } = await import('#lib/api/desktopTrash.js');
-					trashed.push((await trashDesktopFile(item.path)).id);
-					const { desktopUndo } = await import('./undo.svelte');
-					desktopUndo.rememberTrash([...trashed]);
-				} else if (item.isDir) {
-					jobsStore.upsertJob(await createDeleteJob(item.path));
-				} else {
-					await deleteFile(item.path);
-				}
-			}
+			const { deleteItems: deleteSelection } = await import('./mutations.js');
+			await deleteSelection(items);
 			selection.clear();
 			data.refetchDirectory();
 		} catch (error) {

@@ -163,6 +163,31 @@
 		return () => onFolderHover(null);
 	});
 
+	const listingProps = $derived({
+		viewKey: location.viewKey,
+		dropTarget: drop,
+		items: data.displayItems,
+		emptyMessage: data.emptyListMessage,
+		selectedPaths: selection.paths,
+		isLoading: data.isFileListLoading,
+		cutPaths: actions.cutPaths,
+		favoritePaths: actions.favoritePaths,
+		canPaste: actions.canPaste,
+		canCreate: data.canCreate,
+		readOnly: data.isReadOnly,
+		showFileExtensions: settings.showFileExtensions,
+		previewOnSingleClick: settings.previewOnSingleClick,
+		selectionCheckboxes: settings.selectionCheckboxes,
+		fileIconTints: settings.fileIconTints,
+		folderAppearance: appearance,
+		hover: settings.hoverDetails && !hover.failed ? hover.files : undefined,
+		renameEditor,
+		onItemClick: actions.openFile,
+		onFolderHover,
+		onSelectionChange: selection.set,
+		onContextMenuAction: actions.handleContextMenuAction
+	});
+
 	let shortcutsOpen = $state(false);
 	// Presses of Refresh still loading; the icon turns while any is.
 	let refreshes = $state(0);
@@ -503,62 +528,20 @@
 				{:else if location.viewMode === 'grid'}
 					{#await import('#lib/components/FileGrid.svelte') then { default: FileGrid }}
 						<FileGrid
-							viewKey={location.viewKey}
-							dropTarget={drop}
-							items={data.displayItems}
-							emptyMessage={data.emptyListMessage}
-							selectedPaths={selection.paths}
-							isLoading={data.isFileListLoading}
+							{...listingProps}
 							zoom={settings.gridZoom}
-							cutPaths={actions.cutPaths}
-							favoritePaths={actions.favoritePaths}
-							canPaste={actions.canPaste}
-							canCreate={data.canCreate}
-							readOnly={data.isReadOnly}
-							showFileExtensions={settings.showFileExtensions}
-							previewOnSingleClick={settings.previewOnSingleClick}
-							selectionCheckboxes={settings.selectionCheckboxes}
-							fileIconTints={settings.fileIconTints}
-							folderAppearance={appearance}
-							hover={settings.hoverDetails && !hover.failed ? hover.files : undefined}
 							folderPreviews={settings.folderPreviews}
-							{renameEditor}
-							onItemClick={actions.openFile}
-							{onFolderHover}
-							onSelectionChange={selection.set}
-							onContextMenuAction={actions.handleContextMenuAction}
 						/>
 					{:catch}
 						<LoadError label="grid view" inline />
 					{/await}
 				{:else}
 					<FileList
-						viewKey={location.viewKey}
-						dropTarget={drop}
-						items={data.displayItems}
+						{...listingProps}
 						sortBy={location.sortBy}
 						sortDir={location.sortDir}
-						emptyMessage={data.emptyListMessage}
-						selectedPaths={selection.paths}
-						isLoading={data.isFileListLoading}
 						zoom={settings.listZoom}
-						cutPaths={actions.cutPaths}
-						favoritePaths={actions.favoritePaths}
-						canPaste={actions.canPaste}
-						canCreate={data.canCreate}
-						readOnly={data.isReadOnly}
-						showFileExtensions={settings.showFileExtensions}
-						previewOnSingleClick={settings.previewOnSingleClick}
-						selectionCheckboxes={settings.selectionCheckboxes}
-						fileIconTints={settings.fileIconTints}
-						folderAppearance={appearance}
-						hover={settings.hoverDetails && !hover.failed ? hover.files : undefined}
-						{renameEditor}
-						onItemClick={actions.openFile}
-						{onFolderHover}
 						onSortChange={location.setSort}
-						onSelectionChange={selection.set}
-						onContextMenuAction={actions.handleContextMenuAction}
 					/>
 				{/if}
 			</div>
@@ -649,55 +632,31 @@
 	{/await}
 {/if}
 
-{#if dropQuestion}
-	{@const question = dropQuestion}
-	{#await import('#lib/components/ui/ContextMenu.svelte') then { default: ContextMenu }}
-		<ContextMenu
-			items={[
-				...(question.canMove ? [{ id: 'move', label: 'Move Here' }] : []),
-				{ id: 'copy', label: 'Copy Here' },
-				{ id: 'separator', label: '', separator: true },
-				{ id: 'cancel', label: 'Cancel' }
-			]}
-			x={question.x}
-			y={question.y}
-			onSelect={(id) => {
-				if (id === 'move' || id === 'copy')
-					void actions.paste.transfer(id, question.items, question.destination);
-			}}
-			onClose={() => (dropQuestion = null)}
-		/>
-	{/await}
-{/if}
-
-{#if placeMenu}
-	{@const menu = placeMenu}
-	{#await Promise.all( [import('#lib/components/ui/ContextMenu.svelte'), import('#lib/browse/placeMenu.js')] ) then [{ default: ContextMenu }, { placeMenuItems, isPlaceAction }]}
-		<ContextMenu
-			items={placeMenuItems(menu.place, actions.canPaste)}
+{#if dropQuestion || placeMenu || historyMenu}
+	{#await import('./BrowseMenus.svelte') then { default: BrowseMenus }}
+		<BrowseMenus
+			{dropQuestion}
+			{placeMenu}
+			{historyMenu}
 			aboveSidebar={sidebarOpen}
-			x={menu.x}
-			y={menu.y}
-			onSelect={(id) => {
-				if (isPlaceAction(id)) void runPlaceAction(menu.place, id);
-			}}
-			onClose={() => (placeMenu = null)}
+			canPaste={actions.canPaste}
+			{placeLabel}
+			onTransfer={(action, items, destination) =>
+				void actions.paste.transfer(action, items, destination)}
+			onPlaceAction={(place, action) => void runPlaceAction(place, action)}
+			onTravel={location.travelTo}
+			onCloseDrop={() => (dropQuestion = null)}
+			onClosePlace={() => (placeMenu = null)}
+			onCloseHistory={() => (historyMenu = null)}
 		/>
-	{/await}
-{/if}
-
-{#if historyMenu}
-	{@const menu = historyMenu}
-	{#await import('#lib/components/ui/ContextMenu.svelte') then { default: ContextMenu }}
-		<ContextMenu
-			items={menu.places.map((place) => ({
-				id: String(place.index),
-				label: placeLabel(place.path)
-			}))}
-			x={menu.x}
-			y={menu.y}
-			onSelect={(id) => location.travelTo(Number(id))}
-			onClose={() => (historyMenu = null)}
+	{:catch}
+		<LoadError
+			label="menu"
+			onClose={() => {
+				dropQuestion = null;
+				placeMenu = null;
+				historyMenu = null;
+			}}
 		/>
 	{/await}
 {/if}

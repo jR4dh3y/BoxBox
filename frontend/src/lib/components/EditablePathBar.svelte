@@ -6,7 +6,8 @@
 	import LoadError from '#lib/components/LoadError.svelte';
 	import { rootLabel } from '#lib/browse/rootLabel.js';
 	import type { FileDropTarget } from '#lib/browse/fileDrag.js';
-	import { foldCrumbs, type Place } from '#lib/browse/placeMenu.js';
+	import { foldCrumbs } from '#lib/browse/foldCrumbs.js';
+	import type { Place } from '#lib/browse/placeMenu.js';
 
 	let {
 		pathSegments = [],
