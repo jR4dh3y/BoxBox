@@ -81,6 +81,10 @@ type FS interface {
 	// Chmod changes the mode bits of the named file or directory.
 	Chmod(name string, mode os.FileMode) error
 
+	// ChmodFile changes the mode bits of an open file. It acts on the open
+	// file, so a path replaced by a symlink after the open is not followed.
+	ChmodFile(file afero.File, mode os.FileMode) error
+
 	// Exists checks if a file or directory exists at the given path.
 	Exists(path string) (bool, error)
 
@@ -280,6 +284,17 @@ func (a *AferoFS) Symlink(oldname, newname string) error {
 		return linker.SymlinkIfPossible(oldname, newname)
 	}
 	return afero.ErrNoSymlink
+}
+
+func (a *AferoFS) ChmodFile(file afero.File, mode os.FileMode) error {
+	if osFile, ok := file.(*os.File); ok {
+		return osFile.Chmod(mode)
+	}
+	// MemMapFs has no symlinks, so its path names the open file.
+	if _, ok := a.fs.(*afero.MemMapFs); ok {
+		return a.fs.Chmod(file.Name(), mode)
+	}
+	return errors.ErrUnsupported
 }
 
 // Stat returns a FileInfo describing the named file.

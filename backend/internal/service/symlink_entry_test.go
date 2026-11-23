@@ -246,6 +246,13 @@ type crossDeviceFS struct{ filesystem.FS }
 func (crossDeviceFS) RenameNoReplace(string, string) error { return syscall.EXDEV }
 
 func TestFolderCopyAndCrossDeviceMoveKeepSymlinksAndFileModes(t *testing.T) {
+	requireFolderCopyKeepsLinksAndModes(t, filesystem.NewOsFS())
+}
+
+// requireFolderCopyKeepsLinksAndModes runs a folder copy and a move that falls
+// back to copying, both through fsys.
+func requireFolderCopyKeepsLinksAndModes(t *testing.T, fsys filesystem.FS) {
+	t.Helper()
 	modes := map[string]os.FileMode{"run.sh": 0o755, "shared.txt": 0o664, "private.txt": 0o600}
 	for _, op := range []string{"copy", "move"} {
 		t.Run(op, func(t *testing.T) {
@@ -266,7 +273,7 @@ func TestFolderCopyAndCrossDeviceMoveKeepSymlinksAndFileModes(t *testing.T) {
 			if err := os.Symlink("run.sh", filepath.Join(source, "link")); err != nil {
 				t.Fatal(err)
 			}
-			f := crossDeviceFS{FS: filesystem.NewOsFS()}
+			f := crossDeviceFS{FS: fsys}
 			s := &jobService{fs: f, hub: websocket.NewHub(), walker: NewWalker(f)}
 			job := &model.Job{SourcePath: source, DestPath: destination}
 			var err error
