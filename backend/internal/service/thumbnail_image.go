@@ -11,8 +11,6 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
-	"path/filepath"
-	"strings"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
 	"golang.org/x/image/draw"
@@ -24,15 +22,6 @@ import (
 const maxThumbnailRenderBytes = 256 << 20
 
 var thumbnailMemory = semaphore.NewWeighted(maxThumbnailRenderBytes)
-
-// rendersImageThumbnail reports whether a file name has an extension the pure-Go renderer decodes.
-func rendersImageThumbnail(name string) bool {
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
-		return true
-	}
-	return false
-}
 
 func renderImageThumbnail(ctx context.Context, file File, info *model.FileInfo, width, height int) ([]byte, error) {
 	if info.Size < 0 || info.Size > maxThumbnailSourceBytes {

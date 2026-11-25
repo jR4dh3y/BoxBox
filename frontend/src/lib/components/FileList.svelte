@@ -323,7 +323,7 @@
 	class="file-surface relative h-full w-full overflow-auto bg-surface-primary [overflow-anchor:none]"
 	use:attachRowWindow
 	use:observeColumns
-	use:attachBand
+	use:attachBand={viewKey}
 	onscroll={handleViewportScroll}
 	ondragovercapture={(event) => {
 		// Near the top or bottom, a drag scrolls the view; the drop is the pane's to take.

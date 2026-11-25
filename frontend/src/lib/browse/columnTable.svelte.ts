@@ -21,9 +21,15 @@ function loadEdit(): Promise<ColumnEdit> {
 }
 
 /** Runs `use` with the column editing code, or says why it could not download. */
-function withEdit(use: (edit: ColumnEdit) => void): void {
-	loadEdit().then(use, () =>
-		toastStore.error('Could not load column editing. Check your connection, then reload.')
+function withEdit(use: (edit: ColumnEdit) => void, signal = settingsStore.sessionSignal): void {
+	loadEdit().then(
+		(edit) => {
+			if (!signal.aborted) use(edit);
+		},
+		() => {
+			if (!signal.aborted)
+				toastStore.error('Could not load column editing. Check your connection, then reload.');
+		}
 	);
 }
 
@@ -66,7 +72,8 @@ export class ColumnTable {
 
 	/** Drags `column`'s right border; `table` is the element whose left edge is x = 0. */
 	startResize(event: PointerEvent, column: Column, table: HTMLElement): void {
-		if (event.button !== 0) return;
+		const signal = settingsStore.sessionSignal;
+		if (event.button !== 0 || signal.aborted) return;
 		event.preventDefault();
 		event.stopPropagation();
 		const grip = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
@@ -86,16 +93,27 @@ export class ColumnTable {
 			if (done) this.save(done);
 		};
 		const move = (moved: PointerEvent) => {
+			if (moved.pointerId !== event.pointerId) return;
 			x = moved.clientX - table.getBoundingClientRect().left;
 			apply();
 		};
-		const end = () => {
+		const detach = () => {
 			window.removeEventListener('pointermove', move);
 			window.removeEventListener('pointerup', end);
 			window.removeEventListener('pointercancel', end);
+			signal.removeEventListener('abort', cancel);
+		};
+		const cancel = () => {
+			detach();
+			this.dragging = null;
+		};
+		const end = (up: PointerEvent) => {
+			if (up.pointerId !== event.pointerId) return;
+			detach();
 			ended = true;
 			if (edit) finish();
 		};
+		signal.addEventListener('abort', cancel, { once: true });
 		window.addEventListener('pointermove', move);
 		window.addEventListener('pointerup', end);
 		window.addEventListener('pointercancel', end);
@@ -103,7 +121,7 @@ export class ColumnTable {
 			edit = loaded;
 			apply();
 			if (ended) finish();
-		});
+		}, signal);
 	}
 
 	resetWidth(column: Column): void {

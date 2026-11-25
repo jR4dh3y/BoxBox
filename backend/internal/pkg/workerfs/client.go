@@ -234,6 +234,14 @@ func (c *Client) ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, erro
 	return entries(reply.Infos), reply.Truncated, nil
 }
 
+func (c *Client) ReadDirPreview(name string, includeHidden bool) ([]fs.FileInfo, error) {
+	reply, _, err := c.call(request{Op: opReadDirPreview, Path: rawString(name), IncludeHidden: includeHidden})
+	if err != nil {
+		return nil, err
+	}
+	return fileInfos(reply.Infos), nil
+}
+
 func (c *Client) ReadDirFileInfoLimit(name string, limit int) ([]fs.FileInfo, bool, error) {
 	reply, _, err := c.call(request{Op: opReadDirFileInfoLimit, Path: rawString(name), Limit: limit})
 	if err != nil {
@@ -242,11 +250,7 @@ func (c *Client) ReadDirFileInfoLimit(name string, limit int) ([]fs.FileInfo, bo
 	if reply.Truncated {
 		return nil, true, nil
 	}
-	infos := make([]fs.FileInfo, len(reply.Infos))
-	for i, wire := range reply.Infos {
-		infos[i] = fileInfo{wire}
-	}
-	return infos, false, nil
+	return fileInfos(reply.Infos), false, nil
 }
 
 func (c *Client) EvalSymlinks(path string) (string, error) {
@@ -355,6 +359,14 @@ func (c *Client) WriteFile(name string, data []byte, perm os.FileMode) error {
 func (c *Client) ReadFile(name string) ([]byte, error) {
 	reply, _, err := c.call(request{Op: opReadFile, Path: rawString(name)})
 	return reply.Data, err
+}
+
+func fileInfos(infos []wireInfo) []fs.FileInfo {
+	result := make([]fs.FileInfo, len(infos))
+	for i, info := range infos {
+		result[i] = fileInfo{info}
+	}
+	return result
 }
 
 func entries(infos []wireInfo) []fs.DirEntry {

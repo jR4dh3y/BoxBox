@@ -16,12 +16,12 @@ function glob(pattern: readonly string[], name: readonly string[]): boolean {
 	// Where the last `*` was, and how much of the name it has swallowed so far.
 	let star: { p: number; n: number } | null = null;
 	while (n < name.length) {
-		if (p < pattern.length && (pattern[p] === '?' || pattern[p] === name[n])) {
-			p++;
-			n++;
-		} else if (p < pattern.length && pattern[p] === '*') {
+		if (pattern[p] === '*') {
 			star = { p, n };
 			p++;
+		} else if (p < pattern.length && (pattern[p] === '?' || pattern[p] === name[n])) {
+			p++;
+			n++;
 		} else if (star) {
 			star = { p: star.p, n: star.n + 1 };
 			p = star.p + 1;

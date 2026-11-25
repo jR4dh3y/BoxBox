@@ -4,10 +4,12 @@ package workerfs
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,6 +32,11 @@ type worker struct {
 // worker process would.
 func startWorker(t *testing.T) (*Client, *worker) {
 	t.Helper()
+	return startWorkerWithFS(t, filesystem.NewOsFS())
+}
+
+func startWorkerWithFS(t *testing.T, fsys filesystem.FS) (*Client, *worker) {
+	t.Helper()
 	w := &worker{conns: make(chan *fdconn.Conn, 4096), exits: make(chan error, 4096)}
 	client := NewClient(func() (*fdconn.Conn, error) {
 		w.dials.Add(1)
@@ -42,7 +49,7 @@ func startWorker(t *testing.T) (*Client, *worker) {
 			return nil, err
 		}
 		w.conns <- remote
-		go func() { w.exits <- Serve(remote, filesystem.NewOsFS()) }()
+		go func() { w.exits <- Serve(remote, fsys) }()
 		return local, nil
 	}, 0)
 	t.Cleanup(func() { _ = client.Close() })
@@ -123,6 +130,65 @@ func TestClientRoundTripsFilesystemCalls(t *testing.T) {
 	if err := client.Remove(filepath.Join(root, "b.txt")); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestReadDirPreviewOnlyLoadsMetadataForSelectedEntries(t *testing.T) {
+	root := t.TempDir()
+	fsys := &previewCountingFS{FS: filesystem.NewOsFS()}
+	client, _ := startWorkerWithFS(t, fsys)
+	names := []string{".hidden.png", "01-gone.png", "02-cover.jpg", "03-cover.PNG", "README"}
+	for i := range 59 {
+		names = append(names, fmt.Sprintf("z-%02d.txt", i))
+	}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("data"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	preview, err := client.ReadDirPreview(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, info := range preview {
+		got = append(got, info.Name())
+		if info.Size() != 4 {
+			t.Errorf("preview size of %s = %d, want 4", info.Name(), info.Size())
+		}
+	}
+	if !slices.Equal(got, []string{"02-cover.jpg", "03-cover.PNG", "README"}) {
+		t.Errorf("preview names = %v", got)
+	}
+	if calls := fsys.infoCalls.Load(); calls != 4 {
+		t.Errorf("Info calls = %d, want 3 results and 1 disappeared entry", calls)
+	}
+}
+
+type previewCountingFS struct {
+	filesystem.FS
+	infoCalls atomic.Int32
+}
+
+func (f *previewCountingFS) ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, error) {
+	entries, truncated, err := f.FS.ReadDirLimit(name, limit)
+	for i, entry := range entries {
+		entries[i] = previewCountingEntry{DirEntry: entry, calls: &f.infoCalls}
+	}
+	return entries, truncated, err
+}
+
+type previewCountingEntry struct {
+	fs.DirEntry
+	calls *atomic.Int32
+}
+
+func (e previewCountingEntry) Info() (fs.FileInfo, error) {
+	e.calls.Add(1)
+	if e.Name() == "01-gone.png" {
+		return nil, fs.ErrNotExist
+	}
+	return e.DirEntry.Info()
 }
 
 func TestClientReturnsWorkerOpenedFiles(t *testing.T) {

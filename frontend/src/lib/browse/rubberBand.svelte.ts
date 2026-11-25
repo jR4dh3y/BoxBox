@@ -1,4 +1,5 @@
 import { SvelteSet } from 'svelte/reactivity';
+import type { Action } from 'svelte/action';
 import type { FileInfo } from '#lib/api/files.js';
 import {
 	BAND_THRESHOLD,
@@ -36,15 +37,26 @@ export interface BandRect {
 export class RubberBand {
 	rect = $state.raw<BandRect | null>(null);
 	private readonly host: () => RubberBandHost;
+	private cancelGesture: (() => void) | null = null;
 
 	constructor(host: () => RubberBandHost) {
 		this.host = host;
 	}
 
-	attach = (viewport: HTMLElement) => {
+	attach: Action<HTMLElement, string> = (viewport, viewKey) => {
 		const press = (event: PointerEvent) => this.press(event, viewport);
 		viewport.addEventListener('pointerdown', press);
-		return { destroy: () => viewport.removeEventListener('pointerdown', press) };
+		return {
+			update: (nextViewKey) => {
+				if (nextViewKey === viewKey) return;
+				viewKey = nextViewKey;
+				this.cancelGesture?.();
+			},
+			destroy: () => {
+				viewport.removeEventListener('pointerdown', press);
+				this.cancelGesture?.();
+			}
+		};
 	};
 
 	private content(viewport: HTMLElement, clientX: number, clientY: number): Point {
@@ -56,7 +68,7 @@ export class RubberBand {
 	}
 
 	private press(event: PointerEvent, viewport: HTMLElement): void {
-		if (event.button !== 0 || event.pointerType === 'touch') return;
+		if (event.button !== 0 || event.pointerType === 'touch' || this.cancelGesture) return;
 		const target = event.target instanceof Element ? event.target : null;
 		// Items, headers and controls keep their own presses.
 		if (target?.closest('[data-file-row], [data-file-item], [data-file-header], input, button'))
@@ -103,6 +115,7 @@ export class RubberBand {
 			frame = requestAnimationFrame(scroll);
 		};
 		const move = (moved: PointerEvent) => {
+			if (moved.pointerId !== event.pointerId) return;
 			pointer = { x: moved.clientX, y: moved.clientY };
 			if (!dragging) {
 				const at = this.content(viewport, pointer.x, pointer.y);
@@ -112,18 +125,27 @@ export class RubberBand {
 			}
 			select();
 		};
-		const release = () => {
+		const cleanup = () => {
 			window.removeEventListener('pointermove', move);
 			window.removeEventListener('pointerup', release);
-			window.removeEventListener('pointercancel', release);
+			window.removeEventListener('pointercancel', cancel);
 			cancelAnimationFrame(frame);
+			this.cancelGesture = null;
 			this.rect = null;
+		};
+		const release = (up: PointerEvent) => {
+			if (up.pointerId !== event.pointerId) return;
+			cleanup();
 			if (!dragging && !additive && this.host().selected().size > 0)
 				this.host().select(new SvelteSet());
 		};
+		const cancel = (cancelled: PointerEvent) => {
+			if (cancelled.pointerId === event.pointerId) cleanup();
+		};
+		this.cancelGesture = cleanup;
 		window.addEventListener('pointermove', move);
 		window.addEventListener('pointerup', release);
-		window.addEventListener('pointercancel', release);
+		window.addEventListener('pointercancel', cancel);
 		// A drag here selects; it does not select text.
 		event.preventDefault();
 		host.focus();

@@ -8,8 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"uuid"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
@@ -244,13 +242,6 @@ func (s *fileService) List(ctx context.Context, path string) (*model.FileList, e
 	}, nil
 }
 
-const (
-	// peekShown is how many entries a folder's tile draws inside it.
-	peekShown = 3
-	// peekScanned bounds the entries read, so a huge folder costs no more than a small one.
-	peekScanned = 64
-)
-
 // Peek returns up to three entries of a directory, pictures first and then by name,
 // chosen from its first entries, as the desktop app draws a folder's contents in its tile.
 func (s *fileService) Peek(ctx context.Context, path string, includeHidden bool) ([]model.FileInfo, error) {
@@ -268,40 +259,18 @@ func (s *fileService) Peek(ctx context.Context, path string, includeHidden bool)
 	if !info.IsDir() {
 		return nil, ErrNotDirectory
 	}
-	// Names first: only the entries shown are stat'ed.
-	entries, _, err := s.fs.ReadDirLimit(fsPath, peekScanned)
+	infos, err := s.fs.ReadDirPreview(fsPath, includeHidden)
 	if err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	shown := make([]fs.DirEntry, 0, len(entries))
-	for _, entry := range entries {
-		if includeHidden || !strings.HasPrefix(entry.Name(), ".") {
-			shown = append(shown, entry)
-		}
-	}
-	picture := func(entry fs.DirEntry) bool { return !entry.IsDir() && rendersImageThumbnail(entry.Name()) }
-	sort.SliceStable(shown, func(i, j int) bool {
-		if picture(shown[i]) != picture(shown[j]) {
-			return picture(shown[i])
-		}
-		return strings.ToLower(shown[i].Name()) < strings.ToLower(shown[j].Name())
-	})
 	parentPath := filepath.Clean(path)
-	items := make([]model.FileInfo, 0, peekShown)
-	for _, entry := range shown {
-		if len(items) == peekShown {
-			break
-		}
-		info, err := entry.Info()
-		if err != nil {
-			// Gone since the read, or unreadable: the next one is shown instead.
-			continue
-		}
+	items := make([]model.FileInfo, 0, len(infos))
+	for _, info := range infos {
 		items = append(items, fileutil.ToFileInfoWithPermissions(
-			entry.Name(), joinListingPath(parentPath, entry.Name()), info, info.Mode().String(),
+			info.Name(), joinListingPath(parentPath, info.Name()), info, info.Mode().String(),
 		))
 	}
 	return items, nil

@@ -40,6 +40,7 @@ type operation string
 const (
 	opReadDir              operation = "readDir"
 	opReadDirLimit         operation = "readDirLimit"
+	opReadDirPreview       operation = "readDirPreview"
 	opReadDirFileInfoLimit operation = "readDirFileInfoLimit"
 	opEvalSymlinks         operation = "evalSymlinks"
 	opReadlink             operation = "readlink"
@@ -61,13 +62,14 @@ const (
 )
 
 type request struct {
-	Op    operation   `json:"op"`
-	Path  rawString   `json:"path"`
-	Path2 rawString   `json:"path2,omitempty"`
-	Flag  int         `json:"flag,omitempty"`
-	Perm  fs.FileMode `json:"perm,omitempty"`
-	Limit int         `json:"limit,omitempty"`
-	Data  []byte      `json:"data,omitempty"`
+	Op            operation   `json:"op"`
+	Path          rawString   `json:"path"`
+	Path2         rawString   `json:"path2,omitempty"`
+	Flag          int         `json:"flag,omitempty"`
+	Perm          fs.FileMode `json:"perm,omitempty"`
+	Limit         int         `json:"limit,omitempty"`
+	IncludeHidden bool        `json:"includeHidden,omitempty"`
+	Data          []byte      `json:"data,omitempty"`
 }
 
 type response struct {

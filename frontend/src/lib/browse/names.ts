@@ -5,6 +5,7 @@ export function nameProblem(name: string, siblings: Iterable<string>): string | 
 	if (!name) return 'Enter a name.';
 	if (name === '.' || name === '..') return `“${name}” is not a valid name.`;
 	if (name.includes('/')) return 'A name cannot contain “/”.';
+	if (name.startsWith('\\')) return 'A name cannot start with “\\”.';
 	if (name.includes('\0')) return 'A name cannot contain a null character.';
 	for (const sibling of siblings) if (sibling === name) return `“${name}” already exists here.`;
 	return null;

@@ -8,7 +8,8 @@ describe('names', () => {
 		assert.equal(nameProblem('a/b', []), 'A name cannot contain “/”.');
 		assert.equal(nameProblem('..', []), '“..” is not a valid name.');
 		assert.equal(nameProblem('a.txt', ['a.txt']), '“a.txt” already exists here.');
-		// A backslash is an ordinary character on Linux.
+		assert.equal(nameProblem('\\notes.txt', []), 'A name cannot start with “\\”.');
+		// A backslash inside a name is an ordinary character on Linux.
 		assert.equal(nameProblem('a\\b', []), null);
 		// The server's create refuses one, though.
 		assert.equal(createNameProblem('a\\b', []), 'A name cannot contain “\\”.');

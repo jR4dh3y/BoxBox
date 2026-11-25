@@ -87,7 +87,7 @@
 			{/if}
 		</div>
 		<div class="flex min-w-0 flex-col">
-			<span class="truncate text-sm text-text-primary">{item.name}</span>
+			<span class="text-sm wrap-anywhere whitespace-pre-wrap text-text-primary">{item.name}</span>
 			<span class="truncate text-text-secondary">{kind}</span>
 		</div>
 	</div>

@@ -10,6 +10,8 @@ describe('select by pattern', () => {
 		assert.equal(matchesPattern('img_??.png', 'IMG_001.png'), false);
 		assert.equal(matchesPattern('a*b*c', 'axxbyyc'), true);
 		assert.equal(matchesPattern('*', 'anything'), true);
+		assert.equal(matchesPattern('*', '*notes.txt'), true);
+		assert.equal(matchesPattern('*.txt', '*notes.txt'), true);
 	});
 
 	test('plain text matches anywhere; an empty pattern matches nothing', () => {
