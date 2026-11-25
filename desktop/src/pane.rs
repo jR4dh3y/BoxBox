@@ -1146,9 +1146,9 @@ mod tests {
         let mut pane = pane_in_folder();
         pane.set_search_input("ab".into());
         pane.begin_search();
-        found(&mut pane, vec![hit("d/b/zab"), hit("d/.ab"), hit("d/aab")]);
+        found(&mut pane, vec![hit("d/aab"), hit("d/.ab"), hit("d/b/zab")]);
         assert_eq!(pane.display_sort(), None);
-        assert_eq!(names(&pane), ["zab", "aab"]);
+        assert_eq!(names(&pane), ["aab", "zab"]);
         // A column click sorts the results like a folder.
         let search_sort = Sort {
             field: crate::sort::SortField::Name,
