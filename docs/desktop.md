@@ -80,6 +80,10 @@ If FUSE is unavailable, add `--appimage-extract-and-run`. AppImages do not insta
 - On Linux, browse drives, home folders, disks, phones and network shares. Type `smb://server/share`, `sftp://user@host/path` or `ftp://host` in the location bar (Ctrl+L) to mount and open one.
 - Use tabs, split panes, list and grid views, search, favorites and Trash. On Linux, bookmarks and Trash use shared desktop formats.
 - Files open in their default app. Use **Open with** to choose another app.
+- Sort from a column header in List or **Sort by** in the Grid status bar.
+  **Settings → General → Remember sort per folder** is enabled by default.
+  Turn it off to share one sort across folders. Turning it back on restores
+  saved folder sorts. Changing the sort in search affects only the results.
 
 To connect a server:
 

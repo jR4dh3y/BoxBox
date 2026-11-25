@@ -11,7 +11,7 @@ use anyhow::Result;
 use async_channel::{Receiver, TryRecvError};
 use gpui::Context;
 
-use super::{launch_path, preference_sort, PaneTarget, Preferences, StartLocation, Workspace};
+use super::{launch_path, PaneTarget, Preferences, StartLocation, Workspace};
 use crate::api::{Api, DriveStats, FileInfo, MountPoint};
 use crate::pane::View;
 
@@ -68,9 +68,8 @@ impl Startup {
         let api = start.api.clone();
         let path = start.path.clone();
         let view = View {
-            sort: preference_sort(&start.preferences),
+            sort: Some(start.folder_views.sort(&api, &path, &start.preferences)),
             show_hidden_files: start.preferences.show_hidden_files,
-            ranked: false,
         };
         let reader = std::thread::Builder::new().name("first listing".into()).spawn(move || {
             // A small file, which lays out the servers' drives before they answer.

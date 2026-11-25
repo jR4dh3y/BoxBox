@@ -87,6 +87,7 @@ pub(crate) struct Preferences {
     pub selection_checkboxes: bool,
     pub default_sort: SortField,
     pub default_sort_direction: SortDir,
+    pub sort_per_folder: bool,
     pub default_view: ViewMode,
     /// Each folder keeps the List or Grid picked in it, as in Nautilus and
     /// Dolphin; off, the pick is the view of every folder.
@@ -155,6 +156,7 @@ impl Default for Preferences {
             // `DEFAULT_SORT_BY` and `DEFAULT_SORT_DIR` in sortFiles.ts.
             default_sort: SortField::Modified,
             default_sort_direction: SortDir::Desc,
+            sort_per_folder: true,
             default_view: ViewMode::List,
             view_per_folder: true,
             start_location: StartLocation::Overview,
@@ -485,7 +487,7 @@ impl Workspace {
             if preferences.view_per_folder {
                 initial_pane.view_mode = folder_views.mode(&api, &initial_pane.path, preference_view(&preferences));
             }
-            initial_pane.sort = folder_views.sort(&api, &initial_pane.path, preference_sort(&preferences));
+            initial_pane.sort = folder_views.sort(&api, &initial_pane.path, &preferences);
         }
         let dialog_field = cx.new(|cx| TextField::new("", cx));
         let rename_field = cx.new(|cx| TextField::new("", cx));
@@ -1038,7 +1040,6 @@ impl Workspace {
 
     fn apply_preferences(&mut self, cx: &mut Context<Self>) {
         self.apply_motion(cx);
-        let sort = preference_sort(&self.preferences);
         let view = preference_view(&self.preferences);
         let show_hidden_files = self.preferences.show_hidden_files;
         let ids = self.all_pane_ids();
@@ -1046,8 +1047,7 @@ impl Workspace {
         let mut resorted = Vec::new();
         for id in &ids {
             let Some(pane) = self.pane_by_id(*id) else { continue };
-            // A folder's own sort and view win over the new defaults.
-            let sort = if pane.is_at_root() { sort } else { self.folder_views.sort(&pane.api, &pane.path, sort) };
+            let sort = self.folder_views.sort(&pane.api, &pane.path, &self.preferences);
             let Some(pane) = self.pane_mut_by_id(*id) else { continue };
             if pane.sort != sort {
                 resorted.push(PaneTarget(*id));

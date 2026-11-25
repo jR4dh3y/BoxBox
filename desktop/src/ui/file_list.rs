@@ -9,7 +9,7 @@ use crate::api::FileInfo;
 use crate::format::{display_name, file_date, file_size, type_description};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
-use crate::sort::SortField;
+use crate::sort::{Sort, SortDir, SortField};
 use crate::workspace::operations::{ClipboardMode, PaneTarget};
 use crate::workspace::place_menu::Place;
 use crate::workspace::Workspace;
@@ -22,15 +22,16 @@ impl Workspace {
         let empty = placeholder.is_some();
         let layout = self.preferences.columns(Table::Files);
         let specs = layout.specs(Table::Files);
-        let sorted = (!pane.shows_ranked()).then(|| (pane.sort.field.column(), pane.sort.dir));
+        let sorted = pane.display_sort().map(|sort| (sort.field.column(), sort.dir));
         let table = table_frame(&layout, Table::Files).child(
             self.table_header(Table::Files, layout, target, cx).sorted(sorted).on_sort({
                 let workspace = cx.entity().downgrade();
                 move |column, _, cx| {
                     let Some(field) = SortField::of_column(column) else { return };
                     let _ = workspace.update(cx, |this, cx| {
+                        let Some(pane) = this.pane_by_id(target.0) else { return };
+                        let next = pane.display_sort().map_or(Sort { field, dir: SortDir::Asc }, |sort| sort.toggled(field));
                         this.active_pane = target;
-                        let next = this.pane().sort.toggled(field);
                         this.choose_sort(target, next, cx);
                     });
                 }

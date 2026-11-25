@@ -3,10 +3,12 @@
 use gpui::{div, prelude::*, px, Context};
 
 use super::TextScale;
-use crate::components::ViewSwitch;
+use crate::components::{Button, ButtonSize, ButtonVariant, ViewSwitch};
 use crate::format::file_size;
+use crate::pane::ViewMode;
 use crate::theme::*;
 use crate::workspace::operations::PaneTarget;
+use crate::workspace::place_menu::Place;
 use crate::workspace::Workspace;
 
 impl Workspace {
@@ -48,14 +50,21 @@ impl Workspace {
             .text_xs_tw()
             .text_color(c(TEXT_SECONDARY))
             .child(text)
-            .child(ViewSwitch::new("view", mode, {
+            .child(div().flex().flex_none().items_center().gap(px(4.)).when(!pane.is_at_root() && mode == ViewMode::Grid, |controls| {
+                controls.child(Button::new("grid-sort").label("Sort by").icon("chevron-down")
+                    .size(ButtonSize::Sm).variant(ButtonVariant::Ghost)
+                    .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                        this.active_pane = target;
+                        this.open_place_menu(Place::Sort(target), event.position(), cx);
+                    })))
+            }).child(ViewSwitch::new("view", mode, {
                 let view = cx.entity().downgrade();
-                move |target, _, cx| {
+                move |mode, _, cx| {
                     let _ = view.update(cx, |this, cx| {
-                        this.choose_view_mode(this.active_pane, target, cx);
+                        this.choose_view_mode(target, mode, cx);
                         cx.notify();
                     });
                 }
-            }))
+            })))
     }
 }

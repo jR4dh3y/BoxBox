@@ -89,33 +89,37 @@ impl Sort {
     }
 }
 
-/// Folders lead every sort. Size and time sort by value, and their ties by
-/// ascending natural name; name and type sort by name in `dir`. Paths break
-/// remaining ties, so repeated reads keep one order.
+/// Folders lead every sort. Size, date and type sort by the displayed column,
+/// breaking ties by ascending natural name. Paths break remaining ties.
 pub fn sort_files(items: &mut Vec<FileInfo>, sort: Sort) {
-    let by_value = matches!(sort.field, SortField::Size | SortField::Modified);
-    let value = |item: &FileInfo| -> i64 {
-        match sort.field {
-            SortField::Size => i64::try_from(item.size).unwrap_or(i64::MAX),
-            SortField::Modified => item.mod_time.unwrap_or(0),
-            SortField::Name | SortField::Type => 0,
-        }
-    };
     let directed = |ordering: Ordering| match sort.dir {
         SortDir::Asc => ordering,
         SortDir::Desc => ordering.reverse(),
     };
-    let mut keyed: Vec<(i64, FileInfo)> = items.drain(..).map(|item| (value(&item), item)).collect();
-    keyed.sort_by(|(left_value, left), (right_value, right)| {
+    let mut keyed: Vec<_> = items
+        .drain(..)
+        .map(|item| {
+            let kind = (sort.field == SortField::Type && !item.is_dir)
+                .then(|| crate::format::type_description(&item.name));
+            (kind, item)
+        })
+        .collect();
+    keyed.sort_by(|(left_kind, left), (right_kind, right)| {
         if left.is_dir != right.is_dir {
             return if left.is_dir { Ordering::Less } else { Ordering::Greater };
         }
-        if by_value && left_value != right_value {
-            return directed(left_value.cmp(right_value));
-        }
-        let names = natural_cmp(&left.name, &right.name);
-        let names = if by_value { names } else { directed(names) };
-        names.then_with(|| natural_cmp(&left.path, &right.path))
+        let order = match sort.field {
+            SortField::Name => natural_cmp(&left.name, &right.name),
+            SortField::Size => left.size.cmp(&right.size),
+            SortField::Modified => left.mod_time.unwrap_or(0).cmp(&right.mod_time.unwrap_or(0)),
+            SortField::Type => natural_cmp(
+                left_kind.as_deref().unwrap_or_default(),
+                right_kind.as_deref().unwrap_or_default(),
+            ),
+        };
+        directed(order)
+            .then_with(|| natural_cmp(&left.name, &right.name))
+            .then_with(|| natural_cmp(&left.path, &right.path))
     });
     items.extend(keyed.into_iter().map(|(_, item)| item));
 }
@@ -222,6 +226,21 @@ mod tests {
             },
         );
         assert_eq!(items[0].name, "b");
+    }
+
+    #[test]
+    fn type_groups_displayed_kinds_and_keeps_folders_first() {
+        let mut items = vec![
+            file("d.pdf", false, 0),
+            file("c.txt", false, 0),
+            file("b.pdf", false, 0),
+            file("a.TXT", false, 0),
+            file("z.txt", true, 0),
+        ];
+        sort_files(&mut items, Sort { field: SortField::Type, dir: SortDir::Asc });
+        assert_eq!(names(&items), ["z.txt", "b.pdf", "d.pdf", "a.TXT", "c.txt"]);
+        sort_files(&mut items, Sort { field: SortField::Type, dir: SortDir::Desc });
+        assert_eq!(names(&items), ["z.txt", "a.TXT", "c.txt", "b.pdf", "d.pdf"]);
     }
 }
 

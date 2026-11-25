@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use gpui::Context;
 
-use super::Workspace;
+use super::{preference_sort, Preferences, Workspace};
 use crate::api::Api;
 use crate::pane::ViewMode;
 use crate::sort::Sort;
@@ -42,7 +42,11 @@ impl FolderViews {
     }
 
     /// The sort `path` opens with.
-    pub fn sort(&self, api: &Api, path: &str, default: Sort) -> Sort {
+    pub fn sort(&self, api: &Api, path: &str, preferences: &Preferences) -> Sort {
+        let default = preference_sort(preferences);
+        if path.is_empty() || !preferences.sort_per_folder {
+            return default;
+        }
         self.0.get(&key(api, path)).and_then(|view| view.sort).unwrap_or(default)
     }
 
@@ -87,18 +91,39 @@ impl Workspace {
         cx.notify();
     }
 
-    /// A column header's sort: the folder keeps it, as it keeps its view.
-    /// Search results are not a folder, so their sort is not kept.
+    /// Applies a sort from a column header or the grid menu.
     pub(crate) fn choose_sort(&mut self, target: PaneTarget, sort: Sort, cx: &mut Context<Self>) {
-        let default = super::preference_sort(&self.preferences);
+        let default = preference_sort(&self.preferences);
+        let per_folder = self.preferences.sort_per_folder;
         let Some(pane) = self.pane_mut_by_id(target.0) else { return };
-        pane.set_sort(sort);
-        if !pane.is_at_root() && !pane.is_searching() {
-            let (api, path) = (pane.api.clone(), pane.path.clone());
-            self.folder_views.set_sort(&api, &path, sort, default);
-            self.save_folder_views(cx);
+        if pane.is_at_root() {
+            return;
         }
-        self.resort(target, cx);
+        if pane.is_searching() {
+            pane.set_search_sort(sort);
+            self.resort(target, cx);
+            cx.notify();
+            return;
+        }
+        if !per_folder {
+            self.preferences.default_sort = sort.field;
+            self.preferences.default_sort_direction = sort.dir;
+            self.commit_preferences(cx);
+            return;
+        }
+        let (api, path) = (pane.api.clone(), pane.path.clone());
+        self.folder_views.set_sort(&api, &path, sort, default);
+        self.save_folder_views(cx);
+        for id in self.all_pane_ids() {
+            let Some(pane) = self.pane_by_id(id) else { continue };
+            let sort = self.folder_views.sort(&pane.api, &pane.path, &self.preferences);
+            if pane.sort != sort {
+                if let Some(pane) = self.pane_mut_by_id(id) {
+                    pane.set_sort(sort);
+                    self.resort(PaneTarget(id), cx);
+                }
+            }
+        }
         cx.notify();
     }
 
@@ -114,16 +139,14 @@ impl Workspace {
     /// Returns whether the sort changed, so shown entries need sorting again.
     pub(crate) fn apply_folder_view(&mut self, target: PaneTarget) -> bool {
         let default_mode = self.preferences.default_view;
-        let default_sort = super::preference_sort(&self.preferences);
         let Some(pane) = self.pane_by_id(target.0).filter(|pane| !pane.is_at_root()) else { return false };
         let mode = match self.preferences.view_per_folder {
             true => self.folder_views.mode(&pane.api, &pane.path, default_mode),
             false => default_mode,
         };
-        let sort = self.folder_views.sort(&pane.api, &pane.path, default_sort);
+        let sort = self.folder_views.sort(&pane.api, &pane.path, &self.preferences);
         let Some(pane) = self.pane_mut_by_id(target.0) else { return false };
         pane.view_mode = mode;
-        // Setting an equal sort would take search results out of their ranking.
         let changed = pane.sort != sort;
         if changed {
             pane.set_sort(sort);

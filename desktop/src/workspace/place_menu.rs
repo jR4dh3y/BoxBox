@@ -22,6 +22,7 @@ pub(crate) enum Place {
     Hidden { pane: PaneTarget, crumbs: Vec<(String, String)> },
     /// A table's header: the columns it can show.
     Columns(crate::components::Table),
+    Sort(PaneTarget),
     /// The selected items of the Trash page.
     TrashItems,
 }

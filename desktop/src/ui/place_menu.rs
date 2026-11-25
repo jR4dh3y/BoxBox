@@ -3,6 +3,7 @@
 use gpui::{anchored, div, prelude::*, AnyElement, Context, MouseButton, Window};
 
 use crate::components::{ContextMenu, MenuItem};
+use crate::sort::{Sort, SortDir, SortField};
 use crate::workspace::operations::PaneTarget;
 use crate::workspace::drive_names::DriveKey;
 use crate::workspace::place_menu::Place;
@@ -123,6 +124,27 @@ impl Workspace {
                     Box::new(move |this, _, cx| this.resize_columns(table, crate::components::ColumnLayout::new(table), cx)),
                     cx,
                 ));
+                items
+            }
+            Place::Sort(target) => {
+                let target = *target;
+                let Some(pane) = self.pane_by_id(target.0) else { return div().into_any_element() };
+                let selected = pane.display_sort();
+                let current = selected.unwrap_or(pane.sort);
+                let entry = |id, label, sort: Sort, checked, cx: &mut Context<Self>| {
+                    let entry = MenuItem::action(id, label).on_select(cx.listener(move |this, _, _, cx| {
+                        this.place_menu = None;
+                        this.choose_sort(target, sort, cx);
+                    }));
+                    if checked { entry.icon("check") } else { entry }
+                };
+                let mut items: Vec<_> = SortField::OPTIONS.into_iter().enumerate().map(|(index, (field, label))| {
+                    entry(("sort-field", index), label, Sort { field, ..current }, selected.is_some_and(|sort| sort.field == field), cx)
+                }).collect();
+                items.push(MenuItem::Separator);
+                items.extend(SortDir::OPTIONS.into_iter().enumerate().map(|(index, (dir, label))| {
+                    entry(("sort-direction", index), label, Sort { dir, ..current }, selected.is_some_and(|sort| sort.dir == dir), cx)
+                }));
                 items
             }
             Place::TrashItems => {

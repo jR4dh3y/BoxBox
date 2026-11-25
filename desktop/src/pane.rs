@@ -49,10 +49,9 @@ pub enum Moved {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct View {
-    pub sort: Sort,
+    /// Ranked search results keep the provider's order.
+    pub sort: Option<Sort>,
     pub show_hidden_files: bool,
-    /// Search results in the order the search ranked them; `sort` is not applied.
-    pub ranked: bool,
 }
 
 /// Drops hidden entries unless shown, then sorts unless the entries are ranked.
@@ -60,30 +59,30 @@ pub struct View {
 pub fn arrange(items: Vec<FileInfo>, view: View) -> Vec<FileInfo> {
     let mut items: Vec<FileInfo> =
         items.into_iter().filter(|item| view.show_hidden_files || !item.is_hidden()).collect();
-    if !view.ranked {
-        sort_files(&mut items, view.sort);
+    if let Some(sort) = view.sort {
+        sort_files(&mut items, sort);
     }
     items
 }
 
 pub struct SortJob {
-    items: Arc<Vec<FileInfo>>,
-    folder_items: Arc<Vec<FileInfo>>,
-    pub sort: Sort,
-    /// `items` are ranked search results, which keep their order.
-    ranked: bool,
+    folder: Arc<Vec<FileInfo>>,
+    folder_sort: Sort,
+    search: Option<(Arc<Vec<FileInfo>>, Sort)>,
 }
 
 impl SortJob {
     /// Sorted copies of both lists.
-    pub fn run(&self) -> (Vec<FileInfo>, Vec<FileInfo>) {
-        let sorted = |items: &Vec<FileInfo>| {
+    pub fn run(&self) -> (Vec<FileInfo>, Option<Vec<FileInfo>>) {
+        let sorted = |items: &Vec<FileInfo>, sort| {
             let mut items = items.clone();
-            sort_files(&mut items, self.sort);
+            sort_files(&mut items, sort);
             items
         };
-        let items = if self.ranked { self.items.to_vec() } else { sorted(&self.items) };
-        (items, sorted(&self.folder_items))
+        (
+            sorted(&self.folder, self.folder_sort),
+            self.search.as_ref().map(|(items, sort)| sorted(items, *sort)),
+        )
     }
 }
 
@@ -155,7 +154,7 @@ pub struct Pane {
     pub search: Search,
     /// Results stay in the search's own order, best match first, until a column is
     /// clicked; then they sort like a folder.
-    pub search_ranked: bool,
+    search_sort: Option<Sort>,
     /// Stops the walk of the search in flight.
     search_cancel: Option<Arc<AtomicBool>>,
     /// The folder's entries while `items` hold search results.
@@ -226,7 +225,7 @@ impl Pane {
             items: Arc::default(),
             search_input: String::new(),
             search: Search::Off,
-            search_ranked: true,
+            search_sort: None,
             search_cancel: None,
             folder_items: Arc::default(),
             sort,
@@ -391,6 +390,7 @@ impl Pane {
         self.folder_items = Arc::default();
         self.search_input.clear();
         self.search = Search::Off;
+        self.search_sort = None;
         // A search still in flight is for the old folder.
         self.invalidate_search();
         self.clear_selection();
@@ -443,27 +443,25 @@ impl Pane {
     /// What `arrange` needs for a folder listing, read on the UI thread before work
     /// is sent off it.
     pub fn view(&self) -> View {
-        View { sort: self.sort, show_hidden_files: self.show_hidden_files, ranked: false }
+        View { sort: Some(self.sort), show_hidden_files: self.show_hidden_files }
     }
 
     /// The same for search results, which may keep the search's order.
     pub fn search_view(&self) -> View {
-        View { ranked: self.search_ranked, ..self.view() }
+        View { sort: self.search_sort, ..self.view() }
     }
 
     /// The current entries and how to sort them, for `apply_sort`.
     pub fn sort_job(&self) -> SortJob {
         SortJob {
-            items: self.items.clone(),
-            folder_items: self.folder_items.clone(),
-            sort: self.sort,
-            ranked: self.is_searching() && self.search_ranked,
+            folder: if self.is_searching() { self.folder_items.clone() } else { self.items.clone() },
+            folder_sort: self.sort,
+            search: self.search_sort.map(|sort| (self.items.clone(), sort)),
         }
     }
 
-    /// Whether the list shows results in the search's order rather than a column's.
-    pub fn shows_ranked(&self) -> bool {
-        self.is_searching() && self.search_ranked
+    pub fn display_sort(&self) -> Option<Sort> {
+        if self.is_searching() { self.search_sort } else { Some(self.sort) }
     }
 
     /// Makes any search in flight stale and stops its walk.
@@ -474,14 +472,20 @@ impl Pane {
         }
     }
 
-    /// Applies a finished `SortJob` unless the entries or the sort changed meanwhile.
-    pub fn apply_sort(&mut self, job: &SortJob, items: Vec<FileInfo>, folder_items: Vec<FileInfo>) -> bool {
-        if !Arc::ptr_eq(&job.items, &self.items) || !Arc::ptr_eq(&job.folder_items, &self.folder_items) || job.sort != self.sort {
-            return false;
+    /// A new batch of hits can supersede the search sort while the folder sort is still current.
+    pub fn apply_sort(&mut self, job: &SortJob, folder: Vec<FileInfo>, search: Option<Vec<FileInfo>>) -> bool {
+        let folder_items = if self.is_searching() { &mut self.folder_items } else { &mut self.items };
+        let folder_current = job.folder_sort == self.sort && Arc::ptr_eq(&job.folder, folder_items);
+        if folder_current {
+            *folder_items = Arc::new(folder);
         }
-        self.items = Arc::new(items);
-        self.folder_items = Arc::new(folder_items);
-        true
+        if let Some((search, (items, sort))) = search.zip(job.search.as_ref()) {
+            if self.search_sort == Some(*sort) && Arc::ptr_eq(items, &self.items) {
+                self.items = Arc::new(search);
+                return true;
+            }
+        }
+        folder_current
     }
 
     /// Swaps in new entries, keeping the selection, anchor and active row by path.
@@ -523,7 +527,6 @@ impl Pane {
             if !self.is_searching() {
                 self.folder_items = std::mem::take(&mut self.items);
                 self.clear_selection();
-                self.search_ranked = true;
             }
             self.search = Search::Loading;
             true
@@ -542,6 +545,7 @@ impl Pane {
     fn end_search(&mut self) {
         if self.is_searching() {
             self.search = Search::Off;
+            self.search_sort = None;
             self.items = std::mem::take(&mut self.folder_items);
             self.clear_selection();
         }
@@ -616,7 +620,6 @@ impl Pane {
     ) -> bool {
         let hidden_changed = self.show_hidden_files != show_hidden_files;
         self.show_hidden_files = show_hidden_files;
-        // An unrelated preference must not take search results out of their ranking.
         if sort != self.sort {
             self.set_sort(sort);
         }
@@ -628,7 +631,14 @@ impl Pane {
     /// Records the sort; the workspace re-sorts the entries off the UI thread.
     pub fn set_sort(&mut self, sort: Sort) {
         self.sort = sort;
-        self.search_ranked = false;
+        if !self.is_searching() {
+            self.anchor = None;
+            self.active = None;
+        }
+    }
+
+    pub fn set_search_sort(&mut self, sort: Sort) {
+        self.search_sort = Some(sort);
         self.anchor = None;
         self.active = None;
     }
@@ -1137,23 +1147,24 @@ mod tests {
         pane.set_search_input("ab".into());
         pane.begin_search();
         found(&mut pane, vec![hit("d/b/zab"), hit("d/.ab"), hit("d/aab")]);
-        assert!(pane.shows_ranked());
+        assert_eq!(pane.display_sort(), None);
         assert_eq!(names(&pane), ["zab", "aab"]);
         // A column click sorts the results like a folder.
-        pane.set_sort(Sort {
+        let search_sort = Sort {
             field: crate::sort::SortField::Name,
             dir: crate::sort::SortDir::Desc,
-        });
+        };
+        pane.set_search_sort(search_sort);
         let job = pane.sort_job();
         let (items, folder_items) = job.run();
         assert!(pane.apply_sort(&job, items, folder_items));
-        assert!(!pane.shows_ranked());
+        assert_eq!(pane.display_sort(), Some(search_sort));
         assert_eq!(names(&pane), ["zab", "aab"]);
         pane.clear_search();
-        assert_eq!(names(&pane), ["b", "a"]);
+        assert_eq!(names(&pane), ["a", "b"]);
         // The next search is ranked again.
         pane.set_search_input("ab".into());
-        assert!(pane.search_ranked);
+        assert_eq!(pane.display_sort(), None);
     }
 
     #[test]

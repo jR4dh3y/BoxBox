@@ -1459,10 +1459,64 @@ fn a_folder_keeps_the_sort_picked_in_it(cx: &mut TestAppContext) {
     // Kept on disk for the next window; choosing the default forgets it.
     let api = Api::local_with_root(fixture.root.clone()).unwrap();
     let default = Sort { field: SortField::Size, dir: SortDir::Asc };
-    assert_eq!(super::folder_views::FolderViews::load().sort(&api, "home/docs", default), by_name_desc);
+    let preferences = Preferences::load();
+    assert_eq!(super::folder_views::FolderViews::load().sort(&api, "home/docs", &preferences), by_name_desc);
     view.update(cx, |workspace, cx| workspace.choose_sort(PaneTarget(0), default, cx));
     cx.run_until_parked();
     assert_eq!(super::folder_views::FolderViews::load().encode(), b"{}");
+}
+
+#[gpui::test]
+fn grid_sort_follows_the_per_folder_toggle(cx: &mut TestAppContext) {
+    let (view, cx, fixture) = open(cx, &["a.txt", "b.pdf", "c.txt", "d.pdf", "docs/e.txt", "docs/f.pdf"]);
+    click(cx, "view-grid");
+    click(cx, "grid-sort");
+    click(cx, "sort-field-3");
+    settle(cx);
+    assert_eq!(names(&view, cx), ["docs", "b.pdf", "d.pdf", "a.txt", "c.txt"]);
+    click(cx, "grid-sort");
+    click(cx, "sort-direction-1");
+    settle(cx);
+    assert_eq!(names(&view, cx), ["docs", "a.txt", "c.txt", "b.pdf", "d.pdf"]);
+
+    cx.simulate_keystrokes("ctrl-,");
+    click(cx, "setting-sort-per-folder");
+    click(cx, "close-settings");
+    settle(cx);
+    assert_eq!(names(&view, cx), ["docs", "a.txt", "b.pdf", "c.txt", "d.pdf"]);
+    assert!(!Preferences::load().sort_per_folder);
+
+    click(cx, "grid-sort");
+    click(cx, "sort-field-3");
+    settle(cx);
+    assert_eq!(Preferences::load().default_sort, SortField::Type);
+    view.update(cx, |workspace, cx| workspace.navigate("home/docs".into(), cx));
+    settle(cx);
+    assert_eq!(names(&view, cx), ["f.pdf", "e.txt"]);
+
+    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
+    settle(cx);
+    assert_eq!(names(&view, cx), ["docs", "b.pdf", "d.pdf", "a.txt", "c.txt"]);
+    cx.simulate_keystrokes("ctrl-,");
+    click(cx, "setting-sort-per-folder");
+    click(cx, "close-settings");
+    settle(cx);
+    assert_eq!(names(&view, cx), ["docs", "a.txt", "c.txt", "b.pdf", "d.pdf"]);
+    let api = Api::local_with_root(fixture.root.clone()).unwrap();
+    assert_eq!(
+        super::folder_views::FolderViews::load().sort(&api, "home", &Preferences::load()),
+        Sort { field: SortField::Type, dir: SortDir::Desc },
+    );
+
+    // Clear the fixture's changes to the settings files shared by visual tests.
+    click(cx, "view-list");
+    view.update(cx, |workspace, cx| {
+        let default = preference_sort(&workspace.preferences);
+        workspace.choose_sort(PaneTarget(0), default, cx);
+        workspace.preferences.default_sort = SortField::Name;
+        workspace.commit_preferences(cx);
+    });
+    cx.run_until_parked();
 }
 
 #[gpui::test]
