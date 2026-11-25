@@ -20,6 +20,7 @@ import type { BrowseData } from './data.svelte';
 import type { BrowseLocation } from './location.svelte';
 import type { BrowseSelection } from './selection.svelte';
 import { createNameProblem, nameProblem, unusedName } from './names.js';
+import { browseRequests } from './requests.svelte';
 
 function errorMessage(error: unknown, fallback: string): string {
 	return error instanceof Error ? error.message : fallback;
@@ -117,15 +118,17 @@ export function useBrowseActions(
 
 		const { type } = createDialog;
 		const folder = location.path;
+		const signal = browseRequests.sessionSignal;
 		try {
 			const { createItem } = await import('./mutations.js');
-			const created = await createItem(type, folder, name);
+			const created = await createItem(type, folder, name, signal);
+			if (signal.aborted) return;
 			closeCreate();
 			// The new item shows selected in the folder, so success needs no notice.
 			selection.set(new SvelteSet([created.path]));
 			data.refresh();
 		} catch (error) {
-			toastStore.error(errorMessage(error, 'Create failed'));
+			if (!signal.aborted) toastStore.error(errorMessage(error, 'Create failed'));
 		}
 	}
 
@@ -167,34 +170,40 @@ export function useBrowseActions(
 
 		const newPath = parentPath ? `${parentPath}/${newName}` : newName;
 
+		const signal = browseRequests.sessionSignal;
 		try {
 			const { renameItem } = await import('./mutations.js');
-			await renameItem(oldPath, newPath);
+			await renameItem(oldPath, newPath, signal);
+			if (signal.aborted) return;
 			data.refetchDirectory();
 		} catch (error) {
+			if (signal.aborted) return;
 			console.error('Rename failed:', error);
 			toastStore.error(errorMessage(error, 'Rename failed'));
 		}
 	}
 
 	/** Files go at once; folders become background jobs. */
-	async function deleteItems(items: FileInfo[]) {
+	async function deleteItems(items: FileInfo[], signal = browseRequests.sessionSignal) {
 		if (items.length === 0) return;
 
 		try {
 			const { deleteItems: deleteSelection } = await import('./mutations.js');
-			await deleteSelection(items);
+			await deleteSelection(items, signal);
+			if (signal.aborted) return;
 			selection.clear();
 			data.refetchDirectory();
 		} catch (error) {
+			if (signal.aborted) return;
 			console.error('Delete failed:', error);
 			toastStore.error(errorMessage(error, 'Delete failed'));
 		}
 	}
 
 	async function confirmDelete() {
-		await deleteItems(deleteDialog.items);
-		deleteDialog = { open: false, items: [] };
+		const signal = browseRequests.sessionSignal;
+		await deleteItems(deleteDialog.items, signal);
+		if (!signal.aborted) deleteDialog = { open: false, items: [] };
 	}
 
 	return {
