@@ -14,9 +14,9 @@ export const blogPosts: readonly BlogPost[] = ([
   {
     slug: "v0-4-0",
     version: "v0.4.0",
-    title: "What’s new in BoxBox v0.4.0",
+    title: "BoxBox 0.4: the desktop app is native now",
     date: "2026-11-26",
-    description: "Release notes for BoxBox v0.4.0.",
+    description: "The desktop app is a native Rust app now, it runs on Windows, and the web app picks up its file-manager features.",
   },
 ] satisfies BlogPost[]).sort((a, b) => b.date.localeCompare(a.date));
 
