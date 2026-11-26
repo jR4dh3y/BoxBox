@@ -1,4 +1,4 @@
-//! BoxBox as the system's Open and Save dialog. D-Bus starts `boxbox-files
+//! BoxBox as the system's Open and Save dialog. D-Bus starts `boxbox
 //! --portal` when an app asks; that process shows one window per request and
 //! ends when the last one closes. It never opens the file manager window and
 //! never writes the file manager's settings.
@@ -24,7 +24,7 @@ pub fn run(sans: SharedString) {
     let connection = match portal::serve(events) {
         Ok(connection) => connection,
         Err(error) => {
-            eprintln!("boxbox-files --portal: {error:#}");
+            eprintln!("boxbox --portal: {error:#}");
             std::process::exit(1);
         }
     };

@@ -146,6 +146,12 @@ impl RemoteApi {
         self.mutate_empty("DELETE", &endpoint, None)
     }
 
+    pub(super) fn remove_empty_directory(&self, path: &str) -> Result<()> {
+        validate_remote_path(path)?;
+        let endpoint = format!("/empty-directories/{}", encode_path(path));
+        self.mutate_empty("DELETE", &endpoint, None)
+    }
+
     pub(super) fn download(&self, item: &FileInfo, dir: &Path) -> Result<PathBuf> {
         validate_remote_path(&item.path)?;
         validate_file_name(&item.name)?;

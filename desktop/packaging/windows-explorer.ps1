@@ -12,8 +12,8 @@ if ($Uninstall) {
     return
 }
 
-$app = Get-Item -LiteralPath (Join-Path $PSScriptRoot 'boxbox-files.exe')
-if ($app.PSIsContainer) { throw 'boxbox-files.exe must be a file in this folder' }
+$app = Get-Item -LiteralPath (Join-Path $PSScriptRoot 'boxbox.exe')
+if ($app.PSIsContainer) { throw 'boxbox.exe must be a file in this folder' }
 New-Item -Path $verb -Force | Out-Null
 Set-Item -LiteralPath $verb -Value 'Open in BoxBox Files'
 Set-ItemProperty -LiteralPath $verb -Name 'Icon' -Value $app.FullName

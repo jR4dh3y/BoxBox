@@ -12,8 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/afero"
+	"github.com/spf13/afero/mem"
 )
 
 // FS provides an abstraction over filesystem operations.
@@ -37,6 +39,9 @@ type FS interface {
 	// Readlink returns the stored target of a symbolic link.
 	Readlink(path string) (string, error)
 
+	// Symlink creates newname as a symbolic link to oldname.
+	Symlink(oldname, newname string) error
+
 	// Stat returns a FileInfo describing the named file.
 	Stat(name string) (fs.FileInfo, error)
 
@@ -51,6 +56,9 @@ type FS interface {
 
 	// Remove removes the named file or empty directory.
 	Remove(name string) error
+
+	// RemoveEmptyDirectory removes only a directory with no entries.
+	RemoveEmptyDirectory(name string) error
 
 	// RemoveAll removes path and any children it contains.
 	RemoveAll(path string) error
@@ -80,6 +88,10 @@ type FS interface {
 
 	// Chmod changes the mode bits of the named file or directory.
 	Chmod(name string, mode os.FileMode) error
+
+	// ChmodFile changes the mode bits of an open file. It acts on the open
+	// file, so a path replaced by a symlink after the open is not followed.
+	ChmodFile(file afero.File, mode os.FileMode) error
 
 	// Exists checks if a file or directory exists at the given path.
 	Exists(path string) (bool, error)
@@ -271,6 +283,29 @@ func (a *AferoFS) Readlink(path string) (string, error) {
 	return "", afero.ErrNoReadlink
 }
 
+func (a *AferoFS) Symlink(oldname, newname string) error {
+	if err := validateFilesystemPath(newname); err != nil {
+		return err
+	}
+	newname = filepath.Clean("/" + newname)
+	if linker, ok := a.fs.(afero.Linker); ok {
+		return linker.SymlinkIfPossible(oldname, newname)
+	}
+	return afero.ErrNoSymlink
+}
+
+func (a *AferoFS) ChmodFile(file afero.File, mode os.FileMode) error {
+	if osFile, ok := file.(*os.File); ok {
+		return osFile.Chmod(mode)
+	}
+	if memFile, ok := file.(*mem.File); ok {
+		info := memFile.Info()
+		mem.SetMode(info.FileData, info.Mode()&^os.ModePerm|mode.Perm())
+		return nil
+	}
+	return errors.ErrUnsupported
+}
+
 // Stat returns a FileInfo describing the named file.
 func (a *AferoFS) Stat(name string) (fs.FileInfo, error) {
 	if err := validateFilesystemPath(name); err != nil {
@@ -319,6 +354,41 @@ func (a *AferoFS) Remove(name string) error {
 		return err
 	}
 	name = filepath.Clean("/" + name)
+	return a.fs.Remove(name)
+}
+
+// RemoveEmptyDirectory leaves files and nonempty directories intact.
+func (a *AferoFS) RemoveEmptyDirectory(name string) error {
+	if err := validateFilesystemPath(name); err != nil {
+		return err
+	}
+	name = filepath.Clean("/" + name)
+	if _, ok := a.fs.(*afero.OsFs); ok {
+		if err := syscall.Rmdir(name); err != nil {
+			return &fs.PathError{Op: "rmdir", Path: name, Err: err}
+		}
+		return nil
+	}
+
+	dir, err := a.fs.Open(name)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	info, err := dir.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return syscall.ENOTDIR
+	}
+	entries, err := dir.Readdirnames(1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	if len(entries) != 0 {
+		return syscall.ENOTEMPTY
+	}
 	return a.fs.Remove(name)
 }
 

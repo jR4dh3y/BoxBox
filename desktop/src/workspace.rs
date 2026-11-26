@@ -406,8 +406,8 @@ pub struct Workspace {
     pub(crate) location_field: Entity<TextField>,
     _subscriptions: Vec<Subscription>,
     pub(crate) file_clipboard: Option<FileClipboard>,
-    /// What this app last put on the system clipboard, to tell it from other apps' copies.
-    pub(crate) published_files: Option<crate::os_clipboard::Files>,
+    system_file_clipboard: Arc<crate::clipboard::Writer>,
+    system_file_contents: operations::SystemFileClipboard,
     pub(crate) transfer_question: Option<transfers::PendingQuestion>,
     pub(crate) confirm: Option<confirm::Confirm>,
     /// The last move to Trash or rename, for Ctrl+Z.
@@ -515,6 +515,7 @@ impl Workspace {
             .iter()
             .map(|field| cx.subscribe_in(field, window, |this, _, event, window, cx| this.on_settings_field(event, window, cx)))
             .collect::<Vec<_>>();
+        let system_file_clipboard = crate::clipboard::writer(cx);
         let mut workspace = Self {
             directory_watches: watching::DirectoryWatches::default(),
             tabs: vec![initial_pane],
@@ -590,6 +591,13 @@ impl Workspace {
                 }),
                 #[cfg(target_os = "linux")]
                 cx.subscribe_in(&open_with_search, window, |this, _, event, window, cx| this.on_open_with_search(event, window, cx)),
+                cx.observe_global::<crate::clipboard::Clipboard>(|this, cx| {
+                    if crate::clipboard::text_is_current(cx) {
+                        this.system_file_contents.cancel_pending();
+                        this.file_clipboard = None;
+                        cx.notify();
+                    }
+                }),
                 cx.subscribe_in(&customize_search, window, |this, _, event, window, cx| this.on_customize_search(event, window, cx)),
             ]
             .into_iter()
@@ -597,7 +605,8 @@ impl Workspace {
             .chain(device_subscriptions)
             .collect(),
             file_clipboard: None,
-            published_files: None,
+            system_file_clipboard,
+            system_file_contents: operations::SystemFileClipboard::Ready(None),
             transfer_question: None,
             confirm: None,
             last_undo: None,
@@ -1450,10 +1459,7 @@ impl Workspace {
     /// Copies text selected in the Details panel or a dialog; false when there is none.
     pub(crate) fn copy_text_selection(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(text) = self.text_selection.as_ref().and_then(|selection| selection.selected()) else { return false };
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_owned()));
-        // The text replaces any copied or cut files, so a later paste does not move them.
-        self.file_clipboard = None;
-        cx.notify();
+        crate::clipboard::copy_text(text.to_owned(), cx);
         true
     }
 

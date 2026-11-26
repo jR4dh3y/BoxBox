@@ -11,6 +11,7 @@ members = [".", "thumbnail"]
 [dependencies]
 anyhow = "1"
 async-channel = "2"
+async-lock = "3"
 boxbox-thumbnail = { version = "0.1.0", path = "thumbnail" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 crc32fast = "1.5.4"
@@ -55,8 +56,10 @@ raw-window-handle = "0.6"
 tar = { version = "0.4.46", default-features = false }
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"
-wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
+wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wl-clipboard-rs = "0.9"
+x11-clipboard = "0.9"
 x11rb = "0.13"
 yeslogic-fontconfig-sys = "6.0.1"
 zbus = { version = "5.19", default-features = false, features = ["async-io", "blocking-api"] }

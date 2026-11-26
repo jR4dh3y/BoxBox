@@ -259,6 +259,13 @@ impl LocalFiles {
         copy::remove_entry(&entry).with_context(|| format!("cannot delete {path}"))
     }
 
+    pub fn remove_empty_directory(&self, path: &str) -> Result<()> {
+        let (_, entry) = self.resolve_entry(path)?;
+        ensure!(fs::symlink_metadata(&entry)?.is_dir(), "{path} is not a real directory");
+        self.ensure_mutable_target(&entry, true)?;
+        fs::remove_dir(&entry).with_context(|| format!("cannot remove empty directory {path}"))
+    }
+
     /// Copy a file into `directory`, or write a directory archive as `<name>.zip`.
     pub fn download(&self, item: &FileInfo, directory: &Path) -> Result<PathBuf> {
         let (mount, source_entry) = self.resolve_entry(&item.path)?;

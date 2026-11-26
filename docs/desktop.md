@@ -6,7 +6,7 @@ It replaced the Electrobun desktop app shipped in v0.3.2. Settings from that app
 
 ## Windows
 
-BoxBox Files runs on Windows 11 x64 with a Direct3D 11-capable graphics driver. Download <code>boxbox-desktop-v&lt;version&gt;-windows-amd64.zip</code> and <code>SHA256SUMS</code> from [GitHub Releases](https://github.com/jR4dh3y/BoxBox/releases/) or [Downloads](/download/). To check the archive, compare its SHA-256 from <code>Get-FileHash</code> with the matching line in <code>SHA256SUMS</code>. Extract the archive and launch <code>boxbox-files.exe</code>. To update, extract the new ZIP and replace the previous app.
+BoxBox Files runs on Windows 11 x64 with a Direct3D 11-capable graphics driver. Download <code>boxbox-desktop-v&lt;version&gt;-windows-amd64.zip</code> and <code>SHA256SUMS</code> from [GitHub Releases](https://github.com/jR4dh3y/BoxBox/releases/) or [Downloads](/download/). To check the archive, compare its SHA-256 from <code>Get-FileHash</code> with the matching line in <code>SHA256SUMS</code>. Extract the archive and launch <code>boxbox.exe</code>. To update, extract the new ZIP and replace the previous app.
 
 The sidebar lists Windows drives and known folders, including Recent. Use Ctrl+L for drive-letter paths, UNC paths or SMB URLs such as <code>smb://server/share</code>. BoxBox uses the Windows credential prompt when a share requires it. Right-click a removable or mapped drive to eject or disconnect it.
 
@@ -53,13 +53,13 @@ cd boxbox-desktop-v<version>-linux-amd64
 ./install.sh
 ```
 
-Run the installer **without sudo**. It puts `boxbox-files` in `~/.local/bin` and adds a desktop entry and icon under `~/.local/share`. It leaves your default file manager unchanged. To make BoxBox Files the default folder handler:
+Run the installer **without sudo**. It puts `boxbox` in `~/.local/bin` and adds a desktop entry and icon under `~/.local/share`. It leaves your default file manager unchanged. To make BoxBox Files the default folder handler:
 
 ```bash
 ./install.sh --set-default
 ```
 
-Pass `--set-picker` to use BoxBox Files for other apps' Open and Save dialogs through the xdg-desktop-portal FileChooser. `boxbox-files --disable-picker`, or **Settings → General**, undoes it.
+Pass `--set-picker` to use BoxBox Files for other apps' Open and Save dialogs through the xdg-desktop-portal FileChooser. `boxbox --disable-picker`, or **Settings → General**, undoes it.
 
 To update, install a newer archive the same way. To remove it, run `./install.sh --uninstall`. Settings in `~/.config/boxbox-gpui` and saved state in `~/.local/state/boxbox-gpui` are kept; delete them yourself to start fresh.
 

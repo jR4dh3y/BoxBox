@@ -30,11 +30,8 @@ func Serve(conn *fdconn.Conn, fsys filesystem.FS) error {
 			}
 			return err
 		}
-		if message.File != nil {
-			_ = message.File.Close()
-		}
 		wg.Go(func() {
-			reply, file := handle(fsys, message.Payload)
+			reply, file := handle(fsys, message.Payload, message.File)
 			defer func() {
 				if file != nil {
 					_ = file.Close()
@@ -58,7 +55,11 @@ func Serve(conn *fdconn.Conn, fsys filesystem.FS) error {
 	}
 }
 
-func handle(fsys filesystem.FS, payload []byte) (response, *os.File) {
+// handle owns sent, the file the API attached to the request, if any.
+func handle(fsys filesystem.FS, payload []byte, sent *os.File) (response, *os.File) {
+	if sent != nil {
+		defer sent.Close()
+	}
 	var req request
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return response{Err: encodeError(fmt.Errorf("workerfs: bad request: %w", err))}, nil
@@ -90,6 +91,8 @@ func handle(fsys filesystem.FS, payload []byte) (response, *os.File) {
 	case opReadlink:
 		text, err := fsys.Readlink(path)
 		return textReply(text, err), nil
+	case opSymlink:
+		return errReply(fsys.Symlink(path, path2)), nil
 	case opStat:
 		return infoReply(fsys.Stat(path)), nil
 	case opLstat:
@@ -107,6 +110,8 @@ func handle(fsys filesystem.FS, payload []byte) (response, *os.File) {
 		return response{}, file
 	case opRemove:
 		return errReply(fsys.Remove(path)), nil
+	case opRemoveEmptyDirectory:
+		return errReply(fsys.RemoveEmptyDirectory(path)), nil
 	case opRemoveAll:
 		return errReply(fsys.RemoveAll(path)), nil
 	case opRename:
@@ -121,6 +126,11 @@ func handle(fsys filesystem.FS, payload []byte) (response, *os.File) {
 		return errReply(fsys.Mkdir(path, req.Perm)), nil
 	case opChmod:
 		return errReply(fsys.Chmod(path, req.Perm)), nil
+	case opChmodFile:
+		if sent == nil {
+			return fail(errors.New("workerfs: chmodFile without a file")), nil
+		}
+		return errReply(fsys.ChmodFile(sent, req.Perm)), nil
 	case opExists:
 		ok, err := fsys.Exists(path)
 		return boolReply(ok, err), nil

@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/jR4dh3y/BoxBox/releases/latest"><img src="https://img.shields.io/github/v/release/jR4dh3y/BoxBox?style=flat-square&color=4a9eff" alt="Latest release"></a>
+  <a href="https://github.com/jR4dh3y/BoxBox/pkgs/container/boxbox"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fipitio.github.io%2Fbackage%2FjR4dh3y%2FBoxBox%2Fboxbox.json&query=%24.downloads&label=docker%20pulls&style=flat-square&color=2496ED&logo=docker&logoColor=white" alt="Docker pulls"></a>
   <img src="https://img.shields.io/badge/Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/SvelteKit-FF3E00?style=flat-square&logo=svelte&logoColor=white" alt="SvelteKit">
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">

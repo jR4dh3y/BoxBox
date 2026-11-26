@@ -24,6 +24,30 @@ pub(crate) enum ClipboardMode {
     Cut,
 }
 
+pub(super) enum SystemFileClipboard {
+    Pending(Option<os_clipboard::Files>),
+    Ready(Option<os_clipboard::Files>),
+}
+
+impl SystemFileClipboard {
+    fn begin(&mut self) {
+        let previous = match self {
+            Self::Pending(previous) | Self::Ready(previous) => previous.take(),
+        };
+        *self = Self::Pending(previous);
+    }
+
+    pub(super) fn cancel_pending(&mut self) {
+        if let Self::Pending(previous) = self {
+            *self = Self::Ready(previous.take());
+        }
+    }
+
+    fn is_external(&self, files: &os_clipboard::Files) -> bool {
+        matches!(self, Self::Ready(replaced) if replaced.as_ref() != Some(files))
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct ClipboardEntry {
     pub api: Arc<Api>,
@@ -557,9 +581,7 @@ impl Workspace {
         if mode == ClipboardMode::Cut && !self.ensure_writable(target, cx) {
             return;
         }
-        if api.is_local() {
-            self.publish_files(api.clone(), &items, mode, cx);
-        }
+        self.publish_files(api.clone(), &items, mode, cx);
         self.file_clipboard = Some(FileClipboard {
             mode,
             entries: items
@@ -574,8 +596,11 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Puts local items on the system clipboard, so other apps can paste them.
+    /// Offers local files to other apps and retires the old system choice for a server copy.
     fn publish_files(&mut self, api: Arc<Api>, items: &[FileInfo], mode: ClipboardMode, cx: &mut Context<Self>) {
+        let writes = self.system_file_clipboard.clone();
+        let generation = crate::clipboard::begin_file_write(cx);
+        self.system_file_contents.begin();
         let virtual_paths: Vec<String> = items.iter().map(|item| item.path.clone()).collect();
         let op = match mode {
             ClipboardMode::Copy => os_clipboard::FileOp::Copy,
@@ -585,20 +610,34 @@ impl Workspace {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let paths = virtual_paths
-                        .iter()
-                        // The entries themselves: a cut link moves the link, not its target.
-                        .map(|path| api.entry_path(path)?.with_context(|| format!("{path} is not on this computer")))
-                        .collect::<anyhow::Result<Vec<_>>>()?;
-                    let files = os_clipboard::Files { op, paths };
-                    os_clipboard::publish(&files)?;
-                    Ok::<_, anyhow::Error>(files)
+                    let files = api.is_local().then(|| {
+                        // Cutting a link moves the entry itself.
+                        let paths = virtual_paths.iter().map(|path| {
+                            api.entry_path(path)?.with_context(|| format!("{path} is not on this computer"))
+                        }).collect::<anyhow::Result<Vec<_>>>()?;
+                        #[cfg(windows)]
+                        let paths = paths.iter().map(|path| crate::windows::shell_path_buf(path)).collect();
+                        Ok::<_, anyhow::Error>(os_clipboard::Files { op, paths })
+                    }).transpose();
+                    writes.commit(generation, || {
+                        let result = match files {
+                            Ok(Some(files)) => os_clipboard::publish(&files).map(|()| Some(files)),
+                            Ok(None) => os_clipboard::clear().map(|()| None),
+                            Err(error) => Err(error),
+                        };
+                        result.unwrap_or_else(|error| {
+                            log::warn!("Could not update the system clipboard: {error:#}");
+                            os_clipboard::read().ok().flatten()
+                        })
+                    }).await
                 })
                 .await;
-            this.update(cx, |this, _| match result {
-                Ok(files) => this.published_files = Some(files),
-                // Copy and paste inside BoxBox still work.
-                Err(error) => log::warn!("Files were not put on the system clipboard: {error:#}"),
+            this.update(cx, |this, _| {
+                if let Some(files) = result {
+                    if this.system_file_clipboard.current() == generation {
+                        this.system_file_contents = SystemFileClipboard::Ready(files);
+                    }
+                }
             })
             .ok();
         })
@@ -620,17 +659,30 @@ impl Workspace {
         if self.operation_status.is_busy() {
             return;
         }
+        if crate::clipboard::pending_text(cx).is_some() {
+            self.notify(crate::components::ToastKind::Info, "The clipboard has no files to paste", cx);
+            return;
+        }
+        if matches!(self.system_file_contents, SystemFileClipboard::Pending(_)) {
+            self.paste_in_app(target, folder, cx);
+            return;
+        }
+        let generation = self.system_file_clipboard.current();
         cx.spawn(async move |this, cx| {
             let system = cx.background_executor().spawn(async move { os_clipboard::read() }).await;
-            this.update(cx, |this, cx| match system {
-                Ok(Some(files)) if this.published_files.as_ref() != Some(&files) => this.paste_system_files(target, folder, files, cx),
-                Ok(_) => this.paste_in_app(target, folder, cx),
-                Err(error) => {
-                    log::warn!("Could not read the system clipboard: {error:#}");
-                    this.paste_in_app(target, folder, cx)
+            this.update(cx, |this, cx| {
+                if this.system_file_clipboard.current() != generation {
+                    return;
                 }
-            })
-            .ok();
+                match system {
+                    Ok(Some(files)) if this.system_file_contents.is_external(&files) => this.paste_system_files(target, folder, files, cx),
+                    Ok(_) => this.paste_in_app(target, folder, cx),
+                    Err(error) => {
+                        log::warn!("Could not read the system clipboard: {error:#}");
+                        this.paste_in_app(target, folder, cx);
+                    }
+                }
+            }).ok();
         })
         .detach();
     }

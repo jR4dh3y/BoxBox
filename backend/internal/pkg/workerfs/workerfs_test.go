@@ -78,7 +78,7 @@ func TestClientRoundTripsFilesystemCalls(t *testing.T) {
 	if err := client.MkdirAllWithin(root, "x/y", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("a.txt", filepath.Join(root, "link")); err != nil {
+	if err := client.Symlink("a.txt", filepath.Join(root, "link")); err != nil {
 		t.Fatal(err)
 	}
 	if target, err := client.Readlink(filepath.Join(root, "link")); err != nil || target != "a.txt" {
@@ -122,6 +122,12 @@ func TestClientRoundTripsFilesystemCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := client.Rename(path, filepath.Join(root, "b.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.RemoveEmptyDirectory(filepath.Join(root, "x")); !errors.Is(err, syscall.ENOTEMPTY) {
+		t.Fatalf("rmdir of nonempty directory: %v", err)
+	}
+	if err := client.RemoveEmptyDirectory(filepath.Join(root, "x", "y")); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.RemoveAll(filepath.Join(root, "x")); err != nil {
@@ -221,6 +227,12 @@ func TestClientReturnsWorkerOpenedFiles(t *testing.T) {
 	}
 	if _, ok := opened.(*os.File); !ok {
 		t.Fatalf("Open returned %T, want the descriptor itself", opened)
+	}
+	if err := client.ChmodFile(opened, 0o604); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o604 {
+		t.Fatalf("ChmodFile mode = %v, %v", info.Mode().Perm(), err)
 	}
 }
 

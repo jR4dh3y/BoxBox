@@ -126,6 +126,11 @@ func (s *session) forget(id uint64) {
 }
 
 func (c *Client) call(req request) (response, fdconn.Message, error) {
+	return c.callWithFile(req, nil)
+}
+
+// callWithFile sends file with the request; the worker gets its own copy.
+func (c *Client) callWithFile(req request, file *os.File) (response, fdconn.Message, error) {
 	payload, err := json.Marshal(req)
 	if err != nil {
 		return response{}, fdconn.Message{}, err
@@ -137,7 +142,7 @@ func (c *Client) call(req request) (response, fdconn.Message, error) {
 	}
 	defer c.release(current)
 
-	if err := current.conn.Send(id, payload, nil); err != nil {
+	if err := current.conn.Send(id, payload, file); err != nil {
 		if errors.Is(err, fdconn.ErrMessageTooLarge) {
 			// Nothing was written, so the session and other calls are fine.
 			current.forget(id)
@@ -263,6 +268,10 @@ func (c *Client) Readlink(path string) (string, error) {
 	return string(reply.Text), err
 }
 
+func (c *Client) Symlink(oldname, newname string) error {
+	return c.do(request{Op: opSymlink, Path: rawString(oldname), Path2: rawString(newname)})
+}
+
 func (c *Client) Stat(name string) (fs.FileInfo, error) {
 	return c.info(request{Op: opStat, Path: rawString(name)})
 }
@@ -308,6 +317,10 @@ func (c *Client) Remove(name string) error {
 	return c.do(request{Op: opRemove, Path: rawString(name)})
 }
 
+func (c *Client) RemoveEmptyDirectory(path string) error {
+	return c.do(request{Op: opRemoveEmptyDirectory, Path: rawString(path)})
+}
+
 func (c *Client) RemoveAll(path string) error {
 	return c.do(request{Op: opRemoveAll, Path: rawString(path)})
 }
@@ -340,6 +353,17 @@ func (c *Client) Mkdir(path string, perm os.FileMode) error {
 
 func (c *Client) Chmod(name string, mode os.FileMode) error {
 	return c.do(request{Op: opChmod, Path: rawString(name), Perm: mode})
+}
+
+// ChmodFile sends the open file to the worker: the file belongs to the NAS
+// identity, so this process may not change its mode.
+func (c *Client) ChmodFile(file afero.File, mode os.FileMode) error {
+	osFile, ok := file.(*os.File)
+	if !ok {
+		return errors.ErrUnsupported
+	}
+	_, _, err := c.callWithFile(request{Op: opChmodFile, Perm: mode}, osFile)
+	return err
 }
 
 func (c *Client) Exists(path string) (bool, error) {

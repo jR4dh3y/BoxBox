@@ -67,7 +67,7 @@ try {
   await mkdir(desktopRoot);
   await cp(
     join(root, "desktop/target/release/boxbox-gpui"),
-    join(desktopRoot, "boxbox-files"),
+    join(desktopRoot, "boxbox"),
   );
   for (const file of ["install.sh", "io.boxbox.desktop", "icons"])
     await cp(join(root, "desktop/packaging", file), join(desktopRoot, file), {

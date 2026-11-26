@@ -429,6 +429,13 @@ impl Api {
         }
     }
 
+    pub fn remove_empty_directory(&self, path: &str) -> Result<()> {
+        match &self.provider {
+            Provider::Local(local) => local.remove_empty_directory(path),
+            Provider::Remote(remote) => remote.remove_empty_directory(path),
+        }
+    }
+
     pub fn download(&self, item: &FileInfo, dir: &Path) -> Result<PathBuf> {
         let _span = crate::profile::span("api.download").with(|| item.path.to_string());
         match &self.provider {

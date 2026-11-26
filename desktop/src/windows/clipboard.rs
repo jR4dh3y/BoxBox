@@ -142,6 +142,9 @@ fn effect_format() -> u32 {
 
 pub fn publish(files: &Files) -> Result<()> {
     ensure!(!files.paths.is_empty(), "no files to copy");
+    if cfg!(test) {
+        return Ok(());
+    }
     let names: Vec<_> = files
         .paths
         .iter()
@@ -175,7 +178,19 @@ pub fn publish(files: &Files) -> Result<()> {
     data.publish(u32::from(CF_HDROP))
 }
 
+pub fn clear() -> Result<()> {
+    if cfg!(test) {
+        return Ok(());
+    }
+    let _clipboard = Clipboard::open(true)?;
+    crate::windows::ensure_win32(unsafe { EmptyClipboard() })?;
+    Ok(())
+}
+
 pub fn read() -> Result<Option<Files>> {
+    if cfg!(test) {
+        return Ok(None);
+    }
     let _clipboard = Clipboard::open(false)?;
     let drop = unsafe { GetClipboardData(u32::from(CF_HDROP)) };
     if drop.is_null() {

@@ -1,7 +1,7 @@
 //! Settings modal for the GPUI desktop experiment.
 
 use gpui::{
-    div, prelude::*, px, AnyElement, App, ClipboardItem, Context, MouseButton, PathPromptOptions, Window,
+    div, prelude::*, px, AnyElement, App, Context, MouseButton, PathPromptOptions, Window,
 };
 
 use super::TextScale;
@@ -1186,7 +1186,7 @@ impl Workspace {
             cx.notify();
             return;
         };
-        cx.write_to_clipboard(ClipboardItem::new_string(link));
+        crate::clipboard::copy_text(link, cx);
         self.settings_panel.error = None;
         self.settings_panel.notice = Some("Share link copied to the clipboard.".into());
         cx.notify();

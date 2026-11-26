@@ -474,14 +474,19 @@ impl Pane {
 
     /// A new batch of hits can supersede the search sort while the folder sort is still current.
     pub fn apply_sort(&mut self, job: &SortJob, folder: Vec<FileInfo>, search: Option<Vec<FileInfo>>) -> bool {
-        let folder_items = if self.is_searching() { &mut self.folder_items } else { &mut self.items };
+        let searching = self.is_searching();
+        let folder_items = if searching { &self.folder_items } else { &self.items };
         let folder_current = job.folder_sort == self.sort && Arc::ptr_eq(&job.folder, folder_items);
         if folder_current {
-            *folder_items = Arc::new(folder);
+            if searching {
+                self.folder_items = Arc::new(folder);
+            } else {
+                self.replace_sorted_items(folder);
+            }
         }
         if let Some((search, (items, sort))) = search.zip(job.search.as_ref()) {
             if self.search_sort == Some(*sort) && Arc::ptr_eq(items, &self.items) {
-                self.items = Arc::new(search);
+                self.replace_sorted_items(search);
                 return true;
             }
         }
@@ -490,6 +495,15 @@ impl Pane {
 
     /// Swaps in new entries, keeping the selection, anchor and active row by path.
     fn replace_items(&mut self, items: Vec<FileInfo>) {
+        self.replace_sorted_items(items);
+        if !self.selected.is_empty() {
+            let paths: HashSet<&str> = self.items.iter().map(|item| item.path.as_str()).collect();
+            self.selected.retain(|path| paths.contains(path.as_str()));
+        }
+    }
+
+    /// A reorder preserves the selected paths, but the cursor and range anchor are row indices.
+    fn replace_sorted_items(&mut self, items: Vec<FileInfo>) {
         let path_at = |index: Option<usize>| -> Option<String> {
             index
                 .and_then(|i| self.items.get(i))
@@ -497,10 +511,6 @@ impl Pane {
         };
         let (anchor, active) = (path_at(self.anchor), path_at(self.active));
         self.items = Arc::new(items);
-        if !self.selected.is_empty() {
-            let paths: HashSet<&str> = self.items.iter().map(|item| item.path.as_str()).collect();
-            self.selected.retain(|path| paths.contains(path.as_str()));
-        }
         self.anchor = anchor.and_then(|path| self.index_of(&path));
         self.active = active.and_then(|path| self.index_of(&path));
     }
@@ -1165,6 +1175,39 @@ mod tests {
         // The next search is ranked again.
         pane.set_search_input("ab".into());
         assert_eq!(pane.display_sort(), None);
+    }
+
+    #[test]
+    fn sorting_preserves_the_cursor_and_anchor_after_input_on_the_old_rows() {
+        for searching in [false, true] {
+            let mut pane = pane_in_folder();
+            if searching {
+                pane.set_search_input("ab".into());
+                pane.begin_search();
+                found(&mut pane, vec![hit("d/aab"), hit("d/bab"), hit("d/cab")]);
+            } else {
+                load(&mut pane, ["aab", "bab", "cab"].map(file).to_vec());
+            }
+            let sort = Sort { field: crate::sort::SortField::Name, dir: crate::sort::SortDir::Desc };
+            if searching {
+                pane.set_search_sort(sort);
+            } else {
+                pane.set_sort(sort);
+            }
+            let job = pane.sort_job();
+            let (folder, search) = job.run();
+            let a = pane.items.iter().position(|item| item.name == "aab").unwrap();
+            let c = pane.items.iter().position(|item| item.name == "cab").unwrap();
+            pane.move_cursor(a, Move::Select);
+            pane.move_cursor(c, Move::Focus);
+
+            assert!(pane.apply_sort(&job, folder, search));
+            assert_eq!(names(&pane), ["cab", "bab", "aab"]);
+            assert_eq!(pane.active, Some(0));
+            assert_eq!(pane.anchor, Some(2));
+            pane.move_cursor(1, Move::Extend);
+            assert_eq!(pane.items.iter().filter(|item| pane.selected.contains(&item.path)).map(|item| item.name.as_str()).collect::<Vec<_>>(), ["bab", "aab"]);
+        }
     }
 
     #[test]

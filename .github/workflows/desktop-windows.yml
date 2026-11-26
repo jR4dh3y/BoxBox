@@ -33,7 +33,7 @@ jobs:
           $name = "boxbox-desktop-v$version-windows-amd64"
           $unpacked = Join-Path $env:RUNNER_TEMP 'BoxBox Windows smoke'
           Expand-Archive -LiteralPath "dist/release/$name.zip" -DestinationPath $unpacked
-          bun scripts/desktop-smoke.ts (Join-Path $unpacked "$name/boxbox-files.exe")
+          bun scripts/desktop-smoke.ts (Join-Path $unpacked "$name/boxbox.exe")
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: boxbox-release-windows
