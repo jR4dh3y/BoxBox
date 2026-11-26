@@ -28,6 +28,7 @@ jobs:
       - name: Test desktop
         run: cargo test --release --locked --workspace --manifest-path desktop/Cargo.toml
       - name: Launch the packaged app until it paints a folder
+        timeout-minutes: 10
         run: |
           $version = (Get-Content -Raw VERSION).Trim()
           $name = "boxbox-desktop-v$version-windows-amd64"
