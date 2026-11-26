@@ -1,0 +1,30 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import { blogPosts, readBlogMarkdown, renderBlogMarkdown } from '../../lib/blog';
+
+export function getStaticPaths() {
+  return blogPosts.map((post) => ({ params: { slug: post.slug }, props: { post } }));
+}
+
+const { post } = Astro.props;
+const { html } = await renderBlogMarkdown(readBlogMarkdown(post.slug));
+---
+
+<Layout title={`${post.title} | BoxBox Blog`} description={post.description}>
+  <SiteNav />
+  <main class="mx-auto w-full max-w-3xl px-5 py-10 md:px-8 lg:py-14">
+    <a href="/blog/" class="text-sm text-text-secondary underline hover:text-white">All posts</a>
+    <article class="mt-6">
+      <header class="mb-10 border-b border-border-primary pb-8">
+        <time datetime={post.date} class="text-sm text-text-secondary">{post.date}</time>
+        <h1 class="mt-3 text-4xl font-black tracking-tight text-white md:text-5xl" style="font-family: 'Bricolage Grotesque', sans-serif;">
+          {post.title}
+        </h1>
+      </header>
+      <div class="doc-content [&_img]:h-auto [&_img]:w-full [&_img]:rounded-lg" set:html={html} />
+    </article>
+  </main>
+  <SiteFooter />
+</Layout>

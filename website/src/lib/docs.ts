@@ -239,12 +239,7 @@ export async function getDocPage(slug: string): Promise<DocPage> {
     join(docsDirectory, `${normalizedSlug}.md`),
     "utf8",
   );
-  const rendered = sanitizeDocHtml(await marked.parse(markdown));
-  const linked = normalizeMarkdownDocLinks(rendered);
-  const highlighted = sanitizeHighlightedHtml(
-    await highlightCodeBlocks(linked),
-  );
-  const { html, headings } = addHeadingIds(highlighted);
+  const rendered = await renderMarkdown(markdown, { docLinks: true });
   const meta = docMeta.get(normalizedSlug) ?? {
     title: titleFromMarkdown(markdown) ?? titleFromSlug(normalizedSlug),
     description: "",
@@ -253,17 +248,29 @@ export async function getDocPage(slug: string): Promise<DocPage> {
   return {
     slug: normalizedSlug,
     ...meta,
-    html: sanitizeHighlightedHtml(html),
-    headings,
+    ...rendered,
   };
 }
 
-function sanitizeDocHtml(html: string): string {
-  return sanitizeHtml(html, baseSanitizeOptions);
-}
-
-function sanitizeHighlightedHtml(html: string): string {
-  return sanitizeHtml(html, highlightedSanitizeOptions);
+export async function renderMarkdown(
+  markdown: string,
+  options: { docLinks?: boolean; imageRoot?: `/${string}/` } = {},
+): Promise<Pick<DocPage, "html" | "headings">> {
+  const { imageRoot } = options;
+  const rendered = sanitizeHtml(await marked.parse(markdown), {
+    ...baseSanitizeOptions,
+    exclusiveFilter: ({ tag, attribs }) => {
+      if (tag !== "img" || !imageRoot) return false;
+      const src = attribs.src ?? "";
+      return !src.startsWith(imageRoot) ||
+        /%2f|%5c/i.test(src) ||
+        !new URL(src, "https://boxbox.invalid").pathname.startsWith(imageRoot);
+    },
+  });
+  const linked = options.docLinks ? normalizeMarkdownDocLinks(rendered) : rendered;
+  const highlighted = sanitizeHtml(await highlightCodeBlocks(linked), highlightedSanitizeOptions);
+  const { html, headings } = addHeadingIds(highlighted);
+  return { html: sanitizeHtml(html, highlightedSanitizeOptions), headings };
 }
 
 function normalizeMarkdownDocLinks(html: string): string {
