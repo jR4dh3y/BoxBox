@@ -48,6 +48,7 @@ const (
 	opLstat                operation = "lstat"
 	opOpenFile             operation = "openFile"
 	opRemove               operation = "remove"
+	opRemoveEmptyDirectory           = "removeEmptyDirectory"
 	opRemoveAll            operation = "removeAll"
 	opRename               operation = "rename"
 	opRenameNoReplace      operation = "renameNoReplace"

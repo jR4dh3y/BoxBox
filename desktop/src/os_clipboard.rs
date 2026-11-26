@@ -5,14 +5,20 @@
 //!
 //! On Wayland this owns the clipboard through the data-control protocol
 //! (wlroots compositors, Niri, Hyprland, KDE). GNOME has no such protocol,
-//! and X11 falls back to `xclip`, which offers one format. Every call here
+//! and X11 offers files in GNOME's format. X11 reads use `xclip`. Every call here
 //! blocks, so it runs off the UI thread.
 
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result};
+
+#[path = "os_clipboard/wayland.rs"]
+mod wayland_clipboard;
+
+static X11_CLIPBOARD: Mutex<Option<x11_clipboard::Clipboard>> = Mutex::new(None);
 
 const GNOME: &str = "x-special/gnome-copied-files";
 const URI_LIST: &str = "text/uri-list";
@@ -119,41 +125,37 @@ pub fn publish(files: &Files) -> Result<()> {
     }
     let formats = encode(files);
     if wayland() {
-        use wl_clipboard_rs::copy::{MimeSource, MimeType, Options, Source};
-        // Fails fast when the compositor has no data-control protocol.
-        if let Err(wl_clipboard_rs::paste::Error::MissingProtocol { name, .. }) =
-            wl_clipboard_rs::paste::get_mime_types(wl_clipboard_rs::paste::ClipboardType::Regular, wl_clipboard_rs::paste::Seat::Unspecified)
-        {
-            bail!("this compositor does not let apps own the clipboard ({name} is missing)");
+        let mut formats = formats;
+        if let Some((_, text)) = formats.iter().find(|(mime, _)| *mime == "text/plain;charset=utf-8") {
+            let text = text.clone();
+            formats.extend(["text/plain", "UTF8_STRING", "STRING", "TEXT"].map(|mime| (mime, text.clone())));
         }
-        let sources = formats
-            .into_iter()
-            .map(|(mime, bytes)| MimeSource { source: Source::Bytes(bytes.into_boxed_slice()), mime_type: MimeType::Specific(mime.into()) })
-            .collect::<Vec<_>>();
-        // Serving blocks until the selection is replaced, so it gets a thread of its own.
-        std::thread::Builder::new()
-            .name("clipboard".into())
-            .spawn(move || {
-                let mut options = Options::new();
-                options.foreground(true);
-                if let Err(error) = options.copy_multi(sources) {
-                    log::warn!("Could not offer files on the clipboard: {error}");
-                }
-            })
-            .context("cannot start the clipboard thread")?;
+        return wayland_clipboard::publish(formats);
+    }
+    // The owner window stays alive while other apps can request the files.
+    let clipboard = x11_clipboard::Clipboard::new()?;
+    let target = clipboard.setter.get_atom(GNOME)?;
+    let (_, bytes) = formats.into_iter().next().context("nothing to copy")?;
+    let mut published = X11_CLIPBOARD.lock().expect("X11 clipboard owner");
+    clipboard.store(clipboard.setter.atoms.clipboard, target, bytes)?;
+    *published = Some(clipboard);
+    Ok(())
+}
+
+pub fn clear() -> Result<()> {
+    if cfg!(test) {
         return Ok(());
     }
-    // xclip forks to serve the selection and offers a single target.
-    let (_, bytes) = formats.into_iter().next().context("nothing to copy")?;
-    let mut child = Command::new("xclip")
-        .args(["-selection", "clipboard", "-t", GNOME, "-i"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .context("install xclip to copy files to other apps")?;
-    child.stdin.take().context("xclip has no input")?.write_all(&bytes)?;
-    child.wait()?;
+    if wayland() {
+        use wl_clipboard_rs::copy::{clear, ClipboardType, Seat};
+        return clear(ClipboardType::Regular, Seat::All).context("cannot clear the Wayland clipboard");
+    }
+    use x11rb::protocol::xproto::ConnectionExt as _;
+    let mut published = X11_CLIPBOARD.lock().expect("X11 clipboard owner");
+    let (connection, _) = x11rb::connect(None)?;
+    let clipboard = connection.intern_atom(false, b"CLIPBOARD")?.reply()?.atom;
+    connection.set_selection_owner(x11rb::NONE, clipboard, x11rb::CURRENT_TIME)?.check()?;
+    *published = None;
     Ok(())
 }
 

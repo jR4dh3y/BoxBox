@@ -35,6 +35,19 @@ func (h *FileHandler) RegisterRoutes(r chi.Router) {
 	r.Delete("/*", h.Delete)
 }
 
+// RegisterEmptyDirectoryRoutes registers the nonrecursive move cleanup endpoint.
+func (h *FileHandler) RegisterEmptyDirectoryRoutes(r chi.Router) {
+	r.Delete("/*", h.removeEmptyDirectory)
+}
+
+func (h *FileHandler) removeEmptyDirectory(w http.ResponseWriter, r *http.Request) {
+	if err := h.fileService.RemoveEmptyDirectory(r.Context(), chi.URLParam(r, "*")); err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListPath returns a whole directory without the polymorphic file-info lookup.
 func (h *FileHandler) ListPath(w http.ResponseWriter, r *http.Request) {
 	path := chi.URLParam(r, "*")

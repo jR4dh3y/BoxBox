@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"uuid"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
@@ -26,6 +27,7 @@ var (
 	ErrNoFileAccess       = errors.New("account has no NAS identity")
 	ErrInvalidOperation   = errors.New("invalid operation")
 	ErrMountPointNotFound = errors.New("mount point not found")
+	ErrDirectoryNotEmpty  = errors.New("directory is not empty")
 	ErrDirectoryTooLarge  = errors.New("directory exceeds entry limit")
 )
 
@@ -64,6 +66,7 @@ type FileCommander interface {
 	CreateDir(ctx context.Context, path string) error
 	Rename(ctx context.Context, oldPath, newPath string) error
 	Delete(ctx context.Context, path string) error
+	RemoveEmptyDirectory(ctx context.Context, path string) error
 	CreateFile(ctx context.Context, path string) (WriteFile, error)
 }
 
@@ -365,6 +368,31 @@ func (s *fileService) Delete(ctx context.Context, path string) error {
 
 	// Remove file or directory
 	return s.fs.RemoveAll(fsPath)
+}
+
+// RemoveEmptyDirectory removes an emptied source folder after a move.
+func (s *fileService) RemoveEmptyDirectory(ctx context.Context, path string) error {
+	mount, fsPath, err := s.mounts.resolve(path, writeEntry)
+	if err != nil {
+		return err
+	}
+	if path == mount.Name {
+		return ErrInvalidOperation
+	}
+	if err := s.mounts.requireWritablePath(fsPath, true); err != nil {
+		return err
+	}
+	err = s.fs.RemoveEmptyDirectory(fsPath)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return ErrPathNotFound
+	case errors.Is(err, syscall.ENOTDIR):
+		return ErrNotDirectory
+	case errors.Is(err, syscall.ENOTEMPTY), errors.Is(err, syscall.EEXIST):
+		return ErrDirectoryNotEmpty
+	default:
+		return err
+	}
 }
 
 // OpenFile opens a file for reading using the filesystem abstraction

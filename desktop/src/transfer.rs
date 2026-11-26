@@ -139,7 +139,10 @@ impl Run<'_> {
         let target = join(parent, &name);
         let same = same_provider(source, self.dest());
         // Before anything is replaced or copied; a folder link is pasted as a link.
-        if item.is_dir && self.goes_into_itself(source, item, parent, false)? {
+        if item.is_dir && !is_link(source, &item.path) && self.goes_into_itself(source, item, parent)? {
+            return Ok(());
+        }
+        if self.fat && item.is_dir && !self.attempt(&item.name, || require_real_folder(source, &item.path))? {
             return Ok(());
         }
         if let Ok(existing) = self.dest().stat(&target) {
@@ -173,7 +176,7 @@ impl Run<'_> {
                     }
                 }
                 Answer::Merge => {
-                    if self.goes_into_itself(source, item, parent, true)? {
+                    if self.goes_into_itself(source, item, &target)? {
                         return Ok(());
                     }
                     return self.merge_into(source, item, &target);
@@ -183,9 +186,6 @@ impl Run<'_> {
         }
         // FAT needs every name inside checked too, so folders are walked there.
         if self.fat && item.is_dir {
-            if self.goes_into_itself(source, item, parent, true)? {
-                return Ok(());
-            }
             if !self.attempt(&item.name, || self.job.destination.create_directory(parent, &name).map(|_| ()))? {
                 return Ok(());
             }
@@ -199,10 +199,9 @@ impl Run<'_> {
     }
 
     /// Whether `item` would go into `parent`, itself or inside it, which reports
-    /// it as the item's failure. A link to a folder is only refused when `walked`,
-    /// as a merge or a FAT copy goes through it; otherwise the link itself moves.
-    fn goes_into_itself(&mut self, source: &Arc<Api>, item: &FileInfo, parent: &str, walked: bool) -> Result<bool> {
-        if !same_provider(source, self.dest()) || (!walked && is_link(source, &item.path)) || !within(source, &item.path, parent) {
+    /// it as the item's failure.
+    fn goes_into_itself(&mut self, source: &Arc<Api>, item: &FileInfo, parent: &str) -> Result<bool> {
+        if !same_provider(source, self.dest()) || !within(source, &item.path, parent) {
             return Ok(false);
         }
         let into_itself = || anyhow::bail!("“{}” cannot go inside itself", item.name);
@@ -212,15 +211,32 @@ impl Run<'_> {
 
     /// Two folders become one: each item goes inside, asking again where names meet.
     fn merge_into(&mut self, source: &Arc<Api>, item: &FileInfo, target: &str) -> Result<()> {
-        let Some(children) = self.attempt_value(&item.name, || source.list(&item.path))? else { return Ok(()) };
+        let destination = self.job.destination.clone();
+        let Some(children) = self.attempt_value(&item.name, || {
+            require_real_folder(source, &item.path)?;
+            require_real_folder(&destination, target)?;
+            source.list(&item.path)
+        })? else { return Ok(()) };
         for child in &children {
             crate::progress::check()?;
             self.put(source, child, target, true)?;
         }
         // A moved folder is gone once everything left it; a skipped item keeps it.
-        let empty = || source.list(&item.path).is_ok_and(|left| left.is_empty()) && unlisted_name(source, &item.path).is_none();
-        if self.job.mode == Mode::Move && empty() {
-            let _ = source.delete(&item.path, false);
+        if self.job.mode == Mode::Move {
+            crate::progress::check()?;
+            if !self.attempt(&item.name, || {
+                require_real_folder(source, &item.path)?;
+                let empty = match source.entry_path(&item.path)? {
+                    Some(path) => fs::read_dir(path)?.next().transpose()?.is_none(),
+                    None => source.list(&item.path)?.is_empty(),
+                };
+                if empty {
+                    source.remove_empty_directory(&item.path)?;
+                }
+                Ok(())
+            })? {
+                return Ok(());
+            }
         }
         self.outcome.done += 1;
         Ok(())
@@ -324,12 +340,7 @@ impl Run<'_> {
         if item.is_dir {
             // A listing shows a link to a folder as the folder; walking it would
             // copy what it points at, or loop for ever on a link to a parent.
-            if let Some(entry) = source.entry_path(&item.path)? {
-                let metadata = fs::symlink_metadata(&entry).with_context(|| format!("cannot read {}", item.name))?;
-                if metadata.file_type().is_symlink() {
-                    bail!("{} is a link to a folder; links cannot be copied to another place", item.name);
-                }
-            }
+            require_real_folder(source, &item.path)?;
             if let Some(unlisted) = unlisted_name(source, &item.path) {
                 bail!("{} holds {unlisted:?}, a name that is not UTF-8, which BoxBox cannot copy", item.name);
             }
@@ -387,6 +398,15 @@ fn contains(api: &Api, folder: &str, item: &str) -> bool {
     let Some(folder) = api.entry_path(folder).ok().flatten().and_then(|path| entry_identity(&path)) else { return false };
     let Some(item) = api.entry_path(item).ok().flatten() else { return false };
     item.ancestors().skip(1).any(|ancestor| entry_identity(ancestor) == Some(folder))
+}
+
+fn require_real_folder(api: &Api, path: &str) -> Result<()> {
+    // Server listings describe the link itself, so directory links are not walkable entries.
+    if let Some(entry) = api.entry_path(path)? {
+        let metadata = fs::symlink_metadata(&entry).with_context(|| format!("cannot inspect {path}"))?;
+        anyhow::ensure!(metadata.is_dir(), "cannot walk {path}: the entry is a link or no longer a folder");
+    }
+    Ok(())
 }
 
 fn is_link(api: &Api, path: &str) -> bool {
@@ -674,6 +694,53 @@ mod tests {
         // The skipped file keeps its folder.
         assert!(root.0.join("src/docs/same.txt").exists());
         assert!(!root.0.join("src/docs/new.txt").exists());
+    }
+
+    #[test]
+    fn a_move_merge_removes_the_empty_source_folders() {
+        let (root, api) = fixture(&["src/docs/sub/a.txt", "dst/docs/sub/"]);
+        let ask = |question, _| {
+            assert!(matches!(question, Question::Conflict { .. }));
+            (Answer::Merge, false)
+        };
+        assert_eq!(run(&job(&api, Mode::Move, &["src/docs"], "dst"), &ask).unwrap().skipped, 0);
+        assert!(root.0.join("dst/docs/sub/a.txt").is_file());
+        assert!(!root.0.join("src/docs").exists());
+    }
+
+    #[test]
+    fn a_fat_move_removes_empty_sources_after_walking_the_tree() {
+        let (root, api) = fixture(&["src/docs/sub/notes.txt", "dst/"]);
+        let job = job(&api, Mode::Move, &["src/docs"], "dst");
+        let ask = |question, _| panic!("unexpected question: {question:?}");
+        let mut run = Run { job: &job, ask: &ask, policy: Policy::default(), outcome: Outcome::default(), fat: true };
+        let (source, item) = &job.items[0];
+        run.put(source, item, &job.parent, false).unwrap();
+        assert!(root.0.join("dst/docs/sub/notes.txt").is_file());
+        assert!(!root.0.join("src/docs").exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_move_merge_never_walks_a_folder_link() {
+        for source_is_link in [true, false] {
+            let (root, api) = fixture(&["real/keep.txt", "src/", "dst/"]);
+            let (link, folder) = if source_is_link { ("src/docs", "dst/docs") } else { ("dst/docs", "src/docs") };
+            fs::create_dir(root.0.join(folder)).unwrap();
+            fs::write(root.0.join(folder).join("untouched"), "data").unwrap();
+            std::os::unix::fs::symlink("../real", root.0.join(link)).unwrap();
+            let ask = |question, _| match question {
+                Question::Conflict { .. } => (Answer::Merge, false),
+                Question::Failed { error, .. } if error.contains("link") => (Answer::Skip, false),
+                other => panic!("unexpected question: {other:?}"),
+            };
+            let outcome = run(&job(&api, Mode::Move, &["src/docs"], "dst"), &ask).unwrap();
+            assert_eq!(outcome, Outcome { done: 0, skipped: 1 });
+            assert!(root.0.join("real/keep.txt").is_file());
+            assert!(!root.0.join("real/untouched").exists());
+            assert!(root.0.join(folder).join("untouched").is_file());
+            assert!(fs::symlink_metadata(root.0.join(link)).unwrap().is_symlink());
+        }
     }
 
     #[test]
