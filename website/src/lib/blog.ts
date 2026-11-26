@@ -14,9 +14,9 @@ export const blogPosts: readonly BlogPost[] = ([
   {
     slug: "v0-4-0",
     version: "v0.4.0",
-    title: "BoxBox 0.4: the desktop app is native now",
+    title: "BoxBox v0.4.0: native desktop app, Windows support, and way less weight",
     date: "2026-11-26",
-    description: "The desktop app is a native Rust app now, it runs on Windows, and the web app picks up its file-manager features.",
+    description: "BoxBox v0.4.0 is out. The big change is the desktop app. I dropped Electrobun and rewrote it in Rust with GPUI. It is still boxbox, it keeps the same look, it runs on Windows alongside Linux now, and it drops the bundled Chromium browser, Bun runtime, and private Go server for a single native binary.",
   },
 ] satisfies BlogPost[]).sort((a, b) => b.date.localeCompare(a.date));
 
