@@ -48,37 +48,6 @@ impl SystemFileClipboard {
     }
 }
 
-#[derive(Default)]
-pub(super) struct ClipboardWrites {
-    generation: std::sync::atomic::AtomicU64,
-    writer: std::sync::Mutex<()>,
-}
-
-impl ClipboardWrites {
-    pub(super) fn begin(&self) -> u64 {
-        self.generation.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
-    }
-
-    fn current(&self) -> u64 {
-        self.generation.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    fn commit(
-        &self,
-        generation: u64,
-        write: impl FnOnce() -> anyhow::Result<Option<os_clipboard::Files>>,
-    ) -> Option<Option<os_clipboard::Files>> {
-        let _writer = self.writer.lock().expect("clipboard writer");
-        if generation != self.current() {
-            return None;
-        }
-        Some(write().unwrap_or_else(|error| {
-            log::warn!("Could not update the system clipboard: {error:#}");
-            os_clipboard::read().ok().flatten()
-        }))
-    }
-}
-
 #[derive(Clone)]
 pub(crate) struct ClipboardEntry {
     pub api: Arc<Api>,
@@ -630,7 +599,7 @@ impl Workspace {
     /// Offers local files to other apps and retires the old system choice for a server copy.
     fn publish_files(&mut self, api: Arc<Api>, items: &[FileInfo], mode: ClipboardMode, cx: &mut Context<Self>) {
         let writes = self.system_file_clipboard.clone();
-        let generation = writes.begin();
+        let generation = crate::clipboard::begin_file_write(cx);
         self.system_file_contents.begin();
         let virtual_paths: Vec<String> = items.iter().map(|item| item.path.clone()).collect();
         let op = match mode {
@@ -650,11 +619,17 @@ impl Workspace {
                         let paths = paths.iter().map(|path| crate::windows::shell_path_buf(path)).collect();
                         Ok::<_, anyhow::Error>(os_clipboard::Files { op, paths })
                     }).transpose();
-                    writes.commit(generation, || match files {
-                        Ok(Some(files)) => os_clipboard::publish(&files).map(|()| Some(files)),
-                        Ok(None) => os_clipboard::clear().map(|()| None),
-                        Err(error) => Err(error),
-                    })
+                    writes.commit(generation, || {
+                        let result = match files {
+                            Ok(Some(files)) => os_clipboard::publish(&files).map(|()| Some(files)),
+                            Ok(None) => os_clipboard::clear().map(|()| None),
+                            Err(error) => Err(error),
+                        };
+                        result.unwrap_or_else(|error| {
+                            log::warn!("Could not update the system clipboard: {error:#}");
+                            os_clipboard::read().ok().flatten()
+                        })
+                    }).await
                 })
                 .await;
             this.update(cx, |this, _| {
@@ -682,6 +657,10 @@ impl Workspace {
     /// Pastes into `folder` on `target`'s provider, which need not be the folder it shows.
     pub(crate) fn paste_into_folder(&mut self, target: PaneTarget, folder: String, cx: &mut Context<Self>) {
         if self.operation_status.is_busy() {
+            return;
+        }
+        if crate::clipboard::pending_text(cx).is_some() {
+            self.notify(crate::components::ToastKind::Info, "The clipboard has no files to paste", cx);
             return;
         }
         if matches!(self.system_file_contents, SystemFileClipboard::Pending(_)) {
@@ -1622,16 +1601,6 @@ fn import_path_recursive(api: &Arc<Api>, path: &Path, parent: &str) -> anyhow::R
 #[cfg(test)]
 mod transfer_tests {
     use super::*;
-
-    #[test]
-    fn delayed_file_copy_cannot_replace_a_newer_clipboard_choice() {
-        let writes = ClipboardWrites::default();
-        let slow = writes.begin();
-        let newer = writes.begin();
-        let files = os_clipboard::Files { op: os_clipboard::FileOp::Copy, paths: vec![PathBuf::from("newer")] };
-        assert_eq!(writes.commit(newer, || Ok(Some(files.clone()))), Some(Some(files)));
-        assert_eq!(writes.commit(slow, || panic!("an obsolete copy must not publish")), None);
-    }
 
     #[test]
     fn a_drop_skips_files_already_in_the_folder() {

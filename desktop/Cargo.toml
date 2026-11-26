@@ -11,6 +11,7 @@ members = [".", "thumbnail"]
 [dependencies]
 anyhow = "1"
 async-channel = "2"
+async-lock = "3"
 boxbox-thumbnail = { version = "0.1.0", path = "thumbnail" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 crc32fast = "1.5.4"

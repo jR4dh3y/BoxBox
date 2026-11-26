@@ -7,6 +7,7 @@ mod assets;
 #[cfg(target_os = "linux")]
 mod chooser;
 mod cli;
+mod clipboard;
 mod components;
 mod emblems;
 mod devices;

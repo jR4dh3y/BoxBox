@@ -113,8 +113,17 @@ pub fn decode(gnome: Option<&[u8]>, uri_list: Option<&[u8]>, kde_cut: Option<&[u
     (!paths.is_empty()).then_some(Files { op: if cut { FileOp::Cut } else { FileOp::Copy }, paths })
 }
 
-fn wayland() -> bool {
+pub(crate) fn wayland() -> bool {
     std::env::var_os("WAYLAND_DISPLAY").is_some_and(|display| !display.is_empty())
+}
+
+/// Publishes text without depending on the window still having Wayland focus.
+pub(crate) fn publish_wayland_text(text: &str) -> Result<()> {
+    wayland_clipboard::publish(
+        ["text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "STRING", "TEXT"]
+            .map(|mime| (mime, text.as_bytes().to_vec()))
+            .into(),
+    )
 }
 
 /// Offers `files` until another app takes the clipboard. Returns once it is offered.

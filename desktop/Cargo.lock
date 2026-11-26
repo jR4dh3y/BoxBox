@@ -772,6 +772,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "async-channel 2.5.0",
+ "async-lock",
  "backhand",
  "boxbox-thumbnail",
  "chrono",
