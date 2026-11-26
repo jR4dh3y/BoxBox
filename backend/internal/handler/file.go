@@ -3,6 +3,7 @@ package handler
 import (
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jR4dh3y/BoxBox/backend/internal/middleware"
@@ -25,9 +26,13 @@ func NewFileHandler(fileService service.FileManager) *FileHandler {
 
 // RegisterRoutes registers file routes on the given router
 func (h *FileHandler) RegisterRoutes(r chi.Router) {
+	r.Use(h.routePeek)
 	r.Get("/", h.ListRoots)
 	r.Get("/stats", h.GetDriveStats)
 	r.With(middleware.JSONCompression).Get("/list/*", h.ListPath)
+	// A mount may take any name, so operations on a path are chosen by query rather than by a
+	// fixed first segment, and Properties takes the root, which no item can be created in.
+	r.Post("/", h.Properties)
 	r.Get("/*", h.GetPath)
 	r.Post("/*", h.CreateItem)
 	r.Put("/*", h.Rename)
@@ -61,6 +66,61 @@ func (h *FileHandler) ListPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, directoryListing(list), http.StatusOK)
+}
+
+// PeekResponse is a few entries of a directory, for its grid tile.
+type PeekResponse struct {
+	Items []model.FileInfo `json:"items"`
+}
+
+// routePeek uses the whole path below /files before list and stats routes match.
+func (h *FileHandler) routePeek(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Query().Has("peek") {
+			path := strings.TrimPrefix(chi.RouteContext(r.Context()).RoutePath, "/")
+			h.peekPath(w, r, path)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (h *FileHandler) peekPath(w http.ResponseWriter, r *http.Request, path string) {
+	if path == "" {
+		writeError(w, "Path is required", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	items, err := h.fileService.Peek(r.Context(), path, r.URL.Query().Get("hidden") == "1")
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	writeJSON(w, PeekResponse{Items: items}, http.StatusOK)
+}
+
+// PropertiesRequest names the items Properties describes.
+type PropertiesRequest struct {
+	Paths []string `json:"paths"`
+}
+
+// Properties returns owners, dates and totals for a selection.
+// POST /api/v1/files
+func (h *FileHandler) Properties(w http.ResponseWriter, r *http.Request) {
+	var request PropertiesRequest
+	if err := decodeJSONBody(w, r, &request); err != nil {
+		writeError(w, "Invalid request body", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	if len(request.Paths) == 0 || len(request.Paths) > service.MaxPropertiesPaths {
+		writeError(w, "Choose between 1 and 1000 items", model.ErrCodeValidationError, http.StatusBadRequest)
+		return
+	}
+	properties, err := h.fileService.Properties(r.Context(), request.Paths)
+	if err != nil {
+		HandleServiceError(w, err)
+		return
+	}
+	writeJSON(w, properties, http.StatusOK)
 }
 
 // MountPointResponse represents a mount point in API responses

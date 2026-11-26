@@ -5,7 +5,7 @@
 import { isLocalDesktop } from '#lib/api/desktop.js';
 import { wallpaperPublication } from './wallpaperPublication.js';
 import { getWallpaper } from '#lib/api/wallpaper.js';
-import { deleteLocalWallpaper } from '#lib/utils/wallpaperStorage.js';
+import { isLocalWallpaperReference } from '#lib/utils/wallpaperReference.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { currentUsername } from '#lib/utils/sessionUser.js';
 
@@ -48,14 +48,18 @@ export function syncShareWallpaperOnLogin(): Promise<void> {
 			signal.throwIfAborted();
 			wallpaper = await restoreWallpaper(stored, initial, signal, user);
 		}
+		const previous = initial.backgroundImage;
+		const cleanup =
+			previous && previous !== wallpaper.backgroundImage && isLocalWallpaperReference(previous)
+				? await import('./wallpaperStorage.js')
+				: null;
 		signal.throwIfAborted();
 		if (currentUsername() !== user || settingsStore.wallpaperRevision !== revision) return;
 		settingsStore.set({
 			...settingsStore.current,
 			...wallpaper
 		});
-		if (initial.backgroundImage !== wallpaper.backgroundImage)
-			await deleteLocalWallpaper(initial.backgroundImage);
+		await cleanup?.deleteLocalWallpaper(previous);
 	}).catch((error) => {
 		if (!signal.aborted) console.warn('Unable to restore the wallpaper', error);
 	});

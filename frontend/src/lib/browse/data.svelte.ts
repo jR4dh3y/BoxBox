@@ -174,6 +174,14 @@ export function useBrowseData(
 		get displayItems() {
 			return displayItems;
 		},
+		/**
+		 * Every name in the folder at `path`, hidden ones too, when that is the listing held;
+		 * null otherwise, as for a search result's folder.
+		 */
+		namesIn(path: string): string[] | null {
+			const listing = folder.value;
+			return listing && listing.path === path ? listing.items.map((item) => item.name) : null;
+		},
 		get previewableFiles() {
 			return displayItems.filter((item) => !item.isDir && canPreview(item.name));
 		},
@@ -205,8 +213,9 @@ export function useBrowseData(
 		refreshAll() {
 			void browseRequests.changed();
 		},
-		reload() {
-			void (isAtRoot ? browseRequests.changed() : browseRequests.changed(location.path));
+		/** Settles when every load it started has finished, so Refresh can turn until then. */
+		reload(): Promise<void> {
+			return isAtRoot ? browseRequests.changed() : browseRequests.changed(location.path);
 		},
 		refetchDirectory() {
 			void browseRequests.changed(location.path);

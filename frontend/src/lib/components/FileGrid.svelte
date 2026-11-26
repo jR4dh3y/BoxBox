@@ -12,16 +12,37 @@
 	import type { FileInfo } from '#lib/api/files.js';
 	import { getThumbnailUrl } from '#lib/api/files.js';
 	import { formatFileSize, formatFileDate } from '#lib/utils/format.js';
-	import { getFileTypeDescription, getFileIcon, getPreviewType } from '#lib/utils/fileTypes.js';
+	import {
+		getFileTypeDescription,
+		getFileIcon,
+		getFileTint,
+		getPreviewType
+	} from '#lib/utils/fileTypes.js';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import { canvasMeasure } from '#lib/utils/textMeasure.js';
+	import type { Measure } from '#lib/browse/tileLabel.js';
+	import TileLabel from './TileLabel.svelte';
 	import { Spinner } from '#lib/components/ui/index.js';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import { FolderOpen } from 'lucide-svelte';
 	import { CONFIG } from '#lib/config.js';
 	import { createDelayedFlag } from '#lib/utils/delayedFlag.svelte.js';
 	import { createFixedRowWindow } from '#lib/utils/fixedRowWindow.svelte.js';
-	import { withPathSelected } from '#lib/browse/selection.svelte.js';
+	import { ViewCursor } from '#lib/browse/viewCursor.svelte.js';
+	import { RubberBand } from '#lib/browse/rubberBand.svelte.js';
+	import { isMiddleButton, openInNewTab } from '#lib/browse/newTab.js';
+	import { dragScrollStep } from '#lib/browse/springLoad.js';
+	import { DEFAULT_ZOOM, gridMetrics } from '#lib/browse/zoom.js';
+	import type { FolderAppearance } from '#lib/browse/folderLooks.js';
+	import FolderGlyph from './FolderGlyph.svelte';
+	import type { RenameEditor } from '#lib/browse/renameEditor.js';
+	import FolderPeekCards from './FolderPeekCards.svelte';
+	import { folderPeeks } from '#lib/browse/folderPeek.svelte.js';
+	import { settingsStore } from '#lib/stores/settings.svelte.js';
+	import { hoverPoint, type HoverTarget } from '#lib/browse/hoverPoint.js';
+
+	const PLAIN_FOLDER: FolderAppearance = { color: null, emblem: null, emblemColor: null };
 
 	let {
 		items = [],
@@ -29,7 +50,7 @@
 		emptyMessage = 'This folder is empty',
 		selectedPaths = new SvelteSet<string>(),
 		isLoading = false,
-		compactMode = false,
+		zoom = DEFAULT_ZOOM,
 		cutPaths = new SvelteSet<string>(),
 		favoritePaths = new SvelteSet<string>(),
 		canPaste = false,
@@ -38,7 +59,12 @@
 		showFileExtensions = true,
 		previewOnSingleClick = false,
 		selectionCheckboxes = true,
+		fileIconTints = false,
 		dropTarget,
+		folderAppearance = () => PLAIN_FOLDER,
+		hover,
+		renameEditor = null,
+		folderPreviews = false,
 		onItemClick,
 		onFolderHover,
 		onSelectionChange,
@@ -49,7 +75,8 @@
 		emptyMessage?: string;
 		selectedPaths?: Set<string>;
 		isLoading?: boolean;
-		compactMode?: boolean;
+		/** The grid's zoom step. */
+		zoom?: number;
 		cutPaths?: Set<string>;
 		favoritePaths?: Set<string>;
 		canPaste?: boolean;
@@ -58,7 +85,17 @@
 		showFileExtensions?: boolean;
 		previewOnSingleClick?: boolean;
 		selectionCheckboxes?: boolean;
+		/** Files take their kind's colour; see `getFileTint`. */
+		fileIconTints?: boolean;
 		dropTarget?: FileDropTarget;
+		/** How a folder is drawn: its colour and emblem. */
+		folderAppearance?: (path: string) => FolderAppearance;
+		/** The hover card; without it, a row's native tooltip names the item. */
+		hover?: HoverTarget;
+		/** The item being renamed in place, if any. */
+		renameEditor?: RenameEditor | null;
+		/** Folders draw what they hold inside their tiles. */
+		folderPreviews?: boolean;
 		onItemClick?: (item: FileInfo) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
@@ -68,32 +105,59 @@
 
 	const showSpinner = createDelayedFlag(() => isLoading, CONFIG.ui.spinnerDelayMs);
 	let gridElement = $state<HTMLDivElement | null>(null);
-	let activeItemPath = $state<string | null>(null);
-	const activeItemIndex = $derived.by(() =>
-		activeItemPath === null ? -1 : items.findIndex((item) => item.path === activeItemPath)
+	const metrics = $derived(gridMetrics(zoom));
+	const showHidden = $derived(settingsStore.current.showHiddenFiles);
+	const peeks = $derived(
+		folderPreviews
+			? {
+					get: (folder: FileInfo) => folderPeeks.get(folder, showHidden),
+					request: (folder: FileInfo) => folderPeeks.request(folder, showHidden)
+				}
+			: undefined
 	);
-	const activeItem = $derived(activeItemIndex < 0 ? null : (items[activeItemIndex] ?? null));
+	const cursor = new ViewCursor(() => ({ items, selectedPaths, onSelectionChange }));
+	const activeItemIndex = $derived(cursor.activeIndex);
+	const band = new RubberBand(() => ({
+		itemsTop: 0,
+		layout: () => ({ kind: 'grid', metrics, columns: rowWindow.columnCount }),
+		items: () => items,
+		selected: () => selectedPaths,
+		select: (paths) => onSelectionChange?.(paths),
+		focus: () => gridElement?.focus({ preventScroll: true })
+	}));
+	const attachBand = band.attach;
 	const rowWindow = createFixedRowWindow({
 		items: () => items,
 		itemKey: (item) => item.path,
 		viewKey: () => viewKey,
 		isReady: () => !isLoading,
-		rowHeight: () => (compactMode ? 136 : 164),
-		itemOffset: () => (compactMode ? 8 : 12),
-		contentEndPadding: () => (compactMode ? 8 : 12),
-		columnsForWidth: (width) => {
-			const tileWidth = compactMode ? 96 : 112;
-			const gap = compactMode ? 8 : 12;
-			const padding = compactMode ? 16 : 24;
-			return Math.max(1, Math.floor((width - padding + gap) / (tileWidth + gap)));
-		}
+		rowHeight: () => metrics.rowHeight,
+		itemOffset: () => metrics.padding,
+		contentEndPadding: () => metrics.padding,
+		columnsForWidth: (width) =>
+			Math.max(
+				1,
+				Math.floor((width - metrics.padding * 2 + metrics.gap) / (metrics.tileWidth + metrics.gap))
+			)
 	});
 	const attachRowWindow = rowWindow.attach;
+	// Labels are laid out in the page's own font, once it has loaded.
+	let measureLabel = $state.raw<Measure | null>(null);
+	onMount(() => {
+		let live = true;
+		void document.fonts.ready.then(() => {
+			if (live && gridElement)
+				measureLabel = canvasMeasure(`13px ${getComputedStyle(gridElement).fontFamily}`);
+		});
+		return () => {
+			live = false;
+		};
+	});
 	$effect(() => {
-		const path = activeItemPath;
+		const path = cursor.activePath;
 		if (path === null || items.some((item) => item.path === path)) return;
 		untrack(() => {
-			activeItemPath = null;
+			cursor.activePath = null;
 		});
 	});
 
@@ -101,38 +165,14 @@
 	let thumbnailErrors = new SvelteSet<string>();
 
 	function handleItemClick(item: FileInfo, event: MouseEvent) {
-		activeItemPath = item.path;
 		gridElement?.focus({ preventScroll: true });
-		if (event.ctrlKey || event.metaKey) {
-			onSelectionChange?.(
-				withPathSelected(selectedPaths, item.path, !selectedPaths.has(item.path))
-			);
-		} else if (event.shiftKey && selectedPaths.size > 0) {
-			handleCheck(item, true);
-		} else {
-			const newSelection = new SvelteSet<string>([item.path]);
-			onSelectionChange?.(newSelection);
-		}
-
-		if (item.isDir && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-			onItemClick?.(item);
-			return;
-		}
-
-		if (
-			previewOnSingleClick &&
-			!item.isDir &&
-			!event.ctrlKey &&
-			!event.metaKey &&
-			!event.shiftKey
-		) {
-			onItemClick?.(item);
-		}
+		if (cursor.click(item, event) !== 'replaced') return;
+		// A plain click opens a folder, or a file when Settings preview on one click.
+		if (item.isDir || previewOnSingleClick) onItemClick?.(item);
 	}
 
-	function handleCheck(item: FileInfo, checked: boolean) {
-		activeItemPath = item.path;
-		onSelectionChange?.(withPathSelected(selectedPaths, item.path, checked));
+	function handleCheck(item: FileInfo) {
+		cursor.toggle(item);
 		// Keyboard navigation stays on the grid instead of the checkbox.
 		gridElement?.focus({ preventScroll: true });
 	}
@@ -143,32 +183,25 @@
 	}
 
 	function handleGridFocus() {
-		if (items.length === 0 || activeItemPath !== null) return;
+		if (items.length === 0 || cursor.activePath !== null) return;
 		const firstVisible = Math.min(
 			items.length - 1,
 			rowWindow.firstVisibleRow * rowWindow.columnCount
 		);
-		activeItemPath = items[firstVisible]?.path ?? null;
+		cursor.activePath = items[firstVisible]?.path ?? null;
 	}
 
 	function handleViewportScroll() {
 		rowWindow.onScroll();
 	}
 
-	function getKeyboardTargetItems(): FileInfo[] {
-		if (selectedPaths.size > 0) {
-			return items.filter((item) => selectedPaths.has(item.path));
-		}
-		return activeItem ? [activeItem] : [];
-	}
-
+	/** The Menu key: the selection's menu by its item, or the folder's when nothing is picked. */
 	function handleKeyboardContextMenu() {
 		if (!gridElement) return;
-		const targetItems = getKeyboardTargetItems();
-		if (targetItems.length === 0) return;
-
+		const targetItems = cursor.targets();
 		const activeRow = Math.floor(activeItemIndex / rowWindow.columnCount);
 		const activeIsVisible =
+			targetItems.length > 0 &&
 			activeItemIndex >= 0 &&
 			activeRow >= rowWindow.firstVisibleRow &&
 			activeRow < rowWindow.lastVisibleRow;
@@ -180,8 +213,8 @@
 			gridElement.parentElement?.getBoundingClientRect() ??
 			gridElement.getBoundingClientRect();
 		contextMenu = {
-			x: Math.min(Math.max(0, bounds.left), Math.max(0, window.innerWidth - 1)),
-			y: Math.min(Math.max(0, bounds.top), Math.max(0, window.innerHeight - 1)),
+			x: Math.min(Math.max(0, bounds.left + 40), Math.max(0, window.innerWidth - 1)),
+			y: Math.min(Math.max(0, bounds.top + 8), Math.max(0, window.innerHeight - 1)),
 			items: targetItems
 		};
 	}
@@ -195,87 +228,47 @@
 		if (items.length === 0) return;
 
 		const columns = rowWindow.columnCount;
-		const currentIndex = Math.min(
-			items.length - 1,
-			Math.max(0, activeItemIndex >= 0 ? activeItemIndex : rowWindow.firstVisibleRow * columns)
+		const moved = cursor.key(
+			event,
+			{ grid: true, columns, page: columns * Math.max(1, rowWindow.visibleRowCount) },
+			performance.now()
 		);
-		const rowStart = Math.floor(currentIndex / columns) * columns;
-		const rowEnd = Math.min(items.length - 1, rowStart + columns - 1);
-		let nextIndex: number;
-
-		switch (event.key) {
-			case 'ArrowLeft':
-				nextIndex = Math.max(0, currentIndex - 1);
-				break;
-			case 'ArrowRight':
-				nextIndex = Math.min(items.length - 1, currentIndex + 1);
-				break;
-			case 'ArrowUp':
-				nextIndex = Math.max(0, currentIndex - columns);
-				break;
-			case 'ArrowDown':
-				nextIndex = Math.min(items.length - 1, currentIndex + columns);
-				break;
-			case 'PageUp':
-				nextIndex = Math.max(0, currentIndex - rowWindow.visibleRowCount * columns);
-				break;
-			case 'PageDown':
-				nextIndex = Math.min(items.length - 1, currentIndex + rowWindow.visibleRowCount * columns);
-				break;
-			case 'Home':
-				nextIndex = event.ctrlKey || event.metaKey ? 0 : rowStart;
-				break;
-			case 'End':
-				nextIndex = event.ctrlKey || event.metaKey ? items.length - 1 : rowEnd;
-				break;
-			default: {
-				const item = items[currentIndex];
-				if (!item) return;
-				if (event.key === ' ') {
-					event.preventDefault();
-					handleCheck(item, !selectedPaths.has(item.path));
-					return;
-				}
-				if (event.key === 'Enter') {
-					event.preventDefault();
-					onItemClick?.(item);
-					return;
-				}
-
-				let action: 'delete' | 'rename' | 'copy' | 'cut' | 'paste' | null = null;
-				if (event.key === 'Delete') action = 'delete';
-				else if (event.key === 'F2') action = 'rename';
-				else if ((event.key === 'c' || event.key === 'C') && (event.ctrlKey || event.metaKey)) {
-					action = 'copy';
-				} else if ((event.key === 'x' || event.key === 'X') && (event.ctrlKey || event.metaKey)) {
-					action = 'cut';
-				} else if ((event.key === 'v' || event.key === 'V') && (event.ctrlKey || event.metaKey)) {
-					action = 'paste';
-				}
-				if (!action) return;
-
-				const targetItems = getKeyboardTargetItems();
-				if (targetItems.length === 0) return;
-				event.preventDefault();
-				onContextMenuAction?.(action, targetItems);
-				return;
-			}
+		if (moved.kind !== 'ignored') {
+			event.preventDefault();
+			if (moved.kind === 'moved') rowWindow.scrollToItem(moved.index);
+			return;
 		}
 
+		const item = items[activeItemIndex];
+		if (event.key === 'Enter' && !event.altKey && item) {
+			event.preventDefault();
+			onItemClick?.(item);
+			return;
+		}
+
+		let action: 'delete' | 'rename' | 'copy' | 'cut' | 'paste' | null = null;
+		if (event.key === 'Delete') action = 'delete';
+		else if (event.key === 'F2') action = 'rename';
+		else if ((event.key === 'c' || event.key === 'C') && (event.ctrlKey || event.metaKey)) {
+			action = 'copy';
+		} else if ((event.key === 'x' || event.key === 'X') && (event.ctrlKey || event.metaKey)) {
+			action = 'cut';
+		} else if ((event.key === 'v' || event.key === 'V') && (event.ctrlKey || event.metaKey)) {
+			action = 'paste';
+		}
+		if (!action) return;
+
+		const targetItems = cursor.targets();
+		if (targetItems.length === 0) return;
 		event.preventDefault();
-		activeItemPath = items[nextIndex]?.path ?? null;
-		rowWindow.scrollToItem(nextIndex);
+		onContextMenuAction?.(action, targetItems);
 	}
 
 	function handleContextMenu(item: FileInfo, event: MouseEvent) {
-		activeItemPath = item.path;
 		gridElement?.focus({ preventScroll: true });
 		event.preventDefault();
-
-		if (!selectedPaths.has(item.path)) {
-			const newSelection = new SvelteSet<string>([item.path]);
-			onSelectionChange?.(newSelection);
-		}
+		// A right-click on an item that is not picked picks only it.
+		cursor.point(item);
 
 		const selectedItems = items.filter((i) => selectedPaths.has(i.path) || i.path === item.path);
 
@@ -340,15 +333,34 @@
 	const idleClass = 'border-transparent hover:bg-surface-secondary';
 	const thumbnailClass =
 		'flex shrink-0 items-center justify-center overflow-hidden rounded border border-border-primary bg-surface-primary';
+	const iconSlotClass = 'flex shrink-0 items-center justify-center';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="file-surface relative h-full w-full overflow-auto bg-surface-primary [overflow-anchor:none]"
 	use:attachRowWindow
+	use:attachBand={viewKey}
 	onscroll={handleViewportScroll}
+	ondragovercapture={(event) => {
+		// Near the top or bottom, a drag scrolls the view; the drop is the pane's to take.
+		const view = event.currentTarget;
+		const bounds = view.getBoundingClientRect();
+		view.scrollTop += dragScrollStep(event.clientY, bounds.top, bounds.bottom);
+	}}
 	oncontextmenu={handleBackgroundContextMenu}
 >
+	{#if band.rect}
+		<div
+			class="pointer-events-none absolute z-[6] rounded-[2px] border border-accent bg-accent/15"
+			style:left="{band.rect.left}px"
+			style:top="{band.rect.top}px"
+			style:width="{band.rect.width}px"
+			style:height="{band.rect.height}px"
+			aria-hidden="true"
+		></div>
+	{/if}
+
 	{#if showSpinner.value}
 		<div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-primary/80">
 			<Spinner />
@@ -363,7 +375,8 @@
 	{:else}
 		<div
 			bind:this={gridElement}
-			class="flex flex-col outline-none {compactMode ? 'p-2' : 'p-3'}"
+			class="flex flex-col outline-none"
+			style:padding="{metrics.padding}px"
 			role="grid"
 			tabindex="0"
 			aria-busy={isLoading}
@@ -394,10 +407,10 @@
 					Math.min(items.length, firstItemIndex + rowWindow.columnCount)
 				)}
 				<div
-					class={compactMode
-						? 'grid h-[136px] grid-flow-row gap-x-2'
-						: 'grid h-[164px] grid-flow-row gap-x-3'}
-					style={`grid-template-columns: repeat(${rowWindow.columnCount}, ${compactMode ? 96 : 112}px)`}
+					class="grid grid-flow-row"
+					style:height="{metrics.rowHeight}px"
+					style:column-gap="{metrics.gap}px"
+					style:grid-template-columns="repeat({rowWindow.columnCount}, {metrics.tileWidth}px)"
 					role="row"
 					aria-rowindex={rowIndex + 1}
 				>
@@ -422,16 +435,25 @@
 								: activeItemIndex === itemIndex
 									? activeClass
 									: idleClass} {isCut(item.path) ? 'opacity-50' : ''}"
-							style={`height: ${compactMode ? 128 : 152}px`}
+							style={`height: ${metrics.rowHeight - metrics.padding}px`}
 							role="gridcell"
 							tabindex="-1"
 							aria-colindex={columnOffset + 1}
 							aria-selected={isSelected(item.path)}
-							title={`${item.name}\n${typeDescription}${sizeDescription ? ` - ${sizeDescription}` : ''}\nModified ${modifiedDescription}`}
-							onpointerdown={() => (activeItemPath = item.path)}
+							title={hover
+								? undefined
+								: `${item.name}\n${typeDescription}${sizeDescription ? ` - ${sizeDescription}` : ''}\nModified ${modifiedDescription}`}
+							onpointerdown={() => (cursor.activePath = item.path)}
 							onclick={(e) => handleItemClick(item, e)}
-							onpointerenter={() => item.isDir && onFolderHover?.(item.path)}
-							onpointerleave={() => onFolderHover?.(null)}
+							onpointerenter={(event) => {
+								if (item.isDir) onFolderHover?.(item.path);
+								hover?.rest(item, hoverPoint(event));
+							}}
+							onpointermove={(event) => hover?.rest(item, hoverPoint(event))}
+							onpointerleave={() => {
+								onFolderHover?.(null);
+								hover?.hide();
+							}}
 							ondblclick={() => handleOpen(item)}
 							class:ring-1={dropTarget?.overPath === item.path}
 							class:ring-accent={dropTarget?.overPath === item.path}
@@ -458,6 +480,12 @@
 							}}
 							oncontextmenu={(e) => handleContextMenu(item, e)}
 							data-file-item="true"
+							onmousedown={(event) => {
+								if (isMiddleButton(event) && item.isDir) event.preventDefault();
+							}}
+							onauxclick={(event) => {
+								if (isMiddleButton(event) && item.isDir) openInNewTab(item.path);
+							}}
 							data-file-path={item.path}
 						>
 							{#if selectionCheckboxes}
@@ -473,16 +501,20 @@
 										: 'opacity-0 group-hover/tile:opacity-100 pointer-coarse:opacity-100'}"
 									onclick={(event) => event.stopPropagation()}
 									ondblclick={(event) => event.stopPropagation()}
-									onchange={(event) => handleCheck(item, event.currentTarget.checked)}
+									onchange={() => handleCheck(item)}
 								/>
 							{/if}
-							<div class="{thumbnailClass} {compactMode ? 'h-14' : 'h-20'}">
+							<!-- A thumbnail sits in a frame; an icon stands on its own, as in Thunar and the desktop app. -->
+							<div
+								class={showThumbnail ? thumbnailClass : iconSlotClass}
+								style:height="{metrics.previewHeight}px"
+							>
 								{#if showThumbnail}
 									<img
 										src={getThumbnailUrl(
 											item.path,
-											compactMode ? 192 : 224,
-											compactMode ? 96 : 144
+											metrics.thumbnail.width,
+											metrics.thumbnail.height
 										)}
 										alt=""
 										loading="lazy"
@@ -491,18 +523,60 @@
 									/>
 								{:else}
 									<span
+										style:color={fileIconTints ? getFileTint(item.name, item.isDir) : null}
 										class="flex h-full w-full items-center justify-center {item.isDir
 											? 'text-folder'
 											: 'text-text-secondary'}"
 									>
-										<IconComponent size={compactMode ? 24 : 30} strokeWidth={1.7} />
+										{#if item.isDir}
+											{@const look = folderAppearance(item.path)}
+											{@const peek = look.emblem === null ? peeks?.get(item) : undefined}
+											<!-- A folder with an emblem keeps it instead of its contents. -->
+											<span
+												class="relative inline-flex"
+												{@attach () => {
+													if (look.emblem === null) untrack(() => peeks?.request(item));
+												}}
+											>
+												<FolderGlyph size={metrics.icon} strokeWidth={1.7} {...look} />
+												{#if peek?.length}
+													<FolderPeekCards items={peek} size={metrics.icon} />
+												{/if}
+											</span>
+										{:else}
+											<IconComponent size={metrics.icon} strokeWidth={1.7} />
+										{/if}
 									</span>
 								{/if}
 							</div>
 
 							<div class="mt-1.5 min-w-0 overflow-hidden">
-								<div class="file-grid-name text-center text-[13px] leading-4 text-text-primary">
-									<span class={item.isDir ? 'text-folder' : ''}>{displayName}</span>
+								<div class="text-center text-[13px] leading-4 text-text-primary">
+									{#if renameEditor?.path === item.path}
+										{#await import('./InlineNameEditor.svelte') then { default: InlineNameEditor }}
+											<InlineNameEditor
+												value={renameEditor.name}
+												isDir={renameEditor.isDir}
+												problem={renameEditor.problem}
+												align="center"
+												oninput={renameEditor.oninput}
+												oncommit={() => {
+													renameEditor.oncommit();
+													gridElement?.focus({ preventScroll: true });
+												}}
+												oncancel={() => {
+													renameEditor.oncancel();
+													gridElement?.focus({ preventScroll: true });
+												}}
+											/>
+										{/await}
+									{:else}
+										<TileLabel
+											name={displayName}
+											width={metrics.tileWidth - 18}
+											measure={measureLabel}
+										/>
+									{/if}
 								</div>
 								<div
 									class="mt-0.5 truncate text-center text-[11px] leading-3.5 {isSelected(item.path)
@@ -546,14 +620,3 @@
 		<LoadError label="file context menu" onClose={handleContextMenuClose} />
 	{/await}
 {/if}
-
-<style>
-	.file-grid-name {
-		display: -webkit-box;
-		overflow: hidden;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		word-break: break-word;
-	}
-</style>

@@ -34,9 +34,15 @@ export async function listDesktopTrash(signal?: AbortSignal): Promise<DesktopTra
 }
 
 /** Move a virtual BoxBox path into the desktop trash. */
-export async function trashDesktopFile(path: string): Promise<DesktopTrashItem> {
+export async function trashDesktopFile(
+	path: string,
+	signal?: AbortSignal
+): Promise<DesktopTrashItem> {
 	if (isRemotePath(path)) throw new Error('Remote files must be deleted on their server');
-	const value = record(await api.post<unknown>('/desktop/trash', { path }), 'trash response');
+	const value = record(
+		await api.post<unknown>('/desktop/trash', { path }, signal),
+		'trash response'
+	);
 	return parseDesktopTrashItem(value.item);
 }
 

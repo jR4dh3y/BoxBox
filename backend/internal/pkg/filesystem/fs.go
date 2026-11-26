@@ -27,6 +27,9 @@ type FS interface {
 	// ReadDirLimit reads at most limit entries and reports whether more exist.
 	ReadDirLimit(name string, limit int) ([]fs.DirEntry, bool, error)
 
+	// ReadDirPreview selects up to three entries for a folder tile.
+	ReadDirPreview(name string, includeHidden bool) ([]fs.FileInfo, error)
+
 	// ReadDirFileInfoLimit reads metadata for a bounded directory listing.
 	ReadDirFileInfoLimit(name string, limit int) ([]fs.FileInfo, bool, error)
 

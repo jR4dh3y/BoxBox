@@ -71,6 +71,63 @@ Response:
 }
 ```
 
+## Peek Into a Directory
+
+```http
+GET /api/v1/files/{path}?peek&hidden=1
+```
+
+Up to three entries of a directory, for its grid tile: pictures the server can thumbnail first, then by name. Only the first 64 entries are read, so a huge folder costs no more than a small one. Hidden entries are left out unless `hidden=1`. Each entry carries its full `path`.
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "name": "cover.jpg",
+      "path": "home/photos/cover.jpg",
+      "size": 18213,
+      "isDir": false,
+      "modTime": "2026-05-13T09:00:00Z",
+      "permissions": "-rw-r--r--"
+    }
+  ]
+}
+```
+
+## Properties of a Selection
+
+```http
+POST /api/v1/files
+```
+
+```json
+{ "paths": ["home/photos", "home/notes.txt"] }
+```
+
+Between 1 and 1000 paths. Each item's owner, group and access and change times come from the server's own file system, so they are left out where it does not keep them, as on Windows or through a NAS worker. The totals walk every folder, hidden entries included and links not followed; a walk past 200,000 entries stops and sets `complete` to `false`, so the totals are a lower bound.
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "path": "home/photos",
+      "owner": "alice",
+      "group": "users",
+      "accessed": "2026-05-13T09:00:00Z",
+      "changed": "2026-05-13T09:00:00Z"
+    }
+  ],
+  "files": 214,
+  "folders": 9,
+  "bytes": 801233920,
+  "complete": true
+}
+```
+
 ## Get File Info
 
 ```http

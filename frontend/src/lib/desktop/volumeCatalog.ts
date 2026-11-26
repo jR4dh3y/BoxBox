@@ -1,6 +1,6 @@
 import type { DesktopVolume } from '#lib/api/desktopVolumes.js';
 import type { DriveStats } from '#lib/api/files.js';
-/** Mounted volumes appear alongside ordinary local drives in This PC. */
+/** Mounted volumes appear alongside ordinary local drives in Overview. */
 export function mountedVolumeDrives(volumes: readonly DesktopVolume[]): DriveStats[] {
 	return volumes.flatMap((volume) => {
 		if (!volume.mounted || !volume.browsePath) return [];
