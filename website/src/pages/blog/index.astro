@@ -1,22 +1,44 @@
 ---
+import { ArrowRight } from '@lucide/astro';
 import Layout from '../../layouts/Layout.astro';
 import SiteNav from '../../components/SiteNav.astro';
 import SiteFooter from '../../components/SiteFooter.astro';
-import { blogPostHref, blogPosts } from '../../lib/blog';
+import { blogPostHref, blogPosts, formatBlogDate } from '../../lib/blog';
 ---
 
 <Layout title="Blog | BoxBox" description="BoxBox release announcements.">
-  <SiteNav />
-  <main class="mx-auto w-full max-w-3xl px-5 py-10 md:px-8 lg:py-14">
-    <h1 class="text-4xl font-black tracking-tight text-white md:text-5xl" style="font-family: 'Bricolage Grotesque', sans-serif;">Blog</h1>
-    <ul class="mt-8 divide-y divide-border-primary border-y border-border-primary">
+  <SiteNav showStarDoodle={false} crumb={{ label: 'Blog', href: '/blog/' }} />
+  <main class="relative z-10 mx-auto w-full max-w-7xl flex-1 px-5 pt-4 pb-24 md:px-8 md:pt-7">
+    <header class="border-b border-border-primary pb-8">
+      <h1 class="font-display text-4xl font-extrabold leading-[1.06] tracking-[-0.03em] text-white md:text-5xl">
+        Blog
+      </h1>
+    </header>
+
+    <ul class="divide-y divide-border-primary border-b border-border-primary">
       {blogPosts.map((post) => (
-        <li class="py-6">
-          <time datetime={post.date} class="text-sm text-text-secondary">{post.date}</time>
-          <h2 class="mt-2 text-xl font-semibold text-white">
-            <a href={blogPostHref(post.slug)} class="underline decoration-accent underline-offset-4">{post.title}</a>
-          </h2>
-          <p class="mt-2 text-text-secondary">{post.description}</p>
+        <li>
+          <a
+            href={blogPostHref(post.slug)}
+            class="group grid gap-4 py-8 transition-colors hover:bg-white/[0.02] md:grid-cols-[200px_minmax(0,1fr)_auto] md:items-start md:gap-8 md:px-4 md:-mx-4 md:rounded-xl"
+          >
+            <div class="flex items-center gap-3 md:flex-col md:items-start md:gap-1.5">
+              <span class="font-mono text-xs font-medium text-accent">{post.version}</span>
+              <time datetime={post.date} class="text-sm text-text-secondary">{formatBlogDate(post.date)}</time>
+            </div>
+
+            <div class="min-w-0 max-w-2xl">
+              <h2 class="font-display text-2xl font-bold leading-snug tracking-tight text-white transition-colors group-hover:text-accent">
+                {post.title}
+              </h2>
+              <p class="mt-2.5 text-base leading-relaxed text-text-secondary">{post.description}</p>
+            </div>
+
+            <span class="inline-flex items-center gap-1.5 text-sm font-medium text-text-secondary transition-colors group-hover:text-white md:pt-1">
+              Read post
+              <ArrowRight class="h-4 w-4 text-accent" aria-hidden="true" />
+            </span>
+          </a>
         </li>
       ))}
     </ul>
