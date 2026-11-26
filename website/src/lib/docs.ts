@@ -63,6 +63,11 @@ const docNav = [
     description: "What changed in each release and what to do when you upgrade.",
   },
   {
+    slug: "v0.4.0",
+    title: "BoxBox v0.4.0",
+    description: "Release details, desktop measurements, and upgrade steps.",
+  },
+  {
     slug: "configuration",
     title: "Configuration",
     description:
@@ -137,7 +142,7 @@ const docSections: { title: string; slugs: DocSlug[] }[] = [
   { title: "Get started", slugs: ["index", "quickstart", "docker", "docker-options", "desktop"] },
   {
     title: "Run it",
-    slugs: ["configuration", "mounts", "nas", "security", "troubleshooting", "troubleshooting-files", "release-notes"],
+    slugs: ["configuration", "mounts", "nas", "security", "troubleshooting", "troubleshooting-files", "release-notes", "v0.4.0"],
   },
   {
     title: "Reference",
@@ -145,6 +150,8 @@ const docSections: { title: string; slugs: DocSlug[] }[] = [
   },
   { title: "Contribute", slugs: ["development", "testing", "release"] },
 ];
+
+const docSourceOverrides = new Map<string, string>([["v0.4.0", "releases/v0.4.0.md"]]);
 
 const docMeta = new Map<string, Omit<DocNavItem, "slug">>(docNav.map(({ slug, ...meta }) => [slug, meta]));
 
@@ -228,15 +235,19 @@ export function getDocSections(): DocNavSection[] {
 }
 
 export function getDocSlugs(): string[] {
-  return readdirSync(docsDirectory)
+  const topLevel = readdirSync(docsDirectory)
     .filter((file) => file.endsWith(".md"))
     .map((file) => basename(file, ".md"));
+  const nested = Array.from(docSourceOverrides, ([slug, file]) =>
+    existsSync(join(docsDirectory, file)) ? [slug] : [],
+  ).flat();
+  return [...topLevel, ...nested];
 }
 
 export async function getDocPage(slug: string): Promise<DocPage> {
   const normalizedSlug = slug === "" ? "index" : slug;
   const markdown = readFileSync(
-    join(docsDirectory, `${normalizedSlug}.md`),
+    join(docsDirectory, docSourceOverrides.get(normalizedSlug) ?? `${normalizedSlug}.md`),
     "utf8",
   );
   const rendered = await renderMarkdown(markdown, { docLinks: true });
