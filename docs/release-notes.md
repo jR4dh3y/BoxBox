@@ -2,6 +2,10 @@
 
 What changed in each release and what to do when you upgrade. To ship a release, see [Release workflow](release.md).
 
+## v0.4.0 Release
+
+TBD
+
 ## v0.3.2 Desktop Release
 
 The next release adds the Linux x86_64 desktop app alongside the existing amd64/arm64 server packages. Check [Downloads](/download/) for published assets; the website does not offer a desktop link until a real release asset exists. See [Linux Desktop](desktop.md) for dependencies and pairing.
