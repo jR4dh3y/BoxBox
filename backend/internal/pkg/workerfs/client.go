@@ -313,6 +313,10 @@ func (c *Client) Remove(name string) error {
 	return c.do(request{Op: opRemove, Path: rawString(name)})
 }
 
+func (c *Client) RemoveEmptyDirectory(path string) error {
+	return c.do(request{Op: opRemoveEmptyDirectory, Path: rawString(path)})
+}
+
 func (c *Client) RemoveAll(path string) error {
 	return c.do(request{Op: opRemoveAll, Path: rawString(path)})
 }

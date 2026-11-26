@@ -244,7 +244,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.desktop == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ./.github/actions/setup-desktop
@@ -257,9 +257,19 @@ jobs:
         run: |
           bun scripts/package-release.ts
           bun scripts/check-release-package.ts
+      - name: Launch the desktop app until it paints a folder
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb xauth mesa-vulkan-drivers
+          WAYLAND_DISPLAY= xvfb-run -a bun scripts/desktop-smoke.ts desktop/target/release/boxbox-gpui
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: ${{ needs.changes.result != 'success' || needs.changes.outputs.desktop_package == 'true' }}
         with:
           name: desktop-release-preview
           path: dist/release/*
           retention-days: 7
+
+  desktop-windows:
+    name: Windows desktop package validation
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.desktop == 'true') }}
+    uses: ./.github/workflows/desktop-windows.yml

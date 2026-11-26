@@ -9,10 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build AppImages for
+        description: Existing release tag to build AppImages for (one that ships the native desktop app; v0.3.2 and earlier are Electrobun)
         required: true
         type: string
-        default: v0.3.2
 
 permissions:
   contents: read
@@ -37,7 +36,7 @@ jobs:
             tool_sha256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
             runtime_sha256: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
@@ -60,7 +59,7 @@ jobs:
         uses: ./.github/actions/setup-desktop
       - name: Install package verification tools
         run: |
-          sudo apt-get install -y --no-install-recommends xvfb xauth desktop-file-utils librsvg2-bin
+          sudo apt-get install -y --no-install-recommends xvfb xauth desktop-file-utils librsvg2-bin mesa-vulkan-drivers
           curl --fail --location --retry 3 "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${ARCH}.AppImage" -o "$RUNNER_TEMP/appimagetool"
           echo "$TOOL_SHA256  $RUNNER_TEMP/appimagetool" | sha256sum --check
           chmod +x "$RUNNER_TEMP/appimagetool"
@@ -87,8 +86,8 @@ jobs:
           image="$PWD/boxbox-desktop-${RELEASE_TAG}-${ARCH}.AppImage"
           "$image" --appimage-extract
           desktop-file-validate squashfs-root/io.boxbox.desktop
-          # Also test FUSE-free startup, renderer settings, handoff and shutdown.
-          APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a bun "$GITHUB_WORKSPACE/tooling/desktop/scripts/native-smoke.ts" "$image"
+          # FUSE-free startup on X11 with software Vulkan, until a folder is painted.
+          APPIMAGE_EXTRACT_AND_RUN=1 WAYLAND_DISPLAY= xvfb-run -a bun "$GITHUB_WORKSPACE/tooling/scripts/desktop-smoke.ts" "$image"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: appimage-${{ matrix.arch }}

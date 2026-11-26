@@ -15,7 +15,6 @@ on:
         description: Published stable release tag
         required: true
         type: string
-        default: v0.3.2
 
 permissions:
   contents: read
@@ -76,11 +75,13 @@ jobs:
           unset AUR_SSH_PRIVATE_KEY
           export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$PWD/packaging/aur/known_hosts"
           git clone ssh://aur@aur.archlinux.org/boxbox-bin.git aur-publish
-          cp aur/PKGBUILD aur/.SRCINFO aur/AppRun aur/boxbox.desktop aur/boxbox.svg aur/boxbox.portal aur/org.freedesktop.impl.portal.desktop.boxbox.service aur-publish/
+          cp aur/PKGBUILD aur/.SRCINFO aur-publish/
           cd aur-publish
           git config user.name 'Radhey Kalra'
           git config user.email 'radheykalra901@gmail.com'
-          git add PKGBUILD .SRCINFO AppRun boxbox.desktop boxbox.svg boxbox.portal org.freedesktop.impl.portal.desktop.boxbox.service
+          # The Electrobun package shipped these beside the PKGBUILD.
+          git rm -q --ignore-unmatch AppRun boxbox.desktop boxbox.svg boxbox.portal org.freedesktop.impl.portal.desktop.boxbox.service
+          git add PKGBUILD .SRCINFO
           if git diff --cached --quiet; then
             echo 'AUR package already matches this release'
             exit 0

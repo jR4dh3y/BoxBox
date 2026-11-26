@@ -46,6 +46,8 @@ func ClientRouteAllowed(method, route string) bool {
 			return true
 		}
 		return method == "GET" || method == "POST" || method == "PUT" || method == "PATCH" || method == "DELETE"
+	case "empty-directories":
+		return len(p) >= 3 && method == http.MethodDelete
 	case "stream":
 		if len(p) < 3 {
 			return false

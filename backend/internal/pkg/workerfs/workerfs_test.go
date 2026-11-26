@@ -117,6 +117,12 @@ func TestClientRoundTripsFilesystemCalls(t *testing.T) {
 	if err := client.Rename(path, filepath.Join(root, "b.txt")); err != nil {
 		t.Fatal(err)
 	}
+	if err := client.RemoveEmptyDirectory(filepath.Join(root, "x")); !errors.Is(err, syscall.ENOTEMPTY) {
+		t.Fatalf("rmdir of nonempty directory: %v", err)
+	}
+	if err := client.RemoveEmptyDirectory(filepath.Join(root, "x", "y")); err != nil {
+		t.Fatal(err)
+	}
 	if err := client.RemoveAll(filepath.Join(root, "x")); err != nil {
 		t.Fatal(err)
 	}

@@ -23,10 +23,11 @@ type fileStack struct {
 	jobs    service.JobService
 	streams *handler.StreamHandler
 
-	files  http.Handler
-	stream http.Handler
-	search http.Handler
-	job    http.Handler
+	files            http.Handler
+	emptyDirectories http.Handler
+	stream           http.Handler
+	search           http.Handler
+	job              http.Handler
 }
 
 func newFileStack(fsys filesystem.FS, mountPoints []model.MountPoint, hub *websocket.Hub, cfg *model.ServerConfig, desktopMode bool, thumbnailLimit *service.ThumbnailLimit) (*fileStack, error) {
@@ -60,13 +61,15 @@ func newFileStack(fsys filesystem.FS, mountPoints []model.MountPoint, hub *webso
 		register(r)
 		return r
 	}
+	fileHandler := handler.NewFileHandler(fileService)
 	return &fileStack{
-		jobs:    jobService,
-		streams: streamHandler,
-		files:   guarded(handler.NewFileHandler(fileService).RegisterRoutes),
-		stream:  guarded(streamHandler.RegisterRoutes),
-		search:  plain(handler.NewSearchHandler(searchService).RegisterRoutes),
-		job:     plain(handler.NewJobHandler(jobService).RegisterRoutes),
+		jobs:             jobService,
+		streams:          streamHandler,
+		files:            guarded(fileHandler.RegisterRoutes),
+		emptyDirectories: guarded(fileHandler.RegisterEmptyDirectoryRoutes),
+		stream:           guarded(streamHandler.RegisterRoutes),
+		search:           plain(handler.NewSearchHandler(searchService).RegisterRoutes),
+		job:              plain(handler.NewJobHandler(jobService).RegisterRoutes),
 	}, nil
 }
 

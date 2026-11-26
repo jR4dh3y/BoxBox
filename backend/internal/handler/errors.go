@@ -33,6 +33,7 @@ var serviceErrorMappings = []ErrorMapping{
 	{filesystem.ErrWorkerUnavailable, "File access is temporarily unavailable. Try again.", model.ErrCodeInternalError, http.StatusServiceUnavailable},
 	{service.ErrMountPointNotFound, "Mount point not found", model.ErrCodeAccessDenied, http.StatusForbidden},
 	{service.ErrInvalidOperation, "Invalid operation", model.ErrCodeValidationError, http.StatusBadRequest},
+	{service.ErrDirectoryNotEmpty, "Directory is not empty", model.ErrCodeConflict, http.StatusConflict},
 	{service.ErrDirectoryTooLarge, "Directory exceeds server entry limit", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
 	{service.ErrThumbnailTooLarge, "Image exceeds thumbnail limits", model.ErrCodeValidationError, http.StatusRequestEntityTooLarge},
 	{service.ErrThumbnailUnsupported, "No preview available for this file", model.ErrCodeValidationError, http.StatusUnsupportedMediaType},

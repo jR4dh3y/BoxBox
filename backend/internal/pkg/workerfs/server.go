@@ -114,6 +114,8 @@ func handle(fsys filesystem.FS, payload []byte, sent *os.File) (response, *os.Fi
 		return response{}, file
 	case opRemove:
 		return errReply(fsys.Remove(path)), nil
+	case opRemoveEmptyDirectory:
+		return errReply(fsys.RemoveEmptyDirectory(path)), nil
 	case opRemoveAll:
 		return errReply(fsys.RemoveAll(path)), nil
 	case opRename:
