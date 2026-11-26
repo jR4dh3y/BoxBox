@@ -12,7 +12,7 @@ import {
 	type FileDropHandler
 } from './fileDrag';
 import type { TransferSource } from './transfers';
-import type { BrowseActions } from './actions.svelte';
+import type { useBrowsePaste } from './paste.svelte';
 import type { BrowseData } from './data.svelte';
 import { parseRemotePath } from '#lib/api/remotePaths.js';
 
@@ -28,7 +28,7 @@ export interface DropQuestion {
 
 export function useFileDrop(
 	data: BrowseData,
-	actions: BrowseActions,
+	paste: ReturnType<typeof useBrowsePaste>,
 	ask: (question: DropQuestion) => void = () => {}
 ): FileDropHandler {
 	function allowed(destination: string) {
@@ -75,7 +75,7 @@ export function useFileDrop(
 			}
 			if (!canDropInto(items, destination, operation)) return;
 			if (items.length) {
-				void actions.paste.transfer(operation, items, destination);
+				void paste.transfer(operation, items, destination);
 				return;
 			}
 			if (kind === 'external')

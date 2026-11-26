@@ -1,4 +1,4 @@
-import { useBrowsePaste } from './paste.svelte';
+import type { useBrowsePaste } from './paste.svelte';
 import {
 	isNativePath,
 	isLocalDesktop,
@@ -55,9 +55,9 @@ function parentOf(path: string): string {
 export function useBrowseActions(
 	location: BrowseLocation,
 	data: BrowseData,
-	selection: BrowseSelection
+	selection: BrowseSelection,
+	pasteController: ReturnType<typeof useBrowsePaste>
 ) {
-	const pasteController = useBrowsePaste(location, data);
 	let openWithFile = $state<FileInfo | null>(null);
 	let previewFile = $state<FileInfo | null>(null);
 	let createDialog = $state<CreateDialog>({ open: false, type: 'file', name: '', problem: null });
@@ -78,15 +78,6 @@ export function useBrowseActions(
 	let customizeFolder = $state<FileInfo | null>(null);
 	// The file or folder being shared; null when the share dialog is closed.
 	let shareItem = $state<FileInfo | null>(null);
-
-	const favoritePaths = $derived(
-		new SvelteSet(settingsStore.current.favoriteFolders.map((folder) => folder.path))
-	);
-	const cutPaths = $derived(
-		new SvelteSet(
-			clipboardStore.operation === 'cut' ? clipboardStore.items.map((item) => item.path) : []
-		)
-	);
 
 	function closeCreate() {
 		createDialog = { open: false, type: 'file', name: '', problem: null };
@@ -207,7 +198,6 @@ export function useBrowseActions(
 	}
 
 	return {
-		paste: pasteController,
 		get openWithFile() {
 			return openWithFile;
 		},
@@ -238,16 +228,6 @@ export function useBrowseActions(
 		closeCustomize() {
 			customizeFolder = null;
 		},
-		get favoritePaths() {
-			return favoritePaths;
-		},
-		get cutPaths() {
-			return cutPaths;
-		},
-		get canPaste() {
-			return clipboardStore.hasItems || (isNativePath(location.path) && data.canCreate);
-		},
-
 		setCreateName(name: string) {
 			createDialog.name = name;
 			createDialog.problem = createNameProblem(name.trim(), siblingNames(location.path));
@@ -278,10 +258,6 @@ export function useBrowseActions(
 		confirmDelete,
 
 		openFile(file: FileInfo) {
-			if (file.isDir) {
-				location.navigate(file.path);
-				return;
-			}
 			if (isNativePath(file.path)) {
 				void openDesktopFile(file.path).catch((error) =>
 					toastStore.error(errorMessage(error, 'Open failed'))

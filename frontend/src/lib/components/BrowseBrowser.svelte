@@ -21,7 +21,7 @@
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { uploadStore } from '#lib/stores/upload.svelte.js';
 	import { jobsStore } from '#lib/stores/jobs.svelte.js';
-	import { useBrowseActions } from '#lib/browse/actions.svelte.js';
+	import { useFileActions } from '#lib/browse/fileActions.svelte.js';
 	import { useBrowseData } from '#lib/browse/data.svelte.js';
 	import { useBrowseLocation, type HistoryPlace } from '#lib/browse/location.svelte.js';
 	import { type Place, type PlaceAction } from '#lib/browse/placeMenu.js';
@@ -32,7 +32,7 @@
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
 	import type { AddAction } from '#lib/utils/addMenu.js';
-	import { folderAppearance, specialEmblem } from '#lib/browse/folderLooks.js';
+	import { folderAppearance } from '#lib/browse/folderLooks.js';
 	import { HoverCards } from '#lib/browse/hoverCards.svelte.js';
 	import { rootLabel } from '#lib/browse/rootLabel.js';
 	import { parentFolder } from '#lib/browse/details.js';
@@ -68,10 +68,11 @@
 		onRuntime?.({ location, data });
 		return () => onRuntime?.(null);
 	});
-	const actions = useBrowseActions(location, data, selection);
+	const files = useFileActions(location, data, selection);
+	const actions = $derived(files.controller);
 	const uploads = useBrowseUploads(location, data);
 	let dropQuestion = $state<DropQuestion | null>(null);
-	const dropHandler = useFileDrop(data, actions, (question) => (dropQuestion = question));
+	const dropHandler = useFileDrop(data, files.paste, (question) => (dropQuestion = question));
 	// A drag held on a folder, a crumb or a place opens it, so a drop can go deeper.
 	const drop = createDropZone(
 		() => dropHandler,
@@ -87,7 +88,7 @@
 	function handleAdd(action: AddAction) {
 		if (action === 'upload-files') uploads.openPicker();
 		else if (action === 'upload-folder') uploads.openFolderPicker();
-		else void actions.handleContextMenuAction(action, []);
+		else void files.handleContextMenuAction(action, []);
 	}
 	// Places are the special folders, such as Downloads, whose folders carry an emblem.
 	const places = $derived(
@@ -120,14 +121,14 @@
 	const hideHoverCard = () => hover.hide();
 	/** The item being renamed in place, and what its field reports back. */
 	const renameEditor = $derived(
-		actions.renaming.kind === 'renaming'
+		actions?.renaming.kind === 'renaming'
 			? {
 					path: actions.renaming.file.path,
 					isDir: actions.renaming.file.isDir,
 					name: actions.renaming.name,
 					problem: actions.renaming.problem,
 					oninput: actions.setRenameName,
-					oncommit: () => void actions.confirmRename(),
+					oncommit: () => void actions?.confirmRename(),
 					oncancel: actions.cancelRename
 				}
 			: null
@@ -145,13 +146,13 @@
 	let uploadErrorDismissed = $state(false);
 
 	function closeDialogs() {
-		actions.closeCreate();
-		actions.closeDelete();
-		actions.closeProperties();
+		actions?.closeCreate();
+		actions?.closeDelete();
+		actions?.closeProperties();
 	}
 	// Overlays load on first use, so they stay out of the browse page's first download.
 	const hasOpenDialog = $derived(
-		actions.createDialog.open || actions.deleteDialog.open || actions.propertiesItems !== null
+		actions?.createDialog.open || actions?.deleteDialog.open || actions?.propertiesItems != null
 	);
 	const onFolderHover = createHoverIntent(
 		data.prefetchDirectory,
@@ -170,9 +171,9 @@
 		emptyMessage: data.emptyListMessage,
 		selectedPaths: selection.paths,
 		isLoading: data.isFileListLoading,
-		cutPaths: actions.cutPaths,
-		favoritePaths: actions.favoritePaths,
-		canPaste: actions.canPaste,
+		cutPaths: files.cutPaths,
+		favoritePaths: files.favoritePaths,
+		canPaste: files.canPaste,
 		canCreate: data.canCreate,
 		readOnly: data.isReadOnly,
 		showFileExtensions: settings.showFileExtensions,
@@ -182,10 +183,10 @@
 		folderAppearance: appearance,
 		hover: settings.hoverDetails && !hover.failed ? hover.files : undefined,
 		renameEditor,
-		onItemClick: actions.openFile,
+		onItemClick: files.openFile,
 		onFolderHover,
 		onSelectionChange: selection.set,
-		onContextMenuAction: actions.handleContextMenuAction
+		onContextMenuAction: files.handleContextMenuAction
 	});
 
 	let shortcutsOpen = $state(false);
@@ -226,7 +227,7 @@
 				openInNewTab(place.path);
 				break;
 			case 'paste':
-				await actions.paste.paste(place.path);
+				await files.paste.paste(place.path);
 				break;
 			case 'copy-path':
 				try {
@@ -320,19 +321,19 @@
 				break;
 			case 'rename':
 				if (selectedItems.length !== 1 || data.isReadOnly) return;
-				void actions.handleContextMenuAction('rename', selectedItems);
+				void files.handleContextMenuAction('rename', selectedItems);
 				break;
 			case 'properties':
 				if (selectedItems.length === 0) return;
-				void actions.handleContextMenuAction('properties', selectedItems);
+				void files.handleContextMenuAction('properties', selectedItems);
 				break;
 			case 'paste':
 				if (!data.canCreate) return;
-				void actions.paste.paste();
+				void files.paste.paste();
 				break;
 			case 'new-folder':
 				if (!data.canCreate) return;
-				void actions.handleContextMenuAction('new-folder', []);
+				void files.handleContextMenuAction('new-folder', []);
 				break;
 			case 'select-all':
 				if (!inFolder) return;
@@ -574,165 +575,42 @@
 	</div>
 </div>
 
-{#if actions.previewFile && focused}
-	{#await import('#lib/components/FilePreview.svelte') then { default: FilePreview }}
-		<FilePreview
-			file={actions.previewFile}
-			allFiles={data.previewableFiles}
-			onNavigate={actions.showPreview}
-			onFileSaved={actions.fileSaved}
-			onClose={actions.closePreview}
-		/>
-	{:catch}
-		<LoadError label="preview" onClose={actions.closePreview} />
-	{/await}
-{/if}
-
-{#if hasOpenDialog}
-	{#await import('#lib/components/BrowseDialogs.svelte') then { default: BrowseDialogs }}
-		<BrowseDialogs
-			createDialog={actions.createDialog}
-			deleteDialog={actions.deleteDialog}
-			onCreateNameChange={actions.setCreateName}
-			onCreateConfirm={() => void actions.confirmCreate()}
-			onDeleteConfirm={() => void actions.confirmDelete()}
-			onCloseCreate={actions.closeCreate}
-			onCloseDelete={actions.closeDelete}
-		/>
-	{:catch}
-		<LoadError label="dialog" onClose={closeDialogs} />
-	{/await}
-{/if}
-
-{#if actions.paste.plan}
-	{#await import('#lib/components/desktop/TransferConflictDialog.svelte') then { default: TransferConflictDialog }}
-		<TransferConflictDialog
-			plan={actions.paste.plan}
-			open
-			onapply={actions.paste.apply}
-			oncancelbatch={() => void actions.paste.cancel()}
-		/>
-	{/await}
-{/if}
-
-{#if actions.openWithFile}
-	{#await import('./desktop/OpenWithDialog.svelte') then { default: OpenWithDialog }}<OpenWithDialog
-			open
-			path={actions.openWithFile.path}
-			onclose={actions.closeOpenWith}
-		/>{/await}
-{/if}
-
-{#if actions.propertiesItems}
-	{@const items = actions.propertiesItems}
-	{#await import('#lib/components/PropertiesDialog.svelte') then { default: PropertiesDialog }}
-		<PropertiesDialog {items} {locationLabel} onclose={actions.closeProperties} />
-	{:catch}
-		<LoadError label="Properties" onClose={actions.closeProperties} />
-	{/await}
-{/if}
-
-{#if dropQuestion || placeMenu || historyMenu}
-	{#await import('./BrowseMenus.svelte') then { default: BrowseMenus }}
-		<BrowseMenus
+{#if (actions?.previewFile && focused) || hasOpenDialog || files.paste.plan || actions?.openWithFile || actions?.customizeFolder || actions?.shareItem || dropQuestion || placeMenu || historyMenu || shortcutsOpen || patternOpen || settingsOpen || hover.cards?.drive.state.kind === 'shown' || hover.cards?.file.state.kind === 'shown'}
+	{#await import('./BrowseOverlays.svelte') then { default: BrowseOverlays }}
+		<BrowseOverlays
+			{actions}
+			{files}
+			{appearance}
+			{data}
+			{focused}
+			{hasOpenDialog}
+			{closeDialogs}
+			{hover}
+			{location}
+			{locationLabel}
+			{places}
+			{selection}
+			{placeLabel}
 			{dropQuestion}
 			{placeMenu}
 			{historyMenu}
-			aboveSidebar={sidebarOpen}
-			canPaste={actions.canPaste}
-			{placeLabel}
-			onTransfer={(action, items, destination) =>
-				void actions.paste.transfer(action, items, destination)}
-			onPlaceAction={(place, action) => void runPlaceAction(place, action)}
-			onTravel={location.travelTo}
+			{sidebarOpen}
+			{runPlaceAction}
 			onCloseDrop={() => (dropQuestion = null)}
 			onClosePlace={() => (placeMenu = null)}
 			onCloseHistory={() => (historyMenu = null)}
+			{shortcutsOpen}
+			onCloseShortcuts={() => (shortcutsOpen = false)}
+			{patternOpen}
+			{lastPattern}
+			rememberPattern={(pattern) => (lastPattern = pattern)}
+			onClosePattern={() => (patternOpen = false)}
+			{settingsOpen}
+			{settingsSection}
+			onCloseSettings={() => (settingsOpen = false)}
 		/>
 	{:catch}
-		<LoadError
-			label="menu"
-			onClose={() => {
-				dropQuestion = null;
-				placeMenu = null;
-				historyMenu = null;
-			}}
-		/>
-	{/await}
-{/if}
-
-{#if shortcutsOpen}
-	{#await import('#lib/components/KeyboardShortcutsDialog.svelte') then { default: KeyboardShortcutsDialog }}
-		<KeyboardShortcutsDialog onclose={() => (shortcutsOpen = false)} />
-	{:catch}
-		<LoadError label="keyboard shortcuts" onClose={() => (shortcutsOpen = false)} />
-	{/await}
-{/if}
-
-{#if patternOpen}
-	{#await Promise.all( [import('#lib/components/SelectPatternDialog.svelte'), import('#lib/browse/selectPattern.js')] ) then [{ default: SelectPatternDialog }, { pathsMatching }]}
-		<SelectPatternDialog
-			initial={lastPattern}
-			onselect={(pattern) => {
-				const matched = pathsMatching(data.displayItems, pattern);
-				if (matched.size > 0) {
-					lastPattern = pattern;
-					selection.set(matched);
-				}
-				return matched.size;
-			}}
-			onclose={() => (patternOpen = false)}
-		/>
-	{:catch}
-		<LoadError label="Select by Pattern" onClose={() => (patternOpen = false)} />
-	{/await}
-{/if}
-
-{#if hover.cards?.drive.state.kind === 'shown'}
-	{@const card = hover.cards.drive.state}
-	{#await import('#lib/components/DriveHoverCard.svelte') then { default: DriveHoverCard }}
-		<DriveHoverCard {card} />
-	{/await}
-{/if}
-
-{#if hover.cards?.file.state.kind === 'shown'}
-	{@const card = hover.cards.file.state}
-	{#await import('#lib/components/FileHoverCard.svelte') then { default: FileHoverCard }}
-		<FileHoverCard {card} {appearance} />
-	{/await}
-{/if}
-
-{#if actions.customizeFolder}
-	{@const folder = actions.customizeFolder}
-	{#await import('#lib/components/FolderCustomizeDialog.svelte') then { default: FolderCustomizeDialog }}
-		<FolderCustomizeDialog
-			{folder}
-			own={specialEmblem(folder.path, places)}
-			onclose={actions.closeCustomize}
-		/>
-	{:catch}
-		<LoadError label="Customize Folder" onClose={actions.closeCustomize} />
-	{/await}
-{/if}
-
-{#if settingsOpen}
-	{#await import('#lib/components/settings/SettingsModal.svelte') then { default: SettingsModal }}
-		<SettingsModal initialSection={settingsSection} onclose={() => (settingsOpen = false)} />
-	{:catch}
-		<LoadError label="settings" onClose={() => (settingsOpen = false)} />
-	{/await}
-{/if}
-
-{#if actions.shareItem}
-	{#await import('#lib/components/ShareModal.svelte') then { default: ShareModal }}
-		<ShareModal
-			open
-			item={actions.shareItem}
-			readOnly={data.isReadOnly}
-			onclose={actions.closeShare}
-		/>
-	{:catch}
-		<LoadError label="share window" onClose={actions.closeShare} />
+		<LoadError label="file browser controls" />
 	{/await}
 {/if}
 
