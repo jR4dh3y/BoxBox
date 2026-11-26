@@ -15,5 +15,5 @@ test("the release notes link opens the full v0.4.0 notes", async () => {
   assert.equal(path, "/docs/v0.4.0/");
   assert.ok(getDocNav().some(({ slug }) => `/docs/${slug}/` === path));
   const release = await getDocPage("v0.4.0");
-  assert.ok(release.headings.some(({ id }) => id === "upgrading"));
+  assert.ok(release.headings.some(({ id }) => id === "desktop-app"));
 });
