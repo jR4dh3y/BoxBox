@@ -87,7 +87,7 @@ fn main() {
                 Ok(path) if enable => println!("Open and Save dialogs now use BoxBox ({}).", path.display()),
                 Ok(path) => println!("Open and Save dialogs are back to the previous choice ({}).", path.display()),
                 Err(error) => {
-                    eprintln!("boxbox-files: {error:#}");
+                    eprintln!("boxbox: {error:#}");
                     std::process::exit(1);
                 }
             }
@@ -98,7 +98,7 @@ fn main() {
             return;
         }
         Ok(cli::Command::Version) => {
-            println!("boxbox-files {}", env!("BOXBOX_VERSION"));
+            println!("boxbox {}", env!("BOXBOX_VERSION"));
             return;
         }
         Ok(cli::Command::ProfileSummary(trace)) => {
@@ -109,7 +109,7 @@ fn main() {
             return;
         }
         Err(cli::Error(message)) => {
-            eprintln!("boxbox-files: {message}\nTry 'boxbox-files --help'.");
+            eprintln!("boxbox: {message}\nTry 'boxbox --help'.");
             std::process::exit(2);
         }
     };

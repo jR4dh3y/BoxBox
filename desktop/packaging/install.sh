@@ -12,11 +12,9 @@ data="${XDG_DATA_HOME:-$HOME/.local/share}"
 desktop="$data/applications/io.boxbox.desktop"
 icons="$data/icons/hicolor"
 sizes="16 24 32 48 64 128 256 512"
-# What earlier installs left: the BoxBox Files entry, and SVG icons that Qt shells draw black.
+# What earlier installs left: SVG icons that Qt shells draw black.
 remove_stale_entries() {
-	rm -f "$data/applications/io.boxbox.files.desktop" \
-		"$icons/scalable/apps/io.boxbox.files.svg" \
-		"$icons/scalable/apps/io.boxbox.desktop.svg"
+	rm -f "$icons/scalable/apps/io.boxbox.desktop.svg"
 }
 
 # A release archive holds every file beside this script; a checkout builds them.
@@ -24,8 +22,8 @@ first() { for file; do [ -f "$file" ] && { echo "$file"; return; }; done; echo "
 
 case "${1:-}" in
 --uninstall)
-	[ -x "$bin/boxbox-files" ] && "$bin/boxbox-files" --disable-picker || true
-	rm -f "$bin/boxbox-files" "$desktop"
+	[ -x "$bin/boxbox" ] && "$bin/boxbox" --disable-picker || true
+	rm -f "$bin/boxbox" "$desktop"
 	remove_stale_entries
 	for size in $sizes; do rm -f "$icons/${size}x$size/apps/io.boxbox.desktop.png"; done
 	echo "Removed BoxBox. Settings stay in ${XDG_CONFIG_HOME:-$HOME/.config}/boxbox-gpui."
@@ -38,11 +36,11 @@ case "${1:-}" in
 	;;
 esac
 
-install -Dm755 "$(first "$base/boxbox-files" "$base/../target/release/boxbox-gpui")" "$bin/boxbox-files"
+install -Dm755 "$(first "$base/boxbox" "$base/../target/release/boxbox-gpui")" "$bin/boxbox"
 mkdir -p "$(dirname "$desktop")"
 # Desktop Entry quoting: inside double quotes, \ " ` $ take a backslash; then the
 # value's own string escaping doubles every backslash; % is written %%.
-exec_path=$(printf '%s' "$bin/boxbox-files" | sed -e 's/[\\"`$]/\\&/g' -e 's/\\/\\\\/g' -e 's/%/%%/g')
+exec_path=$(printf '%s' "$bin/boxbox" | sed -e 's/[\\"`$]/\\&/g' -e 's/\\/\\\\/g' -e 's/%/%%/g')
 while IFS= read -r line; do
 	case $line in
 	Exec=@EXEC@*) printf 'Exec="%s"%s\n' "$exec_path" "${line#Exec=@EXEC@}" ;;
@@ -60,6 +58,6 @@ if [ "${1:-}" = --set-default ]; then
 	xdg-mime default io.boxbox.desktop inode/directory
 fi
 if [ "${1:-}" = --set-picker ]; then
-	"$bin/boxbox-files" --enable-picker
+	"$bin/boxbox" --enable-picker
 fi
-echo "Installed BoxBox to $bin/boxbox-files."
+echo "Installed BoxBox to $bin/boxbox."

@@ -25,9 +25,9 @@ sha256sums=("$_archive_sha256")
 
 package() {
   cd "boxbox-desktop-v$pkgver-linux-amd64"
-  install -Dm755 boxbox-files "$pkgdir/usr/bin/boxbox-files"
+  install -Dm755 boxbox "$pkgdir/usr/bin/boxbox"
   install -dm755 "$pkgdir/usr/share/applications"
-  sed 's|@EXEC@|/usr/bin/boxbox-files|' io.boxbox.desktop > "$pkgdir/usr/share/applications/io.boxbox.desktop"
+  sed 's|@EXEC@|/usr/bin/boxbox|' io.boxbox.desktop > "$pkgdir/usr/share/applications/io.boxbox.desktop"
   for size in 16 24 32 48 64 128 256 512; do
     install -Dm644 "icons/$size.png" "$pkgdir/usr/share/icons/hicolor/${size}x$size/apps/io.boxbox.desktop.png"
   done

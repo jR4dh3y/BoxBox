@@ -5,7 +5,7 @@ use std::ffi::OsString;
 
 macro_rules! usage {
     ($platform:literal, $options:literal) => { concat!("\
-Usage: boxbox-files [OPTIONS] [LOCATION]
+Usage: boxbox [OPTIONS] [LOCATION]
 
 Opens LOCATION: a folder, a file:// URI, or a file (opens its folder).
 ", $platform, "

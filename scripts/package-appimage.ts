@@ -36,15 +36,15 @@ const stage = await mkdtemp(join(output, ".stage-"));
 try {
   const appdir = join(stage, "BoxBox.AppDir");
   await mkdir(join(appdir, "usr/bin"), { recursive: true });
-  await cp(binary, join(appdir, "usr/bin/boxbox-files"));
-  await symlink("usr/bin/boxbox-files", join(appdir, "AppRun"));
+  await cp(binary, join(appdir, "usr/bin/boxbox"));
+  await symlink("usr/bin/boxbox", join(appdir, "AppRun"));
   const entry = await readFile(
     join(root, "desktop/packaging/io.boxbox.desktop"),
     "utf8",
   );
   await writeFile(
     join(appdir, "io.boxbox.desktop"),
-    entry.replace("@EXEC@", "boxbox-files"),
+    entry.replace("@EXEC@", "boxbox"),
   );
   await cp(
     join(root, "desktop/packaging/icons/256.png"),

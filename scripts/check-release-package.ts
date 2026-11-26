@@ -149,7 +149,7 @@ try {
 
   const name = `boxbox-desktop-v${version}-linux-amd64`;
   await run(["tar", "-xzf", join(directory, `${name}.tar.gz`), "-C", stage]);
-  assert.equal(await machine(join(stage, name, "boxbox-files")), 62);
+  assert.equal(await machine(join(stage, name, "boxbox")), 62);
   const home = join(stage, "home with spaces");
   await mkdir(home);
   const env = {
@@ -161,7 +161,7 @@ try {
   };
   const install = join(stage, name, "install.sh");
   await run(["sh", install], env);
-  const binary = join(home, "bin/boxbox-files");
+  const binary = join(home, "bin/boxbox");
   assert.ok(((await stat(binary)).mode & 0o111) !== 0, "binary is executable");
   const entry = join(home, "data/applications/io.boxbox.desktop");
   const exec = (await readFile(entry, "utf8")).match(/^Exec=(.*)$/m)?.[1];
