@@ -4,7 +4,7 @@ What changed in each release and what to do when you upgrade. To ship a release,
 
 ## v0.4.0 Release
 
-The desktop app is now BoxBox Files, a native Rust app for Linux and Windows 11 x64. It replaces the Electrobun app and does not carry its settings over. The web app gets the same file-manager features, and the server adds OpenID Connect sign-in, share link previews, NAS identities and delete-on-expiry shares. See the [v0.4.0 notes](releases/v0.4.0.md) for details, measurements and upgrade steps.
+The `boxbox` desktop app is now a native Rust app for Linux and Windows 11 x64. It replaces the Electrobun app and does not carry its settings over. The web app gets the same file-manager features, and the server adds OpenID Connect sign-in, share link previews, NAS identities and delete-on-expiry shares. See the [v0.4.0 notes](releases/v0.4.0.md) for details, measurements and upgrade steps.
 
 ## v0.3.2 Desktop Release
 
