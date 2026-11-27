@@ -29,7 +29,7 @@ sha2 = "0.10"
 shlex = "1"
 unicode-segmentation = "1"
 ureq = { version = "2", features = ["json"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 getrandom = "0.4"

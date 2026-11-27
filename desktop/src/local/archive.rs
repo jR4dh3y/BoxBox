@@ -236,7 +236,7 @@ mod tests {
         let sources = [(folder.join("report.txt"), root.clone()), (folder.clone(), root.clone())];
         super::write_zip_of(&sources, &folder.join("bundle.zip")).unwrap();
         let archive = zip::ZipArchive::new(fs::File::open(folder.join("bundle.zip")).unwrap()).unwrap();
-        let mut names: Vec<_> = archive.file_names().map(str::to_owned).collect();
+        let mut names: Vec<_> = archive.file_names().collect::<Result<_, _>>().unwrap();
         names.sort();
         fs::remove_dir_all(&root).unwrap();
         assert_eq!(names, ["report.txt", "reports/", "reports/report.txt"]);
