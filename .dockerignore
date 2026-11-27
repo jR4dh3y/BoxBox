@@ -26,13 +26,7 @@ frontend/.svelte-kit
 frontend/build
 
 # Other workspace dependencies and generated output
-.hutch
-desktop/node_modules
-desktop/.hutch
-desktop/build
-desktop/artifacts
-desktop/resources
-desktop/native/target
+desktop
 website/node_modules
 website/dist
 website/.astro

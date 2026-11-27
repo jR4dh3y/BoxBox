@@ -11,6 +11,7 @@ export interface LatestRelease {
   htmlUrl: string;
   summary: string;
   desktop: DesktopDownload | null;
+  windowsDesktop: DesktopDownload | null;
   checksumsUrl: string | null;
 }
 
@@ -40,8 +41,14 @@ export function parseRelease(payload: unknown): LatestRelease | null {
       (item) =>
         item.name === name && item.browser_download_url === prefix + name,
     );
-  const fileName = `boxbox-desktop-${tagName}-linux-amd64.tar.gz`;
-  const desktop = asset(fileName);
+  const desktopAsset = (platform: "linux-amd64.tar.gz" | "windows-amd64.zip") => {
+    const fileName = `boxbox-desktop-${tagName}-${platform}`;
+    const match = asset(fileName);
+    const size = match?.size;
+    return typeof size === "number" && Number.isSafeInteger(size) && size > 0
+      ? { fileName, url: prefix + fileName, size }
+      : null;
+  };
   const body = typeof payload.body === "string" ? payload.body.trim() : "";
   return {
     tagName,
@@ -51,13 +58,8 @@ export function parseRelease(payload: unknown): LatestRelease | null {
       typeof payload.published_at === "string" ? payload.published_at : "",
     htmlUrl: `${repository}/releases/tag/${tagName}`,
     summary: body.split(/\r?\n\r?\n/)[0]?.trim() ?? "",
-    desktop:
-      desktop &&
-      typeof desktop.size === "number" &&
-      Number.isSafeInteger(desktop.size) &&
-      desktop.size > 0
-        ? { fileName, url: prefix + fileName, size: desktop.size }
-        : null,
+    desktop: desktopAsset("linux-amd64.tar.gz"),
+    windowsDesktop: desktopAsset("windows-amd64.zip"),
     checksumsUrl: asset("SHA256SUMS") ? prefix + "SHA256SUMS" : null,
   };
 }

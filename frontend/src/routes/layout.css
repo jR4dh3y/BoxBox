@@ -55,6 +55,23 @@
 	--animate-led-b: led-blink 3.4s step-end 1300ms infinite;
 	--animate-led-busy: led-blink 0.5s step-end infinite;
 	--animate-progress-sweep: progress-sweep 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+	/* The desktop app's popover and arrival motion: short, eased, never in the way. */
+	--animate-pop-in: pop-in 120ms cubic-bezier(0.2, 0, 0, 1);
+	--animate-rise-in: rise-in 220ms cubic-bezier(0.2, 0, 0, 1) backwards;
+
+	@keyframes pop-in {
+		from {
+			opacity: 0;
+			transform: scale(0.97);
+		}
+	}
+
+	@keyframes rise-in {
+		from {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+	}
 
 	@keyframes progress-sweep {
 		from {
@@ -225,6 +242,11 @@ input[autocomplete='current-password']:focus-visible {
 	.file-surface
 	:where(.text-folder svg, [data-file-header] svg) {
 	color: var(--color-accent-icon);
+}
+
+/* Over a wallpaper the chrome is see-through, so greyed-out controls stay legible. */
+.app-shell[data-has-background='true'] .browse-chrome {
+	--color-text-disabled: rgb(255 255 255 / 0.35);
 }
 
 /* Keep native scrolling and keyboard behavior; only the scrollbar's paint changes. */
