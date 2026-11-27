@@ -4,9 +4,10 @@ import '../styles/global.css';
 interface Props {
   title: string;
   description?: string;
+  showDotGrid?: boolean;
 }
 
-const { title, description = "Fast, lightweight file manager for Linux servers." } = Astro.props;
+const { title, description = "Fast, lightweight file manager for Linux servers.", showDotGrid = true } = Astro.props;
 ---
 
 <!doctype html>
@@ -26,13 +27,15 @@ const { title, description = "Fast, lightweight file manager for Linux servers."
   <body class="relative flex min-h-screen flex-col bg-[#07080b] text-text-primary antialiased">
     <div class="page-curtain relative z-20 flex flex-1 flex-col bg-[#0d0d0d]">
       <!-- Interactive Bayer-dithered dot grid behind the top of the page, fading out cleanly. -->
-      <div
-        data-dot-grid-root
-        class="dot-grid pointer-events-none absolute inset-x-0 top-0 z-0 h-[900px]"
-        aria-hidden="true"
-      >
-        <canvas data-dot-grid class="block h-full w-full"></canvas>
-      </div>
+      {showDotGrid && (
+        <div
+          data-dot-grid-root
+          class="dot-grid pointer-events-none absolute inset-x-0 top-0 z-0 h-[900px]"
+          aria-hidden="true"
+        >
+          <canvas data-dot-grid class="block h-full w-full"></canvas>
+        </div>
+      )}
 
       <slot />
     </div>

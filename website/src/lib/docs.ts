@@ -43,7 +43,7 @@ const docNav = [
     description:
       "Deploy from GHCR with Compose, port binding, and optional reverse proxy examples.",
   },
-  { slug: "desktop", title: "Linux Desktop", description: "Download, install, pair, update and remove the Linux desktop app." },
+  { slug: "desktop", title: "Desktop App", description: "Download, install, pair, update, and remove BoxBox Files on Windows and Linux." },
   { slug: "connect-api", title: "Paired Client API", description: "Authorize desktop devices and revoke server access." },
   {
     slug: "docker-options",
@@ -232,6 +232,20 @@ export function getDocSections(): DocNavSection[] {
       items: slugs.flatMap((slug) => pages.get(slug) ?? []),
     }))
     .filter((section) => section.items.length > 0);
+}
+
+/** Returns the previous and next docs pages in sidebar section order. */
+export function getAdjacentDocs(
+  slug: string,
+  sections: readonly DocNavSection[],
+): { prev: DocNavItem | null; next: DocNavItem | null } {
+  const ordered = sections.flatMap((section) => section.items);
+  const index = ordered.findIndex((item) => item.slug === slug);
+  if (index === -1) return { prev: null, next: null };
+  return {
+    prev: ordered[index - 1] ?? null,
+    next: ordered[index + 1] ?? null,
+  };
 }
 
 export function getDocSlugs(): string[] {

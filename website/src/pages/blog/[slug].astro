@@ -119,6 +119,10 @@ const githubReleaseHref = `https://github.com/jR4dh3y/BoxBox/releases/tag/${post
 </Layout>
 
 <script>
+  import { mountCodeCopyButtons } from '../../lib/codeCopy';
+
+  mountCodeCopyButtons();
+
   const tocLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
   const headings = tocLinks
     .map((link): HTMLElement | null => {
