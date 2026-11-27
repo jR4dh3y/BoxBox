@@ -94,6 +94,7 @@ const dialogTitleId = `${comparison.id}-dialog-title`;
             width={comparison.before.width}
             height={comparison.before.height}
             loading="lazy"
+            decoding="async"
             class="block h-auto w-full"
           />
         </div>
@@ -116,6 +117,7 @@ const dialogTitleId = `${comparison.id}-dialog-title`;
             width={comparison.after.width}
             height={comparison.after.height}
             loading="lazy"
+            decoding="async"
             class="block h-auto w-full"
           />
         </div>
@@ -135,6 +137,8 @@ const dialogTitleId = `${comparison.id}-dialog-title`;
             width={comparison.after.width}
             height={comparison.after.height}
             draggable="false"
+            loading="lazy"
+            decoding="async"
             class="block h-auto w-full pointer-events-none"
           />
           <div
@@ -147,6 +151,8 @@ const dialogTitleId = `${comparison.id}-dialog-title`;
               width={comparison.before.width}
               height={comparison.before.height}
               draggable="false"
+              loading="lazy"
+              decoding="async"
               class="block h-auto w-full"
             />
           </div>
@@ -282,6 +288,8 @@ const dialogTitleId = `${comparison.id}-dialog-title`;
             alt={comparison.before.label}
             width={comparison.before.width}
             height={comparison.before.height}
+            loading="lazy"
+            decoding="async"
             class="block h-auto w-full"
           />
         </div>
@@ -296,6 +304,8 @@ const dialogTitleId = `${comparison.id}-dialog-title`;
             alt={comparison.after.label}
             width={comparison.after.width}
             height={comparison.after.height}
+            loading="lazy"
+            decoding="async"
             class="block h-auto w-full"
           />
         </div>

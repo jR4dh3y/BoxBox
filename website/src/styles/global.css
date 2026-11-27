@@ -488,7 +488,7 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
   .word-box {
     display: inline-block;
     margin: 0 -0.04em;
-    padding: 0 0.1em 0.06em;
+    padding: 0.08em 0.11em 0.01em;
     border: max(1.5px, 0.035em) solid var(--color-accent);
     border-radius: 0.1em;
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);

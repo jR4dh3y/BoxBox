@@ -470,17 +470,18 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
     position: relative;
     z-index: 5;
     display: flex;
-    width: min(100%, 18rem);
-    aspect-ratio: 1;
+    width: min(100%, 19rem);
+    min-height: 18.5rem;
     flex-direction: column;
+    gap: 0.85rem;
     margin: 3.5rem 0 0 0.5rem;
-    padding: 2rem 1.4rem 1.15rem;
+    padding: 2.1rem 1.45rem 1.2rem;
     background: var(--color-folder);
     color: #1c1608;
     font-family: 'Caveat', cursive;
     font-size: 1.38rem;
     font-weight: 700;
-    line-height: 1.14;
+    line-height: 1.18;
     box-shadow: 0 calc(14px + var(--lift) * 34px) calc(20px + var(--lift) * 36px) calc(-12px + var(--lift) * 4px) rgb(0 0 0 / calc(0.85 - var(--lift) * 0.35));
     transform: rotate(2.5deg);
     transform-origin: center 0.2rem;
@@ -514,10 +515,10 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
   /* Caveat draws 4 with an open top; use a matching hand-drawn closed-top 4 so jR4dh3y reads clearly. */
   .closing-note-four {
     display: inline-block;
-    width: 0.56em;
-    height: 0.7em;
-    margin: 0 -0.02em 0 -0.04em;
-    vertical-align: -0.06em;
+    width: 0.54em;
+    height: 0.68em;
+    margin: 0 -0.01em 0 -0.03em;
+    vertical-align: -0.04em;
   }
 
   .closing-note-four svg {

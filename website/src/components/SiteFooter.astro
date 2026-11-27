@@ -289,6 +289,7 @@ import {
     --scene-x: 0;
     --scene-y: 0;
     --scene-reveal: 0;
+    contain: layout paint;
   }
 
   /* Tuck neatly under the rounded bottom corners of .page-curtain so there is zero seam gap. */
@@ -410,39 +411,42 @@ import {
   .atmosphere-bloom {
     opacity: 0.4;
     mask-image: radial-gradient(
-      ellipse 52% 48% at 50% 66%,
-      rgb(0 0 0 / 0.96) 0%,
-      rgb(0 0 0 / 0.42) 44%,
-      transparent 78%
+      ellipse 56% 52% at 50% 66%,
+      rgb(0 0 0 / 0.94) 0%,
+      rgb(0 0 0 / 0.56) 26%,
+      rgb(0 0 0 / 0.18) 54%,
+      transparent 82%
     );
     -webkit-mask-image: radial-gradient(
-      ellipse 52% 48% at 50% 66%,
-      rgb(0 0 0 / 0.96) 0%,
-      rgb(0 0 0 / 0.42) 44%,
-      transparent 78%
+      ellipse 56% 52% at 50% 66%,
+      rgb(0 0 0 / 0.94) 0%,
+      rgb(0 0 0 / 0.56) 26%,
+      rgb(0 0 0 / 0.18) 54%,
+      transparent 82%
     );
-    filter: blur(28px);
     animation: atmosphere-breathe 9.5s ease-in-out infinite;
   }
 
   .atmosphere-core {
     opacity: 0.25;
     background-image: radial-gradient(
-      ellipse 34% 24% at 50% 68%,
-      rgb(255 255 255 / 0.46) 0%,
-      transparent 72%
+      ellipse 38% 28% at 50% 68%,
+      rgb(255 255 255 / 0.44) 0%,
+      rgb(255 255 255 / 0.14) 38%,
+      transparent 76%
     );
     mask-image: radial-gradient(
-      ellipse 38% 30% at 50% 68%,
-      rgb(0 0 0 / 0.9) 0%,
-      transparent 74%
+      ellipse 42% 34% at 50% 68%,
+      rgb(0 0 0 / 0.88) 0%,
+      rgb(0 0 0 / 0.32) 42%,
+      transparent 78%
     );
     -webkit-mask-image: radial-gradient(
-      ellipse 38% 30% at 50% 68%,
-      rgb(0 0 0 / 0.9) 0%,
-      transparent 74%
+      ellipse 42% 34% at 50% 68%,
+      rgb(0 0 0 / 0.88) 0%,
+      rgb(0 0 0 / 0.32) 42%,
+      transparent 78%
     );
-    filter: blur(18px);
     animation: atmosphere-core-drift 12.5s ease-in-out infinite;
   }
 
@@ -487,16 +491,17 @@ import {
     opacity: 0.13;
     transition: background-color 700ms ease;
     mask-image: radial-gradient(
-      ellipse 46% 62% at 50% 80%,
-      rgb(0 0 0 / 0.95) 0%,
-      transparent 74%
+      ellipse 50% 66% at 50% 80%,
+      rgb(0 0 0 / 0.9) 0%,
+      rgb(0 0 0 / 0.3) 44%,
+      transparent 78%
     );
     -webkit-mask-image: radial-gradient(
-      ellipse 46% 62% at 50% 80%,
-      rgb(0 0 0 / 0.95) 0%,
-      transparent 74%
+      ellipse 50% 66% at 50% 80%,
+      rgb(0 0 0 / 0.9) 0%,
+      rgb(0 0 0 / 0.3) 44%,
+      transparent 78%
     );
-    filter: blur(18px);
   }
 
   /* Drifting micro-motes rising lazily through the backlit center valley. */

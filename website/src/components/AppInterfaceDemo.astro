@@ -21,7 +21,7 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
       id="demo-video"
       class="block w-full aspect-video"
       src="/media/boxbox-promo.mp4"
-      poster="/media/boxbox-promo-poster.jpg"
+      poster="/media/boxbox-promo-poster.webp"
       muted
       playsinline
       controls
@@ -33,7 +33,7 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
     data-slide="1"
     inert
     class="demo-slide col-start-1 row-start-1 w-full rounded-[14px] overflow-hidden border border-[#2a2a2a] bg-[#161616] relative"
-    style="box-shadow: 0 24px 70px rgba(0, 0, 0, 0.72), 0 0 96px var(--hero-glow); --hero-wallpaper: url('/wallpapers/evernight.png'); --hero-glow: rgba(146, 124, 255, 0.32); --color-accent: #a892ff; --color-accent-hover: #7b69c5; --color-accent-muted: #473d68; --color-selection: #463c67; --color-selection-hover: #7b69c5; --color-border-focus: #a892ff;"
+    style="box-shadow: 0 24px 70px rgba(0, 0, 0, 0.72), 0 0 96px var(--hero-glow); --hero-glow: rgba(146, 124, 255, 0.32); --color-accent: #a892ff; --color-accent-hover: #7b69c5; --color-accent-muted: #473d68; --color-selection: #463c67; --color-selection-hover: #7b69c5; --color-border-focus: #a892ff;"
   >
     <div class="absolute inset-0 demo-wallpaper-layer"></div>
     <div id="demo-wallpaper-fade" class="absolute inset-0 demo-wallpaper-fade"></div>
@@ -65,9 +65,12 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
   const demo = document.getElementById('demo');
   const stage = document.getElementById('demo-stage');
   const heroApp = document.getElementById('hero-app');
-  const video = document.getElementById('demo-video') as HTMLVideoElement | null;
-  const prevButton = document.getElementById('demo-prev') as HTMLButtonElement | null;
-  const nextButton = document.getElementById('demo-next') as HTMLButtonElement | null;
+  const videoEl = document.getElementById('demo-video');
+  const video = videoEl instanceof HTMLVideoElement ? videoEl : null;
+  const prevEl = document.getElementById('demo-prev');
+  const prevButton = prevEl instanceof HTMLButtonElement ? prevEl : null;
+  const nextEl = document.getElementById('demo-next');
+  const nextButton = nextEl instanceof HTMLButtonElement ? nextEl : null;
   const wallpaperFade = document.getElementById('demo-wallpaper-fade');
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -102,6 +105,7 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
     let ticking = false;
     let previewShown = false;
     let theater = false;
+    let lastProgress = -1;
 
     const THEATER_LEAVE_PX = 120;
     let theaterScrollY = 0;
@@ -111,14 +115,20 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
       if (theater && Math.abs(window.scrollY - theaterScrollY) > THEATER_LEAVE_PX) setTheater(false);
     }
 
-    function updateDemoTransform() {
+    function updateDemoTransform(force = false) {
       if (motionPreference.matches || theater) {
-        demoStage.style.transform = 'none';
+        if (lastProgress !== -2 || force) {
+          demoStage.style.transform = 'none';
+          lastProgress = -2;
+        }
         return;
       }
       const scrollY = window.scrollY;
       const maxScroll = window.innerHeight * 0.6;
       const progress = Math.min(Math.max(scrollY / maxScroll, 0), 1);
+      if (!force && progress === lastProgress) return;
+      lastProgress = progress;
+
       const easeProgress = 1 - Math.pow(1 - progress, 4);
       const rotateX = 20 - (20 * easeProgress);
       const scale = 0.85 + (0.15 * easeProgress);
@@ -137,10 +147,9 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
       });
     }, { passive: true });
 
-    motionPreference.addEventListener('change', updateDemoTransform);
+    motionPreference.addEventListener('change', () => updateDemoTransform(true));
 
-    updateDemoTransform();
-    wearTheme(activeTheme(), false);
+    updateDemoTransform(true);
     onThemeChange((theme) => wearTheme(theme, true));
 
     // Slide 0 is the promo video, slide 1 the interface preview. The video
@@ -180,6 +189,7 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
       previewWindow.inert = index !== 1;
       if (index === 1 && !previewShown) {
         previewShown = true;
+        wearTheme(activeTheme(), false);
         startThemeCycle();
         preview.startUpload();
       }
@@ -394,10 +404,9 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from '@lucide/astro';
 
   .demo-hero-glow {
     background:
-      radial-gradient(ellipse at 50% 42%, var(--hero-glow, rgba(74, 158, 255, 0.32)) 0%, transparent 58%),
-      radial-gradient(ellipse at 50% 88%, rgba(74, 158, 255, 0.18) 0%, transparent 64%);
-    filter: blur(72px);
-    opacity: 0.95;
+      radial-gradient(ellipse 56% 52% at 50% 42%, var(--hero-glow, rgba(74, 158, 255, 0.32)) 0%, transparent 72%),
+      radial-gradient(ellipse 52% 48% at 50% 84%, rgba(74, 158, 255, 0.16) 0%, transparent 70%);
+    opacity: 0.9;
     transition: background 700ms ease, opacity 700ms ease;
   }
 </style>
