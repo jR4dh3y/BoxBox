@@ -115,7 +115,8 @@ impl ThumbnailCache {
 /// Decodes a PNG thumbnail into GPUI's BGRA pixels. A `RenderImage` stays out of
 /// GPUI's asset map, which never frees what it holds, so the cache owns its lifetime.
 pub(crate) fn decode_thumbnail(png: &[u8]) -> anyhow::Result<Arc<RenderImage>> {
-    let mut pixels = image::load_from_memory_with_format(png, image::ImageFormat::Png)?.into_rgba8();
+    let decoder = image::codecs::png::PngDecoder::new(std::io::Cursor::new(png))?;
+    let mut pixels = image::DynamicImage::from_decoder(decoder)?.into_rgba8();
     for pixel in pixels.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }

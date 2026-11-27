@@ -3,12 +3,15 @@
 //! on the selection from the toolbar, the row menu and the Delete key, as in
 //! Thunar.
 
+use std::rc::Rc;
+
+use chrono::{Datelike as _, Local, NaiveDate};
 use gpui::{div, prelude::*, px, uniform_list, AnyElement, ClickEvent, Context, SharedString};
 
 use super::{icon, TextScale};
 use crate::api::{FileInfo, TrashItem};
 use crate::components::{sideways, table_frame, Button, ButtonSize, ButtonVariant, Column, ColumnSpec, FileRow, ListMetrics, Table};
-use crate::format::{deletion_millis, file_date, type_description, Kind};
+use crate::format::{deletion_millis, file_date_at, type_description, Kind};
 use crate::theme::*;
 use crate::workspace::trash_table::location;
 use crate::workspace::{Load, Workspace};
@@ -61,7 +64,7 @@ impl Workspace {
             Load::Loaded(items) if items.is_empty() => message("Trash is empty".into(), Some("trash-2")),
             Load::Loaded(items) => {
                 let layout = self.preferences.columns(Table::Trash);
-                let specs = layout.specs(Table::Trash);
+                let specs: Rc<[ColumnSpec]> = Rc::from(layout.specs(Table::Trash));
                 let header = self
                     .table_header(Table::Trash, layout.clone(), self.active_pane, cx)
                     .sorted(Some(self.trash_table.sort))
@@ -75,7 +78,11 @@ impl Workspace {
                     "trash-list",
                     items.len(),
                     cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
-                        range.filter_map(|index| this.render_trash_row(index, specs.clone(), cx)).collect::<Vec<_>>()
+                        let now = Local::now();
+                        let (today, year) = (now.date_naive(), now.year());
+                        range
+                            .filter_map(|index| this.render_trash_row(index, specs.clone(), today, year, cx))
+                            .collect::<Vec<_>>()
                     }),
                 )
                 .track_scroll(self.trash_table.scroll.clone())
@@ -86,23 +93,23 @@ impl Workspace {
         div().id("trash-page").size_full().flex().flex_col().bg(self.file_background()).child(body)
     }
 
-    fn render_trash_row(&mut self, index: usize, specs: Vec<ColumnSpec>, cx: &mut Context<Self>) -> Option<FileRow> {
+    fn render_trash_row(&mut self, index: usize, specs: Rc<[ColumnSpec]>, today: NaiveDate, year: i32, cx: &mut Context<Self>) -> Option<FileRow> {
         let item = self.trash_items().get(index)?.clone();
         let api = self.trash_provider.clone()?;
         let size = ListMetrics::new(self.preferences.list_zoom).icon + 4.;
         let entry = icon_entry(&item);
-        self.request_item_icon(&api, &entry, size, cx);
+        let image = self.request_and_get_item_icon(&api, &entry, size, cx);
         let kind = Kind::of(&item.name, item.is_dir);
         let deleted = deletion_millis(&item.deleted_at);
         let selected = self.trash_table.selected.contains(&item.id);
         let row = FileRow::new(("trash-row", index), item.name.clone(), item.is_dir, self.selection_style())
             .icon(kind.glyph())
             .tint(self.kind_tint(kind), None)
-            .image(self.item_icon(&api, &entry, size))
+            .image(image)
             .columns(specs)
             .value(Column::Location, location(&item.original_path))
-            .value(Column::Deleted, file_date(deleted))
-            .value(Column::Type, if item.is_dir { "Folder".into() } else { type_description(&item.name) })
+            .value(Column::Deleted, file_date_at(deleted, today, year))
+            .value(Column::Type, if item.is_dir { SharedString::from("Folder") } else { SharedString::from(type_description(&item.name)) })
             .selected(selected)
             .active(self.trash_table.anchor == Some(index) && self.trash_table.selected.len() > 1)
             .zoom(self.preferences.list_zoom);

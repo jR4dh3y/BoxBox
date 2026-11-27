@@ -16,6 +16,7 @@ boxbox-thumbnail = { version = "0.1.0", path = "thumbnail" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 crc32fast = "1.5.4"
 env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
+flate2 = "1"
 gpui = "0.2.2"
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "ico", "qoi"] }
 libc = "=0.2.189"
@@ -29,7 +30,10 @@ sha2 = "0.10"
 shlex = "1"
 unicode-segmentation = "1"
 ureq = { version = "2", features = ["json"] }
-zip = { version = "9", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+
+[build-dependencies]
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [target.'cfg(windows)'.dependencies]
 getrandom = "0.4"
@@ -49,7 +53,6 @@ windows-sys = { version = "0.61", features = [
 
 [target.'cfg(target_os = "linux")'.dependencies]
 backhand = { version = "0.25.5", default-features = false, features = ["gzip", "xz", "zstd"] }
-flate2 = "1"
 liblzma = { version = "0.4", default-features = false }
 md-5 = "0.10.6"
 raw-window-handle = "0.6"
@@ -70,6 +73,13 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
 
 [dev-dependencies]
 gpui = { version = "0.2.2", features = ["test-support"] }

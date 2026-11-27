@@ -70,6 +70,7 @@ impl LocalFiles {
         }];
         // Home is a folder on the system drive, not a drive of its own.
         add_mount(&mut mounts, "home", Some("Home"), RootKind::Place, home.clone());
+        let user_dirs = fs::read_to_string(home.join(".config/user-dirs.dirs")).ok();
         for (name, label, config_key, fallback) in [
             ("desktop", "Desktop", "XDG_DESKTOP_DIR", "Desktop"),
             ("documents", "Documents", "XDG_DOCUMENTS_DIR", "Documents"),
@@ -79,7 +80,9 @@ impl LocalFiles {
             ("videos", "Videos", "XDG_VIDEOS_DIR", "Videos"),
             ("templates", "Templates", "XDG_TEMPLATES_DIR", "Templates"),
         ] {
-            let candidate = user_directory(&home, config_key)
+            let candidate = user_dirs
+                .as_deref()
+                .and_then(|config| parse_user_directory(&home, config, config_key))
                 .unwrap_or_else(|| home.join(fallback));
             if let Ok(path) = canonical_directory(&candidate) {
                 if path.starts_with(&home) {
@@ -205,14 +208,12 @@ impl LocalFiles {
             .with_context(|| format!("cannot list {}", path))?
             .map(|entry| entry.map_err(anyhow::Error::from))
             .collect::<Result<Vec<_>>>()?;
-        let mut items = map_entries(&entries, |entry| self.info_for_entry(&mount, path, entry))
+        let items = map_entries(&entries, |entry| self.info_for_entry(&mount, path, entry))
             .into_iter()
             // Deleted since the folder was read, as happens in a busy Downloads. A name that is
             // not UTF-8 has no virtual path to reach it, so it is left out, not the folder.
             .filter(|result| !matches!(result, Err(error) if is_not_found(error) || error.is::<NotUtf8Name>()))
             .collect::<Result<Vec<_>>>()?;
-        // By the names already read: `DirEntry::file_name` allocates on every call.
-        items.sort_unstable_by(|left, right| left.name.cmp(&right.name));
         Ok(items)
     }
 
@@ -686,29 +687,35 @@ impl std::error::Error for NotUtf8Name {}
 
 impl LocalFiles {
     /// Stats relative to the open folder, which skips resolving the whole path
-    /// again: 26 ms instead of 37 ms for 20,000 entries.
+    /// again and avoids allocating a full `PathBuf` unless the entry is a symlink.
     fn info_for_entry(&self, mount: &Mount, parent: &str, entry: &fs::DirEntry) -> Result<FileInfo> {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            log::info!("{} is left out: its name is not UTF-8", path.display());
-            return Err(NotUtf8Name.into());
+        let name = match entry.file_name().into_string() {
+            Ok(name) => name,
+            Err(_) => {
+                log::info!("{} is left out: its name is not UTF-8", entry.path().display());
+                return Err(NotUtf8Name.into());
+            }
         };
-        let metadata = entry.metadata().with_context(|| format!("cannot inspect entry {name:?}"))?;
-        self.info_from_metadata(mount, parent, &path, metadata)
-            .with_context(|| format!("cannot inspect entry {name:?}"))
+        let entry_metadata = entry.metadata().with_context(|| format!("cannot inspect entry {name:?}"))?;
+        let metadata = if entry_metadata.file_type().is_symlink() {
+            let path = entry.path();
+            match fs::canonicalize(&path) {
+                Ok(target) if target.starts_with(&mount.path) => fs::metadata(target)?,
+                _ => entry_metadata,
+            }
+        } else {
+            entry_metadata
+        };
+        Ok(build_file_info(mount, parent, name, metadata))
     }
 
     fn info_for_path(&self, mount: &Mount, parent: &str, path: &Path) -> Result<FileInfo> {
-        self.info_from_metadata(mount, parent, path, fs::symlink_metadata(path)?)
-    }
-
-    /// `entry_metadata` describes the entry itself; a link inside the mount reports its target.
-    fn info_from_metadata(&self, mount: &Mount, parent: &str, path: &Path, entry_metadata: fs::Metadata) -> Result<FileInfo> {
         let name = path
             .file_name()
             .and_then(|name| name.to_str())
             .context("file name is not valid UTF-8")?
             .to_owned();
+        let entry_metadata = fs::symlink_metadata(path)?;
         let metadata = if entry_metadata.file_type().is_symlink() {
             match fs::canonicalize(path) {
                 Ok(target) if target.starts_with(&mount.path) => fs::metadata(target)?,
@@ -717,20 +724,24 @@ impl LocalFiles {
         } else {
             entry_metadata
         };
-        let mod_time = metadata.modified().ok().and_then(crate::api::mod_time);
-        let virtual_path = if parent.is_empty() {
-            format!("{}/{}", mount.point.name, name)
-        } else {
-            format!("{parent}/{name}")
-        };
-        Ok(FileInfo {
-            name,
-            path: virtual_path,
-            size: metadata.len(),
-            is_dir: metadata.is_dir(),
-            hidden: hidden_attribute(&metadata),
-            mod_time,
-        })
+        Ok(build_file_info(mount, parent, name, metadata))
+    }
+}
+
+fn build_file_info(mount: &Mount, parent: &str, name: String, metadata: fs::Metadata) -> FileInfo {
+    let mod_time = metadata.modified().ok().and_then(crate::api::mod_time);
+    let prefix = if parent.is_empty() { mount.point.name.as_str() } else { parent };
+    let mut virtual_path = String::with_capacity(prefix.len() + 1 + name.len());
+    virtual_path.push_str(prefix);
+    virtual_path.push('/');
+    virtual_path.push_str(&name);
+    FileInfo {
+        name,
+        path: virtual_path,
+        size: metadata.len(),
+        is_dir: metadata.is_dir(),
+        hidden: hidden_attribute(&metadata),
+        mod_time,
     }
 }
 
@@ -834,6 +845,10 @@ pub(super) fn add_mount(mounts: &mut Vec<Mount>, name: &str, label: Option<&str>
 
 fn user_directory(home: &Path, key: &str) -> Option<PathBuf> {
     let config = fs::read_to_string(home.join(".config/user-dirs.dirs")).ok()?;
+    parse_user_directory(home, &config, key)
+}
+
+fn parse_user_directory(home: &Path, config: &str, key: &str) -> Option<PathBuf> {
     let raw = config
         .lines()
         .filter_map(|line| line.split_once('='))

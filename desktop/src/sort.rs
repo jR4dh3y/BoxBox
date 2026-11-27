@@ -96,32 +96,45 @@ pub fn sort_files(items: &mut Vec<FileInfo>, sort: Sort) {
         SortDir::Asc => ordering,
         SortDir::Desc => ordering.reverse(),
     };
-    let mut keyed: Vec<_> = items
-        .drain(..)
-        .map(|item| {
-            let kind = (sort.field == SortField::Type && !item.is_dir)
-                .then(|| crate::format::type_description(&item.name));
-            (kind, item)
-        })
-        .collect();
-    keyed.sort_by(|(left_kind, left), (right_kind, right)| {
+    if sort.field == SortField::Type {
+        let mut keyed: Vec<_> = items
+            .drain(..)
+            .map(|item| {
+                let kind = (!item.is_dir).then(|| crate::format::type_description(&item.name));
+                (kind, item)
+            })
+            .collect();
+        keyed.sort_unstable_by(|(left_kind, left), (right_kind, right)| {
+            if left.is_dir != right.is_dir {
+                return if left.is_dir { Ordering::Less } else { Ordering::Greater };
+            }
+            let order = natural_cmp(
+                left_kind.as_deref().unwrap_or_default(),
+                right_kind.as_deref().unwrap_or_default(),
+            );
+            directed(order)
+                .then_with(|| natural_cmp(&left.name, &right.name))
+                .then_with(|| natural_cmp(&left.path, &right.path))
+        });
+        items.extend(keyed.into_iter().map(|(_, item)| item));
+        return;
+    }
+    items.sort_unstable_by(|left, right| {
         if left.is_dir != right.is_dir {
             return if left.is_dir { Ordering::Less } else { Ordering::Greater };
         }
-        let order = match sort.field {
-            SortField::Name => natural_cmp(&left.name, &right.name),
-            SortField::Size => left.size.cmp(&right.size),
-            SortField::Modified => left.mod_time.unwrap_or(0).cmp(&right.mod_time.unwrap_or(0)),
-            SortField::Type => natural_cmp(
-                left_kind.as_deref().unwrap_or_default(),
-                right_kind.as_deref().unwrap_or_default(),
-            ),
-        };
-        directed(order)
-            .then_with(|| natural_cmp(&left.name, &right.name))
-            .then_with(|| natural_cmp(&left.path, &right.path))
+        match sort.field {
+            SortField::Name => directed(natural_cmp(&left.name, &right.name))
+                .then_with(|| natural_cmp(&left.path, &right.path)),
+            SortField::Size => directed(left.size.cmp(&right.size))
+                .then_with(|| natural_cmp(&left.name, &right.name))
+                .then_with(|| natural_cmp(&left.path, &right.path)),
+            SortField::Modified => directed(left.mod_time.unwrap_or(0).cmp(&right.mod_time.unwrap_or(0)))
+                .then_with(|| natural_cmp(&left.name, &right.name))
+                .then_with(|| natural_cmp(&left.path, &right.path)),
+            SortField::Type => unreachable!(),
+        }
     });
-    items.extend(keyed.into_iter().map(|(_, item)| item));
 }
 
 /// Approximates `Intl.Collator(undefined, { numeric: true })`: case-insensitive, digit runs by value.

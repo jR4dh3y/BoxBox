@@ -2,6 +2,7 @@
 //! (`mime/globs2` and `mime/aliases` in each XDG data dir), the rules GIO
 //! applies before it sniffs content.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -13,15 +14,61 @@ struct Glob {
     case_sensitive: bool,
 }
 
+struct GlobEntry {
+    weight: u32,
+    pattern_len: usize,
+    mime: String,
+    case_sensitive: bool,
+}
+
 #[derive(Default)]
 struct Database {
-    globs: Vec<Glob>,
+    /// Exact filename globs (no `*` or `?`), indexed by pattern.
+    literals_ci: HashMap<String, Vec<GlobEntry>>,
+    literals_cs: HashMap<String, Vec<GlobEntry>>,
+    /// Pure suffix globs (`*.ext`, `*.tar.gz`), indexed by the text after `*`.
+    suffixes_ci: HashMap<String, Vec<GlobEntry>>,
+    suffixes_cs: HashMap<String, Vec<GlobEntry>>,
+    /// Remaining wildcard globs (`README*`, `*.[0-9]`, etc.).
+    complex: Vec<Glob>,
     aliases: HashMap<String, String>,
     /// `mime/icons` and `mime/generic-icons`: a type's own icon name and its family's.
     icons: HashMap<String, String>,
     generic_icons: HashMap<String, String>,
     /// `mime/subclasses`: each type's parents, as `text/x-python` is a `text/plain`.
     parents: HashMap<String, Vec<String>>,
+}
+
+impl Database {
+    fn add_globs(&mut self, globs: impl IntoIterator<Item = Glob>) {
+        for glob in globs {
+            if !glob.pattern.contains(['*', '?']) {
+                let entry = GlobEntry {
+                    weight: glob.weight,
+                    pattern_len: glob.pattern.len(),
+                    mime: glob.mime,
+                    case_sensitive: glob.case_sensitive,
+                };
+                let map = if glob.case_sensitive { &mut self.literals_cs } else { &mut self.literals_ci };
+                map.entry(glob.pattern).or_default().push(entry);
+            } else if let Some(suffix) = glob.pattern.strip_prefix('*').filter(|s| !s.is_empty() && !s.contains(['*', '?'])) {
+                if suffix.starts_with('.') {
+                    let entry = GlobEntry {
+                        weight: glob.weight,
+                        pattern_len: glob.pattern.len(),
+                        mime: glob.mime,
+                        case_sensitive: glob.case_sensitive,
+                    };
+                    let map = if glob.case_sensitive { &mut self.suffixes_cs } else { &mut self.suffixes_ci };
+                    map.entry(suffix.to_string()).or_default().push(entry);
+                } else {
+                    self.complex.push(glob);
+                }
+            } else {
+                self.complex.push(glob);
+            }
+        }
+    }
 }
 
 /// `$XDG_DATA_HOME`, then `$XDG_DATA_DIRS`: the user's files win.
@@ -41,7 +88,7 @@ fn database() -> &'static Database {
         let mut database = Database::default();
         for dir in data_dirs() {
             if let Ok(text) = std::fs::read_to_string(dir.join("mime/globs2")) {
-                database.globs.extend(parse_globs(&text));
+                database.add_globs(parse_globs(&text));
             }
             if let Ok(text) = std::fs::read_to_string(dir.join("mime/aliases")) {
                 for (alias, canonical) in text.lines().filter_map(|line| line.split_once(' ')) {
@@ -96,15 +143,58 @@ fn matches(pattern: &str, name: &str) -> bool {
     }
 }
 
+fn consider<'a>(
+    best: &mut Option<((u32, bool, usize), &'a str)>,
+    weight: u32,
+    case_sensitive: bool,
+    pattern_len: usize,
+    mime: &'a str,
+) {
+    let key = (weight, case_sensitive, pattern_len);
+    // Preserve `Iterator::max_by_key` tie-breaking (highest weight, exact-case, longest).
+    if best.is_none_or(|(best_key, _)| key >= best_key) {
+        *best = Some((key, mime));
+    }
+}
+
 fn lookup(database: &Database, name: &str) -> Option<String> {
-    let lower = name.to_lowercase();
-    database
-        .globs
-        .iter()
-        .filter(|glob| matches(&glob.pattern, if glob.case_sensitive { name } else { &lower }))
-        // The highest weight, then an exact-case match, then the longest pattern.
-        .max_by_key(|glob| (glob.weight, glob.case_sensitive, glob.pattern.len()))
-        .map(|glob| canonical_in(database, &glob.mime).to_string())
+    let lower: Cow<'_, str> = if name.bytes().all(|byte| !byte.is_ascii_uppercase() && byte.is_ascii()) {
+        Cow::Borrowed(name)
+    } else {
+        Cow::Owned(name.to_lowercase())
+    };
+    let mut best: Option<((u32, bool, usize), &str)> = None;
+    if let Some(entries) = database.literals_ci.get(lower.as_ref()) {
+        for entry in entries {
+            consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, &entry.mime);
+        }
+    }
+    if let Some(entries) = database.literals_cs.get(name) {
+        for entry in entries {
+            consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, &entry.mime);
+        }
+    }
+    for (dot, _) in lower.match_indices('.') {
+        if let Some(entries) = database.suffixes_ci.get(&lower[dot..]) {
+            for entry in entries {
+                consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, &entry.mime);
+            }
+        }
+    }
+    for (dot, _) in name.match_indices('.') {
+        if let Some(entries) = database.suffixes_cs.get(&name[dot..]) {
+            for entry in entries {
+                consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, &entry.mime);
+            }
+        }
+    }
+    for glob in &database.complex {
+        let candidate = if glob.case_sensitive { name } else { lower.as_ref() };
+        if matches(&glob.pattern, candidate) {
+            consider(&mut best, glob.weight, glob.case_sensitive, glob.pattern.len(), &glob.mime);
+        }
+    }
+    best.map(|(_, mime)| canonical_in(database, mime).to_string())
 }
 
 fn canonical_in<'a>(database: &'a Database, mime: &'a str) -> &'a str {
@@ -178,13 +268,13 @@ mod tests {
 
     fn database() -> Database {
         let globs = "# comment\n50:video/mp4:*.mp4\n50:video/matroska:*.mkv\n10:text/x-makefile:makefile\n50:text/x-c++src:*.C:cs\n50:text/x-csrc:*.c\n60:application/x-compressed-tar:*.tar.gz\n50:application/gzip:*.gz\n0:model/x:__NOGLOBS__\n";
-        Database {
-            globs: parse_globs(globs).collect(),
+        let mut database = Database {
             aliases: [("video/x-matroska".to_string(), "video/matroska".to_string())].into_iter().collect(),
-            icons: HashMap::new(),
             generic_icons: [("text/x-python".to_string(), "text-x-script".to_string())].into_iter().collect(),
-            parents: HashMap::new(),
-        }
+            ..Database::default()
+        };
+        database.add_globs(parse_globs(globs));
+        database
     }
 
     #[test]

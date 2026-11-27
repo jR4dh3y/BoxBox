@@ -2,7 +2,7 @@ use std::{io::{Cursor, Read}, path::{Path, PathBuf}, sync::Arc};
 
 use anyhow::{bail, Context as _, Result};
 use gpui::{div, img, prelude::*, px, Context, Image, ImageFormat, ObjectFit, Rgba, Window, WindowBackgroundAppearance};
-use image::{GenericImageView, ImageReader, Limits};
+use image::{GenericImageView, Limits};
 use sha2::{Digest, Sha256};
 
 use crate::{settings_state::WallpaperFit, theme::*};
@@ -91,13 +91,11 @@ fn read_wallpaper(path: &Path) -> Result<Vec<u8>> {
 /// Decodes the wallpaper and makes its pictures as PNG: the image (at most 4096px),
 /// a blurred copy, a tile, and a blurred tile, with the same crop for both variants.
 fn prepare_wallpaper(bytes: &[u8]) -> Result<(Prepared, [Vec<u8>; 4])> {
-    let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
     let mut limits = Limits::default();
     limits.max_image_width = Some(16384);
     limits.max_image_height = Some(16384);
     limits.max_alloc = Some(160 * 1024 * 1024);
-    reader.limits(limits);
-    let decoded = reader.decode().context("Choose a supported image file")?;
+    let decoded = boxbox_thumbnail::decode_supported(Cursor::new(bytes), limits).context("Choose a supported image file")?;
     let accent = super::palette::wallpaper_accent(&decoded);
     let tint = accent.unwrap_or(0x4a9eff);
     let dimensions = decoded.dimensions();
@@ -116,9 +114,7 @@ fn prepare_wallpaper(bytes: &[u8]) -> Result<(Prepared, [Vec<u8>; 4])> {
     });
     let frosted_tile = image::imageops::crop_imm(&image::imageops::blur(&bordered, 24.), padding, padding, tile.width(), tile.height()).to_image();
     let encode = |image: image::DynamicImage| -> Result<Vec<u8>> {
-        let mut output = Cursor::new(Vec::new());
-        image.write_to(&mut output, image::ImageFormat::Png)?;
-        Ok(output.into_inner())
+        Ok(boxbox_thumbnail::encode_png(&image)?)
     };
     let image = if decoded.dimensions().0.max(decoded.dimensions().1) > 4096 {
         decoded.resize(4096, 4096, image::imageops::FilterType::Triangle)
@@ -136,7 +132,7 @@ impl Workspace {
             let result = cx.background_executor().spawn(async move {
                 let bytes = read_wallpaper(&path)?;
                 // Refuse an unreadable image before keeping a copy of it.
-                image::load_from_memory(&bytes).context("Choose a supported image file")?;
+                boxbox_thumbnail::decode_supported(Cursor::new(&bytes), Limits::default()).context("Choose a supported image file")?;
                 let digest = format!("{:x}", Sha256::digest(&bytes));
                 let stored = crate::settings_state::store_wallpaper(&bytes, &digest).map_err(anyhow::Error::msg)?;
                 let image = load_wallpaper(&stored)?;

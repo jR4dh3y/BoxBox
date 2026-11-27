@@ -1,12 +1,15 @@
 //! `FileList.svelte`: the view. It wires `FileListHeader` and `FileRow` to the
 //! pane; the components own the look.
 
-use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context};
+use std::rc::Rc;
+
+use chrono::{Datelike as _, Local, NaiveDate};
+use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, SharedString};
 
 use super::{icon, TextScale};
-use crate::components::{sideways, table_frame, Column, ColumnLayout, ColumnSpec, FileListHeader, FileRow, Selection, Table};
+use crate::components::{sideways, table_frame, Column, ColumnLayout, ColumnSpec, EntryIcon, FileListHeader, FileRow, Selection, Table};
 use crate::api::FileInfo;
-use crate::format::{display_name, file_date, file_size, type_description};
+use crate::format::{display_name, file_date_at, file_size, type_description};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
 use crate::sort::{Sort, SortDir, SortField};
@@ -21,7 +24,7 @@ impl Workspace {
         let placeholder = pane.placeholder();
         let empty = placeholder.is_some();
         let layout = self.preferences.columns(Table::Files);
-        let specs = layout.specs(Table::Files);
+        let specs: Rc<[ColumnSpec]> = Rc::from(layout.specs(Table::Files));
         let sorted = pane.display_sort().map(|sort| (sort.field.column(), sort.dir));
         let table = table_frame(&layout, Table::Files).child(
             self.table_header(Table::Files, layout, target, cx).sorted(sorted).on_sort({
@@ -59,10 +62,12 @@ impl Workspace {
                             let specs = specs.clone();
                             let _span = crate::profile::span("list rows").with(|| format!("{} rows", range.len()));
                             let size = crate::components::ListMetrics::new(this.preferences.list_zoom).icon + 4.;
+                            let now = Local::now();
+                            let date = (now.date_naive(), now.year());
                             range
                                 .filter_map(|index| {
-                                    this.request_entry_icon(target, index, size, cx);
-                                    this.render_row(target, index, specs.clone(), cx)
+                                    let image = this.request_and_item_icon(target, index, size, cx);
+                                    this.render_row(target, index, specs.clone(), image, date, cx)
                                 })
                                 .collect::<Vec<_>>()
                         }),
@@ -114,20 +119,29 @@ impl Workspace {
         .detach();
     }
 
-    fn render_row(&self, target: PaneTarget, index: usize, specs: Vec<ColumnSpec>, cx: &mut Context<Self>) -> Option<FileRow> {
+    fn render_row(
+        &self,
+        target: PaneTarget,
+        index: usize,
+        specs: Rc<[ColumnSpec]>,
+        image: EntryIcon,
+        (today, year): (NaiveDate, i32),
+        cx: &mut Context<Self>,
+    ) -> Option<FileRow> {
         let pane = self.pane_by_id(target.0)?;
         let item = pane.items.get(index)?;
         let (path, is_dir) = (item.path.clone(), item.is_dir);
         let folder = DropTarget::Folder { pane: target, path: path.clone() };
         let style = self.glyph_style(&pane.api, item);
+        let kind: SharedString = if is_dir { SharedString::from("Folder") } else { SharedString::from(type_description(&item.name)) };
         let row = FileRow::new(("row", index), display_name(&item.name, is_dir, self.preferences.show_file_extensions), is_dir, self.selection_style())
             .icon(style.glyph)
             .tint(style.tint, style.emblem)
-            .image(self.item_icon(&pane.api, item, crate::components::ListMetrics::new(self.preferences.list_zoom).icon + 4.))
+            .image(image)
             .location(if pane.shows_locations() { crate::search::location(&pane.path, &item.path).to_string() } else { String::new() })
-            .value(Column::Type, if is_dir { "Folder".into() } else { type_description(&item.name) })
-            .value(Column::Size, if is_dir { "—".into() } else { file_size(item.size) })
-            .value(Column::Modified, file_date(item.mod_time))
+            .value(Column::Type, kind)
+            .value(Column::Size, if is_dir { SharedString::from("—") } else { SharedString::from(file_size(item.size)) })
+            .value(Column::Modified, file_date_at(item.mod_time, today, year))
             .selected(pane.is_selected(&item.path))
             .active(pane.active == Some(index))
             .cut(self.is_cut(pane, item))

@@ -11,7 +11,7 @@ use anyhow::{Context as _, Result};
 
 use super::{skip_search_directory, LocalFiles, Mount};
 use crate::api::FileInfo;
-use crate::search::{best_by, Hit, Request, LIMIT};
+use crate::search::{best_by, prune_by, Hit, Request, LIMIT};
 
 /// How often the matches so far are shown while the walk goes on.
 const REPORT_EVERY: Duration = Duration::from_millis(150);
@@ -53,6 +53,8 @@ impl LocalFiles {
         let mut hits: Vec<Found> = Vec::new();
         let mut pending = VecDeque::from([(start.clone(), request.path.to_owned(), 0usize)]);
         let (mut reported, mut unreported) = (Instant::now(), false);
+        let mut lower_scratch = String::with_capacity(128);
+        let mut chars_scratch = Vec::new();
         while let Some((directory, virtual_directory, depth)) = pending.pop_front() {
             if request.cancel.load(Ordering::Relaxed) {
                 break;
@@ -76,12 +78,15 @@ impl LocalFiles {
                     continue;
                 }
                 let is_folder = entry.file_type().is_ok_and(|kind| kind.is_dir());
-                let rank = request.query.rank(name);
+                let rank = request.query.rank_with_scratch(name, &mut lower_scratch, &mut chars_scratch);
                 if rank.is_none() && !is_folder {
                     continue;
                 }
                 let path = entry.path();
-                let virtual_path = format!("{virtual_directory}/{name}");
+                let mut virtual_path = String::with_capacity(virtual_directory.len() + 1 + name.len());
+                virtual_path.push_str(&virtual_directory);
+                virtual_path.push('/');
+                virtual_path.push_str(name);
                 if let Some(rank) = rank {
                     let item = FileInfo { name: name.to_owned(), path: virtual_path.clone(), size: 0, is_dir: is_folder, hidden: false, mod_time: None };
                     hits.push(Found { hit: Hit { item, rank, depth }, real: path.clone(), parent: virtual_directory.clone(), inspected: false });
@@ -91,9 +96,9 @@ impl LocalFiles {
                     pending.push_back((path, virtual_path, depth + 1));
                 }
             }
-            // Past the limit only better matches matter; keep memory bounded.
+            // Past the limit only better matches matter; keep memory bounded in O(N).
             if hits.len() > LIMIT * 2 {
-                best_by(&mut hits, |found| &found.hit);
+                prune_by(&mut hits, |found| &found.hit);
             }
             if unreported && reported.elapsed() >= REPORT_EVERY {
                 progress(self.best_items(&mount, &mut hits));

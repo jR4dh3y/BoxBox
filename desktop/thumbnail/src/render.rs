@@ -2,8 +2,19 @@ use std::io::{BufRead, Seek};
 
 use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer, images::Image};
 use image::{
-    codecs::png::PngEncoder,
-    ExtendedColorType, ImageDecoder, ImageEncoder, ImageError, ImageReader, Limits,
+    DynamicImage, ExtendedColorType, ImageDecoder, ImageEncoder, ImageError, ImageFormat,
+    ImageReader, Limits,
+    codecs::{
+        bmp::BmpDecoder,
+        gif::GifDecoder,
+        ico::IcoDecoder,
+        jpeg::JpegDecoder,
+        png::{PngDecoder, PngEncoder},
+        qoi::QoiDecoder,
+        tiff::TiffDecoder,
+        webp::WebPDecoder,
+    },
+    error::{UnsupportedError, UnsupportedErrorKind},
 };
 
 pub const MAX_SOURCE_BYTES: u64 = 64 << 20;
@@ -20,6 +31,67 @@ fn image_error(error: ImageError) -> RenderError {
         ImageError::Limits(_) => RenderError::Limit,
         _ => RenderError::Invalid,
     }
+}
+
+fn unsupported_format(format: ImageFormat) -> ImageError {
+    ImageError::Unsupported(UnsupportedError::from_format_and_kind(
+        format.into(),
+        UnsupportedErrorKind::Format(format.into()),
+    ))
+}
+
+/// Opens a decoder only for the raster formats BoxBox advertises, so LTO can drop
+/// unused codecs (`exr`, `hdr`, `pnm`, `tga`, `dds`, `ff`) that `gpui` enables on `image`.
+fn open_supported_decoder<'a, R: BufRead + Seek + 'a>(
+    source: R,
+    limits: Limits,
+) -> Result<Box<dyn ImageDecoder + 'a>, ImageError> {
+    let reader = ImageReader::new(source).with_guessed_format()?;
+    let format = reader.format().ok_or_else(|| {
+        ImageError::Unsupported(UnsupportedError::from_format_and_kind(
+            image::error::ImageFormatHint::Unknown,
+            UnsupportedErrorKind::Format(image::error::ImageFormatHint::Unknown),
+        ))
+    })?;
+    let inner = reader.into_inner();
+    let mut decoder: Box<dyn ImageDecoder + 'a> = match format {
+        ImageFormat::Jpeg => Box::new(JpegDecoder::new(inner)?),
+        ImageFormat::Png => Box::new(PngDecoder::new(inner)?),
+        ImageFormat::Gif => Box::new(GifDecoder::new(inner)?),
+        ImageFormat::WebP => Box::new(WebPDecoder::new(inner)?),
+        ImageFormat::Bmp => Box::new(BmpDecoder::new(inner)?),
+        ImageFormat::Tiff => Box::new(TiffDecoder::new(inner)?),
+        ImageFormat::Ico => Box::new(IcoDecoder::new(inner)?),
+        ImageFormat::Qoi => Box::new(QoiDecoder::new(inner)?),
+        other => return Err(unsupported_format(other)),
+    };
+    decoder.set_limits(limits)?;
+    Ok(decoder)
+}
+
+pub fn decode_supported<R: BufRead + Seek>(
+    source: R,
+    limits: Limits,
+) -> Result<DynamicImage, ImageError> {
+    let decoder = open_supported_decoder(source, limits)?;
+    DynamicImage::from_decoder(decoder)
+}
+
+pub fn dimensions_supported<R: BufRead + Seek>(source: R) -> Result<(u32, u32), ImageError> {
+    let decoder = open_supported_decoder(source, Limits::default())?;
+    Ok(decoder.dimensions())
+}
+
+pub fn encode_png(image: &DynamicImage) -> Result<Vec<u8>, ImageError> {
+    let mut output = Vec::new();
+    let color = image.color();
+    PngEncoder::new(&mut output).write_image(
+        image.as_bytes(),
+        image.width(),
+        image.height(),
+        ExtendedColorType::from(color),
+    )?;
+    Ok(output)
 }
 
 pub fn fit(width: u32, height: u32, max_width: u32, max_height: u32) -> (u32, u32) {
@@ -44,11 +116,7 @@ fn resized_rgb<R: BufRead + Seek>(
     limits.max_image_width = Some(8192);
     limits.max_image_height = Some(8192);
     limits.max_alloc = Some(128 << 20);
-    let mut reader = ImageReader::new(source)
-        .with_guessed_format()
-        .map_err(|_| RenderError::Invalid)?;
-    reader.limits(limits);
-    let decoder = reader.into_decoder().map_err(image_error)?;
+    let decoder = open_supported_decoder(source, limits).map_err(image_error)?;
     let (source_width, source_height) = decoder.dimensions();
     if source_width == 0
         || source_height == 0
@@ -56,34 +124,31 @@ fn resized_rgb<R: BufRead + Seek>(
     {
         return Err(RenderError::Limit);
     }
-    let decoded = image::DynamicImage::from_decoder(decoder).map_err(image_error)?;
+    let decoded = DynamicImage::from_decoder(decoder).map_err(image_error)?;
     let (target_width, target_height) = fit(source_width, source_height, width, height);
     let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::CatmullRom));
     let mut resizer = Resizer::new();
-    let rgb = if decoded.color().has_alpha() {
-        let source = decoded.into_rgba8();
-        let mut target = Image::new(target_width, target_height, PixelType::U8x4);
-        resizer
-            .resize(&source, &mut target, &options)
-            .map_err(|_| RenderError::Invalid)?;
+    let has_alpha = decoded.color().has_alpha();
+    // Always resize as U8x4 so fast_image_resize only compiles its RGBA SIMD kernels.
+    let source = decoded.into_rgba8();
+    let mut target = Image::new(target_width, target_height, PixelType::U8x4);
+    resizer
+        .resize(&source, &mut target, &options)
+        .map_err(|_| RenderError::Invalid)?;
+    let mut rgb = Vec::with_capacity((target_width * target_height * 3) as usize);
+    if has_alpha {
         // Match the existing JPEG thumbnail's black matte for transparency.
-        target
-            .buffer()
-            .chunks_exact(4)
-            .flat_map(|pixel| {
-                let alpha = u16::from(pixel[3]);
-                [pixel[0], pixel[1], pixel[2]]
-                    .map(|channel| ((u16::from(channel) * alpha + 127) / 255) as u8)
-            })
-            .collect::<Vec<_>>()
+        for pixel in target.buffer().chunks_exact(4) {
+            let alpha = u16::from(pixel[3]);
+            rgb.push(((u16::from(pixel[0]) * alpha + 127) / 255) as u8);
+            rgb.push(((u16::from(pixel[1]) * alpha + 127) / 255) as u8);
+            rgb.push(((u16::from(pixel[2]) * alpha + 127) / 255) as u8);
+        }
     } else {
-        let source = decoded.into_rgb8();
-        let mut target = Image::new(target_width, target_height, PixelType::U8x3);
-        resizer
-            .resize(&source, &mut target, &options)
-            .map_err(|_| RenderError::Invalid)?;
-        target.into_vec()
-    };
+        for pixel in target.buffer().chunks_exact(4) {
+            rgb.extend_from_slice(&pixel[..3]);
+        }
+    }
     Ok((rgb, target_width, target_height))
 }
 

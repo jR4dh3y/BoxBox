@@ -29,13 +29,19 @@ impl IconKey {
         if is_dir {
             return Self::Folder(special.unwrap_or("folder"));
         }
-        let lower = name.to_lowercase();
-        let parts: Vec<&str> = lower.trim_start_matches('.').rsplitn(3, '.').collect();
-        Self::File(match parts.as_slice() {
-            [extension, "tar", _] => format!("tar.{extension}"),
-            [extension, _, ..] => extension.to_string(),
-            _ => lower,
-        })
+        let trimmed = name.trim_start_matches('.');
+        if let Some((stem, ext)) = trimmed.rsplit_once('.') {
+            if let Some((_, second)) = stem.rsplit_once('.') {
+                if second.eq_ignore_ascii_case("tar") {
+                    let mut key = String::with_capacity(4 + ext.len());
+                    key.push_str("tar.");
+                    key.push_str(&ext.to_lowercase());
+                    return Self::File(key);
+                }
+            }
+            return Self::File(ext.to_lowercase());
+        }
+        Self::File(name.to_lowercase())
     }
 
     /// The type a file's name gives it.
@@ -171,7 +177,7 @@ fn pixels(bytes: &[u8], svg: bool, size: u32) -> anyhow::Result<image::RgbaImage
     if svg {
         return svg_pixels(bytes, size);
     }
-    let decoded = image::load_from_memory(bytes)?.into_rgba8();
+    let decoded = boxbox_thumbnail::decode_supported(std::io::Cursor::new(bytes), image::Limits::default())?.into_rgba8();
     // Never scaled up: a small PNG stays sharp at its own size.
     Ok(match decoded.width().max(decoded.height()) > size {
         true => image::imageops::thumbnail(&decoded, size, size),

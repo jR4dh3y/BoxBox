@@ -55,8 +55,8 @@ impl IconTheme {
         let _span = crate::profile::span("icon theme index");
         let mut bases = vec![dot_icons.to_path_buf()];
         bases.extend(data.iter().map(|dir| dir.join("icons")));
-        // (theme, its index.theme), the theme first and hicolor last.
-        let mut chain: Vec<(String, String)> = Vec::new();
+        // (theme, its parsed directories), the theme first and hicolor last.
+        let mut chain: Vec<(String, Vec<Dir>)> = Vec::new();
         let mut queue: Vec<String> = name.into_iter().map(str::to_string).collect();
         queue.insert(0, "hicolor".into());
         while let Some(theme) = queue.pop() {
@@ -64,32 +64,75 @@ impl IconTheme {
                 continue;
             }
             let Some(text) = bases.iter().find_map(|base| std::fs::read_to_string(base.join(&theme).join("index.theme")).ok()) else { continue };
-            // Parents are searched in order, depth first, so push them reversed.
-            let parents = Ini::parse(&text).get("Icon Theme", "Inherits").to_string();
+            // Parse index.theme once for both inheritance and directory layout.
+            let ini = Ini::parse(&text);
+            let parents = ini.get("Icon Theme", "Inherits");
             queue.extend(parents.split(',').map(str::trim).filter(|parent| !parent.is_empty() && *parent != "hicolor").rev().map(str::to_string));
-            chain.push((theme, text));
+            chain.push((theme, theme_dirs(&ini)));
         }
-        let mut dirs = Vec::new();
-        let mut names: HashMap<String, Vec<(usize, bool)>> = HashMap::new();
-        for (index, (theme, text)) in chain.iter().enumerate() {
-            for dir in theme_dirs(&Ini::parse(text)) {
-                for base in &bases {
-                    let path = base.join(theme).join(&dir.path);
-                    let Ok(entries) = std::fs::read_dir(&path) else { continue };
-                    let at = dirs.len();
-                    for entry in entries.flatten() {
-                        let file = entry.file_name();
-                        let Some(file) = file.to_str() else { continue };
-                        let (stem, svg) = match file.rsplit_once('.') {
-                            Some((stem, "svg")) => (stem, true),
-                            Some((stem, "png")) => (stem, false),
-                            _ => continue,
-                        };
-                        names.entry(stem.to_string()).or_default().push((at, svg));
-                    }
-                    dirs.push((index, Dir { path, ..dir.clone() }));
+        // Only check bases where each theme directory actually exists, avoiding
+        // thousands of failed openat calls for absent theme roots.
+        let mut targets: Vec<(usize, PathBuf, Dir)> = Vec::new();
+        for (index, (theme, theme_folders)) in chain.into_iter().enumerate() {
+            let roots: Vec<PathBuf> = bases.iter().map(|base| base.join(&theme)).filter(|root| root.is_dir()).collect();
+            for dir in theme_folders {
+                for root in &roots {
+                    targets.push((index, root.join(&dir.path), dir.clone()));
                 }
             }
+        }
+        type ScannedDir = (usize, Dir, Vec<(String, bool)>);
+        let scan_dir = |index: usize, path: PathBuf, dir: Dir| -> Option<ScannedDir> {
+            let entries = std::fs::read_dir(&path).ok()?;
+            let mut found = Vec::new();
+            for entry in entries.flatten() {
+                let file = entry.file_name();
+                let Some(file) = file.to_str() else { continue };
+                let (stem, svg) = match file.rsplit_once('.') {
+                    Some((stem, "svg")) => (stem, true),
+                    Some((stem, "png")) => (stem, false),
+                    _ => continue,
+                };
+                found.push((stem.to_string(), svg));
+            }
+            Some((index, Dir { path, ..dir }, found))
+        };
+        let threads = std::thread::available_parallelism().map_or(1, |count| count.get().min(4));
+        let scanned: Vec<ScannedDir> = if targets.len() >= 32 && threads >= 2 {
+            let chunk = targets.len().div_ceil(threads);
+            let mut slices: Vec<Vec<(usize, PathBuf, Dir)>> = Vec::with_capacity(threads);
+            let mut iter = targets.into_iter();
+            loop {
+                let part: Vec<_> = iter.by_ref().take(chunk).collect();
+                if part.is_empty() {
+                    break;
+                }
+                slices.push(part);
+            }
+            std::thread::scope(|scope| {
+                let workers: Vec<_> = slices
+                    .into_iter()
+                    .map(|part| {
+                        scope.spawn(move || {
+                            part.into_iter()
+                                .filter_map(|(index, path, dir)| scan_dir(index, path, dir))
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                workers.into_iter().flat_map(|worker| worker.join().unwrap_or_default()).collect()
+            })
+        } else {
+            targets.into_iter().filter_map(|(index, path, dir)| scan_dir(index, path, dir)).collect()
+        };
+        let mut dirs = Vec::with_capacity(scanned.len());
+        let mut names: HashMap<String, Vec<(usize, bool)>> = HashMap::with_capacity(8192);
+        for (index, dir, found) in scanned {
+            let at = dirs.len();
+            for (stem, svg) in found {
+                names.entry(stem).or_default().push((at, svg));
+            }
+            dirs.push((index, dir));
         }
         Self { dirs, names, pixmaps: data.iter().map(|dir| dir.join("pixmaps")).collect() }
     }

@@ -131,7 +131,7 @@ impl Workspace {
     }
 
     fn single_details(&self, item: &FileInfo, cx: &mut Context<Self>) -> gpui::Div {
-        let kind = if item.is_dir { "Folder".to_string() } else { type_description(&item.name) };
+        let kind = if item.is_dir { "Folder".to_string() } else { type_description(&item.name).into_owned() };
         let mut details = vec![row("Type", self.selectable("details-type", kind, cx))];
         if !item.is_dir {
             details.push(row("Size", self.selectable("details-size", file_size(item.size), cx)));

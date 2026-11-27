@@ -2,6 +2,7 @@
 mod media;
 mod render;
 
+pub use render::{decode_supported, dimensions_supported, encode_png};
 use render::{MAX_SOURCE_BYTES, RenderError};
 use std::{
     fs::File,

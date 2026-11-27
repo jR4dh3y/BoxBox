@@ -2,9 +2,12 @@
 //! `scripts/extract-icons.ts`. Each SVG is built with Lucide's stroke when it is
 //! drawn and served as `emblems/{name}.svg` (`assets.rs`).
 
+use std::io::Read as _;
 use std::sync::OnceLock;
 
-static TABLE: &str = include_str!("../assets/emblems.tsv");
+use flate2::read::DeflateDecoder;
+
+static TABLE_COMPRESSED: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/emblems.deflate"));
 
 /// A folder emblem the user can choose.
 pub struct Icon {
@@ -17,7 +20,10 @@ pub struct Icon {
 pub fn all() -> &'static [Icon] {
     static ICONS: OnceLock<Vec<Icon>> = OnceLock::new();
     ICONS.get_or_init(|| {
-        let mut icons = TABLE
+        let mut raw = String::with_capacity(330 * 1024);
+        DeflateDecoder::new(TABLE_COMPRESSED).read_to_string(&mut raw).expect("decompress emblems");
+        let table: &'static str = Box::leak(raw.into_boxed_str());
+        let mut icons = table
             .lines()
             .filter_map(|line| {
                 let mut fields = line.splitn(3, '\t');

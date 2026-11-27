@@ -613,9 +613,11 @@ pub struct AccelerationStructureSizes {
 }
 
 pub struct Shader {
-    module: naga::Module,
-    info: naga::valid::ModuleInfo,
+    parsed: std::sync::OnceLock<(naga::Module, naga::valid::ModuleInfo)>,
     source: String,
+    source_hash: [u64; 2],
+    ray_query: bool,
+    cached_structs: Option<Vec<(String, u32)>>,
 }
 
 #[derive(Clone, Copy)]
@@ -628,7 +630,7 @@ pub struct ShaderFunction<'a> {
 impl ShaderFunction<'_> {
     fn entry_point_index(&self) -> usize {
         self.shader
-            .module
+            .module()
             .entry_points
             .iter()
             .position(|ep| ep.name == self.entry_point)

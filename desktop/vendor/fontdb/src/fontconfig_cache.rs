@@ -52,9 +52,37 @@ pub(crate) fn load(db: &mut Database) -> bool {
             }
         }
     }
-    for path in parse {
-        if let Err(error) = db.load_font_file(&path) {
-            log::warn!("Failed to load '{}' cause {}.", path.display(), error);
+    let parse: Vec<PathBuf> = parse.into_iter().collect();
+    let threads = std::thread::available_parallelism().map_or(1, |count| count.get().min(4));
+    if parse.len() >= 8 && threads >= 2 {
+        let chunk = parse.len().div_ceil(threads);
+        let extra: Vec<Vec<FaceInfo>> = std::thread::scope(|scope| {
+            let workers: Vec<_> = parse
+                .chunks(chunk)
+                .map(|part| {
+                    scope.spawn(move || {
+                        let mut sub = Database::new();
+                        for path in part {
+                            if let Err(error) = sub.load_font_file(path) {
+                                log::warn!("Failed to load '{}' cause {}.", path.display(), error);
+                            }
+                        }
+                        sub.faces().cloned().collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            workers.into_iter().filter_map(|worker| worker.join().ok()).collect()
+        });
+        for faces in extra {
+            for face in faces {
+                db.push_face_info(face);
+            }
+        }
+    } else {
+        for path in parse {
+            if let Err(error) = db.load_font_file(&path) {
+                log::warn!("Failed to load '{}' cause {}.", path.display(), error);
+            }
         }
     }
     true
