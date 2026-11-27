@@ -1,35 +1,44 @@
 ---
 import PolicyLayout from '../layouts/PolicyLayout.astro';
+
+const sections = [
+  { id: 'self-hosted', label: 'Self-hosted by design' },
+  { id: 'your-data', label: 'Your data stays on your server' },
+  { id: 'this-website', label: 'This website' },
+  { id: 'github', label: 'GitHub' },
+  { id: 'changes', label: 'Changes to this policy' },
+  { id: 'contact', label: 'Contact' },
+] as const;
 ---
 
-<PolicyLayout title="Privacy Policy | BoxBox" description="BoxBox runs on your own server and collects nothing. What this website does and does not record." heading="Privacy." updated="November 2026">
-  <section>
+<PolicyLayout title="Privacy Policy | BoxBox" description="BoxBox runs on your own server and collects nothing. What this website does and does not record." heading="Privacy." updated="November 2026" sections={sections}>
+  <section id="self-hosted">
     <h2>Self-hosted by design</h2>
     <p>BoxBox is a self-hosted file manager. When you run it on your own server, your files, credentials and activity stay on hardware that <em>you</em> control. BoxBox does not phone home, does not collect telemetry and does not route your data through any third-party service.</p>
   </section>
 
-  <section>
+  <section id="your-data">
     <h2>Your data stays on your server</h2>
     <p>The files you manage, the accounts you configure and the uploads you make are stored and processed entirely on your own BoxBox instance. There is no cloud component, no analytics and no backend operated by the project that sees your content.</p>
   </section>
 
-  <section>
+  <section id="this-website">
     <h2>This website (boxbox.radhey.dev)</h2>
     <p>The website is hosted on Vercel and does not set tracking cookies or run analytics. Fonts load from Google Fonts, so your browser asks Google's servers for them.</p>
     <p>The latest release, the star count and the download count come from GitHub. The website's server fetches them and caches them, so your browser never contacts GitHub for them and nothing about you is sent.</p>
   </section>
 
-  <section>
+  <section id="github">
     <h2>GitHub</h2>
     <p>Source code, releases and issue tracking live on GitHub, which has its own privacy and data policies. Anything you post publicly there, such as issues, comments and pull requests, falls under those policies.</p>
   </section>
 
-  <section>
+  <section id="changes">
     <h2>Changes to this policy</h2>
     <p>This policy may change as the project evolves. Material changes will appear here with a new date.</p>
   </section>
 
-  <section>
+  <section id="contact">
     <h2>Contact</h2>
     <p>For privacy questions, open an issue on the <a href="https://github.com/jR4dh3y/BoxBox/issues" target="_blank" rel="noopener">GitHub repository</a>. Report security problems privately, as described on the <a href="/security/">security page</a>.</p>
   </section>

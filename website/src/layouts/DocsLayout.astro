@@ -1,8 +1,9 @@
 ---
 import Layout from './Layout.astro';
-import { ArrowLeft } from '@lucide/astro';
 import { ClientRouter } from 'astro:transitions';
 import GitHubLink from '../components/GitHubLink.astro';
+import ReleaseLink from '../components/ReleaseLink.astro';
+import Wordmark from '../components/Wordmark.astro';
 import type { DocHeading, DocNavSection, DocPage } from '../lib/docs';
 
 interface Props {
@@ -23,13 +24,22 @@ function hrefFor(slug: string) {
   <ClientRouter slot="head" />
   <main class="relative z-10 min-h-screen bg-[#0d0d0d] text-text-primary">
     <header transition:persist="docs-header" class="sticky top-0 z-50 border-b border-border-primary bg-[#0d0d0d]/95 backdrop-blur">
-      <div class="mx-auto flex h-14 max-w-360 items-center justify-between gap-4 px-4">
+      <div class="mx-auto flex h-14 max-w-360 items-center justify-between gap-4 px-5 md:px-8">
         <!-- The landing page does not use the router, so this is a normal load. -->
-        <a href="/" data-astro-reload class="flex items-center gap-2 text-sm font-semibold text-text-secondary transition-colors hover:text-white">
-          <ArrowLeft class="h-4 w-4" />
-          <img src="/logo-boxbox-3d.svg" alt="BoxBox" width="570" height="410" class="h-9 w-auto" />
-        </a>
-        <nav aria-label="Primary" class="flex items-center text-sm font-medium text-text-secondary">
+        <div class="flex min-w-0 items-center gap-2 sm:gap-2.5">
+          <a href="/" data-astro-reload aria-label="BoxBox home" class="inline-flex min-h-11 shrink-0 items-center">
+            <Wordmark id="docs-nav-logo" class="h-6 w-auto sm:h-7" />
+          </a>
+          <span class="hidden text-border-primary select-none sm:inline" aria-hidden="true">/</span>
+          <a
+            href="/docs/"
+            class="hidden min-h-11 items-center rounded px-1 text-sm font-medium text-white transition-colors hover:text-white sm:inline-flex"
+          >
+            Docs
+          </a>
+        </div>
+        <nav aria-label="Primary" class="flex shrink-0 items-center gap-0.5 text-sm font-medium text-text-secondary sm:gap-1">
+          <ReleaseLink />
           <GitHubLink />
         </nav>
       </div>

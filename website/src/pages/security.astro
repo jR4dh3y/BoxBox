@@ -1,16 +1,22 @@
 ---
 // Mirrors SECURITY.md at the repository root; change both together.
 import PolicyLayout from '../layouts/PolicyLayout.astro';
+
+const sections = [
+  { id: 'report', label: 'Report a vulnerability' },
+  { id: 'what-to-include', label: 'What to include' },
+  { id: 'versions-and-fixes', label: 'Versions and fixes' },
+] as const;
 ---
 
-<PolicyLayout title="Security | BoxBox" description="How to report a vulnerability in BoxBox privately, what to include, and where fixes are published." heading="Security." updated="November 2026">
-  <section>
+<PolicyLayout title="Security | BoxBox" description="How to report a vulnerability in BoxBox privately, what to include, and where fixes are published." heading="Security." updated="November 2026" sections={sections}>
+  <section id="report">
     <h2>Report a vulnerability</h2>
     <p>Report suspected vulnerabilities through <a href="https://github.com/jR4dh3y/BoxBox/security/advisories/new" target="_blank" rel="noopener">GitHub private vulnerability reporting</a> or email <a href="mailto:radheykalra901@gmail.com">radheykalra901@gmail.com</a>.</p>
     <p>Keep reports private while they are investigated. Use public issues for ordinary bugs and support requests.</p>
   </section>
 
-  <section>
+  <section id="what-to-include">
     <h2>What to include</h2>
     <ul>
       <li>The BoxBox version, container image tag or digest, and deployment method.</li>
@@ -21,9 +27,9 @@ import PolicyLayout from '../layouts/PolicyLayout.astro';
     <p>Use disposable files and test accounts. Remove passwords, tokens, private keys and personal files from the report.</p>
   </section>
 
-  <section>
+  <section id="versions-and-fixes">
     <h2>Versions and fixes</h2>
     <p>Use the latest stable release when checking whether an issue is still present. If you found it on an older version, include that version and whether it also affects the latest release.</p>
-    <p>Published fixes and affected versions are listed in <a href="https://github.com/jR4dh3y/BoxBox/security/advisories" target="_blank" rel="noopener">BoxBox security advisories</a> and the <a href="/docs/release/">release notes</a>.</p>
+    <p>Published fixes and affected versions are listed in <a href="https://github.com/jR4dh3y/BoxBox/security/advisories" target="_blank" rel="noopener">BoxBox security advisories</a> and the <a href="/docs/release/" class="whitespace-nowrap">release notes</a>.</p>
   </section>
 </PolicyLayout>

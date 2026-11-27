@@ -466,3 +466,9 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
   background-size: 22px 22px;
   mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
 }
+
+/* Once the interactive canvas mounts, hand dot drawing over to it without double-rendering. */
+.dot-grid[data-dot-grid-ready='true'] {
+  background-image: none;
+  mask-image: none;
+}
