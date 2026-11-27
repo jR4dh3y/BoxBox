@@ -1,0 +1,498 @@
+---
+import { Columns2, Expand, SlidersHorizontal, X } from '@lucide/astro';
+import type { BlogComparisonSpec } from '../lib/blog';
+
+interface Props {
+  comparison: BlogComparisonSpec;
+}
+
+const { comparison } = Astro.props;
+const dialogTitleId = `${comparison.id}-dialog-title`;
+---
+
+<figure class="blog-comparison my-9" data-comparison={comparison.id} data-mode="split">
+  <div class="overflow-hidden rounded-[14px] border border-border-primary bg-[#141414] shadow-[0_24px_64px_-28px_rgba(0,0,0,0.85)]">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border-secondary bg-[#18181b] px-4 py-2.5">
+      <div class="flex min-w-0 items-center gap-2.5">
+        <span class="text-sm font-semibold text-white">{comparison.title}</span>
+        <span class="hidden text-xs text-text-muted sm:inline" aria-hidden="true">·</span>
+        <span class="hidden truncate text-xs text-text-secondary sm:inline">{comparison.caption}</span>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-2">
+        <div class="inline-flex rounded-lg border border-border-primary bg-[#111113] p-0.5 text-xs font-medium" role="group" aria-label={`${comparison.title} display mode`}>
+          <button
+            type="button"
+            data-mode-btn="split"
+            aria-pressed="true"
+            class="cmp-tab inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 transition-colors"
+          >
+            <Columns2 class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span class="sm:hidden">Both</span>
+            <span class="hidden sm:inline">Side by side</span>
+          </button>
+
+          {comparison.supportsSlider ? (
+            <button
+              type="button"
+              data-mode-btn="slider"
+              aria-pressed="false"
+              class="cmp-tab inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 transition-colors"
+            >
+              <SlidersHorizontal class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>Slider</span>
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                data-mode-btn="before"
+                aria-pressed="false"
+                class="cmp-tab whitespace-nowrap rounded-md px-2.5 py-1 transition-colors"
+              >
+                {comparison.before.badge}
+              </button>
+              <button
+                type="button"
+                data-mode-btn="after"
+                aria-pressed="false"
+                class="cmp-tab whitespace-nowrap rounded-md px-2.5 py-1 transition-colors"
+              >
+                {comparison.after.badge}
+              </button>
+            </>
+          )}
+        </div>
+
+        <button
+          type="button"
+          data-open-lightbox
+          aria-label={`Inspect ${comparison.title} full size`}
+          title="Inspect full size"
+          class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border-primary bg-[#111113] text-text-secondary transition-colors hover:border-text-muted hover:text-white"
+        >
+          <Expand class="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+
+    <div data-panel="split" class="grid grid-cols-1 items-start gap-3 p-3 md:grid-cols-2">
+      <button
+        type="button"
+        data-open-lightbox="before"
+        class="group flex flex-col overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#111113] text-left transition-colors hover:border-white/25"
+        aria-label={`Expand ${comparison.before.label}`}
+      >
+        <div class="flex w-full items-center justify-between gap-2 border-b border-white/[0.06] bg-[#17171a] px-3 py-2">
+          <span class="truncate text-xs font-medium text-text-secondary">{comparison.before.label}</span>
+          <span class="shrink-0 rounded border border-border-primary bg-[#111113] px-1.5 py-0.5 font-mono text-[11px] text-text-muted">{comparison.before.badge}</span>
+        </div>
+        <div class="relative w-full bg-[#111113]">
+          <img
+            src={comparison.before.src}
+            alt={comparison.before.label}
+            width={comparison.before.width}
+            height={comparison.before.height}
+            loading="lazy"
+            decoding="async"
+            class="block h-auto w-full"
+          />
+        </div>
+      </button>
+
+      <button
+        type="button"
+        data-open-lightbox="after"
+        class="group flex flex-col overflow-hidden rounded-[10px] border border-accent/35 bg-[#111113] text-left transition-colors hover:border-accent"
+        aria-label={`Expand ${comparison.after.label}`}
+      >
+        <div class="flex w-full items-center justify-between gap-2 border-b border-white/[0.06] bg-[#17171a] px-3 py-2">
+          <span class="truncate text-xs font-medium text-white">{comparison.after.label}</span>
+          <span class="shrink-0 rounded border border-accent/40 bg-accent/15 px-1.5 py-0.5 font-mono text-[11px] text-accent">{comparison.after.badge}</span>
+        </div>
+        <div class="relative w-full bg-[#111113]">
+          <img
+            src={comparison.after.src}
+            alt={comparison.after.label}
+            width={comparison.after.width}
+            height={comparison.after.height}
+            loading="lazy"
+            decoding="async"
+            class="block h-auto w-full"
+          />
+        </div>
+      </button>
+    </div>
+
+    {comparison.supportsSlider ? (
+      <div data-panel="slider" hidden class="p-3">
+        <div
+          data-slider-stage
+          class="relative w-full overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#111113] select-none focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent"
+          style="--split: 50%;"
+        >
+          <img
+            src={comparison.after.src}
+            alt={comparison.after.label}
+            width={comparison.after.width}
+            height={comparison.after.height}
+            draggable="false"
+            loading="lazy"
+            decoding="async"
+            class="block h-auto w-full pointer-events-none"
+          />
+          <div
+            class="pointer-events-none absolute inset-0"
+            style="clip-path: inset(0 calc(100% - var(--split)) 0 0);"
+          >
+            <img
+              src={comparison.before.src}
+              alt=""
+              width={comparison.before.width}
+              height={comparison.before.height}
+              draggable="false"
+              loading="lazy"
+              decoding="async"
+              class="block h-auto w-full"
+            />
+          </div>
+
+          <span class="pointer-events-none absolute top-3 left-3 rounded-md border border-white/15 bg-black/75 px-2 py-1 font-mono text-[11px] font-medium text-text-primary backdrop-blur-sm">
+            {comparison.before.badge}
+          </span>
+          <span class="pointer-events-none absolute top-3 right-3 rounded-md border border-accent/45 bg-black/75 px-2 py-1 font-mono text-[11px] font-medium text-accent backdrop-blur-sm">
+            {comparison.after.badge}
+          </span>
+
+          <div
+            class="pointer-events-none absolute inset-y-0 w-px bg-white/85 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
+            style="left: var(--split);"
+          >
+            <span class="absolute top-1/2 left-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-[#141414]/95 text-white shadow-lg">
+              <SlidersHorizontal class="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+          </div>
+
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value="50"
+            data-slider-input
+            aria-label={`Compare ${comparison.before.badge} and ${comparison.after.badge}`}
+            class="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
+          />
+        </div>
+      </div>
+    ) : (
+      <>
+        <div data-panel="before" hidden class="p-3">
+          <button
+            type="button"
+            data-open-lightbox="before"
+            class="flex w-full flex-col overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#111113] text-left transition-colors hover:border-white/25"
+            aria-label={`Expand ${comparison.before.label}`}
+          >
+            <div class="flex w-full items-center justify-between gap-2 border-b border-white/[0.06] bg-[#17171a] px-3 py-2">
+              <span class="text-xs font-medium text-text-secondary">{comparison.before.label}</span>
+              <span class="rounded border border-border-primary bg-[#111113] px-1.5 py-0.5 font-mono text-[11px] text-text-muted">{comparison.before.badge}</span>
+            </div>
+            <img
+              src={comparison.before.src}
+              alt={comparison.before.label}
+              width={comparison.before.width}
+              height={comparison.before.height}
+              class="block h-auto w-full"
+            />
+          </button>
+        </div>
+
+        <div data-panel="after" hidden class="p-3">
+          <button
+            type="button"
+            data-open-lightbox="after"
+            class="flex w-full flex-col overflow-hidden rounded-[10px] border border-accent/35 bg-[#111113] text-left transition-colors hover:border-accent"
+            aria-label={`Expand ${comparison.after.label}`}
+          >
+            <div class="flex w-full items-center justify-between gap-2 border-b border-white/[0.06] bg-[#17171a] px-3 py-2">
+              <span class="text-xs font-medium text-white">{comparison.after.label}</span>
+              <span class="rounded border border-accent/40 bg-accent/15 px-1.5 py-0.5 font-mono text-[11px] text-accent">{comparison.after.badge}</span>
+            </div>
+            <img
+              src={comparison.after.src}
+              alt={comparison.after.label}
+              width={comparison.after.width}
+              height={comparison.after.height}
+              class="block h-auto w-full"
+            />
+          </button>
+        </div>
+      </>
+    )}
+  </div>
+
+  <figcaption class="mt-2.5 flex items-center justify-between gap-4 text-xs text-text-muted">
+    <span>{comparison.alt}</span>
+    <span class="hidden shrink-0 sm:inline">Click an image to inspect full size</span>
+  </figcaption>
+
+  <dialog
+    data-lightbox
+    aria-labelledby={dialogTitleId}
+    class="cmp-lightbox m-auto w-[min(100vw-1.5rem,86rem)] max-w-none overflow-hidden rounded-[14px] border border-border-primary bg-[#141414] p-0 text-text-primary shadow-2xl"
+  >
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border-secondary bg-[#18181b] px-4 py-3">
+      <div class="flex items-center gap-2.5">
+        <span id={dialogTitleId} class="text-sm font-semibold text-white">{comparison.title}</span>
+        <span class="hidden text-xs text-text-secondary sm:inline">{comparison.caption}</span>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <div class="inline-flex rounded-lg border border-border-primary bg-[#111113] p-0.5 text-xs font-medium" role="group" aria-label="Full-size view">
+          <button type="button" data-lb-btn="split" aria-pressed="true" class="cmp-tab rounded-md px-2.5 py-1 transition-colors">
+            Side by side
+          </button>
+          <button type="button" data-lb-btn="before" aria-pressed="false" class="cmp-tab rounded-md px-2.5 py-1 transition-colors">
+            {comparison.before.badge}
+          </button>
+          <button type="button" data-lb-btn="after" aria-pressed="false" class="cmp-tab rounded-md px-2.5 py-1 transition-colors">
+            {comparison.after.badge}
+          </button>
+          {comparison.supportsSlider && (
+            <button type="button" data-lb-btn="slider" aria-pressed="false" class="cmp-tab rounded-md px-2.5 py-1 transition-colors">
+              Slider
+            </button>
+          )}
+        </div>
+
+        <button
+          type="button"
+          data-close-lightbox
+          aria-label="Close full-size view"
+          class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-primary bg-[#111113] text-text-secondary transition-colors hover:border-text-muted hover:text-white"
+        >
+          <X class="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+
+    <div class="max-h-[calc(100dvh-7rem)] overflow-auto p-4 mock-scrollbar">
+      <div data-lb-panel="split" class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div class="flex flex-col overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#111113]">
+          <div class="flex items-center justify-between gap-2 border-b border-white/[0.06] bg-[#17171a] px-3 py-2">
+            <span class="text-xs font-medium text-text-secondary">{comparison.before.label}</span>
+            <span class="rounded border border-border-primary bg-[#111113] px-1.5 py-0.5 font-mono text-[11px] text-text-muted">{comparison.before.badge}</span>
+          </div>
+          <img
+            src={comparison.before.src}
+            alt={comparison.before.label}
+            width={comparison.before.width}
+            height={comparison.before.height}
+            loading="lazy"
+            decoding="async"
+            class="block h-auto w-full"
+          />
+        </div>
+
+        <div class="flex flex-col overflow-hidden rounded-[10px] border border-accent/35 bg-[#111113]">
+          <div class="flex items-center justify-between gap-2 border-b border-white/[0.06] bg-[#17171a] px-3 py-2">
+            <span class="text-xs font-medium text-white">{comparison.after.label}</span>
+            <span class="rounded border border-accent/40 bg-accent/15 px-1.5 py-0.5 font-mono text-[11px] text-accent">{comparison.after.badge}</span>
+          </div>
+          <img
+            src={comparison.after.src}
+            alt={comparison.after.label}
+            width={comparison.after.width}
+            height={comparison.after.height}
+            loading="lazy"
+            decoding="async"
+            class="block h-auto w-full"
+          />
+        </div>
+      </div>
+
+      <div data-lb-panel="before" hidden class="mx-auto max-w-[1280px] overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#111113]">
+        <div class="flex items-center justify-between gap-2 border-b border-white/[0.06] bg-[#17171a] px-3 py-2">
+          <span class="text-xs font-medium text-text-secondary">{comparison.before.label}</span>
+          <span class="rounded border border-border-primary bg-[#111113] px-1.5 py-0.5 font-mono text-[11px] text-text-muted">{comparison.before.badge}</span>
+        </div>
+        <img
+          src={comparison.before.src}
+          alt={comparison.before.label}
+          width={comparison.before.width}
+          height={comparison.before.height}
+          class="block h-auto w-full"
+        />
+      </div>
+
+      <div data-lb-panel="after" hidden class="mx-auto max-w-[1280px] overflow-hidden rounded-[10px] border border-accent/35 bg-[#111113]">
+        <div class="flex items-center justify-between gap-2 border-b border-white/[0.06] bg-[#17171a] px-3 py-2">
+          <span class="text-xs font-medium text-white">{comparison.after.label}</span>
+          <span class="rounded border border-accent/40 bg-accent/15 px-1.5 py-0.5 font-mono text-[11px] text-accent">{comparison.after.badge}</span>
+        </div>
+        <img
+          src={comparison.after.src}
+          alt={comparison.after.label}
+          width={comparison.after.width}
+          height={comparison.after.height}
+          class="block h-auto w-full"
+        />
+      </div>
+
+      {comparison.supportsSlider && (
+        <div data-lb-panel="slider" hidden class="mx-auto max-w-[1024px]">
+          <div
+            data-slider-stage
+            class="relative w-full overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#111113] select-none focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent"
+            style="--split: 50%;"
+          >
+            <img
+              src={comparison.after.src}
+              alt={comparison.after.label}
+              width={comparison.after.width}
+              height={comparison.after.height}
+              draggable="false"
+              class="block h-auto w-full pointer-events-none"
+            />
+            <div
+              class="pointer-events-none absolute inset-0"
+              style="clip-path: inset(0 calc(100% - var(--split)) 0 0);"
+            >
+              <img
+                src={comparison.before.src}
+                alt=""
+                width={comparison.before.width}
+                height={comparison.before.height}
+                draggable="false"
+                class="block h-auto w-full"
+              />
+            </div>
+
+            <span class="pointer-events-none absolute top-3 left-3 rounded-md border border-white/15 bg-black/75 px-2 py-1 font-mono text-[11px] font-medium text-text-primary backdrop-blur-sm">
+              {comparison.before.badge}
+            </span>
+            <span class="pointer-events-none absolute top-3 right-3 rounded-md border border-accent/45 bg-black/75 px-2 py-1 font-mono text-[11px] font-medium text-accent backdrop-blur-sm">
+              {comparison.after.badge}
+            </span>
+
+            <div
+              class="pointer-events-none absolute inset-y-0 w-px bg-white/85 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
+              style="left: var(--split);"
+            >
+              <span class="absolute top-1/2 left-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-[#141414]/95 text-white shadow-lg">
+                <SlidersHorizontal class="h-4 w-4" aria-hidden="true" />
+              </span>
+            </div>
+
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value="50"
+              data-slider-input
+              aria-label={`Compare ${comparison.before.badge} and ${comparison.after.badge} full size`}
+              class="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  </dialog>
+</figure>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>('[data-comparison]')) {
+    const modeButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-mode-btn]'));
+    const panels = Array.from(root.querySelectorAll<HTMLElement>('[data-panel]'));
+    const dialog = root.querySelector<HTMLDialogElement>('[data-lightbox]');
+    const lbButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-lb-btn]'));
+    const lbPanels = Array.from(root.querySelectorAll<HTMLElement>('[data-lb-panel]'));
+
+    function setInlineMode(mode: string) {
+      root.dataset.mode = mode;
+      for (const btn of modeButtons) {
+        btn.setAttribute('aria-pressed', String(btn.dataset.modeBtn === mode));
+      }
+      for (const panel of panels) {
+        panel.hidden = panel.dataset.panel !== mode;
+      }
+    }
+
+    function setLightboxMode(mode: string) {
+      for (const btn of lbButtons) {
+        btn.setAttribute('aria-pressed', String(btn.dataset.lbBtn === mode));
+      }
+      for (const panel of lbPanels) {
+        panel.hidden = panel.dataset.lbPanel !== mode;
+      }
+    }
+
+    for (const btn of modeButtons) {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.modeBtn;
+        if (mode) setInlineMode(mode);
+      });
+    }
+
+    for (const btn of lbButtons) {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.lbBtn;
+        if (mode) setLightboxMode(mode);
+      });
+    }
+
+    for (const stage of root.querySelectorAll<HTMLElement>('[data-slider-stage]')) {
+      const input = stage.querySelector<HTMLInputElement>('[data-slider-input]');
+      if (!input) continue;
+      const sync = () => {
+        stage.style.setProperty('--split', `${input.value}%`);
+      };
+      input.addEventListener('input', sync);
+      sync();
+    }
+
+    if (dialog instanceof HTMLDialogElement) {
+      for (const trigger of root.querySelectorAll<HTMLElement>('[data-open-lightbox]')) {
+        trigger.addEventListener('click', () => {
+          const requested = trigger.dataset.openLightbox;
+          const mode = requested && lbPanels.some((p) => p.dataset.lbPanel === requested)
+            ? requested
+            : root.dataset.mode === 'slider' && lbPanels.some((p) => p.dataset.lbPanel === 'slider')
+              ? 'slider'
+              : 'split';
+          setLightboxMode(mode);
+          dialog.showModal();
+        });
+      }
+
+      root.querySelector('[data-close-lightbox]')?.addEventListener('click', () => dialog.close());
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+    }
+  }
+</script>
+
+<style>
+  .cmp-tab {
+    color: var(--color-text-secondary);
+  }
+
+  .cmp-tab:hover {
+    color: #ffffff;
+  }
+
+  .cmp-tab[aria-pressed='true'] {
+    background: var(--color-surface-secondary);
+    color: #ffffff;
+  }
+
+  .cmp-lightbox::backdrop {
+    background: rgb(0 0 0 / 0.84);
+    backdrop-filter: blur(4px);
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+</style>

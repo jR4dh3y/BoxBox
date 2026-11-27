@@ -1,93 +1,786 @@
 ---
-import { ArrowUpRight } from '@lucide/astro';
+import { ArrowUp, ArrowUpRight } from '@lucide/astro';
 import Wordmark from './Wordmark.astro';
-
-interface Link {
-  label: string;
-  href: string;
-  external?: boolean;
-}
-
-const columns: { title: string; links: Link[] }[] = [
-  {
-    title: 'Get it',
-    links: [
-      { label: 'Download', href: '/download/' },
-      { label: 'Desktop app', href: '/docs/desktop/' },
-      { label: 'Quickstart', href: '/docs/quickstart/' },
-      { label: 'Release notes', href: '/docs/release-notes/' },
-    ],
-  },
-  {
-    title: 'Docs',
-    links: [
-      { label: 'Overview', href: '/docs/' },
-      { label: 'Configuration', href: '/docs/configuration/' },
-      { label: 'API reference', href: '/docs/api/' },
-      { label: 'Troubleshooting', href: '/docs/troubleshooting/' },
-    ],
-  },
-  {
-    title: 'Source',
-    links: [
-      { label: 'GitHub', href: 'https://github.com/jR4dh3y/BoxBox', external: true },
-      { label: 'Releases', href: 'https://github.com/jR4dh3y/BoxBox/releases', external: true },
-      { label: 'Report an issue', href: 'https://github.com/jR4dh3y/BoxBox/issues', external: true },
-    ],
-  },
-];
-
-const projects = [
-  { name: 'fbs-core', href: 'https://fbs-landing.vercel.app/', about: 'S3-compatible blob storage and CDN' },
-  { name: 'qckpages', href: 'https://qckpage.jr4.in/', about: 'Publish HTML files as pages in seconds' },
-  { name: 'vigil-owl', href: 'https://vigil-owl.vercel.app/', about: 'Self-hosted NVR with timeline playback' },
-];
+import {
+  footerColumns,
+  footerLegalLinks,
+  footerLicense,
+  footerProjects,
+  footerTagline,
+} from '../lib/siteFooter';
+import {
+  ambientValleyMotes,
+  farRackLeds,
+  foregroundFrameLeds,
+  midgroundBayLeds,
+} from '../lib/footerSceneLeds';
 ---
 
-<footer class="relative z-10 border-t border-border-primary bg-surface-primary">
-  <div class="mx-auto max-w-7xl px-5 pt-12 pb-8 md:px-8">
-    <div class="grid grid-cols-2 gap-8 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
-      <div class="col-span-2 md:col-span-1">
-        <Wordmark id="footer-logo" class="h-8 w-auto" />
-        <p class="mt-3 max-w-64 text-sm leading-relaxed text-text-muted">Self-hosted, fast, and free. Your files stay where they are.</p>
-      </div>
+<footer
+  data-site-footer
+  data-scene-visible="true"
+  data-curtain="flow"
+  class="site-footer relative z-10 isolate overflow-hidden bg-[#07080b] text-text-primary"
+>
+  <!-- Full-bleed unified parallax diorama: breathing theme-reactive horizon glow -> far racks + LEDs -> depth haze & motes -> dithered BoxBox -> midground NAS & gold folders + LEDs -> foreground rail + LEDs -->
+  <div class="footer-scene pointer-events-none absolute inset-0 select-none" aria-hidden="true">
+    <div class="scene-layer layer-atmosphere">
+      <div class="atmosphere-bloom"></div>
+      <div class="atmosphere-core"></div>
+    </div>
 
-      {columns.map((column) => (
-        <div class="text-sm">
-          <h3 class="mb-3 text-text-muted">{column.title}</h3>
-          <ul class="space-y-2 text-text-primary">
-            {column.links.map((link) => (
+    <div class="scene-layer scene-art layer-racks">
+      <img
+        class="art-img"
+        src="/parallax/scene/racks-far.webp"
+        width="1600"
+        height="549"
+        alt=""
+        loading="lazy"
+        decoding="async"
+      />
+      <svg class="led-overlay" viewBox="0 0 1600 549" fill="none">
+        <defs>
+          <radialGradient id="footer-led-far-accent">
+            <stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.72" />
+            <stop offset="28%" stop-color="var(--color-accent)" stop-opacity="0.24" />
+            <stop offset="62%" stop-color="var(--color-accent)" stop-opacity="0.05" />
+            <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="footer-led-far-gold">
+            <stop offset="0%" stop-color="#e8c36a" stop-opacity="0.68" />
+            <stop offset="28%" stop-color="#e8c36a" stop-opacity="0.22" />
+            <stop offset="62%" stop-color="#e8c36a" stop-opacity="0.04" />
+            <stop offset="100%" stop-color="#e8c36a" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+        {farRackLeds.map((led) => (
+          <g
+            class={`scene-led led-${led.tone} led-${led.pattern}`}
+            style={`--led-dur: ${led.durationSec}s; --led-delay: ${led.delaySec}s;`}
+          >
+            <circle
+              cx={led.x}
+              cy={led.y}
+              r={led.r * 5.2}
+              fill={`url(#footer-led-far-${led.tone})`}
+            />
+            <circle class="led-core" cx={led.x} cy={led.y} r={led.r * 0.78} />
+          </g>
+        ))}
+      </svg>
+    </div>
+
+    <div class="scene-layer layer-valley-mist">
+      <div class="valley-accent-wrap"></div>
+    </div>
+
+    <div class="scene-layer layer-motes">
+      {ambientValleyMotes.map((mote) => (
+        <span
+          class={`valley-mote mote-${mote.tone}`}
+          style={`left: ${mote.leftPct}%; bottom: ${mote.bottomPct}%; width: ${mote.sizePx}px; height: ${mote.sizePx}px; --mote-dx: ${mote.driftX}px; --mote-rise: ${mote.risePx}px; --mote-dur: ${mote.durationSec}s; --mote-delay: ${mote.delaySec}s;`}
+        ></span>
+      ))}
+    </div>
+
+    <div class="scene-layer layer-monument">
+      <canvas data-footer-halftone class="monument-canvas" width="930" height="256"></canvas>
+    </div>
+
+    <div class="scene-layer scene-art layer-midground">
+      <img
+        class="art-img"
+        src="/parallax/scene/midground-bays.webp"
+        width="1600"
+        height="490"
+        alt=""
+        loading="lazy"
+        decoding="async"
+      />
+      <svg class="led-overlay" viewBox="0 0 1600 490" fill="none">
+        <defs>
+          <radialGradient id="footer-led-mid-accent">
+            <stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.78" />
+            <stop offset="28%" stop-color="var(--color-accent)" stop-opacity="0.28" />
+            <stop offset="62%" stop-color="var(--color-accent)" stop-opacity="0.06" />
+            <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="footer-led-mid-gold">
+            <stop offset="0%" stop-color="#e8c36a" stop-opacity="0.74" />
+            <stop offset="28%" stop-color="#e8c36a" stop-opacity="0.25" />
+            <stop offset="62%" stop-color="#e8c36a" stop-opacity="0.05" />
+            <stop offset="100%" stop-color="#e8c36a" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+        {midgroundBayLeds.map((led) => (
+          <g
+            class={`scene-led led-${led.tone} led-${led.pattern}`}
+            style={`--led-dur: ${led.durationSec}s; --led-delay: ${led.delaySec}s;`}
+          >
+            <circle
+              cx={led.x}
+              cy={led.y}
+              r={led.r * 5.2}
+              fill={`url(#footer-led-mid-${led.tone})`}
+            />
+            <circle class="led-core" cx={led.x} cy={led.y} r={led.r * 0.78} />
+          </g>
+        ))}
+      </svg>
+    </div>
+
+    <div class="scene-layer scene-art layer-foreground">
+      <img
+        class="art-img"
+        src="/parallax/scene/foreground-frame.webp"
+        width="1600"
+        height="215"
+        alt=""
+        loading="lazy"
+        decoding="async"
+      />
+      <svg class="led-overlay" viewBox="0 0 1600 215" fill="none">
+        <defs>
+          <radialGradient id="footer-led-fg-accent">
+            <stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.75" />
+            <stop offset="28%" stop-color="var(--color-accent)" stop-opacity="0.26" />
+            <stop offset="62%" stop-color="var(--color-accent)" stop-opacity="0.05" />
+            <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="footer-led-fg-gold">
+            <stop offset="0%" stop-color="#e8c36a" stop-opacity="0.72" />
+            <stop offset="28%" stop-color="#e8c36a" stop-opacity="0.24" />
+            <stop offset="62%" stop-color="#e8c36a" stop-opacity="0.05" />
+            <stop offset="100%" stop-color="#e8c36a" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+        {foregroundFrameLeds.map((led) => (
+          <g
+            class={`scene-led led-${led.tone} led-${led.pattern}`}
+            style={`--led-dur: ${led.durationSec}s; --led-delay: ${led.delaySec}s;`}
+          >
+            <circle
+              cx={led.x}
+              cy={led.y}
+              r={led.r * 5.2}
+              fill={`url(#footer-led-fg-${led.tone})`}
+            />
+            <circle class="led-core" cx={led.x} cy={led.y} r={led.r * 0.78} />
+          </g>
+        ))}
+      </svg>
+    </div>
+
+    <div class="scene-top-blend"></div>
+    <div class="scene-bottom-ground"></div>
+    <div class="scene-curtain-veil"></div>
+  </div>
+
+  <!-- Foreground footer directory living directly in the open recessed sky and grounded on the bottom rail -->
+  <div class="footer-content relative z-10 flex min-h-full flex-col">
+    <div class="footer-directory mx-auto w-full max-w-7xl px-5 pt-14 pb-6 md:px-8 md:pt-20">
+      <div class="grid grid-cols-2 gap-x-8 gap-y-10 md:grid-cols-4 lg:grid-cols-[1.35fr_0.85fr_0.9fr_0.9fr_1.25fr]">
+        <div class="col-span-2 md:col-span-4 lg:col-span-1">
+          <a href="/" aria-label="BoxBox home" class="inline-block rounded-sm">
+            <Wordmark id="footer-logo" class="h-8 w-auto" />
+          </a>
+          <p class="mt-3 max-w-64 text-sm leading-relaxed text-text-secondary/90">
+            {footerTagline}
+          </p>
+        </div>
+
+        {footerColumns.map((column) => (
+          <nav aria-label={column.title} class="text-sm">
+            <h2 class="mb-3 font-mono text-[11px] font-medium tracking-[0.14em] text-text-muted uppercase">
+              {column.title}
+            </h2>
+            <ul class="space-y-2 text-text-primary">
+              {column.links.map((link) => (
+                <li>
+                  <a
+                    href={link.href}
+                    target={link.external ? '_blank' : undefined}
+                    rel={link.external ? 'noopener' : undefined}
+                    class="inline-flex items-center gap-1 text-text-primary/90 transition-colors hover:text-white"
+                  >
+                    {link.label}
+                    {link.external && <ArrowUpRight class="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        ))}
+
+        <nav aria-label="More projects" class="col-span-2 text-sm md:col-span-1">
+          <h2 class="mb-3 font-mono text-[11px] font-medium tracking-[0.14em] text-text-muted uppercase">
+            More projects
+          </h2>
+          <ul class="space-y-3">
+            {footerProjects.map((project) => (
               <li>
-                <a href={link.href} target={link.external ? '_blank' : undefined} rel={link.external ? 'noopener' : undefined} class="transition-colors hover:text-white">{link.label}</a>
+                <a
+                  href={project.href}
+                  target="_blank"
+                  rel="noopener"
+                  class="group block rounded-sm transition-colors"
+                >
+                  <span class="inline-flex items-center gap-1 font-medium text-text-primary/90 transition-colors group-hover:text-white">
+                    {project.name}
+                    <ArrowUpRight
+                      class="h-3.5 w-3.5 text-text-muted transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-accent"
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span class="mt-0.5 block text-xs leading-snug text-text-muted transition-colors group-hover:text-text-secondary">
+                    {project.about}
+                  </span>
+                </a>
               </li>
             ))}
           </ul>
-        </div>
-      ))}
+        </nav>
+      </div>
     </div>
 
-    <ul aria-label="More projects" class="mt-12 grid divide-y divide-border-secondary rounded-lg border border-border-secondary sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-      {projects.map((project) => (
-        <li>
-          <a href={project.href} target="_blank" rel="noopener" class="group block h-full px-5 py-4 transition-colors hover:bg-surface-secondary">
-            <span class="flex items-center gap-1 font-medium text-text-primary group-hover:text-white">
-              {project.name}
-              <ArrowUpRight class="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
-            </span>
-            <span class="mt-1 block text-xs text-text-muted">{project.about}</span>
-          </a>
-        </li>
-      ))}
-    </ul>
+    <!-- Open panoramic vista window framing the reactive dithered BoxBox wordmark, server skyline, and archival gold folders -->
+    <div class="footer-vista" aria-hidden="true"></div>
 
-    <div class="mt-6 flex flex-wrap items-center justify-between gap-4 text-[13px] text-text-muted">
-      <span>MIT licensed</span>
-      <span class="flex gap-5">
-        <a href="/privacy/" class="transition-colors hover:text-white">Privacy</a>
-        <a href="/terms/" class="transition-colors hover:text-white">Terms</a>
-        <a href="/security/" class="transition-colors hover:text-white">Security</a>
-        <a href="https://github.com/jR4dh3y" target="_blank" rel="noopener" class="transition-colors hover:text-white">jR4dh3y</a>
-      </span>
+    <!-- Legal strip anchored flush over the deep obsidian foreground hardware rail -->
+    <div class="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5 pt-4 pb-5 text-[13px] text-text-muted md:px-8">
+      <span>{footerLicense}</span>
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+        {footerLegalLinks.map((link) => (
+          <a
+            href={link.href}
+            target={link.external ? '_blank' : undefined}
+            rel={link.external ? 'noopener' : undefined}
+            class="transition-colors hover:text-white"
+          >
+            {link.label}
+          </a>
+        ))}
+        <a
+          href="#"
+          class="inline-flex items-center gap-1 border-l border-white/10 pl-4 font-mono text-[11px] tracking-[0.08em] text-text-secondary uppercase transition-colors hover:text-white"
+        >
+          Top
+          <ArrowUp class="h-3.5 w-3.5" aria-hidden="true" />
+        </a>
+      </div>
     </div>
   </div>
 </footer>
+
+<script>
+  import { mountFooterParallax } from '../lib/footerParallax';
+  import { mountFooterHalftone } from '../lib/footerHalftone';
+
+  document.querySelectorAll<HTMLElement>('[data-site-footer]').forEach((footer) => {
+    mountFooterParallax(footer);
+    const halftone = footer.querySelector<HTMLCanvasElement>('[data-footer-halftone]');
+    if (halftone) mountFooterHalftone(halftone, footer);
+  });
+</script>
+
+<style>
+  .site-footer {
+    --scene-x: 0;
+    --scene-y: 0;
+    --scene-reveal: 0;
+    contain: layout paint;
+  }
+
+  /* Tuck neatly under the rounded bottom corners of .page-curtain so there is zero seam gap. */
+  :global(.page-curtain) + .site-footer {
+    margin-top: -28px;
+    padding-top: 28px;
+  }
+
+  /* Sticky scroll-over curtain reveal whenever the full footer fits cleanly in the viewport. */
+  .site-footer[data-curtain='sticky'] {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+  }
+
+  /* Pause ambient GPU animations whenever the footer is scrolled offscreen or covered. */
+  .site-footer[data-scene-visible='false'] :is(.atmosphere-bloom, .atmosphere-core, .scene-led, .valley-mote) {
+    animation-play-state: paused;
+  }
+
+  .footer-vista {
+    height: clamp(15rem, 30vw, 27rem);
+  }
+
+  .footer-directory {
+    will-change: transform, opacity;
+    transform: translate3d(0, calc(var(--scene-reveal) * 34px), 0);
+    opacity: calc(1 - var(--scene-reveal) * 0.62);
+  }
+
+  .scene-layer {
+    position: absolute;
+    left: 50%;
+    max-width: none;
+    will-change: transform;
+    transform-origin: center bottom;
+    transform: translate3d(
+        calc(-50% + var(--scene-x) * var(--px, 0px)),
+        calc(var(--scene-y) * var(--py, 0px) + var(--scene-reveal) * var(--scroll, 0px)),
+        0
+      )
+      scale(calc(1 + var(--scene-reveal) * var(--scale, 0)));
+  }
+
+  .scene-art {
+    line-height: 0;
+  }
+
+  .art-img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .led-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    mix-blend-mode: screen;
+  }
+
+  /* Hardware LED tones: accent follows the active page theme, gold echoes BoxBox folders. */
+  .led-accent {
+    color: var(--color-accent);
+  }
+
+  .led-gold {
+    color: #e8c36a;
+  }
+
+  .led-core {
+    fill: color-mix(in srgb, currentColor 58%, #ffffff 42%);
+    opacity: 0.88;
+    transition: fill 700ms ease;
+  }
+
+  .scene-led {
+    will-change: opacity;
+  }
+
+  .led-steady {
+    animation: led-steady var(--led-dur, 6.4s) ease-in-out var(--led-delay, 0s) infinite;
+  }
+
+  .led-heartbeat {
+    animation: led-heartbeat var(--led-dur, 5.4s) ease-in-out var(--led-delay, 0s) infinite;
+  }
+
+  .led-io-fast {
+    animation: led-io-fast var(--led-dur, 3.1s) ease-in-out var(--led-delay, 0s) infinite;
+  }
+
+  .led-io-burst {
+    animation: led-io-burst var(--led-dur, 4.3s) ease-in-out var(--led-delay, 0s) infinite;
+  }
+
+  /* Single unified atmospheric horizon glow whose hue smoothly follows --color-accent. */
+  .layer-atmosphere {
+    --px: 10px;
+    --py: 5px;
+    --scroll: 88px;
+    --scale: -0.16;
+    bottom: 2%;
+    width: min(124%, 108rem);
+    height: clamp(22rem, 42vw, 36rem);
+    opacity: calc(1 - var(--scene-reveal) * 0.58);
+  }
+
+  .atmosphere-bloom,
+  .atmosphere-core {
+    position: absolute;
+    inset: 0;
+    background-color: var(--color-accent);
+    transition: background-color 700ms ease;
+  }
+
+  .atmosphere-bloom {
+    opacity: 0.4;
+    mask-image: radial-gradient(
+      ellipse 56% 52% at 50% 66%,
+      rgb(0 0 0 / 0.94) 0%,
+      rgb(0 0 0 / 0.56) 26%,
+      rgb(0 0 0 / 0.18) 54%,
+      transparent 82%
+    );
+    -webkit-mask-image: radial-gradient(
+      ellipse 56% 52% at 50% 66%,
+      rgb(0 0 0 / 0.94) 0%,
+      rgb(0 0 0 / 0.56) 26%,
+      rgb(0 0 0 / 0.18) 54%,
+      transparent 82%
+    );
+    animation: atmosphere-breathe 9.5s ease-in-out infinite;
+  }
+
+  .atmosphere-core {
+    opacity: 0.25;
+    background-image: radial-gradient(
+      ellipse 38% 28% at 50% 68%,
+      rgb(255 255 255 / 0.44) 0%,
+      rgb(255 255 255 / 0.14) 38%,
+      transparent 76%
+    );
+    mask-image: radial-gradient(
+      ellipse 42% 34% at 50% 68%,
+      rgb(0 0 0 / 0.88) 0%,
+      rgb(0 0 0 / 0.32) 42%,
+      transparent 78%
+    );
+    -webkit-mask-image: radial-gradient(
+      ellipse 42% 34% at 50% 68%,
+      rgb(0 0 0 / 0.88) 0%,
+      rgb(0 0 0 / 0.32) 42%,
+      transparent 78%
+    );
+    animation: atmosphere-core-drift 12.5s ease-in-out infinite;
+  }
+
+  .layer-racks {
+    --px: 16px;
+    --py: 6px;
+    --scroll: 132px;
+    --scale: -0.05;
+    bottom: clamp(-1.8rem, -1.2vw, -0.4rem);
+    width: clamp(62rem, 106%, 98rem);
+    opacity: calc(0.9 - var(--scene-reveal) * 0.42);
+  }
+
+  .layer-racks .art-img {
+    filter: brightness(0.88) contrast(1.03);
+  }
+
+  .layer-racks .led-overlay {
+    opacity: 0.52;
+  }
+
+  /* Atmospheric depth veil + backlit accent light-wrap between distant racks and midground bays. */
+  .layer-valley-mist {
+    --px: 18px;
+    --py: 6px;
+    --scroll: 38px;
+    bottom: 0;
+    width: 112%;
+    height: clamp(12rem, 23vw, 21rem);
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      rgb(13 13 13 / 0.34) 56%,
+      rgb(10 10 10 / 0.78) 100%
+    );
+  }
+
+  .valley-accent-wrap {
+    position: absolute;
+    inset: 0;
+    background-color: var(--color-accent);
+    opacity: 0.13;
+    transition: background-color 700ms ease;
+    mask-image: radial-gradient(
+      ellipse 50% 66% at 50% 80%,
+      rgb(0 0 0 / 0.9) 0%,
+      rgb(0 0 0 / 0.3) 44%,
+      transparent 78%
+    );
+    -webkit-mask-image: radial-gradient(
+      ellipse 50% 66% at 50% 80%,
+      rgb(0 0 0 / 0.9) 0%,
+      rgb(0 0 0 / 0.3) 44%,
+      transparent 78%
+    );
+  }
+
+  /* Drifting micro-motes rising lazily through the backlit center valley. */
+  .layer-motes {
+    --px: 4px;
+    --py: 2px;
+    --scroll: 56px;
+    bottom: 2rem;
+    width: min(100%, 78rem);
+    height: clamp(14rem, 26vw, 22rem);
+  }
+
+  .valley-mote {
+    position: absolute;
+    border-radius: 9999px;
+    will-change: transform, opacity;
+    animation: mote-rise var(--mote-dur, 12s) ease-in-out var(--mote-delay, 0s) infinite;
+  }
+
+  .mote-accent {
+    background-color: var(--color-accent);
+    box-shadow: 0 0 6px var(--color-accent);
+    transition: background-color 700ms ease, box-shadow 700ms ease;
+  }
+
+  .mote-gold {
+    background-color: #e8c36a;
+    box-shadow: 0 0 6px rgb(232 195 106 / 0.7);
+  }
+
+  /* Monumental reactive dithered BoxBox wordmark nestled inside the valley. */
+  .layer-monument {
+    --px: -4px;
+    --py: -2px;
+    --scroll: 168px;
+    --scale: -0.07;
+    bottom: clamp(5.8rem, 12.2vw, 11.4rem);
+    width: clamp(18.5rem, 41vw, 37rem);
+    opacity: calc(1 - var(--scene-reveal) * 0.82);
+  }
+
+  .monument-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 930 / 256;
+    filter: drop-shadow(0 0 24px color-mix(in srgb, var(--color-accent) 28%, transparent));
+  }
+
+  .layer-midground {
+    --px: -24px;
+    --py: -8px;
+    --scroll: 68px;
+    --scale: 0.055;
+    bottom: clamp(-3.8rem, -3vw, -2rem);
+    width: clamp(62rem, 108%, 100rem);
+  }
+
+  .layer-midground .art-img {
+    filter: drop-shadow(0 -14px 28px rgb(4 6 12 / 0.76));
+  }
+
+  .layer-foreground {
+    --px: -42px;
+    --py: -10px;
+    --scroll: 26px;
+    --scale: 0.08;
+    bottom: -10px;
+    width: clamp(64rem, 110%, 104rem);
+  }
+
+  .layer-foreground .art-img {
+    filter: drop-shadow(0 -10px 22px rgb(3 4 8 / 0.88));
+  }
+
+  /* Deep shadow band under the page curtain edge so the footer sits recessed below the page. */
+  .scene-top-blend {
+    position: absolute;
+    inset: 0 0 auto;
+    height: clamp(8rem, 15vw, 12rem);
+    background: linear-gradient(180deg, #050609 0%, rgb(7 8 11 / 0.86) 44%, transparent 100%);
+  }
+
+  /* Recessed curtain shadow that lifts off the diorama as the page scrolls up and uncovers it. */
+  .scene-curtain-veil {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      rgb(3 4 7 / 0.88) 0%,
+      rgb(5 6 10 / 0.72) 55%,
+      rgb(5 6 10 / 0.56) 100%
+    );
+    opacity: calc(var(--scene-reveal) * 0.82);
+    will-change: opacity;
+  }
+
+  /* Dark grounding band behind the bottom legal strip so contrast stays sharp at any width. */
+  .scene-bottom-ground {
+    position: absolute;
+    inset: auto 0 0;
+    height: 6.25rem;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      rgb(8 10 14 / 0.72) 48%,
+      rgb(8 10 14 / 0.94) 100%
+    );
+  }
+
+  @keyframes atmosphere-breathe {
+    0%,
+    100% {
+      opacity: 0.36;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.46;
+      transform: scale(1.045, 1.07);
+    }
+  }
+
+  @keyframes atmosphere-core-drift {
+    0%,
+    100% {
+      opacity: 0.2;
+      transform: translate3d(-1.2%, 0, 0) scale(0.98);
+    }
+    50% {
+      opacity: 0.3;
+      transform: translate3d(1.2%, -2%, 0) scale(1.05);
+    }
+  }
+
+  @keyframes led-steady {
+    0%,
+    100% {
+      opacity: 0.42;
+    }
+    50% {
+      opacity: 0.72;
+    }
+  }
+
+  @keyframes led-heartbeat {
+    0%,
+    74%,
+    100% {
+      opacity: 0.08;
+    }
+    78%,
+    84% {
+      opacity: 0.74;
+    }
+    81% {
+      opacity: 0.2;
+    }
+    88% {
+      opacity: 0.08;
+    }
+  }
+
+  @keyframes led-io-fast {
+    0%,
+    18%,
+    42%,
+    55%,
+    79%,
+    100% {
+      opacity: 0.06;
+    }
+    9%,
+    25%,
+    32%,
+    64%,
+    72%,
+    87% {
+      opacity: 0.78;
+    }
+  }
+
+  @keyframes led-io-burst {
+    0%,
+    48%,
+    64%,
+    84%,
+    100% {
+      opacity: 0.05;
+    }
+    52%,
+    57%,
+    61%,
+    76%,
+    80% {
+      opacity: 0.76;
+    }
+    55%,
+    59%,
+    78% {
+      opacity: 0.14;
+    }
+  }
+
+  @keyframes mote-rise {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 0, 0) scale(0.75);
+    }
+    18% {
+      opacity: 0.44;
+    }
+    75% {
+      opacity: 0.26;
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(var(--mote-dx, 12px), calc(var(--mote-rise, 120px) * -1), 0) scale(1.1);
+    }
+  }
+
+  @media (max-width: 767px) {
+    .footer-vista {
+      height: 16.5rem;
+    }
+
+    .layer-racks {
+      bottom: -0.4rem;
+      width: 50rem;
+    }
+
+    .layer-monument {
+      bottom: 6.4rem;
+      width: min(78vw, 21rem);
+    }
+
+    .layer-midground {
+      bottom: -2.2rem;
+      width: 52rem;
+    }
+
+    .layer-foreground {
+      bottom: -6px;
+      width: 54rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .site-footer[data-curtain='sticky'] {
+      position: relative;
+      bottom: auto;
+    }
+
+    .scene-layer {
+      transform: translateX(-50%);
+      will-change: auto;
+    }
+
+    .footer-directory {
+      transform: none;
+      opacity: 1;
+      will-change: auto;
+    }
+
+    .scene-curtain-veil {
+      opacity: 0;
+    }
+
+    .atmosphere-bloom,
+    .atmosphere-core,
+    .scene-led {
+      animation: none;
+    }
+
+    .scene-led {
+      opacity: 0.55;
+    }
+
+    .layer-motes {
+      display: none;
+    }
+  }
+</style>

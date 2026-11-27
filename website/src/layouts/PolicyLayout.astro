@@ -1,44 +1,183 @@
 ---
-// Privacy, terms and security share one page: the download page's back link
-// and heading, a reading column, and the site footer. The main stays
-// transparent so the layout's dot grid shows through.
-import { ArrowLeft } from '@lucide/astro';
+// Privacy, terms, and security share the blog post's two-column editorial layout:
+// SiteNav breadcrumb, full-width display header, readable prose measure, sticky
+// right-hand outline + legal links, and the recessed SiteFooter reveal.
 import Layout from './Layout.astro';
+import SiteNav from '../components/SiteNav.astro';
 import SiteFooter from '../components/SiteFooter.astro';
+
+export interface PolicySection {
+  id: string;
+  label: string;
+}
 
 interface Props {
   title: string;
   description: string;
   heading: string;
   updated: string;
+  sections: readonly PolicySection[];
 }
 
-const { title, description, heading, updated } = Astro.props;
+const { title, description, heading, updated, sections } = Astro.props;
+const crumbLabel = heading.replace(/\.$/, '');
+const currentPath = Astro.url.pathname.replace(/\/+$/, '') || '/';
+
+const legalPages = [
+  { label: 'Privacy', href: '/privacy/' },
+  { label: 'Terms', href: '/terms/' },
+  { label: 'Security', href: '/security/' },
+] as const;
 ---
 
 <Layout title={title} description={description}>
-  <main class="relative z-10 mx-auto w-full max-w-6xl flex-1 px-5 pt-10 pb-24 md:pt-16">
-    <a href="/" class="inline-flex min-h-11 items-center gap-2 text-sm text-text-secondary hover:text-white"><ArrowLeft class="h-4 w-4" /> BoxBox home</a>
-    <h1 class="mt-10 text-5xl font-bold tracking-tight text-white md:text-7xl">{heading}</h1>
-    <p class="mt-4 text-sm text-text-muted">Last updated: {updated}</p>
-    <div class="policy mt-14 border-t border-border-primary pt-10">
-      <slot />
-    </div>
+  <SiteNav showStarDoodle={false} crumb={{ label: crumbLabel, href: Astro.url.pathname }} />
+  <main class="relative z-10 mx-auto w-full max-w-7xl flex-1 px-5 pt-4 pb-24 md:px-8 md:pt-7">
+    <article>
+      <header class="border-b border-border-primary pb-8 md:pb-10">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-12">
+          <h1 class="font-display text-[clamp(2.2rem,4.6vw,3.6rem)] font-extrabold leading-[1.06] tracking-[-0.03em] text-white">
+            {heading}
+          </h1>
+          <p class="shrink-0 text-sm text-text-secondary lg:pb-1.5">
+            Last updated: {updated}
+          </p>
+        </div>
+      </header>
+
+      <div class="mt-10 lg:mt-12 lg:grid lg:grid-cols-[minmax(0,1fr)_224px] lg:gap-12 xl:gap-16">
+        <div class="policy min-w-0 max-w-[46rem]">
+          <slot />
+        </div>
+
+        <aside class="hidden lg:block">
+          <div class="sticky top-8 space-y-8 border-l border-border-primary pl-6">
+            {sections.length > 0 && (
+              <div>
+                <div class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">
+                  On this page
+                </div>
+                <nav class="flex flex-col gap-1.5" aria-label="On this page">
+                  {sections.map((section) => (
+                    <a
+                      href={`#${section.id}`}
+                      data-toc-link={section.id}
+                      class="toc-link block py-1 text-sm leading-snug text-text-secondary transition-colors hover:text-white"
+                    >
+                      {section.label}
+                    </a>
+                  ))}
+                </nav>
+              </div>
+            )}
+
+            <div class="border-t border-border-secondary pt-6">
+              <div class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">
+                Policies
+              </div>
+              <nav class="flex flex-col gap-1.5" aria-label="Policies">
+                {legalPages.map((page) => {
+                  const active = currentPath === page.href.replace(/\/+$/, '');
+                  return (
+                    <a
+                      href={page.href}
+                      aria-current={active ? 'page' : undefined}
+                      class="block py-1 text-sm leading-snug text-text-secondary transition-colors hover:text-white aria-[current=page]:font-medium aria-[current=page]:text-white"
+                    >
+                      {page.label}
+                    </a>
+                  );
+                })}
+              </nav>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </article>
   </main>
-  <SiteFooter />
+  <SiteFooter slot="footer" />
 </Layout>
 
+<script>
+  const tocLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
+  const headings = tocLinks
+    .map((link): HTMLElement | null => {
+      const id = link.getAttribute('data-toc-link');
+      return id ? document.getElementById(id) : null;
+    })
+    .filter((heading): heading is HTMLElement => heading !== null);
+
+  function setActiveTocLink(activeId: string) {
+    for (const link of tocLinks) {
+      link.classList.toggle('is-active', link.getAttribute('data-toc-link') === activeId);
+    }
+  }
+
+  function updateActiveTocLink() {
+    if (headings.length === 0) return;
+    const documentElement = document.documentElement;
+    const remainingScroll = Math.max(0, documentElement.scrollHeight - window.scrollY - window.innerHeight);
+    const normalActivationLine = Math.min(window.innerHeight * 0.35, 280);
+    const endActivationLine = Math.max(normalActivationLine, window.innerHeight - 40);
+    const endZone = Math.min(Math.max(window.innerHeight * 0.45, 320), 520);
+    const endProgress = 1 - Math.min(remainingScroll / endZone, 1);
+    const activationLine = normalActivationLine + (endActivationLine - normalActivationLine) * endProgress;
+
+    let activeHeading = headings[0];
+    for (const heading of headings) {
+      if (heading.getBoundingClientRect().top <= activationLine) {
+        activeHeading = heading;
+      } else {
+        break;
+      }
+    }
+
+    if (activeHeading) setActiveTocLink(activeHeading.id);
+  }
+
+  let ticking = false;
+  function requestTocUpdate() {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(() => {
+      updateActiveTocLink();
+      ticking = false;
+    });
+  }
+
+  updateActiveTocLink();
+  window.addEventListener('scroll', requestTocUpdate, { passive: true });
+  window.addEventListener('resize', requestTocUpdate);
+  window.addEventListener('hashchange', requestTocUpdate);
+</script>
+
 <style>
+  .policy :global(section) { scroll-margin-top: 5.5rem; }
   .policy :global(section + section) { margin-top: 2.5rem; }
-  .policy :global(h2) { margin-bottom: 0.75rem; color: var(--color-text-primary); font-size: 1.25rem; font-weight: 600; }
+  .policy :global(h2) {
+    margin-bottom: 0.75rem;
+    color: #ffffff;
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
   .policy :global(p),
-  .policy :global(li) { color: var(--color-text-secondary); line-height: 1.75; }
+  .policy :global(li) { color: #d6d6d6; font-size: 1.03125rem; line-height: 1.76; text-wrap: pretty; }
   .policy :global(p + p),
   .policy :global(p + ul),
-  .policy :global(ul + p) { margin-top: 0.75rem; }
-  .policy :global(ul) { padding-left: 1.25rem; list-style: disc; }
-  .policy :global(li + li) { margin-top: 0.35rem; }
-  .policy :global(a) { color: var(--color-accent); transition: color 150ms ease; }
-  .policy :global(a:hover) { color: #fff; }
-  .policy :global(strong) { color: var(--color-text-primary); font-weight: 600; }
+  .policy :global(ul + p) { margin-top: 0.85rem; }
+  .policy :global(ul) { padding-left: 1.35rem; list-style: disc; }
+  .policy :global(li + li) { margin-top: 0.45rem; }
+  .policy :global(li::marker) { color: var(--color-accent); }
+  .policy :global(a) {
+    color: var(--color-accent);
+    font-weight: 500;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+    text-underline-offset: 4px;
+    transition: color 150ms ease, text-decoration-color 150ms ease;
+  }
+  .policy :global(a:hover) { color: #fff; text-decoration-color: #fff; }
+  .policy :global(strong) { color: #ffffff; font-weight: 600; }
 </style>

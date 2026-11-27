@@ -8,19 +8,9 @@ The `boxbox` desktop app is now a native Rust app for Linux and Windows 11 x64. 
 
 ## v0.3.2 Desktop Release
 
-The next release adds the Linux x86_64 desktop app alongside the existing amd64/arm64 server packages. Check [Downloads](/download/) for published assets; the website does not offer a desktop link until a real release asset exists. See [Linux Desktop](desktop.md) for dependencies and pairing.
+`v0.3.2` introduced the initial Linux x86_64 desktop app (built with Electrobun) alongside the Linux amd64/arm64 server packages, and added the paired-client API (`POST /connect/pairing` and `POST /connect/redeem`) so desktop clients can connect to a BoxBox server without a full browser session.
 
-`VERSION` is the release source of truth and also sets the Electrobun app version. Build the full distribution locally with:
-
-```bash
-bun scripts/package-release.ts
-```
-
-This builds the desktop runtime, a self-contained installer archive, both standalone server targets, `SHA256SUMS` and `release-manifest.json` under `dist/release/`. Every packaging run builds the desktop from the current checkout so its manifest cannot describe a stale bundle. A local working-tree build is marked dirty in its manifest; official tag builds require clean source.
-
-For a public stable release, merge both the desktop PR and its website/release follow-up into master first. Set `VERSION` to the intended version, keep `docs/releases/v0.3.2.md` current, and tag the tested master commit with `v0.3.2`. The release workflow verifies that the tag matches VERSION and belongs to master. It validates the server, website, Docker build, desktop tests and artifacts before publishing. The GitHub release stays a draft while files upload, then becomes public only after the Docker image succeeds. Published releases are not overwritten.
-
-Manual workflow dispatch prepares CI artifacts without creating a public release or moving Docker `latest`. Only a version tag publishes. Publishing an unmerged desktop branch as stable is rejected.
+In `v0.4.0`, the Electrobun app was replaced by the native Rust/GPUI app for Windows and Linux. See the [desktop app guide](desktop.md) for current downloads and pairing, and [Release workflow](release.md) for how releases are built and tagged.
 
 ## v0.3.1 Security Release
 

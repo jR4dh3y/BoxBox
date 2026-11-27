@@ -1,11 +1,17 @@
 ---
 import { latestReleaseLink } from '../lib/blog';
+
+const currentPath = Astro.url.pathname.replace(/\/+$/, '') || '/';
+const isCurrent = latestReleaseLink
+  ? currentPath === latestReleaseLink.href.replace(/\/+$/, '')
+  : false;
 ---
 
 {latestReleaseLink && (
   <a
     href={latestReleaseLink.href}
-    class="hidden min-h-11 shrink-0 sm:inline-flex items-center px-3 whitespace-nowrap text-text-primary transition-colors hover:text-white"
+    aria-current={isCurrent ? 'page' : undefined}
+    class="hidden min-h-11 shrink-0 sm:inline-flex items-center px-3 whitespace-nowrap text-text-primary transition-colors hover:text-white aria-[current=page]:text-white"
   >
     <span class="underline decoration-accent decoration-[1.5px] underline-offset-[6px]">{latestReleaseLink.text}</span>
   </a>

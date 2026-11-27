@@ -39,7 +39,7 @@ HOST_PORT=8080
 # DOWNLOADS_PATH=/mnt/downloads
 PUID=10001
 PGID=10001
-BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.3.1
+BOXBOX_IMAGE=ghcr.io/jr4dh3y/boxbox:v0.4.0
 ```
 
 Generate the password hash with `htpasswd -bnBC 12 admin 'your-password' | cut -d: -f2`. Keep the hash single-quoted because bcrypt hashes contain `$`.
@@ -51,10 +51,10 @@ Open `http://localhost:8080`, or use the host and port you configured with `HOST
 Release images are published to GitHub Container Registry:
 
 ```bash
-docker pull ghcr.io/jr4dh3y/boxbox:v0.3.1
+docker pull ghcr.io/jr4dh3y/boxbox:v0.4.0
 ```
 
-Stable release tags update `latest`. Prerelease tags such as `v0.3.1-rc.1` publish versioned images without moving `latest`, nightly builds publish to the dedicated `boxbox-nightly` package, and test branch images publish under branch-scoped tags in the `boxbox-branch` package, such as `ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change`.
+Stable release tags update `latest`. Prerelease tags such as `v0.4.0-rc.1` publish versioned images without moving `latest`, nightly builds publish to the dedicated `boxbox-nightly` package, and test branch images publish under branch-scoped tags in the `boxbox-branch` package, such as `ghcr.io/jr4dh3y/boxbox-branch:branch-test-my-change`.
 
 See [Release workflow](release.md) for the full test-branch and stable-release process.
 
@@ -82,13 +82,13 @@ docker compose up -d
 For a `docker run` deployment:
 
 ```bash
-docker pull ghcr.io/jr4dh3y/boxbox:v0.3.1
+docker pull ghcr.io/jr4dh3y/boxbox:v0.4.0
 docker stop boxbox
 docker rm boxbox
 # Re-run the docker run command with the same volumes and env values.
 ```
 
-For the `v0.3.1` security release, read the upgrade and session-registry guidance in [Release notes](release-notes.md#v0-3-1-security-release).
+Read the [v0.4.0 release notes](releases/v0.4.0.md) for current changes; if upgrading from `v0.3.0` or earlier, also check the session-registry guidance in the [v0.3.1 security notes](release-notes.md#v0-3-1-security-release).
 
 ## Health and Logs
 

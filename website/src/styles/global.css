@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-	--font-display: 'Bricolage Grotesque', sans-serif;
+	--font-display: 'Archivo', sans-serif;
 
 	/* Surface colors (backgrounds) */
 	--color-surface-primary: #1e1e1e;
@@ -43,14 +43,45 @@
 	--color-selection-hover: #345580;
 }
 
-body {
-  background-color: #121212;
-  color: var(--color-text-primary);
-  font-family: 'Inter', system-ui, sans-serif;
-  margin: 0;
-  padding: 0;
-  overflow-x: hidden;
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  body {
+    background-color: #07080b;
+    color: var(--color-text-primary);
+    font-family: 'Inter', system-ui, sans-serif;
+    margin: 0;
+    padding: 0;
+    overflow-x: clip;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Crisp architectural sheet edge separating page content from the recessed footer reveal. */
+.page-curtain:has(+ [data-site-footer]) {
+  min-height: 100svh;
+  border-bottom: 1px solid rgb(255 255 255 / 0.09);
+  border-bottom-left-radius: clamp(18px, 2.2vw, 30px);
+  border-bottom-right-radius: clamp(18px, 2.2vw, 30px);
+  box-shadow:
+    0 28px 72px rgb(0 0 0 / 0.94),
+    0 10px 26px rgb(0 0 0 / 0.86);
+}
+
+.page-curtain:has(+ [data-site-footer])::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  transform: translateX(-50%);
+  width: min(68%, 48rem);
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-accent) 55%, rgb(255 255 255 / 0.25)) 50%,
+    transparent 100%
+  );
+  opacity: 0.72;
 }
 
 html,
@@ -111,9 +142,9 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
 
 .doc-content {
   max-width: 860px;
-  color: var(--color-text-primary);
-  font-size: 16px;
-  line-height: 1.75;
+  color: #d6d6d6;
+  font-size: 1.03125rem;
+  line-height: 1.76;
 }
 
 .doc-content h1 {
@@ -123,12 +154,13 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
 .doc-content h2 {
   margin-top: 3rem;
   margin-bottom: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--color-border-primary);
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border-secondary);
   color: #ffffff;
-  font-family: 'Bricolage Grotesque', sans-serif;
+  font-family: var(--font-display);
   font-size: 1.75rem;
-  font-weight: 800;
+  font-weight: 700;
+  letter-spacing: -0.025em;
   line-height: 1.2;
   scroll-margin-top: 6rem;
 }
@@ -137,7 +169,8 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
   margin-top: 2rem;
   margin-bottom: 0.75rem;
   color: #ffffff;
-  font-size: 1.125rem;
+  font-family: var(--font-display);
+  font-size: 1.18rem;
   font-weight: 700;
   line-height: 1.35;
   scroll-margin-top: 6rem;
@@ -149,6 +182,11 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
 .doc-content table,
 .doc-content pre {
   margin-bottom: 1.25rem;
+}
+
+.doc-content p,
+.doc-content li {
+  text-wrap: pretty;
 }
 
 .doc-content ul,
@@ -165,35 +203,85 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
 }
 
 .doc-content li {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.doc-content li::marker {
+  color: var(--color-accent);
 }
 
 .doc-content a {
   color: var(--color-accent);
-  font-weight: 600;
-  text-decoration: none;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  text-underline-offset: 4px;
+  transition: color 150ms ease, text-decoration-color 150ms ease;
 }
 
 .doc-content a:hover {
   color: #ffffff;
+  text-decoration-color: #ffffff;
 }
 
 .doc-content code {
-  border: 1px solid var(--color-border-primary);
-  border-radius: 4px;
-  background: var(--color-surface-secondary);
-  padding: 0.12rem 0.32rem;
-  color: #ffffff;
+  border: 1px solid #2e2e2e;
+  border-radius: 5px;
+  background: #181818;
+  padding: 0.12rem 0.36rem;
+  color: #f0f0f0;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.88em;
+  font-size: 0.86em;
 }
 
 .doc-content pre {
   overflow-x: auto;
   border: 1px solid var(--color-border-primary);
-  border-radius: 8px;
+  border-radius: 10px;
   background: #0d1117;
-  padding: 1rem;
+  padding: 1rem 3.5rem 1rem 1.15rem;
+}
+
+.code-block-wrap {
+  position: relative;
+  margin-bottom: 1.25rem;
+}
+
+.code-block-wrap pre {
+  margin-bottom: 0;
+}
+
+.code-copy-btn {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 6px;
+  background: rgb(20 24 31 / 0.88);
+  padding: 0.22rem 0.55rem;
+  color: var(--color-text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  cursor: pointer;
+  opacity: 0.78;
+  transition: opacity 150ms ease, border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+}
+
+.code-block-wrap:hover .code-copy-btn,
+.code-copy-btn:focus-visible,
+.code-copy-btn[data-copied='true'] {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  border-color: rgb(255 255 255 / 0.28);
+  color: #ffffff;
+}
+
+.code-copy-btn[data-copied='true'] {
+  border-color: color-mix(in srgb, var(--color-success) 55%, transparent);
+  color: var(--color-success);
 }
 
 .doc-content pre.shiki {
@@ -249,34 +337,178 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
   font-weight: 500;
 }
 
+/* Editorial typography for release blog posts; text measure stays comfortable
+   while comparison frames inside .blog-prose can break out to full column width. */
+.blog-prose {
+  color: #d6d6d6;
+  font-size: 1.03125rem;
+  line-height: 1.76;
+}
+
+.blog-prose > :not(.blog-comparison) {
+  max-width: 46rem;
+}
+
+.blog-prose > .blog-prose-part > :not(.blog-comparison) {
+  max-width: 46rem;
+}
+
+.blog-prose-lead > p:first-child {
+  color: #f3f3f3;
+  font-size: clamp(1.1rem, 1.3vw, 1.22rem);
+  line-height: 1.68;
+}
+
+.blog-prose h2 {
+  margin-top: 3.25rem;
+  margin-bottom: 1rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--color-border-secondary);
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: clamp(1.55rem, 2.4vw, 1.95rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.18;
+  scroll-margin-top: 5.5rem;
+}
+
+.blog-prose h3 {
+  margin-top: 2.15rem;
+  margin-bottom: 0.75rem;
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.3;
+  scroll-margin-top: 5.5rem;
+}
+
+.blog-prose p,
+.blog-prose ul,
+.blog-prose ol,
+.blog-prose pre,
+.blog-prose blockquote {
+  margin-bottom: 1.35rem;
+}
+
+.blog-prose p:last-child,
+.blog-prose ul:last-child,
+.blog-prose ol:last-child {
+  margin-bottom: 0;
+}
+
+.blog-prose ul,
+.blog-prose ol {
+  padding-left: 1.35rem;
+}
+
+.blog-prose ul {
+  list-style: disc;
+}
+
+.blog-prose ol {
+  list-style: decimal;
+}
+
+.blog-prose li {
+  margin-bottom: 0.65rem;
+  padding-left: 0.25rem;
+}
+
+.blog-prose li::marker {
+  color: var(--color-accent);
+}
+
+.blog-prose strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.blog-prose a {
+  color: var(--color-accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  text-underline-offset: 4px;
+  transition: color 150ms ease, text-decoration-color 150ms ease;
+}
+
+.blog-prose a:hover {
+  color: #ffffff;
+  text-decoration-color: #ffffff;
+}
+
+.blog-prose code {
+  border: 1px solid #2e2e2e;
+  border-radius: 5px;
+  background: #181818;
+  padding: 0.12rem 0.38rem;
+  color: #f0f0f0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+
+.blog-prose pre {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 10px;
+  background: #0d1117;
+  padding: 1rem 3.5rem 1rem 1.15rem;
+}
+
+.blog-prose pre.shiki {
+  background: #0d1117 !important;
+}
+
+.blog-prose pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--color-text-primary);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.blog-prose blockquote {
+  margin: 1.5rem 0;
+  border-left: 2px solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  padding: 0.9rem 1.15rem;
+  color: var(--color-text-secondary);
+}
+
 /* Inline package names and installation paths must fit phone-sized docs. */
 .doc-content :not(pre) > code { overflow-wrap: anywhere; }
 
-/* A word drawn as a box, the way the logo draws its letters. The hero uses it
-   for the rotating word and the walkthrough uses it for words you can open. */
-.word-box {
-  display: inline-block;
-  margin: 0 -0.04em;
-  padding: 0 0.1em 0.06em;
-  border: max(1.5px, 0.035em) solid var(--color-accent);
-  border-radius: 0.1em;
-  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  color: var(--color-accent);
-  line-height: 1;
-  white-space: nowrap;
-}
+@layer components {
+  /* A word drawn as a box, the way the logo draws its letters. The hero uses it
+     for the rotating word and the walkthrough uses it for words you can open. */
+  .word-box {
+    display: inline-block;
+    margin: 0 -0.04em;
+    padding: 0.08em 0.11em 0.01em;
+    border: max(1.5px, 0.035em) solid var(--color-accent);
+    border-radius: 0.1em;
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    color: var(--color-accent);
+    line-height: 1;
+    white-space: nowrap;
+  }
 
-/* Inside a sentence the box is something to open: a screenshot or a link. */
-:is(a, button).word-box {
-  margin: 0 0.02em;
-  cursor: pointer;
-  transition: background-color 250ms ease, color 250ms ease;
-}
+  /* Inside a sentence the box is something to open: a screenshot or a link. */
+  :is(a, button).word-box {
+    margin: 0 0.02em;
+    cursor: pointer;
+    transition: background-color 250ms ease, color 250ms ease;
+  }
 
-a.word-box:hover,
-button.word-box[aria-pressed='true'] {
-  background: var(--color-accent);
-  color: #0d0d0d;
+  a.word-box:hover,
+  button.word-box[aria-pressed='true'] {
+    background: var(--color-accent);
+    color: #0d0d0d;
+  }
 }
 
 /* Panels in the interface preview arrive with a small lift. */
@@ -290,4 +522,10 @@ button.word-box[aria-pressed='true'] {
   background-image: radial-gradient(rgb(255 255 255 / 0.09) 1px, transparent 1px);
   background-size: 22px 22px;
   mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
+}
+
+/* Once the interactive canvas mounts, hand dot drawing over to it without double-rendering. */
+.dot-grid[data-dot-grid-ready='true'] {
+  background-image: none;
+  mask-image: none;
 }

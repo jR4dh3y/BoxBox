@@ -1,30 +1,176 @@
 ---
+import { ArrowRight, ArrowUpRight } from '@lucide/astro';
 import Layout from '../../layouts/Layout.astro';
 import SiteNav from '../../components/SiteNav.astro';
 import SiteFooter from '../../components/SiteFooter.astro';
-import { blogPosts, readBlogMarkdown, renderBlogMarkdown } from '../../lib/blog';
+import BlogComparison from '../../components/BlogComparison.astro';
+import {
+  blogPosts,
+  formatBlogDate,
+  readBlogMarkdown,
+  renderBlogArticle,
+} from '../../lib/blog';
+import { getDocSlugs } from '../../lib/docs';
 
 export function getStaticPaths() {
   return blogPosts.map((post) => ({ params: { slug: post.slug }, props: { post } }));
 }
 
 const { post } = Astro.props;
-const { html } = await renderBlogMarkdown(readBlogMarkdown(post.slug));
+const { segments, headings, readingMinutes } = await renderBlogArticle(readBlogMarkdown(post.slug));
+const docSlugs = new Set(getDocSlugs());
+const releaseNotesHref = docSlugs.has(post.version) ? `/docs/${post.version}/` : '/docs/release-notes/';
+const githubReleaseHref = `https://github.com/jR4dh3y/BoxBox/releases/tag/${post.version}`;
 ---
 
 <Layout title={`${post.title} | BoxBox Blog`} description={post.description}>
-  <SiteNav />
-  <main class="mx-auto w-full max-w-3xl px-5 py-10 md:px-8 lg:py-14">
-    <a href="/blog/" class="text-sm text-text-secondary underline hover:text-white">All posts</a>
-    <article class="mt-6">
-      <header class="mb-10 border-b border-border-primary pb-8">
-        <time datetime={post.date} class="text-sm text-text-secondary">{post.date}</time>
-        <h1 class="mt-3 text-4xl font-black tracking-tight text-white md:text-5xl" style="font-family: 'Bricolage Grotesque', sans-serif;">
-          {post.title}
-        </h1>
+  <SiteNav showStarDoodle={false} showReleaseLink={false} crumb={{ label: 'Blog', href: '/blog/', badge: post.version }} />
+  <main class="relative z-10 mx-auto w-full max-w-7xl flex-1 px-5 pt-4 pb-24 md:px-8 md:pt-7">
+    <article>
+      <header class="border-b border-border-primary pb-8 md:pb-10">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-12">
+          <h1
+            class="max-w-4xl font-display text-[clamp(2.1rem,4.4vw,3.4rem)] font-extrabold leading-[1.08] tracking-[-0.03em] text-white"
+          >
+            {post.title}
+          </h1>
+
+          <div class="flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-text-secondary lg:pb-1.5">
+            <span class="inline-flex items-center gap-2 sm:hidden">
+              <a href="/blog/" class="font-medium text-text-secondary transition-colors hover:text-white">← Blog</a>
+              <span class="text-border-primary" aria-hidden="true">/</span>
+              <span class="font-mono text-xs text-text-primary">{post.version}</span>
+            </span>
+            <span class="inline-flex items-center gap-2 whitespace-nowrap">
+              <time datetime={post.date}>{formatBlogDate(post.date)}</time>
+              <span class="text-border-primary" aria-hidden="true">·</span>
+              <span>{readingMinutes} min read</span>
+            </span>
+          </div>
+        </div>
       </header>
-      <div class="doc-content [&_img]:h-auto [&_img]:w-full [&_img]:rounded-lg" set:html={html} />
+
+      <div class="mt-10 lg:mt-12 lg:grid lg:grid-cols-[minmax(0,1fr)_224px] lg:gap-12 xl:gap-16">
+        <div class="min-w-0">
+          <div class="blog-prose">
+            {segments.map((segment, index) =>
+              segment.kind === 'html' ? (
+                <div class:list={['blog-prose-part', index === 0 && 'blog-prose-lead']} set:html={segment.html} />
+              ) : (
+                <BlogComparison comparison={segment.comparison} />
+              ),
+            )}
+          </div>
+
+          <footer class="mt-14 flex flex-col gap-5 border-t border-border-primary pt-8 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex flex-wrap items-center gap-3">
+              <a
+                href="/download/"
+                class="inline-flex min-h-11 items-center gap-2 rounded-lg border-2 border-accent bg-accent/12 px-5 py-2.5 font-display font-bold text-accent transition-colors hover:bg-accent hover:text-[#0d0d0d]"
+              >
+                Download BoxBox
+                <ArrowRight class="h-4 w-4" aria-hidden="true" />
+              </a>
+              <a
+                href={releaseNotesHref}
+                class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-border-primary px-4 py-2.5 text-sm font-medium text-text-primary transition-colors hover:border-text-muted hover:text-white"
+              >
+                Full release notes
+              </a>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-5 text-sm text-text-secondary">
+              <a href="/docs/desktop/" class="transition-colors hover:text-white">Desktop guide</a>
+              <a href={githubReleaseHref} target="_blank" rel="noopener" class="inline-flex items-center gap-1 transition-colors hover:text-white">
+                GitHub release
+                <ArrowUpRight class="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
+              </a>
+            </div>
+          </footer>
+        </div>
+
+        <aside class="hidden lg:block">
+          <div class="sticky top-8 border-l border-border-primary pl-6">
+            {headings.length > 0 && (
+              <div>
+                <div class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">On this page</div>
+                <nav class="flex flex-col gap-1.5" aria-label="On this page">
+                  {headings.map((heading) => (
+                    <a
+                      href={`#${heading.id}`}
+                      data-toc-link={heading.id}
+                      class:list={[
+                        'toc-link block py-1 text-sm leading-snug text-text-secondary transition-colors hover:text-white',
+                        heading.depth === 3 && 'pl-3',
+                      ]}
+                    >
+                      {heading.text}
+                    </a>
+                  ))}
+                </nav>
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
     </article>
   </main>
-  <SiteFooter />
+  <SiteFooter slot="footer" />
 </Layout>
+
+<script>
+  import { mountCodeCopyButtons } from '../../lib/codeCopy';
+
+  mountCodeCopyButtons();
+
+  const tocLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
+  const headings = tocLinks
+    .map((link): HTMLElement | null => {
+      const id = link.getAttribute('data-toc-link');
+      return id ? document.getElementById(id) : null;
+    })
+    .filter((heading): heading is HTMLElement => heading !== null);
+
+  function setActiveTocLink(activeId: string) {
+    for (const link of tocLinks) {
+      link.classList.toggle('is-active', link.getAttribute('data-toc-link') === activeId);
+    }
+  }
+
+  function updateActiveTocLink() {
+    if (headings.length === 0) return;
+    const documentElement = document.documentElement;
+    const remainingScroll = Math.max(0, documentElement.scrollHeight - window.scrollY - window.innerHeight);
+    const normalActivationLine = Math.min(window.innerHeight * 0.35, 280);
+    const endActivationLine = Math.max(normalActivationLine, window.innerHeight - 40);
+    const endZone = Math.min(Math.max(window.innerHeight * 0.45, 320), 520);
+    const endProgress = 1 - Math.min(remainingScroll / endZone, 1);
+    const activationLine = normalActivationLine + (endActivationLine - normalActivationLine) * endProgress;
+
+    let activeHeading = headings[0];
+    for (const heading of headings) {
+      if (heading.getBoundingClientRect().top <= activationLine) {
+        activeHeading = heading;
+      } else {
+        break;
+      }
+    }
+
+    if (activeHeading) setActiveTocLink(activeHeading.id);
+  }
+
+  let ticking = false;
+  function requestTocUpdate() {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(() => {
+      updateActiveTocLink();
+      ticking = false;
+    });
+  }
+
+  updateActiveTocLink();
+  window.addEventListener('scroll', requestTocUpdate, { passive: true });
+  window.addEventListener('resize', requestTocUpdate);
+  window.addEventListener('hashchange', requestTocUpdate);
+</script>

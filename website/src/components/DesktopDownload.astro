@@ -1,34 +1,69 @@
 ---
 import { Download, ArrowUpRight } from '@lucide/astro';
 ---
-<!-- Its parts are rows of the download page's column grid: button, links, notes. -->
-<div id="desktop-download" class="contents">
+<div id="desktop-download" class="mt-8 flex flex-1 flex-col">
   <div class="flex flex-wrap gap-3">
-    <a id="desktop-release-download" hidden class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-accent-solid px-6 py-3 font-semibold text-white transition-colors hover:bg-accent-solid-hover" href="/docs/desktop/">
-      <Download class="h-5 w-5" /> Download for Linux x86_64
+    <a
+      id="desktop-release-download"
+      hidden
+      aria-label="Download BoxBox Files for Linux x86_64"
+      class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border-2 border-accent bg-accent px-6 py-3 font-display text-base font-bold text-[#0d0d0d] transition-colors hover:border-white hover:bg-white"
+      href="/docs/desktop/"
+    >
+      <Download class="h-4 w-4 shrink-0" aria-hidden="true" />
+      Linux x86_64
     </a>
-    <a id="desktop-release-windows" hidden class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-accent-solid px-6 py-3 font-semibold text-white transition-colors hover:bg-accent-solid-hover" href="/docs/desktop/#windows">
-      <Download class="h-5 w-5" /> Download for Windows x64
+    <a
+      id="desktop-release-windows"
+      hidden
+      aria-label="Download BoxBox Files for Windows x64"
+      class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border-2 border-accent bg-accent/12 px-6 py-3 font-display text-base font-bold text-accent transition-colors hover:bg-accent hover:text-[#0d0d0d]"
+      href="/docs/desktop/#windows"
+    >
+      <Download class="h-4 w-4 shrink-0" aria-hidden="true" />
+      Windows x64
     </a>
   </div>
-  <div class="mt-5 flex flex-wrap gap-x-5 gap-y-3 text-sm">
-    <a href="/docs/desktop/" class="inline-flex items-center gap-1 text-accent hover:underline">Install, pair & update <ArrowUpRight class="h-4 w-4" /></a>
-    <a id="desktop-release-checksums" hidden href="https://github.com/jR4dh3y/BoxBox/releases" class="text-text-secondary hover:text-white hover:underline">SHA-256 checksums</a>
-    <a href="https://github.com/jR4dh3y/BoxBox/releases" class="text-text-secondary hover:text-white hover:underline">All releases</a>
+
+  <div class="mt-6 flex flex-wrap gap-x-6 gap-y-2.5 text-sm">
+    <a href="/docs/desktop/" class="inline-flex items-center gap-1 text-accent transition-colors hover:text-white hover:underline">
+      Install &amp; pair guide
+      <ArrowUpRight class="h-4 w-4" aria-hidden="true" />
+    </a>
+    <a
+      id="desktop-release-checksums"
+      hidden
+      href="https://github.com/jR4dh3y/BoxBox/releases"
+      class="text-text-secondary transition-colors hover:text-white hover:underline"
+    >
+      SHA-256 checksums
+    </a>
+    <a href="https://github.com/jR4dh3y/BoxBox/releases" target="_blank" rel="noopener" class="text-text-secondary transition-colors hover:text-white hover:underline">
+      All releases
+    </a>
   </div>
-  <div class="mt-6 space-y-3 text-sm leading-relaxed text-text-muted">
-    <p id="desktop-release-status" class="text-text-secondary" role="status">Find published desktop packages on GitHub Releases, or follow the installation guide.</p>
-    <noscript><p class="text-text-secondary">Visit <a href="https://github.com/jR4dh3y/BoxBox/releases" class="text-accent underline">GitHub Releases</a> to check for a desktop package, or follow the source-build instructions.</p></noscript>
-    <slot />
+
+  <div class="mt-auto pt-8">
+    <div class="border-t border-border-secondary pt-5 text-sm text-text-muted">
+      <p id="desktop-release-status" role="status">
+        Packages on GitHub Releases. AppImage &amp; AUR in the install guide.
+      </p>
+      <noscript>
+        <p>
+          Visit <a href="https://github.com/jR4dh3y/BoxBox/releases" class="text-accent underline">GitHub Releases</a> for packages.
+        </p>
+      </noscript>
+    </div>
   </div>
 </div>
+
 <script>
   const status = document.getElementById('desktop-release-status');
   const download = document.querySelector<HTMLAnchorElement>('#desktop-release-download');
   const checksums = document.querySelector<HTMLAnchorElement>('#desktop-release-checksums');
   const windowsDownload = document.querySelector<HTMLAnchorElement>('#desktop-release-windows');
   if (status && download && windowsDownload && checksums) {
-    status.textContent = 'Checking the latest desktop package…';
+    status.textContent = 'Checking the latest release…';
     fetch('/api/releases.json').then(async response => {
       if (!response.ok) throw new Error('Release service unavailable');
       const release: unknown = await response.json();
@@ -48,12 +83,12 @@ import { Download, ArrowUpRight } from '@lucide/astro';
       display(download, 'desktop' in release ? release.desktop : null, 'linux-amd64.tar.gz');
       display(windowsDownload, 'windowsDesktop' in release ? release.windowsDesktop : null, 'windows-amd64.zip');
       status.textContent = download.hidden && windowsDownload.hidden
-        ? 'The desktop packages are not in the latest public release yet. You can build them from source using the installation guide.'
-        : 'Choose the package for your computer. No Go, Bun or Docker installation needed.';
+        ? 'Desktop packages are not in the latest release yet. See the install guide to build from source.'
+        : 'AppImage & AUR in the install guide · no macOS build.';
       if ('checksumsUrl' in release && typeof release.checksumsUrl === 'string' && /^https:\/\/github\.com\/jR4dh3y\/BoxBox\/releases\/download\/v[\w.-]+\/SHA256SUMS$/.test(release.checksumsUrl)) {
         checksums.href = release.checksumsUrl; checksums.hidden = false;
       }
-    }).catch(() => { status.textContent = 'Release information is temporarily unavailable. Check GitHub Releases or follow the source-build guide.'; });
+    }).catch(() => { status.textContent = 'Release lookup unavailable — check GitHub Releases or the install guide.'; });
   }
 </script>
 <style>

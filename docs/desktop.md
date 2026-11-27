@@ -6,13 +6,13 @@ It replaced the Electrobun desktop app shipped in v0.3.2. Settings from that app
 
 ## Windows
 
-BoxBox Files runs on Windows 11 x64 with a Direct3D 11-capable graphics driver. Download <code>boxbox-desktop-v&lt;version&gt;-windows-amd64.zip</code> and <code>SHA256SUMS</code> from [GitHub Releases](https://github.com/jR4dh3y/BoxBox/releases/) or [Downloads](/download/). To check the archive, compare its SHA-256 from <code>Get-FileHash</code> with the matching line in <code>SHA256SUMS</code>. Extract the archive and launch <code>boxbox.exe</code>. To update, extract the new ZIP and replace the previous app.
+BoxBox Files runs on Windows 11 x64 with a Direct3D 11-capable graphics driver. Download `boxbox-desktop-v<version>-windows-amd64.zip` and `SHA256SUMS` from [GitHub Releases](https://github.com/jR4dh3y/BoxBox/releases/) or [Downloads](/download/). To check the archive, compare its SHA-256 from `Get-FileHash` with the matching line in `SHA256SUMS`. Extract the archive and launch `boxbox.exe`. To update, extract the new ZIP and replace the previous app.
 
-The sidebar lists Windows drives and known folders, including Recent. Use Ctrl+L for drive-letter paths, UNC paths or SMB URLs such as <code>smb://server/share</code>. BoxBox uses the Windows credential prompt when a share requires it. Right-click a removable or mapped drive to eject or disconnect it.
+The sidebar lists Windows drives and known folders, including Recent. Use Ctrl+L for drive-letter paths, UNC paths or SMB URLs such as `smb://server/share`. BoxBox uses the Windows credential prompt when a share requires it. Right-click a removable or mapped drive to eject or disconnect it.
 
 Open With uses the Windows app chooser. Copy, cut, paste and file dragging work with Explorer. The grid uses Windows thumbnail handlers, renders the first page of PDFs, and falls back to an audio waveform if Media Foundation can decode the file. Video thumbnails depend on the installed Windows codecs. Windows Properties opens the native sheet for attributes and security permissions. Windows Trash uses the Recycle Bin, and Mail Recipient opens a draft in a configured Simple MAPI client.
 
-To add **Open in BoxBox Files** to Explorer's folder menu, run <code>windows-explorer.ps1</code> from the extracted folder. Run it again with <code>-Uninstall</code> to remove the entry. A second launch opens the folder in a tab. Settings live under <code>%APPDATA%\BoxBox\Config</code>, state and cache under <code>%LOCALAPPDATA%\BoxBox</code>, and paired server credentials in Windows Credential Manager.
+To add **Open in BoxBox Files** to Explorer's folder menu, run `windows-explorer.ps1` from the extracted folder. Run it again with `-Uninstall` to remove the entry. A second launch opens the folder in a tab. Settings live under `%APPDATA%\BoxBox\Config`, state and cache under `%LOCALAPPDATA%\BoxBox`, and paired server credentials in Windows Credential Manager.
 
 Windows applications keep using their own Open and Save dialogs. Windows Explorer handles portable devices such as MTP phones. SFTP and FTP mounts use the Linux GVfs integration.
 
@@ -102,6 +102,12 @@ bun run build:desktop
 bun run install:desktop
 ```
 
-On Windows, install stable Rust for <code>x86_64-pc-windows-msvc</code>, the Visual Studio C++ Build Tools, and a Windows SDK with the x64 <code>fxc.exe</code>. Set <code>GPUI_FXC_PATH</code> to that executable and run <code>pwsh -File scripts/package-windows.ps1</code> from the checkout. The ZIP lands under <code>dist/release/</code>.
+On Windows, install stable Rust for `x86_64-pc-windows-msvc`, the Visual Studio C++ Build Tools, and a Windows SDK with the x64 `fxc.exe`. Set `GPUI_FXC_PATH` to that executable and package from the checkout:
+
+```powershell
+pwsh -File scripts/package-windows.ps1
+```
+
+The ZIP lands under `dist/release/`.
 
 See the [desktop README](https://github.com/jR4dh3y/BoxBox/blob/master/desktop/README.md) for development, profiling and tests, and [the paired-client API](connect-api.md) for the authorization contract.

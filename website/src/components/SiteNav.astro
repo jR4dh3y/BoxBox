@@ -2,29 +2,74 @@
 import GitHubLink from './GitHubLink.astro';
 import ReleaseLink from './ReleaseLink.astro';
 import Wordmark from './Wordmark.astro';
+
+interface Crumb {
+  label: string;
+  href: string;
+  badge?: string;
+}
+
+interface Props {
+  showStarDoodle?: boolean;
+  showReleaseLink?: boolean;
+  crumb?: Crumb;
+}
+
+const { showStarDoodle = true, showReleaseLink = true, crumb } = Astro.props;
+const currentPath = Astro.url.pathname.replace(/\/+$/, '') || '/';
+const docsActive = currentPath === '/docs' || currentPath.startsWith('/docs/');
+const crumbActive = crumb ? currentPath === crumb.href.replace(/\/+$/, '') : false;
 ---
 
-<header class="relative z-20 mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-5 md:px-8">
-  <a href="/" aria-label="BoxBox home" class="inline-flex min-h-11 items-center">
-    <Wordmark id="nav-logo" class="h-7 w-auto" />
-  </a>
-  <nav aria-label="Primary" class="flex items-center gap-1 text-sm font-medium text-text-secondary">
-    <ReleaseLink />
-    <a href="/docs/" class="inline-flex min-h-11 items-center rounded px-3 transition-colors hover:text-white">Docs</a>
+<header class="relative z-20 mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-5 py-5 md:px-8">
+  <div class="flex min-w-0 items-center gap-2 sm:gap-2.5">
+    <a href="/" aria-label="BoxBox home" class="inline-flex min-h-11 shrink-0 items-center">
+      <Wordmark id="nav-logo" class="h-6 w-auto sm:h-7" />
+    </a>
+    {crumb && (
+      <>
+        <span class="hidden text-border-primary select-none sm:inline" aria-hidden="true">/</span>
+        <a
+          href={crumb.href}
+          aria-current={crumbActive ? 'page' : undefined}
+          class="hidden min-h-11 items-center rounded px-1 text-sm font-medium text-text-secondary transition-colors hover:text-white aria-[current=page]:text-white sm:inline-flex"
+        >
+          {crumb.label}
+        </a>
+        {crumb.badge && (
+          <>
+            <span class="hidden text-border-primary select-none sm:inline" aria-hidden="true">/</span>
+            <span class="hidden font-mono text-xs text-text-secondary sm:inline">{crumb.badge}</span>
+          </>
+        )}
+      </>
+    )}
+  </div>
+  <nav aria-label="Primary" class="flex shrink-0 items-center gap-0.5 text-sm font-medium text-text-secondary sm:gap-1">
+    {showReleaseLink && <ReleaseLink />}
+    <a
+      href="/docs/"
+      aria-current={docsActive ? 'page' : undefined}
+      class="inline-flex min-h-11 items-center rounded px-2.5 transition-colors hover:text-white aria-[current=page]:text-white sm:px-3"
+    >
+      Docs
+    </a>
     <span class="relative">
       <GitHubLink />
-      <span class="star-doodle" aria-hidden="true">
-        <svg class="star-doodle-arrow" width="40" height="42" viewBox="0 0 40 42" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <path pathLength="1" d="M31 40c3-11 0-23-15-32" />
-          <path class="star-doodle-head" pathLength="1" d="M15 21c0-5 0-9 1-13 4 1 8 2 12 2" />
-        </svg>
-        <span class="star-doodle-text">
-          give me a star
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3.2l2.5 5.6 6.1.5-4.7 4 1.6 6-5.5-3.3-5.3 3.4 1.4-6.1-4.7-3.9 6.1-.6z" />
+      {showStarDoodle && (
+        <span class="star-doodle" aria-hidden="true">
+          <svg class="star-doodle-arrow" width="40" height="42" viewBox="0 0 40 42" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path pathLength="1" d="M31 40c3-11 0-23-15-32" />
+            <path class="star-doodle-head" pathLength="1" d="M15 21c0-5 0-9 1-13 4 1 8 2 12 2" />
           </svg>
+          <span class="star-doodle-text">
+            give me a star
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3.2l2.5 5.6 6.1.5-4.7 4 1.6 6-5.5-3.3-5.3 3.4 1.4-6.1-4.7-3.9 6.1-.6z" />
+            </svg>
+          </span>
         </span>
-      </span>
+      )}
     </span>
   </nav>
 </header>

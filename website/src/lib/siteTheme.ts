@@ -5,11 +5,11 @@
 export type Theme = { name: string; wallpaper: string; accent: string; glow: string };
 
 export const themes: readonly Theme[] = [
-  { name: 'Evernight', wallpaper: '/wallpapers/evernight.png', accent: '#a892ff', glow: 'rgba(146, 124, 255, 0.26)' },
-  { name: 'Daylight', wallpaper: '/wallpapers/light.png', accent: '#5ea8ff', glow: 'rgba(94, 168, 255, 0.28)' },
-  { name: 'Lucy', wallpaper: '/wallpapers/lucy.jpeg', accent: '#ff7ab8', glow: 'rgba(255, 122, 184, 0.28)' },
-  { name: 'Minami', wallpaper: '/wallpapers/minami.jpg', accent: '#7ed3ff', glow: 'rgba(126, 211, 255, 0.24)' },
-  { name: 'Summer', wallpaper: '/wallpapers/summer_1.png', accent: '#ff9f70', glow: 'rgba(255, 159, 112, 0.26)' }
+  { name: 'Evernight', wallpaper: '/wallpapers/evernight.webp', accent: '#a892ff', glow: 'rgba(146, 124, 255, 0.26)' },
+  { name: 'Daylight', wallpaper: '/wallpapers/light.webp', accent: '#5ea8ff', glow: 'rgba(94, 168, 255, 0.28)' },
+  { name: 'Lucy', wallpaper: '/wallpapers/lucy.webp', accent: '#ff7ab8', glow: 'rgba(255, 122, 184, 0.28)' },
+  { name: 'Minami', wallpaper: '/wallpapers/minami.webp', accent: '#7ed3ff', glow: 'rgba(126, 211, 255, 0.24)' },
+  { name: 'Summer', wallpaper: '/wallpapers/summer_1.webp', accent: '#ff9f70', glow: 'rgba(255, 159, 112, 0.26)' }
 ];
 
 const CYCLE_MS = 4800;

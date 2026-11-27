@@ -7,6 +7,7 @@ This guide covers the local BoxBox development workflow.
 - Go 1.27+
 - Bun 1.1+
 - Node.js 22+ for Svelte tooling compatibility
+- Rust (stable) for the native desktop app in `desktop/`
 - `air` for backend hot reload:
 
 ```bash
@@ -29,10 +30,15 @@ Dockerfile    Single-container production build
 
 ## Install Dependencies
 
+Each JavaScript package has its own `bun.lock`:
+
 ```bash
-bun install
+bun install --cwd frontend
+bun install --cwd website
 cd backend && go mod download
 ```
+
+Rust dependencies are tracked in `desktop/Cargo.lock` and downloaded automatically by Cargo on the first build.
 
 ## Run the Product App
 
@@ -76,6 +82,20 @@ Frontend:
 
 ```bash
 bun run --cwd frontend dev
+```
+
+Native desktop app (from the repository root; install the [source-build prerequisites](desktop.md#build-from-source) first):
+
+```bash
+bun run dev:desktop
+bun run check:desktop
+bun run test:desktop
+```
+
+Marketing website:
+
+```bash
+bun run --cwd website dev
 ```
 
 ## Build

@@ -1,9 +1,11 @@
 ---
 import Layout from './Layout.astro';
-import { ArrowLeft } from '@lucide/astro';
+import { ArrowLeft, ArrowRight, ChevronDown } from '@lucide/astro';
 import { ClientRouter } from 'astro:transitions';
 import GitHubLink from '../components/GitHubLink.astro';
-import type { DocHeading, DocNavSection, DocPage } from '../lib/docs';
+import ReleaseLink from '../components/ReleaseLink.astro';
+import Wordmark from '../components/Wordmark.astro';
+import { getAdjacentDocs, type DocHeading, type DocNavSection, type DocPage } from '../lib/docs';
 
 interface Props {
 	doc: DocPage;
@@ -11,36 +13,62 @@ interface Props {
 }
 
 const { doc, sections } = Astro.props;
+const { prev, next } = getAdjacentDocs(doc.slug, sections);
 
 function hrefFor(slug: string) {
 	return slug === 'index' ? '/docs/' : `/docs/${slug}/`;
 }
 ---
 
-<Layout title={`${doc.title} | BoxBox Docs`} description={doc.description}>
+<Layout title={`${doc.title} | BoxBox Docs`} description={doc.description} showDotGrid={false}>
   <!-- Moving between docs pages swaps the article in place of a full page
        load; the header and sidebar persist, and links prefetch on hover. -->
   <ClientRouter slot="head" />
   <main class="relative z-10 min-h-screen bg-[#0d0d0d] text-text-primary">
     <header transition:persist="docs-header" class="sticky top-0 z-50 border-b border-border-primary bg-[#0d0d0d]/95 backdrop-blur">
-      <div class="mx-auto flex h-14 max-w-360 items-center justify-between gap-4 px-4">
+      <div class="mx-auto flex h-14 max-w-360 items-center justify-between gap-4 px-5 md:px-8">
         <!-- The landing page does not use the router, so this is a normal load. -->
-        <a href="/" data-astro-reload class="flex items-center gap-2 text-sm font-semibold text-text-secondary transition-colors hover:text-white">
-          <ArrowLeft class="h-4 w-4" />
-          <img src="/logo-boxbox-3d.svg" alt="BoxBox" width="570" height="410" class="h-9 w-auto" />
-        </a>
-        <nav aria-label="Primary" class="flex items-center text-sm font-medium text-text-secondary">
+        <div class="flex min-w-0 items-center gap-2 sm:gap-2.5">
+          <a href="/" data-astro-reload aria-label="BoxBox home" class="inline-flex min-h-11 shrink-0 items-center">
+            <Wordmark id="docs-nav-logo" class="h-6 w-auto sm:h-7" />
+          </a>
+          <span class="hidden text-border-primary select-none sm:inline" aria-hidden="true">/</span>
+          <a
+            href="/docs/"
+            class="hidden min-h-11 items-center rounded px-1 text-sm font-medium text-white transition-colors hover:text-white sm:inline-flex"
+          >
+            Docs
+          </a>
+        </div>
+        <nav aria-label="Primary" class="flex shrink-0 items-center gap-0.5 text-sm font-medium text-text-secondary sm:gap-1">
+          <ReleaseLink />
+          <a
+            href="/download/"
+            data-astro-reload
+            class="inline-flex min-h-11 items-center rounded px-2.5 transition-colors hover:text-white sm:px-3"
+          >
+            Download
+          </a>
           <GitHubLink />
         </nav>
       </div>
     </header>
 
     <div class="mx-auto grid max-w-360 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_240px]">
-      <aside transition:persist="docs-sidebar" class="min-w-0 border-b border-border-primary bg-[#101010] lg:sticky lg:top-[calc(3.5rem_+_1px)] lg:h-[calc(100vh_-_3.5rem_-_1px)] lg:border-b-0 lg:border-r lg:bg-transparent">
-        <nav data-docs-sidebar class="min-w-0 px-4 py-4 lg:h-full lg:overflow-y-auto lg:py-8" aria-label="Documentation">
+      <!-- Collapsible drawer on mobile/tablet so readers see the article immediately. -->
+      <details data-docs-mobile-nav class="border-b border-border-primary bg-[#101010] lg:hidden">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-3.5 text-sm font-medium text-text-primary select-none">
+          <span class="truncate">
+            <span class="text-text-muted">Docs</span>
+            <span class="mx-1.5 text-border-primary" aria-hidden="true">/</span>
+            <span>{doc.title}</span>
+          </span>
+          <ChevronDown class="docs-mobile-chevron h-4 w-4 shrink-0 text-text-muted transition-transform" aria-hidden="true" />
+        </summary>
+        <nav class="border-t border-border-secondary px-4 py-4" aria-label="Documentation">
           {sections.map((section) => (
             <div class="mb-5 last:mb-0">
-              <div class="px-3 py-2 text-sm font-semibold text-text-primary">{section.title}</div>
+              <div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text-muted">{section.title}</div>
               <ul class="ml-3 flex flex-col border-l border-border-primary">
                 {section.items.map((item) => (
                   <li>
@@ -48,7 +76,31 @@ function hrefFor(slug: string) {
                       href={hrefFor(item.slug)}
                       data-doc-link
                       aria-current={item.slug === doc.slug ? 'page' : undefined}
-                      class="-ml-px block border-l border-transparent py-1.5 pr-3 pl-4 text-sm text-text-secondary transition-colors hover:border-text-muted hover:text-white aria-[current=page]:border-white aria-[current=page]:font-medium aria-[current=page]:text-white"
+                      class="-ml-px block border-l border-transparent py-1.5 pr-3 pl-4 text-sm text-text-secondary transition-colors hover:border-text-muted hover:text-white aria-[current=page]:border-accent aria-[current=page]:font-medium aria-[current=page]:text-white"
+                    >
+                      {item.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </nav>
+      </details>
+
+      <aside transition:persist="docs-sidebar" class="hidden min-w-0 border-r border-border-primary lg:sticky lg:top-[calc(3.5rem_+_1px)] lg:block lg:h-[calc(100vh_-_3.5rem_-_1px)]">
+        <nav data-docs-sidebar class="mock-scrollbar min-w-0 px-4 py-8 lg:h-full lg:overflow-y-auto" aria-label="Documentation">
+          {sections.map((section) => (
+            <div class="mb-6 last:mb-0">
+              <div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-text-muted">{section.title}</div>
+              <ul class="ml-3 mt-1 flex flex-col border-l border-border-primary">
+                {section.items.map((item) => (
+                  <li>
+                    <a
+                      href={hrefFor(item.slug)}
+                      data-doc-link
+                      aria-current={item.slug === doc.slug ? 'page' : undefined}
+                      class="-ml-px block border-l border-transparent py-1.5 pr-3 pl-4 text-sm text-text-secondary transition-colors hover:border-text-muted hover:text-white aria-[current=page]:border-accent aria-[current=page]:font-medium aria-[current=page]:text-white"
                     >
                       {item.title}
                     </a>
@@ -60,20 +112,54 @@ function hrefFor(slug: string) {
         </nav>
       </aside>
 
-      <article class="min-w-0 px-4 py-10 md:px-8 lg:px-12 lg:py-14">
+      <article class="min-w-0 px-5 py-10 md:px-8 lg:px-12 lg:py-14">
         <header class="mb-10 border-b border-border-primary pb-8">
-          <h1 class="text-4xl font-black tracking-tight text-white md:text-5xl" style="font-family: 'Bricolage Grotesque', sans-serif;">
+          <h1 class="font-display text-4xl font-extrabold tracking-[-0.03em] text-white md:text-5xl">
             {doc.title}
           </h1>
           {doc.description && <p class="mt-4 max-w-3xl text-lg leading-relaxed text-text-secondary">{doc.description}</p>}
         </header>
 
         <div class="doc-content" set:html={doc.html} />
+
+        {(prev || next) && (
+          <nav aria-label="Page navigation" class="mt-14 grid max-w-[860px] gap-4 border-t border-border-primary pt-8 sm:grid-cols-2">
+            {prev ? (
+              <a
+                href={hrefFor(prev.slug)}
+                class="group flex flex-col rounded-xl border border-border-secondary bg-[#121212] p-4 transition-colors hover:border-border-primary hover:bg-[#161616]"
+              >
+                <span class="inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.12em] text-text-muted uppercase">
+                  <ArrowLeft class="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" aria-hidden="true" />
+                  Previous
+                </span>
+                <span class="mt-1.5 font-display text-base font-bold text-text-primary transition-colors group-hover:text-white">
+                  {prev.title}
+                </span>
+              </a>
+            ) : <div class="hidden sm:block" />}
+
+            {next ? (
+              <a
+                href={hrefFor(next.slug)}
+                class="group flex flex-col items-end rounded-xl border border-border-secondary bg-[#121212] p-4 text-right transition-colors hover:border-border-primary hover:bg-[#161616]"
+              >
+                <span class="inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.12em] text-text-muted uppercase">
+                  Next
+                  <ArrowRight class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                </span>
+                <span class="mt-1.5 font-display text-base font-bold text-text-primary transition-colors group-hover:text-white">
+                  {next.title}
+                </span>
+              </a>
+            ) : null}
+          </nav>
+        )}
       </article>
 
       <aside class="hidden border-l border-border-primary px-5 py-14 xl:sticky xl:top-[calc(3.5rem_+_1px)] xl:block xl:h-[calc(100vh_-_3.5rem_-_1px)]">
         <div>
-          <div class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">On This Page</div>
+          <div class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">On this page</div>
           {doc.headings.length > 0 ? (
             <nav class="flex max-h-[calc(100vh-9rem)] flex-col gap-2 overflow-y-auto pr-1 mock-scrollbar" aria-label="On this page">
               {doc.headings.map((heading: DocHeading) => (
@@ -97,6 +183,8 @@ function hrefFor(slug: string) {
   </main>
 
   <script>
+    import { mountCodeCopyButtons } from '../lib/codeCopy';
+
     // With the client router this module runs once; astro:page-load fires on
     // the first load and after each docs page swap.
     let tocLinks: HTMLAnchorElement[] = [];
@@ -173,6 +261,7 @@ function hrefFor(slug: string) {
 
     document.addEventListener('astro:page-load', () => {
       markCurrentDoc();
+      mountCodeCopyButtons();
       tocLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
       headings = tocLinks
         .map((link): HTMLElement | null => {
@@ -186,4 +275,9 @@ function hrefFor(slug: string) {
     window.addEventListener('resize', requestTocUpdate);
     window.addEventListener('hashchange', requestTocUpdate);
   </script>
+
+  <style>
+    [data-docs-mobile-nav] summary::-webkit-details-marker { display: none; }
+    [data-docs-mobile-nav][open] .docs-mobile-chevron { transform: rotate(180deg); }
+  </style>
 </Layout>
