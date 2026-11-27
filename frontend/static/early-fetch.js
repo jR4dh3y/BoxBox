@@ -19,8 +19,7 @@
 
 	const list = (token) =>
 		fetch(url, {
-			headers: token ? { Authorization: `Bearer ${token}` } : {},
-			credentials: 'same-origin'
+			headers: token ? { Authorization: `Bearer ${token}` } : {}
 		}).then(
 			(response) => (response.ok ? response : null),
 			() => null
@@ -29,17 +28,13 @@
 		document.querySelector('meta[name="boxbox-dev-mode"]')?.getAttribute('content') === 'true';
 	const session = isDevelopment
 		? null
-		: fetch('/api/v1/auth/refresh', { method: 'POST', credentials: 'same-origin' })
-				.then((response) =>
-					response.ok
-						? response.json()
-						: response.status === 401
-							? response.json().then(
-									(body) => ({ rejected: true, error: body?.error, code: body?.code }),
-									() => ({ rejected: true })
-								)
-							: null
-				)
+		: fetch('/api/v1/auth/refresh', { method: 'POST' })
+				.then(async (response) => {
+					if (response.ok) return response.json();
+					if (response.status !== 401) return null;
+					const body = await response.json().catch(() => null);
+					return { rejected: true, error: body?.error, code: body?.code };
+				})
 				.catch(() => null);
 
 	window.boxboxEarly = {
