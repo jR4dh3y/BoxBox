@@ -2,7 +2,7 @@
 mod media;
 mod render;
 
-pub use render::{decode_supported, dimensions_supported, encode_png};
+pub use render::{decode_png, decode_supported, dimensions_supported, encode_png};
 use render::{MAX_SOURCE_BYTES, RenderError};
 use std::{
     fs::File,
@@ -107,6 +107,17 @@ pub fn thumbnail_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn png_decoding_reserves_output_and_encoding_converts_float_images() {
+        let png = encode_png(&image::DynamicImage::new_rgb32f(64, 64)).unwrap();
+        let mut limits = image::Limits::default();
+        limits.max_alloc = Some(8 << 10);
+        assert!(matches!(decode_png(Cursor::new(&png), limits.clone()), Err(image::ImageError::Limits(_))));
+        assert!(matches!(decode_supported(Cursor::new(&png), limits), Err(image::ImageError::Limits(_))));
+        let decoded = decode_png(Cursor::new(&png), image::Limits::default()).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (64, 64));
+    }
 
     #[test]
     fn images_render_and_bad_input_is_refused() {

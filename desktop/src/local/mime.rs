@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 struct Glob {
+    order: usize,
     weight: u32,
     pattern: String,
     mime: String,
@@ -15,6 +16,7 @@ struct Glob {
 }
 
 struct GlobEntry {
+    order: usize,
     weight: u32,
     pattern_len: usize,
     mime: String,
@@ -23,6 +25,7 @@ struct GlobEntry {
 
 #[derive(Default)]
 struct Database {
+    next_glob_order: usize,
     /// Exact filename globs (no `*` or `?`), indexed by pattern.
     literals_ci: HashMap<String, Vec<GlobEntry>>,
     literals_cs: HashMap<String, Vec<GlobEntry>>,
@@ -41,9 +44,12 @@ struct Database {
 
 impl Database {
     fn add_globs(&mut self, globs: impl IntoIterator<Item = Glob>) {
-        for glob in globs {
+        for mut glob in globs {
+            glob.order = self.next_glob_order;
+            self.next_glob_order += 1;
             if !glob.pattern.contains(['*', '?']) {
                 let entry = GlobEntry {
+                    order: glob.order,
                     weight: glob.weight,
                     pattern_len: glob.pattern.len(),
                     mime: glob.mime,
@@ -54,6 +60,7 @@ impl Database {
             } else if let Some(suffix) = glob.pattern.strip_prefix('*').filter(|s| !s.is_empty() && !s.contains(['*', '?'])) {
                 if suffix.starts_with('.') {
                     let entry = GlobEntry {
+                        order: glob.order,
                         weight: glob.weight,
                         pattern_len: glob.pattern.len(),
                         mime: glob.mime,
@@ -121,6 +128,7 @@ fn parse_globs(text: &str) -> impl Iterator<Item = Glob> + '_ {
         let pattern = fields.next()?;
         let case_sensitive = fields.next().is_some_and(|flags| flags.split(',').any(|flag| flag == "cs"));
         (pattern != "__NOGLOBS__").then(|| Glob {
+            order: 0,
             weight,
             pattern: if case_sensitive { pattern.to_string() } else { pattern.to_lowercase() },
             mime: mime.to_string(),
@@ -144,15 +152,16 @@ fn matches(pattern: &str, name: &str) -> bool {
 }
 
 fn consider<'a>(
-    best: &mut Option<((u32, bool, usize), &'a str)>,
+    best: &mut Option<((u32, bool, usize, usize), &'a str)>,
     weight: u32,
     case_sensitive: bool,
     pattern_len: usize,
+    order: usize,
     mime: &'a str,
 ) {
-    let key = (weight, case_sensitive, pattern_len);
-    // Preserve `Iterator::max_by_key` tie-breaking (highest weight, exact-case, longest).
-    if best.is_none_or(|(best_key, _)| key >= best_key) {
+    let key = (weight, case_sensitive, pattern_len, order);
+    // Preserve `Iterator::max_by_key` tie-breaking when rules have equal priority.
+    if best.is_none_or(|(best_key, _)| key > best_key) {
         *best = Some((key, mime));
     }
 }
@@ -163,35 +172,35 @@ fn lookup(database: &Database, name: &str) -> Option<String> {
     } else {
         Cow::Owned(name.to_lowercase())
     };
-    let mut best: Option<((u32, bool, usize), &str)> = None;
+    let mut best: Option<((u32, bool, usize, usize), &str)> = None;
     if let Some(entries) = database.literals_ci.get(lower.as_ref()) {
         for entry in entries {
-            consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, &entry.mime);
+            consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, entry.order, &entry.mime);
         }
     }
     if let Some(entries) = database.literals_cs.get(name) {
         for entry in entries {
-            consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, &entry.mime);
+            consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, entry.order, &entry.mime);
         }
     }
     for (dot, _) in lower.match_indices('.') {
         if let Some(entries) = database.suffixes_ci.get(&lower[dot..]) {
             for entry in entries {
-                consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, &entry.mime);
+                consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, entry.order, &entry.mime);
             }
         }
     }
     for (dot, _) in name.match_indices('.') {
         if let Some(entries) = database.suffixes_cs.get(&name[dot..]) {
             for entry in entries {
-                consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, &entry.mime);
+                consider(&mut best, entry.weight, entry.case_sensitive, entry.pattern_len, entry.order, &entry.mime);
             }
         }
     }
     for glob in &database.complex {
         let candidate = if glob.case_sensitive { name } else { lower.as_ref() };
         if matches(&glob.pattern, candidate) {
-            consider(&mut best, glob.weight, glob.case_sensitive, glob.pattern.len(), &glob.mime);
+            consider(&mut best, glob.weight, glob.case_sensitive, glob.pattern.len(), glob.order, &glob.mime);
         }
     }
     best.map(|(_, mime)| canonical_in(database, mime).to_string())
@@ -287,6 +296,15 @@ mod tests {
         assert_eq!(lookup(&database, "notes").as_deref(), None);
         assert_eq!(lookup(&database, "vidéo.mp4").as_deref(), Some("video/mp4"));
         assert_eq!(lookup(&database, "ééé").as_deref(), None);
+    }
+
+    #[test]
+    fn equally_ranked_rules_use_the_last_match_across_indexes() {
+        let mut database = Database::default();
+        database.add_globs(parse_globs("50:text/x-special:?.c\n50:text/x-csrc:*.c"));
+        assert_eq!(lookup(&database, "a.c").as_deref(), Some("text/x-csrc"));
+        database.add_globs(parse_globs("50:text/x-literal:a.c"));
+        assert_eq!(lookup(&database, "a.c").as_deref(), Some("text/x-literal"));
     }
 
     #[test]

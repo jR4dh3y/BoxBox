@@ -291,7 +291,7 @@ impl Kind {
             if is_single_dotfile(name) {
                 return Self::Config;
             }
-            if name.len() >= 3 && name[..3].eq_ignore_ascii_case("id_") {
+            if name.get(..3).is_some_and(|prefix| prefix.eq_ignore_ascii_case("id_")) {
                 return Self::Key;
             }
             return Self::Other;
@@ -415,6 +415,9 @@ mod tests {
         assert_eq!(file_icon("clip.MP4", false), "file-play");
         assert_eq!(file_icon("ubuntu.iso", false), "disc-3");
         assert_eq!(file_icon("id_ed25519", false), "file-key");
+        assert_eq!(file_icon("ID_é", false), "file-key");
+        assert_eq!(type_description("éé"), "File");
+        assert_eq!(type_description("😀"), "File");
         assert_eq!(Kind::of("report.pdf", false).tint(), Some(0xf87171));
         assert_eq!(file_icon("docs", true), "folder");
     }

@@ -44,7 +44,7 @@ fn unsupported_format(format: ImageFormat) -> ImageError {
 /// unused codecs (`exr`, `hdr`, `pnm`, `tga`, `dds`, `ff`) that `gpui` enables on `image`.
 fn open_supported_decoder<'a, R: BufRead + Seek + 'a>(
     source: R,
-    limits: Limits,
+    limits: &Limits,
 ) -> Result<Box<dyn ImageDecoder + 'a>, ImageError> {
     let reader = ImageReader::new(source).with_guessed_format()?;
     let format = reader.format().ok_or_else(|| {
@@ -56,7 +56,7 @@ fn open_supported_decoder<'a, R: BufRead + Seek + 'a>(
     let inner = reader.into_inner();
     let mut decoder: Box<dyn ImageDecoder + 'a> = match format {
         ImageFormat::Jpeg => Box::new(JpegDecoder::new(inner)?),
-        ImageFormat::Png => Box::new(PngDecoder::new(inner)?),
+        ImageFormat::Png => Box::new(PngDecoder::with_limits(inner, limits.clone())?),
         ImageFormat::Gif => Box::new(GifDecoder::new(inner)?),
         ImageFormat::WebP => Box::new(WebPDecoder::new(inner)?),
         ImageFormat::Bmp => Box::new(BmpDecoder::new(inner)?),
@@ -65,7 +65,7 @@ fn open_supported_decoder<'a, R: BufRead + Seek + 'a>(
         ImageFormat::Qoi => Box::new(QoiDecoder::new(inner)?),
         other => return Err(unsupported_format(other)),
     };
-    decoder.set_limits(limits)?;
+    decoder.set_limits(limits.clone())?;
     Ok(decoder)
 }
 
@@ -73,24 +73,37 @@ pub fn decode_supported<R: BufRead + Seek>(
     source: R,
     limits: Limits,
 ) -> Result<DynamicImage, ImageError> {
-    let decoder = open_supported_decoder(source, limits)?;
+    let decoder = open_supported_decoder(source, &limits)?;
+    decode_with_limits(decoder, limits)
+}
+
+pub fn decode_png<R: BufRead + Seek>(source: R, limits: Limits) -> Result<DynamicImage, ImageError> {
+    let decoder = PngDecoder::with_limits(source, limits.clone())?;
+    decode_with_limits(decoder, limits)
+}
+
+fn decode_with_limits(
+    mut decoder: impl ImageDecoder,
+    mut limits: Limits,
+) -> Result<DynamicImage, ImageError> {
+    limits.reserve(decoder.total_bytes())?;
+    decoder.set_limits(limits)?;
     DynamicImage::from_decoder(decoder)
 }
 
 pub fn dimensions_supported<R: BufRead + Seek>(source: R) -> Result<(u32, u32), ImageError> {
-    let decoder = open_supported_decoder(source, Limits::default())?;
+    let decoder = open_supported_decoder(source, &Limits::default())?;
     Ok(decoder.dimensions())
 }
 
 pub fn encode_png(image: &DynamicImage) -> Result<Vec<u8>, ImageError> {
+    let converted = match image.color() {
+        image::ColorType::Rgb32F => Some(DynamicImage::ImageRgb16(image.to_rgb16())),
+        image::ColorType::Rgba32F => Some(DynamicImage::ImageRgba16(image.to_rgba16())),
+        _ => None,
+    };
     let mut output = Vec::new();
-    let color = image.color();
-    PngEncoder::new(&mut output).write_image(
-        image.as_bytes(),
-        image.width(),
-        image.height(),
-        ExtendedColorType::from(color),
-    )?;
+    converted.as_ref().unwrap_or(image).write_with_encoder(PngEncoder::new(&mut output))?;
     Ok(output)
 }
 
@@ -116,7 +129,7 @@ fn resized_rgb<R: BufRead + Seek>(
     limits.max_image_width = Some(8192);
     limits.max_image_height = Some(8192);
     limits.max_alloc = Some(128 << 20);
-    let decoder = open_supported_decoder(source, limits).map_err(image_error)?;
+    let decoder = open_supported_decoder(source, &limits).map_err(image_error)?;
     let (source_width, source_height) = decoder.dimensions();
     if source_width == 0
         || source_height == 0
@@ -124,7 +137,7 @@ fn resized_rgb<R: BufRead + Seek>(
     {
         return Err(RenderError::Limit);
     }
-    let decoded = DynamicImage::from_decoder(decoder).map_err(image_error)?;
+    let decoded = decode_with_limits(decoder, limits).map_err(image_error)?;
     let (target_width, target_height) = fit(source_width, source_height, width, height);
     let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::CatmullRom));
     let mut resizer = Resizer::new();

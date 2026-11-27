@@ -124,8 +124,24 @@ impl super::Context {
         let cache_key = use_cache.then(|| {
             Self::spv_cache_key(&sf, naga_options_base, group_layouts, vertex_fetch_states)
         });
-        if let Some(cached) = cache_key.and_then(|key| self.shader_cache.get_spv(key)) {
-            if cached.group_infos.len() == group_infos.len() {
+        let cached = cache_key
+            .and_then(|key| self.shader_cache.get_spv(key))
+            .filter(|cached| {
+                cached.spv.len() >= 5
+                    && cached.spv[0] == super::shader_cache::SPIRV_MAGIC
+                    && cached.group_infos.len() == group_infos.len()
+                    && cached.group_infos.iter().zip(group_infos.iter()).all(|(src, dst)| {
+                        src.binding_access.len() == dst.binding_access.len()
+                    })
+                    && cached.attribute_mappings.iter().all(|&(buffer, attribute)| {
+                        vertex_fetch_states.get(buffer as usize).is_some_and(|state| {
+                            (attribute as usize) < state.layout.attributes.len()
+                        })
+                    })
+            });
+        if let Some(cached) = cached {
+            let vk_info = vk::ShaderModuleCreateInfo::default().code(&cached.spv);
+            if let Ok(vk_module) = unsafe { self.device.core.create_shader_module(&vk_info, None) } {
                 for (dst, src) in group_infos.iter_mut().zip(&cached.group_infos) {
                     dst.visibility |= crate::ShaderVisibility::from_bits_truncate(src.visibility);
                     for (dst_acc, &src_acc) in
@@ -134,13 +150,6 @@ impl super::Context {
                         *dst_acc |= naga::StorageAccess::from_bits_truncate(src_acc);
                     }
                 }
-                let vk_info = vk::ShaderModuleCreateInfo::default().code(&cached.spv);
-                let vk_module = unsafe {
-                    self.device
-                        .core
-                        .create_shader_module(&vk_info, None)
-                        .unwrap()
-                };
                 let vk_stage = match cached.stage {
                     naga::ShaderStage::Compute => vk::ShaderStageFlags::COMPUTE,
                     naga::ShaderStage::Vertex => vk::ShaderStageFlags::VERTEX,

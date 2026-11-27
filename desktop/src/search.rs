@@ -95,11 +95,7 @@ impl Query {
                 lower.push(byte.to_ascii_lowercase() as char);
             }
         } else {
-            for ch in name.chars() {
-                for lc in ch.to_lowercase() {
-                    lower.push(lc);
-                }
-            }
+            lower.push_str(&name.to_lowercase());
         }
         let mut chars_ready = false;
         let mut weakest = Rank::Exact;
@@ -264,6 +260,7 @@ mod tests {
     #[test]
     fn a_name_ranks_by_where_the_text_sits() {
         assert_eq!(rank("notes", "notes"), Some(Rank::Exact));
+        assert_eq!(rank("ΟΣ", "ΟΣ"), Some(Rank::Exact));
         assert_eq!(rank("notes", "Notes.txt"), Some(Rank::Exact));
         assert_eq!(rank("note", "notes.txt"), Some(Rank::Prefix));
         assert_eq!(rank("notes", "my-notes.txt"), Some(Rank::Word));

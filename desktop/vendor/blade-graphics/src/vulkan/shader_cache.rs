@@ -7,11 +7,16 @@
 //! `naga` work on warm launches. (BoxBox patch)
 
 use std::collections::HashMap;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
-const MAGIC: &[u8; 8] = b"BBSC0001";
+const MAGIC: &[u8; 8] = b"BBSC0002";
+const COMPILER: &[u8] = env!("BOXBOX_SHADER_COMPILER").as_bytes();
+const CHECKSUM_BYTES: usize = 16;
+pub(crate) const SPIRV_MAGIC: u32 = 0x0723_0203;
+static TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Deterministic 128-bit FNV-1a-style hash (stable across Rust releases).
 pub(crate) struct Hasher128 {
@@ -164,23 +169,27 @@ impl ShaderCache {
     }
 
     pub(crate) fn save_if_dirty(&self) {
-        if !self.dirty.swap(false, Ordering::AcqRel) {
-            return;
-        }
         let Some(ref file) = self.file else {
             return;
         };
-        let bytes = {
-            let Ok(store) = self.store.lock() else {
-                return;
-            };
-            encode(&store)
+        let Ok(store) = self.store.lock() else {
+            return;
         };
-        let temporary = file.with_extension(format!("{}.tmp", std::process::id()));
-        if std::fs::write(&temporary, &bytes)
-            .and_then(|()| std::fs::rename(&temporary, file))
-            .is_err()
-        {
+        if !self.dirty.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        let bytes = encode(&store);
+        let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let temporary = file.with_extension(format!("{}.{id}.tmp", std::process::id()));
+        let result = (|| -> std::io::Result<()> {
+            let mut output = std::fs::File::create(&temporary)?;
+            output.write_all(&bytes)?;
+            output.sync_all()?;
+            drop(output);
+            std::fs::rename(&temporary, file)
+        })();
+        if result.is_err() {
+            self.dirty.store(true, Ordering::Release);
             let _ = std::fs::remove_file(&temporary);
         }
     }
@@ -207,6 +216,10 @@ fn u8_to_stage(value: u8) -> Option<naga::ShaderStage> {
 fn encode(store: &Store) -> Vec<u8> {
     let mut out = Vec::with_capacity(64 * 1024);
     out.extend_from_slice(MAGIC);
+    out.extend_from_slice(COMPILER);
+    let checksum_start = out.len();
+    out.extend_from_slice(&[0; CHECKSUM_BYTES]);
+    let payload_start = out.len();
     out.extend_from_slice(&(store.structs.len() as u32).to_le_bytes());
     for (&(hash, len, ray_query), list) in &store.structs {
         out.extend_from_slice(&hash[0].to_le_bytes());
@@ -251,7 +264,19 @@ fn encode(store: &Store) -> Vec<u8> {
             out.extend_from_slice(&attribute_index.to_le_bytes());
         }
     }
+    let checksum = checksum(&out[payload_start..]);
+    out[checksum_start..payload_start].copy_from_slice(&checksum);
     out
+}
+
+fn checksum(payload: &[u8]) -> [u8; CHECKSUM_BYTES] {
+    let mut hasher = Hasher128::new();
+    hasher.bytes(payload);
+    let [a, b] = hasher.finish();
+    let mut bytes = [0; CHECKSUM_BYTES];
+    bytes[..8].copy_from_slice(&a.to_le_bytes());
+    bytes[8..].copy_from_slice(&b.to_le_bytes());
+    bytes
 }
 
 struct Reader<'a>(&'a [u8]);
@@ -283,7 +308,10 @@ impl<'a> Reader<'a> {
 
 fn decode(bytes: &[u8]) -> Option<Store> {
     let mut reader = Reader(bytes);
-    if reader.take(8)? != MAGIC {
+    if reader.take(MAGIC.len())? != MAGIC || reader.take(COMPILER.len())? != COMPILER {
+        return None;
+    }
+    if reader.take(CHECKSUM_BYTES)? != checksum(reader.0) {
         return None;
     }
     let mut store = Store::default();
@@ -344,4 +372,43 @@ fn decode(bytes: &[u8]) -> Option<Store> {
         return None;
     }
     Some(store)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_save_stays_dirty_until_retry_succeeds() {
+        let parent = std::env::temp_dir().join(format!("boxbox-shader-retry-{}", std::process::id()));
+        let file = parent.join("shader-cache.bin");
+        let cache = ShaderCache {
+            file: Some(file.clone()),
+            store: Mutex::new(Store::default()),
+            dirty: AtomicBool::new(true),
+        };
+        cache.save_if_dirty();
+        assert!(cache.is_dirty());
+
+        std::fs::create_dir(&parent).unwrap();
+        cache.save_if_dirty();
+        assert!(!cache.is_dirty());
+        assert!(decode(&std::fs::read(file).unwrap()).is_some());
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[test]
+    fn disk_format_rejects_corruption_and_other_compilers() {
+        let bytes = encode(&Store::default());
+        assert!(decode(&bytes).is_some());
+
+        let mut damaged = bytes.clone();
+        *damaged.last_mut().unwrap() ^= 1;
+        assert!(decode(&damaged).is_none());
+        assert!(decode(&bytes[..bytes.len() - 1]).is_none());
+
+        let mut stale = bytes;
+        stale[MAGIC.len()] ^= 1;
+        assert!(decode(&stale).is_none());
+    }
 }

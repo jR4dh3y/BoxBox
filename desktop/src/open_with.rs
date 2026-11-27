@@ -274,21 +274,31 @@ struct CachedMimeApps {
 static MIMEAPPS: Mutex<Option<CachedMimeApps>> = Mutex::new(None);
 
 fn all_associations() -> Arc<HashMap<String, Associations>> {
-    let files = mimeapps_files();
+    associations_for(&mimeapps_files(), &MIMEAPPS)
+}
+
+fn associations_for(
+    files: &[PathBuf],
+    cache: &Mutex<Option<CachedMimeApps>>,
+) -> Arc<HashMap<String, Associations>> {
+    let mut cache = cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let stamps: Vec<_> = files
         .iter()
         .map(|path| (path.clone(), std::fs::metadata(path).and_then(|m| m.modified()).ok()))
         .collect();
-    let mut cache = MIMEAPPS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     match &*cache {
         Some(cached) if cached.stamps == stamps => cached.map.clone(),
         _ => {
             let mut map: HashMap<String, Associations> = HashMap::new();
+            let mut complete = true;
             for (path, stamp) in &stamps {
                 if stamp.is_none() {
                     continue;
                 }
-                let Ok(text) = std::fs::read_to_string(path) else { continue };
+                let Ok(text) = std::fs::read_to_string(path) else {
+                    complete = false;
+                    continue;
+                };
                 let mut section = "";
                 for line in text.lines().map(str::trim) {
                     if let Some(name) = line.strip_prefix('[').and_then(|line| line.strip_suffix(']')) {
@@ -318,7 +328,7 @@ fn all_associations() -> Arc<HashMap<String, Associations>> {
                 }
             }
             let map = Arc::new(map);
-            *cache = Some(CachedMimeApps { stamps, map: map.clone() });
+            *cache = complete.then(|| CachedMimeApps { stamps, map: map.clone() });
             map
         }
     }
@@ -546,6 +556,25 @@ mod tests {
         let names = |apps: &[App]| apps.iter().map(|app| app.name.clone()).collect::<Vec<_>>();
         assert_eq!(names(&apps.recommended), ["Alpha", "Beta"]);
         assert_eq!(names(&apps.other), ["Zed"]);
+    }
+
+    #[test]
+    fn failed_reads_are_retried_at_the_same_mtime() {
+        let root = std::env::temp_dir().join(format!("boxbox-mimeapps-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("mimeapps.list");
+        std::fs::write(&path, [0xff]).unwrap();
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let paths = [path.clone()];
+        let cache = Mutex::new(None);
+        assert!(associations_for(&paths, &cache).is_empty());
+
+        std::fs::write(&path, "[Default Applications]\ntext/plain=editor.desktop;").unwrap();
+        std::fs::File::open(&path).unwrap().set_modified(modified).unwrap();
+        let found = associations_for(&paths, &cache);
+        assert_eq!(found["text/plain"].defaults, ["editor.desktop"]);
+        assert!(Arc::ptr_eq(&found, &associations_for(&paths, &cache)));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

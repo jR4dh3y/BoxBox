@@ -171,38 +171,40 @@ fn copy_directory_contents(
 const COPY_CHUNK: usize = 1024 * 1024;
 
 #[cfg(target_os = "linux")]
-fn copy_in_kernel(input: &File, output: &File) -> Result<bool> {
+fn copy_in_kernel(input: &File, output: &File, expected: u64) -> Result<u64> {
     use std::os::unix::io::AsRawFd as _;
     let (in_fd, out_fd) = (input.as_raw_fd(), output.as_raw_fd());
-    let mut copied_any = false;
-    loop {
+    let mut copied = 0;
+    while copied < expected {
+        let count = (expected - copied).min(COPY_CHUNK as u64) as usize;
         crate::progress::check()?;
         // SAFETY: valid open file descriptors; null offsets advance each fd's offset.
         let written = unsafe {
-            libc::copy_file_range(in_fd, std::ptr::null_mut(), out_fd, std::ptr::null_mut(), COPY_CHUNK, 0)
+            libc::copy_file_range(in_fd, std::ptr::null_mut(), out_fd, std::ptr::null_mut(), count, 0)
         };
         if written > 0 {
-            copied_any = true;
+            copied += written as u64;
             crate::progress::advance(written as u64);
             continue;
         }
         if written == 0 {
-            return Ok(true);
+            break;
         }
         let error = io::Error::last_os_error();
         if error.kind() == io::ErrorKind::Interrupted {
             continue;
         }
-        if !copied_any
+        if copied == 0
             && matches!(
                 error.raw_os_error(),
                 Some(libc::EXDEV | libc::ENOSYS | libc::EINVAL | libc::EOPNOTSUPP | libc::EPERM)
             )
         {
-            return Ok(false);
+            break;
         }
         return Err(error.into());
     }
+    Ok(copied)
 }
 
 fn copy_regular_file(
@@ -249,32 +251,29 @@ fn copy_regular_file(
             .open(destination)
             .with_context(|| format!("cannot create {}", destination.display()))?;
         (|| -> Result<()> {
-            let copied = {
-                #[cfg(target_os = "linux")]
-                {
-                    copy_in_kernel(&input, &output)?
+            #[cfg(target_os = "linux")]
+            let copied = copy_in_kernel(&input, &output, opened.len())?;
+            #[cfg(not(target_os = "linux"))]
+            let copied = 0;
+
+            // Check for EOF with read, even after a full kernel copy. Another
+            // kernel copy at the file-size limit can raise SIGXFSZ before checking EOF.
+            let needed = (opened.len() - copied).clamp(4096, COPY_CHUNK as u64) as usize;
+            if buffer.len() < needed {
+                buffer.resize(needed, 0);
+            }
+            let chunk = &mut buffer[..needed];
+            loop {
+                crate::progress::check()?;
+                let read = match io::Read::read(&mut input, chunk) {
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    result => result?,
+                };
+                if read == 0 {
+                    break;
                 }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    false
-                }
-            };
-            if !copied {
-                // Size the fallback buffer to the file (up to 1 MiB) and reuse it across files.
-                let needed = (opened.len() as usize).clamp(4096, COPY_CHUNK);
-                if buffer.len() < needed {
-                    buffer.resize(needed, 0);
-                }
-                let chunk = &mut buffer[..needed];
-                loop {
-                    crate::progress::check()?;
-                    let read = io::Read::read(&mut input, chunk)?;
-                    if read == 0 {
-                        break;
-                    }
-                    output.write_all(&chunk[..read])?;
-                    crate::progress::advance(read as u64);
-                }
+                output.write_all(&chunk[..read])?;
+                crate::progress::advance(read as u64);
             }
             output.flush()?;
             output.set_permissions(metadata.permissions())?;
@@ -357,4 +356,36 @@ fn create_symlink(source: &Path, link: &Path, metadata: &fs::Metadata) -> Result
         }
     };
     result.with_context(|| format!("cannot create symlink {}", link.display()))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copy_reads_past_zero_metadata_size() {
+        let root = std::env::temp_dir().join(format!("boxbox-copy-proc-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let source = Path::new("/proc/self/cmdline");
+        let target = root.join("cmdline");
+        let expected = fs::read(source).unwrap();
+        assert!(!expected.is_empty());
+        assert_eq!(fs::metadata(source).unwrap().len(), 0);
+        copy_no_overwrite(source, &target, None).unwrap();
+        assert_eq!(fs::read(target).unwrap(), expected);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn copy_finishes_at_a_chunk_boundary() {
+        let root = std::env::temp_dir().join(format!("boxbox-copy-chunk-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let target = root.join("target");
+        let expected = vec![0xa5; COPY_CHUNK];
+        fs::write(&source, &expected).unwrap();
+        copy_no_overwrite(&source, &target, None).unwrap();
+        assert_eq!(fs::read(target).unwrap(), expected);
+        fs::remove_dir_all(root).unwrap();
+    }
 }
