@@ -29,6 +29,8 @@
 		[drive.device || drive.serverName, drive.fsType].filter(Boolean).join(' · ')
 	);
 	const usageLevel = $derived(driveUsageLevel(drive.usedPct));
+	// A drive that cannot say its size keeps every row, as the desktop app's cards do.
+	const usageKnown = $derived(drive.totalBytes > 0 && Number.isFinite(drive.usedPct));
 
 	function handleClickOutside(e: MouseEvent): void {
 		if (name.menu && e.target !== null) name.closeMenu();
@@ -65,12 +67,12 @@
 				<span
 					class="inline-flex shrink-0 items-center rounded bg-surface-elevated px-2 py-0.5 text-xs font-medium whitespace-nowrap text-text-secondary"
 				>
-					{totalFormatted}
+					{usageKnown ? totalFormatted : '—'}
 				</span>
 			</div>
 		{/if}
 		<div class="text-xs text-text-muted" title="{usedFormatted} used · {freeFormatted} free">
-			{usedFormatted} used · {freeFormatted} free
+			{usageKnown ? `${usedFormatted} used · ${freeFormatted} free` : 'Usage unknown'}
 			{#if drive.readOnly}
 				<span class="ml-1 text-warning">· Read-only</span>
 			{/if}
@@ -87,10 +89,18 @@
 
 		<div class="mt-0.5 flex items-center gap-3">
 			<div class="flex-1">
-				<ProgressBar value={drive.usedPct} size="sm" variant={DRIVE_USAGE_BAR[usageLevel]} />
+				<ProgressBar
+					value={usageKnown ? drive.usedPct : 0}
+					size="sm"
+					variant={DRIVE_USAGE_BAR[usageLevel]}
+				/>
 			</div>
-			<span class="shrink-0 text-[11px] font-medium {DRIVE_USAGE_TEXT[usageLevel]}">
-				{drive.usedPct.toFixed(1)}%
+			<span
+				class="shrink-0 text-[11px] font-medium {usageKnown
+					? DRIVE_USAGE_TEXT[usageLevel]
+					: 'text-text-muted'}"
+			>
+				{usageKnown ? `${drive.usedPct.toFixed(1)}%` : '—'}
 			</span>
 		</div>
 	</div>

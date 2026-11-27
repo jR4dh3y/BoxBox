@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { rootLabel } from '#lib/browse/rootLabel.js';
 	import { Columns2, Plus, X } from 'lucide-svelte';
 	import BrowseBrowser from '../BrowseBrowser.svelte';
 	import Sidebar from '../Sidebar.svelte';
@@ -50,7 +51,7 @@
 						? `${catalog.servers.find((server) => server.id === source.serverId)?.name ?? 'Deployment'}${source.path ? ' · ' + source.path.split('/').at(-1) : ''}`
 						: tab.panes[0]?.location.page === 'trash'
 							? 'Trash'
-							: path.split('/').at(-1) || 'This PC'}
+							: path.split('/').at(-1) || rootLabel()}
 				<div
 					class="flex min-w-0 items-center rounded {tab.id === tabs.activeTabId
 						? 'bg-surface-elevated'

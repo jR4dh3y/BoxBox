@@ -1,4 +1,5 @@
-export type SettingsSection = 'general' | 'appearance' | 'links' | 'account' | 'connections';
+export type SettingsSection =
+	'general' | 'appearance' | 'links' | 'account' | 'connections' | 'about';
 
 export interface SettingsSectionEntry {
 	id: SettingsSection;
@@ -14,7 +15,10 @@ export function settingsSections(localDesktop: boolean): SettingsSectionEntry[] 
 		{ id: 'general', label: 'General' },
 		{ id: 'appearance', label: 'Appearance' },
 		{ id: 'links', label: 'Shared links' },
-		localDesktop ? { id: 'connections', label: 'Connections' } : { id: 'account', label: 'Account' }
+		localDesktop
+			? { id: 'connections', label: 'Connections' }
+			: { id: 'account', label: 'Account' },
+		{ id: 'about', label: 'About' }
 	];
 }
 

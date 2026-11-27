@@ -79,16 +79,12 @@ func handle(fsys filesystem.FS, payload []byte, sent *os.File) (response, *os.Fi
 			return fail(err), nil
 		}
 		return response{Infos: entryInfos(entries), Truncated: truncated}, nil
+	case opReadDirPreview:
+		infos, err := filesystem.ReadDirectoryPreview(fsys, path, req.IncludeHidden)
+		return infosReply(infos, false, err), nil
 	case opReadDirFileInfoLimit:
 		infos, truncated, err := fsys.ReadDirFileInfoLimit(path, req.Limit)
-		if err != nil {
-			return fail(err), nil
-		}
-		wire := make([]wireInfo, len(infos))
-		for i, info := range infos {
-			wire[i] = toWireInfo(info)
-		}
-		return response{Infos: wire, Truncated: truncated}, nil
+		return infosReply(infos, truncated, err), nil
 	case opEvalSymlinks:
 		text, err := fsys.EvalSymlinks(path)
 		return textReply(text, err), nil
@@ -114,6 +110,8 @@ func handle(fsys filesystem.FS, payload []byte, sent *os.File) (response, *os.Fi
 		return response{}, file
 	case opRemove:
 		return errReply(fsys.Remove(path)), nil
+	case opRemoveEmptyDirectory:
+		return errReply(fsys.RemoveEmptyDirectory(path)), nil
 	case opRemoveAll:
 		return errReply(fsys.RemoveAll(path)), nil
 	case opRename:
@@ -165,6 +163,17 @@ func entryInfos(entries []fs.DirEntry) []wireInfo {
 		wire[i] = toWireInfo(info)
 	}
 	return wire
+}
+
+func infosReply(infos []fs.FileInfo, truncated bool, err error) response {
+	if err != nil {
+		return errReply(err)
+	}
+	wire := make([]wireInfo, len(infos))
+	for i, info := range infos {
+		wire[i] = toWireInfo(info)
+	}
+	return response{Infos: wire, Truncated: truncated}
 }
 
 func errReply(err error) response { return response{Err: encodeError(err)} }

@@ -11,18 +11,6 @@ export function selectedFileBytes(
 	return total;
 }
 
-/** A checkbox adds or removes one path and leaves the rest of the selection alone. */
-export function withPathSelected(
-	paths: ReadonlySet<string>,
-	path: string,
-	selected: boolean
-): SvelteSet<string> {
-	const next = new SvelteSet(paths);
-	if (selected) next.add(path);
-	else next.delete(path);
-	return next;
-}
-
 /** Paths selected in the current folder or its search results. */
 export function useBrowseSelection() {
 	let paths = $state.raw<Set<string>>(new SvelteSet());

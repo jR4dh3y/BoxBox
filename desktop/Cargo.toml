@@ -1,0 +1,83 @@
+[package]
+name = "boxbox-gpui"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "BoxBox Files: a native file manager for local files and BoxBox servers"
+
+[workspace]
+members = [".", "thumbnail"]
+
+[dependencies]
+anyhow = "1"
+async-channel = "2"
+async-lock = "3"
+boxbox-thumbnail = { version = "0.1.0", path = "thumbnail" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+crc32fast = "1.5.4"
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
+gpui = "0.2.2"
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "ico", "qoi"] }
+libc = "=0.2.189"
+log = "0.4"
+material-colors = "0.4.2"
+resvg = { version = "=0.45.1", default-features = false }
+roxmltree = "0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+shlex = "1"
+unicode-segmentation = "1"
+ureq = { version = "2", features = ["json"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+getrandom = "0.4"
+raw-window-handle = "0.6"
+tempfile = "3"
+url = "2"
+windows = { version = "0.61", features = [
+    "Data_Pdf", "Graphics_Imaging", "Storage_FileProperties", "Storage_Streams",
+    "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_SystemServices", "Win32_System_WinRT",
+    "Win32_UI_Controls", "Win32_UI_Shell_Common", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_Input_KeyboardAndMouse",
+] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Security", "Win32_Security_Credentials", "Win32_Storage_FileSystem",
+    "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole",
+    "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_IO", "Win32_System_Registry", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_NetworkManagement_WNet", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+backhand = { version = "0.25.5", default-features = false, features = ["gzip", "xz", "zstd"] }
+flate2 = "1"
+liblzma = { version = "0.4", default-features = false }
+md-5 = "0.10.6"
+raw-window-handle = "0.6"
+tar = { version = "0.4.46", default-features = false }
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wl-clipboard-rs = "0.9"
+x11-clipboard = "0.9"
+x11rb = "0.13"
+yeslogic-fontconfig-sys = "6.0.1"
+zbus = { version = "5.19", default-features = false, features = ["async-io", "blocking-api"] }
+zstd = { version = "0.13", default-features = false }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[dev-dependencies]
+gpui = { version = "0.2.2", features = ["test-support"] }
+
+# GPUI builds its font list on the UI thread at launch; this fontdb reads it from
+# fontconfig's cache instead of parsing every installed font. See the vendored crate.
+[patch.crates-io]
+fontdb = { path = "vendor/fontdb" }
+# NVIDIA reports the swapchain out of date when the compositor sends new dmabuf
+# feedback, and GPUI only rebuilds it on a resize; the window then stops drawing.
+blade-graphics = { path = "vendor/blade-graphics" }

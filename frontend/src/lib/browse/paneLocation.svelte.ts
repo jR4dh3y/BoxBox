@@ -2,6 +2,7 @@ import { isLocalDesktop } from '#lib/api/desktop.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import type { SortDir, SortField, ViewMode } from '#lib/types/files.js';
 import { parseRemotePath } from '#lib/api/remotePaths.js';
+import type { HistoryPlace } from './location.svelte.js';
 function remotePath(path: string) {
 	const source = parseRemotePath(path);
 	return source.kind === 'remote' ? { id: source.serverId, path: source.path } : null;
@@ -221,6 +222,22 @@ export function usePaneLocation(options: BrowseLocationOptions = {}) {
 			const index = history.findIndex((entry) => sameSnapshot(entry, normalized));
 			if (index >= 0) moveHistory(index);
 			else replaceCurrent(normalized);
+		},
+		/** The pane's own history; its places are not checked, as the pane keeps them. */
+		async historyPlaces(back: boolean): Promise<HistoryPlace[]> {
+			const indexes = back
+				? Array.from({ length: historyIndex }, (_, at) => historyIndex - 1 - at)
+				: Array.from(
+						{ length: history.length - historyIndex - 1 },
+						(_, at) => historyIndex + 1 + at
+					);
+			return indexes.flatMap((index) => {
+				const entry = history[index];
+				return entry && entry.page === 'files' ? [{ index, path: entry.path }] : [];
+			});
+		},
+		travelTo(index: number) {
+			if (index >= 0 && index < history.length) moveHistory(index);
 		},
 		back() {
 			if (canGoBack) moveHistory(historyIndex - 1);

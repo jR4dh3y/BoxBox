@@ -13,16 +13,19 @@
 		Image,
 		Monitor,
 		Music,
-		Server,
+		LayoutDashboard,
 		Star,
 		Video,
 		X
 	} from 'lucide-svelte';
 	import DeploymentIcon from './desktop/DeploymentIcon.svelte';
-	import { isLocalDesktop } from '#lib/api/desktop.js';
+	import { rootLabel } from '#lib/browse/rootLabel.js';
 	import type { DesktopVolume, DesktopVolumeAction } from '#lib/api/desktopVolumes.js';
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import type { MountPoint } from '#lib/api/files.js';
+	import { draggedSources, type FileDropTarget } from '#lib/browse/fileDrag.js';
+	import type { Place } from '#lib/browse/placeMenu.js';
+	import { hoverPoint, type HoverPoint } from '#lib/browse/hoverPoint.js';
 
 	interface Props {
 		currentPath?: string;
@@ -34,9 +37,18 @@
 		onNavigate?: (path: string) => void;
 		/** Path of the folder under the pointer, or null once it leaves */
 		onFolderHover?: (path: string | null) => void;
+		/** The pointer is on a drive's row, or null once it leaves or presses; its card waits for it to rest. */
+		onDriveHover?: (drive: { path: string; name: string; at: HoverPoint } | null) => void;
 		/** On narrow windows the sidebar is a drawer, shown only while this is true. */
 		open?: boolean;
 		onClose?: () => void;
+		/** Drives, places and favorites take dropped files and open when a drag rests on them. */
+		dropTarget?: FileDropTarget;
+		/** Right-click on an entry: its place menu. */
+		onPlaceMenu?: (place: Place, x: number, y: number) => void;
+		/** A drive being renamed from its menu. */
+		renamingDrive?: string | null;
+		onRenameDrive?: (path: string, name: string | null) => void;
 	}
 
 	let {
@@ -48,9 +60,31 @@
 		roots = [],
 		onNavigate,
 		onFolderHover,
+		onDriveHover,
 		open = false,
-		onClose
+		onClose,
+		dropTarget,
+		onPlaceMenu,
+		renamingDrive = null,
+		onRenameDrive
 	}: Props = $props();
+
+	function placeMenu(event: MouseEvent, place: Place) {
+		event.preventDefault();
+		onPlaceMenu?.(place, event.clientX, event.clientY);
+	}
+	// A favorite that is a drive or a place is listed there already.
+	const favorites = $derived(
+		settingsStore.current.favoriteFolders.filter(
+			(folder) => !roots.some((root) => root.name === folder.path)
+		)
+	);
+
+	/** Folders dragged from a BoxBox view, which Favorites can pin. */
+	function draggedFolders(): { name: string; path: string }[] {
+		return (draggedSources() ?? []).filter((source) => source.isDir);
+	}
+	let pinning = $state(false);
 
 	const PLACE_ICONS: Record<string, typeof Folder> = {
 		desktop: Monitor,
@@ -63,15 +97,16 @@
 
 	const drives = $derived([
 		{
-			name: isLocalDesktop() ? 'This PC' : 'This Server',
+			name: rootLabel(),
 			path: '',
 			serverIcon: undefined,
-			icon: Server
+			icon: LayoutDashboard
 		},
 		...roots
 			.filter((root) => root.kind !== 'place')
 			.map((root) => ({
-				name: root.label ?? root.name,
+				// A name given on the drives page or here.
+				name: settingsStore.current.driveNameOverrides[root.name] || (root.label ?? root.name),
 				path: root.name,
 				serverIcon: root.serverIcon,
 				icon: HardDrive
@@ -86,6 +121,11 @@
 				icon: PLACE_ICONS[root.name.toLowerCase()] ?? Folder
 			}))
 	);
+
+	/** Overview's row is the drives page, which shows every card already. */
+	function restOnDrive(drive: { path: string; name: string }, event: PointerEvent) {
+		if (drive.path) onDriveHover?.({ path: drive.path, name: drive.name, at: hoverPoint(event) });
+	}
 
 	function isActive(path: string): boolean {
 		if (path === '') return currentPath === '';
@@ -145,19 +185,53 @@
 		{#if !drivesCollapsed}
 			<div class="pb-2">
 				{#each drives as drive (drive.path)}
-					<button
-						type="button"
-						class="{navItemClass} {isActive(drive.path) ? navItemActiveClass : ''}"
-						onclick={() => handleNavigate(drive.path)}
-						onpointerenter={() => drive.path && onFolderHover?.(drive.path)}
-						onpointerleave={() => onFolderHover?.(null)}
-					>
-						{#if drive.serverIcon}<DeploymentIcon icon={drive.serverIcon} />{:else}<drive.icon
-								size={16}
-								class="shrink-0 opacity-80"
-							/>{/if}
-						<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{drive.name}</span>
-					</button>
+					{#if renamingDrive !== null && renamingDrive === drive.path}
+						<div class="px-3 py-1">
+							<!-- Renaming is rare, so its field loads on first use. -->
+							{#await import('./ui/InlineRename.svelte') then { default: InlineRename }}
+								<InlineRename
+									value={drive.name}
+									onSave={(name) => onRenameDrive?.(drive.path, name || null)}
+									onCancel={() => onRenameDrive?.(drive.path, drive.name)}
+								/>
+							{/await}
+						</div>
+					{:else}
+						<button
+							type="button"
+							class="{navItemClass} {isActive(drive.path) ? navItemActiveClass : ''}"
+							onclick={() => handleNavigate(drive.path)}
+							oncontextmenu={(event) => placeMenu(event, { kind: 'drive', path: drive.path })}
+							class:ring-1={dropTarget?.overPath === drive.path}
+							class:ring-inset={dropTarget?.overPath === drive.path}
+							class:ring-accent={dropTarget?.overPath === drive.path}
+							ondragover={(event) => {
+								if (drive.path && dropTarget?.over(event, drive.path)) event.stopPropagation();
+							}}
+							ondragleave={(event) => dropTarget?.leave(event)}
+							ondrop={(event) => {
+								if (drive.path) dropTarget?.drop(event, drive.path);
+							}}
+							onpointerenter={(event) => {
+								if (drive.path) onFolderHover?.(drive.path);
+								restOnDrive(drive, event);
+							}}
+							onpointermove={(event) => restOnDrive(drive, event)}
+							onpointerleave={() => {
+								onFolderHover?.(null);
+								onDriveHover?.(null);
+							}}
+							onpointerdown={() => onDriveHover?.(null)}
+						>
+							{#if drive.serverIcon}<DeploymentIcon icon={drive.serverIcon} />{:else}<drive.icon
+									size={16}
+									class="shrink-0 opacity-80"
+								/>{/if}
+							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+								>{drive.name}</span
+							>
+						</button>
+					{/if}
 				{/each}
 			</div>
 		{/if}
@@ -184,6 +258,17 @@
 							type="button"
 							class="{navItemClass} {isActive(place.path) ? navItemActiveClass : ''}"
 							onclick={() => handleNavigate(place.path)}
+							oncontextmenu={(event) => placeMenu(event, { kind: 'place', path: place.path })}
+							class:ring-1={dropTarget?.overPath === place.path}
+							class:ring-inset={dropTarget?.overPath === place.path}
+							class:ring-accent={dropTarget?.overPath === place.path}
+							ondragover={(event) => {
+								if (place.path && dropTarget?.over(event, place.path)) event.stopPropagation();
+							}}
+							ondragleave={(event) => dropTarget?.leave(event)}
+							ondrop={(event) => {
+								if (place.path) dropTarget?.drop(event, place.path);
+							}}
 							onpointerenter={() => onFolderHover?.(place.path)}
 							onpointerleave={() => onFolderHover?.(null)}
 						>
@@ -229,8 +314,35 @@
 			><Trash2 size={16} />Trash</button
 		>{/if}
 
-	<!-- Favorites Section -->
-	<div class="border-b border-border-secondary">
+	<!-- Favorites Section: a folder dropped here, not on a favorite, is pinned. -->
+	<div
+		class="border-b border-border-secondary {pinning
+			? 'bg-accent/10 ring-1 ring-accent ring-inset'
+			: ''}"
+		role="region"
+		aria-label="Favorites"
+		ondragover={(event) => {
+			if (draggedFolders().length === 0) return;
+			event.preventDefault();
+			// Drags allow copy or move; pinning copies nothing, but must use one of them.
+			if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+			pinning = true;
+		}}
+		ondragleave={(event) => {
+			const area = event.currentTarget;
+			if (event.relatedTarget instanceof Node && area.contains(event.relatedTarget)) return;
+			pinning = false;
+		}}
+		ondrop={(event) => {
+			pinning = false;
+			const folders = draggedFolders();
+			if (folders.length === 0) return;
+			event.preventDefault();
+			for (const folder of folders)
+				if (!roots.some((root) => root.name === folder.path))
+					settingsStore.pinFavoriteFolder(folder);
+		}}
+	>
 		<button
 			type="button"
 			class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-3 py-2.5 text-left text-[11px] font-medium tracking-wide text-text-secondary uppercase hover:text-text-primary"
@@ -244,15 +356,26 @@
 		</button>
 		{#if !favoritesCollapsed}
 			<div class="pb-2">
-				{#if settingsStore.current.favoriteFolders.length === 0}
+				{#if favorites.length === 0}
 					<div class="px-5 py-2 text-xs text-text-muted">No favorites yet</div>
 				{:else}
-					{#each settingsStore.current.favoriteFolders as fav (fav.path)}
+					{#each favorites as fav (fav.path)}
 						<div class="group relative">
 							<button
 								type="button"
 								class="{navItemClass} pr-9 {isActive(fav.path) ? navItemActiveClass : ''}"
 								onclick={() => handleNavigate(fav.path)}
+								oncontextmenu={(event) => placeMenu(event, { kind: 'favorite', path: fav.path })}
+								class:ring-1={dropTarget?.overPath === fav.path}
+								class:ring-inset={dropTarget?.overPath === fav.path}
+								class:ring-accent={dropTarget?.overPath === fav.path}
+								ondragover={(event) => {
+									if (fav.path && dropTarget?.over(event, fav.path)) event.stopPropagation();
+								}}
+								ondragleave={(event) => dropTarget?.leave(event)}
+								ondrop={(event) => {
+									if (fav.path) dropTarget?.drop(event, fav.path);
+								}}
 								onpointerenter={() => onFolderHover?.(fav.path)}
 								onpointerleave={() => onFolderHover?.(null)}
 							>

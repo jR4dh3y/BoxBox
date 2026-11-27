@@ -77,7 +77,7 @@ def affected_jobs(paths):
             jobs.update(FRONTEND)
         elif path.startswith("website/"):
             jobs.add("website")
-        elif path.startswith(".github/actions/setup-desktop/"):
+        elif path.startswith((".github/actions/setup-desktop/", ".github/actions/setup-desktop-windows/")):
             jobs.update(DESKTOP)
         elif path in {"desktop/scripts/tar-fixture.ts", "desktop/scripts/thumbnail-fixtures.ts"}:
             jobs.add("desktop")

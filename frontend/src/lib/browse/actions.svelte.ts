@@ -1,4 +1,4 @@
-import { useBrowsePaste } from './paste.svelte';
+import type { useBrowsePaste } from './paste.svelte';
 import {
 	isNativePath,
 	isLocalDesktop,
@@ -11,38 +11,19 @@ import {
 	publishBrowseClipboardInOrder
 } from './clipboardPublication';
 import { SvelteSet } from 'svelte/reactivity';
-import {
-	createDirectory,
-	createFile,
-	deleteFile,
-	getDirectoryArchiveUrl,
-	getDownloadUrl,
-	rename,
-	type FileInfo
-} from '#lib/api/files.js';
-import { createDeleteJob } from '#lib/api/jobs.js';
+import { getDirectoryArchiveUrl, getDownloadUrl, type FileInfo } from '#lib/api/files.js';
 import { clipboardStore } from '#lib/stores/clipboard.svelte.js';
-import { jobsStore } from '#lib/stores/jobs.svelte.js';
 import { settingsStore } from '#lib/stores/settings.svelte.js';
 import { toastStore } from '#lib/stores/toast.svelte.js';
 import { canPreview, getFileTypeDescription } from '#lib/utils/fileTypes.js';
 import type { BrowseData } from './data.svelte';
 import type { BrowseLocation } from './location.svelte';
 import type { BrowseSelection } from './selection.svelte';
+import { createNameProblem, nameProblem, unusedName } from './names.js';
+import { browseRequests } from './requests.svelte';
 
 function errorMessage(error: unknown, fallback: string): string {
 	return error instanceof Error ? error.message : fallback;
-}
-
-/** Returns the trimmed name, or null (with a toast when the name is unusable). */
-function validateItemName(value: string): string | null {
-	const name = value.trim();
-	if (!name) return null;
-	if (name.includes('/') || name.includes('\\')) {
-		toastStore.error('Name cannot contain path separators');
-		return null;
-	}
-	return name;
 }
 
 function download(items: FileInfo[]) {
@@ -54,47 +35,52 @@ function download(items: FileInfo[]) {
 	}
 }
 
-export type RenameDialog =
-	{ open: true; file: FileInfo; newName: string } | { open: false; file: null; newName: string };
+/** An item being renamed where its name is drawn, with why the typed name cannot be used. */
+export type Renaming =
+	{ kind: 'idle' } | { kind: 'renaming'; file: FileInfo; name: string; problem: string | null };
+
+export interface CreateDialog {
+	open: boolean;
+	type: 'file' | 'directory';
+	name: string;
+	/** Why the typed name cannot be used, or null. */
+	problem: string | null;
+}
+
+function parentOf(path: string): string {
+	return path.substring(0, path.lastIndexOf('/'));
+}
 
 /** What the user does to files and folders: dialogs, file operations, clipboard and preview. */
 export function useBrowseActions(
 	location: BrowseLocation,
 	data: BrowseData,
-	selection: BrowseSelection
+	selection: BrowseSelection,
+	pasteController: ReturnType<typeof useBrowsePaste>
 ) {
-	const pasteController = useBrowsePaste(location, data);
 	let openWithFile = $state<FileInfo | null>(null);
 	let previewFile = $state<FileInfo | null>(null);
-	let createDialog = $state<{ open: boolean; type: 'file' | 'directory'; name: string }>({
-		open: false,
-		type: 'file',
-		name: ''
-	});
-	let renameDialog = $state<RenameDialog>({
-		open: false,
-		file: null,
-		newName: ''
-	});
+	let createDialog = $state<CreateDialog>({ open: false, type: 'file', name: '', problem: null });
+	let renaming = $state.raw<Renaming>({ kind: 'idle' });
+
+	/**
+	 * The names already in `folder`, other than `except`'s. Empty when its listing is not held,
+	 * as for a search result elsewhere; the server then refuses a name that is taken.
+	 */
+	function siblingNames(folder: string, except?: FileInfo): string[] {
+		const names = data.namesIn(folder) ?? [];
+		return except ? names.filter((name) => name !== except.name) : names;
+	}
 	let deleteDialog = $state<{ open: boolean; items: FileInfo[] }>({ open: false, items: [] });
-	let propertiesDialog = $state<{ open: boolean; file: FileInfo | null }>({
-		open: false,
-		file: null
-	});
+	// The items Properties describes; null when it is closed.
+	let propertiesItems = $state.raw<FileInfo[] | null>(null);
+	// The folder whose look is being chosen; null when Customize Folder is closed.
+	let customizeFolder = $state<FileInfo | null>(null);
 	// The file or folder being shared; null when the share dialog is closed.
 	let shareItem = $state<FileInfo | null>(null);
 
-	const favoritePaths = $derived(
-		new SvelteSet(settingsStore.current.favoriteFolders.map((folder) => folder.path))
-	);
-	const cutPaths = $derived(
-		new SvelteSet(
-			clipboardStore.operation === 'cut' ? clipboardStore.items.map((item) => item.path) : []
-		)
-	);
-
 	function closeCreate() {
-		createDialog = { open: false, type: 'file', name: '' };
+		createDialog = { open: false, type: 'file', name: '', problem: null };
 	}
 
 	function openCreate(type: 'file' | 'directory') {
@@ -102,25 +88,38 @@ export function useBrowseActions(
 			toastStore.error('Cannot create items in this location');
 			return;
 		}
-		createDialog = { open: true, type, name: type === 'file' ? 'untitled.txt' : 'New Folder' };
+		// A name not taken yet, as the desktop app suggests one.
+		const taken = siblingNames(location.path);
+		const name = unusedName(
+			type === 'file' ? 'untitled.txt' : 'New Folder',
+			type === 'directory',
+			(candidate) => taken.includes(candidate)
+		);
+		createDialog = { open: true, type, name, problem: null };
 	}
 
 	async function confirmCreate() {
 		if (!location.path) return;
-		const name = validateItemName(createDialog.name);
-		if (!name) return;
+		const name = createDialog.name.trim();
+		const problem = createNameProblem(name, siblingNames(location.path));
+		if (problem) {
+			createDialog.problem = problem;
+			return;
+		}
 
+		const { type } = createDialog;
+		const folder = location.path;
+		const signal = browseRequests.sessionSignal;
 		try {
-			const created =
-				createDialog.type === 'file'
-					? await createFile(location.path, name)
-					: await createDirectory(location.path, name);
+			const { createItem } = await import('./mutations.js');
+			const created = await createItem(type, folder, name, signal);
+			if (signal.aborted) return;
 			closeCreate();
+			// The new item shows selected in the folder, so success needs no notice.
 			selection.set(new SvelteSet([created.path]));
-			toastStore.success(`${created.name} created`);
 			data.refresh();
 		} catch (error) {
-			toastStore.error(errorMessage(error, 'Create failed'));
+			if (!signal.aborted) toastStore.error(errorMessage(error, 'Create failed'));
 		}
 	}
 
@@ -147,61 +146,58 @@ export function useBrowseActions(
 	}
 
 	async function confirmRename() {
-		if (!renameDialog.file) return;
-		const newName = validateItemName(renameDialog.newName);
-		if (!newName) return;
+		const current = renaming;
+		if (current.kind !== 'renaming') return;
+		renaming = { kind: 'idle' };
+		const newName = current.name.trim();
+		// An unchanged name is not a rename.
+		const oldPath = current.file.path;
+		const parentPath = parentOf(oldPath);
+		if (
+			newName === current.file.name ||
+			nameProblem(newName, siblingNames(parentPath, current.file))
+		)
+			return;
 
-		const oldPath = renameDialog.file.path;
-		const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
 		const newPath = parentPath ? `${parentPath}/${newName}` : newName;
 
+		const signal = browseRequests.sessionSignal;
 		try {
-			await rename(oldPath, newPath);
-			if (isNativePath(oldPath)) {
-				const { desktopUndo } = await import('./undo.svelte');
-				desktopUndo.rememberRename(oldPath, newPath);
-			}
-			renameDialog = { open: false, file: null, newName: '' };
+			const { renameItem } = await import('./mutations.js');
+			await renameItem(oldPath, newPath, signal);
+			if (signal.aborted) return;
 			data.refetchDirectory();
 		} catch (error) {
+			if (signal.aborted) return;
 			console.error('Rename failed:', error);
 			toastStore.error(errorMessage(error, 'Rename failed'));
 		}
 	}
 
 	/** Files go at once; folders become background jobs. */
-	async function deleteItems(items: FileInfo[]) {
+	async function deleteItems(items: FileInfo[], signal = browseRequests.sessionSignal) {
 		if (items.length === 0) return;
 
 		try {
-			const trashed: string[] = [];
-			for (const item of items) {
-				if (isNativePath(item.path)) {
-					const { trashDesktopFile } = await import('#lib/api/desktopTrash.js');
-					trashed.push((await trashDesktopFile(item.path)).id);
-					const { desktopUndo } = await import('./undo.svelte');
-					desktopUndo.rememberTrash([...trashed]);
-				} else if (item.isDir) {
-					jobsStore.upsertJob(await createDeleteJob(item.path));
-				} else {
-					await deleteFile(item.path);
-				}
-			}
+			const { deleteItems: deleteSelection } = await import('./mutations.js');
+			await deleteSelection(items, signal);
+			if (signal.aborted) return;
 			selection.clear();
 			data.refetchDirectory();
 		} catch (error) {
+			if (signal.aborted) return;
 			console.error('Delete failed:', error);
 			toastStore.error(errorMessage(error, 'Delete failed'));
 		}
 	}
 
 	async function confirmDelete() {
-		await deleteItems(deleteDialog.items);
-		deleteDialog = { open: false, items: [] };
+		const signal = browseRequests.sessionSignal;
+		await deleteItems(deleteDialog.items, signal);
+		if (!signal.aborted) deleteDialog = { open: false, items: [] };
 	}
 
 	return {
-		paste: pasteController,
 		get openWithFile() {
 			return openWithFile;
 		},
@@ -214,43 +210,45 @@ export function useBrowseActions(
 		get createDialog() {
 			return createDialog;
 		},
-		get renameDialog() {
-			return renameDialog;
+		get renaming() {
+			return renaming;
 		},
 		get deleteDialog() {
 			return deleteDialog;
 		},
-		get propertiesDialog() {
-			return propertiesDialog;
+		get propertiesItems() {
+			return propertiesItems;
 		},
 		get shareItem() {
 			return shareItem;
 		},
-		get favoritePaths() {
-			return favoritePaths;
+		get customizeFolder() {
+			return customizeFolder;
 		},
-		get cutPaths() {
-			return cutPaths;
+		closeCustomize() {
+			customizeFolder = null;
 		},
-		get canPaste() {
-			return clipboardStore.hasItems || (isNativePath(location.path) && data.canCreate);
-		},
-
 		setCreateName(name: string) {
 			createDialog.name = name;
+			createDialog.problem = createNameProblem(name.trim(), siblingNames(location.path));
 		},
 		setRenameName(name: string) {
-			renameDialog.newName = name;
+			if (renaming.kind !== 'renaming') return;
+			renaming = {
+				...renaming,
+				name,
+				problem: nameProblem(name.trim(), siblingNames(parentOf(renaming.file.path), renaming.file))
+			};
 		},
 		closeCreate,
-		closeRename() {
-			renameDialog = { open: false, file: null, newName: '' };
+		cancelRename() {
+			renaming = { kind: 'idle' };
 		},
 		closeDelete() {
 			deleteDialog = { open: false, items: [] };
 		},
 		closeProperties() {
-			propertiesDialog = { open: false, file: null };
+			propertiesItems = null;
 		},
 		closeShare() {
 			shareItem = null;
@@ -260,10 +258,6 @@ export function useBrowseActions(
 		confirmDelete,
 
 		openFile(file: FileInfo) {
-			if (file.isDir) {
-				location.navigate(file.path);
-				return;
-			}
 			if (isNativePath(file.path)) {
 				void openDesktopFile(file.path).catch((error) =>
 					toastStore.error(errorMessage(error, 'Open failed'))
@@ -330,18 +324,17 @@ export function useBrowseActions(
 					break;
 				case 'pin':
 					if (only?.isDir) {
+						// The sidebar shows the pin; only failures notify, as in the desktop app.
 						settingsStore.pinFavoriteFolder({ name: only.name, path: only.path });
-						toastStore.success(`${only.name} pinned to favorites`);
 					}
 					break;
 				case 'unpin':
 					if (only?.isDir) {
 						settingsStore.unpinFavoriteFolder(only.path);
-						toastStore.success(`${only.name} unpinned from favorites`);
 					}
 					break;
 				case 'rename':
-					if (only) renameDialog = { open: true, file: only, newName: only.name };
+					if (only) renaming = { kind: 'renaming', file: only, name: only.name, problem: null };
 					break;
 				case 'delete':
 					if (settingsStore.current.confirmDelete) {
@@ -357,7 +350,10 @@ export function useBrowseActions(
 					if (only && supportsServerTransfer(items)) shareItem = only;
 					break;
 				case 'properties':
-					if (only) propertiesDialog = { open: true, file: only };
+					if (items.length > 0) propertiesItems = items;
+					break;
+				case 'customize':
+					if (only?.isDir) customizeFolder = only;
 					break;
 			}
 		}
