@@ -33,8 +33,8 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
 
 <div id="closing" class="closing">
   <div>
-    <p class="closing-lead">Convinced enough to try it?</p>
-    <h2 class="font-display">Point it at a folder.</h2>
+    <p class="closing-lead">Takes a minute to try.</p>
+    <h2 class="font-display">Run it on your own files.</h2>
     <p class="mt-6 max-w-md text-lg leading-relaxed text-text-secondary">
       BoxBox runs in a single container, without root, and leaves your files exactly where they are.
     </p>
@@ -42,11 +42,11 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
     <figure id="sticky-note" class="closing-note">
       <span class="closing-note-tape" aria-hidden="true"></span>
       <blockquote>
-        <p>I kept hopping between file managers and none of them felt like home.</p>
-        <p>So I built my own, as an experiment.</p>
-        <p>It now has <span id="note-downloads">20k</span> downloads.</p>
+        <p>Every file manager I tried was either too heavy or missing one obvious thing.</p>
+        <p>So I built the one I actually wanted to open every day.</p>
+        <p>Somehow it's past <span id="note-downloads">20k</span> downloads now.</p>
       </blockquote>
-      <figcaption>— jR4dh3y</figcaption>
+      <figcaption>— jR<span class="closing-note-four" aria-hidden="true"><svg viewBox="0 0 18 22" fill="none" stroke="currentColor" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round"><path d="M12.4 3.4C9.5 6.8 6.4 10.3 3.4 13.7c4-.2 8-.5 11.8-.8" /><path d="M12.4 3.4c-.6 5.2-1.3 10.8-2.1 16" /></svg></span><span class="sr-only">4</span>dh3y</figcaption>
     </figure>
   </div>
 
@@ -474,13 +474,13 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
     aspect-ratio: 1;
     flex-direction: column;
     margin: 3.5rem 0 0 0.5rem;
-    padding: 2.25rem 1.5rem 1.25rem;
+    padding: 2rem 1.4rem 1.15rem;
     background: var(--color-folder);
     color: #1c1608;
     font-family: 'Caveat', cursive;
-    font-size: 1.45rem;
+    font-size: 1.38rem;
     font-weight: 700;
-    line-height: 1.15;
+    line-height: 1.14;
     box-shadow: 0 calc(14px + var(--lift) * 34px) calc(20px + var(--lift) * 36px) calc(-12px + var(--lift) * 4px) rgb(0 0 0 / calc(0.85 - var(--lift) * 0.35));
     transform: rotate(2.5deg);
     transform-origin: center 0.2rem;
@@ -509,6 +509,21 @@ const word = { class: 'word-box closing-word', contenteditable: 'plaintext-only'
     margin-top: auto;
     text-align: right;
     font-size: 1.6rem;
+  }
+
+  /* Caveat draws 4 with an open top; use a matching hand-drawn closed-top 4 so jR4dh3y reads clearly. */
+  .closing-note-four {
+    display: inline-block;
+    width: 0.56em;
+    height: 0.7em;
+    margin: 0 -0.02em 0 -0.04em;
+    vertical-align: -0.06em;
+  }
+
+  .closing-note-four svg {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
 
   @media (min-width: 1024px) {
