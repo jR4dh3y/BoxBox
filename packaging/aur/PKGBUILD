@@ -8,7 +8,7 @@ url='https://github.com/jR4dh3y/BoxBox'
 license=('MIT')
 depends=('gcc-libs' 'glibc' 'libxcb' 'libxkbcommon' 'libxkbcommon-x11'
          'vulkan-icd-loader' 'wayland' 'fontconfig' 'freetype2' 'glib2'
-         'xdg-utils')
+         'xdg-utils' 'hicolor-icon-theme')
 optdepends=('udisks2: disks and removable drives in the sidebar'
             'gvfs: phones and network locations'
             'gvfs-smb: SMB shares'
