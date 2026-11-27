@@ -51,7 +51,7 @@ export function mountFooterParallax(footer: HTMLElement): void {
   const prev = footer.previousElementSibling;
   const curtain = prev instanceof HTMLElement && prev.classList.contains('page-curtain') ? prev : null;
 
-  let visible = false;
+  let visible: boolean | null = null;
   let frame = 0;
 
   let pointerX = 0;
@@ -163,10 +163,25 @@ export function mountFooterParallax(footer: HTMLElement): void {
   window.addEventListener(
     'scroll',
     () => {
-      if (curtain || visible) syncScroll();
+      if (curtain || visible === true) syncScroll();
     },
     { passive: true }
   );
+
+  // Keep keyboard-focused footer links uncovered when the sticky curtain overlaps them.
+  footer.addEventListener('focusin', (event) => {
+    if (!curtain || footer.dataset.curtain !== 'sticky') return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const curtainBottom = curtain.getBoundingClientRect().bottom;
+    const targetTop = target.getBoundingClientRect().top;
+    if (targetTop < curtainBottom + 12) {
+      window.scrollTo({
+        top: document.documentElement.scrollHeight - window.innerHeight,
+        behavior: motion.matches ? 'instant' : 'smooth',
+      });
+    }
+  });
 
   window.addEventListener('resize', () => {
     syncCurtainMode();

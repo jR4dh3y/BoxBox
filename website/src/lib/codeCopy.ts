@@ -20,6 +20,10 @@ export function mountCodeCopyButtons(root: ParentNode = document): void {
     button.setAttribute('aria-label', 'Copy code');
     button.textContent = 'Copy';
 
+    const status = document.createElement('span');
+    status.className = 'sr-only';
+    status.setAttribute('role', 'status');
+
     let resetTimer: number | undefined;
     button.addEventListener('click', async () => {
       window.clearTimeout(resetTimer);
@@ -28,16 +32,20 @@ export function mountCodeCopyButtons(root: ParentNode = document): void {
         await navigator.clipboard.writeText(text);
         button.textContent = 'Copied';
         button.dataset.copied = 'true';
+        status.textContent = 'Code copied to clipboard.';
       } catch {
         button.textContent = 'Failed';
         delete button.dataset.copied;
+        status.textContent = 'Copying code failed.';
       }
       resetTimer = window.setTimeout(() => {
         button.textContent = 'Copy';
         delete button.dataset.copied;
+        status.textContent = '';
       }, 2000);
     });
 
     wrapper.appendChild(button);
+    wrapper.appendChild(status);
   }
 }

@@ -56,8 +56,6 @@ export function introSweepEnergy(nx: number, ny: number, elapsedSec: number): nu
 
 export function mountInteractiveDotGrid(container: HTMLElement): void {
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  if (motion.matches) return;
-
   const canvas = container.querySelector<HTMLCanvasElement>('[data-dot-grid]');
   if (!canvas) return;
   const canvasEl = canvas;
@@ -281,8 +279,10 @@ export function mountInteractiveDotGrid(container: HTMLElement): void {
       }
     }
 
-    if (!staticPass && visible && stillActive) {
-      frame = window.requestAnimationFrame(stepLoop);
+    if (staticPass) return;
+
+    if (visible && stillActive) {
+      if (frame === 0) frame = window.requestAnimationFrame(stepLoop);
     } else {
       frame = 0;
       lastTime = 0;
@@ -362,11 +362,18 @@ export function mountInteractiveDotGrid(container: HTMLElement): void {
   const visibilityObserver = new IntersectionObserver(
     ([entry]) => {
       visible = entry?.isIntersecting ?? false;
-      if (!visible && frame !== 0) {
-        window.cancelAnimationFrame(frame);
-        frame = 0;
-        lastTime = 0;
-      } else if (visible && !introDone) {
+      if (!visible) {
+        if (frame !== 0) {
+          window.cancelAnimationFrame(frame);
+          frame = 0;
+          lastTime = 0;
+        }
+        if (ripples.length > 0 || energies.some((v) => v > 0)) {
+          energies.fill(0);
+          ripples.length = 0;
+          if (!motion.matches && width > 0) draw(1 / 60, true);
+        }
+      } else if (!motion.matches && (!introDone || ripples.length > 0)) {
         wake();
       }
     },
@@ -374,7 +381,9 @@ export function mountInteractiveDotGrid(container: HTMLElement): void {
   );
   visibilityObserver.observe(container);
 
-  const resizeObserver = new ResizeObserver(buildGrid);
+  const resizeObserver = new ResizeObserver(() => {
+    if (!motion.matches) buildGrid();
+  });
   resizeObserver.observe(container);
 
   const themeObserver = new MutationObserver(() => {
@@ -397,5 +406,5 @@ export function mountInteractiveDotGrid(container: HTMLElement): void {
     }
   });
 
-  buildGrid();
+  if (!motion.matches) buildGrid();
 }

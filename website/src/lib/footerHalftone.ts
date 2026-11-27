@@ -245,9 +245,8 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
   }
 
   function resize(): void {
-    const rect = canvas.getBoundingClientRect();
-    const nextW = Math.round(rect.width);
-    const nextH = Math.round(rect.height);
+    const nextW = Math.round(canvas.offsetWidth);
+    const nextH = Math.round(canvas.offsetHeight);
     if (nextW < 40 || nextH < 20) return;
 
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -258,7 +257,8 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
 
     const built = buildWordmarkDots(width, height);
     dots = built.dots;
-    draw(motion.matches || !visible);
+    draw(true);
+    if (visible && !motion.matches) wake();
   }
 
   function draw(staticPass = false, dt = 1 / 60): void {
@@ -393,8 +393,10 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
       context.fill();
     }
 
-    if (!staticPass && (stillMoving || visible)) {
-      frame = window.requestAnimationFrame(stepLoop);
+    if (staticPass) return;
+
+    if (visible && (stillMoving || !motion.matches)) {
+      if (frame === 0) frame = window.requestAnimationFrame(stepLoop);
     } else {
       frame = 0;
       lastTime = 0;
@@ -403,9 +405,9 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
 
   function stepLoop(now: number): void {
     frame = 0;
-    if (motion.matches) {
+    if (motion.matches || !visible) {
       lastTime = 0;
-      draw(true);
+      if (motion.matches) draw(true);
       return;
     }
     const dt = lastTime > 0 ? (now - lastTime) / 1000 : 1 / 60;
@@ -414,16 +416,19 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
   }
 
   function wake(): void {
-    if (!motion.matches && frame === 0) {
+    if (!motion.matches && visible && frame === 0) {
       frame = window.requestAnimationFrame(stepLoop);
     }
   }
 
   function toLocalCoords(event: PointerEvent): { x: number; y: number } {
     const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || width <= 0 || height <= 0) {
+      return { x: -1e6, y: -1e6 };
+    }
     return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
+      x: (event.clientX - rect.left) * (width / rect.width),
+      y: (event.clientY - rect.top) * (height / rect.height),
     };
   }
 

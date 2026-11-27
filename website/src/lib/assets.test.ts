@@ -4,7 +4,7 @@ import { readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 function totalBytesIn(relativeDir: string): number {
-  const dir = resolve(process.cwd(), relativeDir);
+  const dir = resolve(import.meta.dirname, "../..", relativeDir);
   return readdirSync(dir).reduce((sum, name) => sum + statSync(join(dir, name)).size, 0);
 }
 

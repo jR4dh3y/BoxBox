@@ -84,7 +84,7 @@ Frontend:
 bun run --cwd frontend dev
 ```
 
-Native desktop app (from the repository root):
+Native desktop app (from the repository root; install the [source-build prerequisites](desktop.md#build-from-source) first):
 
 ```bash
 bun run dev:desktop

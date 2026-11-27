@@ -50,12 +50,21 @@ test("blog markdown highlights code and only keeps images from /blog/", async ()
 
 test("v0.4.0 blog article splits comparison figures cleanly without altering prose", async () => {
   const markdown = readBlogMarkdown("v0-4-0");
+  const { html: fullHtml } = await renderBlogMarkdown(markdown);
   const { segments, headings, readingMinutes } = await renderBlogArticle(markdown);
   const comparisons = segments.filter((segment) => segment.kind === "comparison");
+  const joinedHtml = segments
+    .filter((segment) => segment.kind === "html")
+    .map((segment) => segment.html)
+    .join("\n");
+  const expectedProse = fullHtml
+    .replace(/<p><img src="\/blog\/v0\.4\.0\/compare-(?:grid|list)\.png"[^>]*><\/p>\s*/g, "")
+    .trim();
 
   assert.equal(comparisons.length, 2);
   assert.equal(comparisons[0]?.comparison.id, "compare-grid");
   assert.equal(comparisons[1]?.comparison.id, "compare-list");
+  assert.equal(joinedHtml.replace(/\s+/g, " ").trim(), expectedProse.replace(/\s+/g, " ").trim());
   assert.equal(headings.length, 4);
   assert.ok(readingMinutes >= 2);
   assert.equal(formatBlogDate("2026-11-26"), "November 26, 2026");
