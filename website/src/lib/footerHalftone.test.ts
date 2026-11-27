@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ambientSweepStrength,
   bayerThreshold,
   ditherDotState,
   dotProximity,
@@ -54,4 +55,10 @@ test("ditherDotState transitions cleanly from rest to lit to off across its Baye
   assert.equal(ditherDotState(0.25, 0.5), "lit");
   assert.equal(ditherDotState(0.5, 0.5), "off");
   assert.equal(ditherDotState(0.95, 0.5), "off");
+});
+
+test("ambientSweepStrength peaks during the active sweep and rests cleanly between sweeps", () => {
+  assert.ok(ambientSweepStrength(0.5, 0.5, 1.18) > 0.7);
+  assert.equal(ambientSweepStrength(0.5, 0.5, 4.5), 0);
+  assert.equal(ambientSweepStrength(0.5, 0.5, 6.8), 0);
 });

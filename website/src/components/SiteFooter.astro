@@ -8,54 +8,168 @@ import {
   footerProjects,
   footerTagline,
 } from '../lib/siteFooter';
+import {
+  ambientValleyMotes,
+  farRackLeds,
+  foregroundFrameLeds,
+  midgroundBayLeds,
+} from '../lib/footerSceneLeds';
 ---
 
 <footer
   data-site-footer
+  data-scene-visible="true"
   class="site-footer relative z-10 isolate overflow-hidden bg-[#0d0d0d] text-text-primary"
 >
-  <!-- Full-bleed unified parallax diorama: theme-reactive horizon glow -> far racks -> dithered BoxBox -> midground NAS & gold folders -> foreground rail -->
+  <!-- Full-bleed unified parallax diorama: breathing theme-reactive horizon glow -> far racks + LEDs -> depth haze & motes -> dithered BoxBox -> midground NAS & gold folders + LEDs -> foreground rail + LEDs -->
   <div class="footer-scene pointer-events-none absolute inset-0 select-none" aria-hidden="true">
     <div class="scene-layer layer-atmosphere">
       <div class="atmosphere-bloom"></div>
       <div class="atmosphere-core"></div>
     </div>
 
-    <img
-      class="scene-layer layer-racks"
-      src="/parallax/scene/racks-far.webp"
-      width="1600"
-      height="549"
-      alt=""
-      loading="lazy"
-      decoding="async"
-    />
+    <div class="scene-layer scene-art layer-racks">
+      <img
+        class="art-img"
+        src="/parallax/scene/racks-far.webp"
+        width="1600"
+        height="549"
+        alt=""
+        loading="lazy"
+        decoding="async"
+      />
+      <svg class="led-overlay" viewBox="0 0 1600 549" fill="none">
+        <defs>
+          <radialGradient id="footer-led-far-accent">
+            <stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.72" />
+            <stop offset="28%" stop-color="var(--color-accent)" stop-opacity="0.24" />
+            <stop offset="62%" stop-color="var(--color-accent)" stop-opacity="0.05" />
+            <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="footer-led-far-gold">
+            <stop offset="0%" stop-color="#e8c36a" stop-opacity="0.68" />
+            <stop offset="28%" stop-color="#e8c36a" stop-opacity="0.22" />
+            <stop offset="62%" stop-color="#e8c36a" stop-opacity="0.04" />
+            <stop offset="100%" stop-color="#e8c36a" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+        {farRackLeds.map((led) => (
+          <g
+            class={`scene-led led-${led.tone} led-${led.pattern}`}
+            style={`--led-dur: ${led.durationSec}s; --led-delay: ${led.delaySec}s;`}
+          >
+            <circle
+              cx={led.x}
+              cy={led.y}
+              r={led.r * 5.2}
+              fill={`url(#footer-led-far-${led.tone})`}
+            />
+            <circle class="led-core" cx={led.x} cy={led.y} r={led.r * 0.78} />
+          </g>
+        ))}
+      </svg>
+    </div>
 
-    <div class="scene-layer layer-valley-mist"></div>
+    <div class="scene-layer layer-valley-mist">
+      <div class="valley-accent-wrap"></div>
+    </div>
+
+    <div class="scene-layer layer-motes">
+      {ambientValleyMotes.map((mote) => (
+        <span
+          class={`valley-mote mote-${mote.tone}`}
+          style={`left: ${mote.leftPct}%; bottom: ${mote.bottomPct}%; width: ${mote.sizePx}px; height: ${mote.sizePx}px; --mote-dx: ${mote.driftX}px; --mote-rise: ${mote.risePx}px; --mote-dur: ${mote.durationSec}s; --mote-delay: ${mote.delaySec}s;`}
+        ></span>
+      ))}
+    </div>
 
     <div class="scene-layer layer-monument">
       <canvas data-footer-halftone class="monument-canvas" width="930" height="256"></canvas>
     </div>
 
-    <img
-      class="scene-layer layer-midground"
-      src="/parallax/scene/midground-bays.webp"
-      width="1600"
-      height="490"
-      alt=""
-      loading="lazy"
-      decoding="async"
-    />
+    <div class="scene-layer scene-art layer-midground">
+      <img
+        class="art-img"
+        src="/parallax/scene/midground-bays.webp"
+        width="1600"
+        height="490"
+        alt=""
+        loading="lazy"
+        decoding="async"
+      />
+      <svg class="led-overlay" viewBox="0 0 1600 490" fill="none">
+        <defs>
+          <radialGradient id="footer-led-mid-accent">
+            <stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.78" />
+            <stop offset="28%" stop-color="var(--color-accent)" stop-opacity="0.28" />
+            <stop offset="62%" stop-color="var(--color-accent)" stop-opacity="0.06" />
+            <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="footer-led-mid-gold">
+            <stop offset="0%" stop-color="#e8c36a" stop-opacity="0.74" />
+            <stop offset="28%" stop-color="#e8c36a" stop-opacity="0.25" />
+            <stop offset="62%" stop-color="#e8c36a" stop-opacity="0.05" />
+            <stop offset="100%" stop-color="#e8c36a" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+        {midgroundBayLeds.map((led) => (
+          <g
+            class={`scene-led led-${led.tone} led-${led.pattern}`}
+            style={`--led-dur: ${led.durationSec}s; --led-delay: ${led.delaySec}s;`}
+          >
+            <circle
+              cx={led.x}
+              cy={led.y}
+              r={led.r * 5.2}
+              fill={`url(#footer-led-mid-${led.tone})`}
+            />
+            <circle class="led-core" cx={led.x} cy={led.y} r={led.r * 0.78} />
+          </g>
+        ))}
+      </svg>
+    </div>
 
-    <img
-      class="scene-layer layer-foreground"
-      src="/parallax/scene/foreground-frame.webp"
-      width="1600"
-      height="215"
-      alt=""
-      loading="lazy"
-      decoding="async"
-    />
+    <div class="scene-layer scene-art layer-foreground">
+      <img
+        class="art-img"
+        src="/parallax/scene/foreground-frame.webp"
+        width="1600"
+        height="215"
+        alt=""
+        loading="lazy"
+        decoding="async"
+      />
+      <svg class="led-overlay" viewBox="0 0 1600 215" fill="none">
+        <defs>
+          <radialGradient id="footer-led-fg-accent">
+            <stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.75" />
+            <stop offset="28%" stop-color="var(--color-accent)" stop-opacity="0.26" />
+            <stop offset="62%" stop-color="var(--color-accent)" stop-opacity="0.05" />
+            <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0" />
+          </radialGradient>
+          <radialGradient id="footer-led-fg-gold">
+            <stop offset="0%" stop-color="#e8c36a" stop-opacity="0.72" />
+            <stop offset="28%" stop-color="#e8c36a" stop-opacity="0.24" />
+            <stop offset="62%" stop-color="#e8c36a" stop-opacity="0.05" />
+            <stop offset="100%" stop-color="#e8c36a" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+        {foregroundFrameLeds.map((led) => (
+          <g
+            class={`scene-led led-${led.tone} led-${led.pattern}`}
+            style={`--led-dur: ${led.durationSec}s; --led-delay: ${led.delaySec}s;`}
+          >
+            <circle
+              cx={led.x}
+              cy={led.y}
+              r={led.r * 5.2}
+              fill={`url(#footer-led-fg-${led.tone})`}
+            />
+            <circle class="led-core" cx={led.x} cy={led.y} r={led.r * 0.78} />
+          </g>
+        ))}
+      </svg>
+    </div>
 
     <div class="scene-top-blend"></div>
     <div class="scene-bottom-ground"></div>
@@ -128,7 +242,7 @@ import {
       </div>
     </div>
 
-    <!-- Open panoramic vista window framing the reactive BoxBox halftone wordmark, server skyline, and archival gold folders -->
+    <!-- Open panoramic vista window framing the reactive dithered BoxBox wordmark, server skyline, and archival gold folders -->
     <div class="footer-vista" aria-hidden="true"></div>
 
     <!-- Legal strip anchored flush over the deep obsidian foreground hardware rail -->
@@ -175,6 +289,11 @@ import {
     --scene-reveal: 0;
   }
 
+  /* Pause ambient GPU animations whenever the footer is scrolled offscreen. */
+  .site-footer[data-scene-visible='false'] :is(.atmosphere-bloom, .atmosphere-core, .scene-led, .valley-mote) {
+    animation-play-state: paused;
+  }
+
   .footer-vista {
     height: clamp(16rem, 32vw, 29rem);
   }
@@ -184,11 +303,67 @@ import {
     left: 50%;
     max-width: none;
     will-change: transform;
+    transform-origin: center bottom;
     transform: translate3d(
-      calc(-50% + var(--scene-x) * var(--px, 0px)),
-      calc(var(--scene-y) * var(--py, 0px) + var(--scene-reveal) * var(--scroll, 0px)),
-      0
-    );
+        calc(-50% + var(--scene-x) * var(--px, 0px)),
+        calc(var(--scene-y) * var(--py, 0px) + var(--scene-reveal) * var(--scroll, 0px)),
+        0
+      )
+      scale(calc(1 + var(--scene-reveal) * var(--scale, 0)));
+  }
+
+  .scene-art {
+    line-height: 0;
+  }
+
+  .art-img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .led-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    mix-blend-mode: screen;
+  }
+
+  /* Hardware LED tones: accent follows the active page theme, gold echoes BoxBox folders. */
+  .led-accent {
+    color: var(--color-accent);
+  }
+
+  .led-gold {
+    color: #e8c36a;
+  }
+
+  .led-core {
+    fill: color-mix(in srgb, currentColor 58%, #ffffff 42%);
+    opacity: 0.88;
+    transition: fill 700ms ease;
+  }
+
+  .scene-led {
+    will-change: opacity;
+  }
+
+  .led-steady {
+    animation: led-steady var(--led-dur, 6.4s) ease-in-out var(--led-delay, 0s) infinite;
+  }
+
+  .led-heartbeat {
+    animation: led-heartbeat var(--led-dur, 5.4s) ease-in-out var(--led-delay, 0s) infinite;
+  }
+
+  .led-io-fast {
+    animation: led-io-fast var(--led-dur, 3.1s) ease-in-out var(--led-delay, 0s) infinite;
+  }
+
+  .led-io-burst {
+    animation: led-io-burst var(--led-dur, 4.3s) ease-in-out var(--led-delay, 0s) infinite;
   }
 
   /* Single unified atmospheric horizon glow whose hue smoothly follows --color-accent. */
@@ -210,27 +385,28 @@ import {
   }
 
   .atmosphere-bloom {
-    opacity: 0.38;
+    opacity: 0.4;
     mask-image: radial-gradient(
       ellipse 52% 48% at 50% 66%,
-      rgb(0 0 0 / 0.95) 0%,
+      rgb(0 0 0 / 0.96) 0%,
       rgb(0 0 0 / 0.42) 44%,
       transparent 78%
     );
     -webkit-mask-image: radial-gradient(
       ellipse 52% 48% at 50% 66%,
-      rgb(0 0 0 / 0.95) 0%,
+      rgb(0 0 0 / 0.96) 0%,
       rgb(0 0 0 / 0.42) 44%,
       transparent 78%
     );
     filter: blur(28px);
+    animation: atmosphere-breathe 9.5s ease-in-out infinite;
   }
 
   .atmosphere-core {
-    opacity: 0.24;
+    opacity: 0.25;
     background-image: radial-gradient(
       ellipse 34% 24% at 50% 68%,
-      rgb(255 255 255 / 0.45) 0%,
+      rgb(255 255 255 / 0.46) 0%,
       transparent 72%
     );
     mask-image: radial-gradient(
@@ -244,19 +420,27 @@ import {
       transparent 74%
     );
     filter: blur(18px);
+    animation: atmosphere-core-drift 12.5s ease-in-out infinite;
   }
 
   .layer-racks {
-    --px: 15px;
+    --px: 16px;
     --py: 6px;
-    --scroll: 46px;
+    --scroll: 48px;
     bottom: clamp(-1.8rem, -1.2vw, -0.4rem);
     width: clamp(62rem, 106%, 98rem);
-    height: auto;
     opacity: 0.9;
   }
 
-  /* Neutral dark depth veil between distant racks and midground bays (no fixed hue). */
+  .layer-racks .art-img {
+    filter: brightness(0.88) contrast(1.03);
+  }
+
+  .layer-racks .led-overlay {
+    opacity: 0.52;
+  }
+
+  /* Atmospheric depth veil + backlit accent light-wrap between distant racks and midground bays. */
   .layer-valley-mist {
     --px: 18px;
     --py: 6px;
@@ -270,6 +454,53 @@ import {
       rgb(13 13 13 / 0.34) 56%,
       rgb(10 10 10 / 0.78) 100%
     );
+  }
+
+  .valley-accent-wrap {
+    position: absolute;
+    inset: 0;
+    background-color: var(--color-accent);
+    opacity: 0.13;
+    transition: background-color 700ms ease;
+    mask-image: radial-gradient(
+      ellipse 46% 62% at 50% 80%,
+      rgb(0 0 0 / 0.95) 0%,
+      transparent 74%
+    );
+    -webkit-mask-image: radial-gradient(
+      ellipse 46% 62% at 50% 80%,
+      rgb(0 0 0 / 0.95) 0%,
+      transparent 74%
+    );
+    filter: blur(18px);
+  }
+
+  /* Drifting micro-motes rising lazily through the backlit center valley. */
+  .layer-motes {
+    --px: 4px;
+    --py: 2px;
+    --scroll: 56px;
+    bottom: 2rem;
+    width: min(100%, 78rem);
+    height: clamp(14rem, 26vw, 22rem);
+  }
+
+  .valley-mote {
+    position: absolute;
+    border-radius: 9999px;
+    will-change: transform, opacity;
+    animation: mote-rise var(--mote-dur, 12s) ease-in-out var(--mote-delay, 0s) infinite;
+  }
+
+  .mote-accent {
+    background-color: var(--color-accent);
+    box-shadow: 0 0 6px var(--color-accent);
+    transition: background-color 700ms ease, box-shadow 700ms ease;
+  }
+
+  .mote-gold {
+    background-color: #e8c36a;
+    box-shadow: 0 0 6px rgb(232 195 106 / 0.7);
   }
 
   /* Monumental reactive dithered BoxBox wordmark nestled inside the valley. */
@@ -290,23 +521,29 @@ import {
   }
 
   .layer-midground {
-    --px: -22px;
+    --px: -24px;
     --py: -8px;
-    --scroll: 24px;
+    --scroll: 26px;
+    --scale: 0.014;
     bottom: clamp(-3.8rem, -3vw, -2rem);
     width: clamp(62rem, 108%, 100rem);
-    height: auto;
-    filter: drop-shadow(0 -14px 28px rgb(4 8 15 / 0.72));
+  }
+
+  .layer-midground .art-img {
+    filter: drop-shadow(0 -14px 28px rgb(4 6 12 / 0.76));
   }
 
   .layer-foreground {
-    --px: -38px;
+    --px: -42px;
     --py: -10px;
-    --scroll: 6px;
+    --scroll: 8px;
+    --scale: 0.028;
     bottom: -10px;
     width: clamp(64rem, 110%, 104rem);
-    height: auto;
-    filter: drop-shadow(0 -10px 22px rgb(3 5 10 / 0.85));
+  }
+
+  .layer-foreground .art-img {
+    filter: drop-shadow(0 -10px 22px rgb(3 4 8 / 0.88));
   }
 
   /* Seamless obsidian dissolve at the top edge so the page flows right into the footer sky. */
@@ -328,6 +565,116 @@ import {
       rgb(8 10 14 / 0.72) 48%,
       rgb(8 10 14 / 0.94) 100%
     );
+  }
+
+  @keyframes atmosphere-breathe {
+    0%,
+    100% {
+      opacity: 0.36;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.46;
+      transform: scale(1.045, 1.07);
+    }
+  }
+
+  @keyframes atmosphere-core-drift {
+    0%,
+    100% {
+      opacity: 0.2;
+      transform: translate3d(-1.2%, 0, 0) scale(0.98);
+    }
+    50% {
+      opacity: 0.3;
+      transform: translate3d(1.2%, -2%, 0) scale(1.05);
+    }
+  }
+
+  @keyframes led-steady {
+    0%,
+    100% {
+      opacity: 0.42;
+    }
+    50% {
+      opacity: 0.72;
+    }
+  }
+
+  @keyframes led-heartbeat {
+    0%,
+    74%,
+    100% {
+      opacity: 0.08;
+    }
+    78%,
+    84% {
+      opacity: 0.74;
+    }
+    81% {
+      opacity: 0.2;
+    }
+    88% {
+      opacity: 0.08;
+    }
+  }
+
+  @keyframes led-io-fast {
+    0%,
+    18%,
+    42%,
+    55%,
+    79%,
+    100% {
+      opacity: 0.06;
+    }
+    9%,
+    25%,
+    32%,
+    64%,
+    72%,
+    87% {
+      opacity: 0.78;
+    }
+  }
+
+  @keyframes led-io-burst {
+    0%,
+    48%,
+    64%,
+    84%,
+    100% {
+      opacity: 0.05;
+    }
+    52%,
+    57%,
+    61%,
+    76%,
+    80% {
+      opacity: 0.76;
+    }
+    55%,
+    59%,
+    78% {
+      opacity: 0.14;
+    }
+  }
+
+  @keyframes mote-rise {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 0, 0) scale(0.75);
+    }
+    18% {
+      opacity: 0.44;
+    }
+    75% {
+      opacity: 0.26;
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(var(--mote-dx, 12px), calc(var(--mote-rise, 120px) * -1), 0) scale(1.1);
+    }
   }
 
   @media (max-width: 767px) {
@@ -360,6 +707,20 @@ import {
     .scene-layer {
       transform: translateX(-50%);
       will-change: auto;
+    }
+
+    .atmosphere-bloom,
+    .atmosphere-core,
+    .scene-led {
+      animation: none;
+    }
+
+    .scene-led {
+      opacity: 0.55;
+    }
+
+    .layer-motes {
+      display: none;
     }
   }
 </style>

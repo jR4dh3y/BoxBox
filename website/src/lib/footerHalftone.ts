@@ -1,7 +1,7 @@
 // Interactive ordered-dither halftone renderer for the monumental BoxBox wordmark.
 // Draws the exact BoxBox glyph geometry offscreen to sample a fixed dot matrix,
-// then toggles dots cleanly ON and OFF through a 4x4 Bayer dither threshold in
-// response to pointer hover and clicks without displacing the grid.
+// toggles dots cleanly ON and OFF through a 4x4 Bayer dither threshold on hover/click,
+// and runs a quiet periodic ambient dither sweep while visible in the viewport.
 
 import { clamp } from './footerParallax';
 
@@ -16,6 +16,8 @@ export type DitherState = 'rest' | 'lit' | 'off';
 interface HalftoneDot {
   bx: number;
   by: number;
+  nx: number;
+  ny: number;
   baseRadius: number;
   threshold: number;
   level: number;
@@ -33,6 +35,7 @@ const WORDMARK_W = 930;
 const WORDMARK_H = 256;
 const SECOND_BOX_X = 448;
 const DEFAULT_ACCENT: RgbColor = { r: 74, g: 158, b: 255 };
+const AMBIENT_CYCLE_SEC = 7.4;
 
 const BAYER_4X4: readonly (readonly number[])[] = [
   [0, 8, 2, 10],
@@ -94,6 +97,23 @@ export function bayerThreshold(col: number, row: number): number {
 export function ditherDotState(level: number, threshold: number): DitherState {
   if (level <= 0.04) return 'rest';
   return level >= threshold ? 'off' : 'lit';
+}
+
+/**
+ * Computes a gentle diagonal ambient telemetry sheen in [0, 1] for normalized
+ * position `(nx, ny)` at elapsed `timeSec`. Spends most of each cycle quiet so
+ * the wordmark stays calm and readable while feeling subtly alive.
+ */
+export function ambientSweepStrength(nx: number, ny: number, timeSec: number): number {
+  const phase = ((timeSec % AMBIENT_CYCLE_SEC) + AMBIENT_CYCLE_SEC) % AMBIENT_CYCLE_SEC;
+  // Active sweep takes 2.2s, followed by 5.2s of calm rest
+  if (phase > 2.2) return 0;
+  const sweepPos = -0.22 + (phase / 2.2) * 1.54;
+  const diag = nx + ny * 0.22;
+  const dist = Math.abs(diag - sweepPos);
+  if (dist >= 0.14) return 0;
+  const band = 1 - dist / 0.14;
+  return band * band;
 }
 
 function drawHalfBox(ctx: CanvasRenderingContext2D, offsetX: number): void {
@@ -178,6 +198,8 @@ function buildWordmarkDots(width: number, height: number): { dots: HalftoneDot[]
       dots.push({
         bx: x,
         by: y,
+        nx: x / offscreen.width,
+        ny,
         baseRadius,
         threshold: bayerThreshold(col, row),
         level: 0,
@@ -206,6 +228,8 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
   let currentAccent: RgbColor = { ...targetAccent };
   let frame = 0;
   let lastTime = 0;
+  let elapsedSec = 0;
+  let visible = false;
 
   let pointerActive = false;
   let pointerX = 0;
@@ -234,7 +258,7 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
 
     const built = buildWordmarkDots(width, height);
     dots = built.dots;
-    draw(true);
+    draw(motion.matches || !visible);
   }
 
   function draw(staticPass = false, dt = 1 / 60): void {
@@ -252,6 +276,8 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
     if (staticPass) {
       currentAccent = { ...targetAccent };
     } else {
+      elapsedSec += stepDt;
+
       const dr = targetAccent.r - currentAccent.r;
       const dg = targetAccent.g - currentAccent.g;
       const db = targetAccent.b - currentAccent.b;
@@ -291,7 +317,8 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
     const influence = Math.max(105, width * 0.22);
     const white: RgbColor = { r: 245, g: 248, b: 255 };
     const restTint = mixRgb(currentAccent, white, 0.22);
-    const litTint = mixRgb(currentAccent, white, 0.68);
+    const litTint = mixRgb(currentAccent, white, 0.72);
+    const sweepActive = !staticPass && visible;
 
     for (let i = 0; i < dots.length; i += 1) {
       const dot = dots[i];
@@ -336,11 +363,29 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
       const state = ditherDotState(dot.level, dot.threshold);
       if (state === 'off') continue;
 
-      const color = state === 'lit' ? litTint : restTint;
+      // Subtle periodic ordered-dither telemetry sweep when idle and visible
+      let shimmer = 0;
+      if (sweepActive && state === 'rest') {
+        const sweep = ambientSweepStrength(dot.nx, dot.ny, elapsedSec);
+        if (sweep > 0.05) {
+          // Only light dots whose Bayer threshold falls inside the sweep band
+          if (sweep * 0.65 > dot.threshold * 0.55) {
+            shimmer = sweep * 0.65;
+          }
+        }
+      }
+
+      const color =
+        state === 'lit'
+          ? litTint
+          : shimmer > 0
+            ? mixRgb(restTint, litTint, shimmer)
+            : restTint;
+
       const alpha =
         state === 'lit'
           ? clamp((0.68 + dot.level * 0.28) * dot.fade, 0.24, 0.96)
-          : clamp(0.42 * dot.fade, 0.14, 0.56);
+          : clamp((0.42 + shimmer * 0.34) * dot.fade, 0.14, 0.82);
 
       context.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha.toFixed(3)})`;
       context.beginPath();
@@ -348,7 +393,7 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
       context.fill();
     }
 
-    if (!staticPass && stillMoving) {
+    if (!staticPass && (stillMoving || visible)) {
       frame = window.requestAnimationFrame(stepLoop);
     } else {
       frame = 0;
@@ -415,6 +460,22 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
     wake();
   });
 
+  // Pause the idle ambient shimmer completely whenever the footer leaves the viewport
+  const visibilityObserver = new IntersectionObserver(
+    ([entry]) => {
+      visible = entry?.isIntersecting ?? false;
+      if (visible && !motion.matches) {
+        wake();
+      } else if (!visible && frame !== 0) {
+        window.cancelAnimationFrame(frame);
+        frame = 0;
+        lastTime = 0;
+      }
+    },
+    { rootMargin: '80px 0px' }
+  );
+  visibilityObserver.observe(interactionRoot);
+
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(canvas);
 
@@ -433,9 +494,12 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
     if (motion.matches) {
       if (frame !== 0) window.cancelAnimationFrame(frame);
       frame = 0;
+      lastTime = 0;
       pointerActive = false;
       ripples.length = 0;
       draw(true);
+    } else if (visible) {
+      wake();
     }
   });
 

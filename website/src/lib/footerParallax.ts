@@ -93,6 +93,7 @@ export function mountFooterParallax(footer: HTMLElement): void {
   const observer = new IntersectionObserver(
     ([entry]) => {
       visible = entry?.isIntersecting ?? false;
+      footer.dataset.sceneVisible = visible ? 'true' : 'false';
       if (visible) syncScroll();
     },
     { rootMargin: '120px 0px' }
