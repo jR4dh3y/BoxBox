@@ -4,6 +4,31 @@
 
 import { isLocalDesktop } from '#lib/api/desktop.js';
 import { DEFAULT_SORT_BY, DEFAULT_SORT_DIR } from '#lib/browse/sortFiles.js';
+import {
+	isRootPath,
+	parseFolderViews,
+	rememberFolderMode,
+	rememberFolderSort,
+	type FolderSort,
+	type FolderViews
+} from '#lib/browse/folderViews.js';
+import type { ViewMode } from '#lib/types/files.js';
+import type { StartLocation } from '#lib/browse/startLocation.js';
+import {
+	DEFAULT_ZOOM,
+	GRID_STEPS,
+	LIST_STEPS,
+	savedZoom,
+	zoomStep,
+	type ZoomChange
+} from '#lib/browse/zoom.js';
+import { parseColumnLayout, type ColumnLayout } from '#lib/browse/columns.js';
+import {
+	parseFolderLooks,
+	withFolderLook,
+	type FolderLook,
+	type FolderLooks
+} from '#lib/browse/folderLooks.js';
 import type { DesktopPreferences } from '#lib/api/desktopPreferences.js';
 import { settingsStorage, storage } from '#lib/utils/storage.js';
 import {
@@ -30,6 +55,16 @@ export interface UserSettings {
 	defaultSortBy: 'name' | 'size' | 'modTime' | 'type';
 	defaultSortDir: 'asc' | 'desc';
 	defaultViewMode: 'list' | 'grid';
+	/** Where the app opens when its address names no folder. */
+	startLocation: StartLocation;
+	/** Off: List or Grid picked in any folder is the view of every folder. */
+	viewPerFolder: boolean;
+	/** Each folder's view and sort, where they differ from the defaults above. */
+	folderViews: FolderViews;
+	/** The list's columns as shown and sized by hand; null keeps the defaults. */
+	fileColumns: ColumnLayout | null;
+	/** Folders given their own colour or emblem, by browse path. */
+	folderLooks: FolderLooks;
 	accentColor: string | null;
 	accentColorSource: AccentColorSource;
 	backgroundImage: string | null;
@@ -40,7 +75,17 @@ export interface UserSettings {
 	wallpaperTint: boolean;
 	hardwareAcceleration: boolean;
 	previewOnSingleClick: boolean;
-	compactMode: boolean;
+	/** Zoom steps of the list and the grid; see `browse/zoom.ts`. */
+	listZoom: number;
+	gridZoom: number;
+	/** The Details panel shows at the right of the listing. */
+	detailsPanel: boolean;
+	/** Grid tiles draw a few of what a folder holds inside it. */
+	folderPreviews: boolean;
+	/** File icons take their kind's colour, as the desktop app's tinted set; off keeps them grey. */
+	fileIconTints: boolean;
+	/** A card with an item's details shows when the pointer rests on it. */
+	hoverDetails: boolean;
 	/** Rows show a checkbox on hover, so several items can be picked without modifier keys. */
 	selectionCheckboxes: boolean;
 	driveNameOverrides: Record<string, string>;
@@ -59,6 +104,11 @@ const defaultSettings: UserSettings = {
 	defaultSortBy: DEFAULT_SORT_BY,
 	defaultSortDir: DEFAULT_SORT_DIR,
 	defaultViewMode: 'list',
+	viewPerFolder: true,
+	startLocation: 'overview',
+	folderViews: {},
+	fileColumns: null,
+	folderLooks: {},
 	accentColor: null,
 	accentColorSource: 'wallpaper',
 	backgroundImage: null,
@@ -68,7 +118,12 @@ const defaultSettings: UserSettings = {
 	wallpaperTint: false,
 	hardwareAcceleration: true,
 	previewOnSingleClick: false,
-	compactMode: false,
+	listZoom: DEFAULT_ZOOM,
+	gridZoom: DEFAULT_ZOOM,
+	hoverDetails: true,
+	folderPreviews: true,
+	fileIconTints: true,
+	detailsPanel: false,
 	selectionCheckboxes: true,
 	driveNameOverrides: {},
 	favoriteFolders: []
@@ -90,6 +145,12 @@ function loadSettings(username: string): UserSettings {
 	return {
 		...settings,
 		accentColorSource: normalizeAccentColorSource(stored?.accentColorSource, settings.accentColor),
+		folderViews: parseFolderViews(settings.folderViews),
+		startLocation: stored?.startLocation === 'last' ? 'last' : 'overview',
+		listZoom: savedZoom(stored, 'listZoom'),
+		gridZoom: savedZoom(stored, 'gridZoom'),
+		fileColumns: parseColumnLayout(settings.fileColumns),
+		folderLooks: parseFolderLooks(settings.folderLooks),
 		backgroundImageMode: normalizeBackgroundImageMode(settings.backgroundImageMode)
 	};
 }
@@ -200,6 +261,53 @@ class SettingsStore {
 		const rest = { ...this.current.driveNameOverrides };
 		delete rest[originalName];
 		this.set({ ...this.current, driveNameOverrides: rest });
+	}
+
+	/**
+	 * The view picked in a folder, or in every folder when views are not kept per folder.
+	 * The drives keep theirs either way; their default is the cards.
+	 */
+	chooseFolderMode(path: string, mode: ViewMode): void {
+		const settings = this.current;
+		const root = isRootPath(path);
+		if (!root && !settings.viewPerFolder) {
+			this.set({ ...settings, defaultViewMode: mode });
+			return;
+		}
+		const folderViews = rememberFolderMode(
+			settings.folderViews,
+			path,
+			mode,
+			root ? 'grid' : settings.defaultViewMode
+		);
+		this.set({ ...settings, folderViews });
+	}
+
+	chooseFolderSort(path: string, sort: FolderSort): void {
+		const settings = this.current;
+		const folderViews = rememberFolderSort(settings.folderViews, path, sort, {
+			by: settings.defaultSortBy,
+			dir: settings.defaultSortDir
+		});
+		this.set({ ...settings, folderViews });
+	}
+
+	/** Steps the zoom of the list or the grid, for every folder. Returns whether it changed. */
+	zoom(view: ViewMode, change: ZoomChange): boolean {
+		const settings = this.current;
+		const key = view === 'list' ? 'listZoom' : 'gridZoom';
+		const count = view === 'list' ? LIST_STEPS.length : GRID_STEPS.length;
+		const next = zoomStep(settings[key], change, count);
+		if (next === settings[key]) return false;
+		this.set({ ...settings, [key]: next });
+		return true;
+	}
+
+	setFolderLook(path: string, look: FolderLook): void {
+		this.set({
+			...this.current,
+			folderLooks: withFolderLook(this.current.folderLooks, path, look)
+		});
 	}
 
 	pinFavoriteFolder(folder: FavoriteFolder): void {

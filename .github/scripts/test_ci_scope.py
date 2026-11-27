@@ -35,7 +35,7 @@ class CIScopeTest(unittest.TestCase):
             "docs/api.md": {"website"},
             "docs/evidence/test-pruning/comparison.md": set(),
             "docs/releases/v0.3.2.md": set(),
-            "desktop/src/app.ts": DESKTOP,
+            "desktop/src/main.rs": DESKTOP,
             "desktop/src/launch.test.ts": {"desktop"},
             "desktop/scripts/tar-fixture.ts": {"desktop"},
             "package.json": DESKTOP,
@@ -65,7 +65,7 @@ class CIScopeTest(unittest.TestCase):
                 self.assertEqual(affected_jobs([path]), expected)
 
     def test_mixed_changes_union_dependencies(self):
-        self.assertEqual(affected_jobs(["README.md", "website/src/a.astro", "desktop/src/app.ts"]), {"website", *DESKTOP})
+        self.assertEqual(affected_jobs(["README.md", "website/src/a.astro", "desktop/src/main.rs"]), {"website", *DESKTOP})
 
     def test_unavailable_diff_fails_open(self):
         self.assertIsNone(changed_paths("0" * 40, "head"))

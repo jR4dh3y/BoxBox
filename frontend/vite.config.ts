@@ -3,9 +3,11 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { lucideSprite } from './scripts/lucide-sprite.ts';
 
 export default defineConfig({
 	plugins: [
+		lucideSprite(),
 		tailwindcss(),
 		sveltekit({
 			preprocess: vitePreprocess(),
@@ -48,7 +50,7 @@ export default defineConfig({
 					groups: [
 						{
 							name: 'app',
-							test: /node_modules[\\/](?!\.bun[\\/]|@sveltejs[\\/]kit[\\/])|[\\/]src[\\/]lib[\\/]/,
+							test: /\0boxbox-lucide:|node_modules[\\/](?!\.bun[\\/]|@sveltejs[\\/]kit[\\/])|[\\/]src[\\/]lib[\\/]/,
 							tags: ['$initial']
 						}
 					]

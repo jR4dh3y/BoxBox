@@ -1,6 +1,4 @@
-import { isLocalDesktop } from '#lib/api/desktop.js';
-
-/** Desktop locations include this computer and paired BoxBox deployments. */
+/** The page above every drive, named as the desktop app names it. */
 export function rootLabel(): string {
-	return isLocalDesktop() ? 'This PC' : 'This Server';
+	return 'Overview';
 }

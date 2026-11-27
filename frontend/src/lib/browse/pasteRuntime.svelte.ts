@@ -178,9 +178,9 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 		get busy() {
 			return state.kind === 'planning' || state.kind === 'submitting';
 		},
-		async paste() {
-			if (state.kind !== 'idle' || !location.path || !data.canCreate) return;
-			const destination = location.path;
+		async paste(destination: string = location.path) {
+			const here = destination === location.path;
+			if (state.kind !== 'idle' || !destination || (here && !data.canCreate)) return;
 			state = { kind: 'planning' };
 			try {
 				const { clipboard, selectionId, items, operation } = await readPasteSource(destination);
