@@ -18,7 +18,7 @@ This builds the desktop binary and its installer archive, both standalone server
 
 On Windows x64, <code>pwsh -File scripts/package-windows.ps1</code> builds the portable ZIP under <code>dist/release/</code>. CI expands that ZIP and launches its executable on a temporary folder. The tag workflow adds the Windows ZIP to the release manifest and <code>SHA256SUMS</code> before publishing.
 
-For a public stable release, merge both the desktop PR and its website/release follow-up into master first. Set `VERSION` to the intended version, keep `docs/releases/v0.3.2.md` current, and tag the tested master commit with `v0.3.2`. The release workflow verifies that the tag matches VERSION and belongs to master. It validates the server, website, Docker build, desktop tests and artifacts before publishing. The GitHub release stays a draft while files upload, then becomes public only after the Docker image succeeds. Published releases are not overwritten.
+For a public stable release, merge both the desktop PR and its website/release follow-up into master first. Set `VERSION` to the intended version, keep `docs/releases/v0.4.0.md` current, and tag the tested master commit with `v0.4.0`. The release workflow verifies that the tag matches VERSION and belongs to master. It validates the server, website, Docker build, desktop tests and artifacts before publishing. The GitHub release stays a draft while files upload, then becomes public only after the Docker image succeeds. Published releases are not overwritten.
 
 Manual workflow dispatch prepares CI artifacts without creating a public release or moving Docker `latest`. Only a version tag publishes. Publishing an unmerged desktop branch as stable is rejected.
 
@@ -116,8 +116,8 @@ When the tested change is merged into `master`, tag the release:
 ```bash
 git switch master
 git pull --ff-only
-git tag v0.3.2
-git push origin v0.3.2
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 The release workflow runs the preflight again, publishes the version tags, and updates:
@@ -133,11 +133,11 @@ Use a new patch tag if you need a hotfix. Do not retag an already-published vers
 You do not need prerelease tags for normal testing because `test/*` branch images already cover that. Use a prerelease only if you want a named image for other people to test before a stable release:
 
 ```bash
-git tag v0.3.2-rc.1
-git push origin v0.3.2-rc.1
+git tag v0.4.0-rc.1
+git push origin v0.4.0-rc.1
 ```
 
-Set `VERSION` to `0.3.2-rc.1` and add matching release notes before creating that tag. It publishes `ghcr.io/jr4dh3y/boxbox:v0.3.2-rc.1` but does not update `latest`.
+Set `VERSION` to `0.4.0-rc.1` and add matching release notes before creating that tag. It publishes `ghcr.io/jr4dh3y/boxbox:v0.4.0-rc.1` but does not update `latest`.
 
 ## Desktop AppImages
 

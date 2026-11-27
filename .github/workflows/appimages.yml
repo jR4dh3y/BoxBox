@@ -78,16 +78,18 @@ jobs:
           APPIMAGETOOL: ${{ runner.temp }}/appimagetool
           APPIMAGE_RUNTIME: ${{ runner.temp }}/appimage-runtime
       - name: Verify actual AppImage runtime
+        timeout-minutes: 10
         working-directory: dist/appimages
         env:
           ARCH: ${{ matrix.arch }}
         run: |
           sha256sum --check ./*.sha256
           image="$PWD/boxbox-desktop-${RELEASE_TAG}-${ARCH}.AppImage"
-          "$image" --appimage-extract
+          timeout 60 "$image" --appimage-extract
           desktop-file-validate squashfs-root/io.boxbox.desktop
           # FUSE-free startup on X11 with software Vulkan, until a folder is painted.
-          APPIMAGE_EXTRACT_AND_RUN=1 WAYLAND_DISPLAY= xvfb-run -a bun "$GITHUB_WORKSPACE/tooling/scripts/desktop-smoke.ts" "$image"
+          # The smoke script stops the app and everything it started; the timeout is a last resort.
+          APPIMAGE_EXTRACT_AND_RUN=1 WAYLAND_DISPLAY= timeout --kill-after=10 180 xvfb-run -a bun "$GITHUB_WORKSPACE/tooling/scripts/desktop-smoke.ts" "$image"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: appimage-${{ matrix.arch }}
