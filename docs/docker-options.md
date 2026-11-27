@@ -42,7 +42,7 @@ mount_points:
     read_only: false
 EOF
 
-docker pull ghcr.io/jr4dh3y/boxbox:v0.3.1
+docker pull ghcr.io/jr4dh3y/boxbox:v0.4.0
 
 docker run -d \
   --name boxbox \
@@ -56,7 +56,7 @@ docker run -d \
   -v "$HOME:/home/user" \
   -v boxbox-data:/data \
   -v boxbox-temp:/tmp/boxbox \
-  ghcr.io/jr4dh3y/boxbox:v0.3.1
+  ghcr.io/jr4dh3y/boxbox:v0.4.0
 ```
 
 Open `http://localhost:8080` and sign in as `admin` with the plaintext password used to generate the hash. The port is bound to `127.0.0.1`, so only this machine can reach it.

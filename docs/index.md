@@ -1,6 +1,6 @@
 # BoxBox Documentation
 
-BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It serves a SvelteKit web app from a single Go binary and exposes configured filesystem locations through a browser UI.
+BoxBox is a self-hosted file manager for homelab and NAS servers, paired with **BoxBox Files**, a native desktop file manager for Windows and Linux. The server serves a SvelteKit web app from a single Go binary, and the desktop app manages local files directly or connects to paired BoxBox servers.
 
 ## What to Read First
 
@@ -9,6 +9,7 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 | [Quick start](quickstart.md) | Run BoxBox quickly with Docker Compose and the published GHCR image. |
 | [Docker deployment](docker.md) | Deploy from GHCR with Compose, update, and check health. |
 | [Docker options](docker-options.md) | Reverse proxy, single-container and source-build setups, volumes, and mount propagation. |
+| [Desktop app](desktop.md) | Download, install, pair, and update BoxBox Files on Windows and Linux. |
 | [Configuration](configuration.md) | Configure users, upload limits, origins, and ports. |
 | [Mount points](mounts.md) | Choose which folders BoxBox shows, and how they map into Docker. |
 | [NAS users](nas.md) | Read and write as each person's own NAS user, so files get the right owner. |
@@ -18,13 +19,13 @@ BoxBox is a self-hosted file manager for homelab and NAS-style Linux servers. It
 | [Release notes](release-notes.md) | See what changed in each release and how to upgrade. |
 | [API reference](api.md) | Use the REST, streaming, and WebSocket endpoints directly. |
 | [Architecture](architecture.md) | Understand the Go backend, Svelte frontend, and embedded static deployment. |
-| [Development](development.md) | Run the backend and frontend app locally. |
+| [Development](development.md) | Run the backend, frontend, desktop app, and website locally. |
 | [Testing and CI](testing.md) | Test and validate changes, and see how CI picks checks. |
 | [Release workflow](release.md) | Use test branches, test GHCR images, and stable tags. |
 
 ## Desktop
 
-The [Linux desktop guide](desktop.md) covers downloads, runtime libraries, native file operations, pairing and updates. Local use does not require server credentials or Docker. The credentials below apply to the separately deployed server.
+The [desktop app guide](desktop.md) covers Windows and Linux downloads, runtime libraries, native file operations, pairing, and updates. Local use does not require server credentials or Docker. The credentials below apply to the separately deployed server.
 
 ## Current Runtime Facts
 
