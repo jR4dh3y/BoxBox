@@ -1041,7 +1041,7 @@ fn item_menus_link_compress_open_tabs_and_send(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("b u n d l e enter");
     cx.run_until_parked();
     let archive = zip::ZipArchive::new(fs::File::open(fixture.root.join("bundle.zip")).unwrap()).unwrap();
-    let mut entries: Vec<&str> = archive.file_names().collect();
+    let mut entries: Vec<_> = archive.file_names().collect::<std::result::Result<_, _>>().unwrap();
     entries.sort();
     assert_eq!(entries, ["b/", "b/inner.txt", "x.txt"]);
 
