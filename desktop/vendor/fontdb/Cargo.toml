@@ -1,0 +1,32 @@
+# fontdb 0.16.2 (MIT, https://github.com/RazrFalcon/fontdb), patched so the
+# system font list comes from fontconfig's cache. See src/fontconfig_cache.rs.
+[package]
+name = "fontdb"
+version = "0.16.2"
+authors = ["Yevhenii Reizner <razrfalcon@gmail.com>"]
+edition = "2018"
+description = "A simple, in-memory font database with CSS-like queries."
+license = "MIT"
+publish = false
+
+[dependencies]
+log = "0.4"
+memmap2 = { version = "0.9", optional = true }
+slotmap = { version = "1.0.6", default-features = false }
+tinyvec = { version = "1.6.0", features = ["alloc"] }
+
+[dependencies.ttf-parser]
+version = "0.20"
+default-features = false
+features = ["opentype-layout", "apple-layout", "variable-fonts", "glyph-names"]
+
+[target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
+fontconfig-parser = { version = "0.5", optional = true, default-features = false }
+yeslogic-fontconfig-sys = { version = "6.0.1", optional = true, features = ["dlopen"] }
+
+[features]
+default = ["std", "fs", "memmap", "fontconfig"]
+std = ["ttf-parser/std"]
+fs = ["std"]
+memmap = ["fs", "memmap2"]
+fontconfig = ["fontconfig-parser", "yeslogic-fontconfig-sys", "memmap", "fs"]

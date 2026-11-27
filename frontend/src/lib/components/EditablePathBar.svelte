@@ -1,9 +1,13 @@
 <script lang="ts">
+	import { isMiddleButton, openInNewTab } from '#lib/browse/newTab.js';
 	import type { MountPoint } from '#lib/api/files.js';
 	import { Home } from 'lucide-svelte';
 	import { tick } from 'svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import { rootLabel } from '#lib/browse/rootLabel.js';
+	import type { FileDropTarget } from '#lib/browse/fileDrag.js';
+	import { foldCrumbs } from '#lib/browse/foldCrumbs.js';
+	import type { Place } from '#lib/browse/placeMenu.js';
 
 	let {
 		pathSegments = [],
@@ -11,6 +15,8 @@
 		serverName,
 		pageTitle = null,
 		onNavigate,
+		dropTarget,
+		onPlaceMenu,
 		includeHiddenSuggestions = false
 	}: {
 		pathSegments?: string[];
@@ -19,6 +25,10 @@
 		/** Shown instead of the path while the pane shows a page rather than a folder. */
 		pageTitle?: string | null;
 		onNavigate?: (path: string) => void;
+		/** Crumbs take dropped files, and open when a drag rests on them. */
+		dropTarget?: FileDropTarget;
+		/** Right-click on a crumb: its place menu. */
+		onPlaceMenu?: (place: Place, x: number, y: number) => void;
 		includeHiddenSuggestions?: boolean;
 	} = $props();
 
@@ -51,6 +61,8 @@
 					path: pathSegments.slice(0, index + 1).join('/')
 				}));
 	});
+	let foldMenu = $state<{ x: number; y: number } | null>(null);
+	const folded = $derived(foldCrumbs(breadcrumbs));
 	let editing = $state(false);
 	let pathBar = $state<HTMLDivElement>();
 
@@ -120,6 +132,8 @@
 				event.stopPropagation();
 				onNavigate?.('');
 			}}
+			ondragover={(event) => dropTarget?.over(event, '')}
+			ondragleave={(event) => dropTarget?.leave(event)}
 			title="Go to root"
 		>
 			<Home size={14} />
@@ -130,9 +144,24 @@
 			<span class="text-[13px] whitespace-nowrap text-text-primary">{rootLabel()}</span>
 		{:else}
 			<div class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap">
-				{#each breadcrumbs as segment, index (segment.path)}
+				{#each folded.shown as segment, index (segment.path)}
 					{#if index > 0}<span class="text-xs text-text-muted">/</span>{/if}
-					{#if index === breadcrumbs.length - 1}
+					{#if index === 1 && folded.folded.length > 0}
+						<!-- The middle of a long path, in a menu, as GTK's path bar folds it. -->
+						<button
+							type="button"
+							class="cursor-pointer border-none bg-transparent p-0 text-[13px] text-text-secondary hover:text-white"
+							title="More folders"
+							aria-label="More folders"
+							onclick={(event) => {
+								event.stopPropagation();
+								const bounds = event.currentTarget.getBoundingClientRect();
+								foldMenu = { x: bounds.left, y: bounds.bottom + 4 };
+							}}>…</button
+						>
+						<span class="text-xs text-text-muted">/</span>
+					{/if}
+					{#if index === folded.shown.length - 1}
 						<span class="text-[13px] whitespace-nowrap text-text-primary">{segment.label}</span>
 					{:else}
 						<button
@@ -141,6 +170,26 @@
 							onclick={(event) => {
 								event.stopPropagation();
 								onNavigate?.(segment.path);
+							}}
+							onmousedown={(event) => {
+								if (isMiddleButton(event)) event.preventDefault();
+							}}
+							onauxclick={(event) => {
+								if (!isMiddleButton(event)) return;
+								event.stopPropagation();
+								openInNewTab(segment.path);
+							}}
+							class:ring-1={dropTarget?.overPath === segment.path}
+							class:ring-accent={dropTarget?.overPath === segment.path}
+							ondragover={(event) => {
+								if (dropTarget?.over(event, segment.path)) event.stopPropagation();
+							}}
+							ondragleave={(event) => dropTarget?.leave(event)}
+							ondrop={(event) => dropTarget?.drop(event, segment.path)}
+							oncontextmenu={(event) => {
+								event.preventDefault();
+								event.stopPropagation();
+								onPlaceMenu?.({ kind: 'folder', path: segment.path }, event.clientX, event.clientY);
 							}}>{segment.label}</button
 						>
 					{/if}
@@ -148,4 +197,17 @@
 			</div>
 		{/if}
 	</div>
+{/if}
+
+{#if foldMenu}
+	{@const at = foldMenu}
+	{#await import('./ui/ContextMenu.svelte') then { default: ContextMenu }}
+		<ContextMenu
+			items={folded.folded.map((segment) => ({ id: segment.path, label: segment.label }))}
+			x={at.x}
+			y={at.y}
+			onSelect={(path) => onNavigate?.(path)}
+			onClose={() => (foldMenu = null)}
+		/>
+	{/await}
 {/if}

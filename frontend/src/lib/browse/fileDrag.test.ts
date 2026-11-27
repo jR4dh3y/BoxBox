@@ -10,6 +10,8 @@ describe('file drag and drop', () => {
 		assert.equal(dropOperation('files', { ctrlKey: false }), 'move');
 		assert.equal(dropOperation('files', { ctrlKey: true }), 'copy');
 		assert.equal(dropOperation('external', { ctrlKey: false }), 'copy');
+		assert.equal(dropOperation('files', { ctrlKey: false, shiftKey: true }), 'move');
+		assert.equal(dropOperation('external', { ctrlKey: false, shiftKey: true }), 'copy');
 	});
 
 	test('refuses a folder dropped into itself or its own subfolder', () => {

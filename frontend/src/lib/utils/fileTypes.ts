@@ -358,40 +358,54 @@ export function getFileTypeDescription(filename: string): string {
 	return typeMap[ext] || `${ext.toUpperCase()} File`;
 }
 
+const CODE_TINT = '#60a5fa';
+
+/**
+ * Each kind of file: its extensions, its icon, and its colour in the tinted set, as the desktop
+ * app's `Kind::tint` gives it (null keeps the plain grey). The first match wins.
+ */
+const KINDS: [readonly string[], ComponentType, string | null][] = [
+	[FILE_EXTENSIONS.pdf, FileText, '#f87171'],
+	[['ini', 'conf', 'cfg', 'env', 'cmake', 'gradle'], FileCode, null],
+	[FILE_EXTENSIONS.image, FileImage, '#2dd4bf'],
+	[FILE_EXTENSIONS.video, FileVideo, '#a78bfa'],
+	[FILE_EXTENSIONS.audio, FileAudio, '#fb923c'],
+	[FILE_EXTENSIONS.code, FileCode, CODE_TINT],
+	[FILE_EXTENSIONS.archive, FileArchive, '#fbbf24'],
+	[['deb', 'rpm', 'appimage', 'flatpak', 'snap', 'apk', 'msi', 'jar'], File, '#fbbf24'],
+	[FILE_EXTENSIONS.spreadsheet, FileSpreadsheet, '#4ade80'],
+	[FILE_EXTENSIONS.presentation, FileText, '#fb7185'],
+	[
+		[...FILE_EXTENSIONS.document, ...FILE_EXTENSIONS.notebook, ...FILE_EXTENSIONS.text],
+		FileText,
+		null
+	],
+	[FILE_EXTENSIONS.web, Globe, CODE_TINT],
+	[FILE_EXTENSIONS.style, Palette, CODE_TINT],
+	[FILE_EXTENSIONS.data, FileJson, CODE_TINT],
+	[['db', 'sqlite', 'sqlite3'], File, CODE_TINT]
+];
+
+/** A file's kind, or null for a name with no extension; undefined for an unknown extension. */
+function fileKind(filename: string) {
+	const ext = getExtension(filename);
+	return ext ? KINDS.find(([extensions]) => extensions.includes(ext)) : null;
+}
+
+/** The colour of a file's kind in the tinted icon set; null keeps the plain grey. */
+export function getFileTint(filename: string, isDir: boolean): string | null {
+	if (isDir) return null;
+	const kind = fileKind(filename);
+	if (kind === null) return getPreviewType(filename) === 'code' ? CODE_TINT : null;
+	return kind?.[2] ?? null;
+}
+
 /**
  * Get the appropriate icon component for a file
  */
 export function getFileIcon(filename: string, isDir: boolean): ComponentType {
 	if (isDir) return Folder;
-
-	const ext = getExtension(filename);
-	if (!ext) {
-		return getPreviewType(filename) === 'code' ? FileCode : File;
-	}
-
-	// Check each category
-	if (FILE_EXTENSIONS.image.includes(ext as (typeof FILE_EXTENSIONS.image)[number]))
-		return FileImage;
-	if (FILE_EXTENSIONS.video.includes(ext as (typeof FILE_EXTENSIONS.video)[number]))
-		return FileVideo;
-	if (FILE_EXTENSIONS.audio.includes(ext as (typeof FILE_EXTENSIONS.audio)[number]))
-		return FileAudio;
-	if (FILE_EXTENSIONS.code.includes(ext as (typeof FILE_EXTENSIONS.code)[number])) return FileCode;
-	if (FILE_EXTENSIONS.archive.includes(ext as (typeof FILE_EXTENSIONS.archive)[number]))
-		return FileArchive;
-	if (FILE_EXTENSIONS.spreadsheet.includes(ext as (typeof FILE_EXTENSIONS.spreadsheet)[number]))
-		return FileSpreadsheet;
-	if (FILE_EXTENSIONS.document.includes(ext as (typeof FILE_EXTENSIONS.document)[number]))
-		return FileText;
-	if (FILE_EXTENSIONS.presentation.includes(ext as (typeof FILE_EXTENSIONS.presentation)[number]))
-		return FileText;
-	if (FILE_EXTENSIONS.notebook.includes(ext as (typeof FILE_EXTENSIONS.notebook)[number]))
-		return FileText;
-	if (FILE_EXTENSIONS.pdf.includes(ext as (typeof FILE_EXTENSIONS.pdf)[number])) return FileText;
-	if (FILE_EXTENSIONS.text.includes(ext as (typeof FILE_EXTENSIONS.text)[number])) return FileText;
-	if (FILE_EXTENSIONS.web.includes(ext as (typeof FILE_EXTENSIONS.web)[number])) return Globe;
-	if (FILE_EXTENSIONS.style.includes(ext as (typeof FILE_EXTENSIONS.style)[number])) return Palette;
-	if (FILE_EXTENSIONS.data.includes(ext as (typeof FILE_EXTENSIONS.data)[number])) return FileJson;
-
-	return File;
+	const kind = fileKind(filename);
+	if (kind === null) return getPreviewType(filename) === 'code' ? FileCode : File;
+	return kind?.[1] ?? File;
 }

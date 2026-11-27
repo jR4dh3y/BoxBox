@@ -57,10 +57,13 @@ export function fileDragKind(dataTransfer: DataTransfer | null): FileDragKind | 
 	return null;
 }
 
-/** Files from other apps are copied; BoxBox items move unless Ctrl is held. */
+/**
+ * As GTK file managers read the keys: files from other apps are copied, BoxBox items move on
+ * the same server and copy to another; Ctrl copies, Shift moves.
+ */
 export function dropOperation(
 	kind: FileDragKind,
-	event: { ctrlKey: boolean },
+	event: { ctrlKey: boolean; shiftKey?: boolean },
 	destination?: string,
 	sources: readonly TransferSource[] | null = dragging
 ): TransferOperation {
@@ -69,7 +72,9 @@ export function dropOperation(
 		sources?.some(
 			(source) => !sameSource(parseRemotePath(source.path), parseRemotePath(destination))
 		);
-	return kind === 'external' || event.ctrlKey || crossSource ? 'copy' : 'move';
+	if (kind === 'external' || crossSource) return 'copy';
+	if (event.shiftKey && !event.ctrlKey) return 'move';
+	return event.ctrlKey ? 'copy' : 'move';
 }
 
 function parentPath(path: string): string {

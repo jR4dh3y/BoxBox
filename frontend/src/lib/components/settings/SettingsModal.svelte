@@ -94,6 +94,10 @@
 				{:catch}<LoadError label="connections" inline />{/await}
 			{:else if active === 'account'}
 				<AccountSettings />
+			{:else if active === 'about'}
+				{#await import('./AboutSettings.svelte') then { default: AboutSettings }}
+					<AboutSettings />
+				{:catch}<LoadError label="About" inline />{/await}
 			{/if}
 		</div>
 		<div class="flex shrink-0 justify-end border-t border-border-secondary px-3 py-2 sm:hidden">

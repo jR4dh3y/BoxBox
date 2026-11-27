@@ -69,7 +69,7 @@
 		onkeydown={handleKeydown}
 	>
 		<div
-			class="mx-4 flex max-h-[90vh] w-full {widthClass} flex-col overflow-hidden rounded-lg border border-border-primary bg-surface-secondary shadow-2xl"
+			class="mx-4 flex max-h-[90vh] w-full {widthClass} flex-col overflow-hidden rounded-lg border border-border-primary bg-surface-secondary shadow-2xl motion-safe:animate-pop-in"
 		>
 			{#if title}
 				<div

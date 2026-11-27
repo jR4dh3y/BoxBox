@@ -3,8 +3,18 @@
 	 * Toolbar component - navigation buttons, path bar, search, and actions
 	 */
 	import type { Snippet } from 'svelte';
-	import { ChevronLeft, ChevronRight, PanelLeft, Plus, RefreshCw, Settings } from 'lucide-svelte';
+	import {
+		ChevronLeft,
+		ChevronRight,
+		PanelLeft,
+		PanelRight,
+		Plus,
+		RefreshCw,
+		Settings
+	} from 'lucide-svelte';
 	import EditablePathBar from '#lib/components/EditablePathBar.svelte';
+	import type { DropZone } from '#lib/browse/dropZone.svelte.js';
+	import type { Place } from '#lib/browse/placeMenu.js';
 	import SearchBar from '#lib/components/SearchBar.svelte';
 	import LoadError from '#lib/components/LoadError.svelte';
 	import type { MountPoint } from '#lib/api/files.js';
@@ -13,6 +23,8 @@
 	interface Props {
 		actions?: Snippet;
 		refreshDisabled?: boolean;
+		/** The Refresh icon turns until everything the refresh started has loaded. */
+		refreshing?: boolean;
 		pathSegments?: string[];
 		pageTitle?: string | null;
 		roots?: MountPoint[];
@@ -21,9 +33,17 @@
 		canGoForward?: boolean;
 		onBack?: () => void;
 		onForward?: () => void;
+		/** Right-click on Back or Forward: the places in that direction. */
+		onHistoryMenu?: (back: boolean, x: number, y: number) => void;
+		/** Path crumbs and Back take part in drags: crumbs take drops, Back goes back when held. */
+		dropTarget?: DropZone;
+		onPlaceMenu?: (place: Place, x: number, y: number) => void;
 		onNavigate?: (path: string) => void;
 		onRefresh?: () => void;
 		onSettings?: () => void;
+		/** Shows or hides the Details panel; absent where there is none. */
+		onToggleDetails?: () => void;
+		detailsOpen?: boolean;
 		/** Shows the sidebar on windows too narrow to keep it open. */
 		onToggleSidebar?: () => void;
 		onAdd?: (action: AddAction) => void;
@@ -40,6 +60,7 @@
 	let {
 		actions,
 		refreshDisabled = false,
+		refreshing = false,
 		pathSegments = [],
 		pageTitle = null,
 		roots = [],
@@ -48,9 +69,14 @@
 		canGoForward = false,
 		onBack,
 		onForward,
+		onHistoryMenu,
+		dropTarget,
+		onPlaceMenu,
 		onNavigate,
 		onRefresh,
 		onSettings,
+		onToggleDetails,
+		detailsOpen = false,
 		onToggleSidebar,
 		onAdd,
 		canCreate = false,
@@ -67,6 +93,10 @@
 	export function focusLocation() {
 		pathBar?.edit();
 	}
+	let searchBar: SearchBar | undefined = $state();
+	export function focusSearch() {
+		searchBar?.focus();
+	}
 	let addMenu = $state<{ x: number; y: number } | null>(null);
 	const addDisabled = $derived(!canCreate && uploadDisabled);
 	function openAddMenu(event: MouseEvent & { currentTarget: HTMLButtonElement }) {
@@ -75,7 +105,7 @@
 	}
 
 	const navBtnClass =
-		'w-7 h-7 shrink-0 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed';
+		'w-7 h-7 shrink-0 flex items-center justify-center bg-transparent border-none rounded text-text-secondary cursor-pointer transition-all duration-100 hover:enabled:bg-surface-elevated hover:enabled:text-text-primary active:enabled:opacity-60 disabled:text-text-disabled disabled:cursor-not-allowed';
 </script>
 
 <div
@@ -92,7 +122,19 @@
 		>
 			<PanelLeft size={16} />
 		</button>
-		<button type="button" class={navBtnClass} disabled={!canGoBack} onclick={onBack} title="Back">
+		<button
+			type="button"
+			class={navBtnClass}
+			disabled={!canGoBack}
+			onclick={onBack}
+			oncontextmenu={(event) => {
+				event.preventDefault();
+				onHistoryMenu?.(true, event.clientX, event.clientY);
+			}}
+			ondragover={() => canGoBack && dropTarget?.hold('back', () => onBack?.())}
+			ondragleave={() => dropTarget?.release()}
+			title="Back"
+		>
 			<ChevronLeft size={18} />
 		</button>
 		<button
@@ -100,6 +142,10 @@
 			class={navBtnClass}
 			disabled={!canGoForward}
 			onclick={onForward}
+			oncontextmenu={(event) => {
+				event.preventDefault();
+				onHistoryMenu?.(false, event.clientX, event.clientY);
+			}}
 			title="Forward"
 		>
 			<ChevronRight size={18} />
@@ -113,12 +159,15 @@
 		{serverName}
 		{pathSegments}
 		{onNavigate}
+		{dropTarget}
+		{onPlaceMenu}
 		{includeHiddenSuggestions}
 	/>
 
 	{#if showSearch}
 		<div class="w-28 min-w-28 shrink @lg:w-48 @3xl:w-64 @5xl:w-96">
 			<SearchBar
+				bind:this={searchBar}
 				value={searchValue}
 				onInput={onSearchInput}
 				onClear={onSearchClear}
@@ -152,9 +201,21 @@
 			onclick={onRefresh}
 			disabled={refreshDisabled}
 			title="Refresh"
+			aria-busy={refreshing}
 		>
-			<RefreshCw size={16} />
+			<RefreshCw size={16} class={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} />
 		</button>
+		{#if onToggleDetails}
+			<button
+				type="button"
+				class="{navBtnClass} {detailsOpen ? 'bg-surface-elevated text-text-primary' : ''}"
+				onclick={onToggleDetails}
+				title="Details (F11)"
+				aria-pressed={detailsOpen}
+			>
+				<PanelRight size={16} />
+			</button>
+		{/if}
 		<button type="button" class={navBtnClass} onclick={onSettings} title="Settings">
 			<Settings size={16} />
 		</button>

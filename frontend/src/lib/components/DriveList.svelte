@@ -4,12 +4,12 @@
 
 	interface Props {
 		drives: DriveStats[];
-		compactMode?: boolean;
+		compact?: boolean;
 		onOpen?: (drive: DriveStats) => void;
 		onFolderHover?: (path: string | null) => void;
 	}
 
-	let { drives, compactMode = false, onOpen, onFolderHover }: Props = $props();
+	let { drives, compact = false, onOpen, onFolderHover }: Props = $props();
 
 	// Name and device share the spare width; the usage bar gets the most, since it is what the list is for.
 	// A narrow pane drops device and filesystem rather than scrolling sideways.
@@ -43,7 +43,7 @@
 			{/each}
 		</div>
 		{#each drives as drive (drive.name)}
-			<DriveRow {drive} {columns} {compactMode} onOpen={() => onOpen?.(drive)} {onFolderHover} />
+			<DriveRow {drive} {columns} {compact} onOpen={() => onOpen?.(drive)} {onFolderHover} />
 		{/each}
 	</div>
 </div>

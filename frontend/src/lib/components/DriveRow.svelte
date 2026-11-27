@@ -12,18 +12,18 @@
 		drive: DriveStats;
 		/** The column template, shared with the list header. */
 		columns: string;
-		compactMode?: boolean;
+		compact?: boolean;
 		onOpen?: () => void;
 		onFolderHover?: (path: string | null) => void;
 	}
 
-	let { drive, columns, compactMode = false, onOpen, onFolderHover }: Props = $props();
+	let { drive, columns, compact = false, onOpen, onFolderHover }: Props = $props();
 
 	const name = useDriveName(() => drive);
 	const serverDetails = $derived([drive.serverName, drive.fsType].filter(Boolean).join(' · '));
 	const usageLevel = $derived(driveUsageLevel(drive.usedPct));
 	const rowClass = $derived(
-		`grid w-full ${columns} ${compactMode ? 'h-7' : 'h-8'} items-center border-b border-border-secondary text-left text-[13px]`
+		`grid w-full ${columns} ${compact ? 'h-7' : 'h-8'} items-center border-b border-border-secondary text-left text-[13px]`
 	);
 
 	function handleClickOutside(event: MouseEvent): void {
