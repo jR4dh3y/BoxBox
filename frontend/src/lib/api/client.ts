@@ -270,6 +270,7 @@ export async function apiRequest(endpoint: string, options: RequestOptions = {})
 /** Authenticated transport shared by JSON and binary endpoints. */
 export async function apiFetch(endpoint: string, options: RequestOptions = {}): Promise<Response> {
 	const { method = 'GET', body, headers = {}, skipAuth = false, params, signal } = options;
+	signal?.throwIfAborted();
 
 	const url = buildUrl(endpoint, params);
 
@@ -305,11 +306,13 @@ export async function apiFetch(endpoint: string, options: RequestOptions = {}): 
 	}
 
 	let response = await fetch(url, fetchOptions);
+	signal?.throwIfAborted();
 
 	// A logout response is terminal for this request; never rotate after its 401.
 	if (response.status === 401 && !skipAuth) {
 		try {
 			const refreshed = await refreshSession();
+			signal?.throwIfAborted();
 			requestHeaders['Authorization'] = `Bearer ${refreshed.accessToken}`;
 			fetchOptions.headers = requestHeaders;
 			response = await fetch(url, fetchOptions);
@@ -331,13 +334,18 @@ export const api = {
 		signal?: AbortSignal
 	) => apiRequest<T>(endpoint, { method: 'GET', params, signal }),
 
-	post: <T>(endpoint: string, body?: unknown) => apiRequest<T>(endpoint, { method: 'POST', body }),
+	post: <T>(endpoint: string, body?: unknown, signal?: AbortSignal) =>
+		apiRequest<T>(endpoint, { method: 'POST', body, signal }),
 
-	put: <T>(endpoint: string, body?: unknown) => apiRequest<T>(endpoint, { method: 'PUT', body }),
+	put: <T>(endpoint: string, body?: unknown, signal?: AbortSignal) =>
+		apiRequest<T>(endpoint, { method: 'PUT', body, signal }),
 
 	patch: <T>(endpoint: string, body?: unknown) =>
 		apiRequest<T>(endpoint, { method: 'PATCH', body }),
 
-	delete: <T>(endpoint: string, params?: Record<string, string | number | boolean | undefined>) =>
-		apiRequest<T>(endpoint, { method: 'DELETE', params })
+	delete: <T>(
+		endpoint: string,
+		params?: Record<string, string | number | boolean | undefined>,
+		signal?: AbortSignal
+	) => apiRequest<T>(endpoint, { method: 'DELETE', params, signal })
 };

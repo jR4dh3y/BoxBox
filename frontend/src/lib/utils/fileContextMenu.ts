@@ -18,7 +18,8 @@ import {
 	Info,
 	Pin,
 	PinOff,
-	Share2
+	Share2,
+	Palette
 } from 'lucide-svelte';
 
 export type FileContextAction =
@@ -36,7 +37,8 @@ export type FileContextAction =
 	| 'delete'
 	| 'download'
 	| 'share'
-	| 'properties';
+	| 'properties'
+	| 'customize';
 
 export interface FileContextMenuOptions {
 	/** Selected items for the context menu */
@@ -125,7 +127,8 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 						id: isFavorite ? 'unpin' : 'pin',
 						label: isFavorite ? 'Unpin from Favorites' : 'Pin to Favorites',
 						icon: isFavorite ? PinOff : Pin
-					}
+					},
+					{ id: 'customize', label: 'Customize Folder…', icon: Palette }
 				]
 			: []),
 		{ id: 'separator-1', label: '', separator: true },
@@ -160,6 +163,6 @@ export function getFileContextMenuItems(options: FileContextMenuOptions): Contex
 					}
 				]
 			: []),
-		{ id: 'properties', label: 'Properties', icon: Info, disabled: hasMultiple }
+		{ id: 'properties', label: 'Properties', icon: Info, shortcut: 'Alt+Enter' }
 	];
 }

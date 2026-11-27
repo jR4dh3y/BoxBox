@@ -31,6 +31,7 @@
         "eslint-plugin-svelte": "^3.24.1",
         "fake-indexeddb": "^6.2.6",
         "globals": "^17.14.0",
+        "lucide-static": "1.0.1",
         "playwright": "1.64.1",
         "prettier": "^3.10.1",
         "prettier-plugin-svelte": "^4.1.1",
@@ -396,6 +397,8 @@
     "locate-path": ["locate-path@6.0.0", "", { "dependencies": { "p-locate": "^5.0.0" } }, "sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw=="],
 
     "lodash": ["lodash@4.18.1", "", {}, "sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q=="],
+
+    "lucide-static": ["lucide-static@1.0.1", "", {}, "sha512-DxDGcNvwRIzqS/Ik/jVn/l1uDZil8PGRXVpnFAI9FYF1xa7/qrOyLq3lcLihwqQg3NEKX/ClZ0r7KnaoP8BTkQ=="],
 
     "lucide-svelte": ["lucide-svelte@1.0.1", "", { "peerDependencies": { "svelte": "^3 || ^4 || ^5.0.0-next.42" } }, "sha512-WvzZgk0pqzgda+AErLvgWxHkfg/+GgUwqKMRHvzt0IqyMdmyEDzDCk3Z+Wo/3y753oIgx8u9Q4eUbWkghFa8Jg=="],
 

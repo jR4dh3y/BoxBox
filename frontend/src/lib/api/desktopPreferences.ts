@@ -2,7 +2,11 @@ import { toastStore } from '#lib/stores/toast.svelte.js';
 import { api, apiRequest } from './client';
 import { array, boolean, isRecord, record, string } from './parse';
 import type { UserSettings } from '#lib/stores/settings.svelte.js';
+import { parseColumnLayout } from '#lib/browse/columns.js';
+import { parseFolderLooks } from '#lib/browse/folderLooks.js';
 import { normalizeBackgroundImageMode } from '#lib/utils/wallpaper.js';
+import { parseFolderViews } from '#lib/browse/folderViews.js';
+import { savedZoom } from '#lib/browse/zoom.js';
 
 function choice<T extends string>(value: unknown, choices: T[], fallback: T): T {
 	if (value === undefined) return fallback;
@@ -29,6 +33,11 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 		),
 		defaultSortDir: choice(saved.defaultSortDir, ['asc', 'desc'], defaults.defaultSortDir),
 		defaultViewMode: choice(saved.defaultViewMode, ['list', 'grid'], defaults.defaultViewMode),
+		viewPerFolder: flag('viewPerFolder'),
+		startLocation: choice(saved.startLocation, ['overview', 'last'], defaults.startLocation),
+		folderViews: parseFolderViews(saved.folderViews),
+		fileColumns: parseColumnLayout(saved.fileColumns),
+		folderLooks: parseFolderLooks(saved.folderLooks),
 		accentColor: nullable('accentColor'),
 		accentColorSource: choice(
 			saved.accentColorSource,
@@ -43,7 +52,12 @@ export function parseDesktopPreferences(value: unknown, defaults: UserSettings):
 		hardwareAcceleration: flag('hardwareAcceleration'),
 		previewOnSingleClick: flag('previewOnSingleClick'),
 		selectionCheckboxes: flag('selectionCheckboxes'),
-		compactMode: flag('compactMode'),
+		hoverDetails: flag('hoverDetails'),
+		folderPreviews: flag('folderPreviews'),
+		fileIconTints: flag('fileIconTints'),
+		detailsPanel: flag('detailsPanel'),
+		listZoom: savedZoom(saved, 'listZoom'),
+		gridZoom: savedZoom(saved, 'gridZoom'),
 		driveNameOverrides: isRecord(saved.driveNameOverrides)
 			? Object.fromEntries(
 					Object.entries(saved.driveNameOverrides).map(([key, value]) => [

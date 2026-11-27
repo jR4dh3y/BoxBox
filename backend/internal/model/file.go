@@ -53,3 +53,23 @@ type SystemDrive struct {
 type SystemDrivesResponse struct {
 	Drives []SystemDrive `json:"drives"`
 }
+
+// ItemProperties is what Properties shows of one item beyond its listing entry. Owner, group
+// and the access and change times are left out where the platform does not tell them.
+type ItemProperties struct {
+	Path     string     `json:"path"`
+	Owner    string     `json:"owner,omitempty"`
+	Group    string     `json:"group,omitempty"`
+	Accessed *time.Time `json:"accessed,omitempty"`
+	Changed  *time.Time `json:"changed,omitempty"`
+}
+
+// PropertiesResponse is the selection's items and everything they hold, folders walked.
+type PropertiesResponse struct {
+	Items   []ItemProperties `json:"items"`
+	Files   int64            `json:"files"`
+	Folders int64            `json:"folders"`
+	Bytes   int64            `json:"bytes"`
+	// False when the walk stopped at its limit, so the totals are a lower bound.
+	Complete bool `json:"complete"`
+}

@@ -17,7 +17,7 @@ const device: DesktopVolume = {
 	canEject: true,
 	removable: true
 };
-test('only mounted, browsable devices become This PC cards and retain their name and access', () => {
+test('only mounted, browsable devices become Overview cards and retain their name and access', () => {
 	const drives = mountedVolumeDrives([
 		device,
 		{ ...device, id: 'unmounted', mounted: false },
