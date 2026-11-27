@@ -32,8 +32,8 @@ export const desktopUndo = {
 					pending.ids = pending.ids.filter((item) => item !== id);
 				}
 			}
+			// The item is back where it was, which is notice enough.
 			if (action === pending) action = null;
-			toastStore.success('Operation undone');
 		} catch (error) {
 			toastStore.error(error instanceof Error ? error.message : 'Could not undo this operation');
 		} finally {

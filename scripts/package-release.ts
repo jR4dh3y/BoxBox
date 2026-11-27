@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { expandRuntimeArchive } from "../desktop/scripts/runtimeArchive";
 
 if (process.argv.length > 2) throw new Error("Usage: bun scripts/package-release.ts (always builds fresh output)");
 
@@ -63,59 +62,25 @@ async function archive(name: string): Promise<void> {
 }
 try {
   await run(["bun", "run", "build:desktop"]);
-  const bundle = join(root, "desktop/build/stable-linux-x64/BoxBox");
-  const metadata: unknown = JSON.parse(
-    await readFile(join(bundle, "Resources/metadata.json"), "utf8"),
-  );
-  if (
-    typeof metadata !== "object" ||
-    metadata === null ||
-    !("hash" in metadata) ||
-    typeof metadata.hash !== "string" ||
-    !/^[A-Za-z0-9_-]+$/.test(metadata.hash)
-  )
-    throw new Error("Invalid stable runtime metadata");
   const desktopName = `boxbox-desktop-v${version}-linux-amd64`;
   const desktopRoot = join(stage, desktopName);
   await mkdir(desktopRoot);
-  const expanded = await expandRuntimeArchive(
-    join(bundle, "Resources", `${metadata.hash}.tar.zst`),
-    desktopRoot,
+  await cp(
+    join(root, "desktop/target/release/boxbox-gpui"),
+    join(desktopRoot, "boxbox"),
   );
-  const runtime: unknown = JSON.parse(
-    await readFile(join(expanded, "Resources/version.json"), "utf8"),
-  );
-  if (
-    typeof runtime !== "object" ||
-    runtime === null ||
-    !("version" in runtime) ||
-    runtime.version !== version ||
-    !("channel" in runtime) ||
-    runtime.channel !== "stable"
-  )
-    throw new Error(
-      "Stable runtime version differs from VERSION; rebuild desktop",
-    );
-  const installer = await Bun.build({
-    entrypoints: [join(root, "desktop/scripts/install.ts")],
-    outdir: desktopRoot,
-    naming: "install.js",
-    target: "bun",
-  });
-  if (!installer.success)
-    throw new AggregateError(installer.logs, "Could not bundle installer");
-  await writeFile(
-    join(desktopRoot, "install.sh"),
-    `#!/bin/sh\nset -eu\nbase=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$base/BoxBox/bin/bun" "$base/install.js" --source "$base/BoxBox" "$@"\n`,
-    { mode: 0o755 },
-  );
+  for (const file of ["install.sh", "io.boxbox.desktop", "icons"])
+    await cp(join(root, "desktop/packaging", file), join(desktopRoot, file), {
+      recursive: true,
+    });
   await cp(join(root, "LICENSE"), join(desktopRoot, "LICENSE"));
-  await cp(join(root, "desktop/assets/boxbox.portal"), join(desktopRoot, "boxbox.portal"));
   await writeFile(
     join(desktopRoot, "README.txt"),
-    `BoxBox Desktop v${version} — Linux x86_64\nSource: ${sha}\n\nExtract into a writable folder, then run ./install.sh (no sudo).\nGo, Bun and Docker are not required. GTK 3, WebKitGTK 4.1 and Ayatana AppIndicator are required.\nSee https://boxbox.radhey.dev/docs/desktop/ for dependencies, pairing, updates and removal.\nThe installer leaves your default file manager unchanged unless you pass --set-default.\n`,
+    `BoxBox v${version} — Linux x86_64\nSource: ${sha}\n\nExtract it anywhere, then run ./install.sh (no sudo). It installs to ~/.local.\nThe host needs Vulkan, xkbcommon, Wayland or X11, fontconfig and freetype.\nSee https://boxbox.radhey.dev/docs/desktop/ for dependencies, servers, updates and removal.\nThe installer leaves your default file manager unchanged unless you pass --set-default.\n`,
   );
   await archive(desktopName);
+  // Stages the current frontend into the server's go:embed directory.
+  await run(["bash", "scripts/build-single.sh"]);
   for (const arch of ["amd64", "arm64"]) {
     const name = `boxbox-v${version}-linux-${arch}`;
     const directory = join(stage, name);

@@ -28,7 +28,7 @@ func TestRemoteProductionTLSJourney(t *testing.T) {
 	}
 	upstreamRoot := t.TempDir()
 	os.WriteFile(filepath.Join(upstreamRoot, "hello.txt"), []byte("Hello remote"), 0600)
-	cfg := &model.ServerConfig{Host: "127.0.0.1", DataDir: t.TempDir(), JWTSecret: "integration-test-secret", Users: map[string]string{"alice": string(hash)}, MountPoints: []model.MountPoint{{Name: "files", Path: upstreamRoot}}, MaxUploadMB: 10, ChunkSizeMB: 1}
+	cfg := &model.ServerConfig{Host: "127.0.0.1", DataDir: t.TempDir(), JWTSecret: "integration-test-secret", Users: map[string]string{"alice": string(hash)}, MountPoints: []model.MountPoint{{Name: "files", Path: upstreamRoot}, {Name: "list", Path: upstreamRoot}}, MaxUploadMB: 10, ChunkSizeMB: 1}
 	upstream, err := initializeServer(cfg, false, false, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +86,17 @@ func TestRemoteProductionTLSJourney(t *testing.T) {
 		t.Fatal("range/sandbox lost")
 	}
 	request("POST", base+"/files/files", []byte(`{"name":"folder","type":"directory"}`), nil, 201)
+	request("POST", base+"/files/files/folder", []byte(`{"name":".hidden.png"}`), nil, 201)
+	peek := request("GET", base+"/files/list/folder?peek&hidden=1", nil, nil, 200)
+	var peeked handler.PeekResponse
+	if err := json.Unmarshal(peek.Body.Bytes(), &peeked); err != nil || len(peeked.Items) != 1 || peeked.Items[0].Path != "list/folder/.hidden.png" {
+		t.Fatalf("unexpected remote peek: %s", peek.Body.String())
+	}
+	props := request("POST", base+"/files", []byte(`{"paths":["files/hello.txt"]}`), http.Header{"Content-Type": {"application/json"}}, 200)
+	var properties model.PropertiesResponse
+	if err := json.Unmarshal(props.Body.Bytes(), &properties); err != nil || properties.Files != 1 || properties.Bytes != 12 || !properties.Complete {
+		t.Fatalf("unexpected remote properties: %s", props.Body.String())
+	}
 	upload := []byte("uploaded through gateway")
 	sum := sha256.Sum256(upload)
 	h := http.Header{"X-Create-Only": {"true"}, "X-Chunk-Index": {"0"}, "X-Total-Chunks": {"2"}, "X-Chunk-Size": {"12"}, "X-Total-Size": {"24"}, "X-Checksum": {"sha256:" + hex.EncodeToString(sum[:])}}

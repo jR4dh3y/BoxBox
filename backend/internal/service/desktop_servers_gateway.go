@@ -17,10 +17,14 @@ func gatewayJSON(headers http.Header) bool {
 	return err == nil && value == "application/json"
 }
 
-func gatewayQueryAllowed(query url.Values) bool {
+func gatewayQueryAllowed(method, route string, query url.Values) bool {
 	for name := range query {
 		switch name {
 		case "page", "pageSize", "includeHidden", "sortBy", "sortDir", "filter", "path", "q", "confirm", "width", "height", "uploadId", "v":
+		case "peek", "hidden":
+			if method != http.MethodGet || !strings.HasPrefix(route, "/files/") || !query.Has("peek") {
+				return false
+			}
 		default:
 			return false
 		}
@@ -62,7 +66,7 @@ func (s *DesktopServers) request(ctx context.Context, record desktopServerRecord
 }
 
 func (s *DesktopServers) Forward(ctx context.Context, id, method, route string, query url.Values, headers http.Header, body io.Reader) (*http.Response, error) {
-	if !ClientRouteAllowed(method, route) || !gatewayQueryAllowed(query) {
+	if !ClientRouteAllowed(method, route) || !gatewayQueryAllowed(method, route, query) {
 		return nil, ErrRemoteRoute
 	}
 	record, err := s.record(id)

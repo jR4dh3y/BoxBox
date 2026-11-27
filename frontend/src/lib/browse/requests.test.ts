@@ -296,6 +296,36 @@ describe('shared catalog lifecycle', () => {
 });
 
 describe('workspace session and job boundaries', () => {
+	test('cancelling a file action stops the rest of a delete batch', async () => {
+		const { deleteItems } = await import('./mutations.js');
+		const seen: string[] = [];
+		Object.assign(globalThis, {
+			fetch: async (input: string) => {
+				seen.push(new URL(input).pathname);
+				owner.reset();
+				return Response.json({ message: 'Deleted' });
+			}
+		});
+		await assert.rejects(deleteItems(listing('one.txt', 'two.txt').items, owner.sessionSignal), {
+			name: 'AbortError'
+		});
+		assert.deepEqual(seen, ['/api/v1/files/media/one.txt']);
+	});
+
+	test('file actions retain a cancellation signal for the session that created them', () => {
+		const initial = owner.sessionSignal;
+		owner.startSession();
+		assert.equal(initial.aborted, true);
+		const active = owner.sessionSignal;
+		assert.equal(active.aborted, false);
+		owner.reset();
+		assert.equal(active.aborted, true);
+		assert.equal(owner.sessionSignal.aborted, true);
+		owner.startSession();
+		assert.equal(owner.sessionSignal.aborted, false);
+		assert.equal(active.aborted, true);
+	});
+
 	test('job completion confirms live directory and space through the same domain hook as layout', async () => {
 		const { jobsStore } = await import('#lib/stores/jobs.svelte.js');
 		jobsStore.reset();

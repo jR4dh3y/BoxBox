@@ -181,12 +181,20 @@
 		</div>
 	</SettingsRow>
 {/if}
-<SettingsRow label="Compact rows">
+<SettingsRow label="Colour file icons by kind">
 	<Toggle
-		checked={settings.compactMode}
-		label="Compact rows"
+		checked={settings.fileIconTints}
+		label="Colour file icons by kind"
 		showLabel={false}
-		onchange={(compactMode) => preferences.update({ compactMode })}
+		onchange={(fileIconTints) => preferences.update({ fileIconTints })}
+	/>
+</SettingsRow>
+<SettingsRow label="Folders show what they hold">
+	<Toggle
+		checked={settings.folderPreviews}
+		label="Folders show what they hold"
+		showLabel={false}
+		onchange={(folderPreviews) => preferences.update({ folderPreviews })}
 	/>
 </SettingsRow>
 <SettingsRow label="Wallpaper">

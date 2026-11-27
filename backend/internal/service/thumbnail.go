@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/jR4dh3y/BoxBox/backend/internal/model"
+	"github.com/jR4dh3y/BoxBox/backend/internal/pkg/fileutil"
 )
 
 var (
@@ -99,7 +100,7 @@ func NewShareThumbnailService(shares ShareService) *ShareThumbnailService {
 
 // Supports reports whether a file name can use the thumbnail URL in share metadata.
 func (s *ShareThumbnailService) Supports(name string) bool {
-	return rendersImageThumbnail(name) || (s.video.available() && videoDemuxer(name) != "")
+	return fileutil.RendersImageThumbnail(name) || (s.video.available() && videoDemuxer(name) != "")
 }
 
 func (s *ShareThumbnailService) renderFile(ctx context.Context, file File, info *model.FileInfo, width, height int) ([]byte, error) {

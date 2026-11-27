@@ -27,6 +27,14 @@ type WalkOptions struct {
 	LoadMetadata   bool
 	// IncludeSymlinks visits symlinks as entries without following them.
 	IncludeSymlinks bool
+	// Skipped, when set, hears of each entry or folder SkipUnreadable left out.
+	Skipped func()
+}
+
+func (opts WalkOptions) skip() {
+	if opts.Skipped != nil {
+		opts.Skipped()
+	}
 }
 
 // Walker provides one cancellation-aware traversal policy for services.
@@ -82,6 +90,7 @@ func (w *filesystemWalker) Walk(
 		entries, truncated, err := w.fs.ReadDirLimit(currentPath, remaining)
 		if err != nil {
 			if opts.SkipUnreadable {
+				opts.skip()
 				return nil
 			}
 			return err
@@ -111,6 +120,7 @@ func (w *filesystemWalker) Walk(
 				metadata, err = entry.Info()
 				if err != nil {
 					if opts.SkipUnreadable {
+						opts.skip()
 						continue
 					}
 					return err

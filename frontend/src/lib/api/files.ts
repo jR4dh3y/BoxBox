@@ -230,6 +230,18 @@ export async function listDirectory(path: string, signal?: AbortSignal): Promise
 	};
 }
 
+/** Up to three entries of a folder for its grid tile, pictures first. */
+export async function peekDirectory(
+	path: string,
+	includeHidden: boolean,
+	signal?: AbortSignal
+): Promise<FileInfo[]> {
+	const endpoint = pathEndpoint(path, '/files') + (includeHidden ? '?peek&hidden=1' : '?peek');
+	const body = record(await api.get<unknown>(endpoint, undefined, signal), 'folder peek');
+	const source = parseRemotePath(path);
+	return array(body.items, 'folder peek items').map((item) => parseFile(item, source));
+}
+
 /** The URL `listDirectory` requests. static/early-fetch.js must start the same one. */
 export function directoryUrl(path: string): string {
 	return buildUrl(listEndpoint(path));
@@ -247,10 +259,14 @@ export async function getFileInfo(path: string): Promise<FileInfo> {
  * Create a new directory
  * POST /api/v1/files/*path
  */
-export async function createDirectory(basePath: string, name: string): Promise<FileInfo> {
+export async function createDirectory(
+	basePath: string,
+	name: string,
+	signal?: AbortSignal
+): Promise<FileInfo> {
 	const body: CreateItemRequest = { name, type: 'directory' };
 	return parseFile(
-		await api.post<unknown>(pathEndpoint(basePath, '/files'), body),
+		await api.post<unknown>(pathEndpoint(basePath, '/files'), body, signal),
 		parseRemotePath(basePath)
 	);
 }
@@ -262,11 +278,12 @@ export async function createDirectory(basePath: string, name: string): Promise<F
 export async function createFile(
 	basePath: string,
 	name: string,
-	content: string = ''
+	content: string = '',
+	signal?: AbortSignal
 ): Promise<FileInfo> {
 	const body: CreateItemRequest = { name, type: 'file', content };
 	return parseFile(
-		await api.post<unknown>(pathEndpoint(basePath, '/files'), body),
+		await api.post<unknown>(pathEndpoint(basePath, '/files'), body, signal),
 		parseRemotePath(basePath)
 	);
 }
@@ -275,12 +292,16 @@ export async function createFile(
  * Rename or move a file/directory
  * PUT /api/v1/files/*path
  */
-export async function rename(oldPath: string, newPath: string): Promise<FileInfo> {
+export async function rename(
+	oldPath: string,
+	newPath: string,
+	signal?: AbortSignal
+): Promise<FileInfo> {
 	const source = parseRemotePath(oldPath);
 	const destination = parseRemotePath(newPath);
 	if (!sameSource(source, destination)) throw new Error('Rename requires the same source');
 	const body: RenameRequest = { newPath: destination.path };
-	return parseFile(await api.put<unknown>(pathEndpoint(oldPath, '/files'), body), source);
+	return parseFile(await api.put<unknown>(pathEndpoint(oldPath, '/files'), body, signal), source);
 }
 
 /**
@@ -300,10 +321,14 @@ export async function saveFileContent(path: string, content: string): Promise<Fi
  * DELETE /api/v1/files/*path
  * @param confirm - Set to true to confirm directory deletion
  */
-export async function deleteFile(path: string, confirm: boolean = false): Promise<MessageResponse> {
+export async function deleteFile(
+	path: string,
+	confirm: boolean = false,
+	signal?: AbortSignal
+): Promise<MessageResponse> {
 	const params = confirm ? { confirm: 'true' } : undefined;
 	const response = record(
-		await api.delete<unknown>(pathEndpoint(path, '/files'), params),
+		await api.delete<unknown>(pathEndpoint(path, '/files'), params, signal),
 		'delete response'
 	);
 	return { message: string(response.message, 'message') };

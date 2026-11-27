@@ -40,19 +40,14 @@ export async function verifyNavigation(
 		const childRow = page
 			.locator('[data-file-row="true"]')
 			.filter({ has: page.getByText('Child', { exact: true }) });
+		// A pin shows in the sidebar, not in a notice.
+		const favorites = page.getByRole('region', { name: 'Favorites', exact: true });
 		for (const action of ['Pin to Favorites', 'Unpin from Favorites']) {
 			await childRow.click({ button: 'right' });
 			await page.getByRole('menuitem', { name: action, exact: true }).click();
-			await page
-				.getByRole('alert')
-				.filter({
-					hasText:
-						action === 'Pin to Favorites'
-							? 'Child pinned to favorites'
-							: 'Child unpinned from favorites'
-				})
-				.waitFor();
-			await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+			const pinned = favorites.getByText('Child', { exact: true });
+			if (action === 'Pin to Favorites') await pinned.waitFor();
+			else await pinned.waitFor({ state: 'detached' });
 		}
 
 		await page.getByText('Child', { exact: true }).click();
