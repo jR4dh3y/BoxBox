@@ -195,8 +195,9 @@ impl super::Context {
         flags: ShaderFlags,
     ) -> CompiledShader {
         let ep_index = sf.entry_point_index();
-        let ep = &sf.shader.module.entry_points[ep_index];
-        let ep_info = sf.shader.info.get_entry_point(ep_index);
+        let (parsed_module, parsed_info) = sf.shader.module_and_info();
+        let ep = &parsed_module.entry_points[ep_index];
+        let ep_info = parsed_info.get_entry_point(ep_index);
         let _ = sf.shader.source;
 
         let (mut module, module_info) = sf.shader.resolve_constants(&sf.constants);

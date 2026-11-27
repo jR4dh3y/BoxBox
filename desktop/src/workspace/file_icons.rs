@@ -66,17 +66,27 @@ impl FileIcons {
     /// The file's own icon, in every icon style; its app's, when Settings ask; and the theme's.
     fn keys(&self, api: &Api, item: &FileInfo, size: f32, preferences: &super::Preferences) -> [Option<CacheKey>; 3] {
         let pixels = bucket(size, self.scale.max(1.));
-        let theme = (preferences.file_icons == super::IconStyle::System).then(|| (IconSource::Theme(self.theme_key(api, item)), pixels));
+        let need_theme = preferences.file_icons == super::IconStyle::System;
+        #[cfg(target_os = "linux")]
+        let need_app = preferences.app_icons && !item.is_dir;
+        #[cfg(not(target_os = "linux"))]
+        let need_app = false;
+        let base_key = (need_theme || need_app).then(|| self.theme_key(api, item));
+        #[cfg(target_os = "linux")]
+        let (theme, app) = match (need_theme, need_app, base_key) {
+            (true, true, Some(key)) => (Some((IconSource::Theme(key.clone()), pixels)), Some((IconSource::App(key), pixels))),
+            (true, false, Some(key)) => (Some((IconSource::Theme(key), pixels)), None),
+            (false, true, Some(key)) => (None, Some((IconSource::App(key), pixels))),
+            _ => (None, None),
+        };
+        #[cfg(not(target_os = "linux"))]
+        let (theme, app) = (base_key.map(|key| (IconSource::Theme(key), pixels)), None);
         #[cfg(target_os = "linux")]
         let embedded = crate::package_icons::Package::of(api, item).map(|package| (IconSource::Package(package), pixels));
-        #[cfg(target_os = "linux")]
-        let app = (preferences.app_icons && !item.is_dir).then(|| (IconSource::App(self.theme_key(api, item)), pixels));
         #[cfg(windows)]
         let embedded = (api.is_local() && !item.is_dir
             && std::path::Path::new(&item.name).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("exe")))
             .then(|| (IconSource::Executable { path: item.path.clone(), bytes: item.size, modified: item.mod_time }, pixels));
-        #[cfg(not(target_os = "linux"))]
-        let app = None;
         [embedded, app, theme]
     }
 }
@@ -100,8 +110,13 @@ impl Workspace {
     /// the theme's icon, nothing while it is made, or BoxBox's glyph when the
     /// theme has none or BoxBox's set is chosen.
     pub(crate) fn item_icon(&self, api: &Api, item: &FileInfo, size: f32) -> EntryIcon {
-        let [embedded, app, theme] = self.file_icons.keys(api, item, size, &self.preferences);
-        if let Some(Slot::Ready(image)) = embedded.and_then(|key| self.file_icons.slots.get(&key)) {
+        let keys = self.file_icons.keys(api, item, size, &self.preferences);
+        self.icon_from_keys(&keys)
+    }
+
+    fn icon_from_keys(&self, keys: &[Option<CacheKey>; 3]) -> EntryIcon {
+        let [embedded, app, theme] = keys;
+        if let Some(Slot::Ready(image)) = embedded.as_ref().and_then(|key| self.file_icons.slots.get(key)) {
             return EntryIcon::Theme(image.clone());
         }
         // The app's icon is quick to find; waiting for it keeps the glyph from flashing first.
@@ -111,7 +126,7 @@ impl Workspace {
             Some(Some(Slot::Missing)) | None => {}
         }
         let Some(theme) = theme else { return EntryIcon::Glyph };
-        match self.file_icons.slots.get(&theme) {
+        match self.file_icons.slots.get(theme) {
             Some(Slot::Ready(image)) => EntryIcon::Theme(image.clone()),
             Some(Slot::Missing) => EntryIcon::Glyph,
             Some(Slot::Pending) | None => EntryIcon::Waiting,
@@ -194,21 +209,28 @@ impl Workspace {
         crate::file_icons::svg_image(svg.as_bytes(), PIXELS).ok()
     }
 
-    /// Starts making the icon of a pane's entry, drawn at `size`, if no one has.
-    pub(crate) fn request_entry_icon(&mut self, target: PaneTarget, index: usize, size: f32, cx: &mut Context<Self>) {
-        let Some(pane) = self.pane_by_id(target.0) else { return };
-        let Some(item) = pane.items.get(index).cloned() else { return };
+    /// Starts making the icon of a pane's entry, drawn at `size`, if no one has,
+    /// and returns the current `EntryIcon` without computing its keys a second time.
+    pub(crate) fn request_and_item_icon(&mut self, target: PaneTarget, index: usize, size: f32, cx: &mut Context<Self>) -> EntryIcon {
+        let Some(pane) = self.pane_by_id(target.0) else { return EntryIcon::Glyph };
+        let Some(item) = pane.items.get(index).cloned() else { return EntryIcon::Glyph };
         let api = pane.api.clone();
-        self.request_item_icon(&api, &item, size, cx);
+        self.request_and_get_item_icon(&api, &item, size, cx)
+    }
+
+    /// Starts making the icons of `item` drawn at `size`, if no one has, and returns its icon.
+    pub(crate) fn request_and_get_item_icon(&mut self, api: &Arc<Api>, item: &FileInfo, size: f32, cx: &mut Context<Self>) -> EntryIcon {
+        self.resolve_folder_look(api, item, cx);
+        let keys = self.file_icons.keys(api, item, size, &self.preferences);
+        for key in keys.iter().flatten() {
+            self.request_icon(key.clone(), api, cx);
+        }
+        self.icon_from_keys(&keys)
     }
 
     /// Starts making the icons of `item` drawn at `size`, if no one has.
     pub(crate) fn request_item_icon(&mut self, api: &Arc<Api>, item: &FileInfo, size: f32, cx: &mut Context<Self>) {
-        self.resolve_folder_look(api, item, cx);
-        let keys = self.file_icons.keys(api, item, size, &self.preferences);
-        for key in keys.into_iter().flatten() {
-            self.request_icon(key, api, cx);
-        }
+        let _ = self.request_and_get_item_icon(api, item, size, cx);
     }
 
     fn request_icon(&mut self, key: CacheKey, api: &Arc<Api>, cx: &mut Context<Self>) {

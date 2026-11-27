@@ -7,6 +7,6 @@ publish = false
 
 [dependencies]
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "ico", "qoi"] }
-fast_image_resize = { version = "=6.0.0", features = ["image"] }
+fast_image_resize = { version = "=6.0.0", features = ["image", "only_u8x4"] }
 libc = "=0.2.189"
 

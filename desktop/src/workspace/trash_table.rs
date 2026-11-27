@@ -39,7 +39,7 @@ pub(crate) fn sort_trash(items: &mut [TrashItem], (column, dir): (Column, SortDi
         match column {
             Column::Deleted => (deletion_millis(&item.deleted_at).unwrap_or(0), String::new()),
             Column::Location => (0, location(&item.original_path)),
-            Column::Type => (0, if item.is_dir { "Folder".into() } else { type_description(&item.name) }),
+            Column::Type => (0, if item.is_dir { "Folder".into() } else { type_description(&item.name).into_owned() }),
             Column::Name | Column::Size | Column::Modified => (0, String::new()),
         }
     };

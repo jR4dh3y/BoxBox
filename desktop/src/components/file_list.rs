@@ -277,7 +277,7 @@ pub struct FileRow {
     cut: bool,
     drop_target: bool,
     metrics: ListMetrics,
-    specs: Vec<ColumnSpec>,
+    specs: Option<Rc<[ColumnSpec]>>,
     selection: Selection,
     checkbox: Option<CheckHandler>,
     decorate: Option<Decorate>,
@@ -320,7 +320,7 @@ impl FileRow {
             cut: false,
             drop_target: false,
             metrics: ListMetrics::new(1),
-            specs: ColumnLayout::new(Table::Files).specs(Table::Files),
+            specs: None,
             selection,
             checkbox: None,
             decorate: None,
@@ -329,8 +329,8 @@ impl FileRow {
     }
 
     /// The columns the header shows, Name first, as `ColumnLayout::specs` gives them.
-    pub fn columns(mut self, specs: Vec<ColumnSpec>) -> Self {
-        self.specs = specs;
+    pub fn columns(mut self, specs: impl Into<Rc<[ColumnSpec]>>) -> Self {
+        self.specs = Some(specs.into());
         self
     }
 
@@ -458,9 +458,12 @@ impl RenderOnce for FileRow {
             });
 
         let text = |value: SharedString| div().min_w_0().ellipsis().child(value);
-        let name_width = self.specs.first().map_or(Width::Fill(0.), |spec| spec.width);
+        let specs = self
+            .specs
+            .unwrap_or_else(|| Rc::from(ColumnLayout::new(Table::Files).specs(Table::Files)));
+        let name_width = specs.first().map_or(Width::Fill(0.), |spec| spec.width);
         let values = self.values;
-        let cells = self.specs.into_iter().skip(1).map(move |ColumnSpec { column, width }| {
+        let cells = specs.iter().skip(1).copied().map(move |ColumnSpec { column, width }| {
             let value = values.iter().find(|(key, _)| *key == column).map(|(_, value)| value.clone()).unwrap_or_default();
             cell(width).overflow_hidden().when(column.right_aligned(), |cell| cell.justify_end()).text_color(secondary).child(text(value))
         });

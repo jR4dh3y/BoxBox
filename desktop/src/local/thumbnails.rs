@@ -112,9 +112,9 @@ fn cached(root: &Path, path: &Path, size: u32) -> Result<Vec<u8>> {
 /// The standard's per-application failure record: a 1x1 PNG with the file's
 /// URI and mtime, so the same unchanged file is not tried again.
 fn mark_failed(directory: &Path, name: &str, attributes: &[(&str, String)]) {
+    use image::ImageEncoder as _;
     let mut png = Vec::new();
-    let pixel = image::RgbaImage::new(1, 1);
-    if pixel.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).is_err() || !insert_text(&mut png, attributes) {
+    if image::codecs::png::PngEncoder::new(&mut png).write_image(&[0, 0, 0, 0], 1, 1, image::ExtendedColorType::Rgba8).is_err() || !insert_text(&mut png, attributes) {
         return;
     }
     if let Err(error) = store(directory, name, &png) {

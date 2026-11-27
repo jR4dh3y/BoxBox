@@ -53,6 +53,65 @@ impl super::Context {
         }
     }
 
+    fn spv_cache_key(
+        sf: &crate::ShaderFunction,
+        naga_options: &spv::Options,
+        group_layouts: &[&crate::ShaderDataLayout],
+        vertex_fetch_states: &[crate::VertexFetchState],
+    ) -> [u64; 2] {
+        let mut h = super::shader_cache::Hasher128::new();
+        h.u64(sf.shader.source_hash[0]);
+        h.u64(sf.shader.source_hash[1]);
+        h.bytes(sf.entry_point.as_bytes());
+        let mut constants: Vec<(&String, &f64)> = sf.constants.iter().collect();
+        constants.sort_by(|a, b| a.0.cmp(b.0));
+        h.u32(constants.len() as u32);
+        for (name, value) in constants {
+            h.bytes(name.as_bytes());
+            h.u64(value.to_bits());
+        }
+        h.u8(naga_options.lang_version.0);
+        h.u8(naga_options.lang_version.1);
+        h.u32(naga_options.flags.bits());
+        h.u32(group_layouts.len() as u32);
+        for layout in group_layouts {
+            h.u32(layout.bindings.len() as u32);
+            for &(name, binding) in &layout.bindings {
+                h.bytes(name.as_bytes());
+                match binding {
+                    crate::ShaderBinding::Texture => h.u8(0),
+                    crate::ShaderBinding::TextureArray { count } => {
+                        h.u8(1);
+                        h.u32(count);
+                    }
+                    crate::ShaderBinding::Sampler => h.u8(2),
+                    crate::ShaderBinding::Buffer => h.u8(3),
+                    crate::ShaderBinding::BufferArray { count } => {
+                        h.u8(4);
+                        h.u32(count);
+                    }
+                    crate::ShaderBinding::AccelerationStructure => h.u8(5),
+                    crate::ShaderBinding::Plain { size } => {
+                        h.u8(6);
+                        h.u32(size);
+                    }
+                }
+            }
+        }
+        h.u32(vertex_fetch_states.len() as u32);
+        for vf in vertex_fetch_states {
+            h.u32(vf.layout.stride);
+            h.u8(u8::from(vf.instanced));
+            h.u32(vf.layout.attributes.len() as u32);
+            for &(name, attr) in &vf.layout.attributes {
+                h.bytes(name.as_bytes());
+                h.u32(attr.offset);
+                h.u8(attr.format as u8);
+            }
+        }
+        h.finish()
+    }
+
     fn load_shader(
         &self,
         sf: crate::ShaderFunction,
@@ -61,18 +120,89 @@ impl super::Context {
         group_infos: &mut [crate::ShaderDataInfo],
         vertex_fetch_states: &[crate::VertexFetchState],
     ) -> CompiledShader {
+        let use_cache = self.shader_debug_path.is_none() && DUMP_PREFIX.is_none();
+        let cache_key = use_cache.then(|| {
+            Self::spv_cache_key(&sf, naga_options_base, group_layouts, vertex_fetch_states)
+        });
+        let cached = cache_key
+            .and_then(|key| self.shader_cache.get_spv(key))
+            .filter(|cached| {
+                cached.spv.len() >= 5
+                    && cached.spv[0] == super::shader_cache::SPIRV_MAGIC
+                    && cached.group_infos.len() == group_infos.len()
+                    && cached.group_infos.iter().zip(group_infos.iter()).all(|(src, dst)| {
+                        src.binding_access.len() == dst.binding_access.len()
+                    })
+                    && cached.attribute_mappings.iter().all(|&(buffer, attribute)| {
+                        vertex_fetch_states.get(buffer as usize).is_some_and(|state| {
+                            (attribute as usize) < state.layout.attributes.len()
+                        })
+                    })
+            });
+        if let Some(cached) = cached {
+            let vk_info = vk::ShaderModuleCreateInfo::default().code(&cached.spv);
+            if let Ok(vk_module) = unsafe { self.device.core.create_shader_module(&vk_info, None) } {
+                for (dst, src) in group_infos.iter_mut().zip(&cached.group_infos) {
+                    dst.visibility |= crate::ShaderVisibility::from_bits_truncate(src.visibility);
+                    for (dst_acc, &src_acc) in
+                        dst.binding_access.iter_mut().zip(&src.binding_access)
+                    {
+                        *dst_acc |= naga::StorageAccess::from_bits_truncate(src_acc);
+                    }
+                }
+                let vk_stage = match cached.stage {
+                    naga::ShaderStage::Compute => vk::ShaderStageFlags::COMPUTE,
+                    naga::ShaderStage::Vertex => vk::ShaderStageFlags::VERTEX,
+                    naga::ShaderStage::Fragment => vk::ShaderStageFlags::FRAGMENT,
+                    _ => panic!("Unsupported shader stage: {:?}", cached.stage),
+                };
+                let entry_point = ffi::CString::new(sf.entry_point).unwrap();
+                let create_info = vk::PipelineShaderStageCreateInfo {
+                    stage: vk_stage,
+                    module: vk_module,
+                    p_name: entry_point.as_ptr(),
+                    ..Default::default()
+                };
+                let attribute_mappings = cached
+                    .attribute_mappings
+                    .into_iter()
+                    .map(|(buffer_index, attribute_index)| crate::VertexAttributeMapping {
+                        buffer_index: buffer_index as usize,
+                        attribute_index: attribute_index as usize,
+                    })
+                    .collect();
+                return CompiledShader {
+                    vk_module,
+                    _entry_point: entry_point,
+                    create_info,
+                    attribute_mappings,
+                    wg_size: cached.wg_size,
+                };
+            }
+        }
+
         let ep_index = sf.entry_point_index();
-        let ep = &sf.shader.module.entry_points[ep_index];
-        let ep_info = sf.shader.info.get_entry_point(ep_index);
+        let (parsed_module, parsed_info) = sf.shader.module_and_info();
+        let ep = &parsed_module.entry_points[ep_index];
+        let ep_info = parsed_info.get_entry_point(ep_index);
 
         let (mut module, module_info) = sf.shader.resolve_constants(&sf.constants);
+        let mut stage_infos: Vec<crate::ShaderDataInfo> =
+            group_layouts.iter().map(|layout| layout.to_info()).collect();
         crate::Shader::fill_resource_bindings(
             &mut module,
-            group_infos,
+            &mut stage_infos,
             ep.stage,
             ep_info,
             group_layouts,
         );
+        for (dst, src) in group_infos.iter_mut().zip(&stage_infos) {
+            dst.visibility |= src.visibility;
+            for (dst_acc, &src_acc) in dst.binding_access.iter_mut().zip(src.binding_access.iter())
+            {
+                *dst_acc |= src_acc;
+            }
+        }
         let attribute_mappings =
             crate::Shader::fill_vertex_locations(&mut module, ep_index, vertex_fetch_states);
 
@@ -107,6 +237,30 @@ impl super::Context {
 
         let spv =
             spv::write_vec(&module, &module_info, naga_options, Some(&pipeline_options)).unwrap();
+
+        if let Some(key) = cache_key {
+            let cached_groups = stage_infos
+                .iter()
+                .map(|info| super::shader_cache::CachedGroupInfo {
+                    visibility: info.visibility.bits(),
+                    binding_access: info.binding_access.iter().map(|acc| acc.bits()).collect(),
+                })
+                .collect();
+            let cached_attrs = attribute_mappings
+                .iter()
+                .map(|mapping| (mapping.buffer_index as u32, mapping.attribute_index as u32))
+                .collect();
+            self.shader_cache.insert_spv(
+                key,
+                super::shader_cache::CachedSpv {
+                    stage: ep.stage,
+                    wg_size: ep.workgroup_size,
+                    spv: spv.clone(),
+                    group_infos: cached_groups,
+                    attribute_mappings: cached_attrs,
+                },
+            );
+        }
 
         if let Some(dump_prefix) = DUMP_PREFIX {
             let mut file_name = String::new();
@@ -761,9 +915,26 @@ fn map_blend_component(
 
 impl super::Context {
     /// Writes the pipeline cache when it has grown since it was last written:
-    /// on the first run, not on the runs it speeds up. (BoxBox patch)
+    /// on the first run (batched every 8 pipelines), not on every pipeline of
+    /// a warm launch. (BoxBox patch)
     fn save_pipeline_cache(&self) {
         use std::sync::atomic::Ordering;
+        let cache = &self.pipeline_cache;
+        let count = cache.creates.fetch_add(1, Ordering::Relaxed) + 1;
+        // On a warm run with a valid cache and no new shaders, defer until Drop.
+        if cache.initially_usable && !self.shader_cache.is_dirty() {
+            return;
+        }
+        // GPUI creates 8 pipelines per BladePipelines::new; flush once per batch.
+        if count % 8 != 0 {
+            return;
+        }
+        self.flush_caches();
+    }
+
+    pub(super) fn flush_caches(&self) {
+        use std::sync::atomic::Ordering;
+        self.shader_cache.save_if_dirty();
         let cache = &self.pipeline_cache;
         let Some(ref file) = cache.file else { return };
         let Ok(data) = (unsafe { self.device.core.get_pipeline_cache_data(cache.raw) }) else { return };

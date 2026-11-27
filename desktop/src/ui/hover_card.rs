@@ -116,7 +116,7 @@ fn picture(workspace: &Workspace, api: &Arc<Api>, item: &FileInfo) -> Picture {
 
 impl HoverCard {
     fn new(workspace: WeakEntity<Workspace>, api: Arc<Api>, item: FileInfo, location: Option<String>, picture: Option<Picture>, cx: &mut Context<Self>) -> Self {
-        let kind = if item.is_dir { "Folder".to_string() } else { type_description(&item.name) };
+        let kind = if item.is_dir { "Folder".to_string() } else { type_description(&item.name).into_owned() };
         let picture = picture.unwrap_or(Picture::Glyph { glyph: "file", emblem: None, tone: TEXT_SECONDARY });
         let cancel = Arc::new(AtomicBool::new(false));
         // GPUI keeps a tooltip through a right-click, so the card watches for menus itself.
@@ -169,7 +169,8 @@ fn read_extra(api: &Api, item: &FileInfo, cancel: &AtomicBool) -> Extra {
     let Some(real) = real else { return Extra::default() };
     let dimensions = crate::local::mime::from_name(&real)
         .filter(|mime| mime.starts_with("image/"))
-        .and_then(|_| image::image_dimensions(&real).ok());
+        .and_then(|_| std::fs::File::open(&real).ok())
+        .and_then(|file| boxbox_thumbnail::dimensions_supported(std::io::BufReader::new(file)).ok());
     #[cfg(target_os = "linux")]
     let opens_with = crate::open_with::recommended(&real).ok().and_then(|apps| apps.into_iter().find(|app| app.is_default)).map(|app| app.name);
     #[cfg(windows)]

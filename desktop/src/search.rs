@@ -78,15 +78,38 @@ impl Query {
     /// The name's rank, or None when a word does not match. A name is as good as
     /// its weakest word.
     pub fn rank(&self, name: &str) -> Option<Rank> {
+        let mut lower = String::new();
+        let mut chars = Vec::new();
+        self.rank_with_scratch(name, &mut lower, &mut chars)
+    }
+
+    /// Like `rank`, reusing `lower` and `chars` buffers across a filesystem walk.
+    pub fn rank_with_scratch(&self, name: &str, lower: &mut String, chars: &mut Vec<char>) -> Option<Rank> {
         if self.terms.is_empty() {
             return None;
         }
-        let name = name.to_lowercase();
+        lower.clear();
+        if name.is_ascii() {
+            lower.reserve(name.len());
+            for byte in name.bytes() {
+                lower.push(byte.to_ascii_lowercase() as char);
+            }
+        } else {
+            lower.push_str(&name.to_lowercase());
+        }
+        let mut chars_ready = false;
         let mut weakest = Rank::Exact;
         for term in &self.terms {
             let rank = match term {
-                Term::Text(text) => rank_text(&name, text)?,
-                Term::Glob(pattern) => glob(pattern, &name.chars().collect::<Vec<_>>()).then_some(Rank::Inside)?,
+                Term::Text(text) => rank_text(lower, text)?,
+                Term::Glob(pattern) => {
+                    if !chars_ready {
+                        chars.clear();
+                        chars.extend(lower.chars());
+                        chars_ready = true;
+                    }
+                    glob(pattern, chars).then_some(Rank::Inside)?
+                }
             };
             weakest = weakest.max(rank);
         }
@@ -165,10 +188,18 @@ pub fn best(hits: &mut Vec<Hit>) {
     best_by(hits, |hit| hit);
 }
 
+/// Keeps the best `LIMIT` values in O(N) without fully ordering them.
+pub fn prune_by<T>(values: &mut Vec<T>, hit: impl Fn(&T) -> &Hit) {
+    if values.len() > LIMIT {
+        values.select_nth_unstable_by(LIMIT, |left, right| compare(hit(left), hit(right)));
+        values.truncate(LIMIT);
+    }
+}
+
 /// `best` for values that hold a hit.
 pub fn best_by<T>(values: &mut Vec<T>, hit: impl Fn(&T) -> &Hit) {
-    values.sort_by(|left, right| compare(hit(left), hit(right)));
-    values.truncate(LIMIT);
+    prune_by(values, &hit);
+    values.sort_unstable_by(|left, right| compare(hit(left), hit(right)));
 }
 
 /// One search, as a provider receives it.
@@ -229,6 +260,7 @@ mod tests {
     #[test]
     fn a_name_ranks_by_where_the_text_sits() {
         assert_eq!(rank("notes", "notes"), Some(Rank::Exact));
+        assert_eq!(rank("ΟΣ", "ΟΣ"), Some(Rank::Exact));
         assert_eq!(rank("notes", "Notes.txt"), Some(Rank::Exact));
         assert_eq!(rank("note", "notes.txt"), Some(Rank::Prefix));
         assert_eq!(rank("notes", "my-notes.txt"), Some(Rank::Word));

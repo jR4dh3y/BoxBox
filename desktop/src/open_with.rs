@@ -259,37 +259,79 @@ fn read_installed() -> HashMap<String, Entry> {
     entries
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Associations {
     defaults: Vec<String>,
     added: Vec<String>,
     removed: HashSet<String>,
 }
 
-fn associations(mime_type: &str, files: &[PathBuf]) -> Associations {
-    let mut found = Associations::default();
-    for path in files {
-        let Ok(text) = std::fs::read_to_string(path) else { continue };
-        let mut section = "";
-        for line in text.lines().map(str::trim) {
-            if let Some(name) = line.strip_prefix('[').and_then(|line| line.strip_suffix(']')) {
-                section = name;
-                continue;
+struct CachedMimeApps {
+    stamps: Vec<(PathBuf, Option<SystemTime>)>,
+    map: Arc<HashMap<String, Associations>>,
+}
+
+static MIMEAPPS: Mutex<Option<CachedMimeApps>> = Mutex::new(None);
+
+fn all_associations() -> Arc<HashMap<String, Associations>> {
+    associations_for(&mimeapps_files(), &MIMEAPPS)
+}
+
+fn associations_for(
+    files: &[PathBuf],
+    cache: &Mutex<Option<CachedMimeApps>>,
+) -> Arc<HashMap<String, Associations>> {
+    let mut cache = cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let stamps: Vec<_> = files
+        .iter()
+        .map(|path| (path.clone(), std::fs::metadata(path).and_then(|m| m.modified()).ok()))
+        .collect();
+    match &*cache {
+        Some(cached) if cached.stamps == stamps => cached.map.clone(),
+        _ => {
+            let mut map: HashMap<String, Associations> = HashMap::new();
+            let mut complete = true;
+            for (path, stamp) in &stamps {
+                if stamp.is_none() {
+                    continue;
+                }
+                let Ok(text) = std::fs::read_to_string(path) else {
+                    complete = false;
+                    continue;
+                };
+                let mut section = "";
+                for line in text.lines().map(str::trim) {
+                    if let Some(name) = line.strip_prefix('[').and_then(|line| line.strip_suffix(']')) {
+                        section = name;
+                        continue;
+                    }
+                    let Some((key, value)) = line.split_once('=') else { continue };
+                    let mime = key.trim();
+                    if mime.is_empty() {
+                        continue;
+                    }
+                    let ids: Vec<String> = value.split(';').map(str::trim).filter(|id| valid_id(id)).map(str::to_string).collect();
+                    if ids.is_empty() {
+                        continue;
+                    }
+                    match section {
+                        "Default Applications" => {
+                            let entry = map.entry(mime.to_string()).or_default();
+                            if entry.defaults.is_empty() {
+                                entry.defaults = ids;
+                            }
+                        }
+                        "Added Associations" => map.entry(mime.to_string()).or_default().added.extend(ids),
+                        "Removed Associations" => map.entry(mime.to_string()).or_default().removed.extend(ids),
+                        _ => {}
+                    }
+                }
             }
-            let Some((key, value)) = line.split_once('=') else { continue };
-            if key.trim() != mime_type {
-                continue;
-            }
-            let ids: Vec<String> = value.split(';').map(str::trim).filter(|id| valid_id(id)).map(str::to_string).collect();
-            match section {
-                "Default Applications" if found.defaults.is_empty() => found.defaults = ids,
-                "Added Associations" => found.added.extend(ids),
-                "Removed Associations" => found.removed.extend(ids),
-                _ => {}
-            }
+            let map = Arc::new(map);
+            *cache = complete.then(|| CachedMimeApps { stamps, map: map.clone() });
+            map
         }
     }
-    found
 }
 
 fn registers(mime_types: &[String], mime_type: &str) -> bool {
@@ -327,8 +369,10 @@ fn content_type(path: &Path) -> Result<String> {
         .context("GIO returned no content type")
 }
 
-fn list_for(mime_type: &str, entries: &HashMap<String, Entry>) -> Apps {
-    let found = associations(mime_type, &mimeapps_files());
+fn recommended_ids(mime_type: &str, entries: &HashMap<String, Entry>) -> (Vec<String>, Option<String>) {
+    let map = all_associations();
+    let empty = Associations::default();
+    let found = map.get(mime_type).unwrap_or(&empty);
     let usable = |id: &String| entries.get(id).is_some_and(|entry| entry.accepts_files);
     let mut ordered: Vec<String> = Vec::new();
     let push = |id: &String, ordered: &mut Vec<String>| {
@@ -352,6 +396,11 @@ fn list_for(mime_type: &str, entries: &HashMap<String, Entry>) -> Apps {
         push(id, &mut ordered);
     }
     let default = found.defaults.iter().find(|id| usable(id)).cloned();
+    (ordered, default)
+}
+
+fn list_for(mime_type: &str, entries: &HashMap<String, Entry>) -> Apps {
+    let (ordered, default) = recommended_ids(mime_type, entries);
     let recommended: Vec<App> = ordered
         .iter()
         .map(|id| App { is_default: Some(id) == default.as_ref(), ..entries[id].app.clone() })
@@ -385,11 +434,15 @@ pub fn recommended(path: &Path) -> Result<Vec<App>> {
     let _span = crate::profile::span("open with recommended");
     let mime_type = content_type(path)?;
     let entries = installed();
-    let mut apps = list_for(&mime_type, &entries).recommended;
+    let (ordered, default) = recommended_ids(&mime_type, &entries);
     let theme = IconTheme::shared();
-    for app in &mut apps {
-        app.icon = theme.find(&entries[&app.id].icon);
-    }
+    let apps = ordered
+        .iter()
+        .map(|id| {
+            let entry = &entries[id];
+            App { is_default: Some(id) == default.as_ref(), icon: theme.find(&entry.icon), ..entry.app.clone() }
+        })
+        .collect();
     Ok(apps)
 }
 
@@ -398,8 +451,24 @@ pub fn recommended(path: &Path) -> Result<Vec<App>> {
 /// one GIO would launch.
 pub fn default_app_icon(mime_type: &str, size: u32) -> Option<PathBuf> {
     let entries = installed();
-    let apps = list_for(mime_type, &entries);
-    icon_file(&entries.get(&initial_choice(&apps)?)?.icon, size)
+    let map = all_associations();
+    let empty = Associations::default();
+    let found = map.get(mime_type).unwrap_or(&empty);
+    let usable = |id: &String| entries.get(id).filter(|entry| entry.accepts_files);
+    if let Some(entry) = found.defaults.iter().find_map(usable) {
+        return icon_file(&entry.icon, size);
+    }
+    if let Some(entry) = found.added.iter().filter(|id| !found.removed.contains(*id)).find_map(usable) {
+        return icon_file(&entry.icon, size);
+    }
+    let best = entries
+        .iter()
+        .filter(|(id, entry)| entry.accepts_files && !found.removed.contains(*id) && registers(&entry.mime_types, mime_type))
+        .min_by(|(left_id, left), (right_id, right)| {
+            left.app.name.to_lowercase().cmp(&right.app.name.to_lowercase()).then_with(|| left_id.cmp(right_id))
+        })?
+        .1;
+    icon_file(&best.icon, size)
 }
 
 /// An entry's `Icon` key as a file, nearest `size`.
@@ -487,6 +556,25 @@ mod tests {
         let names = |apps: &[App]| apps.iter().map(|app| app.name.clone()).collect::<Vec<_>>();
         assert_eq!(names(&apps.recommended), ["Alpha", "Beta"]);
         assert_eq!(names(&apps.other), ["Zed"]);
+    }
+
+    #[test]
+    fn failed_reads_are_retried_at_the_same_mtime() {
+        let root = std::env::temp_dir().join(format!("boxbox-mimeapps-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("mimeapps.list");
+        std::fs::write(&path, [0xff]).unwrap();
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let paths = [path.clone()];
+        let cache = Mutex::new(None);
+        assert!(associations_for(&paths, &cache).is_empty());
+
+        std::fs::write(&path, "[Default Applications]\ntext/plain=editor.desktop;").unwrap();
+        std::fs::File::open(&path).unwrap().set_modified(modified).unwrap();
+        let found = associations_for(&paths, &cache);
+        assert_eq!(found["text/plain"].defaults, ["editor.desktop"]);
+        assert!(Arc::ptr_eq(&found, &associations_for(&paths, &cache)));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

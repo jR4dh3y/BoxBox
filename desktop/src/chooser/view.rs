@@ -1085,7 +1085,7 @@ impl Chooser {
                 .tint(tint, None)
                 .image(EntryIcon::Glyph)
                 .columns(self.columns.specs(crate::components::Table::Files))
-                .value(crate::components::Column::Type, if item.is_dir { "Folder".into() } else { type_description(&item.name) })
+                .value(crate::components::Column::Type, if item.is_dir { SharedString::from("Folder") } else { SharedString::from(type_description(&item.name)) })
                 .value(crate::components::Column::Size, if item.is_dir { "—".into() } else { file_size(item.size) })
                 .value(crate::components::Column::Modified, file_date(item.mod_time))
                 .selected(self.selected.contains(&index))

@@ -740,6 +740,7 @@ impl super::Context {
         };
 
         let pipeline_cache = super::PipelineCache::open(&device.core, &capabilities.properties);
+        let shader_cache = super::shader_cache::ShaderCache::open();
 
         Ok(super::Context {
             memory: Mutex::new(memory_manager),
@@ -765,6 +766,7 @@ impl super::Context {
             instance,
             entry,
             pipeline_cache,
+            shader_cache,
         })
     }
 
@@ -800,6 +802,7 @@ impl Drop for super::Context {
         if std::thread::panicking() {
             return;
         }
+        self.flush_caches();
         unsafe {
             if let Ok(queue) = self.queue.lock() {
                 let _ = self.device.core.queue_wait_idle(queue.raw);
@@ -819,17 +822,11 @@ impl super::PipelineCache {
     /// The driver checks the header and ignores data from another device or
     /// version; a file it cannot use is replaced.
     fn open(device: &ash::Device, properties: &vk::PhysicalDeviceProperties) -> Self {
-        let folder = std::env::var_os("XDG_CACHE_HOME")
-            .map(std::path::PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .or_else(|| std::env::var_os("HOME").map(|home| std::path::Path::new(&home).join(".cache")))
-            .map(|cache| cache.join("boxbox-gpui"));
-        let file = folder.and_then(|folder| {
-            std::fs::create_dir_all(&folder).ok()?;
-            Some(folder.join(format!(
+        let file = super::shader_cache::cache_dir().map(|folder| {
+            folder.join(format!(
                 "vulkan-pipelines-{:04x}-{:04x}-{:x}.bin",
                 properties.vendor_id, properties.device_id, properties.driver_version
-            )))
+            ))
         });
         let data = file.as_ref().and_then(|file| std::fs::read(file).ok()).unwrap_or_default();
         // The header names the device; data for another one is left out.
@@ -846,6 +843,8 @@ impl super::PipelineCache {
             raw,
             file,
             saved: std::sync::atomic::AtomicUsize::new(if usable { data.len() } else { 0 }),
+            initially_usable: usable,
+            creates: std::sync::atomic::AtomicU32::new(0),
         }
     }
 }

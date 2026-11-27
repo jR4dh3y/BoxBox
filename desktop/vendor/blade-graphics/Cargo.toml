@@ -16,7 +16,7 @@
 edition = "2021"
 name = "blade-graphics"
 version = "0.7.1"
-build = false
+build = "build.rs"
 autolib = false
 autobins = false
 autoexamples = false

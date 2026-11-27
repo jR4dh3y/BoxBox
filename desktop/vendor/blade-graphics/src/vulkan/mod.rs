@@ -9,6 +9,7 @@ mod descriptor;
 mod init;
 mod pipeline;
 mod resource;
+pub(crate) mod shader_cache;
 mod surface;
 
 const QUERY_POOL_SIZE: usize = crate::limits::PASS_COUNT + 1;
@@ -165,6 +166,8 @@ pub struct Context {
     entry: ash::Entry,
     /// Compiled pipelines, kept on disk between runs. (BoxBox patch)
     pipeline_cache: PipelineCache,
+    /// Parsed shader struct spans and compiled SPIR-V, kept on disk between runs. (BoxBox patch)
+    pub(crate) shader_cache: shader_cache::ShaderCache,
 }
 
 /// NVIDIA takes about 250 ms to compile GPUI's pipelines, and GPUI compiles
@@ -174,6 +177,8 @@ struct PipelineCache {
     raw: vk::PipelineCache,
     file: Option<PathBuf>,
     saved: std::sync::atomic::AtomicUsize,
+    initially_usable: bool,
+    creates: std::sync::atomic::AtomicU32,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq)]

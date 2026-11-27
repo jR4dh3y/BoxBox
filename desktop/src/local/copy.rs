@@ -39,7 +39,8 @@ pub(super) fn copy_no_overwrite(
         }
         Ok(_) => {
             let stage = unique_path(parent, "copy")?;
-            copy_regular_file(source, &stage, confinement)?;
+            let mut buffer = Vec::new();
+            copy_regular_file(source, &stage, confinement, &mut buffer)?;
             stage
         }
         Err(error) => return Err(error).with_context(|| format!("cannot inspect {}", source.display())),
@@ -133,6 +134,7 @@ fn copy_directory_contents(
 ) -> Result<()> {
     let mut pending = vec![(source.to_path_buf(), destination.to_path_buf())];
     let mut directories = Vec::new();
+    let mut buffer = Vec::new();
     while let Some((source_dir, destination_dir)) = pending.pop() {
         let source_dir = fs::canonicalize(&source_dir)?;
         ensure_confined(&source_dir, confinement)?;
@@ -154,7 +156,7 @@ fn copy_directory_contents(
                     pending.push((canonical, destination_entry));
                 }
             } else if metadata.is_file() {
-                copy_regular_file(&source_entry, &destination_entry, confinement)?;
+                copy_regular_file(&source_entry, &destination_entry, confinement, &mut buffer)?;
             } else {
                 bail!("unsupported filesystem entry: {}", source_entry.display());
             }
@@ -166,7 +168,51 @@ fn copy_directory_contents(
     Ok(())
 }
 
-fn copy_regular_file(source: &Path, destination: &Path, confinement: Option<&Path>) -> Result<()> {
+const COPY_CHUNK: usize = 1024 * 1024;
+
+#[cfg(target_os = "linux")]
+fn copy_in_kernel(input: &File, output: &File, expected: u64) -> Result<u64> {
+    use std::os::unix::io::AsRawFd as _;
+    let (in_fd, out_fd) = (input.as_raw_fd(), output.as_raw_fd());
+    let mut copied = 0;
+    while copied < expected {
+        let count = (expected - copied).min(COPY_CHUNK as u64) as usize;
+        crate::progress::check()?;
+        // SAFETY: valid open file descriptors; null offsets advance each fd's offset.
+        let written = unsafe {
+            libc::copy_file_range(in_fd, std::ptr::null_mut(), out_fd, std::ptr::null_mut(), count, 0)
+        };
+        if written > 0 {
+            copied += written as u64;
+            crate::progress::advance(written as u64);
+            continue;
+        }
+        if written == 0 {
+            break;
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() == io::ErrorKind::Interrupted {
+            continue;
+        }
+        if copied == 0
+            && matches!(
+                error.raw_os_error(),
+                Some(libc::EXDEV | libc::ENOSYS | libc::EINVAL | libc::EOPNOTSUPP | libc::EPERM)
+            )
+        {
+            break;
+        }
+        return Err(error.into());
+    }
+    Ok(copied)
+}
+
+fn copy_regular_file(
+    source: &Path,
+    destination: &Path,
+    confinement: Option<&Path>,
+    buffer: &mut Vec<u8>,
+) -> Result<()> {
     let canonical = fs::canonicalize(source)
         .with_context(|| format!("cannot resolve {}", source.display()))?;
     ensure_confined(&canonical, confinement)?;
@@ -204,23 +250,35 @@ fn copy_regular_file(source: &Path, destination: &Path, confinement: Option<&Pat
         let mut output = options
             .open(destination)
             .with_context(|| format!("cannot create {}", destination.display()))?;
-        let result = (|| -> Result<()> {
-            // In chunks, so a transfer can report progress and stop when cancelled.
-            let mut buffer = vec![0u8; 1024 * 1024];
+        (|| -> Result<()> {
+            #[cfg(target_os = "linux")]
+            let copied = copy_in_kernel(&input, &output, opened.len())?;
+            #[cfg(not(target_os = "linux"))]
+            let copied = 0;
+
+            // Check for EOF with read, even after a full kernel copy. Another
+            // kernel copy at the file-size limit can raise SIGXFSZ before checking EOF.
+            let needed = (opened.len() - copied).clamp(4096, COPY_CHUNK as u64) as usize;
+            if buffer.len() < needed {
+                buffer.resize(needed, 0);
+            }
+            let chunk = &mut buffer[..needed];
             loop {
                 crate::progress::check()?;
-                let read = io::Read::read(&mut input, &mut buffer)?;
+                let read = match io::Read::read(&mut input, chunk) {
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    result => result?,
+                };
                 if read == 0 {
                     break;
                 }
-                output.write_all(&buffer[..read])?;
+                output.write_all(&chunk[..read])?;
                 crate::progress::advance(read as u64);
             }
             output.flush()?;
             output.set_permissions(metadata.permissions())?;
             Ok(())
-        })();
-        result
+        })()
     };
     if result.is_err() {
         let _ = fs::remove_file(destination);
@@ -298,4 +356,36 @@ fn create_symlink(source: &Path, link: &Path, metadata: &fs::Metadata) -> Result
         }
     };
     result.with_context(|| format!("cannot create symlink {}", link.display()))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copy_reads_past_zero_metadata_size() {
+        let root = std::env::temp_dir().join(format!("boxbox-copy-proc-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let source = Path::new("/proc/self/cmdline");
+        let target = root.join("cmdline");
+        let expected = fs::read(source).unwrap();
+        assert!(!expected.is_empty());
+        assert_eq!(fs::metadata(source).unwrap().len(), 0);
+        copy_no_overwrite(source, &target, None).unwrap();
+        assert_eq!(fs::read(target).unwrap(), expected);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn copy_finishes_at_a_chunk_boundary() {
+        let root = std::env::temp_dir().join(format!("boxbox-copy-chunk-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let target = root.join("target");
+        let expected = vec![0xa5; COPY_CHUNK];
+        fs::write(&source, &expected).unwrap();
+        copy_no_overwrite(&source, &target, None).unwrap();
+        assert_eq!(fs::read(target).unwrap(), expected);
+        fs::remove_dir_all(root).unwrap();
+    }
 }

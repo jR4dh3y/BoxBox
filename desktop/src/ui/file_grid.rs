@@ -4,7 +4,7 @@
 use gpui::{div, prelude::*, px, uniform_list, ClickEvent, Context, Window};
 
 use super::{icon, TextScale};
-use crate::components::{FileTile, PeekCard};
+use crate::components::{EntryIcon, FileTile, PeekCard};
 use crate::format::{display_name, file_size};
 use crate::theme::*;
 use crate::workspace::drag_drop::{drop_zone, DropTarget};
@@ -57,8 +57,8 @@ impl Workspace {
                                         let item = this.pane_by_id(target.0)?.items.get(index)?.clone();
                                         this.request_folder_peek(target, &item, cx);
                                         this.request_thumbnail(target, item, cx);
-                                        this.request_entry_icon(target, index, metrics.theme_icon(), cx);
-                                        this.render_tile(target, index, cx)
+                                        let image = this.request_and_item_icon(target, index, metrics.theme_icon(), cx);
+                                        this.render_tile(target, index, image, cx)
                                     }))
                             })
                             .collect::<Vec<_>>()
@@ -86,7 +86,7 @@ impl Workspace {
             .collect()
     }
 
-    fn render_tile(&self, target: PaneTarget, index: usize, cx: &mut Context<Self>) -> Option<FileTile> {
+    fn render_tile(&self, target: PaneTarget, index: usize, image: EntryIcon, cx: &mut Context<Self>) -> Option<FileTile> {
         let pane = self.pane_by_id(target.0)?;
         let item = pane.items.get(index)?.clone();
         let (path, is_dir) = (item.path.clone(), item.is_dir);
@@ -101,7 +101,7 @@ impl Workspace {
         )
         .icon(style.glyph)
         .tint(style.tint, style.emblem)
-        .image(self.item_icon(&pane.api, &item, crate::components::GridMetrics::new(self.preferences.grid_zoom).theme_icon()))
+        .image(image)
         .detail(match (pane.shows_locations(), is_dir) {
             // A search result says where it is; a file in its folder, how big.
             (true, _) => crate::search::location(&pane.path, &item.path).to_string().into(),

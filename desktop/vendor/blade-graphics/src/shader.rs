@@ -12,38 +12,112 @@ impl From<naga::ShaderStage> for super::ShaderVisibility {
     }
 }
 
+fn parse_and_validate(
+    source: &str,
+    ray_query: bool,
+) -> Result<(naga::Module, naga::valid::ModuleInfo), &'static str> {
+    let module = naga::front::wgsl::parse_str(source).map_err(|e| {
+        e.emit_to_stderr_with_path(source, "");
+        "compilation failed"
+    })?;
+
+    // Bindings are set up at pipeline creation, ignore here
+    let flags = naga::valid::ValidationFlags::all() ^ naga::valid::ValidationFlags::BINDINGS;
+    let mut caps = naga::valid::Capabilities::empty();
+    caps.set(
+        naga::valid::Capabilities::RAY_QUERY
+            | naga::valid::Capabilities::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+        ray_query,
+    );
+    let info = naga::valid::Validator::new(flags, caps)
+        .validate(&module)
+        .map_err(|e| {
+            crate::util::emit_annotated_error(&e, "", source);
+            crate::util::print_err(&e);
+            "validation failed"
+        })?;
+    Ok((module, info))
+}
+
 impl super::Context {
     pub fn try_create_shader(
         &self,
         desc: super::ShaderDesc,
     ) -> Result<super::Shader, &'static str> {
-        let module = naga::front::wgsl::parse_str(desc.source).map_err(|e| {
-            e.emit_to_stderr_with_path(desc.source, "");
-            "compilation failed"
-        })?;
-
-        let device_caps = self.capabilities();
-
-        // Bindings are set up at pipeline creation, ignore here
-        let flags = naga::valid::ValidationFlags::all() ^ naga::valid::ValidationFlags::BINDINGS;
-        let mut caps = naga::valid::Capabilities::empty();
-        caps.set(
-            naga::valid::Capabilities::RAY_QUERY | naga::valid::Capabilities::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
-            !device_caps.ray_query.is_empty(),
-        );
-        let info = naga::valid::Validator::new(flags, caps)
-            .validate(&module)
-            .map_err(|e| {
-                crate::util::emit_annotated_error(&e, "", desc.source);
-                crate::util::print_err(&e);
-                "validation failed"
-            })?;
-
-        Ok(super::Shader {
-            module,
-            info,
-            source: desc.source.to_owned(),
-        })
+        let ray_query = !self.capabilities().ray_query.is_empty();
+        #[cfg(all(
+            not(gles),
+            any(
+                vulkan,
+                windows,
+                target_os = "linux",
+                target_os = "android",
+                target_os = "freebsd"
+            )
+        ))]
+        {
+            let source_hash = super::hal::shader_cache::hash_source(desc.source, ray_query);
+            if let Some(structs) =
+                self.shader_cache
+                    .get_structs(source_hash, desc.source.len(), ray_query)
+            {
+                return Ok(super::Shader {
+                    parsed: std::sync::OnceLock::new(),
+                    source: desc.source.to_owned(),
+                    source_hash,
+                    ray_query,
+                    cached_structs: Some(structs),
+                });
+            }
+            let (module, info) = parse_and_validate(desc.source, ray_query)?;
+            let structs: Vec<(String, u32)> = module
+                .types
+                .iter()
+                .filter_map(|(_, ty)| match (&ty.name, &ty.inner) {
+                    (Some(name), naga::TypeInner::Struct { span, .. }) => {
+                        Some((name.clone(), *span))
+                    }
+                    _ => None,
+                })
+                .collect();
+            self.shader_cache.insert_structs(
+                source_hash,
+                desc.source.len(),
+                ray_query,
+                structs.clone(),
+            );
+            let parsed = std::sync::OnceLock::new();
+            let _ = parsed.set((module, info));
+            return Ok(super::Shader {
+                parsed,
+                source: desc.source.to_owned(),
+                source_hash,
+                ray_query,
+                cached_structs: Some(structs),
+            });
+        }
+        #[cfg(not(all(
+            not(gles),
+            any(
+                vulkan,
+                windows,
+                target_os = "linux",
+                target_os = "android",
+                target_os = "freebsd"
+            )
+        )))]
+        {
+            let (module, info) = parse_and_validate(desc.source, ray_query)?;
+            let parsed = std::sync::OnceLock::new();
+            let _ = parsed.set((module, info));
+            Ok(super::Shader {
+                parsed,
+                source: desc.source.to_owned(),
+                source_hash: [0, 0],
+                ray_query,
+                cached_structs: None,
+            })
+        }
     }
 
     pub fn create_shader(&self, desc: super::ShaderDesc) -> super::Shader {
@@ -54,6 +128,18 @@ impl super::Context {
 pub static EMPTY_CONSTANTS: Lazy<super::PipelineConstants> = Lazy::new(Default::default);
 
 impl super::Shader {
+    pub(crate) fn module_and_info(&self) -> (&naga::Module, &naga::valid::ModuleInfo) {
+        let (module, info) = self.parsed.get_or_init(|| {
+            parse_and_validate(&self.source, self.ray_query)
+                .expect("cached shader failed to parse")
+        });
+        (module, info)
+    }
+
+    pub(crate) fn module(&self) -> &naga::Module {
+        self.module_and_info().0
+    }
+
     pub fn at<'a>(&'a self, entry_point: &'a str) -> super::ShaderFunction<'a> {
         super::ShaderFunction {
             shader: self,
@@ -78,15 +164,20 @@ impl super::Shader {
         &'a self,
         constants: &super::PipelineConstants,
     ) -> (naga::Module, Cow<'a, naga::valid::ModuleInfo>) {
+        let (module, info) = self.module_and_info();
         let (module, info) =
-            naga::back::pipeline_constants::process_overrides(&self.module, &self.info, constants)
-                .unwrap();
+            naga::back::pipeline_constants::process_overrides(module, info, constants).unwrap();
         (module.into_owned(), info)
     }
 
     pub fn get_struct_size(&self, struct_name: &str) -> u32 {
+        if let Some(ref structs) = self.cached_structs {
+            if let Some(&(_, span)) = structs.iter().find(|(name, _)| name == struct_name) {
+                return span;
+            }
+        }
         match self
-            .module
+            .module()
             .types
             .iter()
             .find(|&(_, ty)| ty.name.as_deref() == Some(struct_name))

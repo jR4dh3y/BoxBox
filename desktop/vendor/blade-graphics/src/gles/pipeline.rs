@@ -114,7 +114,7 @@ impl super::Context {
 
         for &sf in shaders {
             let ep_index = sf.entry_point_index();
-            let ep = &sf.shader.module.entry_points[ep_index];
+            let ep = &sf.shader.module().entry_points[ep_index];
             let _ = sf.shader.source;
 
             let (mut module, module_info) = sf.shader.resolve_constants(&sf.constants);
@@ -207,7 +207,7 @@ impl super::Context {
                 }
 
                 for (glsl_name, var_handle) in variables_to_bind.drain(..) {
-                    let var = &sf.shader.module.global_variables[var_handle];
+                    let var = &sf.shader.module().global_variables[var_handle];
                     let var_name = var.name.as_ref().unwrap().as_str();
                     let (group_index, binding_index) = group_layouts
                         .iter()
@@ -310,7 +310,7 @@ impl crate::traits::ShaderDevice for super::Context {
     type RenderPipeline = super::RenderPipeline;
 
     fn create_compute_pipeline(&self, desc: crate::ComputePipelineDesc) -> super::ComputePipeline {
-        let wg_size = desc.compute.shader.module.entry_points[desc.compute.entry_point_index()]
+        let wg_size = desc.compute.shader.module().entry_points[desc.compute.entry_point_index()]
             .workgroup_size;
         let inner = unsafe {
             self.create_pipeline(
