@@ -6,7 +6,7 @@ export const CACHE_TTL_MS = 60 * 60 * 1000;
 let cache: { total: number; fetchedAt: number } | null = null;
 
 /** The exact total sits in the title of the figure under "Total downloads". */
-export function parseTotalDownloads(html: string): number | null {
+function parseTotalDownloads(html: string): number | null {
   const match = /Total downloads<\/span>\s*<h3 title="(\d{1,12})"/.exec(html);
   return match?.[1] ? Number(match[1]) : null;
 }

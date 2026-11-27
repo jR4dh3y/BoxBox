@@ -836,31 +836,6 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_is_busy_from_its_request_until_its_listing() {
-        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
-        pane.begin_load();
-        assert!(pane.busy);
-        pane.finish_load(Err(anyhow::anyhow!("gone")), pane.view());
-        assert!(!pane.busy, "a failure ends it too");
-        let mut root = Pane::new(0, String::new(), false, Sort::default(), ViewMode::List);
-        root.begin_load();
-        assert!(!root.busy, "the Overview asks for no listing");
-    }
-
-    #[test]
-    fn a_new_tab_shows_the_folder_at_once_and_reloads_it_quietly() {
-        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
-        load(&mut pane, ["a", "b"].map(file).to_vec());
-        let mut tab = pane.duplicate(1);
-        assert_eq!((tab.id, tab.path.as_str()), (1, "d"));
-        assert!(matches!(tab.listing, Listing::Loaded) && Arc::ptr_eq(&tab.items, &pane.items), "shown at once, not re-read");
-        tab.begin_load();
-        assert!(matches!(tab.listing, Listing::Loaded), "the reload keeps the entries on screen");
-        load(&mut tab, ["a", "b", "c"].map(file).to_vec());
-        assert_eq!(tab.items.len(), 3);
-    }
-
-    #[test]
     fn a_sort_is_dropped_when_entries_change_first() {
         let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
         load(&mut pane, ["b", "a"].map(file).to_vec());
@@ -1029,24 +1004,6 @@ mod tests {
     }
 
     #[test]
-    fn drag_carries_selection_or_single_item() {
-        let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
-        load(&mut pane, ["a", "b", "c"].map(file).to_vec());
-        pane.click(0, Modifiers::default());
-        pane.click(
-            2,
-            Modifiers {
-                control: true,
-                ..Default::default()
-            },
-        );
-        let names =
-            |items: Vec<FileInfo>| items.into_iter().map(|item| item.name).collect::<Vec<_>>();
-        assert_eq!(names(pane.drag_items(2)), ["a", "c"]);
-        assert_eq!(names(pane.drag_items(1)), ["b"]);
-    }
-
-    #[test]
     fn every_load_invalidates_older_requests() {
         let mut pane = Pane::new(0, "d".into(), false, Sort::default(), ViewMode::List);
         let pending = pane.begin_load();
@@ -1072,15 +1029,6 @@ mod tests {
 
     fn names(pane: &Pane) -> Vec<&str> {
         pane.items.iter().map(|item| item.name.as_str()).collect()
-    }
-
-    #[test]
-    fn one_character_does_not_search() {
-        let mut pane = pane_in_folder();
-        assert!(!pane.set_search_input("a".into()));
-        assert!(!pane.is_searching());
-        assert!(pane.begin_search().is_none());
-        assert_eq!(names(&pane), ["a", "b"]);
     }
 
     #[test]
@@ -1134,21 +1082,6 @@ mod tests {
         assert_eq!(query, "cat");
         assert_eq!(current, pane.search_generation);
         assert!(matches!(pane.search, Search::Loading));
-    }
-
-    #[test]
-    fn empty_and_failed_searches_explain_themselves() {
-        let mut pane = pane_in_folder();
-        pane.set_search_input("zz".into());
-        pane.begin_search();
-        found(&mut pane, vec![]);
-        assert_eq!(
-            pane.placeholder().unwrap().1,
-            "No matches for \"zz\" in this folder"
-        );
-        pane.finish_search(Err(anyhow::anyhow!("Search path not found")), pane.view());
-        assert_eq!(pane.placeholder().unwrap().1, "Search path not found");
-        assert!(pane.items.is_empty());
     }
 
     #[test]

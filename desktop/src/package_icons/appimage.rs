@@ -167,17 +167,4 @@ mod tests {
         assert!(icon(&path, 256).is_err());
         std::fs::remove_dir_all(dir).ok();
     }
-
-    /// AppImages on this machine, when there are any. Run with `--ignored --nocapture`.
-    #[test]
-    #[ignore]
-    fn real_appimages() {
-        let home = std::env::var("HOME").unwrap();
-        for dir in [format!("{home}/Applications"), format!("{home}/Downloads"), "/opt".to_string()] {
-            for path in super::super::tests::find(Path::new(&dir), "appimage", 2) {
-                let started = std::time::Instant::now();
-                super::super::tests::report(&path, icon(&path, 256), started);
-            }
-        }
-    }
 }

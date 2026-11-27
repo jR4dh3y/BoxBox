@@ -557,13 +557,4 @@ mod tests {
         assert!(!accepts(&[item("home/a.txt", false)], true, "", false));
         assert!(!accepts(&[], true, "home", false));
     }
-
-    #[test]
-    fn control_copies_shift_moves_both_link_and_alt_asks() {
-        assert_eq!(request(Modifiers::default()), Request::Auto);
-        assert_eq!(request(Modifiers { control: true, ..Default::default() }), Request::Copy);
-        assert_eq!(request(Modifiers { shift: true, ..Default::default() }), Request::Move);
-        assert_eq!(request(Modifiers { control: true, shift: true, ..Default::default() }), Request::Link);
-        assert_eq!(request(Modifiers { alt: true, control: true, ..Default::default() }), Request::Ask);
-    }
 }

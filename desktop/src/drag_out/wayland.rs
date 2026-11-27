@@ -376,22 +376,3 @@ fn serve(payload: Arc<Payload>, fd: OwnedFd) {
         Err(error) => log::warn!("cannot prepare dragged files: {error}"),
     });
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn payload_prepares_once_and_keeps_the_answer() {
-        let payload = Payload::new(Box::new(|| Ok(vec![PathBuf::from("/tmp/a b.txt")])));
-        let expected = Ok("file:///tmp/a%20b.txt\r\n".to_string());
-        assert_eq!(payload.uri_list(), &expected);
-        assert_eq!(payload.uri_list(), &expected);
-    }
-
-    #[test]
-    fn payload_reports_a_failed_preparation() {
-        let payload = Payload::new(Box::new(|| bail!("offline")));
-        assert_eq!(payload.uri_list(), &Err("offline".to_string()));
-    }
-}

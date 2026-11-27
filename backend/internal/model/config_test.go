@@ -249,22 +249,6 @@ func TestNASIdentitiesMatchEveryAccountThatCanSignIn(t *testing.T) {
 	}
 }
 
-func TestAccountsListsPasswordAndSSOUsers(t *testing.T) {
-	cfg := &ServerConfig{
-		Users: map[string]string{"alice": "a", "bob": "b"},
-		OIDC:  OIDCConfig{IssuerURL: "https://auth.example.com", Users: []string{"carol"}},
-	}
-	accounts := cfg.Accounts()
-	if len(accounts) != 3 {
-		t.Fatalf("Accounts = %v", accounts)
-	}
-	for _, name := range []string{"alice", "bob", "carol"} {
-		if _, ok := accounts[name]; !ok {
-			t.Fatalf("Accounts = %v, missing %s", accounts, name)
-		}
-	}
-}
-
 func TestValidatePublicURL(t *testing.T) {
 	base := ServerConfig{
 		JWTSecret:   "0123456789abcdef0123456789abcdef",

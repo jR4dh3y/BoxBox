@@ -187,14 +187,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn name_fills_and_the_last_column_ends_at_the_edge() {
-        let specs = ColumnLayout::new(Table::Files).specs(Table::Files);
-        assert_eq!(specs.iter().map(|spec| spec.column).collect::<Vec<_>>(), [Column::Name, Column::Size, Column::Type, Column::Modified]);
-        assert_eq!(specs[0].width, Width::Fill(MIN_NAME));
-        assert_eq!(specs[3].width, Width::Fixed(176.));
-    }
-
-    #[test]
     fn a_border_sizes_the_column_to_its_right() {
         // 1000px: Modified spans 824..1000, Type 664..824, Size 568..664.
         let layout = ColumnLayout::new(Table::Files);

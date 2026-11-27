@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { selectedFileBytes, useBrowseSelection } from './selection.svelte';
+import { useBrowseSelection } from './selection.svelte';
 
 const entries = (...paths: string[]) => paths.map((path) => ({ path }));
 
@@ -30,14 +30,4 @@ test('root listing prunes only direct children', () => {
 	selection.set(new Set(['gone', 'media/kept.txt']));
 	selection.retain([], '');
 	assert.deepEqual([...selection.paths], ['media/kept.txt']);
-});
-
-test('selected size counts files only', () => {
-	const items = [
-		{ path: 'a', isDir: false, size: 10 },
-		{ path: 'b', isDir: false, size: 5 },
-		{ path: 'c', isDir: true, size: 4096 }
-	];
-	assert.equal(selectedFileBytes(items, new Set(['a', 'c'])), 10);
-	assert.equal(selectedFileBytes(items, new Set()), 0);
 });

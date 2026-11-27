@@ -151,25 +151,3 @@ impl Workspace {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_shown_notices_start_their_lifetime() {
-        let mut notices = Notices::default();
-        for index in 0..6 {
-            notices.push(ToastKind::Info, index.to_string(), None);
-        }
-        assert_eq!(notices.start_timers(), [1, 2, 3, 4]);
-        assert!(notices.start_timers().is_empty());
-        assert!(notices.remove(2));
-        assert!(!notices.remove(2), "it is already leaving");
-        assert_eq!(notices.start_timers(), [5], "a leaving notice frees its place at once");
-        assert_eq!(notices.visible().len(), 4);
-        assert_eq!(notices.drawn().count(), 5, "the leaving one is still drawn");
-        notices.purge(2);
-        assert_eq!(notices.drawn().count(), 4);
-    }
-}

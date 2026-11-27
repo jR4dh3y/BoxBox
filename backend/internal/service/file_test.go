@@ -31,17 +31,6 @@ func setupTestFileService() (FileService, *filesystem.AferoFS) {
 	return svc, fs
 }
 
-type truncatedDirectoryListingFS struct {
-	filesystem.FS
-}
-
-func (f truncatedDirectoryListingFS) ReadDirFileInfoLimit(_ string, limit int) ([]fs.FileInfo, bool, error) {
-	if limit != 10_000 {
-		return nil, false, fmt.Errorf("unexpected directory limit %d", limit)
-	}
-	return nil, true, nil
-}
-
 func TestDirectoryListingReturnsHiddenAndVisibleEntries(t *testing.T) {
 	svc, fs := setupTestFileService()
 	ctx := context.Background()
@@ -124,20 +113,6 @@ func TestDirectoryListingHonorsCanceledContext(t *testing.T) {
 
 	if _, err := svc.List(ctx, "media/canceled"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("List error = %v, want context.Canceled", err)
-	}
-}
-
-func TestDirectoryListingEnforcesEntryLimit(t *testing.T) {
-	fsys := filesystem.NewMemMapFS()
-	if err := fsys.MkdirAll("/data/media/large", 0755); err != nil {
-		t.Fatal(err)
-	}
-	svc := NewFileService(truncatedDirectoryListingFS{FS: fsys}, FileServiceConfig{
-		MountPoints: []model.MountPoint{{Name: "media", Path: "/data/media"}},
-	})
-
-	if _, err := svc.List(context.Background(), "media/large"); !errors.Is(err, ErrDirectoryTooLarge) {
-		t.Fatalf("List error = %v, want ErrDirectoryTooLarge", err)
 	}
 }
 

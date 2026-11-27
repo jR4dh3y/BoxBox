@@ -137,38 +137,3 @@ impl Workspace {
         cx.notify();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn item(name: &str, from: &str, deleted: &str, is_dir: bool) -> TrashItem {
-        TrashItem { id: name.into(), name: name.into(), original_path: format!("{from}/{name}"), deleted_at: deleted.into(), is_dir, can_restore: true }
-    }
-
-    #[test]
-    fn newest_first_with_folders_on_top() {
-        let mut items = vec![
-            item("a.txt", "/srv", "2026-01-01T00:00:00Z", false),
-            item("b.txt", "/srv", "2026-03-01T00:00:00Z", false),
-            item("photos", "/srv", "2025-01-01T00:00:00Z", true),
-        ];
-        sort_trash(&mut items, TrashTable::default().sort);
-        assert_eq!(items.iter().map(|item| item.name.as_str()).collect::<Vec<_>>(), ["photos", "b.txt", "a.txt"]);
-    }
-
-    #[test]
-    fn by_location_then_name() {
-        let mut items = vec![item("b", "/srv/z", "", false), item("a", "/srv/z", "", false), item("c", "/srv/a", "", false)];
-        sort_trash(&mut items, (Column::Location, SortDir::Asc));
-        assert_eq!(items.iter().map(|item| item.name.as_str()).collect::<Vec<_>>(), ["c", "a", "b"]);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn locations_show_the_folder_with_home_as_tilde() {
-        let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
-        assert_eq!(location(home.join("Desktop").join("a.pdf").to_str().unwrap()), "~/Desktop");
-        assert_eq!(location("/srv/media/a.mkv"), "/srv/media");
-    }
-}

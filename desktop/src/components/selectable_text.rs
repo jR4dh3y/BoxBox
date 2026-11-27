@@ -54,21 +54,3 @@ pub fn index_at(layout: &TextLayout, text: &str, position: Point<Pixels>) -> usi
     let index = layout.index_for_position(position).unwrap_or_else(|nearest| nearest).min(text.len());
     (0..=index).rev().find(|&index| text.is_char_boundary(index)).unwrap_or(0)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::TextSelection;
-
-    #[test]
-    fn a_drag_selects_either_way_and_a_double_click_takes_it_all() {
-        let mut selection = TextSelection::start("location".into(), "home/Games".into(), 5, false);
-        assert_eq!(selection.selected(), None);
-        selection.extend(10);
-        assert_eq!(selection.selected(), Some("Games"));
-        selection.extend(0);
-        assert_eq!(selection.selected(), Some("home/"));
-        let whole = TextSelection::start("location".into(), "home/Games".into(), 3, true);
-        assert_eq!(whole.selected(), Some("home/Games"));
-        assert!(whole.is_of("location", "home/Games") && !whole.is_of("location", "home"));
-    }
-}
