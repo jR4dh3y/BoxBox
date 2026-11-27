@@ -24,7 +24,7 @@ describe('browse location', () => {
 		assert.equal(explicit.sortBy, 'name');
 		assert.equal(explicit.sortDir, 'asc');
 	});
-	test('This PC defaults to master drive cards while folders retain display preferences', () => {
+	test('Overview defaults to master drive cards while folders retain display preferences', () => {
 		const root = usePaneLocation({
 			initial: parseBrowseLocation(new URL('http://boxbox.local/browse'))
 		});

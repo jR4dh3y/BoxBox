@@ -3,9 +3,12 @@ import { Download, ArrowUpRight } from '@lucide/astro';
 ---
 <!-- Its parts are rows of the download page's column grid: button, links, notes. -->
 <div id="desktop-download" class="contents">
-  <div>
+  <div class="flex flex-wrap gap-3">
     <a id="desktop-release-download" hidden class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-accent-solid px-6 py-3 font-semibold text-white transition-colors hover:bg-accent-solid-hover" href="/docs/desktop/">
       <Download class="h-5 w-5" /> Download for Linux x86_64
+    </a>
+    <a id="desktop-release-windows" hidden class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-accent-solid px-6 py-3 font-semibold text-white transition-colors hover:bg-accent-solid-hover" href="/docs/desktop/#windows">
+      <Download class="h-5 w-5" /> Download for Windows x64
     </a>
   </div>
   <div class="mt-5 flex flex-wrap gap-x-5 gap-y-3 text-sm">
@@ -23,19 +26,30 @@ import { Download, ArrowUpRight } from '@lucide/astro';
   const status = document.getElementById('desktop-release-status');
   const download = document.querySelector<HTMLAnchorElement>('#desktop-release-download');
   const checksums = document.querySelector<HTMLAnchorElement>('#desktop-release-checksums');
-  if (status && download && checksums) {
+  const windowsDownload = document.querySelector<HTMLAnchorElement>('#desktop-release-windows');
+  if (status && download && windowsDownload && checksums) {
     status.textContent = 'Checking the latest desktop package…';
     fetch('/api/releases.json').then(async response => {
       if (!response.ok) throw new Error('Release service unavailable');
       const release: unknown = await response.json();
-      if (typeof release !== 'object' || release === null || !('desktop' in release)) throw new Error('Invalid release');
-      const asset = release.desktop;
-      if (typeof asset !== 'object' || asset === null || !('url' in asset) || typeof asset.url !== 'string' || !/^https:\/\/github\.com\/jR4dh3y\/BoxBox\/releases\/download\/v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\/boxbox-desktop-v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-linux-amd64\.tar\.gz$/.test(asset.url)) {
-        status.textContent = 'The desktop package is not in the latest public release yet. You can build it from source using the installation guide.';
-        return;
+      if (typeof release !== 'object' || release === null || !('tagName' in release) ||
+          typeof release.tagName !== 'string' || !/^v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(release.tagName)) {
+        throw new Error('Invalid release');
       }
-      download.href = asset.url; download.hidden = false;
-      status.textContent = 'Linux x86_64 desktop package available. Includes the app and its runtime; no Go, Bun or Docker installation needed.';
+      const tag = release.tagName;
+      const prefix = `https://github.com/jR4dh3y/BoxBox/releases/download/${tag}/boxbox-desktop-${tag}-`;
+      // Only the exact asset of the current release is linked.
+      const display = (link: HTMLAnchorElement, asset: unknown, file: string) => {
+        if (typeof asset === 'object' && asset !== null && 'url' in asset && asset.url === prefix + file) {
+          link.href = asset.url;
+          link.hidden = false;
+        }
+      };
+      display(download, 'desktop' in release ? release.desktop : null, 'linux-amd64.tar.gz');
+      display(windowsDownload, 'windowsDesktop' in release ? release.windowsDesktop : null, 'windows-amd64.zip');
+      status.textContent = download.hidden && windowsDownload.hidden
+        ? 'The desktop packages are not in the latest public release yet. You can build them from source using the installation guide.'
+        : 'Choose the package for your computer. No Go, Bun or Docker installation needed.';
       if ('checksumsUrl' in release && typeof release.checksumsUrl === 'string' && /^https:\/\/github\.com\/jR4dh3y\/BoxBox\/releases\/download\/v[\w.-]+\/SHA256SUMS$/.test(release.checksumsUrl)) {
         checksums.href = release.checksumsUrl; checksums.hidden = false;
       }

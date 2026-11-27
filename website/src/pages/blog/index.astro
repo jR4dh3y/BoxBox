@@ -1,0 +1,25 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import { blogPostHref, blogPosts } from '../../lib/blog';
+---
+
+<Layout title="Blog | BoxBox" description="BoxBox release announcements.">
+  <SiteNav />
+  <main class="mx-auto w-full max-w-3xl px-5 py-10 md:px-8 lg:py-14">
+    <h1 class="text-4xl font-black tracking-tight text-white md:text-5xl" style="font-family: 'Bricolage Grotesque', sans-serif;">Blog</h1>
+    <ul class="mt-8 divide-y divide-border-primary border-y border-border-primary">
+      {blogPosts.map((post) => (
+        <li class="py-6">
+          <time datetime={post.date} class="text-sm text-text-secondary">{post.date}</time>
+          <h2 class="mt-2 text-xl font-semibold text-white">
+            <a href={blogPostHref(post.slug)} class="underline decoration-accent underline-offset-4">{post.title}</a>
+          </h2>
+          <p class="mt-2 text-text-secondary">{post.description}</p>
+        </li>
+      ))}
+    </ul>
+  </main>
+  <SiteFooter />
+</Layout>

@@ -159,6 +159,7 @@ export class BrowseRequests {
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Listener registration is not render state.
 	private changes = new Set<(event: 'changed' | 'reset') => Promise<unknown> | void>();
 	private session = $state(0);
+	private sessionController = new AbortController();
 	private enabled = true;
 
 	constructor(private readonly early: EarlyStartSource = earlyStart) {}
@@ -241,8 +242,14 @@ export class BrowseRequests {
 		return () => this.changes.delete(changed);
 	}
 
+	/** Deferred file actions keep this signal for their entire lifetime. */
+	get sessionSignal(): AbortSignal {
+		return this.sessionController.signal;
+	}
+
 	reset(): void {
 		this.enabled = false;
+		this.sessionController.abort();
 		for (const entry of this.folders.values()) entry.dispose();
 		for (const { request } of this.searches.values()) request.dispose();
 		this.roots.dispose();
@@ -256,6 +263,8 @@ export class BrowseRequests {
 	}
 
 	startSession(): void {
+		this.sessionController.abort();
+		this.sessionController = new AbortController();
 		this.enabled = true;
 		this.session++;
 	}

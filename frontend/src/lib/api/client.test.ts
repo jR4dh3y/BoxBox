@@ -34,6 +34,29 @@ function installWindow(origin: string) {
 }
 
 describe('auth persistence in the API client', () => {
+	test('an already cancelled mutation never reaches fetch', async () => {
+		const originalFetch = globalThis.fetch;
+		const controller = new AbortController();
+		controller.abort();
+		let requestCount = 0;
+		try {
+			globalThis.fetch = Object.assign(
+				async () => {
+					requestCount++;
+					return new Response();
+				},
+				{ preconnect: originalFetch.preconnect }
+			);
+			await assert.rejects(
+				apiRequest('/files/test', { method: 'DELETE', signal: controller.signal }),
+				{ name: 'AbortError' }
+			);
+			assert.equal(requestCount, 0);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
 	test('automatic and explicit callers share one in-flight refresh', async () => {
 		let beginRefresh: () => void = () => {
 			throw new Error('Refresh request did not start');

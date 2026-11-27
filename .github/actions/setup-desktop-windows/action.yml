@@ -1,0 +1,20 @@
+name: Set up Windows desktop build
+description: Prepare Rust and the Windows SDK shader compiler for GPUI
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.3
+    - name: Set up Rust and the shader compiler
+      shell: pwsh
+      run: |
+        rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
+        rustup default stable-x86_64-pc-windows-msvc
+        $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+        $fxc = Get-ChildItem $kits -Filter fxc.exe -File -Recurse |
+          Where-Object { $_.Directory.Name -eq 'x64' -and $_.Directory.Parent.Name -match '^\d+(\.\d+){3}$' } |
+          Sort-Object { [version]$_.Directory.Parent.Name } -Descending |
+          Select-Object -First 1
+        if (!$fxc) { throw 'Install a Windows SDK with the x64 fxc.exe shader compiler' }
+        "GPUI_FXC_PATH=$($fxc.FullName)" >> $env:GITHUB_ENV

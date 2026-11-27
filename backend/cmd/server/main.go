@@ -444,6 +444,7 @@ func createRouter(
 
 			// User-file routes use the signed-in account's file stack.
 			r.Mount("/files", stacks.route(func(s *fileStack) http.Handler { return s.files }))
+			r.Mount("/empty-directories", stacks.route(func(s *fileStack) http.Handler { return s.emptyDirectories }))
 			r.Mount("/stream", stacks.route(func(s *fileStack) http.Handler { return s.stream }))
 			r.Mount("/search", stacks.route(func(s *fileStack) http.Handler { return s.search }))
 			r.Mount("/jobs", stacks.route(func(s *fileStack) http.Handler { return s.job }))

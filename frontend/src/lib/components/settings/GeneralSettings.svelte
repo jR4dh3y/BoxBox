@@ -8,6 +8,7 @@
 		pickOption
 	} from '#lib/settings/options.js';
 	import type { Preferences } from '#lib/settings/preferences.js';
+	import { START_LOCATION_OPTIONS } from '#lib/browse/startLocation.js';
 	import SettingsRow from './SettingsRow.svelte';
 
 	let { preferences }: { preferences: Preferences } = $props();
@@ -55,6 +56,14 @@
 		onchange={(selectionCheckboxes) => preferences.update({ selectionCheckboxes })}
 	/>
 </SettingsRow>
+<SettingsRow label="Show details on hover">
+	<Toggle
+		checked={settings.hoverDetails}
+		label="Show details on hover"
+		showLabel={false}
+		onchange={(hoverDetails) => preferences.update({ hoverDetails })}
+	/>
+</SettingsRow>
 <SettingsRow label="Default sort">
 	<div class="w-40">
 		<Select
@@ -90,6 +99,27 @@
 			onchange={(value) => {
 				const defaultViewMode = pickOption(VIEW_MODE_OPTIONS, value);
 				if (defaultViewMode) preferences.update({ defaultViewMode });
+			}}
+		/>
+	</div>
+</SettingsRow>
+<SettingsRow label="Remember view per folder">
+	<Toggle
+		checked={settings.viewPerFolder}
+		label="Remember view per folder"
+		showLabel={false}
+		onchange={(viewPerFolder) => preferences.update({ viewPerFolder })}
+	/>
+</SettingsRow>
+<SettingsRow label="Start location">
+	<div class="w-40">
+		<Select
+			label="Start location"
+			options={START_LOCATION_OPTIONS}
+			value={settings.startLocation}
+			onchange={(value) => {
+				const startLocation = pickOption(START_LOCATION_OPTIONS, value);
+				if (startLocation) preferences.update({ startLocation });
 			}}
 		/>
 	</div>

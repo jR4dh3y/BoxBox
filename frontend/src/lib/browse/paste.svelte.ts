@@ -17,9 +17,13 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 		get busy() {
 			return loading || (controller?.busy ?? false);
 		},
-		async paste() {
-			if (loading || !location.path || !data.canCreate) return;
-			const destination = location.path;
+		/** Pastes into the open folder, or into `into`, such as a path crumb or a sidebar place. */
+		async paste(into?: string) {
+			const here = into === undefined || into === location.path;
+			const destination = into ?? location.path;
+			// From Drives the open path is empty, but a drive or place chosen to paste into is not.
+			if (loading || !destination || (here && !data.canCreate)) return;
+			const opened = location.path;
 			const revision = getBrowseClipboardPublication().revision;
 			loading = true;
 			try {
@@ -27,16 +31,13 @@ export function useBrowsePaste(location: BrowseLocation, data: BrowseData) {
 					const module = await import('./pasteRuntime.svelte');
 					controller = module.useBrowsePaste(location, data);
 				}
-				if (
-					destination !== location.path ||
-					revision !== getBrowseClipboardPublication().revision
-				) {
+				if (opened !== location.path || revision !== getBrowseClipboardPublication().revision) {
 					toastStore.info(
 						'The folder or clipboard changed. Paste again to use the current selection.'
 					);
 					return;
 				}
-				await controller.paste();
+				await controller.paste(destination);
 			} catch (error) {
 				toastStore.error(error instanceof Error ? error.message : 'Unable to load paste');
 			} finally {

@@ -160,7 +160,7 @@ export async function getJob(jobId: string, signal?: AbortSignal): Promise<Job> 
  * Create a new background job
  * POST /api/v1/jobs
  */
-export async function createJob(request: CreateJobRequest): Promise<Job> {
+export async function createJob(request: CreateJobRequest, signal?: AbortSignal): Promise<Job> {
 	const source = parseRemotePath(request.sourcePath);
 	const destination =
 		request.destPath === undefined ? undefined : parseRemotePath(request.destPath);
@@ -168,14 +168,18 @@ export async function createJob(request: CreateJobRequest): Promise<Job> {
 		if (request.type === 'move')
 			throw new Error('Moving between servers is unavailable. Copy the items instead.');
 		if (request.type === 'delete') throw new Error('Delete cannot have a cross-source destination');
-		return parseJob(await api.post<unknown>('/desktop/transfers', request), LOCAL);
+		return parseJob(await api.post<unknown>('/desktop/transfers', request, signal), LOCAL);
 	}
 	return parseJob(
-		await api.post<unknown>(sourceEndpoint(source, '/jobs'), {
-			...request,
-			sourcePath: source.path,
-			...(destination ? { destPath: destination.path } : {})
-		}),
+		await api.post<unknown>(
+			sourceEndpoint(source, '/jobs'),
+			{
+				...request,
+				sourcePath: source.path,
+				...(destination ? { destPath: destination.path } : {})
+			},
+			signal
+		),
 		source
 	);
 }
@@ -197,8 +201,8 @@ export async function createMoveJob(sourcePath: string, destPath: string): Promi
 /**
  * Create a delete job
  */
-export async function createDeleteJob(sourcePath: string): Promise<Job> {
-	return createJob({ type: 'delete', sourcePath });
+export async function createDeleteJob(sourcePath: string, signal?: AbortSignal): Promise<Job> {
+	return createJob({ type: 'delete', sourcePath }, signal);
 }
 
 /**

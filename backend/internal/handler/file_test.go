@@ -181,3 +181,48 @@ func TestDeleteSymlinkToFolderNeedsNoConfirmationAndKeepsTarget(t *testing.T) {
 		t.Fatalf("symlink target was deleted: %v", err)
 	}
 }
+
+func TestRemoveEmptyDirectoryOnlyRemovesEmptyFolders(t *testing.T) {
+	home := t.TempDir()
+	for _, name := range []string{"empty", "full"} {
+		if err := os.Mkdir(filepath.Join(home, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(home, "full", "new.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("empty", filepath.Join(home, "link")); err != nil {
+		t.Fatal(err)
+	}
+	files := service.NewFileService(filesystem.NewOsFS(), service.FileServiceConfig{
+		MountPoints: []model.MountPoint{{Name: "home", Path: home}},
+	})
+	router := chi.NewRouter()
+	router.Route("/api/v1/empty-directories", NewFileHandler(files).RegisterEmptyDirectoryRoutes)
+
+	for _, tc := range []struct {
+		path   string
+		status int
+	}{
+		{"full", http.StatusConflict},
+		{"full/new.txt", http.StatusBadRequest},
+		{"link", http.StatusBadRequest},
+		{"empty", http.StatusNoContent},
+	} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/v1/empty-directories/home/"+tc.path, nil))
+		if rec.Code != tc.status {
+			t.Fatalf("%s: got %d, want %d: %s", tc.path, rec.Code, tc.status, rec.Body.String())
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(home, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "full", "new.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "empty")); !os.IsNotExist(err) {
+		t.Fatalf("empty directory remains: %v", err)
+	}
+}

@@ -11,11 +11,26 @@ import {
 	readDroppedLocalFiles,
 	type FileDropHandler
 } from './fileDrag';
-import type { BrowseActions } from './actions.svelte';
+import type { TransferSource } from './transfers';
+import type { useBrowsePaste } from './paste.svelte';
 import type { BrowseData } from './data.svelte';
 import { parseRemotePath } from '#lib/api/remotePaths.js';
 
-export function useFileDrop(data: BrowseData, actions: BrowseActions): FileDropHandler {
+/** A drop with Alt held asks what to do with the items, at the drop point. */
+export interface DropQuestion {
+	x: number;
+	y: number;
+	items: TransferSource[];
+	destination: string;
+	/** Moving is offered only within one server. */
+	canMove: boolean;
+}
+
+export function useFileDrop(
+	data: BrowseData,
+	paste: ReturnType<typeof useBrowsePaste>,
+	ask: (question: DropQuestion) => void = () => {}
+): FileDropHandler {
 	function allowed(destination: string) {
 		const source = parseRemotePath(destination);
 		if (!destination || (source.kind === 'remote' && !source.path)) return false;
@@ -28,8 +43,11 @@ export function useFileDrop(data: BrowseData, actions: BrowseActions): FileDropH
 		over(event, destination) {
 			const kind = fileDragKind(event.dataTransfer);
 			if (!kind || !allowed(destination)) return false;
-			const operation = dropOperation(kind, event, destination);
-			if (!canDropInto(draggedSources(), destination, operation)) return false;
+			const sources = draggedSources();
+			let operation = dropOperation(kind, event, destination);
+			// Alt asks on drop, and into the items' own folder it can still offer Copy Here.
+			if (event.altKey && !canDropInto(sources, destination, operation)) operation = 'copy';
+			if (!canDropInto(sources, destination, operation)) return false;
 			event.preventDefault();
 			if (event.dataTransfer) event.dataTransfer.dropEffect = operation;
 			return true;
@@ -47,9 +65,17 @@ export function useFileDrop(data: BrowseData, actions: BrowseActions): FileDropH
 						? readDroppedLocalFiles(transfer.getData('text/uri-list'))
 						: [];
 			const operation = dropOperation(kind, event, destination, items);
+			if (items.length && event.altKey) {
+				if (!canDropInto(items, destination, 'copy')) return;
+				const canMove =
+					dropOperation(kind, { ctrlKey: false }, destination, items) === 'move' &&
+					canDropInto(items, destination, 'move');
+				ask({ x: event.clientX, y: event.clientY, items, destination, canMove });
+				return;
+			}
 			if (!canDropInto(items, destination, operation)) return;
 			if (items.length) {
-				void actions.paste.transfer(operation, items, destination);
+				void paste.transfer(operation, items, destination);
 				return;
 			}
 			if (kind === 'external')

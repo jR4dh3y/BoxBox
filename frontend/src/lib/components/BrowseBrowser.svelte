@@ -4,7 +4,7 @@
 	 */
 	import { onMount, untrack, type Snippet } from 'svelte';
 	import { createDropZone } from '#lib/browse/dropZone.svelte.js';
-	import { useFileDrop } from '#lib/browse/fileDrop.js';
+	import { useFileDrop, type DropQuestion } from '#lib/browse/fileDrop.js';
 	import { browseRequests } from '#lib/browse/requests.svelte.js';
 	import { watchDesktopDirectory } from '#lib/browse/desktopWatch.js';
 	import { isNativePath } from '#lib/api/desktop.js';
@@ -21,14 +21,23 @@
 	import { settingsStore } from '#lib/stores/settings.svelte.js';
 	import { uploadStore } from '#lib/stores/upload.svelte.js';
 	import { jobsStore } from '#lib/stores/jobs.svelte.js';
-	import { useBrowseActions } from '#lib/browse/actions.svelte.js';
+	import { useFileActions } from '#lib/browse/fileActions.svelte.js';
 	import { useBrowseData } from '#lib/browse/data.svelte.js';
-	import { useBrowseLocation } from '#lib/browse/location.svelte.js';
+	import { useBrowseLocation, type HistoryPlace } from '#lib/browse/location.svelte.js';
+	import { type Place, type PlaceAction } from '#lib/browse/placeMenu.js';
+	import { openInNewTab } from '#lib/browse/newTab.js';
+	import { toastStore } from '#lib/stores/toast.svelte.js';
 	import { selectedFileBytes, useBrowseSelection } from '#lib/browse/selection.svelte.js';
 	import { useBrowseUploads } from '#lib/browse/uploads.svelte.js';
 	import { CONFIG } from '#lib/config.js';
 	import { createHoverIntent } from '#lib/utils/hoverIntent.js';
 	import type { AddAction } from '#lib/utils/addMenu.js';
+	import { folderAppearance } from '#lib/browse/folderLooks.js';
+	import { HoverCards } from '#lib/browse/hoverCards.svelte.js';
+	import { rootLabel } from '#lib/browse/rootLabel.js';
+	import { parentFolder } from '#lib/browse/details.js';
+	import { getFileShortcut, isTextEntryTarget } from '#lib/browse/fileShortcuts.js';
+	import { WheelZoom } from '#lib/browse/zoom.js';
 
 	let {
 		pane,
@@ -48,16 +57,29 @@
 	const paneState = untrack(() => pane);
 	const selection = paneState?.selection ?? useBrowseSelection();
 	const location =
-		paneState?.location ?? useBrowseLocation({ onLocationChange: () => selection.clear() });
+		paneState?.location ??
+		useBrowseLocation({
+			onLocationChange: () => selection.clear(),
+			selection: () => selection.paths,
+			onRestoreSelection: (paths) => selection.set(new Set(paths))
+		});
 	const data = useBrowseData(location, selection, () => catalog);
 	onMount(() => {
 		onRuntime?.({ location, data });
 		return () => onRuntime?.(null);
 	});
-	const actions = useBrowseActions(location, data, selection);
+	const files = useFileActions(location, data, selection);
+	const actions = $derived(files.controller);
 	const uploads = useBrowseUploads(location, data);
-	const dropHandler = useFileDrop(data, actions);
-	const drop = createDropZone(() => dropHandler);
+	let dropQuestion = $state<DropQuestion | null>(null);
+	const dropHandler = useFileDrop(data, files.paste, (question) => (dropQuestion = question));
+	// A drag held on a folder, a crumb or a place opens it, so a drop can go deeper.
+	const drop = createDropZone(
+		() => dropHandler,
+		(destination) => {
+			if (destination !== location.path) location.navigate(destination);
+		}
+	);
 	const settings = $derived(settingsStore.current);
 	let settingsOpen = $state(false);
 	let settingsSection = $state<'general' | 'connections'>('general');
@@ -66,8 +88,52 @@
 	function handleAdd(action: AddAction) {
 		if (action === 'upload-files') uploads.openPicker();
 		else if (action === 'upload-folder') uploads.openFolderPicker();
-		else void actions.handleContextMenuAction(action, []);
+		else void files.handleContextMenuAction(action, []);
 	}
+	// Places are the special folders, such as Downloads, whose folders carry an emblem.
+	const places = $derived(
+		new Set(data.roots.filter((root) => root.kind === 'place').map((root) => root.name))
+	);
+	const appearance = (path: string) =>
+		folderAppearance(path, places, settingsStore.current.folderLooks);
+	const hover = new HoverCards({
+		enabled: () => settingsStore.current.hoverDetails,
+		location: (item) => (location.isSearchActive ? parentFolder(item.path) : null),
+		async listFolder(path) {
+			await browseRequests.prefetch(path);
+			const listing = browseRequests.folder(path).value;
+			if (!listing) throw new Error('The folder could not be read');
+			return listing.items;
+		},
+		async stats() {
+			const { stats } = browseRequests.catalog();
+			await stats.load();
+			if (stats.error) throw stats.error;
+			return stats.value?.drives ?? [];
+		}
+	});
+	// A press, scroll, key, drag or new folder covers or moves what the card describes.
+	$effect(() => {
+		void location.path;
+		if (hasOpenDialog) hideHoverCard();
+		return hideHoverCard;
+	});
+	const hideHoverCard = () => hover.hide();
+	/** The item being renamed in place, and what its field reports back. */
+	const renameEditor = $derived(
+		actions?.renaming.kind === 'renaming'
+			? {
+					path: actions.renaming.file.path,
+					isDir: actions.renaming.file.isDir,
+					name: actions.renaming.name,
+					problem: actions.renaming.problem,
+					oninput: actions.setRenameName,
+					oncommit: () => void actions?.confirmRename(),
+					oncancel: actions.cancelRename
+				}
+			: null
+	);
+
 	const selectedBytes = $derived(selectedFileBytes(data.displayItems, selection.paths));
 	$effect(() => {
 		const path = location.path;
@@ -80,17 +146,13 @@
 	let uploadErrorDismissed = $state(false);
 
 	function closeDialogs() {
-		actions.closeCreate();
-		actions.closeRename();
-		actions.closeDelete();
-		actions.closeProperties();
+		actions?.closeCreate();
+		actions?.closeDelete();
+		actions?.closeProperties();
 	}
 	// Overlays load on first use, so they stay out of the browse page's first download.
 	const hasOpenDialog = $derived(
-		actions.createDialog.open ||
-			actions.renameDialog.open ||
-			actions.deleteDialog.open ||
-			actions.propertiesDialog.open
+		actions?.createDialog.open || actions?.deleteDialog.open || actions?.propertiesItems != null
 	);
 	const onFolderHover = createHoverIntent(
 		data.prefetchDirectory,
@@ -102,38 +164,214 @@
 		return () => onFolderHover(null);
 	});
 
+	const listingProps = $derived({
+		viewKey: location.viewKey,
+		dropTarget: drop,
+		items: data.displayItems,
+		emptyMessage: data.emptyListMessage,
+		selectedPaths: selection.paths,
+		isLoading: data.isFileListLoading,
+		cutPaths: files.cutPaths,
+		favoritePaths: files.favoritePaths,
+		canPaste: files.canPaste,
+		canCreate: data.canCreate,
+		readOnly: data.isReadOnly,
+		showFileExtensions: settings.showFileExtensions,
+		previewOnSingleClick: settings.previewOnSingleClick,
+		selectionCheckboxes: settings.selectionCheckboxes,
+		fileIconTints: settings.fileIconTints,
+		folderAppearance: appearance,
+		hover: settings.hoverDetails && !hover.failed ? hover.files : undefined,
+		renameEditor,
+		onItemClick: files.openFile,
+		onFolderHover,
+		onSelectionChange: selection.set,
+		onContextMenuAction: files.handleContextMenuAction
+	});
+
+	let shortcutsOpen = $state(false);
+	// Presses of Refresh still loading; the icon turns while any is.
+	let refreshes = $state(0);
+	async function refreshAll() {
+		refreshes++;
+		try {
+			await data.reload();
+		} finally {
+			refreshes--;
+		}
+	}
+	function toggleDetails() {
+		settingsStore.set({
+			...settingsStore.current,
+			detailsPanel: !settingsStore.current.detailsPanel
+		});
+	}
+	/** A path as the path bar names it: the drive's label, then the folders under it. */
+	function locationLabel(path: string): string {
+		if (!path) return data.serverName ?? rootLabel();
+		const [drive = '', ...rest] = path.split('/');
+		const root = data.roots.find((candidate) => candidate.name === drive);
+		return [root?.label ?? drive, ...rest].join('/');
+	}
+	const selectedItems = $derived(
+		selection.count === 0 ? [] : data.displayItems.filter((item) => selection.paths.has(item.path))
+	);
+	let placeMenu = $state<{ x: number; y: number; place: Place } | null>(null);
+	let renamingDrive = $state<string | null>(null);
+	function openPlaceMenu(place: Place, x: number, y: number) {
+		placeMenu = { x, y, place };
+	}
+	async function runPlaceAction(place: Place, action: PlaceAction) {
+		switch (action) {
+			case 'new-tab':
+				openInNewTab(place.path);
+				break;
+			case 'paste':
+				await files.paste.paste(place.path);
+				break;
+			case 'copy-path':
+				try {
+					await navigator.clipboard.writeText(place.path);
+				} catch {
+					toastStore.error('The path could not be copied');
+				}
+				break;
+			case 'rename-drive':
+				renamingDrive = place.path;
+				break;
+			case 'unpin':
+				settingsStore.unpinFavoriteFolder(place.path);
+				break;
+		}
+	}
+	function renameDrive(path: string, name: string | null) {
+		renamingDrive = null;
+		const current = settingsStore.current.driveNameOverrides[path];
+		if (name === null) {
+			if (current) void settingsStore.removeDriveName(path);
+		} else if (
+			name !== (current ?? '') &&
+			name !== data.roots.find((root) => root.name === path)?.label &&
+			name !== path
+		) {
+			void settingsStore.setDriveName(path, name);
+		}
+	}
+	let historyMenu = $state<{ x: number; y: number; places: HistoryPlace[] } | null>(null);
+	async function openHistoryMenu(back: boolean, x: number, y: number) {
+		const places = await location.historyPlaces(back);
+		historyMenu = places.length > 0 ? { x, y, places } : null;
+	}
+	/** A place's name in the history menu: the drive's label, or the folder's name. */
+	function placeLabel(path: string): string {
+		if (!path) return data.serverName ?? rootLabel();
+		const root = data.roots.find((candidate) => candidate.name === path);
+		return root?.label ?? path.split('/').at(-1) ?? path;
+	}
+	const wheelZoom = new WheelZoom();
+	/** Ctrl+wheel over the listing zooms it instead of the page. */
+	function zoomWheel(node: HTMLElement) {
+		const wheel = (event: WheelEvent) => {
+			if (!(event.ctrlKey || event.metaKey) || data.isAtRoot) return;
+			event.preventDefault();
+			const steps = wheelZoom.steps(event.deltaY, event.deltaMode);
+			for (let step = 0; step < Math.abs(steps); step++)
+				settingsStore.zoom(location.viewMode, steps > 0 ? 'in' : 'out');
+		};
+		// Not passive, so the browser's own page zoom can be held back.
+		node.addEventListener('wheel', wheel, { passive: false });
+		return { destroy: () => node.removeEventListener('wheel', wheel) };
+	}
+	let patternOpen = $state(false);
+	// The last pattern comes back, as the desktop app keeps it for the session.
+	let lastPattern = $state('');
+
 	function keydown(event: KeyboardEvent) {
 		if (
 			!focused ||
 			event.defaultPrevented ||
-			!(event.ctrlKey || event.metaKey) ||
-			event.altKey ||
-			event.shiftKey ||
 			document.querySelector('[role="dialog"], dialog[open], [role="menu"]')
 		)
 			return;
-		if (event.key.toLowerCase() === 'l') {
-			event.preventDefault();
-			toolbar?.focusLocation();
-			return;
-		}
+		const shortcut = getFileShortcut(event);
+		if (shortcut === null) return;
+		const editable = isTextEntryTarget(event.target);
+		// Fields keep their own Ctrl+A, Ctrl+V and Escape; the location and search keys work anywhere.
 		if (
-			event.key.toLowerCase() === 'v' &&
-			data.canCreate &&
-			!(
-				event.target instanceof Element &&
-				event.target.closest('input, textarea, [contenteditable="true"]')
-			)
-		) {
-			event.preventDefault();
-			void actions.paste.paste();
+			editable &&
+			shortcut !== 'focus-location' &&
+			shortcut !== 'search' &&
+			shortcut !== 'shortcuts'
+		)
+			return;
+		const inFolder = !data.isAtRoot;
+		switch (shortcut) {
+			case 'focus-location':
+				toolbar?.focusLocation();
+				break;
+			case 'search':
+				if (!inFolder) return;
+				toolbar?.focusSearch();
+				break;
+			case 'shortcuts':
+				shortcutsOpen = true;
+				break;
+			case 'details':
+				toggleDetails();
+				break;
+			case 'rename':
+				if (selectedItems.length !== 1 || data.isReadOnly) return;
+				void files.handleContextMenuAction('rename', selectedItems);
+				break;
+			case 'properties':
+				if (selectedItems.length === 0) return;
+				void files.handleContextMenuAction('properties', selectedItems);
+				break;
+			case 'paste':
+				if (!data.canCreate) return;
+				void files.paste.paste();
+				break;
+			case 'new-folder':
+				if (!data.canCreate) return;
+				void files.handleContextMenuAction('new-folder', []);
+				break;
+			case 'select-all':
+				if (!inFolder) return;
+				selection.set(new Set(data.displayItems.map((item) => item.path)));
+				break;
+			case 'clear-selection':
+				if (selection.count === 0) return;
+				selection.clear();
+				break;
+			case 'select-pattern':
+				if (!inFolder) return;
+				patternOpen = true;
+				break;
+			case 'zoom-in':
+			case 'zoom-out':
+			case 'zoom-reset':
+				if (!inFolder) return;
+				settingsStore.zoom(
+					location.viewMode,
+					shortcut === 'zoom-in' ? 'in' : shortcut === 'zoom-out' ? 'out' : 'reset'
+				);
+				break;
+			case 'invert-selection':
+				if (!inFolder) return;
+				void import('#lib/browse/selectPattern.js').then(({ invertedPaths }) =>
+					selection.set(invertedPaths(data.displayItems, selection.paths))
+				);
+				break;
+			default:
+				return;
 		}
+		event.preventDefault();
 	}
 </script>
 
 {#snippet browserToolbar(
 	extraActions?: Snippet,
-	refresh: () => void = data.reload,
+	refresh: () => void = () => void refreshAll(),
 	refreshDisabled = false,
 	pageTitle: string | null = null
 )}
@@ -147,10 +385,16 @@
 		canGoForward={location.canGoForward}
 		onBack={location.back}
 		onForward={location.forward}
+		onHistoryMenu={(back, x, y) => void openHistoryMenu(back, x, y)}
+		dropTarget={drop}
+		onPlaceMenu={openPlaceMenu}
 		onNavigate={location.navigate}
 		onRefresh={refresh}
 		{refreshDisabled}
+		refreshing={refreshes > 0}
 		actions={extraActions}
+		onToggleDetails={paneState ? undefined : toggleDetails}
+		detailsOpen={settings.detailsPanel}
 		onSettings={() => {
 			settingsSection = 'general';
 			settingsOpen = true;
@@ -168,7 +412,19 @@
 	/>
 {/snippet}
 
-<svelte:window onkeydown={keydown} />
+<svelte:window
+	onkeydown={(event) => {
+		hideHoverCard();
+		keydown(event);
+	}}
+	onpointerdowncapture={hideHoverCard}
+	onwheelcapture={hideHoverCard}
+	ondragstartcapture={hideHoverCard}
+	ondragend={drop.release}
+	ondrop={drop.release}
+	oncontextmenucapture={hideHoverCard}
+	onblur={hideHoverCard}
+/>
 
 <svelte:head>
 	<title>BoxBox</title>
@@ -187,6 +443,12 @@
 			roots={data.roots}
 			onNavigate={location.navigate}
 			{onFolderHover}
+			onDriveHover={(drive) =>
+				drive ? hover.drive(drive.path, drive.name, drive.at) : hover.hide()}
+			dropTarget={drop}
+			onPlaceMenu={openPlaceMenu}
+			{renamingDrive}
+			onRenameDrive={renameDrive}
 			open={sidebarOpen}
 			onClose={() => (sidebarOpen = false)}
 		/>{/if}
@@ -198,120 +460,107 @@
 			{@render browserToolbar()}
 		{/if}
 
-		<!-- File list or Drive cards -->
-		<div
-			class="relative min-h-0 flex-1 overflow-hidden"
-			ondragover={(event) => drop.over(event, location.path)}
-			ondragleave={drop.leave}
-			ondrop={(event) => drop.drop(event, location.path)}
-			role="region"
-			aria-label="File browser content"
-		>
-			<!-- Drag-drop overlay -->
-			{#if drop.overPath === location.path && !data.isAtRoot}
-				<div
-					class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-accent bg-accent/10"
-				>
-					<div class="rounded-lg bg-surface-primary/90 px-6 py-4 shadow-lg backdrop-blur-sm">
-						<span class="text-lg font-medium text-accent">Drop files to upload here</span>
+		<!-- The listing, and the Details panel beside it. -->
+		<div class="flex min-h-0 flex-1">
+			<!-- File list or Drive cards -->
+			<div
+				class="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+				ondragover={(event) => drop.over(event, location.path)}
+				ondragleave={drop.leave}
+				ondrop={(event) => drop.drop(event, location.path)}
+				role="region"
+				aria-label="File browser content"
+				use:zoomWheel
+			>
+				<!-- Drag-drop overlay -->
+				{#if drop.overPath === location.path && !data.isAtRoot}
+					<div
+						class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-accent bg-accent/10"
+					>
+						<div class="rounded-lg bg-surface-primary/90 px-6 py-4 shadow-lg backdrop-blur-sm">
+							<span class="text-lg font-medium text-accent">Drop files to upload here</span>
+						</div>
 					</div>
-				</div>
-			{/if}
+				{/if}
 
-			{#if paneState?.location.page === 'trash'}
-				{#await import('./desktop/TrashPage.svelte') then { default: TrashPage }}<TrashPage
-						onChanged={() => void browseRequests.changed()}
-						toolbar={browserToolbar}
-						selectionCheckboxes={settings.selectionCheckboxes}
-					/>{/await}
-			{:else if data.isDeploymentRoot && data.deploymentError}
-				<div class="space-y-3 p-6 text-sm text-text-secondary">
-					<p>
-						{data.deploymentError}
-					</p>
-					<Button
-						onclick={() => {
-							settingsSection = 'connections';
-							settingsOpen = true;
-						}}>Open Connections</Button
-					>
-				</div>
-			{:else if data.isAtRoot}
-				<!-- The drives page loads alongside the drive list, so folder pages never download it. -->
-				{#await import('#lib/components/DrivesView.svelte') then { default: DrivesView }}
-					<DrivesView
-						drives={data.drives}
-						isLoading={data.isLoadingDrives}
-						viewMode={location.driveViewMode}
-						compactMode={settings.compactMode}
-						onOpen={(drive) => location.navigate(drive.name)}
-						{onFolderHover}
+				{#if paneState?.location.page === 'trash'}
+					{#await import('./desktop/TrashPage.svelte') then { default: TrashPage }}<TrashPage
+							onChanged={() => void browseRequests.changed()}
+							toolbar={browserToolbar}
+							selectionCheckboxes={settings.selectionCheckboxes}
+						/>{/await}
+				{:else if data.isDeploymentRoot && data.deploymentError}
+					<div class="space-y-3 p-6 text-sm text-text-secondary">
+						<p>
+							{data.deploymentError}
+						</p>
+						<Button
+							onclick={() => {
+								settingsSection = 'connections';
+								settingsOpen = true;
+							}}>Open Connections</Button
+						>
+					</div>
+				{:else if data.isAtRoot}
+					<!-- The drives page loads alongside the drive list, so folder pages never download it. -->
+					{#await import('#lib/components/DrivesView.svelte') then { default: DrivesView }}
+						<DrivesView
+							drives={data.drives}
+							isLoading={data.isLoadingDrives}
+							viewMode={location.driveViewMode}
+							compact={settings.listZoom === 0}
+							onOpen={(drive) => location.navigate(drive.name)}
+							{onFolderHover}
+						/>
+					{:catch}
+						<LoadError label="drives" inline />
+					{/await}
+				{:else if data.fileListError && data.displayItems.length === 0}
+					<div role="alert" class="flex h-full items-center justify-center gap-3 p-6 text-sm">
+						<span>{data.fileListError}</span>
+						<button
+							type="button"
+							class="rounded border border-border-primary px-3 py-1 hover:bg-surface-secondary"
+							onclick={data.reload}
+						>
+							Retry
+						</button>
+					</div>
+				{:else if location.viewMode === 'grid'}
+					{#await import('#lib/components/FileGrid.svelte') then { default: FileGrid }}
+						<FileGrid
+							{...listingProps}
+							zoom={settings.gridZoom}
+							folderPreviews={settings.folderPreviews}
+						/>
+					{:catch}
+						<LoadError label="grid view" inline />
+					{/await}
+				{:else}
+					<FileList
+						{...listingProps}
+						sortBy={location.sortBy}
+						sortDir={location.sortDir}
+						zoom={settings.listZoom}
+						onSortChange={location.setSort}
 					/>
-				{:catch}
-					<LoadError label="drives" inline />
-				{/await}
-			{:else if data.fileListError && data.displayItems.length === 0}
-				<div role="alert" class="flex h-full items-center justify-center gap-3 p-6 text-sm">
-					<span>{data.fileListError}</span>
-					<button
-						type="button"
-						class="rounded border border-border-primary px-3 py-1 hover:bg-surface-secondary"
-						onclick={data.reload}
-					>
-						Retry
-					</button>
+				{/if}
+			</div>
+			{#if settings.detailsPanel && !paneState}
+				<!-- It opens by its width, so the columns make room as it comes. -->
+				<div class="details-slot h-full shrink-0 overflow-hidden">
+					{#await import('#lib/components/DetailsPanel.svelte') then { default: DetailsPanel }}
+						<DetailsPanel
+							selected={selectedItems}
+							folderCount={data.itemCount}
+							folderName={locationLabel(location.path).split('/').at(-1) ?? ''}
+							{appearance}
+							{locationLabel}
+						/>
+					{:catch}
+						<LoadError label="Details" inline />
+					{/await}
 				</div>
-			{:else if location.viewMode === 'grid'}
-				{#await import('#lib/components/FileGrid.svelte') then { default: FileGrid }}
-					<FileGrid
-						viewKey={location.viewKey}
-						dropTarget={drop}
-						items={data.displayItems}
-						emptyMessage={data.emptyListMessage}
-						selectedPaths={selection.paths}
-						isLoading={data.isFileListLoading}
-						compactMode={settings.compactMode}
-						cutPaths={actions.cutPaths}
-						favoritePaths={actions.favoritePaths}
-						canPaste={actions.canPaste}
-						canCreate={data.canCreate}
-						readOnly={data.isReadOnly}
-						showFileExtensions={settings.showFileExtensions}
-						previewOnSingleClick={settings.previewOnSingleClick}
-						selectionCheckboxes={settings.selectionCheckboxes}
-						onItemClick={actions.openFile}
-						{onFolderHover}
-						onSelectionChange={selection.set}
-						onContextMenuAction={actions.handleContextMenuAction}
-					/>
-				{:catch}
-					<LoadError label="grid view" inline />
-				{/await}
-			{:else}
-				<FileList
-					viewKey={location.viewKey}
-					dropTarget={drop}
-					items={data.displayItems}
-					sortBy={location.sortBy}
-					sortDir={location.sortDir}
-					emptyMessage={data.emptyListMessage}
-					selectedPaths={selection.paths}
-					isLoading={data.isFileListLoading}
-					compactMode={settings.compactMode}
-					cutPaths={actions.cutPaths}
-					favoritePaths={actions.favoritePaths}
-					canPaste={actions.canPaste}
-					canCreate={data.canCreate}
-					readOnly={data.isReadOnly}
-					showFileExtensions={settings.showFileExtensions}
-					previewOnSingleClick={settings.previewOnSingleClick}
-					selectionCheckboxes={settings.selectionCheckboxes}
-					onItemClick={actions.openFile}
-					{onFolderHover}
-					onSortChange={location.setSort}
-					onSelectionChange={selection.set}
-					onContextMenuAction={actions.handleContextMenuAction}
-				/>
 			{/if}
 		</div>
 
@@ -326,79 +575,42 @@
 	</div>
 </div>
 
-{#if actions.previewFile && focused}
-	{#await import('#lib/components/FilePreview.svelte') then { default: FilePreview }}
-		<FilePreview
-			file={actions.previewFile}
-			allFiles={data.previewableFiles}
-			onNavigate={actions.showPreview}
-			onFileSaved={actions.fileSaved}
-			onClose={actions.closePreview}
+{#if (actions?.previewFile && focused) || hasOpenDialog || files.paste.plan || actions?.openWithFile || actions?.customizeFolder || actions?.shareItem || dropQuestion || placeMenu || historyMenu || shortcutsOpen || patternOpen || settingsOpen || hover.cards?.drive.state.kind === 'shown' || hover.cards?.file.state.kind === 'shown'}
+	{#await import('./BrowseOverlays.svelte') then { default: BrowseOverlays }}
+		<BrowseOverlays
+			{actions}
+			{files}
+			{appearance}
+			{data}
+			{focused}
+			{hasOpenDialog}
+			{closeDialogs}
+			{hover}
+			{location}
+			{locationLabel}
+			{places}
+			{selection}
+			{placeLabel}
+			{dropQuestion}
+			{placeMenu}
+			{historyMenu}
+			{sidebarOpen}
+			{runPlaceAction}
+			onCloseDrop={() => (dropQuestion = null)}
+			onClosePlace={() => (placeMenu = null)}
+			onCloseHistory={() => (historyMenu = null)}
+			{shortcutsOpen}
+			onCloseShortcuts={() => (shortcutsOpen = false)}
+			{patternOpen}
+			{lastPattern}
+			rememberPattern={(pattern) => (lastPattern = pattern)}
+			onClosePattern={() => (patternOpen = false)}
+			{settingsOpen}
+			{settingsSection}
+			onCloseSettings={() => (settingsOpen = false)}
 		/>
 	{:catch}
-		<LoadError label="preview" onClose={actions.closePreview} />
-	{/await}
-{/if}
-
-{#if hasOpenDialog}
-	{#await import('#lib/components/BrowseDialogs.svelte') then { default: BrowseDialogs }}
-		<BrowseDialogs
-			createDialog={actions.createDialog}
-			renameDialog={actions.renameDialog}
-			deleteDialog={actions.deleteDialog}
-			propertiesDialog={actions.propertiesDialog}
-			onCreateNameChange={actions.setCreateName}
-			onRenameNameChange={actions.setRenameName}
-			onCreateConfirm={() => void actions.confirmCreate()}
-			onRenameConfirm={() => void actions.confirmRename()}
-			onDeleteConfirm={() => void actions.confirmDelete()}
-			onCloseCreate={actions.closeCreate}
-			onCloseRename={actions.closeRename}
-			onCloseDelete={actions.closeDelete}
-			onCloseProperties={actions.closeProperties}
-		/>
-	{:catch}
-		<LoadError label="dialog" onClose={closeDialogs} />
-	{/await}
-{/if}
-
-{#if actions.paste.plan}
-	{#await import('#lib/components/desktop/TransferConflictDialog.svelte') then { default: TransferConflictDialog }}
-		<TransferConflictDialog
-			plan={actions.paste.plan}
-			open
-			onapply={actions.paste.apply}
-			oncancelbatch={() => void actions.paste.cancel()}
-		/>
-	{/await}
-{/if}
-
-{#if actions.openWithFile}
-	{#await import('./desktop/OpenWithDialog.svelte') then { default: OpenWithDialog }}<OpenWithDialog
-			open
-			path={actions.openWithFile.path}
-			onclose={actions.closeOpenWith}
-		/>{/await}
-{/if}
-
-{#if settingsOpen}
-	{#await import('#lib/components/settings/SettingsModal.svelte') then { default: SettingsModal }}
-		<SettingsModal initialSection={settingsSection} onclose={() => (settingsOpen = false)} />
-	{:catch}
-		<LoadError label="settings" onClose={() => (settingsOpen = false)} />
-	{/await}
-{/if}
-
-{#if actions.shareItem}
-	{#await import('#lib/components/ShareModal.svelte') then { default: ShareModal }}
-		<ShareModal
-			open
-			item={actions.shareItem}
-			readOnly={data.isReadOnly}
-			onclose={actions.closeShare}
-		/>
-	{:catch}
-		<LoadError label="share window" onClose={actions.closeShare} />
+		<LoadError label="file browser controls" />
 	{/await}
 {/if}
 
@@ -442,3 +654,23 @@
 			{/await}
 		{/if}
 	</Notifications>{/if}
+
+<style>
+	.details-slot {
+		animation: details-open 200ms cubic-bezier(0.2, 0, 0, 1);
+	}
+	@keyframes details-open {
+		from {
+			width: 0;
+			opacity: 0;
+		}
+		to {
+			width: 260px;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.details-slot {
+			animation: none;
+		}
+	}
+</style>
