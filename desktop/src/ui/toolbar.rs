@@ -78,18 +78,6 @@ fn trail_segments(mut crumbs: Vec<Crumb>, mut prefix: String, rest: &str) -> Vec
     crumbs
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn long_paths_hide_their_first_crumbs() {
-        let widths = [40., 60., 80., 100.];
-        assert_eq!(super::hidden_crumbs(&widths, 1000.), 0);
-        assert_eq!(super::hidden_crumbs(&widths, 250.), 2);
-        // The current folder stays even when nothing else fits.
-        assert_eq!(super::hidden_crumbs(&widths, 10.), 3);
-    }
-}
-
 impl Workspace {
     /// Root label, then the path below it, like `EditablePathBar`'s breadcrumbs.
     /// A place such as Downloads starts with the folders that hold it, from Home

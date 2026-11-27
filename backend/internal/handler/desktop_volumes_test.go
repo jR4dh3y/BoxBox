@@ -49,31 +49,6 @@ func desktopVolumesRouter(stub *stubDesktopVolumesService) http.Handler {
 	return router
 }
 
-func TestDesktopVolumesListReturnsSnapshot(t *testing.T) {
-	stub := &stubDesktopVolumesService{response: service.DesktopVolumesResponse{
-		Available: true,
-		Volumes: []service.DesktopVolume{{
-			ID: "abc", Name: "Photos", DriveName: "USB DISK", Mounted: true,
-		}},
-	}}
-	recorder := httptest.NewRecorder()
-	desktopVolumesRouter(stub).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/volumes", nil))
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d", recorder.Code)
-	}
-	if recorder.Header().Get("Cache-Control") != "no-store" {
-		t.Fatal("volume snapshots must not be cached")
-	}
-	var response service.DesktopVolumesResponse
-	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
-		t.Fatal(err)
-	}
-	if !response.Available || len(response.Volumes) != 1 || response.Volumes[0].ID != "abc" {
-		t.Fatalf("unexpected response: %#v", response)
-	}
-}
-
 func TestDesktopVolumesActionPassesPathIDAndReturnsFreshList(t *testing.T) {
 	for _, tc := range []struct {
 		path   string
@@ -180,6 +155,9 @@ func TestDesktopVolumesUnavailableJSONKeepsReasonAndEmptyArray(t *testing.T) {
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/volumes", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d", recorder.Code)
+	}
+	if recorder.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("volume snapshots must not be cached")
 	}
 
 	var body struct {

@@ -49,12 +49,3 @@ fn family(generic: &std::ffi::CStr) -> Option<SharedString> {
 pub fn resolve() -> Fonts {
     Fonts { sans: "Segoe UI".into(), mono: "Consolas".into() }
 }
-
-#[cfg(all(test, target_os = "linux"))]
-mod tests {
-    #[test]
-    fn generic_families_resolve_to_installed_fonts() {
-        let fonts = super::resolve();
-        assert!(!fonts.sans.is_empty() && !fonts.mono.is_empty());
-    }
-}

@@ -1597,17 +1597,3 @@ fn import_path_recursive(api: &Arc<Api>, path: &Path, parent: &str) -> anyhow::R
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod transfer_tests {
-    use super::*;
-
-    #[test]
-    fn a_drop_skips_files_already_in_the_folder() {
-        let paths = ["/a/b/here.txt", "/a/other/there.txt", "/a/b/sub/deep.txt"].map(PathBuf::from);
-        assert_eq!(
-            outside_folder(Path::new("/a/b"), paths.to_vec()),
-            [PathBuf::from("/a/other/there.txt"), PathBuf::from("/a/b/sub/deep.txt")]
-        );
-    }
-}

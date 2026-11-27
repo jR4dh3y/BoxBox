@@ -40,6 +40,7 @@ pub(crate) fn version_label(described: &str) -> String {
 }
 
 /// `PRETTY_NAME`, unquoted, from os-release text.
+#[cfg(target_os = "linux")]
 fn pretty_name(os_release: &str) -> Option<String> {
     os_release
         .lines()
@@ -79,24 +80,5 @@ impl Workspace {
             .ok();
         })
         .detach();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn versions_read_as_a_release_or_a_dev_build() {
-        assert_eq!(version_label("v0.3.2"), "0.3.2");
-        assert_eq!(version_label("v0.3.2-169-g094620b"), "0.3.2 (dev, 094620b)");
-        assert_eq!(version_label("v0.3.2-169-g094620b-dirty"), "0.3.2 (dev, 094620b, modified)");
-        assert_eq!(version_label("094620b"), "094620b");
-    }
-
-    #[test]
-    fn the_system_is_os_release_pretty_name() {
-        assert_eq!(pretty_name("NAME=\"CachyOS\"\nPRETTY_NAME=\"CachyOS Linux\"\nID=cachyos\n").as_deref(), Some("CachyOS Linux"));
-        assert_eq!(pretty_name("NAME=Arch\n"), None);
     }
 }

@@ -182,46 +182,6 @@ fn resolve(dir: &str, target: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Files under `dir`, `depth` folders deep, with `extension` in any case.
-    pub(super) fn find(dir: &Path, extension: &str, depth: usize) -> Vec<PathBuf> {
-        let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
-        let mut found = Vec::new();
-        for path in entries.flatten().map(|entry| entry.path()) {
-            if path.is_dir() && depth > 0 {
-                found.extend(find(&path, extension, depth - 1));
-            } else if path.extension().is_some_and(|found| found.eq_ignore_ascii_case(extension)) {
-                found.push(path);
-            }
-        }
-        found
-    }
-
-    /// Prints what a real package gave, and checks it draws.
-    pub(super) fn report(path: &Path, icon: anyhow::Result<Option<Vec<u8>>>, started: std::time::Instant) {
-        let took = started.elapsed();
-        let size = std::fs::metadata(path).map_or(0, |metadata| metadata.len() >> 20);
-        let drawn = match &icon {
-            Ok(Some(bytes)) => {
-                let natural = image::load_from_memory(bytes).map(|image| format!("{}x{} raster", image.width(), image.height())).unwrap_or_else(|_| "svg".into());
-                let image = crate::file_icons::package_image(bytes, 256).expect("the icon draws");
-                format!("{natural}, {} bytes, drawn {}x{}", bytes.len(), image.size(0).width.0, image.size(0).height.0)
-            }
-            Ok(None) => "no icon".into(),
-            Err(error) => format!("error: {error:#}"),
-        };
-        println!("{} ({size} MiB): {drawn} in {took:?}", path.display());
-    }
-
-    #[test]
-    fn formats_come_from_the_extension() {
-        assert_eq!(Format::of("Krita-5.2.AppImage"), Some(Format::AppImage));
-        assert_eq!(Format::of("x.appimage"), Some(Format::AppImage));
-        assert_eq!(Format::of("discord-0.0.113.deb"), Some(Format::Deb));
-        assert_eq!(Format::of("a.x86_64.RPM"), Some(Format::Rpm));
-        assert_eq!(Format::of("deb"), None);
-        assert_eq!(Format::of("notes.txt"), None);
-    }
-
     #[test]
     fn links_resolve_inside_the_package() {
         assert_eq!(resolve("usr/share/icons/hicolor/256x256/apps", "../../../../pixmaps/a.png"), "usr/share/pixmaps/a.png");

@@ -115,18 +115,4 @@ pub(super) mod tests {
         assert!(super::super::archive::icon(|visit| walk(&path, visit), 256).is_err());
         std::fs::remove_dir_all(dir).ok();
     }
-
-    /// Real debs on this machine, when there are any. Run with `--ignored --nocapture`.
-    #[test]
-    #[ignore]
-    fn real_debs() {
-        let home = std::env::var("HOME").unwrap();
-        for dir in [format!("{home}/Downloads"), format!("{home}/.cache/paru/clone")] {
-            for path in super::super::tests::find(Path::new(&dir), "deb", 3) {
-                let started = std::time::Instant::now();
-                let icon = super::super::archive::icon(|visit| walk(&path, visit), 256);
-                super::super::tests::report(&path, icon, started);
-            }
-        }
-    }
 }

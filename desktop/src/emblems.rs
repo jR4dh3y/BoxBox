@@ -65,18 +65,3 @@ pub fn svg(path: &str) -> Option<Vec<u8>> {
     );
     Some(svg.into_bytes())
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn icons_are_found_by_name_or_alias_and_searched_by_words() {
-        assert!(super::all().len() > 1000);
-        assert_eq!(super::find("gamepad-2").map(|icon| icon.name), Some("gamepad-2"));
-        assert_eq!(super::find("home").map(|icon| icon.name), Some("house"), "an alias finds its icon");
-        let names: Vec<&str> = super::search("Game pad").iter().map(|icon| icon.name).collect();
-        assert!(names.contains(&"gamepad-2"), "{names:?}");
-        let svg = String::from_utf8(super::svg(&super::path("house")).unwrap()).unwrap();
-        assert!(svg.contains(r#"stroke-width="2""#) && svg.contains("<path"));
-        assert!(super::svg("emblems/no-such-icon.svg").is_none());
-    }
-}

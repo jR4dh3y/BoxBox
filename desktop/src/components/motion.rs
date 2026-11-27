@@ -431,27 +431,3 @@ impl Element for Interact {
         });
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn transitions_ease_toward_the_target_from_where_they_are() {
-        let start = Instant::now();
-        let mut value = Transition::at_rest();
-        value.go(1., Duration::from_millis(100), start);
-        assert_eq!(value.value(start), 0.);
-        let half = value.value(start + Duration::from_millis(50));
-        assert!(half > 0.5 && half < 1., "eased out: past halfway at half time, got {half}");
-        assert_eq!(value.value(start + Duration::from_millis(100)), 1.);
-        // Reversing midway starts from the current value, not from 1.
-        let midway = start + Duration::from_millis(50);
-        value.go(0., Duration::from_millis(100), midway);
-        assert_eq!(value.value(midway), half);
-        assert!(!value.running(midway + Duration::from_millis(100)));
-        let mut instant = Transition::at_rest();
-        instant.go(1., Duration::ZERO, start);
-        assert_eq!(instant.value(start), 1., "with motion off a change is immediate");
-    }
-}

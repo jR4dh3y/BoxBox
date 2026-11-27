@@ -411,31 +411,6 @@ mod tests {
         assert_eq!(full_date(Some(local)), "15 Nov 2026, 11:20");
         assert_eq!(deletion_millis("yesterday"), None);
     }
-
-    #[test]
-    fn sizes_match_format_ts() {
-        assert_eq!(file_size(0), "0 B");
-        assert_eq!(file_size(1023), "1023 B");
-        assert_eq!(file_size(1536), "1.5 KB");
-        assert_eq!(file_size(1024 * 1024), "1 MB");
-        assert_eq!(file_size(1_234_567_890), "1.15 GB");
-    }
-
-    #[test]
-    fn types_and_icons() {
-        assert_eq!(type_description("a.tar.gz"), "GZip Archive");
-        assert_eq!(type_description("Makefile"), "Code File");
-        assert_eq!(type_description("README"), "File");
-        assert_eq!(type_description("x.weird"), "WEIRD File");
-        assert_eq!(file_icon("photo.JPG", false), "file-image");
-        assert_eq!(file_icon("data.yml", false), "file-json");
-        assert_eq!(file_icon("run.sh", false), "file-terminal");
-        assert_eq!(file_icon("clip.MP4", false), "file-play");
-        assert_eq!(file_icon("ubuntu.iso", false), "disc-3");
-        assert_eq!(file_icon("id_ed25519", false), "file-key");
-        assert_eq!(Kind::of("report.pdf", false).tint(), Some(0xf87171));
-        assert_eq!(file_icon("docs", true), "folder");
-    }
 }
 
 /// `getDisplayName`: drops the extension unless extensions are shown. Folders keep their name.

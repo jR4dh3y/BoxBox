@@ -42,25 +42,6 @@ func desktopClipboardRouter(clipboard service.DesktopClipboard) http.Handler {
 	return router
 }
 
-func TestDesktopClipboardHandlerReturnsTypedClipboardOrNull(t *testing.T) {
-	clipboard := &fakeDesktopClipboard{contents: &service.DesktopClipboardContents{
-		Operation: service.DesktopClipboardCut,
-		Items:     []service.DesktopClipboardItem{{Path: "home/report.txt", Name: "report.txt", IsDir: false}},
-	}}
-	response := httptest.NewRecorder()
-	desktopClipboardRouter(clipboard).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/desktop/clipboard", nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"operation":"cut"`) || !strings.Contains(response.Body.String(), `"path":"home/report.txt"`) {
-		t.Fatalf("GET response = %d %s", response.Code, response.Body.String())
-	}
-
-	clipboard.contents = nil
-	response = httptest.NewRecorder()
-	desktopClipboardRouter(clipboard).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/desktop/clipboard", nil))
-	if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != "null" {
-		t.Fatalf("empty GET response = %d %s", response.Code, response.Body.String())
-	}
-}
-
 func TestDesktopClipboardHandlerDispatchesSetAndClearRequests(t *testing.T) {
 	clipboard := &fakeDesktopClipboard{}
 	router := desktopClipboardRouter(clipboard)

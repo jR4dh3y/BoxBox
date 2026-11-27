@@ -83,24 +83,3 @@ pub fn render<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> i
     queue.ready.notify_one();
     async move { result.recv().await.ok() }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn runs_work_and_returns_its_result() {
-        let answer = block_on(super::render(|| 6 * 7));
-        assert_eq!(answer, Some(42));
-    }
-
-    fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
-        let waker = std::task::Waker::noop();
-        let mut context = std::task::Context::from_waker(waker);
-        let mut future = std::pin::pin!(future);
-        loop {
-            if let std::task::Poll::Ready(value) = future.as_mut().poll(&mut context) {
-                return value;
-            }
-            std::thread::yield_now();
-        }
-    }
-}

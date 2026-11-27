@@ -4,7 +4,7 @@ const REPO_API = "https://api.github.com/repos/jR4dh3y/BoxBox";
 export const CACHE_TTL_MS = 60 * 60 * 1000;
 let cache: { total: number; fetchedAt: number } | null = null;
 
-export function parseStars(payload: unknown): number | null {
+function parseStars(payload: unknown): number | null {
   if (typeof payload !== "object" || payload === null || !("stargazers_count" in payload)) return null;
   const { stargazers_count: total } = payload;
   return typeof total === "number" && Number.isSafeInteger(total) && total >= 0 ? total : null;

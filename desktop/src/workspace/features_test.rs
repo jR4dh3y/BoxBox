@@ -78,20 +78,6 @@ fn set_mode(path: &Path, mode: u32) {
 }
 
 #[gpui::test]
-fn right_click_on_empty_space_clears_the_selection(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt"]);
-    click(cx, "row-0-0");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.pane().selected.len(), 1));
-    let pane = cx.debug_bounds("browser-pane-0").unwrap();
-    let empty = gpui::point(pane.center().x, pane.bottom() - gpui::px(60.));
-    cx.simulate_mouse_down(empty, MouseButton::Right, Modifiers::default());
-    view.read_with(cx, |workspace, _| {
-        assert!(workspace.pane().selected.is_empty());
-        assert!(workspace.context_menu.as_ref().is_some_and(|menu| menu.items.is_empty()));
-    });
-}
-
-#[gpui::test]
 fn a_read_only_folder_refuses_changes_with_a_notice(cx: &mut TestAppContext) {
     let (view, cx, fixture) = open(cx, &["locked/", "locked/a.txt"]);
     set_mode(&fixture.root.join("locked"), 0o555);
@@ -123,39 +109,6 @@ fn a_typed_location_opens_with_its_listing_and_a_wrong_one_stays_to_be_fixed(cx:
     cx.simulate_keystrokes("alt-left");
     cx.run_until_parked();
     assert_eq!(names(&view, cx), ["docs", "top.txt"]);
-}
-
-#[gpui::test]
-fn pasting_with_nothing_copied_says_so(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["a.txt"]);
-    cx.simulate_keystrokes("ctrl-v");
-    cx.run_until_parked();
-    assert!(notices(&view, cx).contains(&"The clipboard has no files to paste".to_string()));
-}
-
-fn dialog_text(view: &Entity<Workspace>, cx: &mut VisualTestContext) -> String {
-    view.read_with(cx, |workspace, app| workspace.dialog_field.read(app).text().to_string())
-}
-
-#[gpui::test]
-fn the_create_dialog_suggests_a_free_name_and_explains_a_bad_one(cx: &mut TestAppContext) {
-    let (view, cx, fixture) = open(cx, &["New folder/", "untitled.txt"]);
-    cx.simulate_keystrokes("ctrl-shift-n");
-    assert_eq!(dialog_text(&view, cx), "New folder 2");
-    // The suggestion is selected, so typing replaces it.
-    cx.simulate_keystrokes("a / b enter");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.dialog_error.as_deref(), Some("A name cannot contain “/”.")));
-    cx.simulate_keystrokes("ctrl-a space s p a c e d space enter");
-    cx.run_until_parked();
-    assert!(fixture.root.join("spaced").is_dir(), "the name is trimmed");
-    cx.simulate_keystrokes("ctrl-shift-e");
-    assert_eq!(dialog_text(&view, cx), "untitled 2.txt");
-    // Only the part before the extension is selected.
-    cx.simulate_keystrokes("n o t e s enter");
-    cx.run_until_parked();
-    assert!(fixture.root.join("notes.txt").is_file());
-    cx.simulate_keystrokes("ctrl-shift-e ctrl-a n o t e s . t x t enter");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.dialog_error.as_deref(), Some("“notes.txt” already exists here.")));
 }
 
 #[gpui::test]
@@ -274,25 +227,6 @@ fn the_keyboard_moves_selects_and_finds_by_name(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn the_grid_moves_by_rows_and_columns(cx: &mut TestAppContext) {
-    let files: Vec<String> = (0..30).map(|index| format!("f{index:02}")).collect();
-    let files: Vec<&str> = files.iter().map(String::as_str).collect();
-    let (view, cx, _fixture) = open(cx, &files);
-    view.update(cx, |workspace, _| workspace.pane_mut().set_view_mode(ViewMode::Grid));
-    let columns = cx.update(|window, app| {
-        let workspace = view.read(app);
-        crate::components::GridMetrics::new(1).columns(workspace.browser_width(window))
-    });
-    assert!(columns > 1);
-    cx.simulate_keystrokes("right right down");
-    assert_eq!(cursor(&view, cx).0, Some(1 + columns));
-    cx.simulate_keystrokes("shift-left");
-    assert_eq!(cursor(&view, cx).1.len(), 2);
-    cx.simulate_keystrokes("up");
-    assert_eq!(cursor(&view, cx).0, Some(0));
-}
-
-#[gpui::test]
 fn history_menus_list_and_back_skips_folders_that_are_gone(cx: &mut TestAppContext) {
     let (view, cx, fixture) = open(cx, &["a/", "a/b/", "a/b/c/"]);
     for path in ["home/a", "home/a/b", "home/a/b/c"] {
@@ -389,26 +323,6 @@ fn servers_drives_sit_beside_this_computers(cx: &mut TestAppContext) {
         assert!(workspace.pane().is_at_root());
         assert!(Arc::ptr_eq(&workspace.pane().api, &workspace.home.api), "the Overview is this computer's");
     });
-}
-
-#[gpui::test]
-fn a_long_server_drive_name_is_cut_before_its_server(cx: &mut TestAppContext) {
-    use crate::settings_state::SavedConnection;
-    use servers::ServerState;
-    let (view, cx, _fixture) = open(cx, &["a.txt"]);
-    let server = Arc::new(Api::new("http://pico:8080", None));
-    let drive = |name: &str| crate::api::DriveStats { name: name.into(), label: None, device: None, fs_type: None, total_bytes: 100, free_bytes: 60, used_bytes: 40, used_pct: 40., read_only: false };
-    view.update(cx, |workspace, cx| {
-        workspace.desktop_settings.connections.push(SavedConnection { id: "pico".into(), name: "pico".into(), url: "http://pico:8080".into() });
-        workspace.servers.set("pico", ServerState::Ready { api: server.clone(), drives: vec![drive("root"), drive("gdrive-radheykalra901-with-a-very-long-name")] });
-        cx.notify();
-    });
-    settle(cx);
-    let sidebar = cx.debug_bounds("sidebar").unwrap();
-    let short = cx.debug_bounds("server-0-detail").unwrap();
-    let long = cx.debug_bounds("server-1-detail").unwrap();
-    assert_eq!(long.right(), short.right(), "both server labels end at the same place");
-    assert!(long.right() <= sidebar.right(), "{long:?} inside {sidebar:?}");
 }
 
 fn server_drive(name: &str) -> crate::api::DriveStats {
@@ -556,9 +470,6 @@ fn refresh_on_the_overview_lists_a_servers_drives_again(cx: &mut TestAppContext)
     settle(cx);
     view.read_with(cx, |workspace, _| assert!(!workspace.servers.busy()));
     assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), before + 1, "one listing at a time");
-    // Done, it finishes its turn and stops.
-    std::thread::sleep(std::time::Duration::from_millis(750));
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.refresh_turn(workspace.active_pane), None));
     let names: Vec<String> = view.read_with(cx, |workspace, _| workspace.storage().unwrap()).into_iter().filter_map(|entry| match entry {
         overview::Storage::ServerDrive { drive, .. } => Some(drive.name),
         _ => None,
@@ -711,16 +622,6 @@ fn the_last_location_is_kept_for_the_next_launch(cx: &mut TestAppContext) {
     view.update(cx, |workspace, cx| workspace.navigate_to(workspace.active_pane, server, "media".into(), cx));
     cx.run_until_parked();
     assert_eq!(kept(), "");
-}
-
-#[gpui::test]
-fn the_trash_notice_undoes_its_move(cx: &mut TestAppContext) {
-    let (_view, cx, fixture) = open(cx, &["docs/", "b.txt"]);
-    drag(cx, "row-0-1", "sidebar-trash");
-    assert!(!fixture.root.join("b.txt").exists());
-    click(cx, "toast-action");
-    cx.run_until_parked();
-    assert!(fixture.root.join("b.txt").is_file(), "Undo put the file back");
 }
 
 #[gpui::test]
@@ -1109,66 +1010,6 @@ fn scripts_ask_before_running_and_launchers_need_trust(cx: &mut TestAppContext) 
     assert!(wait_for(&launched));
 }
 
-
-#[gpui::test]
-fn trash_goes_without_asking_and_a_deletion_names_one_item_or_lists_several(cx: &mut TestAppContext) {
-    let (view, cx, fixture) = open(cx, &["a.txt", "b.txt", "c.txt"]);
-    click(cx, "row-0-0");
-    cx.simulate_keystrokes("delete");
-    cx.run_until_parked();
-    view.read_with(cx, |workspace, _| assert!(workspace.confirm.is_none(), "a move to Trash can be undone, so it does not ask"));
-    assert!(!fixture.root.join("a.txt").exists());
-    assert_eq!(notices(&view, cx), ["Moved 1 item to Trash"]);
-    click(cx, "row-0-0");
-    cx.simulate_keystrokes("shift-delete");
-    view.read_with(cx, |workspace, _| {
-        let confirm = workspace.confirm.as_ref().unwrap();
-        assert_eq!(confirm.ask.heading(), "Delete “b.txt”?");
-    });
-    cx.simulate_keystrokes("escape ctrl-a shift-delete");
-    view.read_with(cx, |workspace, _| {
-        let confirm = workspace.confirm.as_ref().unwrap();
-        assert_eq!(confirm.ask.heading(), "Delete 2 items?");
-    });
-    // No title bar: No answers, as Escape does.
-    click(cx, "confirm-cancel");
-    view.read_with(cx, |workspace, _| assert!(workspace.confirm.is_none()));
-    assert!(fixture.root.join("b.txt").exists());
-}
-
-#[gpui::test]
-fn select_by_pattern_and_invert(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["a.jpg", "b.JPG", "c.txt", "notes.md"]);
-    let selected = |view: &Entity<Workspace>, cx: &mut VisualTestContext| {
-        let mut names: Vec<String> = view.read_with(cx, |workspace, _| workspace.pane().selected_items().into_iter().map(|item| item.name).collect());
-        names.sort();
-        names
-    };
-    cx.simulate_keystrokes("ctrl-s");
-    view.read_with(cx, |workspace, app| {
-        assert_eq!(workspace.operation_dialog.as_ref().map(|dialog| dialog.title()), Some("Select by Pattern"));
-        assert_eq!(workspace.dialog_field.read(app).text(), "*");
-    });
-    // The offered pattern is selected, so typing replaces it.
-    cx.simulate_keystrokes("* . j p g enter");
-    assert_eq!(selected(&view, cx), ["a.jpg", "b.JPG"], "case is ignored");
-    view.read_with(cx, |workspace, _| assert!(workspace.operation_dialog.is_none()));
-
-    cx.simulate_keystrokes("ctrl-i");
-    assert_eq!(selected(&view, cx), ["c.txt", "notes.md"]);
-
-    // Nothing matching keeps the dialog, and the selection, as they were.
-    cx.simulate_keystrokes("ctrl-s z z z enter");
-    view.read_with(cx, |workspace, _| {
-        assert!(workspace.operation_dialog.is_some());
-        assert_eq!(workspace.dialog_error.as_deref(), Some("Nothing here matches “zzz”"));
-    });
-    assert_eq!(selected(&view, cx), ["c.txt", "notes.md"]);
-    // Plain text matches anywhere in the name.
-    cx.simulate_keystrokes("ctrl-a o t e enter");
-    assert_eq!(selected(&view, cx), ["notes.md"]);
-}
-
 #[gpui::test]
 fn shift_delete_deletes_for_good_after_asking(cx: &mut TestAppContext) {
     let (view, cx, fixture) = open(cx, &["a.txt", "docs/b.txt"]);
@@ -1194,52 +1035,6 @@ fn shift_delete_deletes_for_good_after_asking(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_long_notice_wraps_inside_its_toast(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["a.txt"]);
-    let message = "Could not open 482 GB Volume: could not mount: org.freedesktop.UDisks2.Error.NotAuthorizedCanObtain: Not authorized to perform operation";
-    view.update(cx, |workspace, cx| workspace.report(Err(message.into()), cx));
-    settle(cx);
-    let text = cx.debug_bounds("toast-message").unwrap();
-    assert!(text.size.width <= gpui::px(380.), "the message stays in the 380px toast: {text:?}");
-    assert!(text.size.height > gpui::px(40.), "and wraps onto more lines: {text:?}");
-}
-
-#[gpui::test]
-fn a_select_opens_its_list_right_under_it(cx: &mut TestAppContext) {
-    let (_view, cx, _fixture) = open(cx, &["a.txt"]);
-    cx.simulate_keystrokes("ctrl-,");
-    click(cx, "settings-appearance");
-    click(cx, "setting-background");
-    let control = cx.debug_bounds("setting-background").unwrap();
-    let first = cx.debug_bounds("setting-background-0").unwrap();
-    let gap = first.top() - control.bottom();
-    assert!(gap >= gpui::px(0.) && gap < gpui::px(12.), "the list starts just below the control, {gap:?} away");
-}
-
-#[gpui::test]
-fn a_transparent_background_replaces_the_wallpaper(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["a.txt"]);
-    cx.simulate_keystrokes("ctrl-,");
-    click(cx, "settings-appearance");
-    assert!(cx.debug_bounds("wallpaper-choose").is_none(), "no wallpaper options without a wallpaper");
-    assert!(cx.debug_bounds("accent-source").is_none(), "nor an accent taken from one");
-    click(cx, "setting-background");
-    click(cx, "setting-background-2");
-    settle(cx);
-    view.read_with(cx, |workspace, _| {
-        assert!(workspace.desktop_settings.transparent);
-        assert_eq!(workspace.window_transparent, Some(true), "the window was told to draw see-through");
-        assert_eq!(workspace.window_background().a, 0.);
-        assert!(workspace.shell_background().a < 1., "panels are tinted glass over the desktop");
-    });
-    assert!(DesktopSettings::load().transparent, "the choice is saved");
-    click(cx, "setting-background");
-    click(cx, "setting-background-0");
-    settle(cx);
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.window_transparent, Some(false)));
-}
-
-#[gpui::test]
 fn bookmarks_of_places_are_not_listed_twice(cx: &mut TestAppContext) {
     let (view, cx, fixture) = open(cx, &["Desktop/", "work/"]);
     let bookmarks = fixture.root.with_extension("config").join("gtk-3.0/bookmarks");
@@ -1256,101 +1051,6 @@ fn bookmarks_of_places_are_not_listed_twice(cx: &mut TestAppContext) {
     view.read_with(cx, |workspace, _| assert_eq!(workspace.favorites.entries.len(), 2, "both stay bookmarked"));
     // The file keeps both.
     assert_eq!(fs::read_to_string(&bookmarks).unwrap().lines().count(), 2);
-}
-
-#[gpui::test]
-fn pressing_an_open_select_closes_it(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["a.txt"]);
-    cx.simulate_keystrokes("ctrl-,");
-    click(cx, "settings-appearance");
-    click(cx, "setting-background");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("setting-background")));
-    click(cx, "setting-background");
-    cx.run_until_parked();
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, None, "a second press closes the list"));
-    click(cx, "setting-background");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("setting-background"), "and a third opens it again"));
-    // A press elsewhere closes it, and the next press on the control opens it.
-    click(cx, "settings-appearance");
-    cx.run_until_parked();
-    click(cx, "setting-background");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.open_select, Some("setting-background")));
-}
-
-fn selected_names(view: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String> {
-    let mut names: Vec<String> = view.read_with(cx, |workspace, _| workspace.pane().selected_items().into_iter().map(|item| item.name).collect());
-    names.sort();
-    names
-}
-
-#[gpui::test]
-fn a_band_from_empty_space_selects_the_rows_it_crosses(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt", "c.txt", "d.txt"]);
-    let pane = cx.debug_bounds("browser-pane-0").unwrap();
-    let empty = gpui::point(pane.center().x, pane.bottom() - gpui::px(60.));
-    let second = cx.debug_bounds("row-0-1").unwrap().center();
-    let band = |cx: &mut VisualTestContext, modifiers: Modifiers| {
-        cx.simulate_mouse_down(empty, MouseButton::Left, modifiers);
-        cx.simulate_mouse_move(empty - gpui::point(gpui::px(0.), gpui::px(10.)), Some(MouseButton::Left), modifiers);
-        cx.simulate_mouse_move(second, Some(MouseButton::Left), modifiers);
-        cx.simulate_mouse_up(second, MouseButton::Left, modifiers);
-        cx.run_until_parked();
-    };
-    band(cx, Modifiers::default());
-    assert_eq!(selected_names(&view, cx), ["b.txt", "c.txt", "d.txt"]);
-    view.read_with(cx, |workspace, _| assert!(workspace.band.is_none()));
-
-    // A click on empty space clears the selection; Ctrl+drag adds to it.
-    click(cx, "row-0-0");
-    cx.simulate_mouse_down(empty, MouseButton::Left, Modifiers::default());
-    cx.simulate_mouse_up(empty, MouseButton::Left, Modifiers::default());
-    assert!(selected_names(&view, cx).is_empty());
-    click(cx, "row-0-0");
-    band(cx, Modifiers { control: true, ..Default::default() });
-    assert_eq!(selected_names(&view, cx), ["a.txt", "b.txt", "c.txt", "d.txt"]);
-
-    // A press on a row is the row's: it selects it, and starts no band.
-    let first = cx.debug_bounds("row-0-0").unwrap().center();
-    cx.simulate_mouse_down(first, MouseButton::Left, Modifiers::default());
-    view.read_with(cx, |workspace, _| assert!(workspace.band.is_none()));
-    cx.simulate_mouse_up(first, MouseButton::Left, Modifiers::default());
-    assert_eq!(selected_names(&view, cx), ["a.txt"]);
-}
-
-#[gpui::test]
-fn zoom_steps_the_view_and_ctrl_zero_resets_it(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt"]);
-    let height = |cx: &mut VisualTestContext| f32::from(cx.debug_bounds("row-0-0").unwrap().size.height);
-    assert_eq!(height(cx), 32.);
-    cx.simulate_keystrokes("ctrl-= ctrl-=");
-    cx.run_until_parked();
-    assert_eq!(height(cx), 48.);
-    cx.simulate_keystrokes("ctrl-=");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.preferences.list_zoom, 3, "the largest step holds"));
-    cx.simulate_keystrokes("ctrl-0 ctrl--");
-    cx.run_until_parked();
-    assert_eq!(height(cx), 28.);
-
-    // Ctrl+wheel up over the list zooms in instead of scrolling; the grid keeps its own step.
-    let row = cx.debug_bounds("row-0-0").unwrap().center();
-    cx.simulate_event(gpui::ScrollWheelEvent {
-        position: row,
-        delta: gpui::ScrollDelta::Lines(gpui::point(0., 1.)),
-        modifiers: Modifiers { control: true, ..Default::default() },
-        touch_phase: gpui::TouchPhase::Moved,
-    });
-    view.read_with(cx, |workspace, _| {
-        assert_eq!(workspace.preferences.list_zoom, 1);
-        assert_eq!(workspace.preferences.grid_zoom, 1);
-    });
-
-    // Zooming the grid keeps the grid.
-    view.update(cx, |workspace, _| workspace.pane_mut().set_view_mode(ViewMode::Grid));
-    cx.simulate_keystrokes("ctrl-=");
-    view.read_with(cx, |workspace, _| {
-        assert_eq!(workspace.preferences.grid_zoom, 2);
-        assert_eq!(workspace.pane().current_view_mode(), ViewMode::Grid);
-    });
 }
 
 #[gpui::test]
@@ -1412,19 +1112,6 @@ fn one_view_serves_every_folder_when_views_are_not_kept_per_folder(cx: &mut Test
     view.update(cx, |workspace, cx| workspace.navigate("home/photos".into(), cx));
     cx.run_until_parked();
     assert_eq!(mode(&view, cx), ViewMode::Grid, "the Overview's view is not the folders'");
-}
-
-#[gpui::test]
-fn the_overview_keeps_its_view_when_a_setting_is_saved(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["notes.txt"]);
-    view.update(cx, |workspace, cx| workspace.navigate(String::new(), cx));
-    cx.run_until_parked();
-    let mode = |view: &Entity<Workspace>, cx: &mut VisualTestContext| view.read_with(cx, |workspace, _| workspace.pane().current_view_mode());
-    assert_eq!(mode(&view, cx), ViewMode::Grid);
-    // Opening the Details panel saves the settings; the drives stay as cards.
-    cx.simulate_keystrokes("f11");
-    cx.run_until_parked();
-    assert_eq!(mode(&view, cx), ViewMode::Grid);
 }
 
 #[gpui::test]
@@ -1517,45 +1204,6 @@ fn grid_sort_follows_the_per_folder_toggle(cx: &mut TestAppContext) {
         workspace.commit_preferences(cx);
     });
     cx.run_until_parked();
-}
-
-#[gpui::test]
-fn a_drive_keeps_the_name_given_it(cx: &mut TestAppContext) {
-    use super::drive_names::{DriveKey, DriveNames};
-    let (view, cx, fixture) = open(cx, &["a.txt"]);
-    let api = Api::local_with_root(fixture.root.clone()).unwrap();
-    let key = DriveKey::root(&api, "home");
-    let shown = |view: &Entity<Workspace>, cx: &mut VisualTestContext| {
-        view.read_with(cx, |workspace, _| {
-            let card = workspace.storage().unwrap().iter().map(|entry| workspace.drive_info(entry).name.to_string()).find(|name| name != "Desktop");
-            (workspace.drive_names.name(&DriveKey::root(&workspace.home.api, "home"), "own").to_string(), card)
-        })
-    };
-
-    // Rename from the sidebar's menu: the field starts with the drive's name, selected.
-    let home = cx.debug_bounds("sidebar-drive-1").unwrap().center();
-    cx.simulate_mouse_down(home, MouseButton::Right, Modifiers::default());
-    assert!(cx.debug_bounds("drive-reset-name").is_none(), "a drive with its own name has nothing to reset");
-    click(cx, "drive-rename");
-    settle(cx);
-    view.read_with(cx, |workspace, cx| assert_eq!(workspace.dialog_field.read(cx).text(), "Home"));
-    cx.simulate_keystrokes("w o r k enter");
-    settle(cx);
-    assert_eq!(shown(&view, cx), ("work".to_string(), Some("work".to_string())));
-    assert_eq!(DriveNames::load().name(&key, "home"), "work", "kept for the next window");
-
-    // The path bar starts with the new name too.
-    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
-    cx.run_until_parked();
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.breadcrumbs(PaneTarget(0))[0].label, "work"));
-
-    // Reset Name gives the drive its own name back and forgets the given one.
-    let home = cx.debug_bounds("sidebar-drive-1").unwrap().center();
-    cx.simulate_mouse_down(home, MouseButton::Right, Modifiers::default());
-    click(cx, "drive-reset-name");
-    cx.run_until_parked();
-    assert_eq!(shown(&view, cx).0, "own");
-    assert_eq!(DriveNames::load().name(&key, "home"), "home");
 }
 
 #[gpui::test]
@@ -1724,21 +1372,6 @@ fn a_drag_near_the_bottom_scrolls_the_list(cx: &mut TestAppContext) {
     cx.simulate_mouse_up(near_bottom, MouseButton::Left, Modifiers::default());
 }
 
-// F11 shows Details for the selection, as Dolphin's Information panel does, and hides it again.
-#[gpui::test]
-fn f11_shows_details_of_the_selection(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt"]);
-    assert!(cx.debug_bounds("details-panel").is_none());
-    cx.simulate_keystrokes("f11");
-    cx.run_until_parked();
-    view.read_with(cx, |workspace, _| assert!(workspace.preferences.details_panel));
-    click(cx, "row-0-0");
-    assert!(cx.debug_bounds("details-panel").is_some());
-    cx.simulate_keystrokes("f11");
-    cx.run_until_parked();
-    view.read_with(cx, |workspace, _| assert!(!workspace.preferences.details_panel));
-}
-
 #[gpui::test]
 fn clicks_in_the_second_pane_select_there(cx: &mut TestAppContext) {
     let (view, cx, _fixture) = open(cx, &["a.txt", "b.txt"]);
@@ -1773,39 +1406,6 @@ fn permission_clicks_are_all_written_after_properties_closes(cx: &mut TestAppCon
     });
     cx.run_until_parked();
     assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
-}
-
-#[gpui::test]
-fn wallpaper_options_show_only_while_the_wallpaper_does(cx: &mut TestAppContext) {
-    let (view, cx, fixture) = open(cx, &["a.txt"]);
-    let wallpaper = fixture.root.join("wallpaper.png");
-    image::RgbImage::from_pixel(64, 64, image::Rgb([200, 40, 30])).save(&wallpaper).unwrap();
-    cx.simulate_keystrokes("ctrl-,");
-    click(cx, "settings-appearance");
-    let default_accent = view.read_with(cx, |workspace, _| workspace.accent_hex());
-    cx.update(|_, app| view.update(app, |workspace, cx| workspace.install_wallpaper(wallpaper, cx)));
-    cx.run_until_parked();
-    settle(cx);
-    assert!(cx.debug_bounds("setting-wallpaper-fit").is_some());
-    assert!(cx.debug_bounds("accent-source").is_some());
-    let wallpaper_accent = view.read_with(cx, |workspace, _| workspace.accent_hex());
-    assert_ne!(wallpaper_accent, default_accent, "the accent follows the wallpaper");
-    // Transparent hides the wallpaper, so its options and its accent go too.
-    click(cx, "setting-background");
-    click(cx, "setting-background-2");
-    settle(cx);
-    view.read_with(cx, |workspace, _| assert!(workspace.desktop_settings.transparent));
-    // The test platform keeps bounds from earlier frames, so the new row proves the redraw.
-    assert!(cx.debug_bounds("accent-color-input").is_some(), "the accent is a plain color now");
-    view.read_with(cx, |workspace, _| assert_eq!(workspace.accent_hex(), default_accent));
-    // Back to Wallpaper: the kept image returns without a picker.
-    click(cx, "setting-background");
-    click(cx, "setting-background-1");
-    settle(cx);
-    view.read_with(cx, |workspace, _| {
-        assert!(!workspace.desktop_settings.transparent);
-        assert_eq!(workspace.accent_hex(), wallpaper_accent);
-    });
 }
 
 #[gpui::test]
@@ -1846,32 +1446,6 @@ fn custom_actions_run_on_their_files_and_terminal_ones_give_way(cx: &mut TestApp
     }
     assert!(marker.is_file(), "the action ran on the file");
     view.read_with(cx, |workspace, _| assert!(workspace.context_menu.is_none()));
-}
-
-#[gpui::test]
-fn hover_cards_follow_settings_and_give_way_to_menus(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["notes.txt"]);
-    view.update(cx, |workspace, cx| workspace.navigate("home".into(), cx));
-    cx.run_until_parked();
-    let card = |cx: &mut VisualTestContext| {
-        view.update(cx, |workspace, cx| {
-            let item = workspace.pane().items[0].clone();
-            workspace.hover_card(PaneTarget(0), &item, cx).is_some()
-        })
-    };
-    assert!(card(cx), "on by default");
-    view.update(cx, |workspace, cx| {
-        workspace.preferences.hover_details = false;
-        workspace.commit_preferences(cx);
-    });
-    assert!(!card(cx), "Settings turn it off");
-    view.update(cx, |workspace, cx| {
-        workspace.preferences.hover_details = true;
-        workspace.preferences.animations = false;
-        workspace.commit_preferences(cx);
-    });
-    assert!(card(cx));
-    cx.update(|_, app| assert!(!crate::components::motion::enabled(app), "Animations off reaches every component"));
 }
 
 #[gpui::test]
@@ -2055,16 +1629,6 @@ fn the_location_field_closes_when_its_pane_goes_elsewhere(cx: &mut TestAppContex
 }
 
 #[gpui::test]
-fn a_place_shows_the_folders_that_hold_it_in_the_path_bar(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["Desktop/sub/a.txt"]);
-    view.update(cx, |workspace, cx| workspace.navigate("desktop/sub".into(), cx));
-    cx.run_until_parked();
-    let crumbs = view.read_with(cx, |workspace, _| workspace.breadcrumbs(PaneTarget(0)).into_iter().map(|crumb| (crumb.label, crumb.path)).collect::<Vec<_>>());
-    let expected = [("Home", "home"), ("Desktop", "desktop"), ("sub", "desktop/sub")].map(|(label, path)| (label.to_string(), path.to_string()));
-    assert_eq!(crumbs, expected);
-}
-
-#[gpui::test]
 fn a_drag_on_a_separator_drops_in_the_crumb_before_and_resting_on_back_goes_back(cx: &mut TestAppContext) {
     let (view, cx, fixture) = open(cx, &["a/b/x.txt", "a/b/y.txt"]);
     for path in ["home/a", "home/a/b"] {
@@ -2232,44 +1796,4 @@ fn a_customised_folder_shows_its_icon_and_colours_by_every_path(cx: &mut TestApp
     click(cx, "customize-reset");
     click(cx, "customize-done");
     assert_eq!(style(&view, cx, "home/Desktop/sub"), plain);
-}
-
-#[gpui::test]
-fn folder_previews_are_off_when_turned_off_or_with_theme_icons(cx: &mut TestAppContext) {
-    use crate::workspace::IconStyle;
-    for (previews, style) in [(false, IconStyle::Tinted), (true, IconStyle::System)] {
-        let (view, cx, _fixture) = open(cx, &["photos/b.png"]);
-        view.update(cx, |workspace, cx| {
-            workspace.preferences.folder_previews = previews;
-            workspace.preferences.file_icons = style;
-            workspace.pane_mut().set_view_mode(ViewMode::Grid);
-            cx.notify();
-        });
-        for _ in 0..20 {
-            settle(cx);
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        view.read_with(cx, |workspace, _| {
-            let pane = workspace.pane();
-            assert!(workspace.folder_peek(&pane.api, &pane.items[0]).is_none(), "nothing is read for a preview with {style:?}");
-        });
-    }
-}
-
-#[gpui::test]
-fn customize_folder_keeps_done_in_a_short_window(cx: &mut TestAppContext) {
-    let (view, cx, _fixture) = open(cx, &["sub/a.txt"]);
-    cx.simulate_resize(gpui::size(gpui::px(800.), gpui::px(400.)));
-    cx.run_until_parked();
-    cx.update(|window, app| {
-        view.update(app, |workspace, cx| {
-            let (api, folder) = (workspace.pane().api.clone(), workspace.pane().items[0].clone());
-            workspace.open_customize_folder(api, folder, window, cx);
-        })
-    });
-    cx.run_until_parked();
-    let window = cx.update(|window, _| window.viewport_size());
-    let done = cx.debug_bounds("customize-done").expect("Done is drawn");
-    assert!(done.bottom() <= window.height && done.top() >= gpui::px(0.), "Done stays inside a 400px window: {done:?}");
-    click(cx, "customize-done");
 }

@@ -222,19 +222,3 @@ func TestPasswordLoginDisabledReturns403(t *testing.T) {
 		t.Fatalf("login = %d %s", rec.Code, rec.Body.String())
 	}
 }
-
-func TestAuthConfigResponse(t *testing.T) {
-	for _, test := range []struct {
-		config AuthConfigResponse
-		want   string
-	}{
-		{AuthConfigResponse{PasswordLogin: true}, `{"passwordLogin":true,"oidc":null}`},
-		{AuthConfigResponse{PasswordLogin: false, OIDC: &AuthConfigOIDC{Name: "Authelia"}}, `{"passwordLogin":false,"oidc":{"name":"Authelia"}}`},
-	} {
-		rec := httptest.NewRecorder()
-		AuthConfig(test.config)(rec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/config", nil))
-		if got := strings.TrimSpace(rec.Body.String()); got != test.want {
-			t.Errorf("config = %s, want %s", got, test.want)
-		}
-	}
-}

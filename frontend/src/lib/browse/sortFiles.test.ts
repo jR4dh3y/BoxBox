@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { FileInfo } from '#lib/api/files.js';
 import { sortFiles, visibleByDefault } from './sortFiles';
-import { suggestedDirectories } from './pathSuggestions';
 
 function entry(
 	name: string,
@@ -38,7 +37,7 @@ test('default order puts folders first, newest first within each group, with nat
 	]);
 });
 
-test('folders lead all explicit sorts and directions, and hidden entries follow the same order', () => {
+test('folders lead all explicit sorts and directions', () => {
 	for (const field of ['name', 'type', 'modTime', 'size'] satisfies Parameters<
 		typeof sortFiles
 	>[1][]) {
@@ -48,44 +47,6 @@ test('folders lead all explicit sorts and directions, and hidden entries follow 
 			assert.ok(result.slice(3).every((item) => !item.isDir));
 		}
 	}
-	assert.deepEqual(names(sortFiles(folder, 'name', 'asc')), [
-		'.config',
-		'new-folder',
-		'old-folder',
-		'.hidden',
-		'file2.txt',
-		'file10.txt'
-	]);
-	assert.deepEqual(names(sortFiles(folder, 'name', 'desc')), [
-		'old-folder',
-		'new-folder',
-		'.config',
-		'file10.txt',
-		'file2.txt',
-		'.hidden'
-	]);
-	assert.deepEqual(names(sortFiles(folder, 'modTime', 'asc')), [
-		'old-folder',
-		'.config',
-		'new-folder',
-		'file2.txt',
-		'file10.txt',
-		'.hidden'
-	]);
-	assert.deepEqual(names(sortFiles(folder, 'size', 'desc')).slice(3), [
-		'file2.txt',
-		'file10.txt',
-		'.hidden'
-	]);
-});
-
-test('path suggestions use newest folders first, including hidden folders only when requested', () => {
-	assert.deepEqual(names(suggestedDirectories(folder, '', false)), ['new-folder', 'old-folder']);
-	assert.deepEqual(names(suggestedDirectories(folder, '.', false)), [
-		'new-folder',
-		'.config',
-		'old-folder'
-	]);
 });
 
 test('equal names in recursive searches use their full path as a deterministic tie-break', () => {

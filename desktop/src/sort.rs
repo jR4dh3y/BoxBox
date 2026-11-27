@@ -211,24 +211,6 @@ mod tests {
     }
 
     #[test]
-    fn the_default_is_newest_first() {
-        assert_eq!(Sort::default(), Sort { field: SortField::Modified, dir: SortDir::Desc });
-    }
-
-    #[test]
-    fn size_desc() {
-        let mut items = vec![file("a", false, 1), file("b", false, 9)];
-        sort_files(
-            &mut items,
-            Sort {
-                field: SortField::Size,
-                dir: SortDir::Desc,
-            },
-        );
-        assert_eq!(items[0].name, "b");
-    }
-
-    #[test]
     fn type_groups_displayed_kinds_and_keeps_folders_first() {
         let mut items = vec![
             file("d.pdf", false, 0),

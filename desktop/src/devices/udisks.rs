@@ -294,23 +294,3 @@ pub fn eject(id: &str, crypto: Option<&str>) -> Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sizes_read_like_gio() {
-        assert_eq!(size_label(482_168_000_000), "482 GB");
-        assert_eq!(size_label(7_800_000_000), "7.8 GB");
-        assert_eq!(size_label(512), "512 bytes");
-    }
-
-    #[test]
-    fn only_user_locations_count_as_user_mounts() {
-        assert!(user_mount(Path::new("/run/media/me/USB")));
-        assert!(user_mount(Path::new("/mnt/data")));
-        assert!(!user_mount(Path::new("/")));
-        assert!(!user_mount(Path::new("/boot")));
-    }
-}

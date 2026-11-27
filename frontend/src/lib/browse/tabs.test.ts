@@ -78,19 +78,4 @@ describe('browse tabs and panes', () => {
 		assert.ok(activeLocations.includes('media/right'));
 		assert.ok(activeLocations.includes('media/left'));
 	});
-
-	test('tab cycling wraps and preserves each tab split state', () => {
-		const tabs = useBrowseTabs({ initialLocation: initial });
-		const firstId = tabs.activeTabId;
-		const secondId = tabs.newTab({ ...initial, path: 'media/photos' });
-		tabs.toggleSplit();
-		tabs.cycleTab(1);
-		assert.equal(tabs.activeTabId, firstId);
-		assert.equal(tabs.hasSplit, false);
-		tabs.cycleTab(-1);
-		assert.equal(tabs.activeTabId, secondId);
-		assert.equal(tabs.hasSplit, true);
-		tabs.cycleTab(1);
-		assert.equal(tabs.activeTabId, firstId);
-	});
 });

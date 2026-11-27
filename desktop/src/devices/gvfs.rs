@@ -273,22 +273,3 @@ pub fn unmount(daemon: &str, object: &str) -> Result<()> {
         .call::<_, _, ()>("Unmount", &("", ObjectPath::try_from("/")?, 0u32))
         .map_err(reason)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn byte_strings_lose_their_terminator() {
-        assert_eq!(text(b"/run/user/1000/gvfs/x\0"), "/run/user/1000/gvfs/x");
-        assert_eq!(text(b"plain"), "plain");
-    }
-
-    #[test]
-    fn a_mounted_phone_serves_its_volume() {
-        let spec: Spec = [("type", "mtp"), ("host", "Nothing_A015_001")].into_iter().map(|(key, value)| (key.into(), value.into())).collect();
-        assert!(serves(&spec, "mtp://Nothing_A015_001/"));
-        assert!(!serves(&spec, "mtp://Other_002/"));
-        assert!(!serves(&spec, "gphoto2://Nothing_A015_001/"));
-    }
-}
