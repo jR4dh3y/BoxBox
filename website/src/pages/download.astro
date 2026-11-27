@@ -10,26 +10,26 @@ import { ArrowUpRight, Monitor, Server } from '@lucide/astro';
   description="Get BoxBox Files for Windows x64 or Linux x86_64, or deploy the BoxBox server with Docker. Choose the right package, verify checksums, and connect your files."
 >
   <SiteNav showStarDoodle={false} crumb={{ label: 'Download', href: '/download/' }} />
-  <main class="relative z-10 mx-auto w-full max-w-7xl flex-1 px-5 pt-4 pb-24 md:px-8 md:pt-7">
-    <h1 class="font-display text-[clamp(2.4rem,5vw,4rem)] font-extrabold leading-[1.06] tracking-[-0.03em] text-white">
+  <main class="relative z-10 mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-5 pt-8 pb-16 md:px-8 md:pt-10 md:pb-24">
+    <h1 class="font-display text-[clamp(2.6rem,5.4vw,4.5rem)] font-extrabold leading-[1.04] tracking-[-0.03em] text-white">
       Get BoxBox.
     </h1>
 
-    <div class="mt-8 grid gap-6 lg:grid-cols-2">
+    <div class="mt-8 grid gap-6 md:mt-10 lg:grid-cols-2 lg:gap-8">
       <section
         id="desktop"
         aria-labelledby="desktop-heading"
-        class="flex min-w-0 flex-col rounded-[14px] border border-border-primary bg-[#141414] p-6 md:p-8"
+        class="flex min-w-0 scroll-mt-64 flex-col rounded-2xl border border-border-primary bg-[#141414]/95 p-7 md:p-10 lg:min-h-[23rem]"
       >
         <div class="flex items-center justify-between gap-3">
-          <Monitor class="h-7 w-7 text-accent" aria-hidden="true" />
-          <span class="font-mono text-xs text-text-muted">Windows &amp; Linux</span>
+          <Monitor class="h-8 w-8 text-accent" aria-hidden="true" />
+          <span class="font-mono text-xs tracking-wide text-text-muted">Windows &amp; Linux</span>
         </div>
 
-        <h2 id="desktop-heading" class="mt-5 font-display text-2xl font-bold tracking-tight text-white md:text-3xl">
+        <h2 id="desktop-heading" class="mt-6 font-display text-2xl font-bold tracking-tight text-white md:text-[2rem]">
           BoxBox Files
         </h2>
-        <p class="mt-2 text-base leading-relaxed text-text-secondary">
+        <p class="mt-2.5 max-w-md text-base leading-relaxed text-text-secondary md:text-[17px]">
           Local files and paired BoxBox servers in one window.
         </p>
 
@@ -38,32 +38,32 @@ import { ArrowUpRight, Monitor, Server } from '@lucide/astro';
 
       <section
         aria-labelledby="server-heading"
-        class="flex min-w-0 flex-col rounded-[14px] border border-border-primary bg-[#141414] p-6 md:p-8"
+        class="flex min-w-0 flex-col rounded-2xl border border-border-primary bg-[#141414]/95 p-7 md:p-10 lg:min-h-[23rem]"
       >
         <div class="flex items-center justify-between gap-3">
-          <Server class="h-7 w-7 text-accent" aria-hidden="true" />
-          <span class="font-mono text-xs text-text-muted">Docker · amd64 &amp; arm64</span>
+          <Server class="h-8 w-8 text-accent" aria-hidden="true" />
+          <span class="font-mono text-xs tracking-wide text-text-muted">Docker · amd64 &amp; arm64</span>
         </div>
 
-        <h2 id="server-heading" class="mt-5 font-display text-2xl font-bold tracking-tight text-white md:text-3xl">
+        <h2 id="server-heading" class="mt-6 font-display text-2xl font-bold tracking-tight text-white md:text-[2rem]">
           Self-hosted server
         </h2>
-        <p class="mt-2 text-base leading-relaxed text-text-secondary">
+        <p class="mt-2.5 max-w-md text-base leading-relaxed text-text-secondary md:text-[17px]">
           Browse, edit, and share server files from any browser.
         </p>
 
-        <div class="mt-7 flex flex-1 flex-col">
+        <div class="mt-8 flex flex-1 flex-col">
           <div class="flex flex-wrap gap-3">
             <a
               href="/docs/quickstart/"
-              class="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border-2 border-accent bg-accent px-5 py-2.5 font-display text-base font-bold text-[#0d0d0d] transition-colors hover:border-white hover:bg-white"
+              class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border-2 border-accent bg-accent px-6 py-3 font-display text-base font-bold text-[#0d0d0d] transition-colors hover:border-white hover:bg-white"
             >
               Deploy with Docker
               <ArrowUpRight class="h-4 w-4" aria-hidden="true" />
             </a>
           </div>
 
-          <div class="mt-5 flex flex-wrap gap-x-5 gap-y-2.5 text-sm">
+          <div class="mt-6 flex flex-wrap gap-x-6 gap-y-2.5 text-sm">
             <a href="https://github.com/jR4dh3y/BoxBox/releases" target="_blank" rel="noopener" class="text-text-secondary transition-colors hover:text-white hover:underline">
               Standalone binaries
             </a>
@@ -72,8 +72,8 @@ import { ArrowUpRight, Monitor, Server } from '@lucide/astro';
             </a>
           </div>
 
-          <div class="mt-auto pt-6">
-            <p class="border-t border-border-secondary pt-4 text-sm text-text-muted">
+          <div class="mt-auto pt-8">
+            <p class="border-t border-border-secondary pt-5 text-sm text-text-muted">
               Pair with desktop from <strong class="font-medium text-text-secondary">Settings → Account</strong>.
             </p>
           </div>
@@ -81,5 +81,5 @@ import { ArrowUpRight, Monitor, Server } from '@lucide/astro';
       </section>
     </div>
   </main>
-  <SiteFooter />
+  <SiteFooter slot="footer" />
 </Layout>

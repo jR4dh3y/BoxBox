@@ -19,7 +19,8 @@ import {
 <footer
   data-site-footer
   data-scene-visible="true"
-  class="site-footer relative z-10 isolate overflow-hidden bg-[#0d0d0d] text-text-primary"
+  data-curtain="flow"
+  class="site-footer relative z-10 isolate overflow-hidden bg-[#07080b] text-text-primary"
 >
   <!-- Full-bleed unified parallax diorama: breathing theme-reactive horizon glow -> far racks + LEDs -> depth haze & motes -> dithered BoxBox -> midground NAS & gold folders + LEDs -> foreground rail + LEDs -->
   <div class="footer-scene pointer-events-none absolute inset-0 select-none" aria-hidden="true">
@@ -173,11 +174,12 @@ import {
 
     <div class="scene-top-blend"></div>
     <div class="scene-bottom-ground"></div>
+    <div class="scene-curtain-veil"></div>
   </div>
 
-  <!-- Foreground footer directory living directly in the open obsidian sky and grounded on the bottom rail -->
-  <div class="relative z-10 flex min-h-full flex-col">
-    <div class="mx-auto w-full max-w-7xl px-5 pt-12 pb-6 md:px-8 md:pt-16">
+  <!-- Foreground footer directory living directly in the open recessed sky and grounded on the bottom rail -->
+  <div class="footer-content relative z-10 flex min-h-full flex-col">
+    <div class="footer-directory mx-auto w-full max-w-7xl px-5 pt-14 pb-6 md:px-8 md:pt-20">
       <div class="grid grid-cols-2 gap-x-8 gap-y-10 md:grid-cols-4 lg:grid-cols-[1.35fr_0.85fr_0.9fr_0.9fr_1.25fr]">
         <div class="col-span-2 md:col-span-4 lg:col-span-1">
           <a href="/" aria-label="BoxBox home" class="inline-block rounded-sm">
@@ -289,13 +291,32 @@ import {
     --scene-reveal: 0;
   }
 
-  /* Pause ambient GPU animations whenever the footer is scrolled offscreen. */
+  /* Tuck neatly under the rounded bottom corners of .page-curtain so there is zero seam gap. */
+  :global(.page-curtain) + .site-footer {
+    margin-top: -28px;
+    padding-top: 28px;
+  }
+
+  /* Sticky scroll-over curtain reveal whenever the full footer fits cleanly in the viewport. */
+  .site-footer[data-curtain='sticky'] {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+  }
+
+  /* Pause ambient GPU animations whenever the footer is scrolled offscreen or covered. */
   .site-footer[data-scene-visible='false'] :is(.atmosphere-bloom, .atmosphere-core, .scene-led, .valley-mote) {
     animation-play-state: paused;
   }
 
   .footer-vista {
-    height: clamp(16rem, 32vw, 29rem);
+    height: clamp(15rem, 30vw, 27rem);
+  }
+
+  .footer-directory {
+    will-change: transform, opacity;
+    transform: translate3d(0, calc(var(--scene-reveal) * 34px), 0);
+    opacity: calc(1 - var(--scene-reveal) * 0.62);
   }
 
   .scene-layer {
@@ -370,10 +391,12 @@ import {
   .layer-atmosphere {
     --px: 10px;
     --py: 5px;
-    --scroll: 26px;
+    --scroll: 88px;
+    --scale: -0.16;
     bottom: 2%;
     width: min(124%, 108rem);
     height: clamp(22rem, 42vw, 36rem);
+    opacity: calc(1 - var(--scene-reveal) * 0.58);
   }
 
   .atmosphere-bloom,
@@ -426,10 +449,11 @@ import {
   .layer-racks {
     --px: 16px;
     --py: 6px;
-    --scroll: 48px;
+    --scroll: 132px;
+    --scale: -0.05;
     bottom: clamp(-1.8rem, -1.2vw, -0.4rem);
     width: clamp(62rem, 106%, 98rem);
-    opacity: 0.9;
+    opacity: calc(0.9 - var(--scene-reveal) * 0.42);
   }
 
   .layer-racks .art-img {
@@ -507,9 +531,11 @@ import {
   .layer-monument {
     --px: -4px;
     --py: -2px;
-    --scroll: 78px;
+    --scroll: 168px;
+    --scale: -0.07;
     bottom: clamp(5.8rem, 12.2vw, 11.4rem);
     width: clamp(18.5rem, 41vw, 37rem);
+    opacity: calc(1 - var(--scene-reveal) * 0.82);
   }
 
   .monument-canvas {
@@ -523,8 +549,8 @@ import {
   .layer-midground {
     --px: -24px;
     --py: -8px;
-    --scroll: 26px;
-    --scale: 0.014;
+    --scroll: 68px;
+    --scale: 0.055;
     bottom: clamp(-3.8rem, -3vw, -2rem);
     width: clamp(62rem, 108%, 100rem);
   }
@@ -536,8 +562,8 @@ import {
   .layer-foreground {
     --px: -42px;
     --py: -10px;
-    --scroll: 8px;
-    --scale: 0.028;
+    --scroll: 26px;
+    --scale: 0.08;
     bottom: -10px;
     width: clamp(64rem, 110%, 104rem);
   }
@@ -546,12 +572,26 @@ import {
     filter: drop-shadow(0 -10px 22px rgb(3 4 8 / 0.88));
   }
 
-  /* Seamless obsidian dissolve at the top edge so the page flows right into the footer sky. */
+  /* Deep shadow band under the page curtain edge so the footer sits recessed below the page. */
   .scene-top-blend {
     position: absolute;
     inset: 0 0 auto;
-    height: clamp(8rem, 16vw, 13rem);
-    background: linear-gradient(180deg, #0d0d0d 0%, rgb(13 13 13 / 0.88) 46%, transparent 100%);
+    height: clamp(8rem, 15vw, 12rem);
+    background: linear-gradient(180deg, #050609 0%, rgb(7 8 11 / 0.86) 44%, transparent 100%);
+  }
+
+  /* Recessed curtain shadow that lifts off the diorama as the page scrolls up and uncovers it. */
+  .scene-curtain-veil {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      rgb(3 4 7 / 0.88) 0%,
+      rgb(5 6 10 / 0.72) 55%,
+      rgb(5 6 10 / 0.56) 100%
+    );
+    opacity: calc(var(--scene-reveal) * 0.82);
+    will-change: opacity;
   }
 
   /* Dark grounding band behind the bottom legal strip so contrast stays sharp at any width. */
@@ -704,9 +744,24 @@ import {
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .site-footer[data-curtain='sticky'] {
+      position: relative;
+      bottom: auto;
+    }
+
     .scene-layer {
       transform: translateX(-50%);
       will-change: auto;
+    }
+
+    .footer-directory {
+      transform: none;
+      opacity: 1;
+      will-change: auto;
+    }
+
+    .scene-curtain-veil {
+      opacity: 0;
     }
 
     .atmosphere-bloom,

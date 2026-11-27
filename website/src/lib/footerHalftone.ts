@@ -460,21 +460,25 @@ export function mountFooterHalftone(canvas: HTMLCanvasElement, interactionRoot: 
     wake();
   });
 
-  // Pause the idle ambient shimmer completely whenever the footer leaves the viewport
-  const visibilityObserver = new IntersectionObserver(
-    ([entry]) => {
-      visible = entry?.isIntersecting ?? false;
-      if (visible && !motion.matches) {
-        wake();
-      } else if (!visible && frame !== 0) {
-        window.cancelAnimationFrame(frame);
-        frame = 0;
-        lastTime = 0;
-      }
-    },
-    { rootMargin: '80px 0px' }
-  );
-  visibilityObserver.observe(interactionRoot);
+  // Pause the idle ambient shimmer whenever the footer is offscreen or covered by the page curtain
+  function syncVisibility(): void {
+    const nextVisible = interactionRoot.dataset.sceneVisible !== 'false';
+    visible = nextVisible;
+    if (visible && !motion.matches) {
+      wake();
+    } else if (!visible && frame !== 0) {
+      window.cancelAnimationFrame(frame);
+      frame = 0;
+      lastTime = 0;
+    }
+  }
+
+  const visibilityObserver = new MutationObserver(syncVisibility);
+  visibilityObserver.observe(interactionRoot, {
+    attributes: true,
+    attributeFilter: ['data-scene-visible'],
+  });
+  syncVisibility();
 
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(canvas);

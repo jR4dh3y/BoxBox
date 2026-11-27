@@ -1,13 +1,13 @@
 ---
 import { Download, ArrowUpRight } from '@lucide/astro';
 ---
-<div id="desktop-download" class="mt-7 flex flex-1 flex-col">
+<div id="desktop-download" class="mt-8 flex flex-1 flex-col">
   <div class="flex flex-wrap gap-3">
     <a
       id="desktop-release-download"
       hidden
       aria-label="Download BoxBox Files for Linux x86_64"
-      class="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border-2 border-accent bg-accent px-5 py-2.5 font-display text-base font-bold text-[#0d0d0d] transition-colors hover:border-white hover:bg-white"
+      class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border-2 border-accent bg-accent px-6 py-3 font-display text-base font-bold text-[#0d0d0d] transition-colors hover:border-white hover:bg-white"
       href="/docs/desktop/"
     >
       <Download class="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -17,7 +17,7 @@ import { Download, ArrowUpRight } from '@lucide/astro';
       id="desktop-release-windows"
       hidden
       aria-label="Download BoxBox Files for Windows x64"
-      class="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border-2 border-accent bg-accent/12 px-5 py-2.5 font-display text-base font-bold text-accent transition-colors hover:bg-accent hover:text-[#0d0d0d]"
+      class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border-2 border-accent bg-accent/12 px-6 py-3 font-display text-base font-bold text-accent transition-colors hover:bg-accent hover:text-[#0d0d0d]"
       href="/docs/desktop/#windows"
     >
       <Download class="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -25,7 +25,7 @@ import { Download, ArrowUpRight } from '@lucide/astro';
     </a>
   </div>
 
-  <div class="mt-5 flex flex-wrap gap-x-5 gap-y-2.5 text-sm">
+  <div class="mt-6 flex flex-wrap gap-x-6 gap-y-2.5 text-sm">
     <a href="/docs/desktop/" class="inline-flex items-center gap-1 text-accent transition-colors hover:text-white hover:underline">
       Install &amp; pair guide
       <ArrowUpRight class="h-4 w-4" aria-hidden="true" />
@@ -43,8 +43,8 @@ import { Download, ArrowUpRight } from '@lucide/astro';
     </a>
   </div>
 
-  <div class="mt-auto pt-6">
-    <div class="border-t border-border-secondary pt-4 text-sm text-text-muted">
+  <div class="mt-auto pt-8">
+    <div class="border-t border-border-secondary pt-5 text-sm text-text-muted">
       <p id="desktop-release-status" role="status">
         Packages on GitHub Releases. AppImage &amp; AUR in the install guide.
       </p>

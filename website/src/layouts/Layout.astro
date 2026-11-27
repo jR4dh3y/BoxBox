@@ -23,10 +23,14 @@ const { title, description = "Fast, lightweight file manager for Linux servers."
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Caveat:wght@700&display=swap" rel="stylesheet">
     <slot name="head" />
   </head>
-  <body class="relative bg-[#0d0d0d] text-text-primary min-h-screen flex flex-col antialiased">
-    <!-- A faint dot grid behind the top of the page, fading out as it scrolls away. -->
-    <div class="dot-grid pointer-events-none absolute inset-x-0 top-0 z-0 h-[900px]" aria-hidden="true"></div>
+  <body class="relative flex min-h-screen flex-col bg-[#07080b] text-text-primary antialiased">
+    <div class="page-curtain relative z-20 flex flex-1 flex-col bg-[#0d0d0d]">
+      <!-- A faint dot grid behind the top of the page, fading out as it scrolls away. -->
+      <div class="dot-grid pointer-events-none absolute inset-x-0 top-0 z-0 h-[900px]" aria-hidden="true"></div>
 
-    <slot />
+      <slot />
+    </div>
+
+    <slot name="footer" />
   </body>
 </html>

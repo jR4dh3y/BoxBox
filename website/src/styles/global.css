@@ -45,14 +45,43 @@
 
 @layer base {
   body {
-    background-color: #0d0d0d;
+    background-color: #07080b;
     color: var(--color-text-primary);
     font-family: 'Inter', system-ui, sans-serif;
     margin: 0;
     padding: 0;
-    overflow-x: hidden;
+    overflow-x: clip;
     -webkit-font-smoothing: antialiased;
   }
+}
+
+/* Crisp architectural sheet edge separating page content from the recessed footer reveal. */
+.page-curtain:has(+ [data-site-footer]) {
+  min-height: 100svh;
+  border-bottom: 1px solid rgb(255 255 255 / 0.09);
+  border-bottom-left-radius: clamp(18px, 2.2vw, 30px);
+  border-bottom-right-radius: clamp(18px, 2.2vw, 30px);
+  box-shadow:
+    0 28px 72px rgb(0 0 0 / 0.94),
+    0 10px 26px rgb(0 0 0 / 0.86);
+}
+
+.page-curtain:has(+ [data-site-footer])::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  transform: translateX(-50%);
+  width: min(68%, 48rem);
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-accent) 55%, rgb(255 255 255 / 0.25)) 50%,
+    transparent 100%
+  );
+  opacity: 0.72;
 }
 
 html,

@@ -25,7 +25,7 @@ const { title, description, heading, updated } = Astro.props;
       <slot />
     </div>
   </main>
-  <SiteFooter />
+  <SiteFooter slot="footer" />
 </Layout>
 
 <style>
