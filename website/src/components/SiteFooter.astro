@@ -1,93 +1,365 @@
 ---
-import { ArrowUpRight } from '@lucide/astro';
+import { ArrowUp, ArrowUpRight } from '@lucide/astro';
 import Wordmark from './Wordmark.astro';
-
-interface Link {
-  label: string;
-  href: string;
-  external?: boolean;
-}
-
-const columns: { title: string; links: Link[] }[] = [
-  {
-    title: 'Get it',
-    links: [
-      { label: 'Download', href: '/download/' },
-      { label: 'Desktop app', href: '/docs/desktop/' },
-      { label: 'Quickstart', href: '/docs/quickstart/' },
-      { label: 'Release notes', href: '/docs/release-notes/' },
-    ],
-  },
-  {
-    title: 'Docs',
-    links: [
-      { label: 'Overview', href: '/docs/' },
-      { label: 'Configuration', href: '/docs/configuration/' },
-      { label: 'API reference', href: '/docs/api/' },
-      { label: 'Troubleshooting', href: '/docs/troubleshooting/' },
-    ],
-  },
-  {
-    title: 'Source',
-    links: [
-      { label: 'GitHub', href: 'https://github.com/jR4dh3y/BoxBox', external: true },
-      { label: 'Releases', href: 'https://github.com/jR4dh3y/BoxBox/releases', external: true },
-      { label: 'Report an issue', href: 'https://github.com/jR4dh3y/BoxBox/issues', external: true },
-    ],
-  },
-];
-
-const projects = [
-  { name: 'fbs-core', href: 'https://fbs-landing.vercel.app/', about: 'S3-compatible blob storage and CDN' },
-  { name: 'qckpages', href: 'https://qckpage.jr4.in/', about: 'Publish HTML files as pages in seconds' },
-  { name: 'vigil-owl', href: 'https://vigil-owl.vercel.app/', about: 'Self-hosted NVR with timeline playback' },
-];
+import {
+  footerColumns,
+  footerLegalLinks,
+  footerLicense,
+  footerProjects,
+  footerTagline,
+} from '../lib/siteFooter';
 ---
 
-<footer class="relative z-10 border-t border-border-primary bg-surface-primary">
-  <div class="mx-auto max-w-7xl px-5 pt-12 pb-8 md:px-8">
-    <div class="grid grid-cols-2 gap-8 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
-      <div class="col-span-2 md:col-span-1">
-        <Wordmark id="footer-logo" class="h-8 w-auto" />
-        <p class="mt-3 max-w-64 text-sm leading-relaxed text-text-muted">Self-hosted, fast, and free. Your files stay where they are.</p>
-      </div>
+<footer
+  data-site-footer
+  class="site-footer relative z-10 isolate overflow-hidden bg-[#0d0d0d] text-text-primary"
+>
+  <!-- Full-bleed unified parallax diorama: theme-reactive horizon glow -> far racks -> dithered BoxBox -> midground NAS & gold folders -> foreground rail -->
+  <div class="footer-scene pointer-events-none absolute inset-0 select-none" aria-hidden="true">
+    <div class="scene-layer layer-atmosphere">
+      <div class="atmosphere-bloom"></div>
+      <div class="atmosphere-core"></div>
+    </div>
 
-      {columns.map((column) => (
-        <div class="text-sm">
-          <h3 class="mb-3 text-text-muted">{column.title}</h3>
-          <ul class="space-y-2 text-text-primary">
-            {column.links.map((link) => (
+    <img
+      class="scene-layer layer-racks"
+      src="/parallax/scene/racks-far.webp"
+      width="1600"
+      height="549"
+      alt=""
+      loading="lazy"
+      decoding="async"
+    />
+
+    <div class="scene-layer layer-valley-mist"></div>
+
+    <div class="scene-layer layer-monument">
+      <canvas data-footer-halftone class="monument-canvas" width="930" height="256"></canvas>
+    </div>
+
+    <img
+      class="scene-layer layer-midground"
+      src="/parallax/scene/midground-bays.webp"
+      width="1600"
+      height="490"
+      alt=""
+      loading="lazy"
+      decoding="async"
+    />
+
+    <img
+      class="scene-layer layer-foreground"
+      src="/parallax/scene/foreground-frame.webp"
+      width="1600"
+      height="215"
+      alt=""
+      loading="lazy"
+      decoding="async"
+    />
+
+    <div class="scene-top-blend"></div>
+    <div class="scene-bottom-ground"></div>
+  </div>
+
+  <!-- Foreground footer directory living directly in the open obsidian sky and grounded on the bottom rail -->
+  <div class="relative z-10 flex min-h-full flex-col">
+    <div class="mx-auto w-full max-w-7xl px-5 pt-12 pb-6 md:px-8 md:pt-16">
+      <div class="grid grid-cols-2 gap-x-8 gap-y-10 md:grid-cols-4 lg:grid-cols-[1.35fr_0.85fr_0.9fr_0.9fr_1.25fr]">
+        <div class="col-span-2 md:col-span-4 lg:col-span-1">
+          <a href="/" aria-label="BoxBox home" class="inline-block rounded-sm">
+            <Wordmark id="footer-logo" class="h-8 w-auto" />
+          </a>
+          <p class="mt-3 max-w-64 text-sm leading-relaxed text-text-secondary/90">
+            {footerTagline}
+          </p>
+        </div>
+
+        {footerColumns.map((column) => (
+          <nav aria-label={column.title} class="text-sm">
+            <h2 class="mb-3 font-mono text-[11px] font-medium tracking-[0.14em] text-text-muted uppercase">
+              {column.title}
+            </h2>
+            <ul class="space-y-2 text-text-primary">
+              {column.links.map((link) => (
+                <li>
+                  <a
+                    href={link.href}
+                    target={link.external ? '_blank' : undefined}
+                    rel={link.external ? 'noopener' : undefined}
+                    class="inline-flex items-center gap-1 text-text-primary/90 transition-colors hover:text-white"
+                  >
+                    {link.label}
+                    {link.external && <ArrowUpRight class="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        ))}
+
+        <nav aria-label="More projects" class="col-span-2 text-sm md:col-span-1">
+          <h2 class="mb-3 font-mono text-[11px] font-medium tracking-[0.14em] text-text-muted uppercase">
+            More projects
+          </h2>
+          <ul class="space-y-3">
+            {footerProjects.map((project) => (
               <li>
-                <a href={link.href} target={link.external ? '_blank' : undefined} rel={link.external ? 'noopener' : undefined} class="transition-colors hover:text-white">{link.label}</a>
+                <a
+                  href={project.href}
+                  target="_blank"
+                  rel="noopener"
+                  class="group block rounded-sm transition-colors"
+                >
+                  <span class="inline-flex items-center gap-1 font-medium text-text-primary/90 transition-colors group-hover:text-white">
+                    {project.name}
+                    <ArrowUpRight
+                      class="h-3.5 w-3.5 text-text-muted transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-accent"
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span class="mt-0.5 block text-xs leading-snug text-text-muted transition-colors group-hover:text-text-secondary">
+                    {project.about}
+                  </span>
+                </a>
               </li>
             ))}
           </ul>
-        </div>
-      ))}
+        </nav>
+      </div>
     </div>
 
-    <ul aria-label="More projects" class="mt-12 grid divide-y divide-border-secondary rounded-lg border border-border-secondary sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-      {projects.map((project) => (
-        <li>
-          <a href={project.href} target="_blank" rel="noopener" class="group block h-full px-5 py-4 transition-colors hover:bg-surface-secondary">
-            <span class="flex items-center gap-1 font-medium text-text-primary group-hover:text-white">
-              {project.name}
-              <ArrowUpRight class="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
-            </span>
-            <span class="mt-1 block text-xs text-text-muted">{project.about}</span>
-          </a>
-        </li>
-      ))}
-    </ul>
+    <!-- Open panoramic vista window framing the reactive BoxBox halftone wordmark, server skyline, and archival gold folders -->
+    <div class="footer-vista" aria-hidden="true"></div>
 
-    <div class="mt-6 flex flex-wrap items-center justify-between gap-4 text-[13px] text-text-muted">
-      <span>MIT licensed</span>
-      <span class="flex gap-5">
-        <a href="/privacy/" class="transition-colors hover:text-white">Privacy</a>
-        <a href="/terms/" class="transition-colors hover:text-white">Terms</a>
-        <a href="/security/" class="transition-colors hover:text-white">Security</a>
-        <a href="https://github.com/jR4dh3y" target="_blank" rel="noopener" class="transition-colors hover:text-white">jR4dh3y</a>
-      </span>
+    <!-- Legal strip anchored flush over the deep obsidian foreground hardware rail -->
+    <div class="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5 pt-4 pb-5 text-[13px] text-text-muted md:px-8">
+      <span>{footerLicense}</span>
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+        {footerLegalLinks.map((link) => (
+          <a
+            href={link.href}
+            target={link.external ? '_blank' : undefined}
+            rel={link.external ? 'noopener' : undefined}
+            class="transition-colors hover:text-white"
+          >
+            {link.label}
+          </a>
+        ))}
+        <a
+          href="#"
+          class="inline-flex items-center gap-1 border-l border-white/10 pl-4 font-mono text-[11px] tracking-[0.08em] text-text-secondary uppercase transition-colors hover:text-white"
+        >
+          Top
+          <ArrowUp class="h-3.5 w-3.5" aria-hidden="true" />
+        </a>
+      </div>
     </div>
   </div>
 </footer>
+
+<script>
+  import { mountFooterParallax } from '../lib/footerParallax';
+  import { mountFooterHalftone } from '../lib/footerHalftone';
+
+  document.querySelectorAll<HTMLElement>('[data-site-footer]').forEach((footer) => {
+    mountFooterParallax(footer);
+    const halftone = footer.querySelector<HTMLCanvasElement>('[data-footer-halftone]');
+    if (halftone) mountFooterHalftone(halftone, footer);
+  });
+</script>
+
+<style>
+  .site-footer {
+    --scene-x: 0;
+    --scene-y: 0;
+    --scene-reveal: 0;
+  }
+
+  .footer-vista {
+    height: clamp(16rem, 32vw, 29rem);
+  }
+
+  .scene-layer {
+    position: absolute;
+    left: 50%;
+    max-width: none;
+    will-change: transform;
+    transform: translate3d(
+      calc(-50% + var(--scene-x) * var(--px, 0px)),
+      calc(var(--scene-y) * var(--py, 0px) + var(--scene-reveal) * var(--scroll, 0px)),
+      0
+    );
+  }
+
+  /* Single unified atmospheric horizon glow whose hue smoothly follows --color-accent. */
+  .layer-atmosphere {
+    --px: 10px;
+    --py: 5px;
+    --scroll: 26px;
+    bottom: 2%;
+    width: min(124%, 108rem);
+    height: clamp(22rem, 42vw, 36rem);
+  }
+
+  .atmosphere-bloom,
+  .atmosphere-core {
+    position: absolute;
+    inset: 0;
+    background-color: var(--color-accent);
+    transition: background-color 700ms ease;
+  }
+
+  .atmosphere-bloom {
+    opacity: 0.38;
+    mask-image: radial-gradient(
+      ellipse 52% 48% at 50% 66%,
+      rgb(0 0 0 / 0.95) 0%,
+      rgb(0 0 0 / 0.42) 44%,
+      transparent 78%
+    );
+    -webkit-mask-image: radial-gradient(
+      ellipse 52% 48% at 50% 66%,
+      rgb(0 0 0 / 0.95) 0%,
+      rgb(0 0 0 / 0.42) 44%,
+      transparent 78%
+    );
+    filter: blur(28px);
+  }
+
+  .atmosphere-core {
+    opacity: 0.24;
+    background-image: radial-gradient(
+      ellipse 34% 24% at 50% 68%,
+      rgb(255 255 255 / 0.45) 0%,
+      transparent 72%
+    );
+    mask-image: radial-gradient(
+      ellipse 38% 30% at 50% 68%,
+      rgb(0 0 0 / 0.9) 0%,
+      transparent 74%
+    );
+    -webkit-mask-image: radial-gradient(
+      ellipse 38% 30% at 50% 68%,
+      rgb(0 0 0 / 0.9) 0%,
+      transparent 74%
+    );
+    filter: blur(18px);
+  }
+
+  .layer-racks {
+    --px: 15px;
+    --py: 6px;
+    --scroll: 46px;
+    bottom: clamp(-1.8rem, -1.2vw, -0.4rem);
+    width: clamp(62rem, 106%, 98rem);
+    height: auto;
+    opacity: 0.9;
+  }
+
+  /* Neutral dark depth veil between distant racks and midground bays (no fixed hue). */
+  .layer-valley-mist {
+    --px: 18px;
+    --py: 6px;
+    --scroll: 38px;
+    bottom: 0;
+    width: 112%;
+    height: clamp(12rem, 23vw, 21rem);
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      rgb(13 13 13 / 0.34) 56%,
+      rgb(10 10 10 / 0.78) 100%
+    );
+  }
+
+  /* Monumental reactive dithered BoxBox wordmark nestled inside the valley. */
+  .layer-monument {
+    --px: -4px;
+    --py: -2px;
+    --scroll: 78px;
+    bottom: clamp(5.8rem, 12.2vw, 11.4rem);
+    width: clamp(18.5rem, 41vw, 37rem);
+  }
+
+  .monument-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 930 / 256;
+    filter: drop-shadow(0 0 24px color-mix(in srgb, var(--color-accent) 28%, transparent));
+  }
+
+  .layer-midground {
+    --px: -22px;
+    --py: -8px;
+    --scroll: 24px;
+    bottom: clamp(-3.8rem, -3vw, -2rem);
+    width: clamp(62rem, 108%, 100rem);
+    height: auto;
+    filter: drop-shadow(0 -14px 28px rgb(4 8 15 / 0.72));
+  }
+
+  .layer-foreground {
+    --px: -38px;
+    --py: -10px;
+    --scroll: 6px;
+    bottom: -10px;
+    width: clamp(64rem, 110%, 104rem);
+    height: auto;
+    filter: drop-shadow(0 -10px 22px rgb(3 5 10 / 0.85));
+  }
+
+  /* Seamless obsidian dissolve at the top edge so the page flows right into the footer sky. */
+  .scene-top-blend {
+    position: absolute;
+    inset: 0 0 auto;
+    height: clamp(8rem, 16vw, 13rem);
+    background: linear-gradient(180deg, #0d0d0d 0%, rgb(13 13 13 / 0.88) 46%, transparent 100%);
+  }
+
+  /* Dark grounding band behind the bottom legal strip so contrast stays sharp at any width. */
+  .scene-bottom-ground {
+    position: absolute;
+    inset: auto 0 0;
+    height: 6.25rem;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      rgb(8 10 14 / 0.72) 48%,
+      rgb(8 10 14 / 0.94) 100%
+    );
+  }
+
+  @media (max-width: 767px) {
+    .footer-vista {
+      height: 16.5rem;
+    }
+
+    .layer-racks {
+      bottom: -0.4rem;
+      width: 50rem;
+    }
+
+    .layer-monument {
+      bottom: 6.4rem;
+      width: min(78vw, 21rem);
+    }
+
+    .layer-midground {
+      bottom: -2.2rem;
+      width: 52rem;
+    }
+
+    .layer-foreground {
+      bottom: -6px;
+      width: 54rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scene-layer {
+      transform: translateX(-50%);
+      will-change: auto;
+    }
+  }
+</style>
