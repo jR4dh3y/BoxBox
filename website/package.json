@@ -17,7 +17,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.4.13",
     "entities": "^9.0.0",
-    "marked": "^18.2.0",
+    "marked": "^18.2.1",
     "sanitize-html": "^2.18.2",
     "shiki": "^4.6.0",
     "tailwindcss": "^4.3.5"
