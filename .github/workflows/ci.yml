@@ -258,6 +258,7 @@ jobs:
           bun scripts/package-release.ts
           bun scripts/check-release-package.ts
       - name: Launch the desktop app until it paints a folder
+        timeout-minutes: 10
         run: |
           sudo apt-get install -y --no-install-recommends xvfb xauth mesa-vulkan-drivers
           WAYLAND_DISPLAY= xvfb-run -a bun scripts/desktop-smoke.ts desktop/target/release/boxbox-gpui
