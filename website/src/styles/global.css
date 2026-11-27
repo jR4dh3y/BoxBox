@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-	--font-display: 'Bricolage Grotesque', sans-serif;
+	--font-display: 'Archivo', sans-serif;
 
 	/* Surface colors (backgrounds) */
 	--color-surface-primary: #1e1e1e;
@@ -157,7 +157,7 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
   padding-top: 1.5rem;
   border-top: 1px solid var(--color-border-secondary);
   color: #ffffff;
-  font-family: 'Bricolage Grotesque', sans-serif;
+  font-family: var(--font-display);
   font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.025em;
@@ -169,7 +169,7 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
   margin-top: 2rem;
   margin-bottom: 0.75rem;
   color: #ffffff;
-  font-family: 'Bricolage Grotesque', sans-serif;
+  font-family: var(--font-display);
   font-size: 1.18rem;
   font-weight: 700;
   line-height: 1.35;
@@ -365,7 +365,7 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
   padding-top: 1.75rem;
   border-top: 1px solid var(--color-border-secondary);
   color: #ffffff;
-  font-family: 'Bricolage Grotesque', sans-serif;
+  font-family: var(--font-display);
   font-size: clamp(1.55rem, 2.4vw, 1.95rem);
   font-weight: 700;
   letter-spacing: -0.025em;
@@ -377,7 +377,7 @@ html[data-accent-transition="true"] :where([class*="accent"], [class*="selection
   margin-top: 2.15rem;
   margin-bottom: 0.75rem;
   color: #ffffff;
-  font-family: 'Bricolage Grotesque', sans-serif;
+  font-family: var(--font-display);
   font-size: 1.2rem;
   font-weight: 700;
   line-height: 1.3;
